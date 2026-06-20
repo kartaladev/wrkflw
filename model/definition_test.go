@@ -47,3 +47,27 @@ func TestProcessDefinitionLookups(t *testing.T) {
 	require.Len(t, starts, 1)
 	assert.Equal(t, "start", starts[0].ID)
 }
+
+func TestNodeUserTaskFields(t *testing.T) {
+	d := &model.ProcessDefinition{
+		ID:      "p2",
+		Version: 1,
+		Nodes: []model.Node{
+			{
+				ID:              "approve",
+				Kind:            model.KindUserTask,
+				Name:            "Approve Request",
+				CandidateRoles:  []string{"manager", "admin"},
+				EligibilityExpr: "amount > 1000",
+			},
+		},
+		Flows: []model.SequenceFlow{},
+	}
+
+	n, ok := d.Node("approve")
+	require.True(t, ok)
+	assert.Equal(t, model.KindUserTask, n.Kind)
+	assert.Equal(t, "Approve Request", n.Name)
+	assert.Equal(t, []string{"manager", "admin"}, n.CandidateRoles)
+	assert.Equal(t, "amount > 1000", n.EligibilityExpr)
+}
