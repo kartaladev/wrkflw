@@ -107,6 +107,16 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
 
 	case TimerFired:
+		// Check first whether this timer belongs to an event-based gateway arm.
+		// If so, dispatch the gateway win and return immediately.
+		if ae := s.armedEventByTimer(t.TimerID); ae != nil {
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: gwCmds}, nil
+		}
+
 		// s.Timers holds only SLA (TimerSLA) and in-wait/reminder (TimerInWait)
 		// records. Intermediate timers (TimerIntermediate) are never appended to
 		// s.Timers; for those, the token parks on the TimerID as its AwaitCommand,
@@ -173,16 +183,38 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 	case SignalReceived:
 		// Broadcast semantics within the instance: resume every token that is
 		// awaiting this signal name. Tokens are processed in slice order for
-		// determinism. A signal that matches no token is a clean no-op.
-		mergeVars(&s, t.Payload)
+		// determinism. A signal that matches no token (and no gateway arm) is a
+		// clean no-op — mergeVars runs ONLY when at least one match is found.
+		//
+		// NOTE: mergeVars is deferred until after match-checking so that a no-match
+		// delivery does not mutate instance variables (Task-2 review fix).
 		var signalCmds []Command
+		matched := false
+
+		// Check whether the signal matches an event-gateway arm (first-event-wins).
+		// A signal can simultaneously match both a standalone catch event AND a
+		// gateway arm; both are processed independently.
+		if ae := s.armedEventBySignal(t.Name); ae != nil {
+			if !matched {
+				mergeVars(&s, t.Payload)
+				matched = true
+			}
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			signalCmds = append(signalCmds, gwCmds...)
+		}
+
+		// Resume all standalone parked-signal tokens (broadcast).
 		for {
-			// Resume all parked-signal tokens in a single pass, driving each.
-			// Because drive() may park or consume tokens, we scan for the next
-			// awaiting-signal token after each drive round so the slice stays stable.
 			tok := s.tokenAwaitingSignal(t.Name)
 			if tok == nil {
 				break
+			}
+			if !matched {
+				mergeVars(&s, t.Payload)
+				matched = true
 			}
 			tok.AwaitSignal = ""
 			tok.State = TokenActive
@@ -198,14 +230,28 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 	case MessageReceived:
 		// Point-to-point semantics: resume the single token whose AwaitMessage
 		// matches the name AND whose AwaitMessageKey matches the correlation key.
-		// A message that matches no token is a clean no-op.
-		mergeVars(&s, t.Payload)
+		// A message that matches no token (and no gateway arm) is a clean no-op.
+		//
+		// NOTE: mergeVars is deferred until after match-checking so that a no-match
+		// delivery does not mutate instance variables (Task-2 review fix).
+
+		// Check whether the message matches an event-gateway arm (first-event-wins).
+		if ae := s.armedEventByMessage(t.Name, t.CorrelationKey); ae != nil {
+			mergeVars(&s, t.Payload)
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: gwCmds}, nil
+		}
+
 		tok := s.tokenAwaitingMessage(t.Name, t.CorrelationKey)
 		if tok == nil {
 			// No matching token: clean no-op (message may be for a different instance
 			// or arrived after the instance advanced).
 			return StepResult{State: s, Commands: nil}, nil
 		}
+		mergeVars(&s, t.Payload)
 		tok.AwaitMessage = ""
 		tok.AwaitMessageKey = ""
 		tok.State = TokenActive
@@ -392,6 +438,59 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				if err := s.forkInclusive(def, tok, node, at); err != nil {
 					return cmds, err
 				}
+			}
+
+		case model.KindEventBasedGateway:
+			// Event-based gateway: arm all outgoing catch-event branches simultaneously.
+			// The gateway token is parked; the first armed event to fire wins and
+			// routes the token to that arm's branch, cancelling sibling arms.
+			//
+			// Routing: for each outgoing flow (definition order) we look at the target
+			// catch-event node and create an armedEvent record. Timer arms also emit a
+			// ScheduleTimer. Signal and message arms are recorded only (delivery happens
+			// via SignalReceived/MessageReceived triggers later).
+			//
+			// The gateway token is parked with a sentinel AwaitCommand set to
+			// "evtgw:<tokenID>" so firstActive() skips it, while still being
+			// identifiable as a gateway-parked token. The ArmedEvents slice is the
+			// primary correlation table — the gateway token is found via armedEvent.GatewayToken.
+			sentinel := "evtgw:" + tok.ID
+			tok.State = TokenWaitingCommand
+			tok.AwaitCommand = sentinel
+			for _, f := range def.Outgoing(node.ID) {
+				catchNode, ok := def.Node(f.Target)
+				if !ok {
+					continue
+				}
+				ae := armedEvent{
+					GatewayToken: tok.ID,
+					CatchNode:    catchNode.ID,
+					Flow:         f.ID,
+				}
+				if catchNode.TimerDuration != "" {
+					dur, err := conditions.EvalDuration(catchNode.TimerDuration, s.Variables)
+					if err != nil {
+						return cmds, fmt.Errorf("engine: event-gateway %q timer arm %q: %w", node.ID, catchNode.ID, err)
+					}
+					timerID := s.nextTimerID()
+					cmds = append(cmds, ScheduleTimer{
+						TimerID: timerID,
+						Token:   tok.ID,
+						FireAt:  at.Add(dur),
+						Kind:    TimerIntermediate,
+					})
+					ae.TimerID = timerID
+				} else if catchNode.SignalName != "" {
+					ae.Signal = catchNode.SignalName
+				} else if catchNode.MessageName != "" {
+					resolvedKey, err := conditions.EvalString(catchNode.CorrelationKey, s.Variables)
+					if err != nil {
+						return cmds, fmt.Errorf("engine: event-gateway %q message arm %q correlation key: %w", node.ID, catchNode.ID, err)
+					}
+					ae.Message = catchNode.MessageName
+					ae.MessageKey = resolvedKey
+				}
+				s.ArmedEvents = append(s.ArmedEvents, ae)
 			}
 
 		case model.KindIntermediateThrowEvent:
@@ -724,6 +823,81 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 	return "", fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
 }
 
+// resolveGatewayWin routes an event-based gateway when one of its armed events
+// fires. It is called from the TimerFired/SignalReceived/MessageReceived handlers
+// in Step when the fired event correlates to an armedEvent entry.
+//
+// Contract:
+//   - The winning arm is identified by ae (the armedEvent that matched).
+//   - The gateway token (ae.GatewayToken) is moved directly to the catch node's
+//     outgoing target (skipping the catch node itself — it has already "fired").
+//   - All armedEvent entries for this gateway are removed; CancelTimer commands are
+//     emitted for any sibling timer arms (the winning arm's TimerID is also in the
+//     removal list and a CancelTimer is emitted for it too — but it fired, so the
+//     runtime should handle a redundant cancel gracefully; alternatively, we skip
+//     cancelling the winner's timer since it already fired). We SKIP cancelling the
+//     winner's timer since it has already fired and no longer exists in the scheduler.
+//   - drive() is called to advance execution beyond the routed target.
+func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time) ([]Command, error) {
+	// Find the gateway token.
+	tok := s.tokenAwaiting("evtgw:" + ae.GatewayToken)
+	if tok == nil {
+		// Gateway token is gone (already resolved by another concurrent path).
+		// This is a late/duplicate trigger: clean no-op.
+		// Remove any stale armed events for this gateway.
+		s.removeArmedEventsForGateway(ae.GatewayToken)
+		return nil, nil
+	}
+
+	// Find the catch node's outgoing target so we can skip directly to the branch.
+	// The catch node has "fired" by the arriving event; we route the gateway token
+	// straight to the catch node's outgoing target (its downstream node).
+	catchOuts := def.Outgoing(ae.CatchNode)
+	var branchTarget string
+	if len(catchOuts) > 0 {
+		branchTarget = catchOuts[0].Target
+	}
+
+	// Activate the gateway token and route it to the branch target.
+	tok.AwaitCommand = ""
+	tok.State = TokenActive
+	if branchTarget != "" {
+		// Close the gateway-node visit and open a visit at the branch target,
+		// skipping the catch node (it fires implicitly).
+		s.closeVisit(tok.ID, tok.NodeID, at)
+		tok.NodeID = branchTarget
+		tok.EnteredAt = at
+		s.openVisit(tok.ID, branchTarget, at)
+	} else {
+		// Fallback: move along the gateway's outgoing flow to the catch node.
+		s.moveAlongSingleFlow(def, tok, at)
+	}
+
+	// Remove ALL armedEvent entries for this gateway (winning + sibling arms).
+	// removeArmedEventsForGateway returns timer IDs that need CancelTimer commands.
+	// The winning arm's TimerID is also returned if it is a timer arm; since it
+	// already fired, the runtime will simply receive a redundant cancel — which is
+	// safe. To avoid the redundant cancel, we exclude the winning timer from cancellation.
+	winningTimerID := ae.TimerID
+	siblingsToCancel := s.removeArmedEventsForGateway(ae.GatewayToken)
+
+	var cmds []Command
+	for _, tid := range siblingsToCancel {
+		if tid == winningTimerID {
+			continue // skip cancelling the timer that already fired
+		}
+		cmds = append(cmds, CancelTimer{TimerID: tid})
+	}
+
+	// Drive forward from the branch target.
+	driveCmds, err := drive(def, s, at)
+	if err != nil {
+		return nil, err
+	}
+	cmds = append(cmds, driveCmds...)
+	return cmds, nil
+}
+
 // handleSLAFired processes a TimerFired event for an SLA timer. It is called
 // from the TimerFired handler in Step when the timer record's Kind is TimerSLA.
 //
@@ -951,5 +1125,8 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy Timers: timerRecord is a value type (no pointers), so a slice copy
 	// is sufficient to ensure mutations to the clone do not affect the original.
 	s.Timers = append([]timerRecord(nil), st.Timers...)
+	// Deep-copy ArmedEvents: armedEvent is a value type (no pointers), so a slice
+	// copy is sufficient.
+	s.ArmedEvents = append([]armedEvent(nil), st.ArmedEvents...)
 	return s
 }

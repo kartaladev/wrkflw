@@ -27,6 +27,45 @@ type timerRecord struct {
 	NodeID string
 }
 
+// armedEvent is the engine's bookkeeping entry for a single arm of an event-based
+// gateway. When a KindEventBasedGateway is driven, one armedEvent is recorded for
+// each outgoing catch-event node. The first arm to fire wins; its siblings are
+// cancelled (CancelTimer for timer arms; drop for signal/message arms).
+//
+// Design:
+//   - GatewayToken is the parked token ID on the gateway node. When an arm wins,
+//     this token is moved to the winning arm's branch target.
+//   - CatchNode is the BPMN node id of the catch-event (timer/signal/message). It
+//     is used to look up the arm in O(n) on ArmedEvents — deterministic slice order.
+//   - Flow is the sequence flow ID from the gateway to the catch node. The target of
+//     this flow is the catch node itself; the token skips the catch node and is
+//     directly routed to the catch node's single outgoing target (first-event-wins
+//     routing: the catch node has already "fired" when its arm is selected).
+//   - TimerID is non-empty for timer arms; it is the ID passed to ScheduleTimer and
+//     is needed to emit CancelTimer for loser timer arms.
+//   - Signal is non-empty for signal arms.
+//   - Message / MessageKey are non-empty for message arms (MessageKey is the
+//     resolved correlation key, empty if not configured on the node).
+//
+// All fields are plain strings (value type); cloneState copies the slice shallowly,
+// which is correct because there are no pointer fields.
+type armedEvent struct {
+	// GatewayToken is the parked token ID on the event-based gateway.
+	GatewayToken string
+	// CatchNode is the BPMN node id of the catch-event arm.
+	CatchNode string
+	// Flow is the sequence flow ID from the gateway to the catch node.
+	Flow string
+	// TimerID is the scheduled timer id for timer arms (empty for signal/message arms).
+	TimerID string
+	// Signal is the signal name for signal arms (empty for timer/message arms).
+	Signal string
+	// Message is the message name for message arms (empty for timer/signal arms).
+	Message string
+	// MessageKey is the resolved correlation key for message arms (empty if no key).
+	MessageKey string
+}
+
 // Status is the lifecycle state of a process instance.
 type Status int
 
@@ -100,6 +139,13 @@ type InstanceState struct {
 	// late/duplicate TimerFired is a clean no-op.
 	// Appended in TimerSeq order; iteration is deterministic by construction.
 	Timers []timerRecord
+
+	// ArmedEvents holds the set of pending arms for in-flight event-based gateways.
+	// Each entry corresponds to one catch-event arm of a parked gateway token.
+	// Entries are appended in definition (outgoing-flow) order and removed in bulk
+	// when any arm wins (all arms for that gateway are removed together).
+	// A late trigger for a removed arm finds no matching armedEvent and is a no-op.
+	ArmedEvents []armedEvent
 
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
@@ -177,6 +223,59 @@ func (s *InstanceState) cancelAllTimers() []Command {
 	}
 	s.Timers = nil
 	return cmds
+}
+
+// armedEventByTimer returns a pointer to the first armedEvent with the given
+// timerID, or nil if none exists.
+func (s *InstanceState) armedEventByTimer(timerID string) *armedEvent {
+	for i := range s.ArmedEvents {
+		if s.ArmedEvents[i].TimerID == timerID {
+			return &s.ArmedEvents[i]
+		}
+	}
+	return nil
+}
+
+// armedEventBySignal returns a pointer to the first armedEvent with the given
+// signal name, or nil if none exists.
+func (s *InstanceState) armedEventBySignal(name string) *armedEvent {
+	for i := range s.ArmedEvents {
+		if s.ArmedEvents[i].Signal == name {
+			return &s.ArmedEvents[i]
+		}
+	}
+	return nil
+}
+
+// armedEventByMessage returns a pointer to the first armedEvent whose Message
+// matches name and whose MessageKey matches correlationKey, or nil if none.
+func (s *InstanceState) armedEventByMessage(name, correlationKey string) *armedEvent {
+	for i := range s.ArmedEvents {
+		ae := &s.ArmedEvents[i]
+		if ae.Message == name && ae.MessageKey == correlationKey {
+			return ae
+		}
+	}
+	return nil
+}
+
+// removeArmedEventsForGateway removes all armedEvent entries whose GatewayToken
+// matches the given token ID, returning the TimerIDs of any timer-arm entries so
+// the caller can emit CancelTimer commands for them.
+func (s *InstanceState) removeArmedEventsForGateway(gatewayToken string) []string {
+	var cancelTimerIDs []string
+	out := make([]armedEvent, 0, len(s.ArmedEvents))
+	for _, ae := range s.ArmedEvents {
+		if ae.GatewayToken == gatewayToken {
+			if ae.TimerID != "" {
+				cancelTimerIDs = append(cancelTimerIDs, ae.TimerID)
+			}
+			continue
+		}
+		out = append(out, ae)
+	}
+	s.ArmedEvents = out
+	return cancelTimerIDs
 }
 
 // Clone returns a deep copy of the InstanceState. All slice and map fields are

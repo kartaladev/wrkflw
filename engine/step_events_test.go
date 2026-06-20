@@ -328,3 +328,195 @@ func TestThrowSignalFields(t *testing.T) {
 	assert.Equal(t, "evt", ts.Name)
 	assert.Equal(t, map[string]any{"a": 1}, ts.Payload)
 }
+
+// eventGatewayDef returns a definition modeling an event-based gateway that
+// races a timer catch event against a signal catch event:
+//
+//	Start → EventGateway → TimerCatch("1h") → ServiceTask(timer-branch) → End1
+//	                     → SignalCatch("approved") → ServiceTask(signal-branch) → End2
+//
+// TimerDuration uses the expr-evaluable format `"1h"` (quoted Go duration string).
+func eventGatewayDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-evtgw", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "evtgw", Kind: model.KindEventBasedGateway},
+			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
+			{ID: "signal-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "approved"},
+			{ID: "timer-branch", Kind: model.KindServiceTask, Action: "timer-action"},
+			{ID: "signal-branch", Kind: model.KindServiceTask, Action: "signal-action"},
+			{ID: "end1", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "evtgw"},
+			{ID: "f-gw-timer", Source: "evtgw", Target: "timer-catch"},
+			{ID: "f-gw-signal", Source: "evtgw", Target: "signal-catch"},
+			{ID: "f-timer-branch", Source: "timer-catch", Target: "timer-branch"},
+			{ID: "f-signal-branch", Source: "signal-catch", Target: "signal-branch"},
+			{ID: "f-timer-end", Source: "timer-branch", Target: "end1"},
+			{ID: "f-signal-end", Source: "signal-branch", Target: "end2"},
+		},
+	}
+}
+
+// TestEventGatewayFirstTimerWins: gateway races a timer-catch vs a signal-catch.
+// Firing the timer first causes:
+//   - The timer branch proceeds (InvokeAction for timer-action).
+//   - The signal arm is dropped (no CancelTimer needed for signal arms, just removed).
+//   - A late SignalReceived("approved") is a clean no-op.
+func TestEventGatewayFirstTimerWins(t *testing.T) {
+	def := eventGatewayDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → EventGateway arms both catch events.
+	// The timer arm must emit ScheduleTimer; the signal arm is just recorded.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Must have exactly one ScheduleTimer (for the timer-catch arm).
+	var schedTimer *engine.ScheduleTimer
+	for _, c := range r1.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok {
+			vv := st
+			schedTimer = &vv
+		}
+	}
+	require.NotNil(t, schedTimer, "expected ScheduleTimer for timer-catch arm")
+	// FireAt = t0 + PT1H = 1 hour later.
+	assert.Equal(t, t0.Add(time.Hour), schedTimer.FireAt)
+
+	// The gateway token must be parked (no active tokens, no regular catch-event tokens).
+	require.Len(t, r1.State.Tokens, 1, "gateway token should be parked")
+	assert.Equal(t, engine.TokenWaitingCommand, r1.State.Tokens[0].State)
+	assert.Equal(t, "evtgw", r1.State.Tokens[0].NodeID)
+
+	// ArmedEvents must have two entries: one timer arm, one signal arm.
+	assert.Len(t, r1.State.ArmedEvents, 2, "both arms must be recorded in ArmedEvents")
+
+	// Step 2: TimerFired for the timer arm → timer branch proceeds.
+	tFired := t0.Add(time.Hour)
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(tFired, schedTimer.TimerID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Timer branch must have invoked "timer-action".
+	var timerBranchIA *engine.InvokeAction
+	for _, c := range r2.Commands {
+		if ia, ok := c.(engine.InvokeAction); ok {
+			vv := ia
+			timerBranchIA = &vv
+		}
+	}
+	require.NotNil(t, timerBranchIA, "expected InvokeAction for timer-action")
+	assert.Equal(t, "timer-action", timerBranchIA.Name)
+
+	// The signal arm must be gone (no armedEvents remain for this gateway).
+	assert.Empty(t, r2.State.ArmedEvents, "all armed events must be cleared after win")
+
+	// Exactly one token exists: parked at timer-branch waiting for action.
+	require.Len(t, r2.State.Tokens, 1)
+	assert.Equal(t, "timer-branch", r2.State.Tokens[0].NodeID)
+
+	// Step 3: Late SignalReceived("approved") for the now-cancelled signal arm must be a clean no-op.
+	r3, err := engine.Step(def, r2.State,
+		engine.NewSignalReceived(tFired, "approved", map[string]any{"x": 1}), engine.StepOptions{})
+	require.NoError(t, err)
+	// No commands: the signal arm was cancelled so no token is awaiting it.
+	assert.Nil(t, r3.Commands, "late signal after gateway resolved must be no-op")
+	// State unchanged relative to r2.
+	assert.Len(t, r3.State.Tokens, 1)
+	assert.Equal(t, "timer-branch", r3.State.Tokens[0].NodeID)
+	// Variables must NOT have been mutated by the no-op signal (mergeVars fix).
+	assert.Equal(t, r2.State.Variables, r3.State.Variables,
+		"no-match signal must not mutate instance variables (mergeVars fix)")
+}
+
+// TestEventGatewayFirstSignalWins: same gateway; firing the signal first causes:
+//   - The signal branch proceeds (InvokeAction for signal-action).
+//   - A CancelTimer is emitted for the loser timer arm.
+//   - A late TimerFired for that timer is a clean no-op.
+func TestEventGatewayFirstSignalWins(t *testing.T) {
+	def := eventGatewayDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → EventGateway arms both catch events.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Capture the scheduled timer ID so we can check CancelTimer later.
+	var schedTimer *engine.ScheduleTimer
+	for _, c := range r1.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok {
+			vv := st
+			schedTimer = &vv
+		}
+	}
+	require.NotNil(t, schedTimer, "expected ScheduleTimer for timer-catch arm")
+	require.Len(t, r1.State.ArmedEvents, 2)
+
+	// Step 2: SignalReceived("approved") → signal branch proceeds.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(t0, "approved", nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Signal branch must have invoked "signal-action".
+	var signalBranchIA *engine.InvokeAction
+	var cancelCmd *engine.CancelTimer
+	for _, c := range r2.Commands {
+		switch v := c.(type) {
+		case engine.InvokeAction:
+			vv := v
+			signalBranchIA = &vv
+		case engine.CancelTimer:
+			vv := v
+			cancelCmd = &vv
+		}
+	}
+	require.NotNil(t, signalBranchIA, "expected InvokeAction for signal-action")
+	assert.Equal(t, "signal-action", signalBranchIA.Name)
+
+	// A CancelTimer must be emitted for the loser timer arm.
+	require.NotNil(t, cancelCmd, "expected CancelTimer for loser timer arm")
+	assert.Equal(t, schedTimer.TimerID, cancelCmd.TimerID)
+
+	// All armed events cleared.
+	assert.Empty(t, r2.State.ArmedEvents)
+
+	// Exactly one token: parked at signal-branch waiting for action.
+	require.Len(t, r2.State.Tokens, 1)
+	assert.Equal(t, "signal-branch", r2.State.Tokens[0].NodeID)
+
+	// Step 3: Late TimerFired for the cancelled timer arm must be a clean no-op.
+	tLate := t0.Add(time.Hour)
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(tLate, schedTimer.TimerID), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, r3.Commands, "late TimerFired after gateway resolved must be no-op")
+	assert.Len(t, r3.State.Tokens, 1)
+	assert.Equal(t, "signal-branch", r3.State.Tokens[0].NodeID)
+}
+
+// TestEventGatewayMergeVarsFix verifies the mergeVars-on-no-match fix:
+// A SignalReceived that matches no token (standalone or gateway arm) must NOT
+// mutate instance variables.
+func TestEventGatewayMergeVarsFix(t *testing.T) {
+	def := signalCatchDef()
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, map[string]any{"existing": "value"}), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// A non-matching signal must not mutate variables.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(at, "no-match", map[string]any{"injected": "bad"}), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, r2.Commands)
+	assert.NotContains(t, r2.State.Variables, "injected",
+		"non-matching signal must not inject variables into instance state")
+	assert.Equal(t, "value", r2.State.Variables["existing"])
+}
