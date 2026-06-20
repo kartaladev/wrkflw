@@ -119,6 +119,23 @@ type StartSubInstance struct {
 	Input map[string]any
 }
 
+// Compensate is an engine-internal command that drives reverse-order compensation
+// for a specific execution scope. It is emitted on cancel/error paths that want
+// to compensate a scope before terminating. ScopeID identifies the scope to
+// compensate ("" = root scope); FromNode is the node from which the reverse
+// walk starts (the most recently completed node, or "" for all records in scope).
+//
+// This command is handled by the runtime/orchestration layer (not by Step
+// directly); Step uses CompensateRequested (a Trigger) for the admin-driven path.
+// The shared reverse-walk logic (compensationWalk) is reused by both paths.
+type Compensate struct {
+	// ScopeID identifies the execution scope to compensate. Empty = root scope.
+	ScopeID string
+	// FromNode is the BPMN node ID to compensate FROM (the most recent completed node).
+	// Empty means compensate ALL records in the scope.
+	FromNode string
+}
+
 func (InvokeAction) isCommand()      {}
 func (CompleteInstance) isCommand()  {}
 func (FailInstance) isCommand()      {}
@@ -128,3 +145,7 @@ func (ScheduleTimer) isCommand()     {}
 func (CancelTimer) isCommand()       {}
 func (ThrowSignal) isCommand()       {}
 func (StartSubInstance) isCommand()  {}
+func (Compensate) isCommand()        {}
+
+// Compile-time assertions: Compensate must satisfy Command.
+var _ Command = Compensate{}

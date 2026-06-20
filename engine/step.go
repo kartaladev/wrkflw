@@ -77,6 +77,14 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{State: s, Commands: append(espCmds, driveCmdsStart...)}, nil
 
 	case ActionCompleted:
+		// If the engine is in compensation mode AND this ActionCompleted corresponds
+		// to the in-flight compensation action (cursor.ActiveCmdID), advance the
+		// compensation cursor rather than doing normal token routing. This keeps
+		// compensation sequencing deterministic and observable (one action at a time).
+		if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
+			return stepCompensationAdvance(def, &s, t.OccurredAt())
+		}
+
 		tok := s.tokenAwaiting(t.CommandID)
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
@@ -109,6 +117,14 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{}, err
 		}
 		return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
+
+	case CompensateRequested:
+		// Admin/debug reverse-order compensation trigger.
+		// 1. Set status to StatusCompensating.
+		// 2. Build the compensation cursor pointing at the first (most-recent) record
+		//    to emit (the last index in the relevant slice that is AFTER ToNode).
+		// 3. Emit the first InvokeAction and record the cursor.
+		return stepCompensateRequested(def, &s, t)
 
 	case ActionFailed:
 		tok := s.tokenAwaiting(t.CommandID)
@@ -2253,6 +2269,209 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 
 	// The token does NOT move — the task is still pending.
 	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// ── Compensation helpers ──────────────────────────────────────────────────────
+
+// compensationRecordsForScope returns a read-only slice of CompensationRecords for
+// the given scope. scopeID "" means the root scope (s.RootCompensations).
+func compensationRecordsForScope(s *InstanceState, scopeID string) []CompensationRecord {
+	if scopeID == "" {
+		return s.RootCompensations
+	}
+	sc := s.scopeByID(scopeID)
+	if sc == nil {
+		return nil
+	}
+	return sc.Compensations
+}
+
+// stepCompensateRequested handles a CompensateRequested trigger. It sets the
+// instance to StatusCompensating, cancels all in-flight tokens (interrupting
+// normal execution), builds the compensation cursor, and emits the first
+// InvokeAction for the most-recently completed compensable activity that is
+// AFTER t.ToNode in the completion order (reverse walk).
+//
+// If there are no records to compensate (empty list, or ToNode is the last record),
+// the function finalises compensation immediately without emitting any command.
+func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested) (StepResult, error) {
+	s.Status = StatusCompensating
+
+	// Cancel all in-flight tokens (interrupting normal execution).
+	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
+	var preCmds []Command
+
+	// Snapshot tokens to cancel (avoid mutating while iterating).
+	tokensToCancel := make([]Token, len(s.Tokens))
+	copy(tokensToCancel, s.Tokens)
+	for _, tok := range tokensToCancel {
+		// Cancel SLA/reminder timers for this token.
+		for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
+		// Cancel boundary arms.
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
+		// Cancel event-gateway arms.
+		if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
+			for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
+				preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+			}
+		}
+		tokPtr := s.tokenByID(tok.ID)
+		if tokPtr != nil {
+			s.consumeToken(tokPtr, t.OccurredAt())
+		}
+	}
+	// Cancel any remaining timers and event-subprocess arms.
+	preCmds = append(preCmds, s.cancelAllTimers()...)
+	preCmds = append(preCmds, s.cancelAllArmsAndBoundaries()...)
+
+	// For now we compensate the root scope (top-level admin path).
+	// Task 4 will extend this to scope-targeted compensation.
+	const scopeID = ""
+	records := compensationRecordsForScope(s, scopeID)
+
+	// Determine the starting index: the last record whose NodeID != t.ToNode.
+	// We walk from the end of records backward; the first record (from the right)
+	// that is NOT the ToNode is the starting point.
+	//
+	// Because records are stored in completion order (oldest first), the reverse
+	// walk is: len(records)-1 down to 0.
+	//
+	// Find how many records are eligible (those AFTER ToNode in completion order).
+	// If ToNode == "", all records are eligible.
+	// If ToNode != "", we exclude the record whose NodeID == ToNode (it is the
+	// rollback TARGET — we do not compensate it). All records recorded AFTER ToNode
+	// (i.e. later in the slice) are eligible.
+	startIndex := len(records) - 1
+	if t.ToNode != "" {
+		// Find the index of ToNode in the records (it's recorded in completion order).
+		toNodeIdx := -1
+		for i, r := range records {
+			if r.NodeID == t.ToNode {
+				toNodeIdx = i
+			}
+		}
+		if toNodeIdx >= 0 {
+			// Only records AFTER toNodeIdx (i.e. indices > toNodeIdx) are eligible.
+			// The first to emit is the last eligible record.
+			if toNodeIdx >= len(records)-1 {
+				// ToNode was the last completed node — nothing to compensate.
+				finishRes, finishErr := stepCompensationFinish(def, s, t.ToNode, t.OccurredAt())
+				if finishErr != nil {
+					return StepResult{}, finishErr
+				}
+				finishRes.Commands = append(preCmds, finishRes.Commands...)
+				return finishRes, nil
+			}
+			// startIndex = the last eligible record = len(records)-1
+			// (all records after toNodeIdx — no change needed; startIndex already set).
+		}
+		// If ToNode not found in records, we compensate all records (startIndex = len-1).
+	}
+
+	if startIndex < 0 {
+		// No records at all.
+		finishRes, finishErr := stepCompensationFinish(def, s, t.ToNode, t.OccurredAt())
+		if finishErr != nil {
+			return StepResult{}, finishErr
+		}
+		finishRes.Commands = append(preCmds, finishRes.Commands...)
+		return finishRes, nil
+	}
+
+	// Emit the first compensation InvokeAction (record at startIndex).
+	rec := records[startIndex]
+	cmdID := s.nextCommandID()
+	s.Compensating = compensationCursor{
+		ScopeID:     scopeID,
+		ToNode:      t.ToNode,
+		NextIndex:   startIndex,
+		ActiveCmdID: cmdID,
+	}
+	cmd := InvokeAction{
+		CommandID: cmdID,
+		Name:      rec.Action,
+		Input:     copyVars(rec.Input),
+	}
+	cmds := append(preCmds, cmd)
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// stepCompensationAdvance advances the compensation cursor after a compensation
+// InvokeAction completes (ActionCompleted with cursor.ActiveCmdID). It emits the
+// next InvokeAction in reverse order, or finalises compensation if the walk is done.
+func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at time.Time) (StepResult, error) {
+	cur := s.Compensating
+	records := compensationRecordsForScope(s, cur.ScopeID)
+
+	// Advance: the record we just completed is at cur.NextIndex. Move to the
+	// previous record (next in reverse order). nextIdx = cur.NextIndex - 1.
+	nextIdx := cur.NextIndex - 1
+
+	// Determine the stop boundary: the index of ToNode (exclusive, i.e. we stop
+	// BEFORE emitting that index's compensation).
+	toNodeIdx := -1
+	if cur.ToNode != "" {
+		for i, r := range records {
+			if r.NodeID == cur.ToNode {
+				toNodeIdx = i
+			}
+		}
+	}
+
+	// Check if next record is within the eligible range.
+	// Eligible: nextIdx >= 0 AND nextIdx > toNodeIdx (i.e. the record is AFTER ToNode).
+	if nextIdx < 0 || nextIdx <= toNodeIdx {
+		// Walk complete: either exhausted all records, or reached ToNode boundary.
+		return stepCompensationFinish(def, s, cur.ToNode, at)
+	}
+
+	// Emit the next compensation action.
+	rec := records[nextIdx]
+	cmdID := s.nextCommandID()
+	s.Compensating = compensationCursor{
+		ScopeID:     cur.ScopeID,
+		ToNode:      cur.ToNode,
+		NextIndex:   nextIdx,
+		ActiveCmdID: cmdID,
+	}
+	cmd := InvokeAction{
+		CommandID: cmdID,
+		Name:      rec.Action,
+		Input:     copyVars(rec.Input),
+	}
+	return StepResult{State: *s, Commands: []Command{cmd}}, nil
+}
+
+// stepCompensationFinish finalises the compensation walk:
+//   - If toNode != "": place a token at toNode, set Status = StatusRunning, and
+//     drive forward (resuming execution from the rollback target).
+//   - If toNode == "": all records have been compensated; set Status =
+//     StatusTerminated (full rollback — no resume point).
+func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time) (StepResult, error) {
+	// Clear the cursor — compensation walk is done.
+	s.Compensating = compensationCursor{}
+
+	if toNode == "" {
+		// Full rollback: no resume point → terminate.
+		s.Status = StatusTerminated
+		ended := at
+		s.EndedAt = &ended
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// Partial rollback: resume at toNode.
+	s.Status = StatusRunning
+	// Place a new token at toNode and drive forward.
+	s.placeToken(toNode, at)
+	driveCmds, err := drive(def, s, at)
+	if err != nil {
+		return StepResult{}, err
+	}
+	return StepResult{State: *s, Commands: driveCmds}, nil
 }
 
 // ---- value helpers ----

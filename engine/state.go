@@ -240,6 +240,42 @@ type NodeVisit struct {
 	ActorID   *string // who completed a human-task visit (later plans)
 }
 
+// compensationCursor tracks progress through an in-flight reverse-order
+// compensation walk. It is set when a CompensateRequested trigger arrives and
+// cleared when the walk completes (all targeted records processed).
+//
+// Fields:
+//   - ScopeID: the scope whose records are being walked ("" = root scope /
+//     RootCompensations). Used to locate the correct record slice on each step.
+//   - ToNode: the rollback target — compensation walks back to (but not
+//     including) this node. Empty means "roll back everything".
+//   - NextIndex: the index into the relevant CompensationRecord slice of the
+//     NEXT record to emit. The walk proceeds from len(records)-1 down to 0
+//     (reverse order). Initially set to len(records)-1 (the most-recently
+//     completed record). Decremented by one after each ActionCompleted while
+//     Status == StatusCompensating. The active InvokeAction's CommandID is
+//     tracked in ActiveCmdID so ActionCompleted can distinguish a compensation
+//     response from a normal one.
+//   - ActiveCmdID: the CommandID of the in-flight compensation InvokeAction.
+//     When ActionCompleted arrives with this CommandID and Status ==
+//     StatusCompensating, the engine advances the cursor to the next record
+//     rather than doing normal token routing.
+//
+// cloneState deep-copies this struct via value copy (all fields are plain
+// scalars — no pointers or maps). No additional deep-copy code is needed.
+type compensationCursor struct {
+	// ScopeID identifies the scope being compensated ("" = root).
+	ScopeID string
+	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
+	ToNode string
+	// NextIndex is the index of the next CompensationRecord to emit.
+	// Counts DOWN from len(records)-1 to 0.
+	NextIndex int
+	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
+	// in flight. Cleared when the step completes.
+	ActiveCmdID string
+}
+
 // InstanceState is the authoritative snapshot of a running instance.
 type InstanceState struct {
 	InstanceID string
@@ -298,6 +334,13 @@ type InstanceState struct {
 	// scope is active. Entries are appended in definition-scan order (deterministic).
 	// Removed when the trigger fires (one-shot) or when the enclosing scope closes.
 	EventSubprocesses []eventSubprocessArm
+
+	// Compensating tracks the in-flight reverse-order compensation walk, if any.
+	// It is non-zero only while Status == StatusCompensating. The cursor is a
+	// plain value struct (all scalar fields); cloneState copies it by value
+	// automatically as part of the InstanceState struct copy — no extra
+	// deep-copy code is required.
+	Compensating compensationCursor
 
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int

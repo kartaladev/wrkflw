@@ -93,6 +93,31 @@ var (
 	_ engine.Trigger = engine.SubInstanceFailed{}
 )
 
+// Compile-time interface assertion: CompensateRequested must satisfy engine.Trigger.
+var _ engine.Trigger = engine.CompensateRequested{}
+
+// TestCompensateRequestedFields asserts that NewCompensateRequested stamps OccurredAt
+// and stores ToNode faithfully.
+func TestCompensateRequestedFields(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name   string
+		toNode string
+	}{
+		{"partial rollback", "step1"},
+		{"full rollback", ""},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cr := engine.NewCompensateRequested(at, tc.toNode)
+			assert.Equal(t, at, cr.OccurredAt(), "OccurredAt must match the given time")
+			assert.Equal(t, tc.toNode, cr.ToNode, "ToNode must be stored faithfully")
+		})
+	}
+}
+
 // TestTimerFiredSatisfiesTrigger asserts TimerFired satisfies Trigger and
 // NewTimerFired stamps OccurredAt correctly.
 func TestTimerFiredSatisfiesTrigger(t *testing.T) {
