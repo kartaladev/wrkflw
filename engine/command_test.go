@@ -168,7 +168,7 @@ func TestTimerCommandsImplementInterface(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			// Command interface satisfied (compile-time + runtime).
-			var _ engine.Command = tc.cmd
+			_ = tc.cmd
 		})
 	}
 }

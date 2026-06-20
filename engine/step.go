@@ -100,6 +100,23 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		task.State = humantask.Claimed
 		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
 
+	case TimerFired:
+		tok := s.tokenAwaiting(t.TimerID)
+		if tok == nil {
+			// Stale/already-moved timer: clean no-op. Timers are inherently racy
+			// with other completion paths (e.g. the instance may have advanced via
+			// a different branch), so we never error here.
+			return StepResult{State: s, Commands: nil}, nil
+		}
+		tok.State = TokenActive
+		tok.AwaitCommand = ""
+		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: driveCmds}, nil
+
 	case HumanCompleted:
 		tok := s.tokenAwaiting(t.TaskToken)
 		if tok == nil {
@@ -185,6 +202,27 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = taskToken
 
+		case model.KindIntermediateCatchEvent:
+			if node.TimerDuration != "" {
+				dur, err := conditions.EvalDuration(node.TimerDuration, s.Variables)
+				if err != nil {
+					return cmds, fmt.Errorf("engine: timer node %q: %w", node.ID, err)
+				}
+				timerID := s.nextTimerID()
+				cmds = append(cmds, ScheduleTimer{
+					TimerID: timerID,
+					Token:   tok.ID,
+					FireAt:  at.Add(dur),
+					Kind:    TimerIntermediate,
+				})
+				tok.State = TokenWaitingCommand
+				tok.AwaitCommand = timerID
+			} else {
+				// Non-timer intermediate catch event: park the token.
+				// Other event variants (message, signal, etc.) arrive in later plans.
+				tok.State = TokenWaitingCommand
+			}
+
 		case model.KindEndEvent:
 			s.consumeToken(tok, at)
 			if len(s.Tokens) == 0 {
@@ -264,6 +302,11 @@ func (s *InstanceState) nextCommandID() string {
 func (s *InstanceState) nextTaskToken() string {
 	s.TaskSeq++
 	return fmt.Sprintf("%s-h%d", s.InstanceID, s.TaskSeq)
+}
+
+func (s *InstanceState) nextTimerID() string {
+	s.TimerSeq++
+	return fmt.Sprintf("%s-tm%d", s.InstanceID, s.TimerSeq)
 }
 
 // setVisitActor sets the ActorID on the most recent open NodeVisit for the
