@@ -2,6 +2,7 @@
 package authz_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -122,6 +123,21 @@ func TestRoleAuthorizer_AttributePredicate(t *testing.T) {
 			assert: func(t *testing.T, err error) {
 				t.Helper()
 				require.NoError(t, err)
+			},
+		},
+		{
+			name: "malformed predicate wraps ErrNotAuthorized with eval error",
+			spec: authz.AuthzSpec{
+				Roles:     []string{"approver"},
+				Attribute: `actor.ID ===`, // invalid syntax
+			},
+			actor: authz.Actor{ID: "u8", Roles: []string{"approver"}},
+			vars:  map[string]any{},
+			assert: func(t *testing.T, err error) {
+				t.Helper()
+				require.Error(t, err)
+				require.True(t, errors.Is(err, authz.ErrNotAuthorized), "expected ErrNotAuthorized to be wrapped")
+				require.NotEmpty(t, err.Error(), "error message should describe the predicate failure")
 			},
 		},
 	}

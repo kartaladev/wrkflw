@@ -15,6 +15,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/expreval"
 )
 
+// attrEval is the package-level expression evaluator for attribute predicates.
+// A single shared instance is safe for concurrent use; memoization is
+// referentially transparent. Mirrors the pattern in engine/conditions.go.
+var attrEval = expreval.New()
+
 // ErrNotAuthorized is returned by an [Authorizer] when the actor does not
 // satisfy the given [AuthzSpec].
 var ErrNotAuthorized = errors.New("authz: not authorized")
@@ -41,6 +46,12 @@ type AuthzSpec struct {
 type Authorizer interface {
 	Authorize(ctx context.Context, spec AuthzSpec, actor Actor, vars map[string]any) error
 }
+
+// Compile-time interface assertions.
+var (
+	_ Authorizer = AllowAll{}
+	_ Authorizer = RoleAuthorizer{}
+)
 
 // AllowAll is an [Authorizer] that unconditionally permits every actor.
 // Useful in tests and permissive development environments.
@@ -70,12 +81,11 @@ func (RoleAuthorizer) Authorize(_ context.Context, spec AuthzSpec, actor Actor, 
 
 	// Step 2: attribute predicate (optional).
 	if spec.Attribute != "" {
-		ev := expreval.New()
 		env := map[string]any{
 			"actor": actor,
 			"vars":  vars,
 		}
-		ok, err := ev.EvalBool(spec.Attribute, env)
+		ok, err := attrEval.EvalBool(spec.Attribute, env)
 		if err != nil {
 			return fmt.Errorf("%w: attribute predicate: %w", ErrNotAuthorized, err)
 		}
