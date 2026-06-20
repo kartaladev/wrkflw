@@ -26,6 +26,10 @@ type timerRecord struct {
 	TaskToken string
 	// NodeID is the BPMN node that owns the timer (needed to resolve SLAFlow/SLAAction).
 	NodeID string
+	// ScopeID is the execution scope of the token that owns this timer. Empty
+	// string means the root scope. Used to resolve the correct nested definition
+	// when a SLA or reminder timer fires inside a sub-process.
+	ScopeID string
 }
 
 // armedEvent is the engine's bookkeeping entry for a single arm of an event-based

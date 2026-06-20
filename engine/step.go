@@ -486,6 +486,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 					Token:     tok.ID,
 					TaskToken: taskToken,
 					NodeID:    node.ID,
+					ScopeID:   tok.ScopeID,
 				})
 				ht.DueAt = &fireAt
 			}
@@ -510,6 +511,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 					Token:     tok.ID,
 					TaskToken: taskToken,
 					NodeID:    node.ID,
+					ScopeID:   tok.ScopeID,
 				})
 			}
 			s.Tasks = append(s.Tasks, ht)
@@ -638,16 +640,16 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 
 		case model.KindParallelGateway:
 			if len(tdef.Incoming(node.ID)) > 1 {
-				s.tryParallelJoin(tdef, tok, node, at)
+				s.tryParallelJoin(tdef, tok, node, tok.ScopeID, at)
 			} else {
-				s.forkParallel(tdef, tok, node, at)
+				s.forkParallel(tdef, tok, node, tok.ScopeID, at)
 			}
 
 		case model.KindInclusiveGateway:
 			if len(tdef.Incoming(node.ID)) > 1 {
-				s.tryInclusiveJoin(tdef, tok, node, at)
+				s.tryInclusiveJoin(tdef, tok, node, tok.ScopeID, at)
 			} else {
-				if err := s.forkInclusive(tdef, tok, node, at); err != nil {
+				if err := s.forkInclusive(tdef, tok, node, tok.ScopeID, at); err != nil {
 					return cmds, err
 				}
 			}
@@ -889,11 +891,12 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 
 // forkParallel consumes the incoming token and creates one Active token at each
 // outgoing flow target (definition order). Used for a diverging parallel gateway.
-func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+// scopeID is the gateway token's scope; forked tokens inherit it.
+func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
 	outs := def.Outgoing(node.ID)
 	s.consumeToken(tok, at)
 	for _, f := range outs {
-		s.placeToken(f.Target, at)
+		s.placeTokenInScope(f.Target, scopeID, at)
 	}
 }
 
@@ -901,7 +904,8 @@ func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, n
 // non-default outgoing flow whose condition is empty or true (definition order).
 // If none are true it takes the default flow; if none are true and there is no
 // default it returns ErrNoMatchingFlow.
-func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) error {
+// scopeID is the gateway token's scope; forked tokens inherit it.
+func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) error {
 	var taken []model.SequenceFlow
 	var dflt *model.SequenceFlow
 	for _, f := range def.Outgoing(node.ID) {
@@ -930,7 +934,7 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 	}
 	s.consumeToken(tok, at)
 	for _, f := range taken {
-		s.placeToken(f.Target, at)
+		s.placeTokenInScope(f.Target, scopeID, at)
 	}
 	return nil
 }
@@ -938,7 +942,8 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 // tryParallelJoin parks the arriving token at a converging parallel gateway and,
 // once a token has arrived on every incoming flow, consumes them all and forks to
 // the gateway's outgoing flows. Until then the token waits as TokenAtJoin.
-func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+// scopeID is the joining token's scope; output tokens inherit it.
+func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
 	tok.State = TokenAtJoin
 
 	arrived := 0
@@ -966,7 +971,7 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 	}
 	s.Tokens = kept
 	for _, f := range def.Outgoing(node.ID) {
-		s.placeToken(f.Target, at)
+		s.placeTokenInScope(f.Target, scopeID, at)
 	}
 }
 
@@ -974,7 +979,8 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 // token other than those already parked at the join can still reach it (so it
 // never waits for branches that were never activated). On firing it consumes all
 // tokens parked at the join and creates one Active token per outgoing flow.
-func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+// scopeID is the joining token's scope; output tokens inherit it.
+func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
 	tok.State = TokenAtJoin
 
 	canReach := nodesThatCanReach(def, node.ID)
@@ -1002,7 +1008,7 @@ func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Toke
 	}
 	s.Tokens = kept
 	for _, f := range def.Outgoing(node.ID) {
-		s.placeToken(f.Target, at)
+		s.placeTokenInScope(f.Target, scopeID, at)
 	}
 }
 
@@ -1086,10 +1092,18 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 		return nil, nil
 	}
 
+	// Resolve the effective definition for the gateway token's scope so that
+	// an event-based gateway inside a sub-process resolves its catch nodes
+	// against the nested definition.
+	tdef, err := defForScope(def, s, tok.ScopeID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Find the catch node's outgoing target so we can skip directly to the branch.
 	// The catch node has "fired" by the arriving event; we route the gateway token
 	// straight to the catch node's outgoing target (its downstream node).
-	catchOuts := def.Outgoing(ae.CatchNode)
+	catchOuts := tdef.Outgoing(ae.CatchNode)
 	var branchTarget string
 	if len(catchOuts) > 0 {
 		branchTarget = catchOuts[0].Target
@@ -1111,7 +1125,7 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 		// branch is unreachable in a validated definition. It is retained as a
 		// defensive fallback so the engine degrades gracefully rather than
 		// panicking if an unvalidated definition is passed.
-		s.moveAlongSingleFlow(def, tok, at)
+		s.moveAlongSingleFlow(tdef, tok, at)
 	}
 
 	// Remove ALL armedEvent entries for this gateway (winning + sibling arms).
@@ -1232,6 +1246,7 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 		return nil, fmt.Errorf("engine: boundary %q: outgoing flow %q not found", ba.BoundaryNode, ba.Flow)
 	}
 
+	hostScopeID := hostTok.ScopeID
 	var cmds []Command
 
 	if !ba.NonInterrupting {
@@ -1255,16 +1270,18 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 			cmds = append(cmds, CancelTimer{TimerID: timerID})
 		}
 
-		// Place a new Active token at the boundary's outgoing flow target.
-		s.placeToken(flowTarget, at)
+		// Place a new Active token at the boundary's outgoing flow target, keeping
+		// the host token's scope so boundary-routed tokens stay in the same scope.
+		s.placeTokenInScope(flowTarget, hostScopeID, at)
 	} else {
 		// Non-interrupting: leave host parked, spawn an additional token.
 
 		// Remove only THIS boundary arm (it fired once; no re-arm in scope).
 		s.removeBoundaryArm(ba.HostToken, ba.BoundaryNode)
 
-		// Spawn a new Active token at the boundary's outgoing flow target.
-		s.placeToken(flowTarget, at)
+		// Spawn a new Active token at the boundary's outgoing flow target, keeping
+		// the host token's scope.
+		s.placeTokenInScope(flowTarget, hostScopeID, at)
 	}
 
 	// Drive forward (the newly placed token(s)).
@@ -1308,8 +1325,15 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
+	// Resolve the effective definition for the timer's scope so that SLA timers
+	// inside a sub-process resolve nodes against the nested definition.
+	tdefSLA, tdefSLAErr := defForScope(def, s, rec.ScopeID)
+	if tdefSLAErr != nil {
+		return StepResult{}, tdefSLAErr
+	}
+
 	// Resolve the SLA alternative-path flow.
-	node, ok := def.Node(rec.NodeID)
+	node, ok := tdefSLA.Node(rec.NodeID)
 	if !ok {
 		return StepResult{}, fmt.Errorf("engine: SLA breach: node %q not found in definition", rec.NodeID)
 	}
@@ -1318,7 +1342,7 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 	}
 	// Find the sequence flow with ID == node.SLAFlow.
 	var slaTarget string
-	for _, f := range def.Flows {
+	for _, f := range tdefSLA.Flows {
 		if f.ID == node.SLAFlow {
 			slaTarget = f.Target
 			break
@@ -1403,8 +1427,15 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
+	// Resolve the effective definition for the timer's scope so that reminder
+	// timers inside a sub-process resolve the node against the nested definition.
+	tdefReminder, tdefReminderErr := defForScope(def, s, rec.ScopeID)
+	if tdefReminderErr != nil {
+		return StepResult{}, tdefReminderErr
+	}
+
 	// Resolve the node to get ReminderEvery and ReminderAction.
-	node, ok := def.Node(rec.NodeID)
+	node, ok := tdefReminder.Node(rec.NodeID)
 	if !ok {
 		return StepResult{}, fmt.Errorf("engine: reminder fired: node %q not found in definition", rec.NodeID)
 	}
@@ -1444,6 +1475,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		Token:     rec.Token,
 		TaskToken: rec.TaskToken,
 		NodeID:    rec.NodeID,
+		ScopeID:   rec.ScopeID,
 	})
 
 	// The token does NOT move — the task is still pending.
