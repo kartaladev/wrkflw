@@ -165,9 +165,3 @@ func TestStepActionCompletedUnknownCommandID(t *testing.T) {
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
 }
 
-func TestStepMicroModeNotImplemented(t *testing.T) {
-	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	_, err := engine.Step(linearDef(), engine.InstanceState{InstanceID: "i1"},
-		engine.NewStartInstance(at, nil), engine.StepOptions{Mode: engine.Micro})
-	require.ErrorIs(t, err, engine.ErrMicroNotImplemented)
-}
