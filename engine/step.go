@@ -146,6 +146,15 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				s.forkParallel(def, tok, node, at)
 			}
 
+		case model.KindInclusiveGateway:
+			if len(def.Incoming(node.ID)) > 1 {
+				s.tryInclusiveJoin(def, tok, node, at)
+			} else {
+				if err := s.forkInclusive(def, tok, node, at); err != nil {
+					return cmds, err
+				}
+			}
+
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
@@ -246,6 +255,44 @@ func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, n
 	}
 }
 
+// forkInclusive consumes the incoming token and creates an Active token for every
+// non-default outgoing flow whose condition is empty or true (definition order).
+// If none are true it takes the default flow; if none are true and there is no
+// default it returns ErrNoMatchingFlow.
+func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) error {
+	var taken []model.SequenceFlow
+	var dflt *model.SequenceFlow
+	for _, f := range def.Outgoing(node.ID) {
+		if f.IsDefault {
+			ff := f
+			dflt = &ff
+			continue
+		}
+		if f.Condition == "" {
+			taken = append(taken, f)
+			continue
+		}
+		ok, err := conditions.EvalBool(f.Condition, s.Variables)
+		if err != nil {
+			return fmt.Errorf("engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+		}
+		if ok {
+			taken = append(taken, f)
+		}
+	}
+	if len(taken) == 0 {
+		if dflt == nil {
+			return fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
+		}
+		taken = append(taken, *dflt)
+	}
+	s.consumeToken(tok, at)
+	for _, f := range taken {
+		s.placeToken(f.Target, at)
+	}
+	return nil
+}
+
 // tryParallelJoin parks the arriving token at a converging parallel gateway and,
 // once a token has arrived on every incoming flow, consumes them all and forks to
 // the gateway's outgoing flows. Until then the token waits as TokenAtJoin.
@@ -279,6 +326,68 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 	for _, f := range def.Outgoing(node.ID) {
 		s.placeToken(f.Target, at)
 	}
+}
+
+// tryInclusiveJoin parks the arriving token at an OR-join and fires only once no
+// token other than those already parked at the join can still reach it (so it
+// never waits for branches that were never activated). On firing it consumes all
+// tokens parked at the join and creates one Active token per outgoing flow.
+func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+	tok.State = TokenAtJoin
+
+	canReach := nodesThatCanReach(def, node.ID)
+	// INVARIANT: single non-nested, acyclic diamond only — the reachability check
+	// (nodesThatCanReach) assumes no nested/re-entered joins or loops back toward
+	// this join (deferred to a later scopes/loops plan).
+	for i := range s.Tokens {
+		t := &s.Tokens[i]
+		if t.NodeID == node.ID && t.State == TokenAtJoin {
+			continue // already arrived at the join
+		}
+		if canReach[t.NodeID] {
+			return // some token can still reach the join; keep waiting
+		}
+	}
+
+	// Fire: consume all tokens parked at this join, then fork to outgoing flows.
+	kept := make([]Token, 0, len(s.Tokens))
+	for _, t := range s.Tokens {
+		if t.NodeID == node.ID && t.State == TokenAtJoin {
+			s.closeVisit(t.ID, t.NodeID, at)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	s.Tokens = kept
+	for _, f := range def.Outgoing(node.ID) {
+		s.placeToken(f.Target, at)
+	}
+}
+
+// nodesThatCanReach returns the set of node IDs (excluding target) from which
+// target is reachable by following sequence flows forward. Implemented as a
+// reverse breadth-first search from target over incoming flows; the visited guard
+// makes it safe on graphs with cycles that do not pass through target.
+func nodesThatCanReach(def *model.ProcessDefinition, target string) map[string]bool {
+	canReach := make(map[string]bool)
+	var queue []string
+	enqueue := func(n string) {
+		if n != target && !canReach[n] {
+			canReach[n] = true
+			queue = append(queue, n)
+		}
+	}
+	for _, f := range def.Incoming(target) {
+		enqueue(f.Source)
+	}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, f := range def.Incoming(n) {
+			enqueue(f.Source)
+		}
+	}
+	return canReach
 }
 
 // selectExclusiveTarget picks the target of an exclusive gateway: the first
