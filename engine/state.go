@@ -429,14 +429,19 @@ func (s *InstanceState) cancelAllTimers() []Command {
 // arms) that has a non-empty TimerID, then clears both slices. Iteration is in
 // slice order (ArmedEvents first, then Boundaries) for determinism.
 //
-// This is called alongside cancelAllTimers on the ActionFailed terminal path to
-// prevent gateway and boundary timer arms from leaking as orphaned scheduled
-// tasks in the runtime scheduler.
+// This is called alongside cancelAllTimers on ALL terminal paths to prevent
+// gateway and boundary timer arms from leaking as orphaned scheduled tasks in
+// the runtime scheduler. Callers include:
+//   - ActionFailed (unhandled error → StatusFailed)
+//   - CancelRequested (admin cancel → StatusTerminated)
+//   - SubInstanceFailed (child instance failed → parent StatusFailed)
+//   - propagateError's unhandled-error terminal path
+//   - stepCompensateRequested (cancels all in-flight tokens before compensating)
 //
-// NOTE: A comprehensive sweep across ALL terminal transitions (not just
-// ActionFailed) and multi-token scenarios is deferred to the errors/compensation
-// plan (Plan 8). This covers ActionFailed specifically, consistent with the
-// Plan-5 precedent for cancelAllTimers.
+// EventSubprocesses arms are also drained on the terminal and compensation paths
+// via removeEventSubprocessArmsForScope — this function does NOT drain them, so
+// callers that need to cover ESP arms call removeEventSubprocessArmsForScope
+// separately.
 func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	var cmds []Command
 	for _, ae := range s.ArmedEvents {

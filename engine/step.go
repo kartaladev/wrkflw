@@ -170,7 +170,9 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// If no handler is found, propagateError sets StatusFailed, emits
 		// FailInstance, and performs terminal cleanup — preserving existing
 		// behavior for root-level service tasks with no handler.
-		errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, t.Err, t.OccurredAt(), opt.Mode)
+		// Pass tok.ID so the direct-attachment branch consumes THIS specific
+		// token, not the first token found at the same NodeID+ScopeID.
+		errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -732,10 +734,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			// current scope. propagateError walks the scope chain outward looking for
 			// a matching boundary error handler on the enclosing sub-process. An error
 			// end event is not an activity node that carries a direct boundary, so we
-			// pass "" as originatingNodeID (no direct-attachment check needed).
+			// pass "" as originatingNodeID (no direct-attachment check needed) and ""
+			// as failingTokenID (the error-end token is already consumed above).
 			currentScopeID := tok.ScopeID
 			s.consumeToken(tok, at)
-			errCmds, propErr := propagateError(def, s, currentScopeID, "", node.ErrorCode, at, mode)
+			errCmds, propErr := propagateError(def, s, currentScopeID, "", "", node.ErrorCode, at, mode)
 			if propErr != nil {
 				return cmds, propErr
 			}
@@ -1608,7 +1611,15 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 // originatingNodeID should be set to the failing activity's NodeID (tok.NodeID) when
 // called from ActionFailed. For KindErrorEndEvent, pass "" (an error end event is not
 // an activity with a direct-attaching boundary).
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, errorCode string, at time.Time, mode StepMode) ([]Command, error) {
+//
+// failingTokenID is the ID of the specific token that failed. When originatingNodeID
+// is non-empty (ActionFailed path), the direct-attachment branch consumes THIS token
+// by ID rather than by NodeID+ScopeID. This is correct when two active tokens occupy
+// the same node in the same scope (e.g. in a parallel/loop topology) — consuming by
+// ID ensures only the exact failing token is removed. For the KindErrorEndEvent path
+// (originatingNodeID == ""), the error-end token is already consumed by drive before
+// propagateError is called, so failingTokenID is unused.
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode) ([]Command, error) {
 	// ── Step 1: Direct-attachment check ──────────────────────────────────────
 	// Only when the caller provides an originating node (ActionFailed path).
 	// Inspect the failing token's OWN scope definition for a boundary error event
@@ -1647,15 +1658,23 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// itself is still present but parked — we need to consume it now).
 			var cmds []Command
 
-			// Consume the failing activity's token (find by NodeID + ScopeID).
-			// The ActionFailed handler already cancelled the token's boundary arms
-			// via removeBoundaryArmsForHost (emitted as preCmds). We just need to
-			// remove the token itself from the token slice.
+			// Consume the failing activity's token by its specific ID (failingTokenID).
+			// Using the ID rather than NodeID+ScopeID ensures correctness when two
+			// active tokens share the same node in the same scope (e.g. a parallel or
+			// loop topology) — we remove only the exact failing token, not the first
+			// one found by position.
 			var failingTok *Token
-			for i := range s.Tokens {
-				if s.Tokens[i].NodeID == originatingNodeID && s.Tokens[i].ScopeID == scopeID {
-					failingTok = &s.Tokens[i]
-					break
+			if failingTokenID != "" {
+				failingTok = s.tokenByID(failingTokenID)
+			}
+			if failingTok == nil {
+				// Fallback: locate by NodeID+ScopeID (defensive; should not occur when
+				// the caller passes a valid failingTokenID).
+				for i := range s.Tokens {
+					if s.Tokens[i].NodeID == originatingNodeID && s.Tokens[i].ScopeID == scopeID {
+						failingTok = &s.Tokens[i]
+						break
+					}
 				}
 			}
 			if failingTok != nil {
@@ -2620,12 +2639,19 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy RootCompensations: each CompensationRecord contains an Input
 	// map[string]any (a reference type) that must be independently allocated so
 	// mutations to a clone's record do not affect the original.
-	if len(st.RootCompensations) > 0 {
-		s.RootCompensations = make([]CompensationRecord, len(st.RootCompensations))
-		for i, cr := range st.RootCompensations {
-			ccr := cr
-			ccr.Input = copyVars(cr.Input)
-			s.RootCompensations[i] = ccr
+	// Use append([]T(nil), src...) instead of a len>0 guard + make so that a
+	// non-nil empty source produces a non-nil empty clone (nil-vs-empty consistency).
+	{
+		src := st.RootCompensations
+		if src == nil {
+			s.RootCompensations = nil
+		} else {
+			s.RootCompensations = make([]CompensationRecord, len(src))
+			for i, cr := range src {
+				ccr := cr
+				ccr.Input = copyVars(cr.Input)
+				s.RootCompensations[i] = ccr
+			}
 		}
 	}
 	// Deep-copy Scopes: each Scope contains a Compensations slice that must be
@@ -2640,7 +2666,12 @@ func cloneState(st InstanceState) InstanceState {
 			// Deep-copy each CompensationRecord: the Input field is a map[string]any
 			// (a reference type) and must be independently allocated so mutations to
 			// a clone's Input do not propagate back to the original's record.
-			if len(sc.Compensations) > 0 {
+			// Use explicit nil-check for nil-vs-empty consistency: a nil Compensations
+			// in the source produces nil in the clone; a non-nil empty slice produces
+			// a non-nil empty clone.
+			if sc.Compensations == nil {
+				cs.Compensations = nil
+			} else if len(sc.Compensations) > 0 {
 				cs.Compensations = make([]CompensationRecord, len(sc.Compensations))
 				for j, cr := range sc.Compensations {
 					ccr := cr

@@ -878,14 +878,14 @@ func TestCancelRequestedTerminates(t *testing.T) {
 	})
 
 	t.Run("already-terminal-is-noop-or-error", func(t *testing.T) {
-		// Cancelling an already-completed instance: CancelRequested on a completed
-		// instance returns ErrUnknownTrigger because a terminal instance has no
-		// live tokens; the trigger is treated as a clean no-op / unknown-state error.
-		// For simplicity, we document that CancelRequested on a StatusCompleted instance
-		// still sets StatusTerminated (same logic; idempotent). The caller must NOT
-		// send CancelRequested to a completed instance; this just ensures no panic.
+		// Cancelling an already-completed instance: CancelRequested is handled by
+		// the CancelRequested case in Step regardless of current Status. The logic
+		// is idempotent — there are no tokens or timers to cancel — so it succeeds
+		// (NoError) and overwrites Status to StatusTerminated. The resulting state
+		// has empty tokens and no harmful side effects.
 		//
-		// We verify the call completes without panicking and emits no harmful side effects.
+		// Callers must NOT send CancelRequested to an already-terminal instance in
+		// production; this subtest only ensures no panic and deterministic behaviour.
 		def := cancelUserTaskDef()
 		completedState := engine.InstanceState{
 			InstanceID: "i-cancel-term",
@@ -894,7 +894,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		// Should not panic; the result is deterministic.
 		r, err := engine.Step(def, completedState,
 			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
-		require.NoError(t, err, "CancelRequested on a completed instance must not error")
+		require.NoError(t, err, "CancelRequested on a completed instance must not error (idempotent)")
 		// Post-cancel: status is terminal (Terminated), tokens still empty.
 		assert.Equal(t, engine.StatusTerminated, r.State.Status)
 		assert.Empty(t, r.State.Tokens)

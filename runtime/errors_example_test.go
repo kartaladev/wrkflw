@@ -4,7 +4,9 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -115,12 +117,16 @@ func TestSagaCompensationRollback(t *testing.T) {
 		"refund":         &recordingAction{name: "refund", rec: rec},
 	})
 
-	clk := clock.System()
+	// Use a fake clock per ADR-0003 / project test policy. The saga has no
+	// timer-driven nodes, so behaviour is identical to a real clock. clockwork.FakeClock
+	// structurally satisfies clock.Clock (it implements Now() time.Time).
+	fakeClock := clockwork.NewFakeClockAt(time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC))
+
 	store := runtime.NewMemStateStore()
 	jnl := runtime.NewMemJournal()
 	out := runtime.NewMemOutbox()
 
-	runner := runtime.NewRunner(cat, clk, store, jnl, out)
+	runner := runtime.NewRunner(cat, fakeClock, store, jnl, out)
 
 	def := sagaDef()
 
@@ -142,19 +148,16 @@ func TestSagaCompensationRollback(t *testing.T) {
 	require.Equal(t, []string{"book", "pay", "ship"}, forwardOrder, "forward actions must run in order")
 
 	// --- Step 2: admin triggers full compensation rollback.
-	trg := engine.NewCompensateRequested(clk.Now(), "") // ToNode="" → full rollback
+	trg := engine.NewCompensateRequested(fakeClock.Now(), "") // ToNode="" → full rollback
 	finalSt, err := runner.Deliver(ctx, def, "saga-i1", trg)
 	require.NoError(t, err, "Deliver(CompensateRequested) must not error")
 
 	// --- Step 3: assert reverse-order compensation.
-	// refund (for pay) must run BEFORE cancel-booking (for book).
-	allActions := rec.snapshot()
+	// Full-slice equality catches both order AND count regressions.
 	// allActions = [book, pay, ship, refund, cancel-booking]
-	require.GreaterOrEqual(t, len(allActions), 5, "at least 5 actions must have been recorded")
-
-	compActions := allActions[3:] // everything after the 3 forward actions
-	assert.Equal(t, []string{"refund", "cancel-booking"}, compActions,
-		"compensation actions must run in reverse order: refund THEN cancel-booking")
+	allActions := rec.snapshot()
+	assert.Equal(t, []string{"book", "pay", "ship", "refund", "cancel-booking"}, allActions,
+		"all actions must run in exact order: forward (book, pay, ship) then compensation in reverse (refund, cancel-booking)")
 
 	// --- Step 4: final status.
 	// Full rollback (ToNode=="") → StatusTerminated.

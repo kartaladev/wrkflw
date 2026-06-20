@@ -190,6 +190,16 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 // ToNode: the BPMN node ID to roll back to (exclusive — that node's compensation
 // is NOT re-run). An empty ToNode means "roll back everything" — the instance
 // ends in StatusTerminated when all records are exhausted.
+//
+// LIMITATION — root scope only: CompensateRequested currently targets only the
+// ROOT scope's compensation records (InstanceState.RootCompensations). Records
+// accumulated inside a sub-process scope are attached to the Scope entry, but
+// those scopes are CLOSED (and their Compensations dropped) when the sub-process
+// completes normally. As a result, completed sub-process scopes are not yet
+// rollback-able via this trigger. Consumers should not rely on CompensateRequested
+// reaching into historical sub-process records — this is a known limitation tracked
+// as a follow-up. The Compensate command (reserved, not yet emitted) is the intended
+// future vehicle for scope-targeted compensation.
 type CompensateRequested struct {
 	baseTrigger
 	// ToNode is the rollback target node ID. Compensation runs from the most-recently

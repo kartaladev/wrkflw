@@ -164,9 +164,18 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 // process entirely with Micro steps reaches the same final StatusCompleted state
 // as a Macro drive.  This is the convergence invariant: Micro and Macro produce
 // identical results; Micro only differs in the number of Step calls required.
+//
+// The test explicitly asserts that the FINAL STATE from both modes is equal on
+// the meaningful fields: Status, Variables, and final token count. History length
+// is also compared — both modes should produce the same number of node visits on
+// a linear process. Per-step timestamps within History entries may differ between
+// runs only if time.Now() is used; this engine is deterministic (all timestamps
+// come from the trigger's OccurredAt) so History entry count and content match.
 func TestMicroStepEventuallyCompletesLikeMacro(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := linearEndDef()
+
+	var microFinal, macroFinal engine.InstanceState
 
 	t.Run("micro converges to completed", func(t *testing.T) {
 		st := engine.InstanceState{InstanceID: "conv-micro"}
@@ -193,6 +202,8 @@ func TestMicroStepEventuallyCompletesLikeMacro(t *testing.T) {
 		_, isComplete := res2.Commands[0].(engine.CompleteInstance)
 		assert.True(t, isComplete, "final micro step must emit CompleteInstance")
 		assert.Equal(t, "ok", res2.State.Variables["result"])
+
+		microFinal = res2.State
 	})
 
 	t.Run("macro reaches same completed state", func(t *testing.T) {
@@ -218,5 +229,31 @@ func TestMicroStepEventuallyCompletesLikeMacro(t *testing.T) {
 		_, isComplete := res2.Commands[0].(engine.CompleteInstance)
 		assert.True(t, isComplete)
 		assert.Equal(t, "ok", res2.State.Variables["result"])
+
+		macroFinal = res2.State
+	})
+
+	// ── Convergence invariant: Micro and Macro produce identical final states ──
+	// These assertions are the load-bearing part of this test: they verify that
+	// the two modes are semantically equivalent, not merely that each mode works
+	// in isolation. We compare the fields that carry semantic meaning:
+	//   - Status: both must be StatusCompleted.
+	//   - Variables: both must carry {"result":"ok"} (output merged correctly).
+	//   - Tokens: both must have no tokens remaining (all consumed at EndEvent).
+	//   - History length: same node visits in the same count (deterministic engine).
+	// We do NOT compare InstanceID (intentionally different for the two runs) or
+	// EndedAt (pointer equality would fail; the value is the same time but different
+	// allocations; each subtest already asserts on status/vars independently).
+	t.Run("micro-final-state-equals-macro-final-state", func(t *testing.T) {
+		assert.Equal(t, macroFinal.Status, microFinal.Status,
+			"micro and macro must produce the same final Status")
+		assert.Equal(t, macroFinal.Variables, microFinal.Variables,
+			"micro and macro must produce the same final Variables")
+		assert.Empty(t, microFinal.Tokens,
+			"micro final state must have no remaining tokens")
+		assert.Empty(t, macroFinal.Tokens,
+			"macro final state must have no remaining tokens")
+		assert.Equal(t, len(macroFinal.History), len(microFinal.History),
+			"micro and macro must produce the same number of History node visits")
 	})
 }
