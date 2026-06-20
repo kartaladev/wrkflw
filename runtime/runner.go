@@ -173,9 +173,9 @@ func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, 
 			return st, fmt.Errorf("runtime: save: %w", err)
 		}
 
-		// Reconcile signal-bus subscriptions after each state save so the bus
-		// always reflects the current set of signals this instance is awaiting.
-		r.syncSignalBus(st)
+		// Reconcile signal-bus and message waiters after each state save so both
+		// the SignalBus and msgWaiters maps always reflect the current parked state.
+		r.syncWaiters(st)
 
 		for _, c := range res.Commands {
 			next, err := r.perform(ctx, def, st, c)
@@ -190,19 +190,28 @@ func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, 
 	return st, nil
 }
 
+// syncWaiters reconciles both the SignalBus subscriptions and the internal
+// message-waiter table for st after each deliverLoop save. It calls
+// syncSignalBus (if a bus is configured) and syncMsgWaiters so both are
+// always consistent with the current parked state of the instance.
+func (r *Runner) syncWaiters(st engine.InstanceState) {
+	r.syncSignalBus(st)
+	r.syncMsgWaiters(st)
+}
+
 // syncSignalBus reconciles st's AwaitSignal tokens with the SignalBus, if one
 // is configured. This is a no-op when r.sigbus is nil.
 func (r *Runner) syncSignalBus(st engine.InstanceState) {
-	if r.sigbus != nil {
-		var awaiting []string
-		for _, tok := range st.Tokens {
-			if tok.AwaitSignal != "" {
-				awaiting = append(awaiting, tok.AwaitSignal)
-			}
-		}
-		r.sigbus.Sync(st.InstanceID, awaiting)
+	if r.sigbus == nil {
+		return
 	}
-	r.syncMsgWaiters(st)
+	var awaiting []string
+	for _, tok := range st.Tokens {
+		if tok.AwaitSignal != "" {
+			awaiting = append(awaiting, tok.AwaitSignal)
+		}
+	}
+	r.sigbus.Sync(st.InstanceID, awaiting)
 }
 
 // syncMsgWaiters reconciles the runner's internal message-waiter table with the

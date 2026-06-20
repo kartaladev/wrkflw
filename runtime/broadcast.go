@@ -2,11 +2,11 @@ package runtime
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sort"
 	"sync"
-	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -27,7 +27,7 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 //   - The deliver function is injected at construction time as a [DeliverFunc]:
 //     the caller typically wraps runner.Deliver with the definition pre-captured:
 //
-//	bus := runtime.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
+//	bus := runtime.NewSignalBus(clk, func(ctx context.Context, id string, trg engine.Trigger) error {
 //	    _, err := runner.Deliver(ctx, def, id, trg)
 //	    return err
 //	})
@@ -35,21 +35,23 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 // Concurrency: all internal state is protected by a mutex; the bus is safe for
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).
 //
-// Timestamp: Publish stamps each SignalReceived with the current wall-clock time
-// obtained from time.Now(). The bus does not depend on clock.Clock because it
-// lives in the runtime boundary, not in the engine core. If a deterministic
-// timestamp is needed in tests, use a fakeClock closure in the DeliverFunc.
+// Timestamp: Publish stamps each SignalReceived with the time from the injected
+// [clock.Clock] (ADR-0003). Pass the same fake clock used by the Runner in tests
+// so that downstream timers anchored to the signal timestamp are deterministic.
 type SignalBus struct {
+	clk     clock.Clock
 	mu      sync.Mutex
 	waiters map[string]map[string]struct{} // signalName → set of instanceIDs
 	deliver DeliverFunc
 }
 
-// NewSignalBus constructs a SignalBus backed by the given delivery function.
-// deliver is called once per registered waiter for each Publish, with the
-// instance ID and the SignalReceived trigger.
-func NewSignalBus(deliver DeliverFunc) *SignalBus {
+// NewSignalBus constructs a SignalBus backed by the given clock and delivery
+// function. clk is used to stamp SignalReceived triggers (ADR-0003 — never
+// time.Now()). deliver is called once per registered waiter for each Publish,
+// with the instance ID and the SignalReceived trigger.
+func NewSignalBus(clk clock.Clock, deliver DeliverFunc) *SignalBus {
 	return &SignalBus{
+		clk:     clk,
 		waiters: make(map[string]map[string]struct{}),
 		deliver: deliver,
 	}
@@ -120,8 +122,9 @@ func (b *SignalBus) Sync(instanceID string, awaitingNames []string) {
 // order. The waiter's subscription is NOT automatically removed on delivery;
 // it is the responsibility of the next deliverLoop call (via Sync) to reconcile.
 //
-// Delivery errors from individual waiters are returned immediately; later
-// waiters in the sorted slice are NOT attempted after the first failure.
+// Delivery is best-effort: all registered waiters are attempted even if one
+// fails. Individual delivery errors are accumulated and returned as a joined
+// error via [errors.Join]. A nil return means all deliveries succeeded.
 func (b *SignalBus) Publish(ctx context.Context, name string, payload map[string]any) error {
 	// Snapshot the waiter set under lock so we hold the lock minimally and
 	// allow concurrent Subscribe/Unsubscribe calls during delivery.
@@ -143,11 +146,27 @@ func (b *SignalBus) Publish(ctx context.Context, name string, payload map[string
 	// Deterministic delivery order.
 	sort.Strings(ids)
 
-	trg := engine.NewSignalReceived(time.Now(), name, payload)
+	trg := engine.NewSignalReceived(b.clk.Now(), name, payload)
+
+	// Best-effort: attempt every waiter; accumulate errors.
+	var errs []error
 	for _, id := range ids {
 		if err := b.deliver(ctx, id, trg); err != nil {
-			return fmt.Errorf("runtime: SignalBus.Publish %q to %q: %w", name, id, err)
+			errs = append(errs, &deliverError{signal: name, instanceID: id, err: err})
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
+
+// deliverError wraps a delivery failure with signal and instance context.
+type deliverError struct {
+	signal     string
+	instanceID string
+	err        error
+}
+
+func (e *deliverError) Error() string {
+	return "runtime: SignalBus.Publish " + e.signal + " to " + e.instanceID + ": " + e.err.Error()
+}
+
+func (e *deliverError) Unwrap() error { return e.err }

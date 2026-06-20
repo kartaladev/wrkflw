@@ -90,15 +90,16 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 
 	def := signalCatchDef("approved")
 
-	// The SignalBus needs a deliver function. Build the runner first with a
-	// placeholder bus, then construct the real bus with the runner's Deliver closure.
-	// Use a two-phase build: bus wraps runner.Deliver with the definition resolved.
-	bus := runtime.NewSignalBus(func(ctx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := runtime.NewRunner(nil, fc, store, jnl, out).Deliver(ctx, def, instanceID, trg)
+	// Use a forward-reference (pointer-forward) pattern so the same runner (with
+	// its signal bus) handles deliveries. This ensures subscriptions/msgWaiters
+	// are always in sync — not a separate ephemeral runner.
+	var r *runtime.Runner
+	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
 	})
 
-	r := runtime.NewRunner(nil, fc, store, jnl, out, runtime.WithSignalBus(bus))
+	r = runtime.NewRunner(nil, fc, store, jnl, out, runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := r.Run(ctx, def, "inst-1", nil)
@@ -172,7 +173,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
 	// dependency with a forward reference via a pointer.
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
 	})
@@ -217,7 +218,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	def := eventGatewayDef()
 
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
 	})
