@@ -1,6 +1,10 @@
 package engine
 
-import "time"
+import (
+	"time"
+
+	"github.com/zakyalvan/krtlwrkflw/humantask"
+)
 
 // Status is the lifecycle state of a process instance.
 type Status int
@@ -43,7 +47,6 @@ type NodeVisit struct {
 }
 
 // InstanceState is the authoritative snapshot of a running instance.
-// Scopes and human-task records are added in later plans.
 type InstanceState struct {
 	InstanceID string
 	DefID      string
@@ -55,7 +58,29 @@ type InstanceState struct {
 	EndedAt    *time.Time
 	History    []NodeVisit
 
+	// Tasks holds the in-flight human-task records for this instance.
+	Tasks []humantask.HumanTask
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
+	TaskSeq  int
+}
+
+// TaskByToken returns a pointer to the HumanTask with the given taskToken, or
+// nil if no such task exists in the state.
+func (s *InstanceState) TaskByToken(taskToken string) *humantask.HumanTask {
+	for i := range s.Tasks {
+		if s.Tasks[i].TaskToken == taskToken {
+			return &s.Tasks[i]
+		}
+	}
+	return nil
+}
+
+// Clone returns a deep copy of the InstanceState. All slice and map fields are
+// independently allocated so that mutations to the returned state do not affect
+// the receiver (and vice versa).
+func (s InstanceState) Clone() InstanceState {
+	return cloneState(s)
 }

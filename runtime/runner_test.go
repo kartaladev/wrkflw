@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -55,7 +56,7 @@ func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	// record a FailInstance command (outbox write "instance.failed").
 	cat := action.NewMapCatalog(nil)
 	out := runtime.NewMemOutbox()
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out)
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out, nil, nil, nil)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -73,7 +74,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 		}),
 	})
 	out := runtime.NewMemOutbox()
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out)
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out, nil, nil, nil)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -86,7 +87,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 
 func TestRunnerJournalAppendErrorPropagates(t *testing.T) {
 	cat := action.NewMapCatalog(nil)
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), &errJournal{}, runtime.NewMemOutbox())
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), &errJournal{}, runtime.NewMemOutbox(), nil, nil, nil)
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -99,7 +100,7 @@ func TestRunnerStoreSaveErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), &errStateStore{}, runtime.NewMemJournal(), runtime.NewMemOutbox())
+	r := runtime.NewRunner(cat, clock.System(), &errStateStore{}, runtime.NewMemJournal(), runtime.NewMemOutbox(), nil, nil, nil)
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -112,9 +113,47 @@ func TestRunnerOutboxWriteErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), &errOutbox{})
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), &errOutbox{}, nil, nil, nil)
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runtime: outbox:")
+}
+
+// userTaskOnlyDef returns a process with a single user-task node: start → userTask → end.
+func userTaskOnlyDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "user-task-only",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "task1", Kind: model.KindUserTask, CandidateRoles: []string{"manager"}},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task1"},
+			{ID: "f2", Source: "task1", Target: "end"},
+		},
+	}
+}
+
+// TestRunnerUserTaskWithoutDepsErrors verifies that a Runner constructed without
+// human-task dependencies (nil resolver and nil TaskStore) returns a descriptive
+// error — rather than panicking — when it reaches an AwaitHuman command.
+func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
+	// Build a Runner with nil resolver and nil tasks (no human-task deps).
+	r := runtime.NewRunner(
+		nil, // no catalog
+		clock.System(),
+		runtime.NewMemStateStore(),
+		runtime.NewMemJournal(),
+		runtime.NewMemOutbox(),
+		nil, // nil ActorResolver
+		nil, // nil TaskStore
+		nil,
+	)
+
+	_, err := r.Run(t.Context(), userTaskOnlyDef(), "i1", nil)
+	require.Error(t, err, "Run must fail with a descriptive error, not panic")
+	assert.Contains(t, err.Error(), "ActorResolver", "error must mention the missing ActorResolver")
 }

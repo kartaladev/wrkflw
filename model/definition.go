@@ -35,6 +35,9 @@ type Node struct {
 	Kind   NodeKind
 	Name   string
 	Action string // service-action name, for KindServiceTask
+	// User-task eligibility (KindUserTask). The engine maps these to authz.AuthzSpec.
+	CandidateRoles  []string
+	EligibilityExpr string // optional attribute predicate (expr)
 }
 
 // SequenceFlow is a directed edge between two nodes.
