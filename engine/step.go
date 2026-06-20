@@ -86,16 +86,23 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 		}
+		// Resolve the effective definition for the token's scope so we can look up
+		// the node and check for a CompensationAction BEFORE merging output.
+		tdef, err := defForScope(def, &s, tok.ScopeID)
+		if err != nil {
+			return StepResult{}, err
+		}
+		// Record compensation BEFORE merging the output: the snapshot captures the
+		// instance variables as they existed when the activity was invoked.
+		if node, ok := tdef.Node(tok.NodeID); ok && node.CompensationAction != "" {
+			s.recordCompensation(tok.ScopeID, node.ID, node.CompensationAction, t.OccurredAt(), copyVars(s.Variables))
+		}
 		mergeVars(&s, t.Output)
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
 		// Advance the token past the completed ServiceTask so drive sees it at
 		// the next node, not re-firing the action. Use the token's scope definition
 		// so inner-scope tokens resolve flows against the nested definition.
-		tdef, err := defForScope(def, &s, tok.ScopeID)
-		if err != nil {
-			return StepResult{}, err
-		}
 		s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
@@ -851,6 +858,14 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 						if err != nil {
 							return cmds, fmt.Errorf("engine: sub-process exit: %w", err)
 						}
+
+						// If the sub-process node itself carries a CompensationAction, record
+						// it in the parent scope. The snapshot is taken after the scope is
+						// closed (consistent: the sub-process completed at this point).
+						if spNode, spOK := parentDef.Node(subNodeID); spOK && spNode.CompensationAction != "" {
+							s.recordCompensation(parentScopeID, subNodeID, spNode.CompensationAction, at, copyVars(s.Variables))
+						}
+
 						outs := parentDef.Outgoing(subNodeID)
 						if len(outs) == 0 {
 							return cmds, fmt.Errorf("engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
@@ -2035,6 +2050,17 @@ func cloneState(st InstanceState) InstanceState {
 	// so a slice copy is sufficient to ensure mutations to the clone do not affect
 	// the original.
 	s.EventSubprocesses = append([]eventSubprocessArm(nil), st.EventSubprocesses...)
+	// Deep-copy RootCompensations: each CompensationRecord contains an Input
+	// map[string]any (a reference type) that must be independently allocated so
+	// mutations to a clone's record do not affect the original.
+	if len(st.RootCompensations) > 0 {
+		s.RootCompensations = make([]CompensationRecord, len(st.RootCompensations))
+		for i, cr := range st.RootCompensations {
+			ccr := cr
+			ccr.Input = copyVars(cr.Input)
+			s.RootCompensations[i] = ccr
+		}
+	}
 	// Deep-copy Scopes: each Scope contains a Compensations slice that must be
 	// independently allocated so mutations to a clone's compensation records do
 	// not affect the original. The other Scope fields (ID, NodeID, ParentID) are
@@ -2044,7 +2070,17 @@ func cloneState(st InstanceState) InstanceState {
 		s.Scopes = make([]Scope, len(st.Scopes))
 		for i, sc := range st.Scopes {
 			cs := sc
-			cs.Compensations = append([]CompensationRecord(nil), sc.Compensations...)
+			// Deep-copy each CompensationRecord: the Input field is a map[string]any
+			// (a reference type) and must be independently allocated so mutations to
+			// a clone's Input do not propagate back to the original's record.
+			if len(sc.Compensations) > 0 {
+				cs.Compensations = make([]CompensationRecord, len(sc.Compensations))
+				for j, cr := range sc.Compensations {
+					ccr := cr
+					ccr.Input = copyVars(cr.Input)
+					cs.Compensations[j] = ccr
+				}
+			}
 			s.Scopes[i] = cs
 		}
 	}

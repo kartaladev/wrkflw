@@ -58,6 +58,12 @@ type Node struct {
 	// ReminderAction is the name of the ServiceAction to invoke on each reminder.
 	ReminderAction string
 
+	// CompensationAction is the name of the ServiceAction to invoke as compensation
+	// when this activity is rolled back (Plan 8 compensation/rollback). Non-empty
+	// only on activity nodes (KindServiceTask, KindSubProcess, etc.) that participate
+	// in compensation. An empty value means the node is not compensable.
+	CompensationAction string
+
 	// Event correlation fields (signal/message catch/throw and boundary events).
 
 	// SignalName is the signal reference for a signal catch/throw event or a

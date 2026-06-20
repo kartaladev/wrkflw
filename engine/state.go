@@ -138,20 +138,30 @@ type eventSubprocessArm struct {
 	MessageKey string
 }
 
-// CompensationRecord is a minimal record of a completed compensable activity
-// within a scope. Plan 8 (compensation/rollback) will populate and consume
-// these records; they are kept minimal here — just enough to identify the
-// activity and its compensating action.
+// CompensationRecord is a record of a completed compensable activity within a
+// scope. Plan 8 (compensation/rollback) populates these records when an activity
+// with a non-empty CompensationAction completes; it walks them in reverse
+// completion order when rolling back the scope.
 //
 // Fields:
-//   - ActivityNode: the BPMN node ID of the completed compensable activity.
+//   - NodeID: the BPMN node ID of the completed compensable activity.
 //   - Action: the name of the service action to invoke as compensation.
+//   - CompletedAt: the time the activity completed (from the trigger's OccurredAt;
+//     never time.Now() — deterministic and clock-free).
+//   - Input: a snapshot of the instance variables at the moment the activity was
+//     invoked (i.e. the same map passed to InvokeAction). Taken before merging the
+//     activity's output so the compensation action receives the original inputs.
+//     Deep-copied in cloneState so mutations to the clone do not affect the original.
 type CompensationRecord struct {
-	// ActivityNode is the BPMN node ID of the completed compensable activity.
-	ActivityNode string
+	// NodeID is the BPMN node ID of the completed compensable activity.
+	NodeID string
 	// Action is the name of the compensating service action (registered in the
 	// service-action catalog) to run when this activity is rolled back.
 	Action string
+	// CompletedAt is the time the activity completed (from the trigger's OccurredAt).
+	CompletedAt time.Time
+	// Input is a snapshot of the instance variables at invocation time.
+	Input map[string]any
 }
 
 // Scope represents an active execution scope within a process instance. Scopes
@@ -271,6 +281,17 @@ type InstanceState struct {
 	// removed when it exits. Scopes form a tree via Scope.ParentID.
 	// Iteration is in openScope (ScopeSeq) order, which is deterministic.
 	Scopes []Scope
+
+	// RootCompensations records completed compensable activities at the ROOT
+	// (top-level) scope. It is the compensation list for the implicit root
+	// execution scope — the counterpart of Scope.Compensations for sub-process
+	// scopes, but stored directly on InstanceState so that s.Scopes remains
+	// clean (containing ONLY currently-open sub-process scopes, as expected by
+	// existing tests that assert on len(s.Scopes)).
+	//
+	// Plan 8 (compensation rollback) reads this in reverse order when rolling
+	// back top-level compensable activities.
+	RootCompensations []CompensationRecord
 
 	// EventSubprocesses holds the set of pending arms for in-flight event
 	// sub-processes. One entry per KindEventSubProcess node while its enclosing
@@ -560,6 +581,33 @@ func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []stri
 	}
 	s.EventSubprocesses = out
 	return cancelTimerIDs
+}
+
+// recordCompensation appends a CompensationRecord to the scope identified by
+// scopeID. If scopeID is "" (root-level token), the record is appended to
+// s.RootCompensations — the root-scope compensation list that is stored directly
+// on the InstanceState rather than in a Scope entry. This keeps s.Scopes clean
+// (containing only currently-open sub-process scopes) so that existing tests that
+// assert on len(s.Scopes) are unaffected.
+//
+// If scopeID is non-empty and the scope is not found (defensive: should not occur
+// in a well-formed state), the call is a no-op.
+func (s *InstanceState) recordCompensation(scopeID, nodeID, action string, completedAt time.Time, input map[string]any) {
+	rec := CompensationRecord{
+		NodeID:      nodeID,
+		Action:      action,
+		CompletedAt: completedAt,
+		Input:       input,
+	}
+	if scopeID == "" {
+		s.RootCompensations = append(s.RootCompensations, rec)
+		return
+	}
+	scope := s.scopeByID(scopeID)
+	if scope == nil {
+		return // defensive no-op
+	}
+	scope.Compensations = append(scope.Compensations, rec)
 }
 
 // openScope creates a new Scope for the given nodeID nested inside

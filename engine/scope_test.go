@@ -153,7 +153,7 @@ func TestCloneStateDeepCopiesCompensations(t *testing.T) {
 	scope := engine.ScopeByID(s, scopeID)
 	require.NotNil(t, scope)
 	scope.Compensations = []engine.CompensationRecord{
-		{ActivityNode: "taskA", Action: "undoTaskA"},
+		{NodeID: "taskA", Action: "undoTaskA"},
 	}
 
 	original := s.Clone()
@@ -162,7 +162,7 @@ func TestCloneStateDeepCopiesCompensations(t *testing.T) {
 	// Append to the clone's Compensations; the original must be unaffected.
 	cloned.Scopes[0].Compensations = append(
 		cloned.Scopes[0].Compensations,
-		engine.CompensationRecord{ActivityNode: "taskB", Action: "undoTaskB"},
+		engine.CompensationRecord{NodeID: "taskB", Action: "undoTaskB"},
 	)
 
 	assert.Len(t, original.Scopes[0].Compensations, 1,

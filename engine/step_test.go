@@ -100,7 +100,7 @@ func TestStepDoesNotMutateInput(t *testing.T) {
 				NodeID:   "sub",
 				ParentID: "",
 				Compensations: []engine.CompensationRecord{
-					{ActivityNode: "svc", Action: "undo-svc"},
+					{NodeID: "svc", Action: "undo-svc"},
 				},
 			},
 		},
@@ -116,7 +116,7 @@ func TestStepDoesNotMutateInput(t *testing.T) {
 	require.Len(t, in.Scopes, 1)
 	assert.Equal(t, "i1-s1", in.Scopes[0].ID)
 	require.Len(t, in.Scopes[0].Compensations, 1)
-	assert.Equal(t, "svc", in.Scopes[0].Compensations[0].ActivityNode)
+	assert.Equal(t, "svc", in.Scopes[0].Compensations[0].NodeID)
 	assert.Equal(t, "undo-svc", in.Scopes[0].Compensations[0].Action)
 }
 
