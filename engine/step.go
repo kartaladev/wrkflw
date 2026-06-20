@@ -115,17 +115,23 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 		}
-		s.Status = StatusFailed
-		ended := t.OccurredAt()
-		s.EndedAt = &ended
-		cmds := []Command{FailInstance{Err: t.Err}}
-		cmds = append(cmds, s.cancelAllTimers()...)
-		// Also cancel any event-gateway timer arms (s.ArmedEvents) and boundary
-		// timer arms (s.Boundaries) to prevent orphaned scheduled tasks in the
-		// runtime scheduler. A comprehensive sweep across all terminal transitions
-		// and multi-token scenarios is deferred to Plan 8.
-		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-		return StepResult{State: s, Commands: cmds}, nil
+		// Cancel any boundary arms on this host token before propagating.
+		// On the unhandled path cancelAllArmsAndBoundaries covers the rest;
+		// on the caught path we clear them before routing to the recovery flow.
+		var preCmds []Command
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
+		// Route through propagateError: if a boundary error handler is found in
+		// the scope chain, the error is caught and execution continues on the
+		// recovery path (no FailInstance). If no handler is found, propagateError
+		// sets StatusFailed, emits FailInstance, and performs terminal cleanup —
+		// preserving existing behavior for root-level service tasks with no handler.
+		errCmds, err := propagateError(def, &s, tok.ScopeID, t.Err, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: append(preCmds, errCmds...)}, nil
 
 	case HumanClaimed:
 		task := s.TaskByToken(t.TaskToken)
@@ -659,6 +665,24 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				// Further event variants arrive in later plans.
 				tok.State = TokenWaitingCommand
 			}
+
+		case model.KindErrorEndEvent:
+			// Error end event: throw an error with node.ErrorCode from the token's
+			// current scope. propagateError walks the scope chain outward looking for
+			// a matching boundary error handler; if none is found it fails the instance.
+			currentScopeID := tok.ScopeID
+			s.consumeToken(tok, at)
+			errCmds, propErr := propagateError(def, s, currentScopeID, node.ErrorCode, at)
+			if propErr != nil {
+				return cmds, propErr
+			}
+			cmds = append(cmds, errCmds...)
+			// propagateError either caught the error (routing a token to the recovery
+			// flow and calling drive) or failed the instance. Either way, we stop
+			// the current drive loop iteration — the recovery token is already
+			// active and will be picked up by a subsequent drive call inside
+			// propagateError, or the instance is terminal.
+			return cmds, nil
 
 		case model.KindEndEvent:
 			// An EndEvent behaves differently depending on whether the token is at the
@@ -1449,6 +1473,158 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 		return nil, err
 	}
 	cmds = append(cmds, driveCmds...)
+	return cmds, nil
+}
+
+// propagateError implements BPMN error propagation: starting from the scope
+// identified by scopeID it walks outward (innermost to root) searching for a
+// boundary error event that can catch the thrown errorCode.
+//
+// Matching rule for a KindBoundaryEvent node bnd:
+//   - bnd.AttachedTo == scope.NodeID (the activity that "owns" this scope in the
+//     parent definition, i.e. the sub-process activity node)
+//   - bnd.ErrorCode == errorCode  (specific-code match)  OR
+//     bnd.ErrorCode == ""         (catch-all: matches any error code)
+//
+// When a handler is found (always interrupting — error boundaries are BPMN
+// interrupting by definition):
+//  1. Cancel all tokens remaining in the current scope (consume + close visits).
+//  2. Close the scope.
+//  3. Route a token along the boundary's outgoing flow in the PARENT scope.
+//  4. Call drive to advance execution.
+//
+// When NO handler is found after walking to the root:
+//  - Set s.Status = StatusFailed, s.EndedAt = &at.
+//  - Emit FailInstance{Err: errorCode}.
+//  - Emit CancelTimer for all outstanding timers, armed events, and boundaries.
+//
+// propagateError is also called from the ActionFailed handler so that a service
+// task failure is routed through the same error-propagation mechanism.
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, errorCode string, at time.Time) ([]Command, error) {
+	// Walk the scope chain from scopeID outward to root ("").
+	// At each step, inspect the scope's activity node in the PARENT definition
+	// for a matching boundary error event. The loop terminates when currentScopeID
+	// reaches "" (root — no scope to inspect) or when a handler is found (early return).
+	for currentScopeID := scopeID; currentScopeID != ""; {
+		scope := s.scopeByID(currentScopeID)
+		if scope == nil {
+			// Scope is already closed (defensive). Stop walking.
+			break
+		}
+
+		parentScopeID := scope.ParentID
+		activityNodeID := scope.NodeID // the sub-process activity in the parent def
+
+		// Resolve the parent definition.
+		parentDef, err := defForScope(top, s, parentScopeID)
+		if err != nil {
+			return nil, fmt.Errorf("engine: propagateError: resolving parent def for scope %q: %w", currentScopeID, err)
+		}
+
+		// Scan the parent def for a boundary error event attached to activityNodeID
+		// that matches errorCode (specific or catch-all).
+		var handler *model.Node
+		for i := range parentDef.Nodes {
+			n := &parentDef.Nodes[i]
+			if n.Kind != model.KindBoundaryEvent {
+				continue
+			}
+			if n.AttachedTo != activityNodeID {
+				continue
+			}
+			// Only boundary error events have a non-zero ErrorCode or catch-all
+			// behavior. We identify a "boundary error event" as a KindBoundaryEvent
+			// that has NO TimerDuration and NO SignalName and NO MessageName set
+			// (i.e. it is not a timer/signal/message boundary but an error boundary).
+			// The presence of ErrorCode (specific or empty catch-all) is the marker.
+			//
+			// Design note: we check !n.SignalName && !n.TimerDuration && !n.MessageName
+			// so timer/signal boundary events on the same host are skipped. A boundary
+			// event with no trigger fields at all defaults to error boundary semantics.
+			if n.TimerDuration != "" || n.SignalName != "" || n.MessageName != "" {
+				continue // not an error boundary
+			}
+			// Match: catch-all (n.ErrorCode=="") or specific code match.
+			if n.ErrorCode == "" || n.ErrorCode == errorCode {
+				nn := *n
+				handler = &nn
+				break
+			}
+		}
+
+		if handler != nil {
+			// Handler found in the PARENT scope. Cancel all tokens in currentScopeID,
+			// close the scope, then route a token along the boundary's outgoing flow
+			// in the parent scope.
+
+			// 1. Cancel all tokens in the erroring scope.
+			var cmds []Command
+			tokensToCancel := make([]Token, 0, len(s.Tokens))
+			for _, tok := range s.Tokens {
+				if tok.ScopeID == currentScopeID {
+					tokensToCancel = append(tokensToCancel, tok)
+				}
+			}
+			for _, tok := range tokensToCancel {
+				// Cancel SLA/reminder timers (UserTask case).
+				for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
+					cmds = append(cmds, CancelTimer{TimerID: timerID})
+				}
+				// Cancel boundary arms for this host token.
+				for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+					cmds = append(cmds, CancelTimer{TimerID: timerID})
+				}
+				// Cancel any event-gateway arms.
+				if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
+					for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
+						cmds = append(cmds, CancelTimer{TimerID: timerID})
+					}
+				}
+				tokPtr := s.tokenByID(tok.ID)
+				if tokPtr != nil {
+					s.consumeToken(tokPtr, at)
+				}
+			}
+			// Cancel ESP arms for the scope.
+			for _, timerID := range s.removeEventSubprocessArmsForScope(currentScopeID) {
+				cmds = append(cmds, CancelTimer{TimerID: timerID})
+			}
+
+			// 2. Close the erroring scope.
+			s.closeScope(currentScopeID)
+
+			// 3. Find the boundary's outgoing flow target in the parent definition.
+			outs := parentDef.Outgoing(handler.ID)
+			if len(outs) == 0 {
+				return cmds, fmt.Errorf("engine: propagateError: boundary error %q has no outgoing flow", handler.ID)
+			}
+			flowTarget := outs[0].Target
+
+			// 4. Place a token on the recovery path in the parent scope.
+			s.placeTokenInScope(flowTarget, parentScopeID, at)
+
+			// 5. Drive forward from the recovery token.
+			driveCmds, err := drive(top, s, at)
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, driveCmds...)
+			return cmds, nil
+		}
+
+		// No handler at this scope level — walk up to the parent.
+		currentScopeID = parentScopeID
+	}
+
+	// No handler found anywhere in the scope chain → unhandled error.
+	// Set instance to failed and perform terminal cleanup.
+	s.Status = StatusFailed
+	ended := at
+	s.EndedAt = &ended
+	var cmds []Command
+	cmds = append(cmds, FailInstance{Err: errorCode})
+	cmds = append(cmds, s.cancelAllTimers()...)
+	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
 	return cmds, nil
 }
 
