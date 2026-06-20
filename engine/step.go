@@ -78,8 +78,13 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
 		// Advance the token past the completed ServiceTask so drive sees it at
-		// the next node, not re-firing the action.
-		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		// the next node, not re-firing the action. Use the token's scope definition
+		// so inner-scope tokens resolve flows against the nested definition.
+		tdef, err := defForScope(def, &s, tok.ScopeID)
+		if err != nil {
+			return StepResult{}, err
+		}
+		s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
 			return StepResult{}, err
@@ -173,7 +178,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		s.removeTimer(t.TimerID)
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
-		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		timerTdef, timerTdefErr := defForScope(def, &s, tok.ScopeID)
+		if timerTdefErr != nil {
+			return StepResult{}, timerTdefErr
+		}
+		s.moveAlongSingleFlow(timerTdef, tok, t.OccurredAt())
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
 			return StepResult{}, err
@@ -198,7 +207,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		task.State = humantask.Completed
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
-		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		humanTdef, humanTdefErr := defForScope(def, &s, tok.ScopeID)
+		if humanTdefErr != nil {
+			return StepResult{}, humanTdefErr
+		}
+		s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
 		cmds := []Command{UpdateTask{Task: *task}}
 		// Cancel any SLA or reminder timers that were guarding this task.
 		for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
@@ -300,7 +313,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			}
 			tok.AwaitSignal = ""
 			tok.State = TokenActive
-			s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+			signalTdef, signalTdefErr := defForScope(def, &s, tok.ScopeID)
+			if signalTdefErr != nil {
+				return StepResult{}, signalTdefErr
+			}
+			s.moveAlongSingleFlow(signalTdef, tok, t.OccurredAt())
 			driveCmds, err := drive(def, &s, t.OccurredAt())
 			if err != nil {
 				return StepResult{}, err
@@ -337,7 +354,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		tok.AwaitMessage = ""
 		tok.AwaitMessageKey = ""
 		tok.State = TokenActive
-		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		msgTdef, msgTdefErr := defForScope(def, &s, tok.ScopeID)
+		if msgTdefErr != nil {
+			return StepResult{}, msgTdefErr
+		}
+		s.moveAlongSingleFlow(msgTdef, tok, t.OccurredAt())
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
 			return StepResult{}, err
@@ -355,7 +376,40 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 	return StepResult{State: s, Commands: cmds}, nil
 }
 
+// defForScope returns the ProcessDefinition that a token in the given scope
+// executes against. An empty scopeID (root) returns top. Otherwise the scope's
+// NodeID is a sub-process activity node in the PARENT scope's definition; this
+// function resolves that node and returns its Subprocess definition recursively.
+//
+// Returns an error if the scope or its subprocess definition cannot be resolved
+// (defensive; unreachable for a well-formed state that was built by Step).
+func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string) (*model.ProcessDefinition, error) {
+	if scopeID == "" {
+		return top, nil
+	}
+	scope := s.scopeByID(scopeID)
+	if scope == nil {
+		return nil, fmt.Errorf("engine: defForScope: unknown scope %q", scopeID)
+	}
+	parentDef, err := defForScope(top, s, scope.ParentID)
+	if err != nil {
+		return nil, err
+	}
+	node, ok := parentDef.Node(scope.NodeID)
+	if !ok {
+		return nil, fmt.Errorf("engine: defForScope: sub-process node %q not found in parent definition", scope.NodeID)
+	}
+	if node.Subprocess == nil {
+		return nil, fmt.Errorf("engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
+	}
+	return node.Subprocess, nil
+}
+
 // drive advances all active tokens until each is parked or consumed (Macro).
+// def is the TOP-LEVEL process definition. For each token, the effective
+// definition (tdef) is resolved via defForScope against the token's ScopeID so
+// that tokens inside a sub-process scope resolve nodes/flows against the nested
+// definition rather than the top-level one.
 func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Command, error) {
 	var cmds []Command
 	for {
@@ -363,7 +417,14 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 		if tok == nil {
 			break
 		}
-		node, ok := def.Node(tok.NodeID)
+
+		// Resolve the effective definition for this token's scope.
+		tdef, err := defForScope(def, s, tok.ScopeID)
+		if err != nil {
+			return cmds, err
+		}
+
+		node, ok := tdef.Node(tok.NodeID)
 		if !ok {
 			// Defensive: a token on a missing node cannot advance.
 			tok.State = TokenWaitingCommand
@@ -372,7 +433,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 
 		switch node.Kind {
 		case model.KindStartEvent:
-			s.moveAlongSingleFlow(def, tok, at)
+			s.moveAlongSingleFlow(tdef, tok, at)
 
 		case model.KindServiceTask:
 			cmdID := s.nextCommandID()
@@ -384,7 +445,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
 			// Arm any boundary events attached to this host activity.
-			bndCmds, err := armBoundaries(def, s, tok.ID, node.ID, at)
+			bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
 			if err != nil {
 				return cmds, err
 			}
@@ -456,7 +517,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = taskToken
 			// Arm any boundary events attached to this host activity.
-			bndCmds, err := armBoundaries(def, s, tok.ID, node.ID, at)
+			bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
 			if err != nil {
 				return cmds, err
 			}
@@ -500,16 +561,73 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			}
 
 		case model.KindEndEvent:
+			// An EndEvent behaves differently depending on whether the token is at the
+			// root scope or inside a sub-process scope:
+			//   - Root scope (tok.ScopeID == ""): consume the token; when no tokens
+			//     remain anywhere, the instance is complete → CompleteInstance.
+			//   - Sub-process scope: consume the inner token; when the scope drains
+			//     (tokensInScope == 0), close the scope and resume the parent by placing
+			//     a token on the sub-process activity's outgoing flow in the parent scope.
+			currentScopeID := tok.ScopeID
 			s.consumeToken(tok, at)
-			if len(s.Tokens) == 0 {
-				s.Status = StatusCompleted
-				ended := at
-				s.EndedAt = &ended
-				cmds = append(cmds, CompleteInstance{Result: copyVars(s.Variables)})
+
+			if currentScopeID == "" {
+				// Root scope: instance completion when all tokens are gone.
+				if len(s.Tokens) == 0 {
+					s.Status = StatusCompleted
+					ended := at
+					s.EndedAt = &ended
+					cmds = append(cmds, CompleteInstance{Result: copyVars(s.Variables)})
+				}
+			} else {
+				// Sub-process scope: check whether the scope is now empty.
+				if s.tokensInScope(currentScopeID) == 0 {
+					// Scope drained: close it and resume execution in the parent scope.
+					scope := s.scopeByID(currentScopeID)
+					if scope == nil {
+						return cmds, fmt.Errorf("engine: sub-process end: scope %q not found", currentScopeID)
+					}
+					subNodeID := scope.NodeID
+					parentScopeID := scope.ParentID
+					s.closeScope(currentScopeID)
+
+					// Resolve the parent definition and find the sub-process activity's
+					// outgoing flow in the parent scope.
+					parentDef, err := defForScope(def, s, parentScopeID)
+					if err != nil {
+						return cmds, fmt.Errorf("engine: sub-process exit: %w", err)
+					}
+					outs := parentDef.Outgoing(subNodeID)
+					if len(outs) == 0 {
+						return cmds, fmt.Errorf("engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
+					}
+					// Place a token on the first outgoing flow's target in the parent scope.
+					s.placeTokenInScope(outs[0].Target, parentScopeID, at)
+				}
 			}
 
+		case model.KindSubProcess:
+			// Embedded sub-process entry: open a scope, place a token on the nested
+			// start node, and consume the sub-process activity token (it is "inside" now).
+			if node.Subprocess == nil {
+				// Defensive: a KindSubProcess without a Subprocess definition cannot
+				// execute; park to avoid infinite drive loop. model.Validate prevents this.
+				tok.State = TokenWaitingCommand
+				continue
+			}
+			innerStarts := node.Subprocess.StartNodes()
+			if len(innerStarts) == 0 {
+				return cmds, fmt.Errorf("engine: sub-process %q: nested definition has no start node", node.ID)
+			}
+			// Open a scope parented to the current token's scope.
+			scopeID := s.openScope(node.ID, tok.ScopeID)
+			// Place the inner start-event token in the new scope.
+			s.placeTokenInScope(innerStarts[0].ID, scopeID, at)
+			// Consume the sub-process activity token (execution is now "inside").
+			s.consumeToken(tok, at)
+
 		case model.KindExclusiveGateway:
-			target, err := selectExclusiveTarget(def, s, node)
+			target, err := selectExclusiveTarget(tdef, s, node)
 			if err != nil {
 				// cmds is carried here for a future error-handling plan (Plan 8);
 				// Step currently discards StepResult on error, so partial commands
@@ -519,17 +637,17 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			s.moveTokenToTarget(tok, target, at)
 
 		case model.KindParallelGateway:
-			if len(def.Incoming(node.ID)) > 1 {
-				s.tryParallelJoin(def, tok, node, at)
+			if len(tdef.Incoming(node.ID)) > 1 {
+				s.tryParallelJoin(tdef, tok, node, at)
 			} else {
-				s.forkParallel(def, tok, node, at)
+				s.forkParallel(tdef, tok, node, at)
 			}
 
 		case model.KindInclusiveGateway:
-			if len(def.Incoming(node.ID)) > 1 {
-				s.tryInclusiveJoin(def, tok, node, at)
+			if len(tdef.Incoming(node.ID)) > 1 {
+				s.tryInclusiveJoin(tdef, tok, node, at)
 			} else {
-				if err := s.forkInclusive(def, tok, node, at); err != nil {
+				if err := s.forkInclusive(tdef, tok, node, at); err != nil {
 					return cmds, err
 				}
 			}
@@ -551,8 +669,8 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			sentinel := "evtgw:" + tok.ID
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = sentinel
-			for _, f := range def.Outgoing(node.ID) {
-				catchNode, ok := def.Node(f.Target)
+			for _, f := range tdef.Outgoing(node.ID) {
+				catchNode, ok := tdef.Node(f.Target)
 				if !ok {
 					continue
 				}
@@ -596,7 +714,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 					Name:    node.SignalName,
 					Payload: nil, // no per-instance payload from throw nodes in this plan
 				})
-				s.moveAlongSingleFlow(def, tok, at)
+				s.moveAlongSingleFlow(tdef, tok, at)
 			} else {
 				// Non-signal intermediate throw: park for future plans (e.g. message
 				// throw, error throw). Parking avoids an infinite drive loop.
@@ -618,6 +736,17 @@ func (s *InstanceState) placeToken(nodeID string, at time.Time) {
 	s.TokenSeq++
 	id := fmt.Sprintf("%s-t%d", s.InstanceID, s.TokenSeq)
 	s.Tokens = append(s.Tokens, Token{ID: id, NodeID: nodeID, State: TokenActive, EnteredAt: at})
+	s.openVisit(id, nodeID, at)
+}
+
+// placeTokenInScope creates a new active token at nodeID tagged with the given
+// scopeID. It is the scoped variant of placeToken, used when entering a
+// sub-process scope so that inner tokens carry the correct ScopeID for
+// defForScope resolution.
+func (s *InstanceState) placeTokenInScope(nodeID, scopeID string, at time.Time) {
+	s.TokenSeq++
+	id := fmt.Sprintf("%s-t%d", s.InstanceID, s.TokenSeq)
+	s.Tokens = append(s.Tokens, Token{ID: id, NodeID: nodeID, ScopeID: scopeID, State: TokenActive, EnteredAt: at})
 	s.openVisit(id, nodeID, at)
 }
 
