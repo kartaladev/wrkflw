@@ -12,6 +12,7 @@ var (
 	ErrUnknownTrigger      = errors.New("engine: unknown trigger")
 	ErrTokenNotFound       = errors.New("engine: no token awaiting command")
 	ErrMicroNotImplemented = errors.New("engine: micro stepping not implemented")
+	ErrNoMatchingFlow      = errors.New("engine: no matching outgoing flow")
 )
 
 // StepMode selects how far one Step advances. Micro behaves as Macro in this
@@ -32,6 +33,11 @@ type StepResult struct {
 
 // Step applies one trigger to the instance state and returns the new state plus
 // the commands the runtime must perform. It is pure: it does not mutate st.
+//
+// The engine assumes the definition has passed [model.Validate]; in particular,
+// an exclusive gateway is assumed to have at most one unconditional non-default
+// outgoing flow — the engine takes the first matching flow in definition order
+// and does not detect ambiguous multi-unconditional configurations.
 func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	if opt.Mode == Micro {
 		return StepResult{}, ErrMicroNotImplemented
@@ -78,12 +84,15 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
 
-	cmds := drive(def, &s, trg.OccurredAt())
+	cmds, err := drive(def, &s, trg.OccurredAt())
+	if err != nil {
+		return StepResult{}, err
+	}
 	return StepResult{State: s, Commands: cmds}, nil
 }
 
 // drive advances all active tokens until each is parked or consumed (Macro).
-func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) []Command {
+func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Command, error) {
 	var cmds []Command
 	for {
 		tok := s.firstActive()
@@ -120,13 +129,30 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) []Comma
 				cmds = append(cmds, CompleteInstance{Result: copyVars(s.Variables)})
 			}
 
+		case model.KindExclusiveGateway:
+			target, err := selectExclusiveTarget(def, s, node)
+			if err != nil {
+				// cmds is carried here for a future error-handling plan (Plan 8);
+				// Step currently discards StepResult on error, so partial commands
+				// are intentionally not delivered today.
+				return cmds, err
+			}
+			s.moveTokenToTarget(tok, target, at)
+
+		case model.KindParallelGateway:
+			if len(def.Incoming(node.ID)) > 1 {
+				s.tryParallelJoin(def, tok, node, at)
+			} else {
+				s.forkParallel(def, tok, node, at)
+			}
+
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
 			tok.State = TokenWaitingCommand
 		}
 	}
-	return cmds
+	return cmds, nil
 }
 
 // ---- InstanceState helpers (unexported) ----
@@ -198,6 +224,89 @@ func (s *InstanceState) closeVisit(tokenID, nodeID string, at time.Time) {
 			return
 		}
 	}
+}
+
+// moveTokenToTarget moves a token to targetID, closing the old visit and opening
+// a new one, leaving the token Active.
+func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Time) {
+	s.closeVisit(tok.ID, tok.NodeID, at)
+	tok.NodeID = target
+	tok.EnteredAt = at
+	tok.State = TokenActive
+	s.openVisit(tok.ID, target, at)
+}
+
+// forkParallel consumes the incoming token and creates one Active token at each
+// outgoing flow target (definition order). Used for a diverging parallel gateway.
+func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+	outs := def.Outgoing(node.ID)
+	s.consumeToken(tok, at)
+	for _, f := range outs {
+		s.placeToken(f.Target, at)
+	}
+}
+
+// tryParallelJoin parks the arriving token at a converging parallel gateway and,
+// once a token has arrived on every incoming flow, consumes them all and forks to
+// the gateway's outgoing flows. Until then the token waits as TokenAtJoin.
+func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+	tok.State = TokenAtJoin
+
+	arrived := 0
+	for i := range s.Tokens {
+		if s.Tokens[i].NodeID == node.ID && s.Tokens[i].State == TokenAtJoin {
+			arrived++
+		}
+	}
+	// INVARIANT: single non-nested, acyclic diamond only — counting TokenAtJoin
+	// on the node vs incoming-flow count over-counts under nested/re-entered joins
+	// (deferred to a later scopes/loops plan).
+	if arrived < len(def.Incoming(node.ID)) {
+		return // still waiting on other branches
+	}
+
+	// Fire: remove all tokens parked at this join (closing their visits), then
+	// create one Active token per outgoing flow.
+	kept := make([]Token, 0, len(s.Tokens))
+	for _, t := range s.Tokens {
+		if t.NodeID == node.ID && t.State == TokenAtJoin {
+			s.closeVisit(t.ID, t.NodeID, at)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	s.Tokens = kept
+	for _, f := range def.Outgoing(node.ID) {
+		s.placeToken(f.Target, at)
+	}
+}
+
+// selectExclusiveTarget picks the target of an exclusive gateway: the first
+// outgoing flow (in definition order) with an empty or true condition, else the
+// default flow, else ErrNoMatchingFlow.
+func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node) (string, error) {
+	var defaultFlow *model.SequenceFlow
+	for _, f := range def.Outgoing(node.ID) {
+		if f.IsDefault {
+			ff := f
+			defaultFlow = &ff
+			continue
+		}
+		if f.Condition == "" {
+			return f.Target, nil
+		}
+		ok, err := conditions.EvalBool(f.Condition, s.Variables)
+		if err != nil {
+			return "", fmt.Errorf("engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+		}
+		if ok {
+			return f.Target, nil
+		}
+	}
+	if defaultFlow != nil {
+		return defaultFlow.Target, nil
+	}
+	return "", fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
 }
 
 // ---- value helpers ----

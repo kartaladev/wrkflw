@@ -29,6 +29,50 @@ func linearDef() *model.ProcessDefinition {
 	}
 }
 
+func TestRunnerExecutesParallelDiamond(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "diamond", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "fork", Kind: model.KindParallelGateway},
+			{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+			{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+			{ID: "join", Kind: model.KindParallelGateway},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "fork"},
+			{ID: "f2", Source: "fork", Target: "a"},
+			{ID: "f3", Source: "fork", Target: "b"},
+			{ID: "f4", Source: "a", Target: "join"},
+			{ID: "f5", Source: "b", Target: "join"},
+			{ID: "f6", Source: "join", Target: "end"},
+		},
+	}
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return map[string]any{"a": true}, nil
+		}),
+		"b": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return map[string]any{"b": true}, nil
+		}),
+	})
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), runtime.NewMemOutbox())
+
+	final, err := r.Run(t.Context(), def, "i1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, final.Status)
+	assert.Empty(t, final.Tokens)
+	assert.Equal(t, true, final.Variables["a"])
+	assert.Equal(t, true, final.Variables["b"])
+
+	// Every NodeVisit opened during the fork/join must be properly closed: no
+	// visit should have a nil LeftAt (which would indicate a dangling open visit).
+	for _, v := range final.History {
+		assert.NotNilf(t, v.LeftAt, "NodeVisit for node %q (token %q) was never closed", v.NodeID, v.TokenID)
+	}
+}
+
 func TestRunnerExecutesLinearProcess(t *testing.T) {
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
