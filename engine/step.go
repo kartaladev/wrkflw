@@ -336,6 +336,9 @@ func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Toke
 	tok.State = TokenAtJoin
 
 	canReach := nodesThatCanReach(def, node.ID)
+	// INVARIANT: single non-nested, acyclic diamond only — the reachability check
+	// (nodesThatCanReach) assumes no nested/re-entered joins or loops back toward
+	// this join (deferred to a later scopes/loops plan).
 	for i := range s.Tokens {
 		t := &s.Tokens[i]
 		if t.NodeID == node.ID && t.State == TokenAtJoin {
