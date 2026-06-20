@@ -34,9 +34,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 		runtime.NewMemStateStore(),
 		runtime.NewMemJournal(),
 		runtime.NewMemOutbox(),
-		resolver,
-		taskStore,
-		az,
+		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
 	def := approvalDef()
@@ -79,9 +77,7 @@ func TestTaskServiceReassign(t *testing.T) {
 		runtime.NewMemStateStore(),
 		runtime.NewMemJournal(),
 		runtime.NewMemOutbox(),
-		resolver,
-		taskStore,
-		az,
+		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
 	def := approvalDef()
@@ -145,9 +141,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 		runtime.NewMemStateStore(),
 		runtime.NewMemJournal(),
 		runtime.NewMemOutbox(),
-		resolver,
-		taskStore,
-		az,
+		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
 	_, err := r.Run(ctx, approvalDef(), "inst-reassign-reject", nil)
@@ -196,9 +190,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 		runtime.NewMemStateStore(),
 		runtime.NewMemJournal(),
 		runtime.NewMemOutbox(),
-		resolver,
-		taskStore,
-		az,
+		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
 	_, err := r.Run(ctx, approvalDef(), "inst-complete-reject", nil)
