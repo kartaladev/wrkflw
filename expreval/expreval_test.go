@@ -1,8 +1,12 @@
 package expreval_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/file"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -57,6 +61,41 @@ func TestEvalBool(t *testing.T) {
 			tc.assert(t, got, err)
 		})
 	}
+}
+
+// TestExprNilComparisonErrorShapeUnchanged is a canary test that guards against
+// expr-lang/expr changing its nil-operand error format in a future upgrade.
+// EvalBool silently treats a nil-operand runtime error as (false, nil) — meaning
+// a process variable that is absent from the env causes a gateway condition to
+// evaluate to false rather than to an error.  This relies on the error produced
+// by expr when AllowUndefinedVariables() compiles a nil identifier into a
+// comparison being a *file.Error whose Message starts with "invalid operation:"
+// and contains "<nil>".
+//
+// Verified against github.com/expr-lang/expr v1.17.8.
+//
+// If this test fails after an expr upgrade it means the library changed its
+// error wording; review isNilOperandError in expreval.go before proceeding.
+func TestExprNilComparisonErrorShapeUnchanged(t *testing.T) {
+	// Compile with AllowUndefinedVariables so that "amount" compiles to nil.
+	p, err := expr.Compile("amount > 100", expr.AllowUndefinedVariables())
+	require.NoError(t, err)
+
+	// Run with an empty env so "amount" resolves to nil at runtime.
+	_, runErr := expr.Run(p, map[string]any{})
+	require.Error(t, runErr, "expr.Run must error when comparing nil to int")
+
+	// The error must be a *file.Error — the typed wrapper the VM uses for panics.
+	var fileErr *file.Error
+	require.True(t, errors.As(runErr, &fileErr),
+		"expr runtime error must be *file.Error (got %T: %v)", runErr, runErr)
+
+	// The Message field (without location / snippet decoration) must contain both
+	// "invalid operation:" and "<nil>", which isNilOperandError relies on.
+	assert.True(t, strings.HasPrefix(fileErr.Message, "invalid operation:"),
+		"file.Error.Message must start with %q (got %q)", "invalid operation:", fileErr.Message)
+	assert.Contains(t, fileErr.Message, "<nil>",
+		"file.Error.Message must contain %q (got %q)", "<nil>", fileErr.Message)
 }
 
 func TestEvalBoolMemoizes(t *testing.T) {
