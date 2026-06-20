@@ -1,0 +1,102 @@
+package engine_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/model"
+)
+
+func linearDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p1", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "greet", Kind: model.KindServiceTask, Action: "greet"},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "greet"},
+			{ID: "f2", Source: "greet", Target: "end"},
+		},
+	}
+}
+
+func TestStepStartInstanceReachesServiceTask(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	def := linearDef()
+
+	res, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, map[string]any{"name": "Ada"}), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// One InvokeAction emitted for the service task; one token parked on it.
+	require.Len(t, res.Commands, 1)
+	ia, ok := res.Commands[0].(engine.InvokeAction)
+	require.True(t, ok)
+	assert.Equal(t, "greet", ia.Name)
+	assert.Equal(t, "Ada", ia.Input["name"])
+
+	require.Len(t, res.State.Tokens, 1)
+	tok := res.State.Tokens[0]
+	assert.Equal(t, "greet", tok.NodeID)
+	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, ia.CommandID, tok.AwaitCommand)
+	assert.Equal(t, engine.StatusRunning, res.State.Status)
+	assert.Equal(t, at, res.State.StartedAt)
+}
+
+func TestStepActionCompletedReachesEnd(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	def := linearDef()
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, map[string]any{"name": "Ada"}), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
+
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(time.Second), cmdID, map[string]any{"greeting": "hi Ada"}),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	require.Len(t, r2.Commands, 1)
+	_, ok := r2.Commands[0].(engine.CompleteInstance)
+	require.True(t, ok)
+	assert.Equal(t, engine.StatusCompleted, r2.State.Status)
+	assert.Empty(t, r2.State.Tokens)
+	assert.Equal(t, "hi Ada", r2.State.Variables["greeting"])
+	require.NotNil(t, r2.State.EndedAt)
+}
+
+func TestStepIsDeterministic(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	def := linearDef()
+	in := engine.InstanceState{InstanceID: "i1"}
+	trg := engine.NewStartInstance(at, map[string]any{"name": "Ada"})
+
+	a, err := engine.Step(def, in, trg, engine.StepOptions{})
+	require.NoError(t, err)
+	b, err := engine.Step(def, in, trg, engine.StepOptions{})
+	require.NoError(t, err)
+
+	assert.Equal(t, a.Commands, b.Commands)
+	assert.Equal(t, a.State, b.State)
+}
+
+func TestStepDoesNotMutateInput(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	def := linearDef()
+	in := engine.InstanceState{InstanceID: "i1", Variables: map[string]any{"name": "Ada"}}
+
+	_, err := engine.Step(def, in, engine.NewStartInstance(at, map[string]any{"extra": 1}), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Caller's state is untouched.
+	assert.Empty(t, in.Tokens)
+	assert.Equal(t, map[string]any{"name": "Ada"}, in.Variables)
+}
