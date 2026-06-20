@@ -131,6 +131,9 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			}
 			s.moveTokenToTarget(tok, target, at)
 
+		case model.KindParallelGateway:
+			s.forkParallel(def, tok, node, at)
+
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
@@ -219,6 +222,16 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 	tok.EnteredAt = at
 	tok.State = TokenActive
 	s.openVisit(tok.ID, target, at)
+}
+
+// forkParallel consumes the incoming token and creates one Active token at each
+// outgoing flow target (definition order). Used for a diverging parallel gateway.
+func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+	outs := def.Outgoing(node.ID)
+	s.consumeToken(tok, at)
+	for _, f := range outs {
+		s.placeToken(f.Target, at)
+	}
 }
 
 // selectExclusiveTarget picks the target of an exclusive gateway: the first

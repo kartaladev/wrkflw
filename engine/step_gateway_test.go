@@ -53,6 +53,53 @@ func TestExclusiveGatewayTakesDefaultBranch(t *testing.T) {
 
 	require.Len(t, res.Commands, 1)
 	assert.Equal(t, "small", res.Commands[0].(engine.InvokeAction).Name)
+	require.Len(t, res.State.Tokens, 1)
+	assert.Equal(t, "small", res.State.Tokens[0].NodeID)
+}
+
+// parallelForkDef: start -> fork => a, b (service tasks) -> end (each)
+func parallelForkDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "par", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "fork", Kind: model.KindParallelGateway},
+			{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+			{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+			{ID: "enda", Kind: model.KindEndEvent},
+			{ID: "endb", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "fork"},
+			{ID: "f2", Source: "fork", Target: "a"},
+			{ID: "f3", Source: "fork", Target: "b"},
+			{ID: "f4", Source: "a", Target: "enda"},
+			{ID: "f5", Source: "b", Target: "endb"},
+		},
+	}
+}
+
+func TestParallelGatewayForksAllBranches(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	res, err := engine.Step(parallelForkDef(), engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Both branches fire their service action in one macro step.
+	require.Len(t, res.Commands, 2)
+	names := []string{
+		res.Commands[0].(engine.InvokeAction).Name,
+		res.Commands[1].(engine.InvokeAction).Name,
+	}
+	assert.ElementsMatch(t, []string{"a", "b"}, names)
+
+	// Two tokens, one parked on each service task; the fork token is gone.
+	require.Len(t, res.State.Tokens, 2)
+	nodes := []string{res.State.Tokens[0].NodeID, res.State.Tokens[1].NodeID}
+	assert.ElementsMatch(t, []string{"a", "b"}, nodes)
+	for _, tk := range res.State.Tokens {
+		assert.Equal(t, engine.TokenWaitingCommand, tk.State)
+	}
 }
 
 func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
