@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wrkflw — Engine Core Execution Model (Explained for Everyone)</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  :root{
+    --ink:#1c2230; --muted:#5b6678; --line:#d9dee7; --soft:#f3f5f9; --soft2:#eef1f6;
+    --accent:#2f6df0; --accentbg:#eaf1ff; --good:#1f9d63; --goodbg:#e8f7ee;
+    --warn:#b6791f; --warnbg:#fdf3e3; --bad:#c0392b; --badbg:#fbeceb;
+    --code:#f6f8fb; --codeink:#22324a; --kw:#9326c9; --str:#1f7a3d; --com:#8a93a3; --typ:#1f5fb8; --fn:#9a6a00;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--ink);font:11pt/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .wrap{max-width:820px;margin:0 auto;padding:8px 18px 40px}
+  h1{font-size:24pt;margin:0 0 4px;letter-spacing:-.4px}
+  h2{font-size:15pt;margin:26px 0 10px;padding:7px 12px;background:var(--soft);border-left:4px solid var(--accent);border-radius:0 6px 6px 0}
+  h3{font-size:12.5pt;margin:18px 0 6px;color:var(--ink)}
+  .sub{color:var(--muted);font-size:10.5pt;margin-bottom:4px}
+  p{margin:9px 0}
+  ul,ol{margin:8px 0 8px 0;padding-left:22px} li{margin:4px 0}
+  code{background:var(--soft2);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:9.5pt}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:9pt;line-height:1.5;color:var(--codeink)}
+  pre .kw{color:var(--kw)} pre .str{color:var(--str)} pre .com{color:var(--com)}
+  pre .typ{color:var(--typ)} pre .fn{color:var(--fn)}
+  a{color:var(--accent);text-decoration:none}
+  .lead{font-size:11.5pt;color:#33405a;background:var(--accentbg);border:1px solid #cfe0ff;border-radius:10px;padding:14px 16px}
+  .analogy{background:var(--goodbg);border:1px solid #bfe6cf;border-radius:10px;padding:13px 16px;margin:12px 0}
+  .analogy b{color:var(--good)}
+  .note{background:var(--soft);border:1px dashed var(--line);border-radius:9px;padding:11px 14px;color:var(--muted);font-size:10pt}
+  .tip{background:var(--warnbg);border:1px solid #ecd5a8;border-radius:9px;padding:11px 14px;font-size:10pt}
+  .tip b{color:var(--warn)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .pros,.cons{border-radius:9px;padding:10px 13px;font-size:10pt}
+  .pros{background:var(--goodbg);border:1px solid #bfe6cf}
+  .cons{background:var(--badbg);border:1px solid #eecac6}
+  .pros b,.cons b{display:block;font-size:8.5pt;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+  .pros b{color:var(--good)} .cons b{color:var(--bad)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:9.5pt}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:var(--soft2);font-weight:700}
+  .y{color:var(--good);font-weight:700}.m{color:var(--warn);font-weight:700}.n{color:var(--bad);font-weight:700}
+  dl{margin:8px 0}
+  dt{font-weight:700;margin-top:10px}
+  dd{margin:2px 0 2px 0;color:#3a4459}
+  .steps{counter-reset:s;list-style:none;padding-left:0}
+  .steps>li{counter-increment:s;position:relative;padding:8px 8px 8px 40px;margin:8px 0;background:var(--soft);border:1px solid var(--line);border-radius:9px}
+  .steps>li::before{content:counter(s);position:absolute;left:10px;top:8px;width:22px;height:22px;border-radius:50%;
+       background:var(--accent);color:#fff;font-weight:700;font-size:10pt;display:flex;align-items:center;justify-content:center}
+  .rec{background:var(--goodbg);border:1px solid #bfe6cf;border-radius:11px;padding:14px 16px}
+  .pageblock{page-break-inside:avoid}
+  .newpage{page-break-before:always}
+  .tag{display:inline-block;font-size:8pt;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
+  .tag.rec{background:var(--good);color:#fff}
+  .tag.alt{background:var(--warn);color:#fff}
+  .tag.no{background:#9aa3b2;color:#fff}
+  footer{margin-top:34px;border-top:1px solid var(--line);padding-top:12px;color:var(--muted);font-size:9pt}
+  .toc{font-size:10pt;color:var(--muted);columns:2;margin:10px 0}
+  .toc a{display:block;margin:2px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>How the Workflow Engine Will "Think"</h1>
+  <div class="sub">wrkflw · engine-core design discussion · 2026-06-20 · written so a junior developer can learn from it</div>
+
+  <p class="lead">This document explains <b>three ways</b> we could build the heart of our workflow engine, and why
+  one of them is recommended. It assumes <b>no prior knowledge</b> of workflow engines. If a word looks unfamiliar,
+  check the <a href="#glossary">Glossary</a> at the end — every technical term is defined there in plain language.</p>
+
+  <div class="toc">
+    <a href="#what">1. What is a workflow engine?</a>
+    <a href="#vocab">2. The core idea: tokens</a>
+    <a href="#decision">3. The decision we're making</a>
+    <a href="#a">4. Option A — Stepper + effects</a>
+    <a href="#b">5. Option B — Active engine</a>
+    <a href="#c">6. Option C — Hybrid</a>
+    <a href="#flow">7. How a result comes back</a>
+    <a href="#matrix">8. Side-by-side comparison</a>
+    <a href="#clock">9. Controlling time (clockwork)</a>
+    <a href="#rec">10. Recommendation</a>
+    <a href="#glossary">11. Glossary</a>
+  </div>
+
+  <h2 id="what">1. What is a workflow engine?</h2>
+  <p>Imagine a business process: a customer submits a leave request, a manager approves it, HR records it, and an
+  email is sent. That sequence of steps — some automatic, some needing a human, some with deadlines — is a
+  <b>workflow</b>. A <b>workflow engine</b> is software that <i>runs</i> these processes: it knows which step comes
+  next, waits when it must wait, calls the right code at the right time, and remembers exactly where every running
+  process is, even if the server restarts.</p>
+
+  <div class="analogy">
+    <b>Analogy — a board game.</b> Think of a process as a board with squares connected by arrows. A
+    <b>process definition</b> is the printed board (the rules and layout). A <b>process instance</b> is one actual
+    play-through of the game. A <b>token</b> is your game piece sitting on a square. The engine's whole job is to
+    decide, for each piece, <i>which arrow to follow next</i> and <i>when</i>. Some squares say "wait for a human to
+    roll the dice" (a human task); some say "wait 3 days" (a timer); some split your piece into several pieces that
+    move down different paths at once (a parallel gateway).
+  </div>
+
+  <h2 id="vocab">2. The core idea: tokens moving on a graph</h2>
+  <p>Our engine is <b>token-based</b>. A token is a marker that sits on one node (square) and carries a bag of
+  <b>variables</b> (data about this run — who requested leave, how many days, etc.). When the engine moves a token
+  along an arrow (a <b>sequence flow</b>) to the next node, the node may read those variables to decide what to do.
+  For example, an <b>exclusive gateway</b> ("either/or" fork) might check <code>days &gt; 10</code> and send the token
+  down the "needs director approval" path instead of the normal path. We evaluate those little conditions with a
+  library called <a href="https://github.com/expr-lang/expr">expr</a>, so we don't invent our own mini-language.</p>
+
+  <p>This whole project follows <b>BPMN</b> — an industry-standard visual notation for business processes — so our
+  nodes have familiar names: tasks, gateways, events, and the flows between them. The full list of terms is in the
+  <a href="#glossary">Glossary</a>.</p>
+
+  <h2 id="decision">3. The decision we're making</h2>
+  <p>The most important rule for this part of the system: the <b>engine core must be "pure"</b>. That means the core
+  logic — deciding which token moves where — must <b>not</b> directly talk to the database, the network, the message
+  bus, or the clock. Why? Because keeping it pure makes it:</p>
+  <ul>
+    <li><b>Easy to test</b> — you can check its decisions without setting up a database or server.</li>
+    <li><b>Easy to reuse</b> — a company can embed our engine in their app without dragging in our infrastructure choices.</li>
+    <li><b>Reliable</b> — pure logic behaves the same way every time, which makes crash-recovery and debugging far easier.</li>
+  </ul>
+  <p>So the question is: <b>if the core can't do input/output itself, how does it actually get work done?</b>
+  (Calling a service, scheduling a timer, sending an email.) Below are three answers. The differences are entirely
+  about <i>who performs the side effects</i> and <i>how a result gets back into the engine</i>.</p>
+
+  <div class="newpage"></div>
+  <h2 id="a">4. Option A — A "stepper" that returns a to-do list <span class="tag rec">RECOMMENDED</span></h2>
+  <p>The core is one <b>pure function</b> called <code>Step</code>. You give it the current situation and one thing
+  that just happened (a <b>stimulus</b>). It hands back the new situation plus a <b>to-do list of effects</b> —
+  descriptions, written as plain data, of side effects it wants someone else to perform. The core never does them
+  itself.</p>
+
+  <div class="analogy">
+    <b>Analogy — a chef who only writes tickets.</b> The core is a head chef who never touches a pan. You tell the
+    chef "a new order arrived" (a stimulus). The chef thinks, updates the order board, and writes tickets: "fry this,"
+    "set a 5-minute timer," "tell the waiter." The chef hands those tickets to the kitchen staff (the
+    <b>runtime</b>). When a dish is done, the staff bring back a "ticket #7 finished" note (a result), and the chef
+    thinks again. The chef is fast, predictable, and never burns anything — because the chef only ever <i>decides</i>.
+  </div>
+
+  <pre><span class="com">// The ENTIRE job of the core: take a situation + one event, return the</span>
+<span class="com">// new situation + a list of side effects to perform. No database. No network.</span>
+<span class="kw">func</span> <span class="fn">Step</span>(def *<span class="typ">ProcessDefinition</span>, state <span class="typ">InstanceState</span>, stim <span class="typ">Stimulus</span>) (<span class="typ">StepResult</span>, <span class="typ">error</span>)
+
+<span class="kw">type</span> <span class="typ">StepResult</span> <span class="kw">struct</span> {
+    State   <span class="typ">InstanceState</span>   <span class="com">// the new state — someone else will save this to the database</span>
+    Effects []<span class="typ">Effect</span>        <span class="com">// the "to-do list" — plain data, not code to run</span>
+}
+
+<span class="com">// A "stimulus" is something that happened the engine must react to:</span>
+<span class="com">//   StartInstance, ActionCompleted, TimerFired, HumanCompleted, SignalReceived ...</span>
+<span class="com">// An "effect" is something the engine wants done:</span>
+<span class="com">//   InvokeAction, ScheduleTimer, EmitEvent, AwaitHuman, Compensate ...</span></pre>
+
+  <div class="grid2">
+    <div class="pros"><b>Why juniors will like it</b>
+      <ul>
+        <li>Testing is "call function, check the returned to-do list." No mocks, no servers.</li>
+        <li>Each piece does one clear job, so it's easy to read.</li>
+        <li>"Waiting for a human for 3 days" needs <i>zero</i> memory — the process is simply saved and woken later.</li>
+      </ul>
+    </div>
+    <div class="cons"><b>The trade-off</b>
+      <ul>
+        <li>Someone must run the "kitchen staff" loop that performs the effects. We'll ship a default one.</li>
+        <li>We must design the fixed list of stimulus/effect types up front.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 id="b">5. Option B — An "active" engine that does everything itself <span class="tag no">DISCOURAGED</span></h2>
+  <p>The core is handed tools (database, scheduler, message bus) and <b>does the work directly</b>: it calls the
+  service, starts the timer, sends the event, and manages its own background threads as it walks the graph.</p>
+  <div class="analogy">
+    <b>Analogy — a chef who also cooks, waits tables, and answers the phone.</b> Simpler to set up for one small
+    order, but the chef is now juggling everything at once. Hard to test (you must fake the whole kitchen), and hard
+    to recover if the chef faints mid-service — you can't tell exactly what was finished.
+  </div>
+  <div class="grid2">
+    <div class="pros"><b>Upside</b>
+      <ul><li>Easiest to call for a tiny embedded use: "just run it."</li><li>Fewer parts to wire on the happy path.</li></ul>
+    </div>
+    <div class="cons"><b>Why we lean away</b>
+      <ul>
+        <li>Mixes background threads and input/output <i>into</i> the part we most need to keep pure.</li>
+        <li>Crash-recovery and "replay to debug" become hard.</li>
+        <li>Hard to guarantee events and saved state stay in sync (the outbox problem).</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 id="c">6. Option C — A hybrid: pure decisions, but it calls a few helpers <span class="tag alt">FALLBACK</span></h2>
+  <p>A middle path. The core decides purely (no background threads), but <i>during</i> a step it calls a small number
+  of injected helper functions (call this service, emit this event, read the clock) and gets results back
+  immediately, instead of returning a to-do list.</p>
+  <div class="grid2">
+    <div class="pros"><b>Upside</b>
+      <ul><li>No background threads inside the core (better than B).</li><li>Results come back right away — less bookkeeping than A.</li></ul>
+    </div>
+    <div class="cons"><b>Downside</b>
+      <ul>
+        <li>The core still does input/output mid-decision, so clean replay and the outbox are weaker than A.</li>
+        <li>Long "wait 3 days for a human" doesn't fit an immediate function call neatly.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="newpage"></div>
+  <h2 id="flow">7. How a result comes back (walking through Option A)</h2>
+  <p>This is the part that confuses people at first, so let's go slowly. The trick is one simple rule:</p>
+  <div class="tip"><b>The rule:</b> every effect that will produce a result is stamped with an <b>EffectID</b> (a unique
+  label). When the result is ready, it comes back carrying <i>that same EffectID</i>. That label is how the engine
+  knows "ah, this is the answer to the thing I asked for earlier."</div>
+
+  <ol class="steps">
+    <li>Something happens (e.g. a new request). The runtime calls <code>Step(state, stimulus)</code>.</li>
+    <li>The core decides, returns the <b>new state</b> and a <b>to-do list</b>, e.g. <code>InvokeAction{EffectID:"7", name:"checkCredit"}</code>.</li>
+    <li>The runtime <b>saves the new state</b> to the database (the database is the single source of truth).</li>
+    <li>The runtime <b>performs each effect</b>: it actually calls the <code>checkCredit</code> service.</li>
+    <li>When <code>checkCredit</code> finishes, the runtime creates a new stimulus <code>ActionCompleted{EffectID:"7", output:…}</code> — <b>same label, 7</b>.</li>
+    <li>The runtime calls <code>Step</code> again with that stimulus. The core finds the token waiting on "7", merges the output, and moves on.</li>
+  </ol>
+
+  <pre><span class="com">// The "kitchen staff" loop. NOTE: this lives OUTSIDE the core, in a later</span>
+<span class="com">// sub-project. The pure core never contains this loop.</span>
+<span class="kw">for</span> {
+    res, _ := core.<span class="fn">Step</span>(def, state, stim)        <span class="com">// 1-2. pure decision + to-do list</span>
+    <span class="fn">save</span>(res.State)                            <span class="com">// 3. database is the source of truth</span>
+    <span class="kw">for</span> _, e := <span class="kw">range</span> res.Effects {             <span class="com">// 4. actually do the side effects</span>
+        <span class="kw">switch</span> e := e.(<span class="kw">type</span>) {
+        <span class="kw">case</span> <span class="typ">InvokeAction</span>:
+            out, _ := catalog.<span class="fn">Resolve</span>(e.ActionName).<span class="fn">Do</span>(ctx, e.Input)
+            <span class="fn">enqueue</span>(<span class="typ">ActionCompleted</span>{EffectID: e.EffectID, Output: out}) <span class="com">// 5. same label</span>
+        <span class="kw">case</span> <span class="typ">ScheduleTimer</span>:
+            scheduler.<span class="fn">At</span>(e.FireAt, <span class="kw">func</span>(){ <span class="fn">enqueue</span>(<span class="typ">TimerFired</span>{EffectID: e.EffectID}) })
+        <span class="kw">case</span> <span class="typ">AwaitHuman</span>:
+            <span class="com">// nothing to do now — the process simply waits in the database</span>
+            <span class="com">// until a person completes the task via the API later.</span>
+        }
+    }
+    stim = <span class="fn">dequeue</span>()                          <span class="com">// 6. wait for the next thing to happen, then loop</span>
+}</pre>
+
+  <p><b>Why this is powerful:</b> "wait 3 working days for a manager, send a reminder on day 2, and if nobody acts,
+  take an alternative path" becomes just a few effects: <code>AwaitHuman</code> + a reminder <code>ScheduleTimer</code>
+  + an SLA <code>ScheduleTimer</code>. Then the process is <b>saved and forgotten</b> — using no memory or threads —
+  until a timer fires or the human acts. That single idea covers human tasks, timers, SLAs, retries, and even
+  rollback (a <code>Compensate</code> effect), which is exactly what our requirements ask for.</p>
+
+  <h2 id="matrix">8. Side-by-side comparison</h2>
+  <p class="sub"><span class="y">●</span> strong &nbsp;&nbsp; <span class="m">●</span> okay, with effort &nbsp;&nbsp; <span class="n">●</span> weak</p>
+  <table class="pageblock">
+    <thead><tr><th>What we care about</th><th>A · Stepper + effects</th><th>B · Active engine</th><th>C · Hybrid</th></tr></thead>
+    <tbody>
+      <tr><td>Keeps the core pure (no DB/network/threads)</td><td><span class="y">● yes</span></td><td><span class="n">● no</span></td><td><span class="m">● mostly</span></td></tr>
+      <tr><td>Easy to test without mocks</td><td><span class="y">● yes</span></td><td><span class="n">● hard</span></td><td><span class="m">● some</span></td></tr>
+      <tr><td>Keeps events &amp; saved state in sync (outbox)</td><td><span class="y">● natural</span></td><td><span class="n">● hard</span></td><td><span class="m">● awkward</span></td></tr>
+      <tr><td>Recover after a crash / replay to debug</td><td><span class="y">● yes</span></td><td><span class="n">● hard</span></td><td><span class="m">● partial</span></td></tr>
+      <tr><td>Long waits (human / 3-day SLA) cost nothing</td><td><span class="y">● yes</span></td><td><span class="m">● managed</span></td><td><span class="m">● clumsy</span></td></tr>
+      <tr><td>Rollback / compensation fits cleanly</td><td><span class="y">● yes</span></td><td><span class="m">● manual</span></td><td><span class="m">● manual</span></td></tr>
+      <tr><td>Simplest to call for a tiny demo</td><td><span class="m">● needs loop</span></td><td><span class="y">● easiest</span></td><td><span class="y">● easy</span></td></tr>
+      <tr><td>Up-front design effort</td><td><span class="m">● medium</span></td><td><span class="y">● low</span></td><td><span class="y">● low</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="clock">9. Controlling time without waiting (clockwork)</h2>
+  <p>Timers and deadlines are everywhere in workflows, but tests can't really wait 3 days. We use a library called
+  <a href="https://github.com/jonboulle/clockwork">clockwork</a>, which gives us a <b>fake clock</b> we can fast-forward
+  in tests. Our scheduler library (gocron) understands the same fake clock, so in a test we can jump "3 days forward"
+  instantly and watch the SLA logic fire — in real time it would genuinely wait 3 days.</p>
+  <div class="note">In <b>Option A</b>, the core never even looks at the clock — it just says "schedule a timer for this
+  moment," and the runtime resolves the actual time using the shared clock. That is the cleanest of the three and the
+  easiest to test.</div>
+
+  <h2 id="rec">10. Recommendation</h2>
+  <div class="rec">
+    <p style="margin-top:0"><b>Go with Option A (stepper + effects as data).</b> It is the only option that truly keeps
+    the engine's brain pure, and it makes several hard requirements — keeping events in sync, retrying safely, rolling
+    back, and waiting days for a human — almost <i>fall out for free</i>. The one cost (a runtime loop instead of a
+    single "just run it" call) is paid once, later, and we'll ship a ready-made loop so simple uses stay easy.</p>
+    <p style="margin-bottom:0">If the team decides day-one simplicity matters more than crash-recovery and event
+    safety, <b>Option C</b> is the backup. <b>Option B</b> is discouraged because it puts threads and input/output
+    inside the very part we need to keep clean.</p>
+  </div>
+
+  <div class="newpage"></div>
+  <h2 id="glossary">11. Glossary (plain-language)</h2>
+  <dl>
+    <dt>Workflow / Process</dt><dd>A sequence of steps that accomplishes a business goal (e.g. approving leave).</dd>
+    <dt>Workflow engine</dt><dd>Software that runs processes: tracks where each one is, runs steps, waits, and remembers state across restarts.</dd>
+    <dt>BPMN</dt><dd>"Business Process Model and Notation" — an industry-standard visual language for drawing processes (tasks, gateways, events, arrows). We model our concepts on it.</dd>
+    <dt>Process definition</dt><dd>The reusable template (the "board"). Loaded from YAML, Go code, or BPMN2 XML.</dd>
+    <dt>Process instance</dt><dd>One running execution of a definition (one "play-through").</dd>
+    <dt>Node</dt><dd>A point in the process: a task, a gateway, or an event.</dd>
+    <dt>Sequence flow</dt><dd>An arrow connecting two nodes — the path a token can travel.</dd>
+    <dt>Token</dt><dd>A marker sitting on a node that represents "the process is here," carrying the run's variables.</dd>
+    <dt>Variables</dt><dd>The data a process instance carries (who, how many days, amounts, etc.), read by gateways to make decisions.</dd>
+    <dt>Gateway</dt><dd>A branching node. <b>Exclusive</b> = pick one path (either/or). <b>Parallel</b> = take all paths at once and later re-join. <b>Inclusive</b> = pick one or more.</dd>
+    <dt>Event</dt><dd>Something that happens to the process — e.g. a <b>timer</b> firing, or a <b>signal</b> arriving.</dd>
+    <dt>Service action</dt><dd>A reusable piece of code (referenced by name in the definition) that does real work — call an API, send an email. All actions share one Go interface.</dd>
+    <dt>Human task</dt><dd>A step that waits for a person to act (approve, fill a form), often with a deadline.</dd>
+    <dt>SLA (deadline)</dt><dd>"Service-Level Agreement" — a promised time limit (e.g. 3 working days). If breached, the process takes an alternative action/path.</dd>
+    <dt>Stimulus</dt><dd>(Option A) A piece of data saying "this just happened" that we feed into the core — e.g. an action finished, a timer fired, a human responded.</dd>
+    <dt>Effect</dt><dd>(Option A) A piece of data saying "please do this" that the core returns — e.g. call an action, schedule a timer, emit an event.</dd>
+    <dt>EffectID</dt><dd>(Option A) A unique label on an effect; the matching result carries the same label so the engine can correlate them.</dd>
+    <dt>Runtime / loop</dt><dd>(Option A) The code outside the core that performs effects and feeds results back in. The core itself does not contain it.</dd>
+    <dt>Pure function</dt><dd>A function whose output depends only on its inputs and that causes no side effects (no database, no network). Predictable and easy to test.</dd>
+    <dt>Side effect</dt><dd>Anything that touches the outside world: writing to a database, calling a service, sending a message.</dd>
+    <dt>Expression (expr)</dt><dd>A small condition like <code>days &gt; 10</code>, evaluated by the expr library to make routing decisions.</dd>
+    <dt>Outbox pattern</dt><dd>A reliability technique: save state and the "to-publish" events in the <i>same</i> database transaction, then publish the events afterward — so they can never disagree.</dd>
+    <dt>Compensation / rollback</dt><dd>Undoing earlier steps when something goes wrong (e.g. refund a charge). Each node may have an optional compensation action.</dd>
+    <dt>Idempotency</dt><dd>Doing the same operation twice has the same effect as doing it once — important when work might be retried after a crash.</dd>
+    <dt>clockwork</dt><dd>A Go library providing a fake, fast-forwardable clock so time-based logic can be tested instantly.</dd>
+    <dt>gocron</dt><dd>The Go scheduling library we use (pinned to v2.21.2) for timers, SLA waiters, and in-wait actions.</dd>
+  </dl>
+
+  <footer>
+    wrkflw — engine-core execution-model explainer · discussion artifact, not a final spec ·
+    saved at <code>docs/specs/2026-06-20-engine-core-execution-model-explained.html</code> (PDF rendered alongside).
+    Once the team chooses an option, it becomes an ADR and is folded into the engine-core design spec.
+  </footer>
+
+</div>
+</body>
+</html>

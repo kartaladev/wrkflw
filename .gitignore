@@ -1,0 +1,23 @@
+# Go build / test artifacts
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+cover.out
+coverage.*
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Claude Code local (machine-specific) overrides — shared config stays tracked
+.claude/settings.local.json
+.claude/projects/
+.claude/todos/

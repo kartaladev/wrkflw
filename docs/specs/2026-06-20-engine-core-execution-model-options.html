@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wrkflw — Engine Core Execution Model Options</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1d212c; --ink:#e6e9ef; --muted:#9aa3b2;
+    --line:#2a2f3c; --accent:#6ea8fe; --good:#5ad19a; --warn:#f0b86e; --bad:#f08a8a;
+    --code:#11141b; --kw:#c792ea; --str:#c3e88d; --com:#5f6b7a; --typ:#82aaff; --fn:#ffcb6b;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:var(--bg);color:var(--ink)}
+  header{padding:42px 24px 28px;border-bottom:1px solid var(--line);
+         background:linear-gradient(180deg,#141826,#0f1117)}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+  h1{margin:0 0 6px;font-size:30px;letter-spacing:-.3px}
+  h2{margin:42px 0 14px;font-size:23px;border-left:3px solid var(--accent);padding-left:12px}
+  h3{margin:26px 0 10px;font-size:18px;color:var(--ink)}
+  .sub{color:var(--muted);font-size:15px}
+  p{margin:12px 0}
+  a{color:var(--accent);text-decoration:none}
+  code{background:#23283440;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px;overflow:auto;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.55}
+  pre .kw{color:var(--kw)} pre .str{color:var(--str)} pre .com{color:var(--com)}
+  pre .typ{color:var(--typ)} pre .fn{color:var(--fn)} pre .mut{color:var(--muted)}
+  .pill{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-right:6px}
+  .pill.rec{color:#0e1117;background:var(--good);border-color:var(--good);font-weight:600}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:18px 0}
+  .card.rec{border-color:#2f6b50;box-shadow:0 0 0 1px #2f6b5040, 0 10px 30px -18px #5ad19a55}
+  .grid{display:grid;gap:14px}
+  @media(min-width:780px){.cols-2{grid-template-columns:1fr 1fr}}
+  .pros,.cons{padding:12px 14px;border-radius:10px;font-size:14.5px}
+  .pros{background:#13241c;border:1px solid #25503a}
+  .cons{background:#241616;border:1px solid #5a2c2c}
+  .pros b,.cons b{display:block;margin-bottom:6px;letter-spacing:.3px;font-size:12px;text-transform:uppercase}
+  .pros b{color:var(--good)} .cons b{color:var(--bad)}
+  ul{margin:8px 0 8px 2px;padding-left:20px} li{margin:5px 0}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--ink);font-weight:600}
+  td .y{color:var(--good);font-weight:600} td .n{color:var(--bad);font-weight:600} td .m{color:var(--warn);font-weight:600}
+  .note{background:var(--panel2);border:1px dashed var(--line);border-radius:10px;padding:14px 16px;color:var(--muted);font-size:14.5px}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .toc a{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:13.5px}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-family:ui-monospace,monospace;font-size:12.5px;color:var(--muted);margin:10px 0}
+  .flow .box{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--ink)}
+  .flow .arr{color:var(--accent)}
+  .ann{display:inline-block;background:#1c2740;border:1px solid #2f4063;color:#a9c2ff;border-radius:5px;padding:0 5px;font-size:11px;margin-left:6px}
+  footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:50px;padding:22px 0 60px}
+  .legend{font-size:12.5px;color:var(--muted);margin:-8px 0 8px}
+  kbd{background:#23283480;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 6px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>wrkflw — Engine Core: Execution Model Options</h1>
+    <div class="sub">Brainstorming artifact · 2026-06-20 · for team discussion before deciding sub-project&nbsp;#1 (the pure engine core)</div>
+    <div class="toc">
+      <a href="#context">Context</a>
+      <a href="#shared">Shared concepts</a>
+      <a href="#a">A · Pure stepper + effects</a>
+      <a href="#b">B · Active engine</a>
+      <a href="#c">C · Hybrid ports</a>
+      <a href="#roundtrip">Results round-trip</a>
+      <a href="#matrix">Comparison matrix</a>
+      <a href="#clock">clockwork</a>
+      <a href="#rec">Recommendation</a>
+      <a href="#questions">Open questions</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="context">
+  <h2>Context &amp; what we're deciding</h2>
+  <p><code>wrkflw</code> is a <b>library-first</b> Go workflow engine (Go&nbsp;1.25). The deliverable is an importable
+  module; there is no daemon we own. The load-bearing constraint that drives this decision:</p>
+  <div class="note">
+    The <b>engine core</b> — the token state machine that moves a process instance across BPMN nodes — must stay
+    <b>pure of transport, storage vendor, and event-bus specifics</b>. It depends on interfaces (or pure data) only,
+    and must be consumable with no Postgres / watermill / gRPC imported at all. Persistence is the source of truth;
+    events publish via a transactional outbox; timers/SLAs run on gocron; time is controlled via
+    <a href="https://github.com/jonboulle/clockwork">jonboulle/clockwork</a> (which gocron&nbsp;v2 also accepts).
+  </div>
+  <p>The question on the table: <b>how does the core actually advance an instance?</b> Three candidate shapes are
+  below. This choice shapes testability, crash-recovery, the outbox, the rollback/compensation feature, and how
+  ergonomic the embedded API feels. BPMN scope for core&nbsp;#1 is already decided as <b>broad coverage</b>
+  (all gateways, intermediate/boundary events, sub-processes) — the execution model must comfortably carry that.</p>
+</section>
+
+<section id="shared">
+  <h2>Shared concepts (true for all three options)</h2>
+  <p>Regardless of which model we pick, the core works in terms of <b>tokens</b> and a <b>process definition</b>.
+  A token sits on a node and carries instance variables; gateways read those variables (via
+  <a href="https://github.com/expr-lang/expr">expr-lang/expr</a>) to decide routing. The differences below are
+  purely about <i>who performs side effects</i> (calling a service action, scheduling a timer, emitting an event,
+  parking on a human task) and <i>how a result re-enters the engine</i>.</p>
+  <pre><span class="com">// Vocabulary shared by the examples on this page.</span>
+<span class="kw">type</span> <span class="typ">ProcessDefinition</span> <span class="kw">struct</span> { <span class="com">/* nodes, sequence flows, gateways, events */</span> }
+<span class="kw">type</span> <span class="typ">InstanceState</span>     <span class="kw">struct</span> { <span class="com">/* live tokens + process variables (what we persist) */</span> }
+
+<span class="kw">type</span> <span class="typ">ServiceAction</span> <span class="kw">interface</span> {        <span class="com">// the catalog interface, referenced by name in definitions</span>
+    <span class="fn">Do</span>(ctx <span class="typ">context</span>.<span class="typ">Context</span>, in <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span>) (out <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span>, err <span class="typ">error</span>)
+}</pre>
+</section>
+
+<!-- OPTION A -->
+<section id="a">
+  <h2>Option A — Pure stepper + effects as data <span class="pill rec">recommended</span></h2>
+  <p>The core is a single <b>deterministic, non-blocking function</b>. Given the current state and one
+  <b>stimulus</b> ("something happened"), it returns the new state and a list of <b>effects</b> ("things the outside
+  world should do"). Effects are <b>plain data</b> — not callbacks — so the core performs zero I/O and spawns zero
+  goroutines. A thin <b>runtime</b> (a <i>later</i> sub-project, not part of the core) executes the effects and feeds
+  each result back as the next stimulus.</p>
+
+  <pre><span class="com">// The ENTIRE I/O-free surface of the core.</span>
+<span class="kw">func</span> <span class="fn">Step</span>(def *<span class="typ">ProcessDefinition</span>, st <span class="typ">InstanceState</span>, stim <span class="typ">Stimulus</span>) (<span class="typ">StepResult</span>, <span class="typ">error</span>)
+
+<span class="kw">type</span> <span class="typ">StepResult</span> <span class="kw">struct</span> {
+    State   <span class="typ">InstanceState</span>   <span class="com">// new token/variable state → runtime persists this (source of truth)</span>
+    Effects []<span class="typ">Effect</span>        <span class="com">// pure-data descriptions of side effects to perform</span>
+}
+
+<span class="com">// Stimulus = "something happened the engine must react to" (a sealed set).</span>
+<span class="kw">type</span> <span class="typ">Stimulus</span> <span class="kw">interface</span>{ <span class="fn">isStimulus</span>() }
+<span class="kw">type</span> <span class="typ">StartInstance</span>   <span class="kw">struct</span>{ Vars <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span> }
+<span class="kw">type</span> <span class="typ">ActionCompleted</span> <span class="kw">struct</span>{ EffectID <span class="typ">string</span>; Output <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span> } <span class="ann">result coming back</span>
+<span class="kw">type</span> <span class="typ">ActionFailed</span>    <span class="kw">struct</span>{ EffectID <span class="typ">string</span>; Err <span class="typ">string</span> }              <span class="ann">result coming back</span>
+<span class="kw">type</span> <span class="typ">TimerFired</span>      <span class="kw">struct</span>{ EffectID <span class="typ">string</span> }                          <span class="ann">result coming back</span>
+<span class="kw">type</span> <span class="typ">HumanCompleted</span>  <span class="kw">struct</span>{ TaskToken <span class="typ">string</span>; Decision <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span> } <span class="ann">result coming back</span>
+<span class="kw">type</span> <span class="typ">SignalReceived</span>  <span class="kw">struct</span>{ Name <span class="typ">string</span>; Payload <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span> }
+
+<span class="com">// Effect = "something the engine wants done" (a sealed set, no funcs inside).</span>
+<span class="kw">type</span> <span class="typ">Effect</span> <span class="kw">interface</span>{ <span class="fn">isEffect</span>() }
+<span class="kw">type</span> <span class="typ">InvokeAction</span>  <span class="kw">struct</span>{ EffectID <span class="typ">string</span>; ActionName <span class="typ">string</span>; Input <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span> }
+<span class="kw">type</span> <span class="typ">ScheduleTimer</span> <span class="kw">struct</span>{ EffectID <span class="typ">string</span>; Token <span class="typ">string</span>; FireAt <span class="typ">time</span>.<span class="typ">Time</span> } <span class="ann">from clockwork</span>
+<span class="kw">type</span> <span class="typ">EmitEvent</span>     <span class="kw">struct</span>{ Topic <span class="typ">string</span>; Payload <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span> }            <span class="ann">→ outbox</span>
+<span class="kw">type</span> <span class="typ">AwaitHuman</span>    <span class="kw">struct</span>{ TaskToken <span class="typ">string</span>; Assignee <span class="typ">AuthzSpec</span>; SLA *<span class="typ">time</span>.<span class="typ">Time</span> }
+<span class="kw">type</span> <span class="typ">Compensate</span>    <span class="kw">struct</span>{ FromNode <span class="typ">string</span> }</pre>
+
+  <div class="grid cols-2">
+    <div class="pros"><b>Strengths</b>
+      <ul>
+        <li><b>Maximally pure &amp; testable</b> — a step is just data-in/data-out; assert on returned effects, no mocks.</li>
+        <li><b>Wait states are free</b> — <code>AwaitHuman</code>+<code>ScheduleTimer</code> park the instance in the DB; nothing held in memory.</li>
+        <li><b>Outbox is natural</b> — runtime persists <code>State</code> and writes <code>EmitEvent</code> in one transaction.</li>
+        <li><b>Crash recovery / replay</b> — deterministic on <code>(state,stimulus)</code>; re-deliver after crash, replay a stimulus log to reconstruct any instance.</li>
+        <li><b>Compensation &amp; SLA</b> map to <code>Compensate</code> / <code>TimerFired</code> effects directly — serves the rollback + 3-working-day examples.</li>
+      </ul>
+    </div>
+    <div class="cons"><b>Costs</b>
+      <ul>
+        <li><b>Indirection</b> — consumers don't call <code>action.Do()</code> themselves; they run (or we ship) the loop.</li>
+        <li>Effect/stimulus taxonomy must be designed up front and kept closed.</li>
+        <li>Correlation bookkeeping (<code>EffectID</code> ↔ result) lives in the core's parked-token state.</li>
+        <li>Slightly more ceremony for a trivial "just run this 3-node flow inline" embed.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION B -->
+<section id="b">
+  <h2>Option B — Active engine owns execution</h2>
+  <p>The core holds injected interfaces (<code>ActionInvoker</code>, <code>Scheduler</code>, <code>EventSink</code>,
+  <code>Clock</code>) and <b>drives execution itself</b>: it calls service actions inline, schedules timers,
+  spawns/awaits goroutines, and writes events as it walks the graph.</p>
+
+  <pre><span class="kw">type</span> <span class="typ">Engine</span> <span class="kw">struct</span> {
+    actions   <span class="typ">ActionInvoker</span>
+    scheduler <span class="typ">Scheduler</span>     <span class="com">// wraps gocron</span>
+    events    <span class="typ">EventSink</span>     <span class="com">// wraps outbox/watermill</span>
+    clock     <span class="typ">clockwork</span>.<span class="typ">Clock</span>
+}
+
+<span class="kw">func</span> (e *<span class="typ">Engine</span>) <span class="fn">Advance</span>(ctx <span class="typ">context</span>.<span class="typ">Context</span>, inst *<span class="typ">Instance</span>) <span class="typ">error</span> {
+    <span class="com">// walks nodes, calls e.actions.Invoke(...), e.scheduler.At(...), e.events.Emit(...)</span>
+    <span class="com">// blocks / parks / resumes internally.</span>
+}</pre>
+
+  <div class="grid cols-2">
+    <div class="pros"><b>Strengths</b>
+      <ul>
+        <li><b>Most ergonomic</b> for a simple embed — call <code>Advance</code> and it just runs.</li>
+        <li>Fewer moving parts to wire for the happy path; no separate runtime loop to ship.</li>
+        <li>Familiar imperative control flow for contributors.</li>
+      </ul>
+    </div>
+    <div class="cons"><b>Costs</b>
+      <ul>
+        <li><b>Couples the core to concurrency &amp; lifecycle</b> — goroutines/locks live inside the "pure" core.</li>
+        <li><b>Outbox is awkward</b> — event emission is interleaved with logic, not bundled with the state write in one tx.</li>
+        <li><b>Replay/determinism is hard</b> — behavior depends on injected I/O timing, not just data.</li>
+        <li>Tests need mocks for every port; timer/SLA tests get fiddlier.</li>
+        <li>Risks violating the CLAUDE.md rule that the core stays free of transport/storage/bus specifics.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION C -->
+<section id="c">
+  <h2>Option C — Hybrid: pure transitions + injected ports</h2>
+  <p>A middle path. The core computes transitions purely, but during a single step it <b>calls out synchronously
+  through a few narrow injected ports</b> (e.g. <code>ActionInvoker</code>, <code>Clock</code>, <code>EventSink</code>)
+  rather than returning an effect list. No goroutines inside the core, but it does touch I/O ports inline.</p>
+
+  <pre><span class="kw">type</span> <span class="typ">Ports</span> <span class="kw">struct</span> {
+    Invoke <span class="kw">func</span>(ctx <span class="typ">context</span>.<span class="typ">Context</span>, name <span class="typ">string</span>, in <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span>) (<span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span>, <span class="typ">error</span>)
+    Emit   <span class="kw">func</span>(topic <span class="typ">string</span>, payload <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">any</span>)
+    Clock  <span class="typ">clockwork</span>.<span class="typ">Clock</span>
+}
+<span class="kw">func</span> <span class="fn">Step</span>(def *<span class="typ">ProcessDefinition</span>, st <span class="typ">InstanceState</span>, stim <span class="typ">Stimulus</span>, p <span class="typ">Ports</span>) (<span class="typ">InstanceState</span>, <span class="typ">error</span>)</pre>
+
+  <div class="grid cols-2">
+    <div class="pros"><b>Strengths</b>
+      <ul>
+        <li>No concurrency inside the core (unlike B); transitions still mostly testable.</li>
+        <li>More direct than A — results return inline from the port call, no <code>EffectID</code> correlation.</li>
+        <li>Less up-front taxonomy than A's full effect set.</li>
+      </ul>
+    </div>
+    <div class="cons"><b>Costs</b>
+      <ul>
+        <li><b>Still does I/O mid-step</b> — outbox-in-one-tx and clean replay are weaker than A.</li>
+        <li>Determinism leaks through the ports; tests still need port fakes.</li>
+        <li>Park/resume for long human waits doesn't fit a synchronous port call as cleanly as A's <code>AwaitHuman</code>.</li>
+        <li>"Middle ground" risks the worst of both as features grow.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ROUND TRIP -->
+<section id="roundtrip">
+  <h2>How a result flows back (Option A in motion)</h2>
+  <p>The key mechanism: <b>every effect that yields a result carries an <code>EffectID</code>, and the matching
+  result-stimulus echoes that same <code>EffectID</code> back.</b> That correlation is the whole trick. The runtime
+  is the <i>only</i> thing that blocks or does I/O:</p>
+
+  <div class="flow">
+    <span class="box">Step(state, stim)</span><span class="arr">→</span>
+    <span class="box">persist(State)</span><span class="arr">→</span>
+    <span class="box">run Effects</span><span class="arr">→</span>
+    <span class="box">result as next Stimulus<br>(same EffectID)</span><span class="arr">↺</span>
+    <span class="box">Step(state', stim')</span>
+  </div>
+
+  <pre><span class="com">// The runtime — a LATER sub-project. The core does NOT contain this loop.</span>
+<span class="kw">for</span> {
+    res, err := core.<span class="fn">Step</span>(def, state, stim)        <span class="com">// 1. pure decision (no I/O)</span>
+    <span class="fn">persist</span>(res.State)                              <span class="com">// 2. DB is source of truth</span>
+    <span class="kw">for</span> _, e := <span class="kw">range</span> res.Effects {                 <span class="com">// 3. perform side effects</span>
+        <span class="kw">switch</span> e := e.(<span class="kw">type</span>) {
+        <span class="kw">case</span> <span class="typ">InvokeAction</span>:
+            out, err := catalog.<span class="fn">Resolve</span>(e.ActionName).<span class="fn">Do</span>(ctx, e.Input)
+            <span class="com">// result becomes the NEXT stimulus, tagged with the SAME EffectID:</span>
+            <span class="fn">enqueue</span>(<span class="typ">ActionCompleted</span>{EffectID: e.EffectID, Output: out}) <span class="com">// or ActionFailed</span>
+        <span class="kw">case</span> <span class="typ">ScheduleTimer</span>:
+            scheduler.<span class="fn">At</span>(e.FireAt, <span class="kw">func</span>(){ <span class="fn">enqueue</span>(<span class="typ">TimerFired</span>{EffectID: e.EffectID}) })
+        <span class="kw">case</span> <span class="typ">AwaitHuman</span>:
+            <span class="com">// no immediate result — instance PARKS in DB. A future REST/gRPC</span>
+            <span class="com">// "complete task" call injects HumanCompleted{TaskToken:...} later.</span>
+        <span class="kw">case</span> <span class="typ">EmitEvent</span>:
+            outbox.<span class="fn">Write</span>(tx, e)                      <span class="com">// same tx as persist(); relayed by watermill adapter</span>
+        }
+    }
+    stim = <span class="fn">dequeue</span>() <span class="com">// blocks until next stimulus: a result, a signal, or a human action</span>
+}</pre>
+
+  <p>So a result is never "returned" synchronously from <code>Step</code> — it arrives on the <i>next</i> call as
+  <code>ActionCompleted</code> / <code>TimerFired</code> / <code>HumanCompleted</code> carrying the <code>EffectID</code>.
+  The core finds the token parked on that <code>EffectID</code>, merges the output into instance variables, and
+  advances. <b>Waiting 3 working days for a human</b> is simply: emit <code>AwaitHuman</code> + <code>ScheduleTimer(SLA)</code>
+  + optional in-wait <code>ScheduleTimer</code> reminders, then return. The instance lives entirely in the DB until a
+  stimulus wakes it.</p>
+</section>
+
+<!-- MATRIX -->
+<section id="matrix">
+  <h2>Comparison matrix</h2>
+  <div class="legend"><span class="y">●</span> strong &nbsp; <span class="m">●</span> partial / with effort &nbsp; <span class="n">●</span> weak</div>
+  <table>
+    <thead><tr>
+      <th>Dimension</th>
+      <th>A · Pure stepper + effects</th>
+      <th>B · Active engine</th>
+      <th>C · Hybrid ports</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>Core purity (no transport/storage/bus)</td><td><span class="y">●</span> data only</td><td><span class="n">●</span> holds I/O + goroutines</td><td><span class="m">●</span> I/O via ports, no goroutines</td></tr>
+      <tr><td>Unit testability (no mocks)</td><td><span class="y">●</span> assert on effects</td><td><span class="n">●</span> mock every port</td><td><span class="m">●</span> fake the ports</td></tr>
+      <tr><td>Outbox in one transaction</td><td><span class="y">●</span> natural</td><td><span class="n">●</span> interleaved</td><td><span class="m">●</span> possible, awkward</td></tr>
+      <tr><td>Deterministic replay / crash recovery</td><td><span class="y">●</span> data-driven</td><td><span class="n">●</span> timing-dependent</td><td><span class="m">●</span> port-dependent</td></tr>
+      <tr><td>Long wait states (human/SLA) in DB</td><td><span class="y">●</span> park &amp; forget</td><td><span class="m">●</span> engine must manage</td><td><span class="m">●</span> sync call mismatch</td></tr>
+      <tr><td>Compensation / rollback fit</td><td><span class="y">●</span> <code>Compensate</code> effect</td><td><span class="m">●</span> imperative unwind</td><td><span class="m">●</span> imperative unwind</td></tr>
+      <tr><td>Ergonomics for a trivial embed</td><td><span class="m">●</span> need the loop</td><td><span class="y">●</span> call &amp; go</td><td><span class="y">●</span> call &amp; go</td></tr>
+      <tr><td>Up-front design cost</td><td><span class="m">●</span> effect/stimulus taxonomy</td><td><span class="y">●</span> low</td><td><span class="y">●</span> low–medium</td></tr>
+      <tr><td>Concurrency coupling risk</td><td><span class="y">●</span> none in core</td><td><span class="n">●</span> high</td><td><span class="y">●</span> low</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CLOCKWORK -->
+<section id="clock">
+  <h2>Where <code>clockwork</code> lands</h2>
+  <p>Time is never read with the wall clock inside the core. <a href="https://github.com/jonboulle/clockwork">jonboulle/clockwork</a>
+  gives a single injectable <code>Clock</code>, and gocron&nbsp;v2 accepts the same interface — so under test one
+  <code>clockwork.NewFakeClock()</code> advances both engine logic and the real scheduler in lockstep.</p>
+  <ul>
+    <li><b>Option A</b>: the core emits <code>ScheduleTimer{FireAt}</code> (or a duration); <code>FireAt</code> is resolved
+      against the injected clock at the <i>boundary</i>. The core itself stays time-free — easiest to test.</li>
+    <li><b>Options B / C</b>: the clock is an injected port the core reads inline; still fake-able, but the timing
+      lives inside the core's control flow.</li>
+  </ul>
+  <div class="note">Likely worth an ADR: "Use <code>clockwork.Clock</code> as the engine's sole time source; share one
+  instance with gocron." Sits alongside the existing gocron <kbd>v2.21.2</kbd> hard pin.</div>
+</section>
+
+<!-- RECOMMENDATION -->
+<section id="rec">
+  <h2>Recommendation</h2>
+  <div class="card rec">
+    <p style="margin-top:0"><b>Option A — pure stepper + effects as data.</b> It is the only option that keeps the core
+    genuinely free of transport/storage/bus (the CLAUDE.md hard rule), and it makes four separate requirements fall
+    out almost for free: the <b>transactional outbox</b>, <b>retry/resilience</b>, <b>compensation/rollback</b>, and
+    <b>long human/SLA waits</b>. The cost — a runtime loop instead of an inline <code>Advance()</code> — is paid once,
+    in a later sub-project, and we can ship a default loop so simple embeds stay one-liner-ish.</p>
+    <p style="margin-bottom:0">If the team prioritizes <b>day-one embed ergonomics</b> over replay/outbox cleanliness,
+    <b>Option C</b> is the fallback. <b>Option B</b> is discouraged: it bakes concurrency and I/O into the part of the
+    system we most need to keep pure.</p>
+  </div>
+</section>
+
+<!-- QUESTIONS -->
+<section id="questions">
+  <h2>Open questions for the team</h2>
+  <ul>
+    <li>Do we accept shipping a <b>default runtime loop</b> in <code>pkg/</code> so Option A embeds stay ergonomic, or is an inline <code>Advance()</code> a hard requirement?</li>
+    <li>Should the <b>stimulus log</b> be a first-class, persisted artifact (full event-sourcing) or just a transient delivery queue? Affects replay/debug depth.</li>
+    <li>For <b>broad BPMN coverage</b> in core #1, do boundary events &amp; sub-processes change the effect taxonomy (e.g. a <code>SpawnSubInstance</code> effect)? Worth confirming the taxonomy is closed enough.</li>
+    <li>Is <b>per-effect idempotency keying</b> (<code>EffectID</code>) sufficient for at-least-once action delivery, or do we also need action-level idempotency tokens?</li>
+    <li>Granularity of a "step": <b>one stimulus → run until the next wait</b> (macro-step), or one node at a time (micro-step)? Affects persistence frequency and observability granularity.</li>
+  </ul>
+</section>
+
+<footer class="wrap">
+  Generated for <code>wrkflw</code> brainstorming · saved at <code>docs/specs/2026-06-20-engine-core-execution-model-options.html</code>.
+  Not a final spec — a discussion aid. The chosen option will be recorded as an ADR and folded into the engine-core design spec.
+</footer>
+
+</div>
+</body>
+</html>
