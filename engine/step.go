@@ -12,14 +12,15 @@ import (
 )
 
 var (
-	ErrUnknownTrigger      = errors.New("engine: unknown trigger")
-	ErrTokenNotFound       = errors.New("engine: no token awaiting command")
-	ErrMicroNotImplemented = errors.New("engine: micro stepping not implemented")
-	ErrNoMatchingFlow      = errors.New("engine: no matching outgoing flow")
+	ErrUnknownTrigger = errors.New("engine: unknown trigger")
+	ErrTokenNotFound  = errors.New("engine: no token awaiting command")
+	ErrNoMatchingFlow = errors.New("engine: no matching outgoing flow")
 )
 
-// StepMode selects how far one Step advances. Micro behaves as Macro in this
-// plan; true single-node stepping arrives in Plan 5.
+// StepMode selects how far one Step advances.
+// Macro (default) runs drive until all active tokens are parked or consumed.
+// Micro runs drive until the first token park or terminal event, then stops,
+// leaving any remaining active tokens for subsequent Step calls.
 type StepMode int
 
 const (
@@ -46,10 +47,6 @@ type StepResult struct {
 // outgoing flow — the engine takes the first matching flow in definition order
 // and does not detect ambiguous multi-unconditional configurations.
 func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
-	if opt.Mode == Micro {
-		return StepResult{}, ErrMicroNotImplemented
-	}
-
 	s := cloneState(st)
 
 	switch t := trg.(type) {
@@ -70,13 +67,21 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{}, espErr
 		}
 		// Drive forward from the start node; prepend any esp ScheduleTimer commands.
-		driveCmdsStart, driveErrStart := drive(def, &s, t.OccurredAt())
+		driveCmdsStart, driveErrStart := drive(def, &s, t.OccurredAt(), opt.Mode)
 		if driveErrStart != nil {
 			return StepResult{}, driveErrStart
 		}
 		return StepResult{State: s, Commands: append(espCmds, driveCmdsStart...)}, nil
 
 	case ActionCompleted:
+		// If the engine is in compensation mode AND this ActionCompleted corresponds
+		// to the in-flight compensation action (cursor.ActiveCmdID), advance the
+		// compensation cursor rather than doing normal token routing. This keeps
+		// compensation sequencing deterministic and observable (one action at a time).
+		if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
+			return stepCompensationAdvance(def, &s, t.OccurredAt(), opt.Mode)
+		}
+
 		tok := s.tokenAwaiting(t.CommandID)
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
@@ -86,39 +91,92 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 		}
+		// Resolve the effective definition for the token's scope so we can look up
+		// the node and check for a CompensationAction BEFORE merging output.
+		tdef, err := defForScope(def, &s, tok.ScopeID)
+		if err != nil {
+			return StepResult{}, err
+		}
+		// Record compensation BEFORE merging the output: the snapshot captures the
+		// instance variables as they existed when the activity was invoked.
+		if node, ok := tdef.Node(tok.NodeID); ok && node.CompensationAction != "" {
+			s.recordCompensation(tok.ScopeID, node.ID, node.CompensationAction, t.OccurredAt(), copyVars(s.Variables))
+		}
 		mergeVars(&s, t.Output)
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
 		// Advance the token past the completed ServiceTask so drive sees it at
 		// the next node, not re-firing the action. Use the token's scope definition
 		// so inner-scope tokens resolve flows against the nested definition.
-		tdef, err := defForScope(def, &s, tok.ScopeID)
-		if err != nil {
-			return StepResult{}, err
-		}
 		s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
-		driveCmds, err := drive(def, &s, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
 		if err != nil {
 			return StepResult{}, err
 		}
 		return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
+
+	case CancelRequested:
+		// Admin trigger: terminate the instance immediately.
+		// 1. Consume ALL tokens (clear s.Tokens).
+		// 2. Set Status = StatusTerminated; set EndedAt from the trigger's OccurredAt.
+		// 3. Emit FailInstance{Err:"cancelled"} as the terminal command (reusing the
+		//    existing FailInstance command type avoids adding a new sealed command; the
+		//    "cancelled" error string distinguishes it from error-propagation failures).
+		// 4. Cancel any outstanding timers, gateway arms, and boundary arms via the
+		//    existing cancelAllTimers() + cancelAllArmsAndBoundaries() helpers.
+		//
+		// Behavior on an already-terminal instance: the logic is idempotent — there
+		// are no tokens or timers to cancel, and Status is overwritten to Terminated.
+		// No error is returned; the caller is responsible for not sending CancelRequested
+		// to an already-terminal instance in production.
+		ended := t.OccurredAt()
+		s.Status = StatusTerminated
+		s.EndedAt = &ended
+		// Consume all tokens (clear visit records as well).
+		for i := range s.Tokens {
+			tok := &s.Tokens[i]
+			s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
+		}
+		s.Tokens = nil
+		// Emit the terminal command and cancel all outstanding scheduler resources.
+		cmds := []Command{FailInstance{Err: "cancelled"}}
+		cmds = append(cmds, s.cancelAllTimers()...)
+		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+		return StepResult{State: s, Commands: cmds}, nil
+
+	case CompensateRequested:
+		// Admin/debug reverse-order compensation trigger.
+		// 1. Set status to StatusCompensating.
+		// 2. Build the compensation cursor pointing at the first (most-recent) record
+		//    to emit (the last index in the relevant slice that is AFTER ToNode).
+		// 3. Emit the first InvokeAction and record the cursor.
+		return stepCompensateRequested(def, &s, t, opt.Mode)
 
 	case ActionFailed:
 		tok := s.tokenAwaiting(t.CommandID)
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 		}
-		s.Status = StatusFailed
-		ended := t.OccurredAt()
-		s.EndedAt = &ended
-		cmds := []Command{FailInstance{Err: t.Err}}
-		cmds = append(cmds, s.cancelAllTimers()...)
-		// Also cancel any event-gateway timer arms (s.ArmedEvents) and boundary
-		// timer arms (s.Boundaries) to prevent orphaned scheduled tasks in the
-		// runtime scheduler. A comprehensive sweep across all terminal transitions
-		// and multi-token scenarios is deferred to Plan 8.
-		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-		return StepResult{State: s, Commands: cmds}, nil
+		// Cancel any boundary arms on this host token before propagating.
+		// On the unhandled path cancelAllArmsAndBoundaries covers the rest;
+		// on the caught path we clear them before routing to the recovery flow.
+		var preCmds []Command
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
+		// Route through propagateError: if a boundary error handler is found in
+		// the scope chain (direct-attachment or enclosing-scope), the error is
+		// caught and execution continues on the recovery path (no FailInstance).
+		// If no handler is found, propagateError sets StatusFailed, emits
+		// FailInstance, and performs terminal cleanup — preserving existing
+		// behavior for root-level service tasks with no handler.
+		// Pass tok.ID so the direct-attachment branch consumes THIS specific
+		// token, not the first token found at the same NodeID+ScopeID.
+		errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode)
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: append(preCmds, errCmds...)}, nil
 
 	case HumanClaimed:
 		task := s.TaskByToken(t.TaskToken)
@@ -148,7 +206,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 
 		// 1) Gateway arm check.
 		if ae := s.armedEventByTimer(t.TimerID); ae != nil {
-			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -157,7 +215,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 
 		// 2) Boundary arm check.
 		if ba := s.boundaryArmByTimer(t.TimerID); ba != nil {
-			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt())
+			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -166,7 +224,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 
 		// 3) Event sub-process arm check.
 		if ea := s.eventSubprocessArmByTimer(t.TimerID); ea != nil {
-			eaCmds, err := fireEventSubprocessArm(def, &s, *ea, t.OccurredAt())
+			eaCmds, err := fireEventSubprocessArm(def, &s, *ea, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -182,7 +240,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		if rec != nil {
 			switch rec.Kind {
 			case TimerSLA:
-				return handleSLAFired(def, &s, *rec, t.OccurredAt())
+				return handleSLAFired(def, &s, *rec, t.OccurredAt(), opt.Mode)
 			case TimerInWait:
 				return handleReminderFired(def, &s, *rec, t.OccurredAt())
 			}
@@ -205,7 +263,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{}, timerTdefErr
 		}
 		s.moveAlongSingleFlow(timerTdef, tok, t.OccurredAt())
-		driveCmds, err := drive(def, &s, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -249,7 +307,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 			cmds = append(cmds, CancelTimer{TimerID: timerID})
 		}
-		driveCmds, err := drive(def, &s, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -296,7 +354,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				mergeVars(&s, t.Payload)
 				matched = true
 			}
-			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -309,7 +367,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				mergeVars(&s, t.Payload)
 				matched = true
 			}
-			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt())
+			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -322,7 +380,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				mergeVars(&s, t.Payload)
 				matched = true
 			}
-			eaCmds, err := fireEventSubprocessArm(def, &s, *ea, t.OccurredAt())
+			eaCmds, err := fireEventSubprocessArm(def, &s, *ea, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -350,7 +408,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				return StepResult{}, signalTdefErr
 			}
 			s.moveAlongSingleFlow(signalTdef, tok, t.OccurredAt())
-			driveCmds, err := drive(def, &s, t.OccurredAt())
+			driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -379,7 +437,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{}, err
 		}
 		s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
-		driveCmds, err := drive(def, &s, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -423,7 +481,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// 1) Check whether the message matches an event-gateway arm (first-event-wins).
 		if ae := s.armedEventByMessage(t.Name, t.CorrelationKey); ae != nil {
 			mergeVars(&s, t.Payload)
-			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -433,7 +491,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// 2) Check whether the message matches an event sub-process arm.
 		if ea := s.eventSubprocessArmByMessage(t.Name, t.CorrelationKey); ea != nil {
 			mergeVars(&s, t.Payload)
-			eaCmds, err := fireEventSubprocessArm(def, &s, *ea, t.OccurredAt())
+			eaCmds, err := fireEventSubprocessArm(def, &s, *ea, t.OccurredAt(), opt.Mode)
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -456,7 +514,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{}, msgTdefErr
 		}
 		s.moveAlongSingleFlow(msgTdef, tok, t.OccurredAt())
-		driveCmds, err := drive(def, &s, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -496,12 +554,20 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 	return node.Subprocess, nil
 }
 
-// drive advances all active tokens until each is parked or consumed (Macro).
+// drive advances active tokens until each is parked or consumed.
+//
+// In Macro mode (default) drive loops until no active tokens remain.
+// In Micro mode drive stops after the first token park or terminal event,
+// leaving any remaining active tokens for subsequent Step(Micro) calls.
+// Auto-advancing nodes (StartEvent, gateway routing that produces new active
+// tokens) do not count as stops in Micro mode; execution passes through them
+// within the same drive call until a park/terminal is reached.
+//
 // def is the TOP-LEVEL process definition. For each token, the effective
 // definition (tdef) is resolved via defForScope against the token's ScopeID so
 // that tokens inside a sub-process scope resolve nodes/flows against the nested
 // definition rather than the top-level one.
-func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Command, error) {
+func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode) ([]Command, error) {
 	var cmds []Command
 	for {
 		tok := s.firstActive()
@@ -522,6 +588,13 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			continue
 		}
 
+		// stopped is set to true by any case that parks or terminally consumes
+		// this token (ServiceTask, UserTask, EndEvent, etc.). In Micro mode the
+		// loop breaks as soon as stopped is true, leaving remaining active tokens
+		// for the next Step call. Auto-advancing cases (StartEvent, gateway routing
+		// that produces new active tokens) leave stopped false so the loop continues.
+		stopped := false
+
 		switch node.Kind {
 		case model.KindStartEvent:
 			s.moveAlongSingleFlow(tdef, tok, at)
@@ -541,6 +614,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				return cmds, err
 			}
 			cmds = append(cmds, bndCmds...)
+			stopped = true // token parked: Micro stops here
 
 		case model.KindUserTask:
 			taskToken := s.nextTaskToken()
@@ -615,6 +689,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				return cmds, err
 			}
 			cmds = append(cmds, bndCmds...)
+			stopped = true // token parked: Micro stops here
 
 		case model.KindIntermediateCatchEvent:
 			if node.TimerDuration != "" {
@@ -652,6 +727,28 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				// Further event variants arrive in later plans.
 				tok.State = TokenWaitingCommand
 			}
+			stopped = true // token parked: Micro stops here
+
+		case model.KindErrorEndEvent:
+			// Error end event: throw an error with node.ErrorCode from the token's
+			// current scope. propagateError walks the scope chain outward looking for
+			// a matching boundary error handler on the enclosing sub-process. An error
+			// end event is not an activity node that carries a direct boundary, so we
+			// pass "" as originatingNodeID (no direct-attachment check needed) and ""
+			// as failingTokenID (the error-end token is already consumed above).
+			currentScopeID := tok.ScopeID
+			s.consumeToken(tok, at)
+			errCmds, propErr := propagateError(def, s, currentScopeID, "", "", node.ErrorCode, at, mode)
+			if propErr != nil {
+				return cmds, propErr
+			}
+			cmds = append(cmds, errCmds...)
+			// propagateError either caught the error (routing a token to the recovery
+			// flow and calling drive) or failed the instance. Either way, we stop
+			// the current drive loop iteration — the recovery token is already
+			// active and will be picked up by a subsequent drive call inside
+			// propagateError, or the instance is terminal.
+			return cmds, nil
 
 		case model.KindEndEvent:
 			// An EndEvent behaves differently depending on whether the token is at the
@@ -851,6 +948,14 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 						if err != nil {
 							return cmds, fmt.Errorf("engine: sub-process exit: %w", err)
 						}
+
+						// If the sub-process node itself carries a CompensationAction, record
+						// it in the parent scope. The snapshot is taken after the scope is
+						// closed (consistent: the sub-process completed at this point).
+						if spNode, spOK := parentDef.Node(subNodeID); spOK && spNode.CompensationAction != "" {
+							s.recordCompensation(parentScopeID, subNodeID, spNode.CompensationAction, at, copyVars(s.Variables))
+						}
+
 						outs := parentDef.Outgoing(subNodeID)
 						if len(outs) == 0 {
 							return cmds, fmt.Errorf("engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
@@ -860,6 +965,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 					}
 				}
 			}
+			// Token consumed (end event). In Micro mode, stop after this node-advance
+			// so the newly placed continuation token (if any) is processed in the next
+			// Step call. Paths that hit 'break' above exit the switch before reaching
+			// here, so stopped=false for those (continue-driving) paths.
+			stopped = true
 
 		case model.KindSubProcess:
 			// Embedded sub-process entry: open a scope, place a token on the nested
@@ -887,6 +997,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				return cmds, espErrScope
 			}
 			cmds = append(cmds, espCmdsScope...)
+			stopped = true // outer token consumed, inner token active: Micro stops here
 
 		case model.KindExclusiveGateway:
 			target, err := selectExclusiveTarget(tdef, s, node)
@@ -901,17 +1012,31 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 		case model.KindParallelGateway:
 			if len(tdef.Incoming(node.ID)) > 1 {
 				s.tryParallelJoin(tdef, tok, node, tok.ScopeID, at)
+				// Join pending: token is still in Tokens with State==TokenAtJoin.
+				// Join fired: token was consumed by tryParallelJoin (no longer in Tokens).
+				// Only stop in Micro when the join is pending (token still exists at join).
+				if t := s.tokenByID(tok.ID); t != nil && t.State == TokenAtJoin {
+					stopped = true
+				}
 			} else {
 				s.forkParallel(tdef, tok, node, tok.ScopeID, at)
+				// Fork: original token consumed, new active tokens placed. Auto-advance
+				// so the loop picks up the first new token and processes it (in Micro,
+				// it will stop when THAT token parks, not here at the fork itself).
 			}
 
 		case model.KindInclusiveGateway:
 			if len(tdef.Incoming(node.ID)) > 1 {
 				s.tryInclusiveJoin(tdef, tok, node, tok.ScopeID, at)
+				// Join pending: token still exists at join. Stop in Micro.
+				if t := s.tokenByID(tok.ID); t != nil && t.State == TokenAtJoin {
+					stopped = true
+				}
 			} else {
 				if err := s.forkInclusive(tdef, tok, node, tok.ScopeID, at); err != nil {
 					return cmds, err
 				}
+				// Fork: original token consumed, new active tokens placed. Auto-advance.
 			}
 
 		case model.KindEventBasedGateway:
@@ -966,6 +1091,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				}
 				s.ArmedEvents = append(s.ArmedEvents, ae)
 			}
+			stopped = true // gateway token parked: Micro stops here
 
 		case model.KindCallActivity:
 			// Call activity: emit StartSubInstance and park the token. The runtime
@@ -985,6 +1111,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
+			stopped = true // token parked: Micro stops here
 
 		case model.KindIntermediateThrowEvent:
 			if node.SignalName != "" {
@@ -996,16 +1123,26 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 					Payload: nil, // no per-instance payload from throw nodes in this plan
 				})
 				s.moveAlongSingleFlow(tdef, tok, at)
+				// Auto-advance: signal throw is fire-and-forget; stopped remains false.
 			} else {
 				// Non-signal intermediate throw: park for future plans (e.g. message
 				// throw, error throw). Parking avoids an infinite drive loop.
 				tok.State = TokenWaitingCommand
+				stopped = true // token parked: Micro stops here
 			}
 
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
 			tok.State = TokenWaitingCommand
+			stopped = true // token parked: Micro stops here
+		}
+
+		// Micro-mode: stop after the first park or terminal event. Auto-advancing
+		// cases (StartEvent, gateway routing that produces new active tokens) leave
+		// stopped=false so the loop continues to the next token within this Step call.
+		if mode == Micro && stopped {
+			break
 		}
 	}
 	return cmds, nil
@@ -1366,7 +1503,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 //     cancelling the winner's timer since it already fired). We SKIP cancelling the
 //     winner's timer since it has already fired and no longer exists in the scheduler.
 //   - drive() is called to advance execution beyond the routed target.
-func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time) ([]Command, error) {
+func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, mode StepMode) ([]Command, error) {
 	// Find the gateway token.
 	tok := s.tokenAwaiting("evtgw:" + ae.GatewayToken)
 	if tok == nil {
@@ -1429,11 +1566,268 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 	}
 
 	// Drive forward from the branch target.
-	driveCmds, err := drive(def, s, at)
+	driveCmds, err := drive(def, s, at, mode)
 	if err != nil {
 		return nil, err
 	}
 	cmds = append(cmds, driveCmds...)
+	return cmds, nil
+}
+
+// propagateError implements BPMN error propagation for a thrown errorCode.
+//
+// It performs two checks in order, stopping at the first match:
+//
+//  1. Direct-attachment check (only when originatingNodeID != ""):
+//     Inspect the token's OWN scope definition (defForScope(top, s, scopeID)) for
+//     a KindBoundaryEvent error event with AttachedTo == originatingNodeID and
+//     (ErrorCode == errorCode || ErrorCode == ""). This covers the case where a
+//     boundary error event is attached directly to the failing activity itself —
+//     e.g. a root-level ServiceTask "svc" with a KindBoundaryEvent{AttachedTo:"svc"}
+//     in the root definition. When found: consume ONLY the originating activity's
+//     token (already done by the caller), cancel its arms, and route a token to the
+//     boundary's outgoing flow TARGET in the SAME scope (scopeID). The scope is NOT
+//     closed — only the individual activity's token is consumed (interrupting
+//     boundary on a single node, contrast with enclosing-scope case below).
+//
+//  2. Enclosing-scope walk (unchanged from original behavior):
+//     Walk outward from scopeID to root. At each level, inspect the scope's activity
+//     node in the PARENT definition for a matching boundary error event with
+//     AttachedTo == scope.NodeID (the sub-process that owns the scope). When found:
+//     cancel ALL tokens in currentScopeID, close the scope, and route a token to the
+//     boundary's outgoing flow in the PARENT scope. This is the interrupting-boundary
+//     behavior for a sub-process error escape.
+//
+// Matching rule for a KindBoundaryEvent node bnd (both checks):
+//   - bnd.AttachedTo == <activity-node-id>
+//   - bnd.ErrorCode == errorCode (specific-code match) OR bnd.ErrorCode == "" (catch-all)
+//   - No timer/signal/message fields set (it is an error boundary, not a timer/signal boundary)
+//
+// When NO handler is found (neither direct nor enclosing):
+//   - Set s.Status = StatusFailed, s.EndedAt = &at.
+//   - Emit FailInstance{Err: errorCode}.
+//   - Emit CancelTimer for all outstanding timers, armed events, and boundaries.
+//
+// originatingNodeID should be set to the failing activity's NodeID (tok.NodeID) when
+// called from ActionFailed. For KindErrorEndEvent, pass "" (an error end event is not
+// an activity with a direct-attaching boundary).
+//
+// failingTokenID is the ID of the specific token that failed. When originatingNodeID
+// is non-empty (ActionFailed path), the direct-attachment branch consumes THIS token
+// by ID rather than by NodeID+ScopeID. This is correct when two active tokens occupy
+// the same node in the same scope (e.g. in a parallel/loop topology) — consuming by
+// ID ensures only the exact failing token is removed. For the KindErrorEndEvent path
+// (originatingNodeID == ""), the error-end token is already consumed by drive before
+// propagateError is called, so failingTokenID is unused.
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode) ([]Command, error) {
+	// ── Step 1: Direct-attachment check ──────────────────────────────────────
+	// Only when the caller provides an originating node (ActionFailed path).
+	// Inspect the failing token's OWN scope definition for a boundary error event
+	// with AttachedTo == originatingNodeID. If found, consume only the failing
+	// activity's token and route a recovery token in the SAME scope.
+	if originatingNodeID != "" {
+		ownDef, err := defForScope(top, s, scopeID)
+		if err != nil {
+			return nil, fmt.Errorf("engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
+		}
+
+		var directHandler *model.Node
+		for i := range ownDef.Nodes {
+			n := &ownDef.Nodes[i]
+			if n.Kind != model.KindBoundaryEvent {
+				continue
+			}
+			if n.AttachedTo != originatingNodeID {
+				continue
+			}
+			// Must be an error boundary (no timer/signal/message fields).
+			if n.TimerDuration != "" || n.SignalName != "" || n.MessageName != "" {
+				continue
+			}
+			// Match: catch-all or specific code.
+			if n.ErrorCode == "" || n.ErrorCode == errorCode {
+				nn := *n
+				directHandler = &nn
+				break
+			}
+		}
+
+		if directHandler != nil {
+			// Direct boundary found. The failing activity's token was already cleaned
+			// up by the ActionFailed handler (preCmds cancelled its arms; the token
+			// itself is still present but parked — we need to consume it now).
+			var cmds []Command
+
+			// Consume the failing activity's token by its specific ID (failingTokenID).
+			// Using the ID rather than NodeID+ScopeID ensures correctness when two
+			// active tokens share the same node in the same scope (e.g. a parallel or
+			// loop topology) — we remove only the exact failing token, not the first
+			// one found by position.
+			var failingTok *Token
+			if failingTokenID != "" {
+				failingTok = s.tokenByID(failingTokenID)
+			}
+			if failingTok == nil {
+				// Fallback: locate by NodeID+ScopeID (defensive; should not occur when
+				// the caller passes a valid failingTokenID).
+				for i := range s.Tokens {
+					if s.Tokens[i].NodeID == originatingNodeID && s.Tokens[i].ScopeID == scopeID {
+						failingTok = &s.Tokens[i]
+						break
+					}
+				}
+			}
+			if failingTok != nil {
+				s.consumeToken(failingTok, at)
+			}
+
+			// Find the boundary's outgoing flow target in the own scope definition.
+			outs := ownDef.Outgoing(directHandler.ID)
+			if len(outs) == 0 {
+				return cmds, fmt.Errorf("engine: propagateError: direct boundary %q has no outgoing flow", directHandler.ID)
+			}
+			flowTarget := outs[0].Target
+
+			// Place a recovery token in the SAME scope (the failing token's scope).
+			// This is the key distinction from the enclosing-scope case: only the
+			// failing activity's token is consumed; the scope itself stays open.
+			s.placeTokenInScope(flowTarget, scopeID, at)
+
+			// Drive forward from the recovery token.
+			driveCmds, err := drive(top, s, at, mode)
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, driveCmds...)
+			return cmds, nil
+		}
+	}
+
+	// ── Step 2: Enclosing-scope walk ─────────────────────────────────────────
+	// Walk the scope chain from scopeID outward to root ("").
+	// At each step, inspect the scope's activity node in the PARENT definition
+	// for a matching boundary error event. The loop terminates when currentScopeID
+	// reaches "" (root — no scope to inspect) or when a handler is found (early return).
+	for currentScopeID := scopeID; currentScopeID != ""; {
+		scope := s.scopeByID(currentScopeID)
+		if scope == nil {
+			// Scope is already closed (defensive). Stop walking.
+			break
+		}
+
+		parentScopeID := scope.ParentID
+		activityNodeID := scope.NodeID // the sub-process activity in the parent def
+
+		// Resolve the parent definition.
+		parentDef, err := defForScope(top, s, parentScopeID)
+		if err != nil {
+			return nil, fmt.Errorf("engine: propagateError: resolving parent def for scope %q: %w", currentScopeID, err)
+		}
+
+		// Scan the parent def for a boundary error event attached to activityNodeID
+		// that matches errorCode (specific or catch-all).
+		var handler *model.Node
+		for i := range parentDef.Nodes {
+			n := &parentDef.Nodes[i]
+			if n.Kind != model.KindBoundaryEvent {
+				continue
+			}
+			if n.AttachedTo != activityNodeID {
+				continue
+			}
+			// Only boundary error events have a non-zero ErrorCode or catch-all
+			// behavior. We identify a "boundary error event" as a KindBoundaryEvent
+			// that has NO TimerDuration and NO SignalName and NO MessageName set
+			// (i.e. it is not a timer/signal/message boundary but an error boundary).
+			// The presence of ErrorCode (specific or empty catch-all) is the marker.
+			//
+			// Design note: we check !n.SignalName && !n.TimerDuration && !n.MessageName
+			// so timer/signal boundary events on the same host are skipped. A boundary
+			// event with no trigger fields at all defaults to error boundary semantics.
+			if n.TimerDuration != "" || n.SignalName != "" || n.MessageName != "" {
+				continue // not an error boundary
+			}
+			// Match: catch-all (n.ErrorCode=="") or specific code match.
+			if n.ErrorCode == "" || n.ErrorCode == errorCode {
+				nn := *n
+				handler = &nn
+				break
+			}
+		}
+
+		if handler != nil {
+			// Handler found in the PARENT scope. Cancel all tokens in currentScopeID,
+			// close the scope, then route a token along the boundary's outgoing flow
+			// in the parent scope.
+
+			// 1. Cancel all tokens in the erroring scope.
+			var cmds []Command
+			tokensToCancel := make([]Token, 0, len(s.Tokens))
+			for _, tok := range s.Tokens {
+				if tok.ScopeID == currentScopeID {
+					tokensToCancel = append(tokensToCancel, tok)
+				}
+			}
+			for _, tok := range tokensToCancel {
+				// Cancel SLA/reminder timers (UserTask case).
+				for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
+					cmds = append(cmds, CancelTimer{TimerID: timerID})
+				}
+				// Cancel boundary arms for this host token.
+				for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+					cmds = append(cmds, CancelTimer{TimerID: timerID})
+				}
+				// Cancel any event-gateway arms.
+				if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
+					for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
+						cmds = append(cmds, CancelTimer{TimerID: timerID})
+					}
+				}
+				tokPtr := s.tokenByID(tok.ID)
+				if tokPtr != nil {
+					s.consumeToken(tokPtr, at)
+				}
+			}
+			// Cancel ESP arms for the scope.
+			for _, timerID := range s.removeEventSubprocessArmsForScope(currentScopeID) {
+				cmds = append(cmds, CancelTimer{TimerID: timerID})
+			}
+
+			// 2. Close the erroring scope.
+			s.closeScope(currentScopeID)
+
+			// 3. Find the boundary's outgoing flow target in the parent definition.
+			outs := parentDef.Outgoing(handler.ID)
+			if len(outs) == 0 {
+				return cmds, fmt.Errorf("engine: propagateError: boundary error %q has no outgoing flow", handler.ID)
+			}
+			flowTarget := outs[0].Target
+
+			// 4. Place a token on the recovery path in the parent scope.
+			s.placeTokenInScope(flowTarget, parentScopeID, at)
+
+			// 5. Drive forward from the recovery token.
+			driveCmds, err := drive(top, s, at, mode)
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, driveCmds...)
+			return cmds, nil
+		}
+
+		// No handler at this scope level — walk up to the parent.
+		currentScopeID = parentScopeID
+	}
+
+	// No handler found anywhere in the scope chain → unhandled error.
+	// Set instance to failed and perform terminal cleanup.
+	s.Status = StatusFailed
+	ended := at
+	s.EndedAt = &ended
+	var cmds []Command
+	cmds = append(cmds, FailInstance{Err: errorCode})
+	cmds = append(cmds, s.cancelAllTimers()...)
+	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
 	return cmds, nil
 }
 
@@ -1507,7 +1901,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 //  3. Remove ONLY this boundary arm (fired once; do not re-arm — repeating out of scope).
 //  4. Place an additional Active token at the boundary's outgoing flow target.
 //  5. Drive forward (the new token).
-func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time) ([]Command, error) {
+func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, mode StepMode) ([]Command, error) {
 	// Find the host token by ID (not by AwaitCommand — the host token parks on
 	// taskToken/cmdID, not on the boundary timer). If the token is gone (already
 	// consumed by another path), this is a late fire — clean no-op.
@@ -1570,7 +1964,7 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 	}
 
 	// Drive forward (the newly placed token(s)).
-	driveCmds, err := drive(def, s, at)
+	driveCmds, err := drive(def, s, at, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -1670,7 +2064,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 //  3. Remove ONLY this arm (one-shot).
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
-func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventSubprocessArm, at time.Time) ([]Command, error) {
+func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventSubprocessArm, at time.Time, mode StepMode) ([]Command, error) {
 	// Verify the enclosing scope is still active. For root scope (empty enclosingScopeID),
 	// the scope is always "active" as long as the instance is running.
 	if ea.EnclosingScopeID != "" {
@@ -1775,7 +2169,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 	}
 
 	// Drive forward.
-	driveCmds, err := drive(def, s, at)
+	driveCmds, err := drive(def, s, at, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -1795,7 +2189,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 //     (c) marks the task Cancelled and emits UpdateTask,
 //     (d) cancels any other timers (e.g. reminders) for the same task,
 //     (e) removes the SLA timer record and drives forward.
-func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time) (StepResult, error) {
+func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode) (StepResult, error) {
 	// Find the parked token. If the token is gone (task completed, instance
 	// advanced), the SLA fired late → clean no-op.
 	tok := s.tokenAwaiting(rec.TaskToken)
@@ -1879,7 +2273,7 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 	s.removeTimer(rec.TimerID)
 
 	// (e) Drive forward from the alternative path.
-	driveCmds, err := drive(def, s, at)
+	driveCmds, err := drive(def, s, at, mode)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -1972,6 +2366,213 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
+// ── Compensation helpers ──────────────────────────────────────────────────────
+
+// compensationRecordsForScope returns a read-only slice of CompensationRecords for
+// the given scope. scopeID "" means the root scope (s.RootCompensations).
+func compensationRecordsForScope(s *InstanceState, scopeID string) []CompensationRecord {
+	if scopeID == "" {
+		return s.RootCompensations
+	}
+	sc := s.scopeByID(scopeID)
+	if sc == nil {
+		return nil
+	}
+	return sc.Compensations
+}
+
+// stepCompensateRequested handles a CompensateRequested trigger. It sets the
+// instance to StatusCompensating, cancels all in-flight tokens (interrupting
+// normal execution), builds the compensation cursor, and emits the first
+// InvokeAction for the most-recently completed compensable activity that is
+// AFTER t.ToNode in the completion order (reverse walk).
+//
+// If there are no records to compensate (empty list, or ToNode is the last record),
+// the function finalises compensation immediately without emitting any command.
+func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode) (StepResult, error) {
+	s.Status = StatusCompensating
+
+	// Cancel all in-flight tokens (interrupting normal execution).
+	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
+	var preCmds []Command
+
+	// Snapshot tokens to cancel (avoid mutating while iterating).
+	tokensToCancel := make([]Token, len(s.Tokens))
+	copy(tokensToCancel, s.Tokens)
+	for _, tok := range tokensToCancel {
+		// Cancel SLA/reminder timers for this token.
+		for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
+		// Cancel boundary arms.
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
+		// Cancel event-gateway arms.
+		if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
+			for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
+				preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+			}
+		}
+		tokPtr := s.tokenByID(tok.ID)
+		if tokPtr != nil {
+			s.consumeToken(tokPtr, t.OccurredAt())
+		}
+	}
+	// Cancel any remaining timers and event-subprocess arms.
+	preCmds = append(preCmds, s.cancelAllTimers()...)
+	preCmds = append(preCmds, s.cancelAllArmsAndBoundaries()...)
+
+	// For now we compensate the root scope (top-level admin path).
+	// Task 4 will extend this to scope-targeted compensation.
+	const scopeID = ""
+	records := compensationRecordsForScope(s, scopeID)
+
+	// Determine the starting index: the last record whose NodeID != t.ToNode.
+	// We walk from the end of records backward; the first record (from the right)
+	// that is NOT the ToNode is the starting point.
+	//
+	// Because records are stored in completion order (oldest first), the reverse
+	// walk is: len(records)-1 down to 0.
+	//
+	// Find how many records are eligible (those AFTER ToNode in completion order).
+	// If ToNode == "", all records are eligible.
+	// If ToNode != "", we exclude the record whose NodeID == ToNode (it is the
+	// rollback TARGET — we do not compensate it). All records recorded AFTER ToNode
+	// (i.e. later in the slice) are eligible.
+	startIndex := len(records) - 1
+	if t.ToNode != "" {
+		// Find the index of ToNode in the records (it's recorded in completion order).
+		toNodeIdx := -1
+		for i, r := range records {
+			if r.NodeID == t.ToNode {
+				toNodeIdx = i
+			}
+		}
+		if toNodeIdx >= 0 {
+			// Only records AFTER toNodeIdx (i.e. indices > toNodeIdx) are eligible.
+			// The first to emit is the last eligible record.
+			if toNodeIdx >= len(records)-1 {
+				// ToNode was the last completed node — nothing to compensate.
+				finishRes, finishErr := stepCompensationFinish(def, s, t.ToNode, t.OccurredAt(), mode)
+				if finishErr != nil {
+					return StepResult{}, finishErr
+				}
+				finishRes.Commands = append(preCmds, finishRes.Commands...)
+				return finishRes, nil
+			}
+			// startIndex = the last eligible record = len(records)-1
+			// (all records after toNodeIdx — no change needed; startIndex already set).
+		} else {
+			// ToNode was specified but not found in the compensation records.
+			// Return a descriptive error so that an admin typo is surfaced rather
+			// than silently rolling back everything.
+			return StepResult{}, fmt.Errorf("engine: compensation target node %q not found in scope records", t.ToNode)
+		}
+	}
+
+	if startIndex < 0 {
+		// No records at all.
+		finishRes, finishErr := stepCompensationFinish(def, s, t.ToNode, t.OccurredAt(), mode)
+		if finishErr != nil {
+			return StepResult{}, finishErr
+		}
+		finishRes.Commands = append(preCmds, finishRes.Commands...)
+		return finishRes, nil
+	}
+
+	// Emit the first compensation InvokeAction (record at startIndex).
+	rec := records[startIndex]
+	cmdID := s.nextCommandID()
+	s.Compensating = compensationCursor{
+		ScopeID:     scopeID,
+		ToNode:      t.ToNode,
+		NextIndex:   startIndex,
+		ActiveCmdID: cmdID,
+	}
+	cmd := InvokeAction{
+		CommandID: cmdID,
+		Name:      rec.Action,
+		Input:     copyVars(rec.Input),
+	}
+	cmds := append(preCmds, cmd)
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// stepCompensationAdvance advances the compensation cursor after a compensation
+// InvokeAction completes (ActionCompleted with cursor.ActiveCmdID). It emits the
+// next InvokeAction in reverse order, or finalises compensation if the walk is done.
+func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode) (StepResult, error) {
+	cur := s.Compensating
+	records := compensationRecordsForScope(s, cur.ScopeID)
+
+	// Advance: the record we just completed is at cur.NextIndex. Move to the
+	// previous record (next in reverse order). nextIdx = cur.NextIndex - 1.
+	nextIdx := cur.NextIndex - 1
+
+	// Determine the stop boundary: the index of ToNode (exclusive, i.e. we stop
+	// BEFORE emitting that index's compensation).
+	toNodeIdx := -1
+	if cur.ToNode != "" {
+		for i, r := range records {
+			if r.NodeID == cur.ToNode {
+				toNodeIdx = i
+			}
+		}
+	}
+
+	// Check if next record is within the eligible range.
+	// Eligible: nextIdx >= 0 AND nextIdx > toNodeIdx (i.e. the record is AFTER ToNode).
+	if nextIdx < 0 || nextIdx <= toNodeIdx {
+		// Walk complete: either exhausted all records, or reached ToNode boundary.
+		return stepCompensationFinish(def, s, cur.ToNode, at, mode)
+	}
+
+	// Emit the next compensation action.
+	rec := records[nextIdx]
+	cmdID := s.nextCommandID()
+	s.Compensating = compensationCursor{
+		ScopeID:     cur.ScopeID,
+		ToNode:      cur.ToNode,
+		NextIndex:   nextIdx,
+		ActiveCmdID: cmdID,
+	}
+	cmd := InvokeAction{
+		CommandID: cmdID,
+		Name:      rec.Action,
+		Input:     copyVars(rec.Input),
+	}
+	return StepResult{State: *s, Commands: []Command{cmd}}, nil
+}
+
+// stepCompensationFinish finalises the compensation walk:
+//   - If toNode != "": place a token at toNode, set Status = StatusRunning, and
+//     drive forward (resuming execution from the rollback target).
+//   - If toNode == "": all records have been compensated; set Status =
+//     StatusTerminated (full rollback — no resume point).
+func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode) (StepResult, error) {
+	// Clear the cursor — compensation walk is done.
+	s.Compensating = compensationCursor{}
+
+	if toNode == "" {
+		// Full rollback: no resume point → terminate.
+		s.Status = StatusTerminated
+		ended := at
+		s.EndedAt = &ended
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// Partial rollback: resume at toNode.
+	s.Status = StatusRunning
+	// Place a new token at toNode and drive forward.
+	s.placeToken(toNode, at)
+	driveCmds, err := drive(def, s, at, mode)
+	if err != nil {
+		return StepResult{}, err
+	}
+	return StepResult{State: *s, Commands: driveCmds}, nil
+}
+
 // ---- value helpers ----
 
 func mergeVars(s *InstanceState, in map[string]any) {
@@ -2035,6 +2636,24 @@ func cloneState(st InstanceState) InstanceState {
 	// so a slice copy is sufficient to ensure mutations to the clone do not affect
 	// the original.
 	s.EventSubprocesses = append([]eventSubprocessArm(nil), st.EventSubprocesses...)
+	// Deep-copy RootCompensations: each CompensationRecord contains an Input
+	// map[string]any (a reference type) that must be independently allocated so
+	// mutations to a clone's record do not affect the original.
+	// Use append([]T(nil), src...) instead of a len>0 guard + make so that a
+	// non-nil empty source produces a non-nil empty clone (nil-vs-empty consistency).
+	{
+		src := st.RootCompensations
+		if src == nil {
+			s.RootCompensations = nil
+		} else {
+			s.RootCompensations = make([]CompensationRecord, len(src))
+			for i, cr := range src {
+				ccr := cr
+				ccr.Input = copyVars(cr.Input)
+				s.RootCompensations[i] = ccr
+			}
+		}
+	}
 	// Deep-copy Scopes: each Scope contains a Compensations slice that must be
 	// independently allocated so mutations to a clone's compensation records do
 	// not affect the original. The other Scope fields (ID, NodeID, ParentID) are
@@ -2044,7 +2663,22 @@ func cloneState(st InstanceState) InstanceState {
 		s.Scopes = make([]Scope, len(st.Scopes))
 		for i, sc := range st.Scopes {
 			cs := sc
-			cs.Compensations = append([]CompensationRecord(nil), sc.Compensations...)
+			// Deep-copy each CompensationRecord: the Input field is a map[string]any
+			// (a reference type) and must be independently allocated so mutations to
+			// a clone's Input do not propagate back to the original's record.
+			// Use explicit nil-check for nil-vs-empty consistency: a nil Compensations
+			// in the source produces nil in the clone; a non-nil empty slice produces
+			// a non-nil empty clone.
+			if sc.Compensations == nil {
+				cs.Compensations = nil
+			} else if len(sc.Compensations) > 0 {
+				cs.Compensations = make([]CompensationRecord, len(sc.Compensations))
+				for j, cr := range sc.Compensations {
+					ccr := cr
+					ccr.Input = copyVars(cr.Input)
+					cs.Compensations[j] = ccr
+				}
+			}
 			s.Scopes[i] = cs
 		}
 	}

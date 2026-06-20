@@ -138,20 +138,30 @@ type eventSubprocessArm struct {
 	MessageKey string
 }
 
-// CompensationRecord is a minimal record of a completed compensable activity
-// within a scope. Plan 8 (compensation/rollback) will populate and consume
-// these records; they are kept minimal here — just enough to identify the
-// activity and its compensating action.
+// CompensationRecord is a record of a completed compensable activity within a
+// scope. Plan 8 (compensation/rollback) populates these records when an activity
+// with a non-empty CompensationAction completes; it walks them in reverse
+// completion order when rolling back the scope.
 //
 // Fields:
-//   - ActivityNode: the BPMN node ID of the completed compensable activity.
+//   - NodeID: the BPMN node ID of the completed compensable activity.
 //   - Action: the name of the service action to invoke as compensation.
+//   - CompletedAt: the time the activity completed (from the trigger's OccurredAt;
+//     never time.Now() — deterministic and clock-free).
+//   - Input: a snapshot of the instance variables at the moment the activity was
+//     invoked (i.e. the same map passed to InvokeAction). Taken before merging the
+//     activity's output so the compensation action receives the original inputs.
+//     Deep-copied in cloneState so mutations to the clone do not affect the original.
 type CompensationRecord struct {
-	// ActivityNode is the BPMN node ID of the completed compensable activity.
-	ActivityNode string
+	// NodeID is the BPMN node ID of the completed compensable activity.
+	NodeID string
 	// Action is the name of the compensating service action (registered in the
 	// service-action catalog) to run when this activity is rolled back.
 	Action string
+	// CompletedAt is the time the activity completed (from the trigger's OccurredAt).
+	CompletedAt time.Time
+	// Input is a snapshot of the instance variables at invocation time.
+	Input map[string]any
 }
 
 // Scope represents an active execution scope within a process instance. Scopes
@@ -230,6 +240,43 @@ type NodeVisit struct {
 	ActorID   *string // who completed a human-task visit (later plans)
 }
 
+// compensationCursor tracks progress through an in-flight reverse-order
+// compensation walk. It is set when a CompensateRequested trigger arrives and
+// cleared when the walk completes (all targeted records processed).
+//
+// Fields:
+//   - ScopeID: the scope whose records are being walked ("" = root scope /
+//     RootCompensations). Used to locate the correct record slice on each step.
+//   - ToNode: the rollback target — compensation walks back to (but not
+//     including) this node. Empty means "roll back everything".
+//   - NextIndex: the index into the relevant CompensationRecord slice of the
+//     record currently in-flight (most recently emitted). The walk proceeds
+//     from len(records)-1 down to 0 (reverse order). Initially set to
+//     len(records)-1 (the most-recently completed record). Decremented by one
+//     after each ActionCompleted while Status == StatusCompensating. The active
+//     InvokeAction's CommandID is tracked in ActiveCmdID so ActionCompleted can
+//     distinguish a compensation response from a normal one.
+//   - ActiveCmdID: the CommandID of the in-flight compensation InvokeAction.
+//     When ActionCompleted arrives with this CommandID and Status ==
+//     StatusCompensating, the engine advances the cursor to the next record
+//     rather than doing normal token routing.
+//
+// cloneState deep-copies this struct via value copy (all fields are plain
+// scalars — no pointers or maps). No additional deep-copy code is needed.
+type compensationCursor struct {
+	// ScopeID identifies the scope being compensated ("" = root).
+	ScopeID string
+	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
+	ToNode string
+	// NextIndex is the index of the CompensationRecord currently in-flight
+	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
+	// compensation actions complete; the next record to emit is NextIndex-1.
+	NextIndex int
+	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
+	// in flight. Cleared when the step completes.
+	ActiveCmdID string
+}
+
 // InstanceState is the authoritative snapshot of a running instance.
 type InstanceState struct {
 	InstanceID string
@@ -272,11 +319,29 @@ type InstanceState struct {
 	// Iteration is in openScope (ScopeSeq) order, which is deterministic.
 	Scopes []Scope
 
+	// RootCompensations records completed compensable activities at the ROOT
+	// (top-level) scope. It is the compensation list for the implicit root
+	// execution scope — the counterpart of Scope.Compensations for sub-process
+	// scopes, but stored directly on InstanceState so that s.Scopes remains
+	// clean (containing ONLY currently-open sub-process scopes, as expected by
+	// existing tests that assert on len(s.Scopes)).
+	//
+	// Plan 8 (compensation rollback) reads this in reverse order when rolling
+	// back top-level compensable activities.
+	RootCompensations []CompensationRecord
+
 	// EventSubprocesses holds the set of pending arms for in-flight event
 	// sub-processes. One entry per KindEventSubProcess node while its enclosing
 	// scope is active. Entries are appended in definition-scan order (deterministic).
 	// Removed when the trigger fires (one-shot) or when the enclosing scope closes.
 	EventSubprocesses []eventSubprocessArm
+
+	// Compensating tracks the in-flight reverse-order compensation walk, if any.
+	// It is non-zero only while Status == StatusCompensating. The cursor is a
+	// plain value struct (all scalar fields); cloneState copies it by value
+	// automatically as part of the InstanceState struct copy — no extra
+	// deep-copy code is required.
+	Compensating compensationCursor
 
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
@@ -364,14 +429,19 @@ func (s *InstanceState) cancelAllTimers() []Command {
 // arms) that has a non-empty TimerID, then clears both slices. Iteration is in
 // slice order (ArmedEvents first, then Boundaries) for determinism.
 //
-// This is called alongside cancelAllTimers on the ActionFailed terminal path to
-// prevent gateway and boundary timer arms from leaking as orphaned scheduled
-// tasks in the runtime scheduler.
+// This is called alongside cancelAllTimers on ALL terminal paths to prevent
+// gateway and boundary timer arms from leaking as orphaned scheduled tasks in
+// the runtime scheduler. Callers include:
+//   - ActionFailed (unhandled error → StatusFailed)
+//   - CancelRequested (admin cancel → StatusTerminated)
+//   - SubInstanceFailed (child instance failed → parent StatusFailed)
+//   - propagateError's unhandled-error terminal path
+//   - stepCompensateRequested (cancels all in-flight tokens before compensating)
 //
-// NOTE: A comprehensive sweep across ALL terminal transitions (not just
-// ActionFailed) and multi-token scenarios is deferred to the errors/compensation
-// plan (Plan 8). This covers ActionFailed specifically, consistent with the
-// Plan-5 precedent for cancelAllTimers.
+// EventSubprocesses arms are also drained on the terminal and compensation paths
+// via removeEventSubprocessArmsForScope — this function does NOT drain them, so
+// callers that need to cover ESP arms call removeEventSubprocessArmsForScope
+// separately.
 func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	var cmds []Command
 	for _, ae := range s.ArmedEvents {
@@ -560,6 +630,33 @@ func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []stri
 	}
 	s.EventSubprocesses = out
 	return cancelTimerIDs
+}
+
+// recordCompensation appends a CompensationRecord to the scope identified by
+// scopeID. If scopeID is "" (root-level token), the record is appended to
+// s.RootCompensations — the root-scope compensation list that is stored directly
+// on the InstanceState rather than in a Scope entry. This keeps s.Scopes clean
+// (containing only currently-open sub-process scopes) so that existing tests that
+// assert on len(s.Scopes) are unaffected.
+//
+// If scopeID is non-empty and the scope is not found (defensive: should not occur
+// in a well-formed state), the call is a no-op.
+func (s *InstanceState) recordCompensation(scopeID, nodeID, action string, completedAt time.Time, input map[string]any) {
+	rec := CompensationRecord{
+		NodeID:      nodeID,
+		Action:      action,
+		CompletedAt: completedAt,
+		Input:       input,
+	}
+	if scopeID == "" {
+		s.RootCompensations = append(s.RootCompensations, rec)
+		return
+	}
+	scope := s.scopeByID(scopeID)
+	if scope == nil {
+		return // defensive no-op
+	}
+	scope.Compensations = append(scope.Compensations, rec)
 }
 
 // openScope creates a new Scope for the given nodeID nested inside

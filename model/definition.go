@@ -58,6 +58,12 @@ type Node struct {
 	// ReminderAction is the name of the ServiceAction to invoke on each reminder.
 	ReminderAction string
 
+	// CompensationAction is the name of the ServiceAction to invoke as compensation
+	// when this activity is rolled back (Plan 8 compensation/rollback). Non-empty
+	// only on activity nodes (KindServiceTask, KindSubProcess, etc.) that participate
+	// in compensation. An empty value means the node is not compensable.
+	CompensationAction string
+
 	// Event correlation fields (signal/message catch/throw and boundary events).
 
 	// SignalName is the signal reference for a signal catch/throw event or a
@@ -71,6 +77,21 @@ type Node struct {
 	// correlation key for message matching. Optional; empty means no correlation.
 	// This field is a plain string in the model — evaluation happens in the engine.
 	CorrelationKey string
+
+	// ErrorCode is the BPMN error code for error end events (KindErrorEndEvent)
+	// and boundary error events (KindBoundaryEvent with error trigger).
+	//
+	// For KindErrorEndEvent: the error code thrown when the node is reached.
+	// Non-empty — an error end event with an empty ErrorCode throws an anonymous
+	// error (effectively a catch-all match on any boundary error handler with an
+	// empty ErrorCode).
+	//
+	// For KindBoundaryEvent: the error code this boundary catches.
+	// Empty means "catch-all" — catches any error code thrown from the attached
+	// activity or its nested scope.
+	// Non-empty means "catch specific" — only catches errors whose code equals
+	// this value.
+	ErrorCode string
 
 	// Boundary event fields (KindBoundaryEvent).
 

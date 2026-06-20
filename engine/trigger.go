@@ -180,3 +180,57 @@ type SubInstanceFailed struct {
 func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFailed {
 	return SubInstanceFailed{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Err: errMsg}
 }
+
+// CompensateRequested is an admin/debug trigger that initiates reverse-order
+// compensation rollback for a running process instance. The engine walks the
+// relevant compensation records in reverse completion order, emitting one
+// InvokeAction per record (down to and excluding ToNode), then resumes at
+// ToNode (StatusRunning) or terminates (StatusTerminated) when ToNode is empty.
+//
+// ToNode: the BPMN node ID to roll back to (exclusive — that node's compensation
+// is NOT re-run). An empty ToNode means "roll back everything" — the instance
+// ends in StatusTerminated when all records are exhausted.
+//
+// LIMITATION — root scope only: CompensateRequested currently targets only the
+// ROOT scope's compensation records (InstanceState.RootCompensations). Records
+// accumulated inside a sub-process scope are attached to the Scope entry, but
+// those scopes are CLOSED (and their Compensations dropped) when the sub-process
+// completes normally. As a result, completed sub-process scopes are not yet
+// rollback-able via this trigger. Consumers should not rely on CompensateRequested
+// reaching into historical sub-process records — this is a known limitation tracked
+// as a follow-up. The Compensate command (reserved, not yet emitted) is the intended
+// future vehicle for scope-targeted compensation.
+type CompensateRequested struct {
+	baseTrigger
+	// ToNode is the rollback target node ID. Compensation runs from the most-recently
+	// completed record back to (but not including) this node. Empty means full rollback.
+	ToNode string
+}
+
+// NewCompensateRequested builds a CompensateRequested trigger stamped with the
+// given time. toNode is the rollback target (empty = full rollback).
+func NewCompensateRequested(at time.Time, toNode string) CompensateRequested {
+	return CompensateRequested{baseTrigger: baseTrigger{at: at}, ToNode: toNode}
+}
+
+// CancelRequested is an admin trigger that immediately terminates a running
+// process instance. The engine consumes all in-flight tokens, cancels any
+// outstanding timers and boundary/gateway arms, sets Status to StatusTerminated,
+// and emits FailInstance{Err:"cancelled"} as the terminal command.
+//
+// Behavior on an already-terminal instance (StatusCompleted, StatusFailed,
+// StatusTerminated): the trigger is accepted without error; the status is
+// overwritten to StatusTerminated (idempotent intent) and no harmful side effects
+// occur since there are no live tokens or timers to cancel.
+type CancelRequested struct {
+	baseTrigger
+}
+
+// NewCancelRequested builds a CancelRequested trigger stamped with the given time.
+func NewCancelRequested(at time.Time) CancelRequested {
+	return CancelRequested{baseTrigger: baseTrigger{at: at}}
+}
+
+// Compile-time assertions: CompensateRequested and CancelRequested must satisfy Trigger.
+var _ Trigger = CompensateRequested{}
+var _ Trigger = CancelRequested{}

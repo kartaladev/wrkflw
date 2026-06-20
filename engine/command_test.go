@@ -96,6 +96,21 @@ var (
 // Compile-time interface assertion: StartSubInstance must satisfy engine.Command.
 var _ engine.Command = engine.StartSubInstance{}
 
+// Compile-time interface assertion: Compensate must satisfy engine.Command.
+var _ engine.Command = engine.Compensate{}
+
+// TestCompensateCommandFields asserts that Compensate stores ScopeID and FromNode faithfully.
+func TestCompensateCommandFields(t *testing.T) {
+	cmd := engine.Compensate{ScopeID: "scope-1", FromNode: "node-x"}
+	assert.Equal(t, "scope-1", cmd.ScopeID)
+	assert.Equal(t, "node-x", cmd.FromNode)
+
+	// Zero-value must satisfy Command (compile-time already checked; runtime sanity).
+	var c engine.Command = engine.Compensate{}
+	_, ok := c.(engine.Compensate)
+	assert.True(t, ok, "Compensate zero-value must satisfy engine.Command")
+}
+
 // TestTimerKindConstsAreDistinct asserts the three TimerKind values are distinct.
 func TestTimerKindConstsAreDistinct(t *testing.T) {
 	kinds := []engine.TimerKind{

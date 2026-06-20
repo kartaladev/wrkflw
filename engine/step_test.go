@@ -100,7 +100,7 @@ func TestStepDoesNotMutateInput(t *testing.T) {
 				NodeID:   "sub",
 				ParentID: "",
 				Compensations: []engine.CompensationRecord{
-					{ActivityNode: "svc", Action: "undo-svc"},
+					{NodeID: "svc", Action: "undo-svc"},
 				},
 			},
 		},
@@ -116,7 +116,7 @@ func TestStepDoesNotMutateInput(t *testing.T) {
 	require.Len(t, in.Scopes, 1)
 	assert.Equal(t, "i1-s1", in.Scopes[0].ID)
 	require.Len(t, in.Scopes[0].Compensations, 1)
-	assert.Equal(t, "svc", in.Scopes[0].Compensations[0].ActivityNode)
+	assert.Equal(t, "svc", in.Scopes[0].Compensations[0].NodeID)
 	assert.Equal(t, "undo-svc", in.Scopes[0].Compensations[0].Action)
 }
 
@@ -133,12 +133,23 @@ func TestStepActionFailedFailsInstance(t *testing.T) {
 		engine.NewActionFailed(at.Add(time.Second), cmdID, "boom", false), engine.StepOptions{})
 	require.NoError(t, err)
 
-	require.Len(t, r2.Commands, 1)
-	fi, ok := r2.Commands[0].(engine.FailInstance)
-	require.True(t, ok)
-	assert.Equal(t, "boom", fi.Err)
+	// Verify behavioral outcome: instance is failed and a FailInstance command is
+	// present. We scan for it by type rather than checking the exact command count so
+	// the test remains valid if terminal-cleanup commands (e.g. CancelTimer) are
+	// legitimately added in the future.
 	assert.Equal(t, engine.StatusFailed, r2.State.Status)
 	require.NotNil(t, r2.State.EndedAt)
+
+	var fi *engine.FailInstance
+	for _, c := range r2.Commands {
+		if v, ok := c.(engine.FailInstance); ok {
+			vv := v
+			fi = &vv
+			break
+		}
+	}
+	require.NotNil(t, fi, "FailInstance command must be present for unhandled ActionFailed")
+	assert.Equal(t, "boom", fi.Err)
 }
 
 func TestStepActionCompletedUnknownCommandID(t *testing.T) {
@@ -154,9 +165,3 @@ func TestStepActionCompletedUnknownCommandID(t *testing.T) {
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
 }
 
-func TestStepMicroModeNotImplemented(t *testing.T) {
-	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	_, err := engine.Step(linearDef(), engine.InstanceState{InstanceID: "i1"},
-		engine.NewStartInstance(at, nil), engine.StepOptions{Mode: engine.Micro})
-	require.ErrorIs(t, err, engine.ErrMicroNotImplemented)
-}

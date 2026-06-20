@@ -46,6 +46,12 @@ var (
 	// DefRef field. A call-activity must name the top-level definition it
 	// delegates to so the runtime registry can resolve it at execution time.
 	ErrMissingDefRef = errors.New("model: call-activity node missing definition reference")
+	// ErrBoundaryErrorHost is returned when a boundary error event
+	// (KindBoundaryEvent with no TimerDuration/SignalName/MessageName) is
+	// attached to an activity that cannot throw a BPMN error. Only
+	// KindServiceTask, KindSubProcess, and KindCallActivity may host a
+	// boundary error event; user tasks and task variants are not valid hosts.
+	ErrBoundaryErrorHost = errors.New("model: boundary error event attached to non-error-throwing activity")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -138,10 +144,22 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		}
 	}
 
+	// errorBoundaryHostKinds is the subset of activityKinds that can throw a
+	// BPMN error and therefore may host a boundary error event.
+	errorBoundaryHostKinds := map[NodeKind]bool{
+		KindServiceTask:  true,
+		KindSubProcess:   true,
+		KindCallActivity: true,
+	}
+
 	// Boundary events: AttachedTo must reference an existing activity node.
 	// Activities are the node kinds that park execution and can host a boundary:
 	// ServiceTask, UserTask, ReceiveTask, SendTask, BusinessRuleTask,
 	// SubProcess, CallActivity. Gateways and events are not valid hosts.
+	//
+	// Additionally, a boundary ERROR event (no TimerDuration/SignalName/MessageName)
+	// may only attach to activities that can throw a BPMN error: ServiceTask,
+	// SubProcess, or CallActivity.
 	for _, n := range d.Nodes {
 		if n.Kind != KindBoundaryEvent {
 			continue
@@ -149,6 +167,13 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		host, ok := d.Node(n.AttachedTo)
 		if !ok || !activityKinds[host.Kind] {
 			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q", ErrBoundaryAttachment, n.ID, n.AttachedTo))
+			continue // skip further checks — attachment itself is invalid
+		}
+		// If this is a boundary error event (no timer/signal/message trigger),
+		// the host must be an error-throwing activity.
+		isErrorBoundary := n.TimerDuration == "" && n.SignalName == "" && n.MessageName == ""
+		if isErrorBoundary && !errorBoundaryHostKinds[host.Kind] {
+			errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, n.ID, n.AttachedTo, host.Kind))
 		}
 	}
 
