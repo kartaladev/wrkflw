@@ -5,6 +5,18 @@ import (
 	"fmt"
 )
 
+// activityKinds is the set of NodeKinds that park execution and may host a
+// boundary event. Gateways and events are not valid hosts.
+var activityKinds = map[NodeKind]bool{
+	KindServiceTask:      true,
+	KindUserTask:         true,
+	KindReceiveTask:      true,
+	KindSendTask:         true,
+	KindBusinessRuleTask: true,
+	KindSubProcess:       true,
+	KindCallActivity:     true,
+}
+
 var (
 	ErrNoStartEvent        = errors.New("model: no start event")
 	ErrMultipleStartEvents = errors.New("model: multiple start events")
@@ -109,15 +121,6 @@ func Validate(d *ProcessDefinition) error {
 	// Activities are the node kinds that park execution and can host a boundary:
 	// ServiceTask, UserTask, ReceiveTask, SendTask, BusinessRuleTask,
 	// SubProcess, CallActivity. Gateways and events are not valid hosts.
-	activityKinds := map[NodeKind]bool{
-		KindServiceTask:      true,
-		KindUserTask:         true,
-		KindReceiveTask:      true,
-		KindSendTask:         true,
-		KindBusinessRuleTask: true,
-		KindSubProcess:       true,
-		KindCallActivity:     true,
-	}
 	for _, n := range d.Nodes {
 		if n.Kind != KindBoundaryEvent {
 			continue

@@ -105,23 +105,25 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 			},
 		},
 		{
-			name: "boundary-interrupting",
+			// Zero-value NonInterrupting (false) = interrupting — the BPMN default.
+			name: "boundary-interrupting-default",
 			node: model.Node{
-				ID:           "boundary-1",
-				Kind:         model.KindBoundaryEvent,
-				SignalName:   "cancel.signal",
-				AttachedTo:   "task-1",
-				Interrupting: true,
+				ID:              "boundary-1",
+				Kind:            model.KindBoundaryEvent,
+				SignalName:      "cancel.signal",
+				AttachedTo:      "task-1",
+				NonInterrupting: false,
 			},
 		},
 		{
+			// NonInterrupting: true = non-interrupting boundary event.
 			name: "boundary-non-interrupting",
 			node: model.Node{
-				ID:           "boundary-2",
-				Kind:         model.KindBoundaryEvent,
-				MessageName:  "reminder.msg",
-				AttachedTo:   "task-2",
-				Interrupting: false,
+				ID:              "boundary-2",
+				Kind:            model.KindBoundaryEvent,
+				MessageName:     "reminder.msg",
+				AttachedTo:      "task-2",
+				NonInterrupting: true,
 			},
 		},
 	}
@@ -141,7 +143,7 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 			assert.Equal(t, tc.node.MessageName, n.MessageName)
 			assert.Equal(t, tc.node.CorrelationKey, n.CorrelationKey)
 			assert.Equal(t, tc.node.AttachedTo, n.AttachedTo)
-			assert.Equal(t, tc.node.Interrupting, n.Interrupting)
+			assert.Equal(t, tc.node.NonInterrupting, n.NonInterrupting)
 		})
 	}
 }

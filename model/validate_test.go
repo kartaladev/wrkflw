@@ -247,7 +247,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					{ID: "start", Kind: model.KindStartEvent},
 					{ID: "task", Kind: model.KindServiceTask, Action: "do-work"},
-					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "task", Interrupting: true},
+					// NonInterrupting omitted (false) = interrupting, the BPMN default.
+					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "task"},
 					{ID: "end", Kind: model.KindEndEvent},
 					{ID: "cancel-end", Kind: model.KindEndEvent},
 				},
@@ -267,7 +268,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					{ID: "start", Kind: model.KindStartEvent},
 					{ID: "end", Kind: model.KindEndEvent},
-					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "ghost", Interrupting: true},
+					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "ghost"},
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -288,7 +289,7 @@ func TestValidate(t *testing.T) {
 					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
 					{ID: "end", Kind: model.KindEndEvent},
 					// boundary attached to a gateway — not an activity
-					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "xor", Interrupting: true},
+					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "xor"},
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},

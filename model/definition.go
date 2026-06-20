@@ -79,10 +79,13 @@ type Node struct {
 	// KindUserTask, KindReceiveTask, KindSendTask, KindBusinessRuleTask,
 	// KindSubProcess, KindCallActivity).
 	AttachedTo string
-	// Interrupting indicates whether this boundary event is interrupting (true)
-	// or non-interrupting (false). An interrupting boundary cancels the host
-	// activity when triggered; a non-interrupting boundary does not.
-	Interrupting bool
+	// NonInterrupting controls the boundary event interrupting behavior.
+	// Zero-value (false) means interrupting: the host activity is cancelled when
+	// the boundary event fires (the BPMN default). Set NonInterrupting: true for a
+	// non-interrupting boundary event, where the host activity keeps running and an
+	// additional token is spawned on the boundary's outgoing flow.
+	// The engine reads this as: interrupting = !node.NonInterrupting.
+	NonInterrupting bool
 }
 
 // SequenceFlow is a directed edge between two nodes.
