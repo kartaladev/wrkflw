@@ -105,19 +105,21 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
 		}
+		// Fail-fast: a parked token without a matching HumanTask record is an
+		// invariant violation (token and task are always created together in
+		// KindUserTask). Advancing silently would corrupt state without emitting
+		// UpdateTask, so we reject the trigger with a descriptive error.
+		task := s.TaskByToken(t.TaskToken)
+		if task == nil {
+			return StepResult{}, fmt.Errorf("engine: human-completed for token %q has no task record: %w", t.TaskToken, humantask.ErrTaskNotFound)
+		}
 		mergeVars(&s, t.Output)
 		s.setVisitActor(tok.ID, tok.NodeID, t.Actor.ID)
-		task := s.TaskByToken(t.TaskToken)
-		if task != nil {
-			task.State = humantask.Completed
-		}
+		task.State = humantask.Completed
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
 		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
-		var cmds []Command
-		if task != nil {
-			cmds = append(cmds, UpdateTask{Task: *task})
-		}
+		cmds := []Command{UpdateTask{Task: *task}}
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
 			return StepResult{}, err

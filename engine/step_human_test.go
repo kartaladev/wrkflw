@@ -310,14 +310,18 @@ func TestHumanCompletedAdvancesAndAudits(t *testing.T) {
 	assert.Equal(t, humantask.Completed, r2.State.Tasks[0].State)
 
 	// NodeVisit for "approve" has ActorID set to the completing actor.
+	// We look specifically for the CLOSED visit (LeftAt != nil) — that is the
+	// user-task visit that was stamped with the actor on completion. Using the
+	// closed visit is unambiguous even if the same node is visited more than once.
 	var approveVisit *engine.NodeVisit
 	for i := range r2.State.History {
-		if r2.State.History[i].NodeID == "approve" {
-			v := r2.State.History[i]
-			approveVisit = &v
+		v := &r2.State.History[i]
+		if v.NodeID == "approve" && v.LeftAt != nil {
+			approveVisit = v
+			break
 		}
 	}
-	require.NotNil(t, approveVisit, "NodeVisit for 'approve' not found")
+	require.NotNil(t, approveVisit, "closed NodeVisit for 'approve' not found")
 	require.NotNil(t, approveVisit.ActorID, "NodeVisit.ActorID is nil")
 	assert.Equal(t, "carol", *approveVisit.ActorID)
 }
@@ -336,4 +340,47 @@ func TestHumanCompletedUnknownTaskTokenErrors(t *testing.T) {
 			map[string]any{"approved": true}, actor),
 		engine.StepOptions{})
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
+}
+
+// TestHumanCompletedMissingTaskRecordErrors verifies that HumanCompleted fails fast
+// when a parked token is found for the given TaskToken but the corresponding
+// HumanTask record is absent from state (invariant violation / data corruption).
+//
+// The test constructs state by hand: a token parked awaiting "i1-h1" but Tasks is
+// empty (simulating the corrupted case). Expect an error wrapping
+// humantask.ErrTaskNotFound, and the token must NOT advance (state unchanged,
+// no CompleteInstance command).
+func TestHumanCompletedMissingTaskRecordErrors(t *testing.T) {
+	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
+	def := userTaskDef()
+	actor := authz.Actor{ID: "carol", Roles: []string{"manager"}}
+
+	// Build corrupted state: token is parked awaiting the task token, but no
+	// HumanTask record exists in Tasks.
+	corruptedState := engine.InstanceState{
+		InstanceID: "i1",
+		Status:     engine.StatusRunning,
+		Tokens: []engine.Token{
+			{
+				ID:           "i1-t1",
+				NodeID:       "approve",
+				State:        engine.TokenWaitingCommand,
+				AwaitCommand: "i1-h1",
+			},
+		},
+		// Tasks deliberately empty — no matching HumanTask record.
+		History: []engine.NodeVisit{
+			{NodeID: "approve", TokenID: "i1-t1", EnteredAt: at},
+		},
+	}
+
+	_, err := engine.Step(def, corruptedState,
+		engine.NewHumanCompleted(at.Add(time.Minute), "i1-h1",
+			map[string]any{"approved": true}, actor),
+		engine.StepOptions{})
+
+	// Must error, wrapping humantask.ErrTaskNotFound.
+	require.Error(t, err)
+	require.ErrorIs(t, err, humantask.ErrTaskNotFound,
+		"expected error wrapping humantask.ErrTaskNotFound, got: %v", err)
 }
