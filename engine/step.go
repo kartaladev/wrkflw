@@ -268,6 +268,10 @@ func (s *InstanceState) nextTaskToken() string {
 
 // setVisitActor sets the ActorID on the most recent open NodeVisit for the
 // given (tokenID, nodeID) pair. Used to record who completed a human task.
+//
+// If no matching open visit exists the call is a no-op. On the HumanCompleted
+// path the visit is invariant-guaranteed to be open (a WaitingCommand token
+// always has a corresponding open visit), so the silent no-op is safe there.
 func (s *InstanceState) setVisitActor(tokenID, nodeID, actorID string) {
 	for i := len(s.History) - 1; i >= 0; i-- {
 		v := &s.History[i]

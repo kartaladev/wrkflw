@@ -70,6 +70,9 @@ func (AllowAll) Authorize(_ context.Context, _ AuthzSpec, _ Actor, _ map[string]
 //
 // On failure [ErrNotAuthorized] is returned. An expression evaluation error is
 // wrapped with [ErrNotAuthorized] so callers can always use errors.Is.
+//
+// Note: [AuthzSpec].Privileges is reserved for future resource-privilege checks
+// and is NOT evaluated by RoleAuthorizer.
 type RoleAuthorizer struct{}
 
 // Authorize implements [Authorizer].

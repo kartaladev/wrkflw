@@ -52,10 +52,19 @@ func (s *TaskService) Claim(ctx context.Context, taskToken string, actor authz.A
 
 // Reassign authorizes the by actor and returns a HumanReassigned trigger.
 // by is the admin or supervisor performing the reassignment; from/to are actor IDs.
+//
+// Authorization policy: the reassigner (by) must satisfy the task's eligibility
+// spec — the same check as Claim. A distinct admin/reassign-privilege model is
+// deferred. from must equal the current claimant (task.ClaimedBy); if they differ,
+// an error is returned and no trigger is issued, preventing a false From in the
+// journal.
 func (s *TaskService) Reassign(ctx context.Context, taskToken string, from, to string, by authz.Actor) (engine.Trigger, error) {
 	task, err := s.store.Get(ctx, taskToken)
 	if err != nil {
 		return nil, fmt.Errorf("runtime: taskservice: get task: %w", err)
+	}
+	if from != task.ClaimedBy {
+		return nil, fmt.Errorf("runtime: reassign: from %q is not the current claimant %q", from, task.ClaimedBy)
 	}
 	if err := s.authz.Authorize(ctx, task.Eligibility, by, nil); err != nil {
 		return nil, fmt.Errorf("runtime: taskservice: reassign: %w", err)

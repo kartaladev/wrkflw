@@ -65,6 +65,13 @@ func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instance
 //
 // It is the entry point for external triggers such as HumanClaimed and
 // HumanCompleted that arrive after Run has returned (parked at a human task).
+//
+// Authorization contract: human-task triggers (HumanClaimed, HumanReassigned,
+// HumanCompleted) MUST originate from TaskService, which performs authorization
+// before returning the trigger. Delivering such a trigger from any other source
+// bypasses authorization entirely — the engine core is authorization-unaware by
+// design. It is the caller's responsibility to ensure human-task triggers pass
+// through TaskService.
 func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
 	st, err := r.store.Load(instanceID)
 	if err != nil {
