@@ -230,6 +230,15 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// 1) event-based gateway arm (first-event-wins).
 		// 2) boundary event arm (interrupting/non-interrupting).
 		// 3) standalone parked-signal tokens (broadcast).
+		//
+		// INTENTIONAL BROADCAST: A single signal name may simultaneously resolve a
+		// gateway arm (step 1), fire a boundary arm (step 2), AND resume one or more
+		// standalone parked-signal tokens (step 3) within the same Step call. All
+		// three dispatch points are evaluated in order; matching is not mutually
+		// exclusive across them. Using the same signal name on competing constructs
+		// (e.g. an event-gateway arm and a standalone catch) is permitted by the
+		// engine but is the definition author's responsibility — a future model.Validate
+		// rule could warn about ambiguous multi-construct signal names.
 		var signalCmds []Command
 		matched := false
 
@@ -355,7 +364,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
 			// Arm any boundary events attached to this host activity.
-			cmds = append(cmds, armBoundaries(def, s, tok.ID, node.ID, at)...)
+			bndCmds, err := armBoundaries(def, s, tok.ID, node.ID, at)
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, bndCmds...)
 
 		case model.KindUserTask:
 			taskToken := s.nextTaskToken()
@@ -423,7 +436,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = taskToken
 			// Arm any boundary events attached to this host activity.
-			cmds = append(cmds, armBoundaries(def, s, tok.ID, node.ID, at)...)
+			bndCmds, err := armBoundaries(def, s, tok.ID, node.ID, at)
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, bndCmds...)
 
 		case model.KindIntermediateCatchEvent:
 			if node.TimerDuration != "" {
@@ -975,8 +992,12 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 //
 // Definition-scan order is deterministic (Nodes slice order); boundary arms are
 // appended in the same order so s.Boundaries is deterministic.
-func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time) []StepCommand {
-	var cmds []StepCommand
+//
+// A bad TimerDuration expression is returned as a wrapped error — consistent with
+// the intermediate-timer and SLA paths — so callers can fail fast rather than
+// silently no-arming the boundary.
+func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time) ([]Command, error) {
+	var cmds []Command
 	for _, n := range def.Nodes {
 		if n.Kind != model.KindBoundaryEvent || n.AttachedTo != hostNode {
 			continue
@@ -999,10 +1020,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		if n.TimerDuration != "" {
 			dur, err := conditions.EvalDuration(n.TimerDuration, s.Variables)
 			if err != nil {
-				// Validation rejects bad durations; skip silently here to avoid
-				// changing the return signature. A test with a bad duration will
-				// see the boundary arm missing (no fire).
-				continue
+				return nil, fmt.Errorf("engine: boundary %q on %q: %w", n.ID, hostNode, err)
 			}
 			timerID := s.nextTimerID()
 			arm.TimerID = timerID
@@ -1017,21 +1035,17 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		}
 		s.Boundaries = append(s.Boundaries, arm)
 	}
-	return cmds
+	return cmds, nil
 }
-
-// StepCommand is an alias so armBoundaries can return []Command without importing
-// a circular type. We use Command directly since armBoundaries is package-internal.
-type StepCommand = Command
 
 // fireBoundaryArm executes a boundary event arm that has fired. It is called
 // from the TimerFired and SignalReceived handlers.
 //
 // For interrupting boundaries (!ba.NonInterrupting):
 //  1. Verify the host token is still parked. If not, it's a late/stale fire → no-op.
-//  2. Consume the host token (close its visit).
-//  3. Cancel any SLA/reminder timers on the host (UserTask) via cancelTimersByTaskToken
+//  2. Cancel any SLA/reminder timers on the host (UserTask) via cancelTimersByTaskToken
 //     using the host's taskToken (AwaitCommand == taskToken for UserTask hosts).
+//  3. Consume the host token (close its visit, remove from slice).
 //  4. Remove ALL boundary arms for this host (emit CancelTimer for timer siblings).
 //  5. Place a new Active token at the boundary's outgoing flow target.
 //  6. Drive forward.

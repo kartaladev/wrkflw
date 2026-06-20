@@ -870,6 +870,50 @@ func TestHostCompletionCancelsArmedBoundary(t *testing.T) {
 	assert.Nil(t, r3.Commands, "late boundary TimerFired after host completion must be no-op")
 }
 
+// badBoundaryDurationDef returns a definition:
+//
+//	Start → ServiceTask("work") → End
+//	               ↑ interrupting timer boundary with malformed TimerDuration → alert → End2
+//
+// The boundary TimerDuration is intentionally invalid so that EvalDuration fails.
+func badBoundaryDurationDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-bad-bnd-dur", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "work", Kind: model.KindServiceTask, Action: "work-action"},
+			{ID: "bnd-bad", Kind: model.KindBoundaryEvent, AttachedTo: "work",
+				TimerDuration: `"not a duration"`, NonInterrupting: false},
+			{ID: "alert", Kind: model.KindServiceTask, Action: "alert-action"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "work"},
+			{ID: "f-work-end", Source: "work", Target: "end"},
+			{ID: "f-bnd-alert", Source: "bnd-bad", Target: "alert"},
+			{ID: "f-alert-end", Source: "alert", Target: "end2"},
+		},
+	}
+}
+
+// TestBoundaryBadDurationErrors verifies that entering a host activity whose
+// boundary TimerDuration is malformed causes Step to return a non-nil error
+// wrapping the eval failure. Previously the error was silently dropped (no-arm);
+// after the fix, it must propagate out of Step.
+func TestBoundaryBadDurationErrors(t *testing.T) {
+	def := badBoundaryDurationDef()
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Driving into the host (StartInstance → ServiceTask with bad boundary) must return
+	// a non-nil error mentioning the boundary node and/or the eval failure.
+	_, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.Error(t, err, "bad boundary TimerDuration must cause Step to return an error")
+	assert.Contains(t, err.Error(), "bnd-bad",
+		"error message must reference the boundary node ID")
+}
+
 // TestEventGatewayMergeVarsFix verifies the mergeVars-on-no-match fix:
 // A SignalReceived that matches no token (standalone or gateway arm) must NOT
 // mutate instance variables.
