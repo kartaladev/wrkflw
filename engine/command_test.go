@@ -9,7 +9,7 @@ import (
 )
 
 func TestCommandsImplementInterface(t *testing.T) {
-	var cmds []engine.Command = []engine.Command{
+	cmds := []engine.Command{
 		engine.InvokeAction{CommandID: "c1", Name: "greet", Input: map[string]any{"a": 1}},
 		engine.CompleteInstance{Result: map[string]any{"done": true}},
 		engine.FailInstance{Err: "boom"},

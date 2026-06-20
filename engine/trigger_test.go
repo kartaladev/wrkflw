@@ -12,7 +12,7 @@ import (
 func TestTriggersCarryOccurredAt(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 
-	var trs []engine.Trigger = []engine.Trigger{
+	trs := []engine.Trigger{
 		engine.NewStartInstance(at, map[string]any{"x": 1}),
 		engine.NewActionCompleted(at, "c1", map[string]any{"ok": true}),
 		engine.NewActionFailed(at, "c1", "boom", true),
