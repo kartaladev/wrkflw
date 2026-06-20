@@ -55,7 +55,7 @@ func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	// record a FailInstance command (outbox write "instance.failed").
 	cat := action.NewMapCatalog(nil)
 	out := runtime.NewMemOutbox()
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out)
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out, nil, nil, nil)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -73,7 +73,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 		}),
 	})
 	out := runtime.NewMemOutbox()
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out)
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out, nil, nil, nil)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 
 func TestRunnerJournalAppendErrorPropagates(t *testing.T) {
 	cat := action.NewMapCatalog(nil)
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), &errJournal{}, runtime.NewMemOutbox())
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), &errJournal{}, runtime.NewMemOutbox(), nil, nil, nil)
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -99,7 +99,7 @@ func TestRunnerStoreSaveErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), &errStateStore{}, runtime.NewMemJournal(), runtime.NewMemOutbox())
+	r := runtime.NewRunner(cat, clock.System(), &errStateStore{}, runtime.NewMemJournal(), runtime.NewMemOutbox(), nil, nil, nil)
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -112,7 +112,7 @@ func TestRunnerOutboxWriteErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), &errOutbox{})
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), &errOutbox{}, nil, nil, nil)
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
