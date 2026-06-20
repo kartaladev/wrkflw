@@ -93,6 +93,9 @@ var (
 	_ engine.Command = engine.CancelTimer{}
 )
 
+// Compile-time interface assertion: StartSubInstance must satisfy engine.Command.
+var _ engine.Command = engine.StartSubInstance{}
+
 // TestTimerKindConstsAreDistinct asserts the three TimerKind values are distinct.
 func TestTimerKindConstsAreDistinct(t *testing.T) {
 	kinds := []engine.TimerKind{

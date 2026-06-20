@@ -86,6 +86,30 @@ type Node struct {
 	// additional token is spawned on the boundary's outgoing flow.
 	// The engine reads this as: interrupting = !node.NonInterrupting.
 	NonInterrupting bool
+
+	// Sub-process fields (KindSubProcess and KindEventSubProcess).
+
+	// Subprocess is the nested process definition for KindSubProcess and
+	// KindEventSubProcess nodes. It must be non-nil for these node kinds; the
+	// runtime executes it as a nested scope when the containing node is entered.
+	//
+	// For KindEventSubProcess, the trigger is encoded on the nested definition's
+	// start event node via its existing event-correlation fields (SignalName,
+	// MessageName, or TimerDuration on the nested KindStartEvent). This keeps the
+	// model self-contained and avoids duplicate trigger fields on the parent node.
+	// The engine inspects the nested start event's fields to set up event
+	// subscriptions. This design is deferred to Task 4 for full engine handling;
+	// the model merely requires the nested definition to be present and valid.
+	Subprocess *ProcessDefinition
+
+	// Call-activity fields (KindCallActivity).
+
+	// DefRef is the name of a top-level process definition resolved by the
+	// runtime's definition registry at execution time. Must be non-empty for
+	// KindCallActivity nodes. The registry maps names to *ProcessDefinition
+	// templates; the engine instantiates the referenced definition as a child
+	// process instance when the call-activity node is entered.
+	DefRef string
 }
 
 // SequenceFlow is a directed edge between two nodes.

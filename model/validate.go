@@ -38,11 +38,32 @@ var (
 	// (KindServiceTask, KindUserTask, KindReceiveTask, KindSendTask,
 	// KindBusinessRuleTask, KindSubProcess, KindCallActivity).
 	ErrBoundaryAttachment = errors.New("model: boundary event attached to missing or non-activity node")
+	// ErrMissingSubprocess is returned when a KindSubProcess or
+	// KindEventSubProcess node has a nil Subprocess field. Embedded sub-process
+	// and event-sub-process nodes must carry their nested definition inline.
+	ErrMissingSubprocess = errors.New("model: subprocess or event-subprocess node missing nested definition")
+	// ErrMissingDefRef is returned when a KindCallActivity node has an empty
+	// DefRef field. A call-activity must name the top-level definition it
+	// delegates to so the runtime registry can resolve it at execution time.
+	ErrMissingDefRef = errors.New("model: call-activity node missing definition reference")
 )
 
 // Validate checks structural well-formedness of a process definition. It
 // returns a joined error covering every violation found.
 func Validate(d *ProcessDefinition) error {
+	return validate(d, make(map[*ProcessDefinition]bool))
+}
+
+// validate is the recursive implementation of Validate with a visited-set
+// cycle guard. If seen[d] is already true, the definition has already been
+// visited in this call chain (cycle detected) and we return immediately to
+// avoid a stack overflow on hand-constructed cyclic subprocess pointer graphs.
+func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
+	if seen[d] {
+		return nil
+	}
+	seen[d] = true
+
 	var errs []error
 
 	starts := d.StartNodes()
@@ -128,6 +149,33 @@ func Validate(d *ProcessDefinition) error {
 		host, ok := d.Node(n.AttachedTo)
 		if !ok || !activityKinds[host.Kind] {
 			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q", ErrBoundaryAttachment, n.ID, n.AttachedTo))
+		}
+	}
+
+	// Sub-process and event-sub-process: Subprocess must be non-nil, and the
+	// nested definition must itself be valid (recursive). Errors from the nested
+	// definition are wrapped with the host node id so callers can trace which
+	// sub-process contains the violation.
+	for _, n := range d.Nodes {
+		if n.Kind != KindSubProcess && n.Kind != KindEventSubProcess {
+			continue
+		}
+		if n.Subprocess == nil {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, n.ID))
+			continue
+		}
+		if nestedErr := validate(n.Subprocess, seen); nestedErr != nil {
+			errs = append(errs, fmt.Errorf("subprocess %q: %w", n.ID, nestedErr))
+		}
+	}
+
+	// Call-activity: DefRef must be non-empty.
+	for _, n := range d.Nodes {
+		if n.Kind != KindCallActivity {
+			continue
+		}
+		if n.DefRef == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingDefRef, n.ID))
 		}
 	}
 

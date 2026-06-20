@@ -87,6 +87,12 @@ var (
 // Compile-time interface assertion: TimerFired must satisfy engine.Trigger.
 var _ engine.Trigger = engine.TimerFired{}
 
+// Compile-time interface assertions: sub-instance triggers must satisfy engine.Trigger.
+var (
+	_ engine.Trigger = engine.SubInstanceCompleted{}
+	_ engine.Trigger = engine.SubInstanceFailed{}
+)
+
 // TestTimerFiredSatisfiesTrigger asserts TimerFired satisfies Trigger and
 // NewTimerFired stamps OccurredAt correctly.
 func TestTimerFiredSatisfiesTrigger(t *testing.T) {

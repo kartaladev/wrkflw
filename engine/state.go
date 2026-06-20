@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -25,6 +26,10 @@ type timerRecord struct {
 	TaskToken string
 	// NodeID is the BPMN node that owns the timer (needed to resolve SLAFlow/SLAAction).
 	NodeID string
+	// ScopeID is the execution scope of the token that owns this timer. Empty
+	// string means the root scope. Used to resolve the correct nested definition
+	// when a SLA or reminder timer fires inside a sub-process.
+	ScopeID string
 }
 
 // armedEvent is the engine's bookkeeping entry for a single arm of an event-based
@@ -92,6 +97,85 @@ type boundaryArm struct {
 	// Signal is the signal name for signal boundary events. Empty for timer
 	// boundary events.
 	Signal string
+}
+
+// eventSubprocessArm is the engine's bookkeeping entry for a single armed event
+// sub-process that is waiting to be triggered. One entry is created per
+// KindEventSubProcess node when the enclosing scope opens (or on StartInstance
+// for top-level event sub-processes). The entry is removed when the trigger fires
+// (one-shot) or when the enclosing scope closes/completes normally.
+//
+// Design mirrors boundaryArm but is keyed to an enclosing SCOPE rather than a
+// host activity token.
+//
+// Flat value struct (no pointers): cloneState copies the slice shallowly (correct
+// because there are no pointer fields). Appended in definition-scan order so the
+// slice is deterministic.
+type eventSubprocessArm struct {
+	// EnclosingScopeID is the ID of the scope inside which this event sub-process
+	// lives. Empty string means the root scope (top-level event sub-process).
+	EnclosingScopeID string
+	// EventSubprocessNode is the BPMN node ID of the KindEventSubProcess node in
+	// the enclosing scope's definition.
+	EventSubprocessNode string
+	// NonInterrupting mirrors model.Node.NonInterrupting on the KindEventSubProcess
+	// node. false = interrupting (BPMN default); true = non-interrupting.
+	NonInterrupting bool
+	// Signal is the signal name from the event sub-process's nested start event.
+	// Non-empty for signal-triggered event sub-processes.
+	Signal string
+	// TimerID is the scheduled timer ID for timer-triggered event sub-processes.
+	// Non-empty for timer-triggered event sub-processes.
+	//
+	// NOTE: the corresponding ScheduleTimer.Token is intentionally EMPTY for ESP
+	// arms — the timer is keyed to the enclosing scope (EnclosingScopeID), not to
+	// any individual token. Cancellation is performed via
+	// removeEventSubprocessArmsForScope (by TimerID), not by token lookup.
+	TimerID string
+	// Message is the message name for message-triggered event sub-processes.
+	Message string
+	// MessageKey is the resolved correlation key for message-triggered event sub-processes.
+	MessageKey string
+}
+
+// CompensationRecord is a minimal record of a completed compensable activity
+// within a scope. Plan 8 (compensation/rollback) will populate and consume
+// these records; they are kept minimal here — just enough to identify the
+// activity and its compensating action.
+//
+// Fields:
+//   - ActivityNode: the BPMN node ID of the completed compensable activity.
+//   - Action: the name of the service action to invoke as compensation.
+type CompensationRecord struct {
+	// ActivityNode is the BPMN node ID of the completed compensable activity.
+	ActivityNode string
+	// Action is the name of the compensating service action (registered in the
+	// service-action catalog) to run when this activity is rolled back.
+	Action string
+}
+
+// Scope represents an active execution scope within a process instance. Scopes
+// are created when a sub-process node is entered and removed when it exits.
+// They form a tree via ParentID: the root scope has an empty ParentID.
+//
+// Fields:
+//   - ID: unique scope identifier, assigned deterministically as
+//     "<instanceID>-s<ScopeSeq>" (e.g. "inst-1-s1").
+//   - NodeID: the BPMN node (typically a sub-process) that opened this scope.
+//   - ParentID: the ID of the enclosing scope, or "" if this is a root scope.
+//   - Compensations: ordered list of completed compensable activities inside
+//     this scope, accumulated as activities finish. Plan 8 reads this list in
+//     reverse order when rolling back the scope.
+type Scope struct {
+	// ID is the unique scope identifier (deterministic, no clock/random).
+	ID string
+	// NodeID is the BPMN node that opened this scope.
+	NodeID string
+	// ParentID is the enclosing scope's ID, or "" for a root scope.
+	ParentID string
+	// Compensations records completed compensable activities in entry order.
+	// Plan 8 (compensation) populates and consumes this list.
+	Compensations []CompensationRecord
 }
 
 // Status is the lifecycle state of a process instance.
@@ -182,11 +266,26 @@ type InstanceState struct {
 	// completes first (cancellation).
 	Boundaries []boundaryArm
 
+	// Scopes holds all currently open execution scopes (sub-process nodes in
+	// flight). Each scope is opened when a sub-process node is entered and
+	// removed when it exits. Scopes form a tree via Scope.ParentID.
+	// Iteration is in openScope (ScopeSeq) order, which is deterministic.
+	Scopes []Scope
+
+	// EventSubprocesses holds the set of pending arms for in-flight event
+	// sub-processes. One entry per KindEventSubProcess node while its enclosing
+	// scope is active. Entries are appended in definition-scan order (deterministic).
+	// Removed when the trigger fires (one-shot) or when the enclosing scope closes.
+	EventSubprocesses []eventSubprocessArm
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
 	TaskSeq  int
 	TimerSeq int
+	// ScopeSeq is the monotonic counter used to generate deterministic scope
+	// IDs of the form "<instanceID>-s<ScopeSeq>".
+	ScopeSeq int
 }
 
 // TaskByToken returns a pointer to the HumanTask with the given taskToken, or
@@ -395,6 +494,127 @@ func (s *InstanceState) removeBoundaryArm(hostToken, boundaryNode string) {
 		out = append(out, ba)
 	}
 	s.Boundaries = out
+}
+
+// eventSubprocessArmBySignal returns a pointer to the first eventSubprocessArm
+// with the given signal name, or nil if none exists.
+func (s *InstanceState) eventSubprocessArmBySignal(name string) *eventSubprocessArm {
+	for i := range s.EventSubprocesses {
+		if s.EventSubprocesses[i].Signal == name {
+			return &s.EventSubprocesses[i]
+		}
+	}
+	return nil
+}
+
+// eventSubprocessArmByTimer returns a pointer to the first eventSubprocessArm
+// with the given timerID, or nil if none exists.
+func (s *InstanceState) eventSubprocessArmByTimer(timerID string) *eventSubprocessArm {
+	for i := range s.EventSubprocesses {
+		if s.EventSubprocesses[i].TimerID == timerID {
+			return &s.EventSubprocesses[i]
+		}
+	}
+	return nil
+}
+
+// eventSubprocessArmByMessage returns a pointer to the first eventSubprocessArm
+// whose Message matches name and whose MessageKey matches correlationKey, or nil.
+func (s *InstanceState) eventSubprocessArmByMessage(name, correlationKey string) *eventSubprocessArm {
+	for i := range s.EventSubprocesses {
+		ea := &s.EventSubprocesses[i]
+		if ea.Message == name && ea.MessageKey == correlationKey {
+			return ea
+		}
+	}
+	return nil
+}
+
+// removeEventSubprocessArm removes the single eventSubprocessArm for the given
+// (enclosingScopeID, eventSubprocessNode) pair. It is a no-op if no such entry exists.
+func (s *InstanceState) removeEventSubprocessArm(enclosingScopeID, espNode string) {
+	out := make([]eventSubprocessArm, 0, len(s.EventSubprocesses))
+	for _, ea := range s.EventSubprocesses {
+		if ea.EnclosingScopeID == enclosingScopeID && ea.EventSubprocessNode == espNode {
+			continue
+		}
+		out = append(out, ea)
+	}
+	s.EventSubprocesses = out
+}
+
+// removeEventSubprocessArmsForScope removes all eventSubprocessArm entries
+// whose EnclosingScopeID matches the given scopeID, returning the TimerIDs of
+// any timer-armed entries so the caller can emit CancelTimer commands.
+func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []string {
+	var cancelTimerIDs []string
+	out := make([]eventSubprocessArm, 0, len(s.EventSubprocesses))
+	for _, ea := range s.EventSubprocesses {
+		if ea.EnclosingScopeID == scopeID {
+			if ea.TimerID != "" {
+				cancelTimerIDs = append(cancelTimerIDs, ea.TimerID)
+			}
+			continue
+		}
+		out = append(out, ea)
+	}
+	s.EventSubprocesses = out
+	return cancelTimerIDs
+}
+
+// openScope creates a new Scope for the given nodeID nested inside
+// parentScopeID (empty string for a root scope). The scope is assigned a
+// deterministic ID of the form "<instanceID>-s<ScopeSeq>" using s.ScopeSeq,
+// which is incremented before use. The new scope is appended to s.Scopes.
+// Returns the new scope's ID.
+func (s *InstanceState) openScope(nodeID, parentScopeID string) string {
+	s.ScopeSeq++
+	id := fmt.Sprintf("%s-s%d", s.InstanceID, s.ScopeSeq)
+	s.Scopes = append(s.Scopes, Scope{
+		ID:       id,
+		NodeID:   nodeID,
+		ParentID: parentScopeID,
+	})
+	return id
+}
+
+// tokensInScope counts the number of tokens in s.Tokens whose ScopeID equals
+// scopeID. Returns 0 if no tokens match.
+func (s *InstanceState) tokensInScope(scopeID string) int {
+	count := 0
+	for i := range s.Tokens {
+		if s.Tokens[i].ScopeID == scopeID {
+			count++
+		}
+	}
+	return count
+}
+
+// closeScope removes the Scope with the given scopeID from s.Scopes. It is a
+// no-op if no scope with that ID exists. Child scopes (those whose ParentID
+// equals scopeID) are NOT automatically removed — callers are responsible for
+// closing or reparenting children before closing a parent. This is intentionally
+// minimal; Plan 8 (compensation/rollback) will add the richer cascading logic.
+func (s *InstanceState) closeScope(scopeID string) {
+	out := make([]Scope, 0, len(s.Scopes))
+	for _, sc := range s.Scopes {
+		if sc.ID != scopeID {
+			out = append(out, sc)
+		}
+	}
+	s.Scopes = out
+}
+
+// scopeByID returns a pointer to the Scope with the given id, or nil if no
+// such scope exists in s.Scopes. The pointer is into the slice element; callers
+// must not hold it across mutations to s.Scopes.
+func (s *InstanceState) scopeByID(id string) *Scope {
+	for i := range s.Scopes {
+		if s.Scopes[i].ID == id {
+			return &s.Scopes[i]
+		}
+	}
+	return nil
 }
 
 // Clone returns a deep copy of the InstanceState. All slice and map fields are

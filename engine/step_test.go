@@ -91,7 +91,20 @@ func TestStepIsDeterministic(t *testing.T) {
 func TestStepDoesNotMutateInput(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := linearDef()
-	in := engine.InstanceState{InstanceID: "i1", Variables: map[string]any{"name": "Ada"}}
+	in := engine.InstanceState{
+		InstanceID: "i1",
+		Variables:  map[string]any{"name": "Ada"},
+		Scopes: []engine.Scope{
+			{
+				ID:       "i1-s1",
+				NodeID:   "sub",
+				ParentID: "",
+				Compensations: []engine.CompensationRecord{
+					{ActivityNode: "svc", Action: "undo-svc"},
+				},
+			},
+		},
+	}
 
 	_, err := engine.Step(def, in, engine.NewStartInstance(at, map[string]any{"extra": 1}), engine.StepOptions{})
 	require.NoError(t, err)
@@ -99,6 +112,12 @@ func TestStepDoesNotMutateInput(t *testing.T) {
 	// Caller's state is untouched.
 	assert.Empty(t, in.Tokens)
 	assert.Equal(t, map[string]any{"name": "Ada"}, in.Variables)
+	// Scopes must be untouched (deep-copy in cloneState protects them).
+	require.Len(t, in.Scopes, 1)
+	assert.Equal(t, "i1-s1", in.Scopes[0].ID)
+	require.Len(t, in.Scopes[0].Compensations, 1)
+	assert.Equal(t, "svc", in.Scopes[0].Compensations[0].ActivityNode)
+	assert.Equal(t, "undo-svc", in.Scopes[0].Compensations[0].Action)
 }
 
 func TestStepActionFailedFailsInstance(t *testing.T) {
