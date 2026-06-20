@@ -97,3 +97,14 @@ func NewHumanClaimed(at time.Time, taskToken string, actor authz.Actor) HumanCla
 func NewHumanReassigned(at time.Time, taskToken, from, to string, by authz.Actor) HumanReassigned {
 	return HumanReassigned{baseTrigger: baseTrigger{at: at}, TaskToken: taskToken, From: from, To: to, By: by}
 }
+
+// TimerFired reports that a previously scheduled timer has fired.
+type TimerFired struct {
+	baseTrigger
+	TimerID string
+}
+
+// NewTimerFired builds a TimerFired trigger stamped with the given time.
+func NewTimerFired(at time.Time, timerID string) TimerFired {
+	return TimerFired{baseTrigger: baseTrigger{at: at}, TimerID: timerID}
+}

@@ -65,6 +65,7 @@ type InstanceState struct {
 	CmdSeq   int
 	TokenSeq int
 	TaskSeq  int
+	TimerSeq int
 }
 
 // TaskByToken returns a pointer to the HumanTask with the given taskToken, or
