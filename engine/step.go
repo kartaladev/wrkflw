@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
@@ -454,6 +455,19 @@ func cloneState(st InstanceState) InstanceState {
 	if st.EndedAt != nil {
 		e := *st.EndedAt
 		s.EndedAt = &e
+	}
+	// Deep-copy Tasks: each task's slice fields (Candidates, Eligibility.Roles,
+	// Eligibility.Privileges) are independently allocated so mutations to the clone
+	// do not affect the original — required for TestStepDoesNotMutateInput to hold.
+	if len(st.Tasks) > 0 {
+		s.Tasks = make([]humantask.HumanTask, len(st.Tasks))
+		for i, t := range st.Tasks {
+			ct := t
+			ct.Candidates = append([]string(nil), t.Candidates...)
+			ct.Eligibility.Roles = append([]string(nil), t.Eligibility.Roles...)
+			ct.Eligibility.Privileges = append([]string(nil), t.Eligibility.Privileges...)
+			s.Tasks[i] = ct
+		}
 	}
 	return s
 }
