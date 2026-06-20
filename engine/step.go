@@ -132,7 +132,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			s.moveTokenToTarget(tok, target, at)
 
 		case model.KindParallelGateway:
-			s.forkParallel(def, tok, node, at)
+			if len(def.Incoming(node.ID)) > 1 {
+				s.tryParallelJoin(def, tok, node, at)
+			} else {
+				s.forkParallel(def, tok, node, at)
+			}
 
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
@@ -230,6 +234,38 @@ func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, n
 	outs := def.Outgoing(node.ID)
 	s.consumeToken(tok, at)
 	for _, f := range outs {
+		s.placeToken(f.Target, at)
+	}
+}
+
+// tryParallelJoin parks the arriving token at a converging parallel gateway and,
+// once a token has arrived on every incoming flow, consumes them all and forks to
+// the gateway's outgoing flows. Until then the token waits as TokenAtJoin.
+func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+	tok.State = TokenAtJoin
+
+	arrived := 0
+	for i := range s.Tokens {
+		if s.Tokens[i].NodeID == node.ID && s.Tokens[i].State == TokenAtJoin {
+			arrived++
+		}
+	}
+	if arrived < len(def.Incoming(node.ID)) {
+		return // still waiting on other branches
+	}
+
+	// Fire: remove all tokens parked at this join (closing their visits), then
+	// create one Active token per outgoing flow.
+	kept := make([]Token, 0, len(s.Tokens))
+	for _, t := range s.Tokens {
+		if t.NodeID == node.ID && t.State == TokenAtJoin {
+			s.closeVisit(t.ID, t.NodeID, at)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	s.Tokens = kept
+	for _, f := range def.Outgoing(node.ID) {
 		s.placeToken(f.Target, at)
 	}
 }

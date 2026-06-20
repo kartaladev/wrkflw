@@ -102,6 +102,59 @@ func TestParallelGatewayForksAllBranches(t *testing.T) {
 	}
 }
 
+// diamondDef: start -> fork => a,b -> join -> end. Join waits for both a and b.
+func diamondDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "diamond", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "fork", Kind: model.KindParallelGateway},
+			{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+			{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+			{ID: "join", Kind: model.KindParallelGateway},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "fork"},
+			{ID: "f2", Source: "fork", Target: "a"},
+			{ID: "f3", Source: "fork", Target: "b"},
+			{ID: "f4", Source: "a", Target: "join"},
+			{ID: "f5", Source: "b", Target: "join"},
+			{ID: "f6", Source: "join", Target: "end"},
+		},
+	}
+}
+
+func TestParallelJoinWaitsForAllBranches(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	def := diamondDef()
+
+	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r0.Commands, 2) // a and b invoked
+	cmdA := r0.Commands[0].(engine.InvokeAction)
+	cmdB := r0.Commands[1].(engine.InvokeAction)
+
+	// Complete the first branch: token parks at the join, instance not done.
+	r1, err := engine.Step(def, r0.State,
+		engine.NewActionCompleted(at.Add(time.Second), cmdA.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, r1.Commands)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+	require.Len(t, r1.State.Tokens, 2)
+
+	// Complete the second branch: join fires, reaches end, instance completes.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), cmdB.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r2.Commands, 1)
+	_, ok := r2.Commands[0].(engine.CompleteInstance)
+	require.True(t, ok)
+	assert.Equal(t, engine.StatusCompleted, r2.State.Status)
+	assert.Empty(t, r2.State.Tokens)
+}
+
 func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := &model.ProcessDefinition{
