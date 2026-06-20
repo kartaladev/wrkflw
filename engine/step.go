@@ -33,7 +33,6 @@ type StepResult struct {
 // the commands the runtime must perform. It is pure: it does not mutate st.
 func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	s := cloneState(st)
-	var cmds []Command
 
 	switch t := trg.(type) {
 	case StartInstance:
@@ -74,7 +73,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
 
-	cmds = drive(def, &s, trg.OccurredAt())
+	cmds := drive(def, &s, trg.OccurredAt())
 	return StepResult{State: s, Commands: cmds}, nil
 }
 
@@ -172,7 +171,7 @@ func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *T
 func (s *InstanceState) consumeToken(tok *Token, at time.Time) {
 	s.closeVisit(tok.ID, tok.NodeID, at)
 	id := tok.ID
-	out := s.Tokens[:0]
+	out := make([]Token, 0, len(s.Tokens))
 	for _, t := range s.Tokens {
 		if t.ID != id {
 			out = append(out, t)
@@ -225,6 +224,9 @@ func cloneState(st InstanceState) InstanceState {
 	s := st
 	s.Variables = copyVars(st.Variables)
 	s.Tokens = append([]Token(nil), st.Tokens...)
+	for i := range s.Tokens {
+		s.Tokens[i].Payload = copyVars(s.Tokens[i].Payload)
+	}
 	s.History = append([]NodeVisit(nil), st.History...)
 	if st.EndedAt != nil {
 		e := *st.EndedAt

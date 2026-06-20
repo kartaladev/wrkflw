@@ -100,3 +100,37 @@ func TestStepDoesNotMutateInput(t *testing.T) {
 	assert.Empty(t, in.Tokens)
 	assert.Equal(t, map[string]any{"name": "Ada"}, in.Variables)
 }
+
+func TestStepActionFailedFailsInstance(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	def := linearDef()
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
+
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionFailed(at.Add(time.Second), cmdID, "boom", false), engine.StepOptions{})
+	require.NoError(t, err)
+
+	require.Len(t, r2.Commands, 1)
+	fi, ok := r2.Commands[0].(engine.FailInstance)
+	require.True(t, ok)
+	assert.Equal(t, "boom", fi.Err)
+	assert.Equal(t, engine.StatusFailed, r2.State.Status)
+	require.NotNil(t, r2.State.EndedAt)
+}
+
+func TestStepActionCompletedUnknownCommandID(t *testing.T) {
+	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	def := linearDef()
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	_, err = engine.Step(def, r1.State,
+		engine.NewActionCompleted(at, "no-such-command", nil), engine.StepOptions{})
+	require.ErrorIs(t, err, engine.ErrTokenNotFound)
+}
