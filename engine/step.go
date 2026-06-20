@@ -146,6 +146,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				s.forkParallel(def, tok, node, at)
 			}
 
+		case model.KindInclusiveGateway:
+			if err := s.forkInclusive(def, tok, node, at); err != nil {
+				return cmds, err
+			}
+
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
@@ -244,6 +249,44 @@ func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, n
 	for _, f := range outs {
 		s.placeToken(f.Target, at)
 	}
+}
+
+// forkInclusive consumes the incoming token and creates an Active token for every
+// non-default outgoing flow whose condition is empty or true (definition order).
+// If none are true it takes the default flow; if none are true and there is no
+// default it returns ErrNoMatchingFlow.
+func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) error {
+	var taken []model.SequenceFlow
+	var dflt *model.SequenceFlow
+	for _, f := range def.Outgoing(node.ID) {
+		if f.IsDefault {
+			ff := f
+			dflt = &ff
+			continue
+		}
+		if f.Condition == "" {
+			taken = append(taken, f)
+			continue
+		}
+		ok, err := conditions.EvalBool(f.Condition, s.Variables)
+		if err != nil {
+			return fmt.Errorf("engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+		}
+		if ok {
+			taken = append(taken, f)
+		}
+	}
+	if len(taken) == 0 {
+		if dflt == nil {
+			return fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
+		}
+		taken = append(taken, *dflt)
+	}
+	s.consumeToken(tok, at)
+	for _, f := range taken {
+		s.placeToken(f.Target, at)
+	}
+	return nil
 }
 
 // tryParallelJoin parks the arriving token at a converging parallel gateway and,
