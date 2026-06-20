@@ -83,3 +83,38 @@ var (
 	_ engine.Trigger = engine.HumanClaimed{}
 	_ engine.Trigger = engine.HumanReassigned{}
 )
+
+// Compile-time interface assertion: TimerFired must satisfy engine.Trigger.
+var _ engine.Trigger = engine.TimerFired{}
+
+// TestTimerFiredSatisfiesTrigger asserts TimerFired satisfies Trigger and
+// NewTimerFired stamps OccurredAt correctly.
+func TestTimerFiredSatisfiesTrigger(t *testing.T) {
+	at := time.Date(2026, 6, 21, 9, 30, 0, 0, time.UTC)
+	tf := engine.NewTimerFired(at, "tmr-99")
+
+	var _ engine.Trigger = tf // runtime check
+
+	assert.Equal(t, at, tf.OccurredAt())
+	assert.Equal(t, "tmr-99", tf.TimerID)
+}
+
+// TestTimerFiredFieldsRoundTrip asserts all TimerFired fields are stored faithfully.
+func TestTimerFiredFieldsRoundTrip(t *testing.T) {
+	cases := []struct {
+		name    string
+		at      time.Time
+		timerID string
+	}{
+		{"early", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), "tmr-a"},
+		{"late", time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC), "tmr-b"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			tf := engine.NewTimerFired(tc.at, tc.timerID)
+			assert.Equal(t, tc.at, tf.OccurredAt())
+			assert.Equal(t, tc.timerID, tf.TimerID)
+		})
+	}
+}

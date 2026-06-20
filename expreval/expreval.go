@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/file"
@@ -64,6 +65,67 @@ func (e *Evaluator) EvalBool(code string, env map[string]any) (bool, error) {
 		return false, fmt.Errorf("expreval: %q did not evaluate to bool (got %T)", code, out)
 	}
 	return b, nil
+}
+
+// EvalDuration evaluates code against env and normalizes the result to a
+// time.Duration. Three result forms are accepted:
+//
+//   - time.Duration — used as-is.
+//   - integer (any int/uint kind): interpreted as a number of whole seconds
+//     (e.g. the literal `90` yields 90s). This matches the most common author
+//     intent when writing SLA values in process definitions.
+//   - float64: interpreted as fractional seconds (e.g. `1.5` yields 1500ms).
+//     expr-lang/expr frequently produces float64 for numeric literals without
+//     a decimal, so fractional support is a strict superset of integral-only;
+//     authors writing whole-number float literals (e.g. `float(90)`) still get
+//     the expected result.
+//   - string: parsed via time.ParseDuration (e.g. `"3h"` yields 3h).
+//
+// Anything else, or a string that time.ParseDuration rejects, is returned as an
+// error.
+func (e *Evaluator) EvalDuration(code string, env map[string]any) (time.Duration, error) {
+	p, err := e.compile(code)
+	if err != nil {
+		return 0, err
+	}
+	out, err := expr.Run(p, env)
+	if err != nil {
+		return 0, fmt.Errorf("expreval: run %q: %w", code, err)
+	}
+	switch v := out.(type) {
+	case time.Duration:
+		return v, nil
+	case int:
+		return time.Duration(v) * time.Second, nil
+	case int8:
+		return time.Duration(v) * time.Second, nil
+	case int16:
+		return time.Duration(v) * time.Second, nil
+	case int32:
+		return time.Duration(v) * time.Second, nil
+	case int64:
+		return time.Duration(v) * time.Second, nil
+	case uint:
+		return time.Duration(v) * time.Second, nil
+	case uint8:
+		return time.Duration(v) * time.Second, nil
+	case uint16:
+		return time.Duration(v) * time.Second, nil
+	case uint32:
+		return time.Duration(v) * time.Second, nil
+	case uint64:
+		return time.Duration(v) * time.Second, nil
+	case float64:
+		return time.Duration(v * float64(time.Second)), nil
+	case string:
+		d, parseErr := time.ParseDuration(v)
+		if parseErr != nil {
+			return 0, fmt.Errorf("expreval: %q yielded string %q not parseable as duration: %w", code, v, parseErr)
+		}
+		return d, nil
+	default:
+		return 0, fmt.Errorf("expreval: %q did not evaluate to a duration-compatible type (got %T)", code, out)
+	}
 }
 
 // isNilOperandError reports whether err is the runtime error produced by

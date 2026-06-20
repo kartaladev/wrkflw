@@ -59,9 +59,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 		runtime.NewMemStateStore(),
 		jnl,
 		runtime.NewMemOutbox(),
-		resolver,
-		taskStore,
-		az,
+		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
 	def := approvalDef()
@@ -147,7 +145,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
-	r := runtime.NewRunner(nil, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), runtime.NewMemOutbox(), nil, nil, nil)
+	r := runtime.NewRunner(nil, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), runtime.NewMemOutbox())
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
 	_, err := r.Deliver(ctx, approvalDef(), "non-existent", trg)

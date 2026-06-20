@@ -57,6 +57,15 @@ type HumanTask struct {
 	DueAt *time.Time
 }
 
+// IsOpen reports whether the task is still in progress — that is, it has been
+// created but not yet completed or cancelled. An open task may be Unclaimed or
+// Claimed. Use this in engine handlers to check whether a task is still
+// actionable (e.g. before applying an SLA breach or reminder). The caller is
+// still responsible for guarding against a nil *HumanTask before calling IsOpen.
+func (t HumanTask) IsOpen() bool {
+	return t.State == Unclaimed || t.State == Claimed
+}
+
 // ActorResolver expands an eligibility spec together with process variables into
 // the concrete actor slice that forms the Candidates list. The resolution may
 // involve I/O (e.g. a group-membership lookup); therefore it accepts a context.

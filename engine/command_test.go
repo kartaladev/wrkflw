@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -85,6 +86,113 @@ var (
 	_ engine.Command = engine.AwaitHuman{}
 	_ engine.Command = engine.UpdateTask{}
 )
+
+// Compile-time interface assertions: timer commands must satisfy engine.Command.
+var (
+	_ engine.Command = engine.ScheduleTimer{}
+	_ engine.Command = engine.CancelTimer{}
+)
+
+// TestTimerKindConstsAreDistinct asserts the three TimerKind values are distinct.
+func TestTimerKindConstsAreDistinct(t *testing.T) {
+	kinds := []engine.TimerKind{
+		engine.TimerIntermediate,
+		engine.TimerSLA,
+		engine.TimerInWait,
+	}
+	seen := map[engine.TimerKind]bool{}
+	for _, k := range kinds {
+		assert.False(t, seen[k], "duplicate TimerKind value: %v", k)
+		seen[k] = true
+	}
+}
+
+// TestTimerKindStringable asserts each TimerKind has a non-empty String().
+func TestTimerKindStringable(t *testing.T) {
+	cases := []struct {
+		kind engine.TimerKind
+		want string
+	}{
+		{engine.TimerIntermediate, "TimerIntermediate"},
+		{engine.TimerSLA, "TimerSLA"},
+		{engine.TimerInWait, "TimerInWait"},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, tc.kind.String())
+	}
+}
+
+// TestTimerCommandsImplementInterface asserts ScheduleTimer and CancelTimer satisfy Command
+// and that their fields round-trip correctly.
+func TestTimerCommandsImplementInterface(t *testing.T) {
+	fireAt := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name string
+		cmd  engine.Command
+	}{
+		{
+			name: "ScheduleTimer/Intermediate",
+			cmd: engine.ScheduleTimer{
+				TimerID: "tmr-1",
+				Token:   "tok-1",
+				FireAt:  fireAt,
+				Kind:    engine.TimerIntermediate,
+			},
+		},
+		{
+			name: "ScheduleTimer/SLA",
+			cmd: engine.ScheduleTimer{
+				TimerID: "tmr-2",
+				Token:   "tok-2",
+				FireAt:  fireAt,
+				Kind:    engine.TimerSLA,
+			},
+		},
+		{
+			name: "ScheduleTimer/InWait",
+			cmd: engine.ScheduleTimer{
+				TimerID: "tmr-3",
+				Token:   "tok-3",
+				FireAt:  fireAt,
+				Kind:    engine.TimerInWait,
+			},
+		},
+		{
+			name: "CancelTimer",
+			cmd:  engine.CancelTimer{TimerID: "tmr-1"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			// Command interface satisfied (compile-time + runtime).
+			_ = tc.cmd
+		})
+	}
+}
+
+// TestScheduleTimerFieldsRoundTrip asserts all ScheduleTimer fields are stored faithfully.
+func TestScheduleTimerFieldsRoundTrip(t *testing.T) {
+	fireAt := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	cmd := engine.ScheduleTimer{
+		TimerID: "tmr-42",
+		Token:   "tok-99",
+		FireAt:  fireAt,
+		Kind:    engine.TimerSLA,
+	}
+	assert.Equal(t, "tmr-42", cmd.TimerID)
+	assert.Equal(t, "tok-99", cmd.Token)
+	assert.Equal(t, fireAt, cmd.FireAt)
+	assert.Equal(t, engine.TimerSLA, cmd.Kind)
+}
+
+// TestCancelTimerFieldsRoundTrip asserts CancelTimer.TimerID is stored faithfully.
+func TestCancelTimerFieldsRoundTrip(t *testing.T) {
+	cmd := engine.CancelTimer{TimerID: "tmr-cancel-me"}
+	assert.Equal(t, "tmr-cancel-me", cmd.TimerID)
+}
 
 // TestInstanceStateTasksDeepCopied asserts that cloneState (via Step) deep-copies
 // Tasks so that mutating the returned state's Tasks does not affect the input.

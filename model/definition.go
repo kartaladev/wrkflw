@@ -38,6 +38,25 @@ type Node struct {
 	// User-task eligibility (KindUserTask). The engine maps these to authz.AuthzSpec.
 	CandidateRoles  []string
 	EligibilityExpr string // optional attribute predicate (expr)
+
+	// Timer fields (KindIntermediateCatchEvent timer nodes).
+	// TimerDuration is an ISO-8601 duration string (e.g. "PT1H") describing how
+	// long the engine waits before the timer fires.
+	TimerDuration string
+
+	// SLA fields (any wait node that carries a deadline).
+	// SLADuration is an ISO-8601 duration string for the SLA deadline.
+	SLADuration string
+	// SLAFlow is the ID of the sequence flow to take when the SLA is breached.
+	SLAFlow string
+	// SLAAction is the name of the ServiceAction to invoke when the SLA is breached.
+	SLAAction string
+
+	// Reminder fields (periodic in-wait actions during a wait period).
+	// ReminderEvery is an ISO-8601 duration string for the reminder interval.
+	ReminderEvery string
+	// ReminderAction is the name of the ServiceAction to invoke on each reminder.
+	ReminderAction string
 }
 
 // SequenceFlow is a directed edge between two nodes.
