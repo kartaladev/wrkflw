@@ -81,23 +81,13 @@ go 1.25
 
 - [ ] **Step 3: Add a baseline linter config**
 
-Create `.golangci.yml`:
+Create `.golangci.yml` (golangci-lint **v2** schema — the installed version is 2.x):
 ```yaml
+version: "2"
 run:
   timeout: 5m
 linters:
-  enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - revive
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
+  default: standard   # errcheck, govet, ineffassign, staticcheck, unused
 ```
 
 - [ ] **Step 4: Verify the module builds**
