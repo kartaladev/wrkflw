@@ -107,9 +107,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			switch rec.Kind {
 			case TimerSLA:
 				return handleSLAFired(def, &s, *rec, t.OccurredAt())
+			case TimerInWait:
+				return handleReminderFired(def, &s, *rec, t.OccurredAt())
 			default:
-				// For intermediate (and future in-wait) timers recorded here, fall
-				// through to the tokenAwaiting path which is still valid because
+				// For intermediate timers recorded here, fall through to the
+				// tokenAwaiting path which is still valid because
 				// intermediate-timer tokens park on the TimerID as their AwaitCommand.
 			}
 		}
@@ -240,6 +242,29 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 					NodeID:    node.ID,
 				})
 				ht.DueAt = &fireAt
+			}
+			// If the node carries a reminder interval, schedule the first in-wait
+			// timer. Subsequent reminders are re-scheduled each time the timer fires
+			// (see handleReminderFired), so a single ScheduleTimer is enough here.
+			if node.ReminderEvery != "" {
+				dur, err := conditions.EvalDuration(node.ReminderEvery, s.Variables)
+				if err != nil {
+					return cmds, fmt.Errorf("engine: reminder node %q: %w", node.ID, err)
+				}
+				reminderTimerID := s.nextTimerID()
+				cmds = append(cmds, ScheduleTimer{
+					TimerID: reminderTimerID,
+					Token:   tok.ID,
+					FireAt:  at.Add(dur),
+					Kind:    TimerInWait,
+				})
+				s.Timers = append(s.Timers, timerRecord{
+					TimerID:   reminderTimerID,
+					Kind:      TimerInWait,
+					Token:     tok.ID,
+					TaskToken: taskToken,
+					NodeID:    node.ID,
+				})
 			}
 			s.Tasks = append(s.Tasks, ht)
 			cmds = append(cmds, AwaitHuman{TaskToken: taskToken, Eligibility: spec})
@@ -613,9 +638,11 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
-	// If the task has already been completed/cancelled, treat as no-op.
+	// If the task has already been completed or cancelled, treat as no-op.
+	// Fix C: treat both Completed and Cancelled as "already resolved" so a
+	// duplicate SLA fire after cancellation is also a clean no-op.
 	task := s.TaskByToken(rec.TaskToken)
-	if task != nil && task.State == humantask.Completed {
+	if task != nil && task.State != humantask.Unclaimed && task.State != humantask.Claimed {
 		s.removeTimer(rec.TimerID)
 		return StepResult{State: *s, Commands: nil}, nil
 	}
@@ -655,7 +682,11 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 	// (b) Move the token to the alternative path target. The token was parked
 	//     (TokenWaitingCommand / AwaitCommand == TaskToken); reactivate it and
 	//     route to the SLA path.
+	// Fix A: explicitly set TokenActive before moveTokenToTarget for symmetry
+	// with HumanCompleted and as a defensive measure (moveTokenToTarget also
+	// sets it, but being explicit here makes the intent unambiguous).
 	tok.AwaitCommand = ""
+	tok.State = TokenActive
 	s.moveTokenToTarget(tok, slaTarget, at)
 
 	// (c) Mark the task Cancelled and emit UpdateTask.
@@ -679,6 +710,80 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 	}
 	cmds = append(cmds, driveCmds...)
 
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// handleReminderFired processes a TimerFired event for a TimerInWait reminder
+// timer. It is called from the TimerFired handler in Step.
+//
+// Contract:
+//   - If the guarded task is no longer open (token gone, task Completed or
+//     Cancelled), the reminder is stale: clean no-op, stale record removed.
+//   - If the task is still open:
+//     (1) emits InvokeAction(node.ReminderAction) if non-empty (fire-and-forget),
+//     (2) removes the fired reminder record and schedules the next reminder at
+//         firedAt + every (new timer id from the counter), recording the new
+//         timerRecord; the token does NOT move.
+func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, firedAt time.Time) (StepResult, error) {
+	// If the parked token is gone (task completed/cancelled and advanced), the
+	// reminder fired late → clean no-op, remove the stale record.
+	tok := s.tokenAwaiting(rec.TaskToken)
+	if tok == nil {
+		s.removeTimer(rec.TimerID)
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// If the task is already resolved (Completed or Cancelled), stale no-op.
+	task := s.TaskByToken(rec.TaskToken)
+	if task != nil && task.State != humantask.Unclaimed && task.State != humantask.Claimed {
+		s.removeTimer(rec.TimerID)
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// Resolve the node to get ReminderEvery and ReminderAction.
+	node, ok := def.Node(rec.NodeID)
+	if !ok {
+		return StepResult{}, fmt.Errorf("engine: reminder fired: node %q not found in definition", rec.NodeID)
+	}
+
+	var cmds []Command
+
+	// (1) Fire-and-forget reminder action, if configured.
+	if node.ReminderAction != "" {
+		cmdID := s.nextCommandID()
+		cmds = append(cmds, InvokeAction{
+			CommandID: cmdID,
+			Name:      node.ReminderAction,
+			Input:     copyVars(s.Variables),
+		})
+	}
+
+	// (2) Replace the fired reminder record with a new one for the next interval.
+	// Remove the old record first so the timer table stays consistent.
+	s.removeTimer(rec.TimerID)
+
+	// Re-evaluate the duration from the expression (node variables may differ,
+	// but correctness requires the same expression path as initial scheduling).
+	dur, err := conditions.EvalDuration(node.ReminderEvery, s.Variables)
+	if err != nil {
+		return StepResult{}, fmt.Errorf("engine: reminder node %q re-schedule: %w", node.ID, err)
+	}
+	newTimerID := s.nextTimerID()
+	cmds = append(cmds, ScheduleTimer{
+		TimerID: newTimerID,
+		Token:   rec.Token,
+		FireAt:  firedAt.Add(dur),
+		Kind:    TimerInWait,
+	})
+	s.Timers = append(s.Timers, timerRecord{
+		TimerID:   newTimerID,
+		Kind:      TimerInWait,
+		Token:     rec.Token,
+		TaskToken: rec.TaskToken,
+		NodeID:    rec.NodeID,
+	})
+
+	// The token does NOT move — the task is still pending.
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 

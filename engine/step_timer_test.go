@@ -150,9 +150,9 @@ func TestTimerFiredStaleTokenIsNoop(t *testing.T) {
 // slaDef returns a definition with a user task that has a 3h SLA:
 //
 //	Start → userTask(SLADuration:"3h", SLAFlow:"escalate", SLAAction:"notify") → normalEnd
-//	userTask → escalate → escalateEnd
+//	userTask → (escalate flow) → escalateNode
 //
-// "escalate" is the flow id from userTask to the escalate node.
+// "escalate" is the flow id from userTask to escalateNode (the alternative end event).
 func slaDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-sla", Version: 1,
@@ -293,6 +293,9 @@ func TestUserTaskSLABreachTakesAlternativePath(t *testing.T) {
 // TestUserTaskCompletedBeforeSLAIgnoresTimer verifies that if the task is
 // completed before the SLA fires, the late SLA TimerFired is a clean no-op:
 // no commands, no error, instance already advanced past the user task.
+//
+// Fix B: also asserts that the HumanCompleted step emitted a CancelTimer for
+// the SLA timer, proving cancellation on task completion, not just late-fire no-op.
 func TestUserTaskCompletedBeforeSLAIgnoresTimer(t *testing.T) {
 	def := slaDef()
 	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
@@ -321,11 +324,285 @@ func TestUserTaskCompletedBeforeSLAIgnoresTimer(t *testing.T) {
 	// Instance must have completed via the normal end path.
 	assert.Equal(t, engine.StatusCompleted, r2.State.Status)
 
+	// Fix B: HumanCompleted must emit a CancelTimer for the SLA timer, proving the
+	// SLA is actively cancelled on task completion (not just a late-fire no-op).
+	var foundCancel bool
+	for _, c := range r2.Commands {
+		if ct, ok := c.(engine.CancelTimer); ok && ct.TimerID == slaTimerID {
+			foundCancel = true
+		}
+	}
+	assert.True(t, foundCancel, "HumanCompleted must emit CancelTimer for the SLA timer (id=%s); got: %v", slaTimerID, r2.Commands)
+
 	// Now the SLA fires late.
 	r3, err := engine.Step(def, r2.State,
 		engine.NewTimerFired(fireAt, slaTimerID), engine.StepOptions{})
 	require.NoError(t, err, "late SLA TimerFired must not error")
 	assert.Empty(t, r3.Commands, "late SLA TimerFired must emit no commands")
 	// State unchanged (already completed).
+	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
+}
+
+// reminderDef returns a definition with a user task that has both a reminder
+// (ReminderEvery:"1h", ReminderAction:"remind") and an SLA (SLADuration:"3h"):
+//
+//	Start → userTask → normalEnd
+//	userTask → (escalate flow) → escalateEnd
+func reminderDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-reminder", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{
+				ID:             "userTask",
+				Kind:           model.KindUserTask,
+				CandidateRoles: []string{"manager"},
+				SLADuration:    `"3h"`,
+				SLAFlow:        "escalate",
+				SLAAction:      "notify",
+				ReminderEvery:  `"1h"`,
+				ReminderAction: "remind",
+			},
+			{ID: "normalEnd", Kind: model.KindEndEvent},
+			{ID: "escalateNode", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "userTask"},
+			{ID: "f2", Source: "userTask", Target: "normalEnd"},
+			{ID: "escalate", Source: "userTask", Target: "escalateNode"},
+		},
+	}
+}
+
+// TestInWaitReminderRepeatsUntilCompletion verifies the full reminder lifecycle:
+//  1. Entering a user task with ReminderEvery emits AwaitHuman + ScheduleTimer(SLA) + ScheduleTimer(InWait).
+//  2. Each TimerFired for the in-wait reminder emits InvokeAction("remind") + a fresh ScheduleTimer(InWait)
+//     with a new timer id and FireAt == firedAt+1h.
+//  3. Token does not move; task remains Unclaimed/Claimed.
+//  4. Fire the reminder twice to confirm repeating with distinct timer ids.
+//  5. HumanCompleted emits CancelTimer for the outstanding reminder timer.
+//  6. A late reminder TimerFired after completion is a clean no-op.
+func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
+	def := reminderDef()
+	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// ---- Step 1: Start → parked at userTask ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Expect 3 commands: AwaitHuman + ScheduleTimer(SLA) + ScheduleTimer(InWait).
+	require.Len(t, r1.Commands, 3, "expected AwaitHuman + ScheduleTimer(SLA) + ScheduleTimer(InWait) on user-task entry; got: %v", r1.Commands)
+
+	var ah engine.AwaitHuman
+	var slaST, reminderST engine.ScheduleTimer
+	var foundAH bool
+	for _, c := range r1.Commands {
+		switch v := c.(type) {
+		case engine.AwaitHuman:
+			ah = v
+			foundAH = true
+		case engine.ScheduleTimer:
+			switch v.Kind {
+			case engine.TimerSLA:
+				slaST = v
+			case engine.TimerInWait:
+				reminderST = v
+			}
+		}
+	}
+	require.True(t, foundAH, "AwaitHuman not found in entry commands")
+	require.NotEmpty(t, slaST.TimerID, "SLA ScheduleTimer not found in entry commands")
+	require.NotEmpty(t, reminderST.TimerID, "InWait ScheduleTimer not found in entry commands")
+
+	// TaskToken is deterministic.
+	assert.Equal(t, "i1-h1", ah.TaskToken)
+
+	// SLA: 3h from start.
+	assert.Equal(t, engine.TimerSLA, slaST.Kind)
+	assert.Equal(t, startAt.Add(3*time.Hour), slaST.FireAt)
+	slaTimerID := slaST.TimerID
+
+	// Reminder: 1h from start.
+	assert.Equal(t, engine.TimerInWait, reminderST.Kind)
+	assert.Equal(t, startAt.Add(time.Hour), reminderST.FireAt, "first reminder should fire at start+1h")
+
+	// Timer ids are distinct.
+	assert.NotEqual(t, slaTimerID, reminderST.TimerID, "SLA and reminder timer ids must differ")
+
+	// Token parked at the user task (not moved).
+	require.Len(t, r1.State.Tokens, 1)
+	tok := r1.State.Tokens[0]
+	assert.Equal(t, "userTask", tok.NodeID)
+	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, "i1-h1", tok.AwaitCommand, "token must remain parked on the task token")
+
+	// Task state is Unclaimed.
+	require.Len(t, r1.State.Tasks, 1)
+	assert.Equal(t, humantask.Unclaimed, r1.State.Tasks[0].State)
+
+	// ---- Step 2: first reminder fires ----
+	reminder1ID := reminderST.TimerID
+	fire1At := startAt.Add(time.Hour)
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(fire1At, reminder1ID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Expect: InvokeAction("remind") + ScheduleTimer(InWait, FireAt=fire1At+1h).
+	// No CancelTimer, no UpdateTask, no CompleteInstance.
+	var ia1 engine.InvokeAction
+	var nextST1 engine.ScheduleTimer
+	var foundIA1, foundNextST1 bool
+	for _, c := range r2.Commands {
+		switch v := c.(type) {
+		case engine.InvokeAction:
+			ia1 = v
+			foundIA1 = true
+		case engine.ScheduleTimer:
+			if v.Kind == engine.TimerInWait {
+				nextST1 = v
+				foundNextST1 = true
+			}
+		case engine.CancelTimer, engine.UpdateTask, engine.CompleteInstance:
+			t.Errorf("unexpected command %T after first reminder fire: %v", c, c)
+		}
+	}
+	require.True(t, foundIA1, "InvokeAction not found after first reminder; got: %v", r2.Commands)
+	assert.Equal(t, "remind", ia1.Name, "InvokeAction name must be the ReminderAction")
+	require.True(t, foundNextST1, "re-schedule ScheduleTimer(InWait) not found after first reminder; got: %v", r2.Commands)
+	assert.Equal(t, engine.TimerInWait, nextST1.Kind)
+	assert.Equal(t, fire1At.Add(time.Hour), nextST1.FireAt, "next reminder must fire at firedAt+1h")
+	assert.NotEqual(t, reminder1ID, nextST1.TimerID, "re-scheduled reminder must have a new timer id")
+
+	// Token must NOT move — still parked at userTask.
+	require.Len(t, r2.State.Tokens, 1)
+	assert.Equal(t, "userTask", r2.State.Tokens[0].NodeID)
+	assert.Equal(t, engine.TokenWaitingCommand, r2.State.Tokens[0].State)
+	assert.Equal(t, "i1-h1", r2.State.Tokens[0].AwaitCommand)
+
+	// Task still Unclaimed.
+	require.Len(t, r2.State.Tasks, 1)
+	assert.Equal(t, humantask.Unclaimed, r2.State.Tasks[0].State)
+
+	// ---- Step 3: second reminder fires (proves repeating with distinct timer ids) ----
+	reminder2ID := nextST1.TimerID
+	fire2At := fire1At.Add(time.Hour)
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(fire2At, reminder2ID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var nextST2 engine.ScheduleTimer
+	var foundIA2, foundNextST2 bool
+	for _, c := range r3.Commands {
+		switch v := c.(type) {
+		case engine.InvokeAction:
+			if v.Name == "remind" {
+				foundIA2 = true
+			}
+		case engine.ScheduleTimer:
+			if v.Kind == engine.TimerInWait {
+				nextST2 = v
+				foundNextST2 = true
+			}
+		case engine.CancelTimer, engine.UpdateTask, engine.CompleteInstance:
+			t.Errorf("unexpected command %T after second reminder fire: %v", c, c)
+		}
+	}
+	require.True(t, foundIA2, "InvokeAction('remind') not found after second reminder; got: %v", r3.Commands)
+	require.True(t, foundNextST2, "re-schedule ScheduleTimer(InWait) not found after second reminder; got: %v", r3.Commands)
+	assert.Equal(t, fire2At.Add(time.Hour), nextST2.FireAt, "third reminder must fire at fire2At+1h")
+	assert.NotEqual(t, reminder1ID, nextST2.TimerID, "third reminder id must differ from first")
+	assert.NotEqual(t, reminder2ID, nextST2.TimerID, "third reminder id must differ from second")
+
+	// ---- Step 4: complete the task → CancelTimer for outstanding reminder ----
+	reminder3ID := nextST2.TimerID
+	actor := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	completeAt := startAt.Add(3 * time.Hour / 2) // 1.5h into the process, before SLA
+	r4, err := engine.Step(def, r3.State,
+		engine.NewHumanCompleted(completeAt, "i1-h1", nil, actor), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r4.State.Status, "instance should complete on HumanCompleted")
+
+	// HumanCompleted must cancel the outstanding reminder timer AND the SLA timer.
+	var foundCancelReminder, foundCancelSLA bool
+	for _, c := range r4.Commands {
+		if ct, ok := c.(engine.CancelTimer); ok {
+			if ct.TimerID == reminder3ID {
+				foundCancelReminder = true
+			}
+			if ct.TimerID == slaTimerID {
+				foundCancelSLA = true
+			}
+		}
+	}
+	assert.True(t, foundCancelReminder, "HumanCompleted must cancel the outstanding reminder timer (id=%s); got: %v", reminder3ID, r4.Commands)
+	assert.True(t, foundCancelSLA, "HumanCompleted must cancel the SLA timer (id=%s); got: %v", slaTimerID, r4.Commands)
+
+	// ---- Step 5: late reminder fires after task completed → clean no-op ----
+	r5, err := engine.Step(def, r4.State,
+		engine.NewTimerFired(startAt.Add(3*time.Hour), reminder3ID), engine.StepOptions{})
+	require.NoError(t, err, "late reminder TimerFired must not error")
+	assert.Empty(t, r5.Commands, "late reminder TimerFired must emit no commands; got: %v", r5.Commands)
+	assert.Equal(t, engine.StatusCompleted, r5.State.Status, "instance must remain completed after late reminder")
+}
+
+// TestInWaitReminderCancelledBySLA verifies that when the SLA fires on a user task
+// with a reminder, the SLA breach cancels the outstanding reminder timer.
+func TestInWaitReminderCancelledBySLA(t *testing.T) {
+	def := reminderDef()
+	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Start → parked at userTask.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Extract timer ids.
+	var slaTimerID, reminderTimerID string
+	for _, c := range r1.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok {
+			switch st.Kind {
+			case engine.TimerSLA:
+				slaTimerID = st.TimerID
+			case engine.TimerInWait:
+				reminderTimerID = st.TimerID
+			}
+		}
+	}
+	require.NotEmpty(t, slaTimerID, "SLA timer must be scheduled")
+	require.NotEmpty(t, reminderTimerID, "reminder timer must be scheduled")
+
+	// Fire the first reminder so there's an outstanding re-scheduled reminder,
+	// then fire the SLA to confirm it cancels the re-scheduled one.
+	fire1At := startAt.Add(time.Hour)
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(fire1At, reminderTimerID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Get the re-scheduled reminder id.
+	var reminder2ID string
+	for _, c := range r2.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
+			reminder2ID = st.TimerID
+		}
+	}
+	require.NotEmpty(t, reminder2ID, "second reminder must be scheduled after first fires")
+
+	// SLA fires while the second reminder is outstanding.
+	slaFireAt := startAt.Add(3 * time.Hour)
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(slaFireAt, slaTimerID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// SLA breach must cancel the outstanding reminder timer.
+	var foundCancelReminder bool
+	for _, c := range r3.Commands {
+		if ct, ok := c.(engine.CancelTimer); ok && ct.TimerID == reminder2ID {
+			foundCancelReminder = true
+		}
+	}
+	assert.True(t, foundCancelReminder, "SLA breach must emit CancelTimer for the outstanding reminder (id=%s); got: %v", reminder2ID, r3.Commands)
+
+	// Instance completes via the escalate path.
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
 }
