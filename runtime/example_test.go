@@ -112,6 +112,12 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 	assert.Equal(t, true, final.Variables["rb"])
 	_, ranC := final.Variables["rc"]
 	assert.False(t, ranC, "branch c must not run when its condition is false")
+
+	// Every NodeVisit opened during the fork/join must be properly closed: no
+	// visit should have a nil LeftAt (which would indicate a dangling open visit).
+	for _, v := range final.History {
+		assert.NotNilf(t, v.LeftAt, "NodeVisit for node %q (token %q) was never closed", v.NodeID, v.TokenID)
+	}
 }
 
 func TestRunnerExecutesLinearProcess(t *testing.T) {
