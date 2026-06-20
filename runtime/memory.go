@@ -4,10 +4,9 @@ import "github.com/zakyalvan/krtlwrkflw/engine"
 
 // Compile-time checks that the in-memory fakes satisfy the ports.
 var (
-	_ StateStore    = (*MemStateStore)(nil)
-	_ Journal       = (*MemJournal)(nil)
-	_ JournalReader = (*MemJournal)(nil)
-	_ OutboxWriter  = (*MemOutbox)(nil)
+	_ StateStore   = (*MemStateStore)(nil)
+	_ Journal      = (*MemJournal)(nil)
+	_ OutboxWriter = (*MemOutbox)(nil)
 )
 
 // MemStateStore is an in-memory StateStore for tests and reference wiring.
@@ -39,12 +38,6 @@ func (j *MemJournal) Append(id string, trg engine.Trigger) error {
 }
 
 func (j *MemJournal) Entries(id string) []engine.Trigger { return j.m[id] }
-
-// OutboxEvent is one recorded domain event.
-type OutboxEvent struct {
-	Topic   string
-	Payload map[string]any
-}
 
 // MemOutbox is an in-memory OutboxWriter for tests and reference wiring.
 type MemOutbox struct{ events []OutboxEvent }
