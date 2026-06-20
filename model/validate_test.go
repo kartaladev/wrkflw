@@ -129,6 +129,94 @@ func TestValidate(t *testing.T) {
 				require.ErrorIs(t, err, model.ErrDanglingFlow)
 			},
 		},
+		"condition on parallel gateway outgoing": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "fork", Kind: model.KindParallelGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "fork"},
+					{ID: "f2", Source: "fork", Target: "a", Condition: "x > 1"}, // illegal
+					{ID: "f3", Source: "fork", Target: "b"},
+					{ID: "f4", Source: "a", Target: "end"},
+					{ID: "f5", Source: "b", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrConditionNotAllowed)
+			},
+		},
+		"default on parallel gateway outgoing": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "fork", Kind: model.KindParallelGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "fork"},
+					{ID: "f2", Source: "fork", Target: "a", IsDefault: true}, // illegal
+					{ID: "f3", Source: "fork", Target: "b"},
+					{ID: "f4", Source: "a", Target: "end"},
+					{ID: "f5", Source: "b", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDefaultNotAllowed)
+			},
+		},
+		"multiple defaults on exclusive gateway": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "xor", Kind: model.KindExclusiveGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "xor"},
+					{ID: "f2", Source: "xor", Target: "a", IsDefault: true},
+					{ID: "f3", Source: "xor", Target: "b", IsDefault: true}, // illegal: two defaults
+					{ID: "f4", Source: "a", Target: "end"},
+					{ID: "f5", Source: "b", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrMultipleDefaults)
+			},
+		},
+		"valid exclusive gateway with condition and default": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "xor", Kind: model.KindExclusiveGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "xor"},
+					{ID: "f2", Source: "xor", Target: "a", Condition: "x > 1"},
+					{ID: "f3", Source: "xor", Target: "b", IsDefault: true},
+					{ID: "f4", Source: "a", Target: "end"},
+					{ID: "f5", Source: "b", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
 	}
 
 	for name, tc := range tests {
