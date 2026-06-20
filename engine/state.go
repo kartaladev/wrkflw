@@ -260,6 +260,36 @@ func (s *InstanceState) cancelAllTimers() []Command {
 	return cmds
 }
 
+// cancelAllArmsAndBoundaries returns CancelTimer commands for every timer arm
+// in s.ArmedEvents (event-gateway timer arms) and s.Boundaries (boundary timer
+// arms) that has a non-empty TimerID, then clears both slices. Iteration is in
+// slice order (ArmedEvents first, then Boundaries) for determinism.
+//
+// This is called alongside cancelAllTimers on the ActionFailed terminal path to
+// prevent gateway and boundary timer arms from leaking as orphaned scheduled
+// tasks in the runtime scheduler.
+//
+// NOTE: A comprehensive sweep across ALL terminal transitions (not just
+// ActionFailed) and multi-token scenarios is deferred to the errors/compensation
+// plan (Plan 8). This covers ActionFailed specifically, consistent with the
+// Plan-5 precedent for cancelAllTimers.
+func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
+	var cmds []Command
+	for _, ae := range s.ArmedEvents {
+		if ae.TimerID != "" {
+			cmds = append(cmds, CancelTimer{TimerID: ae.TimerID})
+		}
+	}
+	s.ArmedEvents = nil
+	for _, ba := range s.Boundaries {
+		if ba.TimerID != "" {
+			cmds = append(cmds, CancelTimer{TimerID: ba.TimerID})
+		}
+	}
+	s.Boundaries = nil
+	return cmds
+}
+
 // armedEventByTimer returns a pointer to the first armedEvent with the given
 // timerID, or nil if none exists.
 func (s *InstanceState) armedEventByTimer(timerID string) *armedEvent {

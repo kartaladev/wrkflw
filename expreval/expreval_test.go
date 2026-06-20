@@ -250,6 +250,13 @@ func TestEvalString(t *testing.T) {
 		env    map[string]any
 		assert func(t *testing.T, got string, err error)
 	}{
+		"empty code returns empty string (fast path)": {
+			code: "", env: nil,
+			assert: func(t *testing.T, got string, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "", got)
+			},
+		},
 		"string literal": {
 			code: `"hello"`, env: nil,
 			assert: func(t *testing.T, got string, err error) {

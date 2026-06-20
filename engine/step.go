@@ -96,6 +96,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		s.EndedAt = &ended
 		cmds := []Command{FailInstance{Err: t.Err}}
 		cmds = append(cmds, s.cancelAllTimers()...)
+		// Also cancel any event-gateway timer arms (s.ArmedEvents) and boundary
+		// timer arms (s.Boundaries) to prevent orphaned scheduled tasks in the
+		// runtime scheduler. A comprehensive sweep across all terminal transitions
+		// and multi-token scenarios is deferred to Plan 8.
+		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
 		return StepResult{State: s, Commands: cmds}, nil
 
 	case HumanClaimed:
@@ -239,6 +244,17 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// (e.g. an event-gateway arm and a standalone catch) is permitted by the
 		// engine but is the definition author's responsibility — a future model.Validate
 		// rule could warn about ambiguous multi-construct signal names.
+		//
+		// SNAPSHOT SEMANTICS (Fix 2): BPMN signal delivery is a single event at
+		// the delivery instant — only tokens already awaiting the signal AT DELIVERY
+		// TIME should catch it. We snapshot the set of token IDs awaiting this
+		// signal BEFORE running steps 1 and 2 (gateway-arm and boundary-arm
+		// processing). Step 3 only resumes tokens whose ID is in that snapshot.
+		// A token spawned by a non-interrupting boundary or gateway resolution
+		// during this Step is NOT in the snapshot and will not be re-consumed by
+		// the same delivery.
+		snapshotIDs := s.tokenIDsAwaitingSignal(t.Name)
+
 		var signalCmds []Command
 		matched := false
 
@@ -268,11 +284,15 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			signalCmds = append(signalCmds, baCmds...)
 		}
 
-		// 3) Resume all standalone parked-signal tokens (broadcast).
-		for {
-			tok := s.tokenAwaitingSignal(t.Name)
-			if tok == nil {
-				break
+		// 3) Resume all standalone parked-signal tokens that were in the snapshot
+		// (i.e. awaiting this signal at the delivery instant). Tokens spawned by
+		// steps 1 or 2 above are not in the snapshot and will not be consumed here.
+		for _, tokenID := range snapshotIDs {
+			tok := s.tokenByID(tokenID)
+			// Skip if the token was consumed by an interrupting boundary (step 2)
+			// or is no longer awaiting this signal.
+			if tok == nil || tok.AwaitSignal != t.Name {
+				continue
 			}
 			if !matched {
 				mergeVars(&s, t.Payload)
@@ -629,15 +649,19 @@ func (s *InstanceState) tokenByID(tokenID string) *Token {
 	return nil
 }
 
-// tokenAwaitingSignal returns the first token whose AwaitSignal matches name
-// (tokens are stored in TokenSeq order, so iteration is deterministic).
-func (s *InstanceState) tokenAwaitingSignal(name string) *Token {
+// tokenIDsAwaitingSignal returns a snapshot of the token IDs (in slice order)
+// of all tokens currently awaiting the given signal name. The returned slice
+// captures the state at the call instant; tokens added to s.Tokens after this
+// call are NOT included. Used by SignalReceived dispatch to implement snapshot
+// semantics: only tokens awaiting the signal AT DELIVERY TIME are resumed.
+func (s *InstanceState) tokenIDsAwaitingSignal(name string) []string {
+	var ids []string
 	for i := range s.Tokens {
 		if s.Tokens[i].AwaitSignal == name {
-			return &s.Tokens[i]
+			ids = append(ids, s.Tokens[i].ID)
 		}
 	}
-	return nil
+	return ids
 }
 
 // tokenAwaitingMessage returns the first token whose AwaitMessage matches name
@@ -962,10 +986,9 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 	}
 
 	// Remove ALL armedEvent entries for this gateway (winning + sibling arms).
-	// removeArmedEventsForGateway returns timer IDs that need CancelTimer commands.
-	// The winning arm's TimerID is also returned if it is a timer arm; since it
-	// already fired, the runtime will simply receive a redundant cancel — which is
-	// safe. To avoid the redundant cancel, we exclude the winning timer from cancellation.
+	// The winning arm's timer (if it was a timer arm) is excluded from CancelTimer
+	// commands because it already fired and no longer exists in the scheduler.
+	// All sibling timer arms are cancelled.
 	winningTimerID := ae.TimerID
 	siblingsToCancel := s.removeArmedEventsForGateway(ae.GatewayToken)
 

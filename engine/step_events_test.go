@@ -914,6 +914,180 @@ func TestBoundaryBadDurationErrors(t *testing.T) {
 		"error message must reference the boundary node ID")
 }
 
+// actionFailedCancelsArmsAndBoundariesDef returns a definition:
+//
+//	Start → ServiceTask("work") → End
+//	               ↑ interrupting timer boundary "2h" → alert → End2
+//
+// Used to verify that ActionFailed cancels armed boundary timer IDs (Fix 1).
+func actionFailedCancelsArmsAndBoundariesDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-af-cancel", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "work", Kind: model.KindServiceTask, Action: "work-action"},
+			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "work",
+				TimerDuration: `"2h"`, NonInterrupting: false},
+			{ID: "alert", Kind: model.KindServiceTask, Action: "alert-action"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "work"},
+			{ID: "f-work-end", Source: "work", Target: "end"},
+			{ID: "f-bnd-alert", Source: "bnd-timer", Target: "alert"},
+			{ID: "f-alert-end", Source: "alert", Target: "end2"},
+		},
+	}
+}
+
+// TestActionFailedCancelsArmsAndBoundaries verifies Fix 1:
+// When ActionFailed is received for the host token, the engine must emit
+// CancelTimer commands for ALL pending boundary timer arms (s.Boundaries) and
+// event-gateway timer arms (s.ArmedEvents), and clear both slices. Previously
+// only s.Timers (SLA/reminder records) were drained, leaving boundary and
+// gateway timer arms orphaned in the scheduler.
+func TestActionFailedCancelsArmsAndBoundaries(t *testing.T) {
+	def := actionFailedCancelsArmsAndBoundariesDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → ServiceTask("work") parked with boundary timer arm.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Capture the InvokeAction commandID and the boundary ScheduleTimer.
+	var workIA *engine.InvokeAction
+	var boundaryTimer *engine.ScheduleTimer
+	for _, c := range r1.Commands {
+		switch v := c.(type) {
+		case engine.InvokeAction:
+			vv := v
+			workIA = &vv
+		case engine.ScheduleTimer:
+			vv := v
+			boundaryTimer = &vv
+		}
+	}
+	require.NotNil(t, workIA, "expected InvokeAction for work-action")
+	require.NotNil(t, boundaryTimer, "expected ScheduleTimer for boundary timer")
+
+	// The boundary arm must be recorded in s.Boundaries.
+	require.Len(t, r1.State.Boundaries, 1, "boundary arm must be recorded")
+	boundaryTimerID := boundaryTimer.TimerID
+
+	// Step 2: ActionFailed for the work command.
+	// EXPECTED (after fix): StatusFailed, CancelTimer{boundaryTimerID} emitted,
+	//                        s.Boundaries empty.
+	// ACTUAL (before fix):  StatusFailed, NO CancelTimer, s.Boundaries still has the arm.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionFailed(t0, workIA.CommandID, "simulated failure", false), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusFailed, r2.State.Status, "instance must be StatusFailed")
+
+	// After fix: a CancelTimer for the boundary timer must be emitted.
+	var cancelCmd *engine.CancelTimer
+	for _, c := range r2.Commands {
+		if ct, ok := c.(engine.CancelTimer); ok {
+			vv := ct
+			cancelCmd = &vv
+		}
+	}
+	require.NotNil(t, cancelCmd, "ActionFailed must emit CancelTimer for boundary timer arm")
+	assert.Equal(t, boundaryTimerID, cancelCmd.TimerID, "CancelTimer must reference the boundary timer ID")
+
+	// After fix: s.Boundaries must be empty.
+	assert.Empty(t, r2.State.Boundaries, "ActionFailed must clear s.Boundaries")
+	// s.ArmedEvents must also be empty (none were armed in this topology, but still).
+	assert.Empty(t, r2.State.ArmedEvents, "ActionFailed must clear s.ArmedEvents")
+}
+
+// nonInterruptingBoundarySignalSelfCascadeDef returns a definition:
+//
+//	Start → UserTask("work") → End
+//	               ↑ non-interrupting signal boundary "pulse" → SignalCatch("pulse") → End2
+//
+// When SignalReceived{"pulse"} is delivered:
+//   - Step 2: The non-interrupting boundary fires → spawns a new token on "inner-catch"
+//     (which itself parks awaiting "pulse").
+//   - Step 3: The standalone broadcast loop must NOT re-consume the newly-spawned
+//     token because it was NOT awaiting "pulse" at the delivery instant.
+//
+// BPMN semantics: signal delivery is a point-in-time event; tokens spawned during
+// the same Step are not in scope for the current delivery.
+func nonInterruptingBoundarySignalSelfCascadeDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-nonint-selfcascade", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "work", Kind: model.KindUserTask},
+			{ID: "bnd-pulse", Kind: model.KindBoundaryEvent, AttachedTo: "work",
+				SignalName: "pulse", NonInterrupting: true},
+			// The boundary's outgoing path leads to a signal catch for the same signal.
+			{ID: "inner-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "pulse"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "work"},
+			{ID: "f-work-end", Source: "work", Target: "end"},
+			{ID: "f-bnd-catch", Source: "bnd-pulse", Target: "inner-catch"},
+			{ID: "f-catch-end", Source: "inner-catch", Target: "end2"},
+		},
+	}
+}
+
+// TestNonInterruptingBoundarySignalNoSelfCascade verifies Fix 2:
+// A non-interrupting signal boundary fires when SignalReceived{"pulse"} is delivered.
+// The boundary's outgoing path leads to a signal-catch also awaiting "pulse".
+// The newly-spawned token (parked at inner-catch) must NOT be re-consumed by
+// the same delivery — it is not in the snapshot of tokens awaiting "pulse"
+// at the delivery instant.
+func TestNonInterruptingBoundarySignalNoSelfCascade(t *testing.T) {
+	def := nonInterruptingBoundarySignalSelfCascadeDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → UserTask("work") parked; signal boundary arm recorded.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.Tokens, 1)
+	assert.Equal(t, "work", r1.State.Tokens[0].NodeID)
+	require.Len(t, r1.State.Boundaries, 1, "signal boundary arm must be recorded")
+
+	// Step 2: Deliver SignalReceived{"pulse"}.
+	//   - The boundary arm fires (non-interrupting): spawns a token at "inner-catch"
+	//     which parks awaiting "pulse".
+	//   - The standalone broadcast loop (step 3 in SignalReceived dispatch) must NOT
+	//     re-consume this newly-spawned token — it was NOT in the snapshot at delivery.
+	//   - Expected: "work" token still parked, "inner-catch" token parked awaiting "pulse".
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(t0, "pulse", nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Two tokens must exist: the host "work" and the newly-spawned "inner-catch".
+	require.Len(t, r2.State.Tokens, 2, "host + inner-catch token must exist")
+
+	nodeIDs := make(map[string]string) // nodeID → AwaitSignal
+	for _, tok := range r2.State.Tokens {
+		nodeIDs[tok.NodeID] = tok.AwaitSignal
+	}
+	assert.Equal(t, "", nodeIDs["work"],
+		"host work token must still be parked (AwaitCommand, not AwaitSignal)")
+	assert.Equal(t, "pulse", nodeIDs["inner-catch"],
+		"inner-catch token must remain parked awaiting 'pulse' (not re-consumed by this delivery)")
+
+	// The inner-catch token must be parked (not consumed/advanced), confirming no self-cascade.
+	for _, tok := range r2.State.Tokens {
+		if tok.NodeID == "inner-catch" {
+			assert.Equal(t, engine.TokenWaitingCommand, tok.State,
+				"inner-catch token must be parked (AwaitSignal), not active/consumed")
+			assert.Equal(t, "pulse", tok.AwaitSignal,
+				"inner-catch token must still be awaiting 'pulse'")
+		}
+	}
+}
+
 // TestEventGatewayMergeVarsFix verifies the mergeVars-on-no-match fix:
 // A SignalReceived that matches no token (standalone or gateway arm) must NOT
 // mutate instance variables.
