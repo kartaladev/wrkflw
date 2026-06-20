@@ -229,6 +229,90 @@ func TestTaskServiceReassign(t *testing.T) {
 	assert.Equal(t, admin.ID, reassigned.By.ID)
 }
 
+// TestTaskServiceReassignRejectsUnauthorized verifies that Reassign returns
+// ErrNotAuthorized when the acting actor lacks the required role, and that no
+// trigger (side effect) is returned.
+func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
+	ctx := t.Context()
+
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	stranger := authz.Actor{ID: "bob", Roles: []string{"viewer"}}
+
+	taskStore := humantask.NewMemTaskStore()
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
+		"manager": {manager},
+	})
+	az := authz.RoleAuthorizer{}
+	clk := clock.System()
+
+	r := runtime.NewRunner(
+		nil,
+		clk,
+		runtime.NewMemStateStore(),
+		runtime.NewMemJournal(),
+		runtime.NewMemOutbox(),
+		resolver,
+		taskStore,
+		az,
+	)
+
+	_, err := r.Run(ctx, approvalDef(), "inst-reassign-reject", nil)
+	require.NoError(t, err)
+
+	claimable, err := taskStore.ClaimableBy(ctx, manager)
+	require.NoError(t, err)
+	require.Len(t, claimable, 1)
+	taskToken := claimable[0].TaskToken
+
+	svc := runtime.NewTaskService(taskStore, az, clk)
+	trg, err := svc.Reassign(ctx, taskToken, manager.ID, stranger.ID, stranger)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
+	assert.Nil(t, trg, "no trigger must be returned when authorization is rejected")
+}
+
+// TestTaskServiceCompleteRejectsUnauthorized verifies that Complete returns
+// ErrNotAuthorized when the acting actor lacks the required role, and that no
+// trigger (side effect) is returned.
+func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
+	ctx := t.Context()
+
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	stranger := authz.Actor{ID: "bob", Roles: []string{"viewer"}}
+
+	taskStore := humantask.NewMemTaskStore()
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
+		"manager": {manager},
+	})
+	az := authz.RoleAuthorizer{}
+	clk := clock.System()
+
+	r := runtime.NewRunner(
+		nil,
+		clk,
+		runtime.NewMemStateStore(),
+		runtime.NewMemJournal(),
+		runtime.NewMemOutbox(),
+		resolver,
+		taskStore,
+		az,
+	)
+
+	_, err := r.Run(ctx, approvalDef(), "inst-complete-reject", nil)
+	require.NoError(t, err)
+
+	claimable, err := taskStore.ClaimableBy(ctx, manager)
+	require.NoError(t, err)
+	require.Len(t, claimable, 1)
+	taskToken := claimable[0].TaskToken
+
+	svc := runtime.NewTaskService(taskStore, az, clk)
+	trg, err := svc.Complete(ctx, taskToken, stranger, map[string]any{"approved": false})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
+	assert.Nil(t, trg, "no trigger must be returned when authorization is rejected")
+}
+
 // TestTaskServiceGetNotFound verifies that Claim/Complete return an error when the
 // task token does not exist in the store.
 func TestTaskServiceGetNotFound(t *testing.T) {

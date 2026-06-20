@@ -141,6 +141,12 @@ func (r *Runner) perform(ctx context.Context, st engine.InstanceState, c engine.
 		return nil, nil
 
 	case engine.AwaitHuman:
+		if r.resolver == nil {
+			return nil, fmt.Errorf("runtime: perform AwaitHuman: no ActorResolver configured")
+		}
+		if r.tasks == nil {
+			return nil, fmt.Errorf("runtime: perform AwaitHuman: no TaskStore configured")
+		}
 		// Resolve candidates from the eligibility spec and process variables.
 		actors, err := r.resolver.Candidates(ctx, cmd.Eligibility, st.Variables)
 		if err != nil {
@@ -174,6 +180,9 @@ func (r *Runner) perform(ctx context.Context, st engine.InstanceState, c engine.
 		return nil, nil
 
 	case engine.UpdateTask:
+		if r.tasks == nil {
+			return nil, fmt.Errorf("runtime: perform UpdateTask: no TaskStore configured")
+		}
 		if err := r.tasks.Upsert(ctx, cmd.Task); err != nil {
 			return nil, fmt.Errorf("runtime: update task: %w", err)
 		}
