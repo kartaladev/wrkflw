@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
@@ -498,6 +499,375 @@ func TestEventGatewayFirstSignalWins(t *testing.T) {
 	assert.Nil(t, r3.Commands, "late TimerFired after gateway resolved must be no-op")
 	assert.Len(t, r3.State.Tokens, 1)
 	assert.Equal(t, "signal-branch", r3.State.Tokens[0].NodeID)
+}
+
+// eventGatewayMessageDef returns a definition modeling an event-based gateway
+// that races a timer catch event against a message catch event:
+//
+//	Start → EventGateway → TimerCatch("1h") → ServiceTask(timer-branch) → End1
+//	                     → MessageCatch("order") → ServiceTask(msg-branch) → End2
+func eventGatewayMessageDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-evtgw-msg", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "evtgw", Kind: model.KindEventBasedGateway},
+			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
+			{ID: "msg-catch", Kind: model.KindIntermediateCatchEvent, MessageName: "order"},
+			{ID: "timer-branch", Kind: model.KindServiceTask, Action: "timer-action"},
+			{ID: "msg-branch", Kind: model.KindServiceTask, Action: "msg-action"},
+			{ID: "end1", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "evtgw"},
+			{ID: "f-gw-timer", Source: "evtgw", Target: "timer-catch"},
+			{ID: "f-gw-msg", Source: "evtgw", Target: "msg-catch"},
+			{ID: "f-timer-branch", Source: "timer-catch", Target: "timer-branch"},
+			{ID: "f-msg-branch", Source: "msg-catch", Target: "msg-branch"},
+			{ID: "f-timer-end", Source: "timer-branch", Target: "end1"},
+			{ID: "f-msg-end", Source: "msg-branch", Target: "end2"},
+		},
+	}
+}
+
+// TestEventGatewayFirstMessageWins: gateway races a timer arm vs a message arm.
+// Firing the message first causes:
+//   - The message branch proceeds (InvokeAction for msg-action).
+//   - A CancelTimer is emitted for the loser timer arm.
+//   - A late TimerFired is a clean no-op.
+func TestEventGatewayFirstMessageWins(t *testing.T) {
+	def := eventGatewayMessageDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → EventGateway arms both catch events.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Capture the timer ID for later assertions.
+	var schedTimer *engine.ScheduleTimer
+	for _, c := range r1.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok {
+			vv := st
+			schedTimer = &vv
+		}
+	}
+	require.NotNil(t, schedTimer, "expected ScheduleTimer for timer arm")
+	require.Len(t, r1.State.ArmedEvents, 2, "both arms must be recorded")
+
+	// Step 2: MessageReceived("order","") → message branch proceeds.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewMessageReceived(t0, "order", "", nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var msgBranchIA *engine.InvokeAction
+	var cancelCmd *engine.CancelTimer
+	for _, c := range r2.Commands {
+		switch v := c.(type) {
+		case engine.InvokeAction:
+			vv := v
+			msgBranchIA = &vv
+		case engine.CancelTimer:
+			vv := v
+			cancelCmd = &vv
+		}
+	}
+	require.NotNil(t, msgBranchIA, "expected InvokeAction for msg-action")
+	assert.Equal(t, "msg-action", msgBranchIA.Name)
+	require.NotNil(t, cancelCmd, "expected CancelTimer for loser timer arm")
+	assert.Equal(t, schedTimer.TimerID, cancelCmd.TimerID)
+	assert.Empty(t, r2.State.ArmedEvents, "all armed events must be cleared after win")
+
+	require.Len(t, r2.State.Tokens, 1)
+	assert.Equal(t, "msg-branch", r2.State.Tokens[0].NodeID)
+
+	// Step 3: Late TimerFired for the cancelled timer arm is a clean no-op.
+	tLate := t0.Add(time.Hour)
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(tLate, schedTimer.TimerID), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, r3.Commands, "late TimerFired after gateway resolved must be no-op")
+	assert.Len(t, r3.State.Tokens, 1)
+	assert.Equal(t, "msg-branch", r3.State.Tokens[0].NodeID)
+}
+
+// ---- Boundary event tests ----
+
+// interruptingBoundaryTimerDef returns a definition:
+//
+//	Start → UserTask("approve") → End
+//	                ↑ interrupting timer boundary "3h" → escalate → End2
+func interruptingBoundaryTimerDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-bnd-timer", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "approve", Kind: model.KindUserTask},
+			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "approve",
+				TimerDuration: `"3h"`, NonInterrupting: false},
+			{ID: "escalate", Kind: model.KindServiceTask, Action: "escalate-action"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "approve"},
+			{ID: "f-approve-end", Source: "approve", Target: "end"},
+			{ID: "f-bnd-escalate", Source: "bnd-timer", Target: "escalate"},
+			{ID: "f-escalate-end", Source: "escalate", Target: "end2"},
+		},
+	}
+}
+
+// TestInterruptingBoundaryTimerCancelsHost verifies:
+//  1. On entering UserTask("approve"), an AwaitHuman is emitted AND a ScheduleTimer
+//     is emitted for the interrupting boundary timer (3h).
+//  2. Firing the boundary timer (WITHOUT completing the task) cancels the host token,
+//     places a new token on "escalate" (InvokeAction for escalate-action), emits
+//     a CancelTimer for any SLA/reminder timers on the task (none here).
+//  3. A late HumanCompleted for the now-consumed host token is a clean no-op
+//     (ErrTokenNotFound).
+func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
+	def := interruptingBoundaryTimerDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → UserTask parked; boundary timer armed.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var awaitHuman *engine.AwaitHuman
+	var boundaryTimer *engine.ScheduleTimer
+	for _, c := range r1.Commands {
+		switch v := c.(type) {
+		case engine.AwaitHuman:
+			vv := v
+			awaitHuman = &vv
+		case engine.ScheduleTimer:
+			vv := v
+			boundaryTimer = &vv
+		}
+	}
+	require.NotNil(t, awaitHuman, "expected AwaitHuman for approve task")
+	require.NotNil(t, boundaryTimer, "expected ScheduleTimer for boundary timer")
+	assert.Equal(t, t0.Add(3*time.Hour), boundaryTimer.FireAt, "boundary timer must fire at t0+3h")
+
+	// One token: parked at "approve".
+	require.Len(t, r1.State.Tokens, 1)
+	assert.Equal(t, "approve", r1.State.Tokens[0].NodeID)
+	assert.Equal(t, engine.TokenWaitingCommand, r1.State.Tokens[0].State)
+	// Boundary arm recorded.
+	require.Len(t, r1.State.Boundaries, 1, "boundary arm must be recorded")
+
+	// Step 2: Boundary timer fires → host cancelled, escalate path runs.
+	tFired := t0.Add(3 * time.Hour)
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(tFired, boundaryTimer.TimerID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// InvokeAction for escalate-action must be emitted.
+	var escalateIA *engine.InvokeAction
+	for _, c := range r2.Commands {
+		if ia, ok := c.(engine.InvokeAction); ok {
+			vv := ia
+			escalateIA = &vv
+		}
+	}
+	require.NotNil(t, escalateIA, "expected InvokeAction for escalate-action")
+	assert.Equal(t, "escalate-action", escalateIA.Name)
+
+	// Host token is gone; a new token is on "escalate".
+	require.Len(t, r2.State.Tokens, 1)
+	assert.Equal(t, "escalate", r2.State.Tokens[0].NodeID)
+	// Boundary arms cleared.
+	assert.Empty(t, r2.State.Boundaries, "boundary arms must be cleared after interrupting fire")
+
+	// Step 3: Late HumanCompleted for the now-consumed host token is a no-op (error).
+	// The token is gone, so the engine returns ErrTokenNotFound.
+	_, err = engine.Step(def, r2.State,
+		engine.NewHumanCompleted(tFired, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
+	assert.Error(t, err, "late HumanCompleted for consumed host must return error (token gone)")
+}
+
+// nonInterruptingBoundaryDef returns a definition:
+//
+//	Start → UserTask("work") → End
+//	               ↑ non-interrupting signal boundary "notify" → notify-svc → End2
+func nonInterruptingBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-bnd-nonint", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "work", Kind: model.KindUserTask},
+			{ID: "bnd-signal", Kind: model.KindBoundaryEvent, AttachedTo: "work",
+				SignalName: "notify", NonInterrupting: true},
+			{ID: "notify-svc", Kind: model.KindServiceTask, Action: "notify-action"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "work"},
+			{ID: "f-work-end", Source: "work", Target: "end"},
+			{ID: "f-bnd-notify", Source: "bnd-signal", Target: "notify-svc"},
+			{ID: "f-notify-end", Source: "notify-svc", Target: "end2"},
+		},
+	}
+}
+
+// TestNonInterruptingBoundarySpawnsParallelToken verifies:
+//  1. On entering UserTask("work"), AwaitHuman is emitted and the signal boundary arm
+//     is recorded (no ScheduleTimer for signal boundaries).
+//  2. Firing the boundary signal → an ADDITIONAL token appears on "notify-svc"
+//     (InvokeAction for notify-action), while the host "work" token is still parked.
+//  3. The host can still be completed normally after the boundary fires.
+func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
+	def := nonInterruptingBoundaryDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → UserTask parked; signal boundary arm recorded.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var awaitHuman *engine.AwaitHuman
+	for _, c := range r1.Commands {
+		if ah, ok := c.(engine.AwaitHuman); ok {
+			vv := ah
+			awaitHuman = &vv
+		}
+	}
+	require.NotNil(t, awaitHuman, "expected AwaitHuman for work task")
+
+	// No ScheduleTimer for a signal boundary.
+	for _, c := range r1.Commands {
+		_, isTimer := c.(engine.ScheduleTimer)
+		assert.False(t, isTimer, "signal boundary must not emit ScheduleTimer")
+	}
+
+	// One token at "work"; boundary arm recorded.
+	require.Len(t, r1.State.Tokens, 1)
+	assert.Equal(t, "work", r1.State.Tokens[0].NodeID)
+	require.Len(t, r1.State.Boundaries, 1, "signal boundary arm must be recorded")
+
+	// Step 2: Signal fires → additional token on "notify-svc"; host still parked.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(t0, "notify", nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var notifyIA *engine.InvokeAction
+	for _, c := range r2.Commands {
+		if ia, ok := c.(engine.InvokeAction); ok {
+			vv := ia
+			notifyIA = &vv
+		}
+	}
+	require.NotNil(t, notifyIA, "expected InvokeAction for notify-action")
+	assert.Equal(t, "notify-action", notifyIA.Name)
+
+	// Two tokens: one still at "work" (parked), one at "notify-svc".
+	require.Len(t, r2.State.Tokens, 2, "non-interrupting: host + new boundary token")
+	nodeIDs := make(map[string]bool)
+	for _, tok := range r2.State.Tokens {
+		nodeIDs[tok.NodeID] = true
+	}
+	assert.True(t, nodeIDs["work"], "host token must still be at work")
+	assert.True(t, nodeIDs["notify-svc"], "new token must be at notify-svc")
+
+	// The fired boundary arm is removed (one-shot).
+	assert.Empty(t, r2.State.Boundaries, "fired non-interrupting arm removed")
+
+	// Step 3: Complete the host normally — the host token advances, the instance
+	// keeps running because the notify-svc token (from the non-interrupting boundary)
+	// is still pending.
+	r3, err := engine.Step(def, r2.State,
+		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
+	require.NoError(t, err)
+	// Instance still running: notify-svc token is pending its action.
+	assert.Equal(t, engine.StatusRunning, r3.State.Status)
+	// No "work" token remains: host advanced past end and was consumed.
+	for _, tok := range r3.State.Tokens {
+		assert.NotEqual(t, "work", tok.NodeID, "host token must have advanced past work")
+	}
+}
+
+// hostCompletionCancelsBoundaryDef returns a definition:
+//
+//	Start → ServiceTask("work") → End
+//	               ↑ interrupting timer boundary "1h" → alert → End2
+func hostCompletionCancelsBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-bnd-hostfirst", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "work", Kind: model.KindServiceTask, Action: "work-action"},
+			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "work",
+				TimerDuration: `"1h"`, NonInterrupting: false},
+			{ID: "alert", Kind: model.KindServiceTask, Action: "alert-action"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "work"},
+			{ID: "f-work-end", Source: "work", Target: "end"},
+			{ID: "f-bnd-alert", Source: "bnd-timer", Target: "alert"},
+			{ID: "f-alert-end", Source: "alert", Target: "end2"},
+		},
+	}
+}
+
+// TestHostCompletionCancelsArmedBoundary verifies:
+//  1. On entering ServiceTask("work"), a boundary timer arm is scheduled and recorded.
+//  2. Completing the host FIRST emits a CancelTimer for the boundary timer.
+//  3. A late boundary TimerFired is a clean no-op.
+func TestHostCompletionCancelsArmedBoundary(t *testing.T) {
+	def := hostCompletionCancelsBoundaryDef()
+	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Step 1: Start → ServiceTask parked; boundary timer armed.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var invokeWork *engine.InvokeAction
+	var boundaryTimer *engine.ScheduleTimer
+	for _, c := range r1.Commands {
+		switch v := c.(type) {
+		case engine.InvokeAction:
+			vv := v
+			invokeWork = &vv
+		case engine.ScheduleTimer:
+			vv := v
+			boundaryTimer = &vv
+		}
+	}
+	require.NotNil(t, invokeWork, "expected InvokeAction for work-action")
+	require.NotNil(t, boundaryTimer, "expected ScheduleTimer for boundary timer")
+	require.Len(t, r1.State.Boundaries, 1, "boundary arm must be recorded")
+
+	// Step 2: Complete the host FIRST → CancelTimer for boundary emitted.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(t0, invokeWork.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var cancelCmd *engine.CancelTimer
+	for _, c := range r2.Commands {
+		if ct, ok := c.(engine.CancelTimer); ok {
+			vv := ct
+			cancelCmd = &vv
+		}
+	}
+	require.NotNil(t, cancelCmd, "expected CancelTimer for boundary timer on host completion")
+	assert.Equal(t, boundaryTimer.TimerID, cancelCmd.TimerID)
+
+	// Boundary arms cleared.
+	assert.Empty(t, r2.State.Boundaries, "boundary arms cleared after host completion")
+
+	// Step 3: Late boundary TimerFired is a clean no-op.
+	tLate := t0.Add(time.Hour)
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(tLate, boundaryTimer.TimerID), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, r3.Commands, "late boundary TimerFired after host completion must be no-op")
 }
 
 // TestEventGatewayMergeVarsFix verifies the mergeVars-on-no-match fix:

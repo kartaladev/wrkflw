@@ -69,12 +69,22 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 		}
+		// Cancel any boundary arms on this host token before advancing.
+		var preCmds []Command
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
 		mergeVars(&s, t.Output)
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
 		// Advance the token past the completed ServiceTask so drive sees it at
 		// the next node, not re-firing the action.
 		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
 
 	case ActionFailed:
 		tok := s.tokenAwaiting(t.CommandID)
@@ -107,8 +117,13 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
 
 	case TimerFired:
-		// Check first whether this timer belongs to an event-based gateway arm.
-		// If so, dispatch the gateway win and return immediately.
+		// Dispatch order:
+		// 1) event-based gateway arm (first-event-wins routing).
+		// 2) boundary event arm (interrupting/non-interrupting).
+		// 3) SLA/in-wait timer record (task-guarded timers).
+		// 4) standalone intermediate catch event (token parks on TimerID).
+
+		// 1) Gateway arm check.
 		if ae := s.armedEventByTimer(t.TimerID); ae != nil {
 			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
 			if err != nil {
@@ -117,6 +132,16 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{State: s, Commands: gwCmds}, nil
 		}
 
+		// 2) Boundary arm check.
+		if ba := s.boundaryArmByTimer(t.TimerID); ba != nil {
+			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: baCmds}, nil
+		}
+
+		// 3) SLA/in-wait timer record.
 		// s.Timers holds only SLA (TimerSLA) and in-wait/reminder (TimerInWait)
 		// records. Intermediate timers (TimerIntermediate) are never appended to
 		// s.Timers; for those, the token parks on the TimerID as its AwaitCommand,
@@ -131,6 +156,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			}
 		}
 
+		// 4) Standalone intermediate timer.
 		tok := s.tokenAwaiting(t.TimerID)
 		if tok == nil {
 			// Stale/already-moved timer (no record and no parked token): clean no-op.
@@ -173,6 +199,16 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
 			cmds = append(cmds, CancelTimer{TimerID: timerID})
 		}
+		// Cancel any boundary arms on this host token (token ID is the same as the
+		// HostToken recorded at arm time; at this point tok.ID is still valid since
+		// moveAlongSingleFlow keeps the same token — it just changes NodeID).
+		// We find the original token ID via the task token's parked token:
+		// tok.ID is already the token that was parked (we looked it up via
+		// tokenAwaiting(t.TaskToken) above, and moveAlongSingleFlow does not change
+		// the token ID, only its NodeID). So tok.ID is the correct HostToken.
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
 			return StepResult{}, err
@@ -183,17 +219,21 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 	case SignalReceived:
 		// Broadcast semantics within the instance: resume every token that is
 		// awaiting this signal name. Tokens are processed in slice order for
-		// determinism. A signal that matches no token (and no gateway arm) is a
-		// clean no-op — mergeVars runs ONLY when at least one match is found.
+		// determinism. A signal that matches no token (and no gateway arm, and no
+		// boundary arm) is a clean no-op — mergeVars runs ONLY when at least one
+		// match is found.
 		//
 		// NOTE: mergeVars is deferred until after match-checking so that a no-match
 		// delivery does not mutate instance variables (Task-2 review fix).
+		//
+		// Dispatch order for signal:
+		// 1) event-based gateway arm (first-event-wins).
+		// 2) boundary event arm (interrupting/non-interrupting).
+		// 3) standalone parked-signal tokens (broadcast).
 		var signalCmds []Command
 		matched := false
 
-		// Check whether the signal matches an event-gateway arm (first-event-wins).
-		// A signal can simultaneously match both a standalone catch event AND a
-		// gateway arm; both are processed independently.
+		// 1) Check whether the signal matches an event-gateway arm.
 		if ae := s.armedEventBySignal(t.Name); ae != nil {
 			if !matched {
 				mergeVars(&s, t.Payload)
@@ -206,7 +246,20 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			signalCmds = append(signalCmds, gwCmds...)
 		}
 
-		// Resume all standalone parked-signal tokens (broadcast).
+		// 2) Check whether the signal matches a boundary arm.
+		if ba := s.boundaryArmBySignal(t.Name); ba != nil {
+			if !matched {
+				mergeVars(&s, t.Payload)
+				matched = true
+			}
+			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			signalCmds = append(signalCmds, baCmds...)
+		}
+
+		// 3) Resume all standalone parked-signal tokens (broadcast).
 		for {
 			tok := s.tokenAwaitingSignal(t.Name)
 			if tok == nil {
@@ -301,6 +354,8 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
+			// Arm any boundary events attached to this host activity.
+			cmds = append(cmds, armBoundaries(def, s, tok.ID, node.ID, at)...)
 
 		case model.KindUserTask:
 			taskToken := s.nextTaskToken()
@@ -367,6 +422,8 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			cmds = append(cmds, AwaitHuman{TaskToken: taskToken, Eligibility: spec})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = taskToken
+			// Arm any boundary events attached to this host activity.
+			cmds = append(cmds, armBoundaries(def, s, tok.ID, node.ID, at)...)
 
 		case model.KindIntermediateCatchEvent:
 			if node.TimerDuration != "" {
@@ -539,6 +596,16 @@ func (s *InstanceState) firstActive() *Token {
 func (s *InstanceState) tokenAwaiting(cmdID string) *Token {
 	for i := range s.Tokens {
 		if s.Tokens[i].AwaitCommand == cmdID {
+			return &s.Tokens[i]
+		}
+	}
+	return nil
+}
+
+// tokenByID returns the first token whose ID matches, or nil.
+func (s *InstanceState) tokenByID(tokenID string) *Token {
+	for i := range s.Tokens {
+		if s.Tokens[i].ID == tokenID {
 			return &s.Tokens[i]
 		}
 	}
@@ -870,6 +937,10 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 		s.openVisit(tok.ID, branchTarget, at)
 	} else {
 		// Fallback: move along the gateway's outgoing flow to the catch node.
+		// model.Validate rejects a catch node with no outgoing flow, so this
+		// branch is unreachable in a validated definition. It is retained as a
+		// defensive fallback so the engine degrades gracefully rather than
+		// panicking if an unvalidated definition is passed.
 		s.moveAlongSingleFlow(def, tok, at)
 	}
 
@@ -890,6 +961,147 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 	}
 
 	// Drive forward from the branch target.
+	driveCmds, err := drive(def, s, at)
+	if err != nil {
+		return nil, err
+	}
+	cmds = append(cmds, driveCmds...)
+	return cmds, nil
+}
+
+// armBoundaries finds all KindBoundaryEvent nodes with AttachedTo == hostNode,
+// records a boundaryArm for each, and returns ScheduleTimer commands for timer
+// boundaries. Called from the ServiceTask and UserTask park points in drive.
+//
+// Definition-scan order is deterministic (Nodes slice order); boundary arms are
+// appended in the same order so s.Boundaries is deterministic.
+func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time) []StepCommand {
+	var cmds []StepCommand
+	for _, n := range def.Nodes {
+		if n.Kind != model.KindBoundaryEvent || n.AttachedTo != hostNode {
+			continue
+		}
+		// Find the boundary's single outgoing flow.
+		outs := def.Outgoing(n.ID)
+		if len(outs) == 0 {
+			continue // unreachable if model.Validate passes
+		}
+		flowID := outs[0].ID
+
+		arm := boundaryArm{
+			HostToken:       hostTokenID,
+			HostNode:        hostNode,
+			BoundaryNode:    n.ID,
+			Flow:            flowID,
+			NonInterrupting: n.NonInterrupting,
+		}
+
+		if n.TimerDuration != "" {
+			dur, err := conditions.EvalDuration(n.TimerDuration, s.Variables)
+			if err != nil {
+				// Validation rejects bad durations; skip silently here to avoid
+				// changing the return signature. A test with a bad duration will
+				// see the boundary arm missing (no fire).
+				continue
+			}
+			timerID := s.nextTimerID()
+			arm.TimerID = timerID
+			cmds = append(cmds, ScheduleTimer{
+				TimerID: timerID,
+				Token:   hostTokenID,
+				FireAt:  at.Add(dur),
+				Kind:    TimerIntermediate,
+			})
+		} else if n.SignalName != "" {
+			arm.Signal = n.SignalName
+		}
+		s.Boundaries = append(s.Boundaries, arm)
+	}
+	return cmds
+}
+
+// StepCommand is an alias so armBoundaries can return []Command without importing
+// a circular type. We use Command directly since armBoundaries is package-internal.
+type StepCommand = Command
+
+// fireBoundaryArm executes a boundary event arm that has fired. It is called
+// from the TimerFired and SignalReceived handlers.
+//
+// For interrupting boundaries (!ba.NonInterrupting):
+//  1. Verify the host token is still parked. If not, it's a late/stale fire → no-op.
+//  2. Consume the host token (close its visit).
+//  3. Cancel any SLA/reminder timers on the host (UserTask) via cancelTimersByTaskToken
+//     using the host's taskToken (AwaitCommand == taskToken for UserTask hosts).
+//  4. Remove ALL boundary arms for this host (emit CancelTimer for timer siblings).
+//  5. Place a new Active token at the boundary's outgoing flow target.
+//  6. Drive forward.
+//
+// For non-interrupting boundaries (ba.NonInterrupting):
+//  1. Verify the host token is still parked. If not, no-op.
+//  2. Leave the host parked.
+//  3. Remove ONLY this boundary arm (fired once; do not re-arm — repeating out of scope).
+//  4. Place an additional Active token at the boundary's outgoing flow target.
+//  5. Drive forward (the new token).
+func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time) ([]Command, error) {
+	// Find the host token by ID (not by AwaitCommand — the host token parks on
+	// taskToken/cmdID, not on the boundary timer). If the token is gone (already
+	// consumed by another path), this is a late fire — clean no-op.
+	hostTok := s.tokenByID(ba.HostToken)
+	if hostTok == nil {
+		// Also clean up stale boundary arms for this host (defensive).
+		s.removeBoundaryArmsForHost(ba.HostToken)
+		return nil, nil
+	}
+
+	// Resolve the boundary's outgoing flow target.
+	var flowTarget string
+	for _, f := range def.Flows {
+		if f.ID == ba.Flow {
+			flowTarget = f.Target
+			break
+		}
+	}
+	if flowTarget == "" {
+		// No target: unreachable if model.Validate passes (boundary must have outgoing flow).
+		return nil, fmt.Errorf("engine: boundary %q: outgoing flow %q not found", ba.BoundaryNode, ba.Flow)
+	}
+
+	var cmds []Command
+
+	if !ba.NonInterrupting {
+		// Interrupting: consume the host, cancel its task timers and boundary siblings.
+
+		// Cancel SLA/reminder timers for the host (UserTask case: AwaitCommand == taskToken).
+		// For a ServiceTask host, AwaitCommand is a cmdID (not a taskToken), so
+		// cancelTimersByTaskToken will find no records — which is correct.
+		hostTaskToken := hostTok.AwaitCommand
+		for _, timerID := range s.cancelTimersByTaskToken(hostTaskToken, "") {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
+
+		// Consume the host token (close its visit, remove from slice).
+		s.consumeToken(hostTok, at)
+
+		// Remove ALL boundary arms for this host and emit CancelTimer for timer siblings.
+		// The fired arm's timerID (if any) is included; it already fired so the
+		// runtime's cancel is idempotent — no special handling needed.
+		for _, timerID := range s.removeBoundaryArmsForHost(ba.HostToken) {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
+
+		// Place a new Active token at the boundary's outgoing flow target.
+		s.placeToken(flowTarget, at)
+	} else {
+		// Non-interrupting: leave host parked, spawn an additional token.
+
+		// Remove only THIS boundary arm (it fired once; no re-arm in scope).
+		s.removeBoundaryArm(ba.HostToken, ba.BoundaryNode)
+
+		// Spawn a new Active token at the boundary's outgoing flow target.
+		s.placeToken(flowTarget, at)
+	}
+
+	// Drive forward (the newly placed token(s)).
 	driveCmds, err := drive(def, s, at)
 	if err != nil {
 		return nil, err
@@ -1128,5 +1340,8 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy ArmedEvents: armedEvent is a value type (no pointers), so a slice
 	// copy is sufficient.
 	s.ArmedEvents = append([]armedEvent(nil), st.ArmedEvents...)
+	// Deep-copy Boundaries: boundaryArm is a value type (no pointers), so a slice
+	// copy is sufficient.
+	s.Boundaries = append([]boundaryArm(nil), st.Boundaries...)
 	return s
 }
