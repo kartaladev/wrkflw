@@ -33,6 +33,11 @@ type StepResult struct {
 
 // Step applies one trigger to the instance state and returns the new state plus
 // the commands the runtime must perform. It is pure: it does not mutate st.
+//
+// The engine assumes the definition has passed [model.Validate]; in particular,
+// an exclusive gateway is assumed to have at most one unconditional non-default
+// outgoing flow — the engine takes the first matching flow in definition order
+// and does not detect ambiguous multi-unconditional configurations.
 func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	if opt.Mode == Micro {
 		return StepResult{}, ErrMicroNotImplemented
@@ -127,6 +132,9 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 		case model.KindExclusiveGateway:
 			target, err := selectExclusiveTarget(def, s, node)
 			if err != nil {
+				// cmds is carried here for a future error-handling plan (Plan 8);
+				// Step currently discards StepResult on error, so partial commands
+				// are intentionally not delivered today.
 				return cmds, err
 			}
 			s.moveTokenToTarget(tok, target, at)
@@ -250,6 +258,9 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 			arrived++
 		}
 	}
+	// INVARIANT: single non-nested, acyclic diamond only — counting TokenAtJoin
+	// on the node vs incoming-flow count over-counts under nested/re-entered joins
+	// (deferred to a later scopes/loops plan).
 	if arrived < len(def.Incoming(node.ID)) {
 		return // still waiting on other branches
 	}
