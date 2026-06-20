@@ -126,6 +126,11 @@ type eventSubprocessArm struct {
 	Signal string
 	// TimerID is the scheduled timer ID for timer-triggered event sub-processes.
 	// Non-empty for timer-triggered event sub-processes.
+	//
+	// NOTE: the corresponding ScheduleTimer.Token is intentionally EMPTY for ESP
+	// arms — the timer is keyed to the enclosing scope (EnclosingScopeID), not to
+	// any individual token. Cancellation is performed via
+	// removeEventSubprocessArmsForScope (by TimerID), not by token lookup.
 	TimerID string
 	// Message is the message name for message-triggered event sub-processes.
 	Message string

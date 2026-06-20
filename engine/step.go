@@ -645,13 +645,17 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 					//     enclosing scope's parent (grandparent level). The enclosing scope
 					//     was intentionally kept open (its tokens cancelled) so that we can
 					//     check for remaining non-interrupting children before exiting.
+					//
+					// Fix 2: detect ESP child scope by checking the NodeID in the parent
+					// definition regardless of whether parentScopeID is "" (root scope).
+					// The previous guard (parentScopeID != "") excluded root-level ESPs,
+					// causing the engine to fall into the regular sub-process branch and
+					// error ("no outgoing flows from root-esp in root definition").
 					isEventSubProcess := false
-					if parentScopeID != "" {
-						parentDef, pErr := defForScope(def, s, parentScopeID)
-						if pErr == nil {
-							if espNode, ok2 := parentDef.Node(subNodeID); ok2 && espNode.Kind == model.KindEventSubProcess {
-								isEventSubProcess = true
-							}
+					parentDef, pErr := defForScope(def, s, parentScopeID)
+					if pErr == nil {
+						if espNode, ok2 := parentDef.Node(subNodeID); ok2 && espNode.Kind == model.KindEventSubProcess {
+							isEventSubProcess = true
 						}
 					}
 
@@ -660,6 +664,46 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 						// Close this child scope.
 						s.closeScope(currentScopeID)
 
+						// Fix 2: handle root-level ESP (parentScopeID == "") distinctly from
+						// nested ESP (parentScopeID != ""). The root scope is implicit (no Scope
+						// object exists for it), so scopeByID("") always returns nil. We must
+						// NOT treat that nil as "enclosing scope already closed".
+						if parentScopeID == "" {
+							// Root-level event sub-process.
+							// Non-interrupting: the root scope still has tokens → just close child.
+							if s.tokensInScope("") > 0 {
+								break
+							}
+							// Check if any other child scopes of the root still have tokens.
+							hasOtherRootChildren := false
+							for _, sc := range s.Scopes {
+								if sc.ParentID == "" && sc.ID != currentScopeID {
+									if s.tokensInScope(sc.ID) > 0 {
+										hasOtherRootChildren = true
+										break
+									}
+								}
+							}
+							if hasOtherRootChildren {
+								break
+							}
+							// Interrupting root-level ESP completed: all root tokens were cancelled
+							// and no sibling child scopes remain. The instance is now complete.
+							// Cancel any remaining ESP arms for the root scope.
+							for _, timerID := range s.removeEventSubprocessArmsForScope("") {
+								cmds = append(cmds, CancelTimer{TimerID: timerID})
+							}
+							// Instance completes: all tokens gone, no active root children.
+							if len(s.Tokens) == 0 {
+								s.Status = StatusCompleted
+								ended := at
+								s.EndedAt = &ended
+								cmds = append(cmds, CompleteInstance{Result: copyVars(s.Variables)})
+							}
+							break
+						}
+
+						// Nested event sub-process (parentScopeID != "").
 						// Check what kind of event sub-process this is:
 						// If the parent scope (enclosingScopeID) still has tokens or is still
 						// a normal running scope, this was NON-interrupting → just close child.
@@ -1609,6 +1653,16 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 			// Cancel boundary arms for this host token.
 			for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 				cmds = append(cmds, CancelTimer{TimerID: timerID})
+			}
+			// Fix 1: if the token is an event-based-gateway-parked token (its
+			// AwaitCommand starts with the "evtgw:" sentinel), cancel all of its
+			// armed events so their timers do not fire as stale orphans later.
+			// Deterministic: removeArmedEventsForGateway returns timer IDs in
+			// ArmedEvents slice order; we emit CancelTimer for each.
+			if len(tok.AwaitCommand) > 6 && tok.AwaitCommand[:6] == "evtgw:" {
+				for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
+					cmds = append(cmds, CancelTimer{TimerID: timerID})
+				}
 			}
 			// Consume the token (close visit).
 			tokPtr := s.tokenByID(tok.ID)

@@ -324,15 +324,13 @@ func TestInterruptingEventSubprocessCancelsParentScope(t *testing.T) {
 	}
 	assert.True(t, found, "expected CompleteInstance command after event sub-process completion")
 
-	// ---- Step 4: Late HumanCompleted is a clean no-op ----
-	r4, err := engine.Step(def, r3.State,
+	// ---- Step 4: Late HumanCompleted must error with ErrTokenNotFound ----
+	// A completed/cancelled task's token is gone; the engine must reject the trigger.
+	_, err = engine.Step(def, r3.State,
 		engine.NewHumanCompleted(at.Add(3*time.Second), taskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
-	// Should error with ErrTokenNotFound (task token no longer exists) OR be a no-op.
-	// Either is acceptable; we just verify it doesn't panic and the state is unchanged.
-	if err == nil {
-		assert.Equal(t, engine.StatusCompleted, r4.State.Status,
-			"state should remain completed on late HumanCompleted")
-	}
+	require.Error(t, err, "late HumanCompleted on a cancelled task token must return an error")
+	require.ErrorIs(t, err, engine.ErrTokenNotFound,
+		"late HumanCompleted must wrap ErrTokenNotFound")
 }
 
 // TestNonInterruptingEventSubprocessRunsAlongside verifies the non-interrupting
@@ -610,4 +608,323 @@ func TestTimerEventSubprocessArmsOnScopeOpen(t *testing.T) {
 	// Normal inner-action's ScheduleTimer was the evtsub arm timer — it was the fired timer.
 	// A CancelTimer for the inner-action's InvokeAction command is NOT emitted (no way to cancel
 	// in-flight service invocations in this plan). That's expected.
+}
+
+// espWithEventGatewayDef builds a definition for Fix 1 testing:
+//
+// outer: outer-start → sub (KindSubProcess) → outer-end
+//
+// sub's inner def:
+//
+//	inner-start → evtgw (KindEventBasedGateway)
+//	  → timer-catch (IntermediateCatchEvent timer "2h") → normal-end
+//	  → signal-catch (IntermediateCatchEvent signal "done") → normal-end
+//	[KindEventSubProcess "evtsub"] triggered by signal "cancel" (interrupting)
+//	  evtsub-inner: evtsub-start(signal "cancel") → evtsub-svc("cancel-action") → evtsub-end
+//
+// The event-based gateway parks and arms a timer (2h) and a signal arm.
+// An interrupting ESP is armed for "cancel" signal.
+// When the ESP fires, it must cancel the gateway's timer arm and leave no stale ArmedEvents.
+func espWithEventGatewayDef() *model.ProcessDefinition {
+	evtsubInner := &model.ProcessDefinition{
+		ID: "esp-gw-evtsub-inner", Version: 1,
+		Nodes: []model.Node{
+			{ID: "evtsub-start", Kind: model.KindStartEvent, SignalName: "cancel"},
+			{ID: "evtsub-svc", Kind: model.KindServiceTask, Action: "cancel-action"},
+			{ID: "evtsub-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
+			{ID: "ef2", Source: "evtsub-svc", Target: "evtsub-end"},
+		},
+	}
+
+	inner := &model.ProcessDefinition{
+		ID: "inner-esp-gw", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "evtgw", Kind: model.KindEventBasedGateway},
+			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"2h"`},
+			{ID: "signal-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "done"},
+			{ID: "normal-end", Kind: model.KindEndEvent},
+			{ID: "evtsub", Kind: model.KindEventSubProcess, NonInterrupting: false, Subprocess: evtsubInner},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "evtgw"},
+			{ID: "if2", Source: "evtgw", Target: "timer-catch"},
+			{ID: "if3", Source: "evtgw", Target: "signal-catch"},
+			{ID: "if4", Source: "timer-catch", Target: "normal-end"},
+			{ID: "if5", Source: "signal-catch", Target: "normal-end"},
+		},
+	}
+
+	return &model.ProcessDefinition{
+		ID: "outer-esp-gw", Version: 1,
+		Nodes: []model.Node{
+			{ID: "outer-start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+		},
+	}
+}
+
+// TestInterruptingEventSubprocessCancelsGatewayArms is the Fix 1 TDD test.
+//
+// Scenario: A sub-process contains an event-based gateway (parked, with a timer arm)
+// AND an interrupting event sub-process. When the ESP fires ("cancel" signal), it
+// must cancel the enclosing-scope tokens — but the event-gateway-parked token's
+// ArmedEvents entries must ALSO be cancelled (the timer arm for timer-catch).
+//
+// Before fix: the gateway token is consumed but its ArmedEvents entries remain →
+// a late TimerFired for the gateway timer fires against a missing token (no-op today,
+// but the ArmedEvents entry is stale and could misroute in other scenarios).
+//
+// After fix: firing the ESP emits CancelTimer for the gateway's timer arm and
+// removes all ArmedEvents for that gateway so a late TimerFired is a clean no-op
+// with no ArmedEvents remaining.
+func TestInterruptingEventSubprocessCancelsGatewayArms(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := espWithEventGatewayDef()
+
+	// ---- Step 1: StartInstance → inner starts → event gateway parks with timer arm ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-esp-gw"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// The event gateway must be parked with ArmedEvents (timer arm + signal arm).
+	require.NotEmpty(t, r1.State.ArmedEvents, "event gateway must have armed events")
+
+	// Find the timer arm's TimerID from commands.
+	var gwTimerID string
+	for _, cmd := range r1.Commands {
+		if st, ok := cmd.(engine.ScheduleTimer); ok {
+			gwTimerID = st.TimerID
+		}
+	}
+	require.NotEmpty(t, gwTimerID, "expected ScheduleTimer for event gateway timer arm")
+
+	// Gateway token must be parked with "evtgw:" prefix.
+	var gwTokID string
+	for _, tok := range r1.State.Tokens {
+		if len(tok.AwaitCommand) > 6 && tok.AwaitCommand[:6] == "evtgw:" {
+			gwTokID = tok.ID
+			break
+		}
+	}
+	require.NotEmpty(t, gwTokID, "expected a gateway-parked token with evtgw: prefix")
+
+	// ESP arm must be recorded (signal "cancel").
+	require.NotEmpty(t, r1.State.EventSubprocesses, "ESP arm must be recorded")
+
+	// ---- Step 2: SignalReceived{"cancel"} — interrupting ESP fires ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+
+	// FIX 1 ASSERTION: ArmedEvents must be empty (gateway arms cleaned up).
+	assert.Empty(t, r2.State.ArmedEvents,
+		"ArmedEvents must be empty after interrupting ESP cancels the enclosing scope (gateway arms must be cleaned up)")
+
+	// FIX 1 ASSERTION: A CancelTimer for the gateway's timer arm must have been emitted.
+	cancelTimerFound := false
+	for _, cmd := range r2.Commands {
+		if ct, ok := cmd.(engine.CancelTimer); ok && ct.TimerID == gwTimerID {
+			cancelTimerFound = true
+			break
+		}
+	}
+	assert.True(t, cancelTimerFound,
+		"expected CancelTimer for gateway timer arm %q in commands %v", gwTimerID, r2.Commands)
+
+	// FIX 1 ASSERTION: A late TimerFired for the cancelled gateway timer must be a clean no-op
+	// (no error, no state change, no commands).
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(at.Add(2*time.Hour), gwTimerID), engine.StepOptions{})
+	require.NoError(t, err, "late TimerFired for cancelled gateway timer must not error")
+	assert.Empty(t, r3.Commands, "late TimerFired for cancelled gateway timer must produce no commands")
+	// Status must still be running (cancel-action InvokeAction was emitted but not yet completed).
+	assert.Equal(t, engine.StatusRunning, r3.State.Status)
+}
+
+// rootLevelESPDef builds a definition for Fix 2 testing:
+//
+// Root-level (no outer KindSubProcess wrapper):
+//
+//	root-start → root-svc (ServiceTask "normal-action") → root-end
+//	[KindEventSubProcess "root-esp"] triggered by signal "cancel" (interrupting)
+//	  root-esp-inner: esp-start(signal "cancel") → esp-svc("esp-action") → esp-end
+//
+// When the ESP fires, it cancels root-svc and runs esp-svc.
+// On esp-svc completion, the instance should complete (no outer sub-process to resume).
+func rootLevelESPDef() *model.ProcessDefinition {
+	espInner := &model.ProcessDefinition{
+		ID: "root-esp-inner", Version: 1,
+		Nodes: []model.Node{
+			{ID: "esp-start", Kind: model.KindStartEvent, SignalName: "cancel"},
+			{ID: "esp-svc", Kind: model.KindServiceTask, Action: "esp-action"},
+			{ID: "esp-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "re1", Source: "esp-start", Target: "esp-svc"},
+			{ID: "re2", Source: "esp-svc", Target: "esp-end"},
+		},
+	}
+
+	return &model.ProcessDefinition{
+		ID: "root-esp-def", Version: 1,
+		Nodes: []model.Node{
+			{ID: "root-start", Kind: model.KindStartEvent},
+			{ID: "root-svc", Kind: model.KindServiceTask, Action: "normal-action"},
+			{ID: "root-end", Kind: model.KindEndEvent},
+			{ID: "root-esp", Kind: model.KindEventSubProcess, NonInterrupting: false, Subprocess: espInner},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "rf1", Source: "root-start", Target: "root-svc"},
+			{ID: "rf2", Source: "root-svc", Target: "root-end"},
+		},
+	}
+}
+
+// TestRootLevelEventSubprocessCompletes is the Fix 2 TDD test.
+//
+// Scenario: A ROOT-LEVEL (no enclosing KindSubProcess) interrupting event sub-process
+// fires. The root-svc token is cancelled; the ESP child scope opens and runs esp-svc.
+// On esp-svc completion, the ESP child scope drains. Since the ESP is at the root level
+// (parentScopeID == ""), the isEventSubProcess detection must still work (Fix 2),
+// and the instance should complete cleanly.
+func TestRootLevelEventSubprocessCompletes(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := rootLevelESPDef()
+
+	// ---- Step 1: StartInstance → root-svc parks ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-root-esp"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// root-svc must be parked (InvokeAction emitted).
+	var normalCmdID string
+	for _, cmd := range r1.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "normal-action" {
+			normalCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, normalCmdID, "expected InvokeAction for normal-action")
+
+	// Root-level ESP arm must be recorded (EnclosingScopeID == "").
+	require.NotEmpty(t, r1.State.EventSubprocesses, "root-level ESP arm must be recorded")
+	assert.Equal(t, "", r1.State.EventSubprocesses[0].EnclosingScopeID,
+		"root-level ESP arm must have empty EnclosingScopeID")
+
+	// ---- Step 2: SignalReceived{"cancel"} → interrupting ESP fires at root level ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+
+	// root-svc token must be gone (cancelled by interrupting ESP).
+	for _, tok := range r2.State.Tokens {
+		assert.NotEqual(t, "root-svc", tok.NodeID,
+			"root-svc token must be cancelled by interrupting root-level ESP")
+	}
+
+	// A child scope must be open for the ESP (parented to "").
+	// The ESP child scope's NodeID == "root-esp".
+	var espScope *engine.Scope
+	for i := range r2.State.Scopes {
+		if r2.State.Scopes[i].NodeID == "root-esp" {
+			espScope = &r2.State.Scopes[i]
+			break
+		}
+	}
+	require.NotNil(t, espScope, "expected a child scope for root-level ESP")
+	assert.Equal(t, "", espScope.ParentID, "root-level ESP scope parent must be empty (root)")
+
+	// InvokeAction for esp-action must have been emitted.
+	var espCmdID string
+	for _, cmd := range r2.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "esp-action" {
+			espCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, espCmdID, "expected InvokeAction for esp-action")
+
+	// ---- Step 3: Complete esp-action → ESP child scope drains → instance completes ----
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), espCmdID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r3.State.Status,
+		"instance must complete when root-level ESP child scope drains")
+	assert.Empty(t, r3.State.Tokens, "all tokens must be consumed on completion")
+	assert.Empty(t, r3.State.Scopes, "all scopes must be closed on completion")
+	require.NotNil(t, r3.State.EndedAt)
+
+	found := false
+	for _, cmd := range r3.Commands {
+		if _, ok := cmd.(engine.CompleteInstance); ok {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected CompleteInstance after root-level ESP completes")
+}
+
+// TestEventSubprocessArmCancelledOnNormalScopeClose is Fix 3 / M2.
+//
+// Scenario: A sub-process contains a TIMER event-subprocess arm that does NOT fire.
+// The inner activity completes normally → scope drains → the ESP timer arm must be
+// cancelled (CancelTimer emitted) and s.EventSubprocesses must be empty.
+func TestEventSubprocessArmCancelledOnNormalScopeClose(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := timerEventSubProcessDef()
+
+	// ---- Step 1: StartInstance → inner-svc parks + ESP timer arm scheduled ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-esp-cancel-scope"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var innerCmdID string
+	var espTimerID string
+	for _, cmd := range r1.Commands {
+		switch c := cmd.(type) {
+		case engine.InvokeAction:
+			if c.Name == "inner-action" {
+				innerCmdID = c.CommandID
+			}
+		case engine.ScheduleTimer:
+			espTimerID = c.TimerID
+		}
+	}
+	require.NotEmpty(t, innerCmdID, "expected InvokeAction for inner-action")
+	require.NotEmpty(t, espTimerID, "expected ScheduleTimer for ESP timer arm")
+
+	// One ESP arm must be recorded.
+	require.Len(t, r1.State.EventSubprocesses, 1, "one ESP arm must be recorded")
+
+	// ---- Step 2: Complete inner-svc normally (ESP timer never fires) → scope drains ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(time.Minute), innerCmdID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r2.State.Status, "instance must complete normally")
+
+	// M2 ASSERTION: CancelTimer for the ESP timer arm must have been emitted.
+	cancelFound := false
+	for _, cmd := range r2.Commands {
+		if ct, ok := cmd.(engine.CancelTimer); ok && ct.TimerID == espTimerID {
+			cancelFound = true
+			break
+		}
+	}
+	assert.True(t, cancelFound,
+		"CancelTimer for ESP timer arm %q must be emitted on normal scope close", espTimerID)
+
+	// M2 ASSERTION: EventSubprocesses must be empty after scope closes.
+	assert.Empty(t, r2.State.EventSubprocesses,
+		"EventSubprocesses must be empty after scope closes normally")
 }
