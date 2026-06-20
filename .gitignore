@@ -21,3 +21,6 @@ go.work.sum
 .claude/settings.local.json
 .claude/projects/
 .claude/todos/
+
+# Subagent-driven-development scratch (briefs, reports, ledger, review packages)
+.superpowers/
