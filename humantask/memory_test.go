@@ -171,6 +171,53 @@ func TestMemTaskStore_ClaimableBy_DeterministicOrder(t *testing.T) {
 	assert.Equal(t, "tok-z", got[3].TaskToken)
 }
 
+func TestMemTaskStore_ReturnedTaskIsDefensivelyCopied(t *testing.T) {
+	ctx := t.Context()
+	store := humantask.NewMemTaskStore()
+
+	// Create a task with non-empty Candidates and Eligibility.Roles.
+	originalCandidates := []string{"actor-a", "actor-b"}
+	originalRoles := []string{"reviewer", "approver"}
+	task := makeTask("tok-def", "inst-1", "node-1", humantask.Unclaimed, "", originalCandidates, originalRoles)
+
+	// Upsert the task.
+	require.NoError(t, store.Upsert(ctx, task))
+
+	// Test egress (returned) defensive copy: mutate the returned task.
+	got, err := store.Get(ctx, "tok-def")
+	require.NoError(t, err)
+
+	// Mutate the returned Candidates slice.
+	got.Candidates[0] = "tampered"
+	got.Candidates = append(got.Candidates, "injected")
+
+	// Mutate the returned Eligibility.Roles slice.
+	got.Eligibility.Roles[0] = "tampered-role"
+	got.Eligibility.Roles = append(got.Eligibility.Roles, "injected-role")
+
+	// Re-fetch and assert the store's copy is unchanged.
+	got2, err := store.Get(ctx, "tok-def")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"actor-a", "actor-b"}, got2.Candidates, "Candidates should be unchanged after mutation of returned copy")
+	assert.Equal(t, []string{"reviewer", "approver"}, got2.Eligibility.Roles, "Roles should be unchanged after mutation of returned copy")
+
+	// Test ingress defensive copy: mutate the original input slice after Upsert.
+	inputCandidates := []string{"actor-c", "actor-d"}
+	inputRoles := []string{"editor"}
+	task2 := makeTask("tok-def2", "inst-2", "node-2", humantask.Unclaimed, "", inputCandidates, inputRoles)
+	require.NoError(t, store.Upsert(ctx, task2))
+
+	// Mutate the input slices after Upsert.
+	inputCandidates[0] = "mutated"
+	inputRoles[0] = "mutated-role"
+
+	// Fetch and assert the store's copy is unchanged.
+	got3, err := store.Get(ctx, "tok-def2")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"actor-c", "actor-d"}, got3.Candidates, "Candidates should be unchanged after mutation of input slice")
+	assert.Equal(t, []string{"editor"}, got3.Eligibility.Roles, "Roles should be unchanged after mutation of input slice")
+}
+
 // --- StaticActorResolver tests ---
 
 func TestStaticActorResolver_Candidates_ReturnsUnionDedupedSorted(t *testing.T) {
