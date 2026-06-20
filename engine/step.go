@@ -12,6 +12,7 @@ var (
 	ErrUnknownTrigger      = errors.New("engine: unknown trigger")
 	ErrTokenNotFound       = errors.New("engine: no token awaiting command")
 	ErrMicroNotImplemented = errors.New("engine: micro stepping not implemented")
+	ErrNoMatchingFlow      = errors.New("engine: no matching outgoing flow")
 )
 
 // StepMode selects how far one Step advances. Micro behaves as Macro in this
@@ -78,12 +79,15 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
 
-	cmds := drive(def, &s, trg.OccurredAt())
+	cmds, err := drive(def, &s, trg.OccurredAt())
+	if err != nil {
+		return StepResult{}, err
+	}
 	return StepResult{State: s, Commands: cmds}, nil
 }
 
 // drive advances all active tokens until each is parked or consumed (Macro).
-func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) []Command {
+func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Command, error) {
 	var cmds []Command
 	for {
 		tok := s.firstActive()
@@ -120,13 +124,20 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) []Comma
 				cmds = append(cmds, CompleteInstance{Result: copyVars(s.Variables)})
 			}
 
+		case model.KindExclusiveGateway:
+			target, err := selectExclusiveTarget(def, s, node)
+			if err != nil {
+				return cmds, err
+			}
+			s.moveTokenToTarget(tok, target, at)
+
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
 			tok.State = TokenWaitingCommand
 		}
 	}
-	return cmds
+	return cmds, nil
 }
 
 // ---- InstanceState helpers (unexported) ----
@@ -198,6 +209,44 @@ func (s *InstanceState) closeVisit(tokenID, nodeID string, at time.Time) {
 			return
 		}
 	}
+}
+
+// moveTokenToTarget moves a token to targetID, closing the old visit and opening
+// a new one, leaving the token Active.
+func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Time) {
+	s.closeVisit(tok.ID, tok.NodeID, at)
+	tok.NodeID = target
+	tok.EnteredAt = at
+	tok.State = TokenActive
+	s.openVisit(tok.ID, target, at)
+}
+
+// selectExclusiveTarget picks the target of an exclusive gateway: the first
+// outgoing flow (in definition order) with an empty or true condition, else the
+// default flow, else ErrNoMatchingFlow.
+func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node) (string, error) {
+	var defaultFlow *model.SequenceFlow
+	for _, f := range def.Outgoing(node.ID) {
+		if f.IsDefault {
+			ff := f
+			defaultFlow = &ff
+			continue
+		}
+		if f.Condition == "" {
+			return f.Target, nil
+		}
+		ok, err := conditions.EvalBool(f.Condition, s.Variables)
+		if err != nil {
+			return "", fmt.Errorf("engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+		}
+		if ok {
+			return f.Target, nil
+		}
+	}
+	if defaultFlow != nil {
+		return defaultFlow.Target, nil
+	}
+	return "", fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
 }
 
 // ---- value helpers ----
