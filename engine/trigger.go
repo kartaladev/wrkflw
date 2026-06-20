@@ -138,3 +138,45 @@ type MessageReceived struct {
 func NewMessageReceived(at time.Time, name, correlationKey string, payload map[string]any) MessageReceived {
 	return MessageReceived{baseTrigger: baseTrigger{at: at}, Name: name, CorrelationKey: correlationKey, Payload: payload}
 }
+
+// SubInstanceCompleted reports that a child process instance (started by a
+// StartSubInstance command) has finished successfully. CommandID correlates
+// this result back to the StartSubInstance command that spawned the child.
+// Output carries any variables the child exported on completion.
+//
+// Task 3+ implements the engine's handling of this trigger (resume the parked
+// parent token and merge Output into the parent instance variables).
+type SubInstanceCompleted struct {
+	baseTrigger
+	// CommandID matches the StartSubInstance.CommandID that started the child.
+	CommandID string
+	// Output is the result variable map from the completed child instance.
+	Output map[string]any
+}
+
+// NewSubInstanceCompleted builds a SubInstanceCompleted trigger stamped with
+// the given time. at is the moment the child instance completed.
+func NewSubInstanceCompleted(at time.Time, commandID string, output map[string]any) SubInstanceCompleted {
+	return SubInstanceCompleted{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Output: output}
+}
+
+// SubInstanceFailed reports that a child process instance (started by a
+// StartSubInstance command) has terminated with an error. CommandID correlates
+// this result back to the StartSubInstance command. Err is a human-readable
+// description of the failure reason.
+//
+// Task 3+ implements the engine's handling of this trigger (mark the parent
+// token/instance failed or route to an error boundary if one is configured).
+type SubInstanceFailed struct {
+	baseTrigger
+	// CommandID matches the StartSubInstance.CommandID that started the child.
+	CommandID string
+	// Err is the error message from the failed child instance.
+	Err string
+}
+
+// NewSubInstanceFailed builds a SubInstanceFailed trigger stamped with the
+// given time. at is the moment the child instance failure was observed.
+func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFailed {
+	return SubInstanceFailed{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Err: errMsg}
+}

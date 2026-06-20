@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -94,6 +95,46 @@ type boundaryArm struct {
 	Signal string
 }
 
+// CompensationRecord is a minimal record of a completed compensable activity
+// within a scope. Plan 8 (compensation/rollback) will populate and consume
+// these records; they are kept minimal here — just enough to identify the
+// activity and its compensating action.
+//
+// Fields:
+//   - ActivityNode: the BPMN node ID of the completed compensable activity.
+//   - Action: the name of the service action to invoke as compensation.
+type CompensationRecord struct {
+	// ActivityNode is the BPMN node ID of the completed compensable activity.
+	ActivityNode string
+	// Action is the name of the compensating service action (registered in the
+	// service-action catalog) to run when this activity is rolled back.
+	Action string
+}
+
+// Scope represents an active execution scope within a process instance. Scopes
+// are created when a sub-process node is entered and removed when it exits.
+// They form a tree via ParentID: the root scope has an empty ParentID.
+//
+// Fields:
+//   - ID: unique scope identifier, assigned deterministically as
+//     "<instanceID>-s<ScopeSeq>" (e.g. "inst-1-s1").
+//   - NodeID: the BPMN node (typically a sub-process) that opened this scope.
+//   - ParentID: the ID of the enclosing scope, or "" if this is a root scope.
+//   - Compensations: ordered list of completed compensable activities inside
+//     this scope, accumulated as activities finish. Plan 8 reads this list in
+//     reverse order when rolling back the scope.
+type Scope struct {
+	// ID is the unique scope identifier (deterministic, no clock/random).
+	ID string
+	// NodeID is the BPMN node that opened this scope.
+	NodeID string
+	// ParentID is the enclosing scope's ID, or "" for a root scope.
+	ParentID string
+	// Compensations records completed compensable activities in entry order.
+	// Plan 8 (compensation) populates and consumes this list.
+	Compensations []CompensationRecord
+}
+
 // Status is the lifecycle state of a process instance.
 type Status int
 
@@ -182,11 +223,20 @@ type InstanceState struct {
 	// completes first (cancellation).
 	Boundaries []boundaryArm
 
+	// Scopes holds all currently open execution scopes (sub-process nodes in
+	// flight). Each scope is opened when a sub-process node is entered and
+	// removed when it exits. Scopes form a tree via Scope.ParentID.
+	// Iteration is in openScope (ScopeSeq) order, which is deterministic.
+	Scopes []Scope
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
 	TaskSeq  int
 	TimerSeq int
+	// ScopeSeq is the monotonic counter used to generate deterministic scope
+	// IDs of the form "<instanceID>-s<ScopeSeq>".
+	ScopeSeq int
 }
 
 // TaskByToken returns a pointer to the HumanTask with the given taskToken, or
@@ -395,6 +445,61 @@ func (s *InstanceState) removeBoundaryArm(hostToken, boundaryNode string) {
 		out = append(out, ba)
 	}
 	s.Boundaries = out
+}
+
+// openScope creates a new Scope for the given nodeID nested inside
+// parentScopeID (empty string for a root scope). The scope is assigned a
+// deterministic ID of the form "<instanceID>-s<ScopeSeq>" using s.ScopeSeq,
+// which is incremented before use. The new scope is appended to s.Scopes.
+// Returns the new scope's ID.
+func (s *InstanceState) openScope(nodeID, parentScopeID string) string {
+	s.ScopeSeq++
+	id := fmt.Sprintf("%s-s%d", s.InstanceID, s.ScopeSeq)
+	s.Scopes = append(s.Scopes, Scope{
+		ID:       id,
+		NodeID:   nodeID,
+		ParentID: parentScopeID,
+	})
+	return id
+}
+
+// tokensInScope counts the number of tokens in s.Tokens whose ScopeID equals
+// scopeID. Returns 0 if no tokens match.
+func (s *InstanceState) tokensInScope(scopeID string) int {
+	count := 0
+	for i := range s.Tokens {
+		if s.Tokens[i].ScopeID == scopeID {
+			count++
+		}
+	}
+	return count
+}
+
+// closeScope removes the Scope with the given scopeID from s.Scopes. It is a
+// no-op if no scope with that ID exists. Child scopes (those whose ParentID
+// equals scopeID) are NOT automatically removed — callers are responsible for
+// closing or reparenting children before closing a parent. This is intentionally
+// minimal; Plan 8 (compensation/rollback) will add the richer cascading logic.
+func (s *InstanceState) closeScope(scopeID string) {
+	out := make([]Scope, 0, len(s.Scopes))
+	for _, sc := range s.Scopes {
+		if sc.ID != scopeID {
+			out = append(out, sc)
+		}
+	}
+	s.Scopes = out
+}
+
+// scopeByID returns a pointer to the Scope with the given id, or nil if no
+// such scope exists in s.Scopes. The pointer is into the slice element; callers
+// must not hold it across mutations to s.Scopes.
+func (s *InstanceState) scopeByID(id string) *Scope {
+	for i := range s.Scopes {
+		if s.Scopes[i].ID == id {
+			return &s.Scopes[i]
+		}
+	}
+	return nil
 }
 
 // Clone returns a deep copy of the InstanceState. All slice and map fields are

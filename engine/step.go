@@ -1380,5 +1380,18 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy Boundaries: boundaryArm is a value type (no pointers), so a slice
 	// copy is sufficient.
 	s.Boundaries = append([]boundaryArm(nil), st.Boundaries...)
+	// Deep-copy Scopes: each Scope contains a Compensations slice that must be
+	// independently allocated so mutations to a clone's compensation records do
+	// not affect the original. The other Scope fields (ID, NodeID, ParentID) are
+	// plain strings (value types) and are correctly copied by the struct copy.
+	// ScopeSeq is a scalar (int) and is already carried by the struct copy above.
+	if len(st.Scopes) > 0 {
+		s.Scopes = make([]Scope, len(st.Scopes))
+		for i, sc := range st.Scopes {
+			cs := sc
+			cs.Compensations = append([]CompensationRecord(nil), sc.Compensations...)
+			s.Scopes[i] = cs
+		}
+	}
 	return s
 }
