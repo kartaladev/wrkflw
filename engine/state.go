@@ -64,6 +64,7 @@ type InstanceState struct {
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
+	TaskSeq  int
 }
 
 // TaskByToken returns a pointer to the HumanTask with the given taskToken, or

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
@@ -81,6 +82,49 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		s.EndedAt = &ended
 		return StepResult{State: s, Commands: []Command{FailInstance{Err: t.Err}}}, nil
 
+	case HumanClaimed:
+		task := s.TaskByToken(t.TaskToken)
+		if task == nil {
+			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
+		}
+		task.ClaimedBy = t.Actor.ID
+		task.State = humantask.Claimed
+		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
+
+	case HumanReassigned:
+		task := s.TaskByToken(t.TaskToken)
+		if task == nil {
+			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
+		}
+		task.ClaimedBy = t.To
+		task.State = humantask.Claimed
+		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
+
+	case HumanCompleted:
+		tok := s.tokenAwaiting(t.TaskToken)
+		if tok == nil {
+			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
+		}
+		mergeVars(&s, t.Output)
+		s.setVisitActor(tok.ID, tok.NodeID, t.Actor.ID)
+		task := s.TaskByToken(t.TaskToken)
+		if task != nil {
+			task.State = humantask.Completed
+		}
+		tok.State = TokenActive
+		tok.AwaitCommand = ""
+		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		var cmds []Command
+		if task != nil {
+			cmds = append(cmds, UpdateTask{Task: *task})
+		}
+		driveCmds, err := drive(def, &s, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		cmds = append(cmds, driveCmds...)
+		return StepResult{State: s, Commands: cmds}, nil
+
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
@@ -120,6 +164,24 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
+
+		case model.KindUserTask:
+			taskToken := s.nextTaskToken()
+			spec := authz.AuthzSpec{
+				Roles:     node.CandidateRoles,
+				Attribute: node.EligibilityExpr,
+			}
+			s.Tasks = append(s.Tasks, humantask.HumanTask{
+				TaskToken:   taskToken,
+				InstanceID:  s.InstanceID,
+				NodeID:      node.ID,
+				Eligibility: spec,
+				State:       humantask.Unclaimed,
+				CreatedAt:   at,
+			})
+			cmds = append(cmds, AwaitHuman{TaskToken: taskToken, Eligibility: spec})
+			tok.State = TokenWaitingCommand
+			tok.AwaitCommand = taskToken
 
 		case model.KindEndEvent:
 			s.consumeToken(tok, at)
@@ -195,6 +257,23 @@ func (s *InstanceState) tokenAwaiting(cmdID string) *Token {
 func (s *InstanceState) nextCommandID() string {
 	s.CmdSeq++
 	return fmt.Sprintf("%s-c%d", s.InstanceID, s.CmdSeq)
+}
+
+func (s *InstanceState) nextTaskToken() string {
+	s.TaskSeq++
+	return fmt.Sprintf("%s-h%d", s.InstanceID, s.TaskSeq)
+}
+
+// setVisitActor sets the ActorID on the most recent open NodeVisit for the
+// given (tokenID, nodeID) pair. Used to record who completed a human task.
+func (s *InstanceState) setVisitActor(tokenID, nodeID, actorID string) {
+	for i := len(s.History) - 1; i >= 0; i-- {
+		v := &s.History[i]
+		if v.TokenID == tokenID && v.NodeID == nodeID && v.LeftAt == nil {
+			v.ActorID = &actorID
+			return
+		}
+	}
 }
 
 func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *Token, at time.Time) {
