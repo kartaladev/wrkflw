@@ -510,3 +510,40 @@ func TestValidateSubProcess(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateCyclicSubprocessDoesNotPanic verifies that Validate does not
+// stack-overflow on a hand-constructed cyclic subprocess pointer graph (A→B→A).
+func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
+	defA := &model.ProcessDefinition{
+		ID: "cyclic-a", Version: 1,
+		Nodes: []model.Node{
+			{ID: "a-start", Kind: model.KindStartEvent},
+			{ID: "a-sub", Kind: model.KindSubProcess},
+			{ID: "a-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "af1", Source: "a-start", Target: "a-sub"},
+			{ID: "af2", Source: "a-sub", Target: "a-end"},
+		},
+	}
+	defB := &model.ProcessDefinition{
+		ID: "cyclic-b", Version: 1,
+		Nodes: []model.Node{
+			{ID: "b-start", Kind: model.KindStartEvent},
+			{ID: "b-sub", Kind: model.KindSubProcess},
+			{ID: "b-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "bf1", Source: "b-start", Target: "b-sub"},
+			{ID: "bf2", Source: "b-sub", Target: "b-end"},
+		},
+	}
+	// Wire the cycle: A's sub-process points to B, B's sub-process points back to A.
+	defA.Nodes[1].Subprocess = defB
+	defB.Nodes[1].Subprocess = defA
+
+	// Must not panic or stack-overflow.
+	require.NotPanics(t, func() {
+		_ = model.Validate(defA)
+	}, "Validate must not panic on cyclic subprocess graph")
+}

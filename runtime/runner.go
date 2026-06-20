@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
@@ -25,12 +26,12 @@ type callDepthKey struct{}
 // SubInstanceFailed error instead of allowing unbounded recursion that would
 // eventually cause a stack overflow or exhaust memory.
 //
-// The current child instance ID scheme appends the full parent ID, causing
-// child IDs to grow roughly as O(2^depth). A limit of 10 is more than
-// sufficient for any realistic workflow while staying safely below the point
-// at which string allocations become infeasible. True async call activities
-// (a future enhancement) do not use this counter at all.
-const maxCallActivityDepth = 10
+// Child instance IDs use a SHORT suffix scheme (see StartSubInstance handling):
+// "<parentInstanceID>-sub-c<N>" where c<N> is only the command-sequence suffix,
+// not the full parent ID. This gives O(depth) growth rather than O(2^depth), so
+// depth 64 is safely bounded. True async call activities (a future enhancement)
+// do not use this counter at all.
+const maxCallActivityDepth = 64
 
 // callDepth returns the current call-activity nesting depth stored in ctx.
 // Returns 0 if no depth has been set (i.e. the outermost call).
@@ -465,10 +466,17 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		childCtx := withCallDepth(ctx, depth+1)
 
 		// Derive a deterministic child instance ID from the parent and command ID.
-		// Scheme: "<parentInstanceID>-sub-<commandID>"
-		// This is unique within the runner's store as long as commandIDs are unique
-		// (which the engine guarantees via CmdSeq).
-		childInstanceID := st.InstanceID + "-sub-" + cmd.CommandID
+		// Scheme: "<parentInstanceID>-sub-<suffix>" where <suffix> is only the
+		// trailing segment of cmd.CommandID after the last "-" (e.g. "c1", "c2").
+		// cmd.CommandID format is "<instanceID>-c<N>"; embedding the full commandID
+		// would cause child IDs to grow O(2^depth). Using just the short suffix
+		// keeps growth linear: each nesting level adds a constant-length segment.
+		// IDs remain unique because CmdSeq is monotonic within an instance.
+		suffix := cmd.CommandID
+		if idx := strings.LastIndex(cmd.CommandID, "-"); idx >= 0 {
+			suffix = cmd.CommandID[idx+1:]
+		}
+		childInstanceID := st.InstanceID + "-sub-" + suffix
 
 		// Run the child to completion (synchronous within perform). The child uses
 		// the same Runner so it shares the store, journal, outbox, catalog, and

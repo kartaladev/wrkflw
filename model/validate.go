@@ -51,6 +51,19 @@ var (
 // Validate checks structural well-formedness of a process definition. It
 // returns a joined error covering every violation found.
 func Validate(d *ProcessDefinition) error {
+	return validate(d, make(map[*ProcessDefinition]bool))
+}
+
+// validate is the recursive implementation of Validate with a visited-set
+// cycle guard. If seen[d] is already true, the definition has already been
+// visited in this call chain (cycle detected) and we return immediately to
+// avoid a stack overflow on hand-constructed cyclic subprocess pointer graphs.
+func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
+	if seen[d] {
+		return nil
+	}
+	seen[d] = true
+
 	var errs []error
 
 	starts := d.StartNodes()
@@ -151,7 +164,7 @@ func Validate(d *ProcessDefinition) error {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, n.ID))
 			continue
 		}
-		if nestedErr := Validate(n.Subprocess); nestedErr != nil {
+		if nestedErr := validate(n.Subprocess, seen); nestedErr != nil {
 			errs = append(errs, fmt.Errorf("subprocess %q: %w", n.ID, nestedErr))
 		}
 	}
