@@ -101,13 +101,28 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
 
 	case TimerFired:
+		// Look up the timer record first; this handles both intermediate and SLA timers.
+		rec := s.timerByID(t.TimerID)
+		if rec != nil {
+			switch rec.Kind {
+			case TimerSLA:
+				return handleSLAFired(def, &s, *rec, t.OccurredAt())
+			default:
+				// For intermediate (and future in-wait) timers recorded here, fall
+				// through to the tokenAwaiting path which is still valid because
+				// intermediate-timer tokens park on the TimerID as their AwaitCommand.
+			}
+		}
+
 		tok := s.tokenAwaiting(t.TimerID)
 		if tok == nil {
-			// Stale/already-moved timer: clean no-op. Timers are inherently racy
-			// with other completion paths (e.g. the instance may have advanced via
-			// a different branch), so we never error here.
+			// Stale/already-moved timer (no record and no parked token): clean no-op.
+			// Timers are inherently racy with other completion paths (e.g. the
+			// instance may have advanced via a different branch), so we never error here.
 			return StepResult{State: s, Commands: nil}, nil
 		}
+		// Intermediate timer: remove its record (if any) so a later dup is a no-op.
+		s.removeTimer(t.TimerID)
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
 		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
@@ -137,6 +152,10 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		tok.AwaitCommand = ""
 		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
 		cmds := []Command{UpdateTask{Task: *task}}
+		// Cancel any SLA or reminder timers that were guarding this task.
+		for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
 			return StepResult{}, err
@@ -190,14 +209,39 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				Roles:     node.CandidateRoles,
 				Attribute: node.EligibilityExpr,
 			}
-			s.Tasks = append(s.Tasks, humantask.HumanTask{
+			ht := humantask.HumanTask{
 				TaskToken:   taskToken,
 				InstanceID:  s.InstanceID,
 				NodeID:      node.ID,
 				Eligibility: spec,
 				State:       humantask.Unclaimed,
 				CreatedAt:   at,
-			})
+			}
+			// If the node carries an SLA, schedule the SLA timer and record the
+			// deadline on the HumanTask so callers can surface the due date.
+			if node.SLADuration != "" {
+				dur, err := conditions.EvalDuration(node.SLADuration, s.Variables)
+				if err != nil {
+					return cmds, fmt.Errorf("engine: SLA node %q: %w", node.ID, err)
+				}
+				fireAt := at.Add(dur)
+				slaTimerID := s.nextTimerID()
+				cmds = append(cmds, ScheduleTimer{
+					TimerID: slaTimerID,
+					Token:   tok.ID,
+					FireAt:  fireAt,
+					Kind:    TimerSLA,
+				})
+				s.Timers = append(s.Timers, timerRecord{
+					TimerID:   slaTimerID,
+					Kind:      TimerSLA,
+					Token:     tok.ID,
+					TaskToken: taskToken,
+					NodeID:    node.ID,
+				})
+				ht.DueAt = &fireAt
+			}
+			s.Tasks = append(s.Tasks, ht)
 			cmds = append(cmds, AwaitHuman{TaskToken: taskToken, Eligibility: spec})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = taskToken
@@ -547,6 +591,97 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 	return "", fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
 }
 
+// handleSLAFired processes a TimerFired event for an SLA timer. It is called
+// from the TimerFired handler in Step when the timer record's Kind is TimerSLA.
+//
+// Contract:
+//   - If the guarded task is already completed (or the parked token is gone),
+//     it is a clean no-op: no commands, no error.
+//   - If the task is still in progress, it performs the SLA breach:
+//     (a) emits InvokeAction for node.SLAAction (if set),
+//     (b) moves the token to the target of node.SLAFlow (alternative path),
+//     (c) marks the task Cancelled and emits UpdateTask,
+//     (d) cancels any other timers (e.g. reminders) for the same task,
+//     (e) removes the SLA timer record and drives forward.
+func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time) (StepResult, error) {
+	// Find the parked token. If the token is gone (task completed, instance
+	// advanced), the SLA fired late → clean no-op.
+	tok := s.tokenAwaiting(rec.TaskToken)
+	if tok == nil {
+		// Also clean up the stale timer record.
+		s.removeTimer(rec.TimerID)
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// If the task has already been completed/cancelled, treat as no-op.
+	task := s.TaskByToken(rec.TaskToken)
+	if task != nil && task.State == humantask.Completed {
+		s.removeTimer(rec.TimerID)
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// Resolve the SLA alternative-path flow.
+	node, ok := def.Node(rec.NodeID)
+	if !ok {
+		return StepResult{}, fmt.Errorf("engine: SLA breach: node %q not found in definition", rec.NodeID)
+	}
+	if node.SLAFlow == "" {
+		return StepResult{}, fmt.Errorf("engine: SLA breach: node %q has no SLAFlow defined", rec.NodeID)
+	}
+	// Find the sequence flow with ID == node.SLAFlow.
+	var slaTarget string
+	for _, f := range def.Flows {
+		if f.ID == node.SLAFlow {
+			slaTarget = f.Target
+			break
+		}
+	}
+	if slaTarget == "" {
+		return StepResult{}, fmt.Errorf("engine: SLA breach: SLAFlow %q not found in definition flows for node %q", node.SLAFlow, rec.NodeID)
+	}
+
+	var cmds []Command
+
+	// (a) Emit the SLA alternative action, if configured.
+	if node.SLAAction != "" {
+		cmdID := s.nextCommandID()
+		cmds = append(cmds, InvokeAction{
+			CommandID: cmdID,
+			Name:      node.SLAAction,
+			Input:     copyVars(s.Variables),
+		})
+	}
+
+	// (b) Move the token to the alternative path target. The token was parked
+	//     (TokenWaitingCommand / AwaitCommand == TaskToken); reactivate it and
+	//     route to the SLA path.
+	tok.AwaitCommand = ""
+	s.moveTokenToTarget(tok, slaTarget, at)
+
+	// (c) Mark the task Cancelled and emit UpdateTask.
+	if task != nil {
+		task.State = humantask.Cancelled
+		cmds = append(cmds, UpdateTask{Task: *task})
+	}
+
+	// (d) Cancel any other timers (e.g. reminder timers) for this task.
+	for _, reminderID := range s.cancelTimersByTaskToken(rec.TaskToken, rec.TimerID) {
+		cmds = append(cmds, CancelTimer{TimerID: reminderID})
+	}
+
+	// Remove the SLA timer record — it has been consumed.
+	s.removeTimer(rec.TimerID)
+
+	// (e) Drive forward from the alternative path.
+	driveCmds, err := drive(def, s, at)
+	if err != nil {
+		return StepResult{}, err
+	}
+	cmds = append(cmds, driveCmds...)
+
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
 // ---- value helpers ----
 
 func mergeVars(s *InstanceState, in map[string]any) {
@@ -597,5 +732,8 @@ func cloneState(st InstanceState) InstanceState {
 			s.Tasks[i] = ct
 		}
 	}
+	// Deep-copy Timers: timerRecord is a value type (no pointers), so a slice copy
+	// is sufficient to ensure mutations to the clone do not affect the original.
+	s.Timers = append([]timerRecord(nil), st.Timers...)
 	return s
 }
