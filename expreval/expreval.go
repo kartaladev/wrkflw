@@ -128,6 +128,31 @@ func (e *Evaluator) EvalDuration(code string, env map[string]any) (time.Duration
 	}
 }
 
+// EvalString evaluates code against env and converts the result to a string.
+// If the expression already returns a string it is used as-is. Any other type
+// is formatted via fmt.Sprintf("%v", v) so that authors can use integer or
+// boolean correlation keys without explicit conversions in the definition.
+//
+// An empty code returns an empty string without compilation (fast path for the
+// common "no correlation key" case).
+func (e *Evaluator) EvalString(code string, env map[string]any) (string, error) {
+	if code == "" {
+		return "", nil
+	}
+	p, err := e.compile(code)
+	if err != nil {
+		return "", err
+	}
+	out, err := expr.Run(p, env)
+	if err != nil {
+		return "", fmt.Errorf("expreval: run %q: %w", code, err)
+	}
+	if s, ok := out.(string); ok {
+		return s, nil
+	}
+	return fmt.Sprintf("%v", out), nil
+}
+
 // isNilOperandError reports whether err is the runtime error produced by
 // expr-lang/expr when a nil operand (typically an undefined process variable
 // resolved via expr.AllowUndefinedVariables) participates in a comparison or

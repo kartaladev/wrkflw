@@ -69,12 +69,22 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 		}
+		// Cancel any boundary arms on this host token before advancing.
+		var preCmds []Command
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
 		mergeVars(&s, t.Output)
 		tok.State = TokenActive
 		tok.AwaitCommand = ""
 		// Advance the token past the completed ServiceTask so drive sees it at
 		// the next node, not re-firing the action.
 		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
 
 	case ActionFailed:
 		tok := s.tokenAwaiting(t.CommandID)
@@ -86,6 +96,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		s.EndedAt = &ended
 		cmds := []Command{FailInstance{Err: t.Err}}
 		cmds = append(cmds, s.cancelAllTimers()...)
+		// Also cancel any event-gateway timer arms (s.ArmedEvents) and boundary
+		// timer arms (s.Boundaries) to prevent orphaned scheduled tasks in the
+		// runtime scheduler. A comprehensive sweep across all terminal transitions
+		// and multi-token scenarios is deferred to Plan 8.
+		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
 		return StepResult{State: s, Commands: cmds}, nil
 
 	case HumanClaimed:
@@ -107,6 +122,31 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
 
 	case TimerFired:
+		// Dispatch order:
+		// 1) event-based gateway arm (first-event-wins routing).
+		// 2) boundary event arm (interrupting/non-interrupting).
+		// 3) SLA/in-wait timer record (task-guarded timers).
+		// 4) standalone intermediate catch event (token parks on TimerID).
+
+		// 1) Gateway arm check.
+		if ae := s.armedEventByTimer(t.TimerID); ae != nil {
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: gwCmds}, nil
+		}
+
+		// 2) Boundary arm check.
+		if ba := s.boundaryArmByTimer(t.TimerID); ba != nil {
+			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: baCmds}, nil
+		}
+
+		// 3) SLA/in-wait timer record.
 		// s.Timers holds only SLA (TimerSLA) and in-wait/reminder (TimerInWait)
 		// records. Intermediate timers (TimerIntermediate) are never appended to
 		// s.Timers; for those, the token parks on the TimerID as its AwaitCommand,
@@ -121,6 +161,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			}
 		}
 
+		// 4) Standalone intermediate timer.
 		tok := s.tokenAwaiting(t.TimerID)
 		if tok == nil {
 			// Stale/already-moved timer (no record and no parked token): clean no-op.
@@ -163,12 +204,145 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
 			cmds = append(cmds, CancelTimer{TimerID: timerID})
 		}
+		// Cancel any boundary arms on this host token (token ID is the same as the
+		// HostToken recorded at arm time; at this point tok.ID is still valid since
+		// moveAlongSingleFlow keeps the same token — it just changes NodeID).
+		// We find the original token ID via the task token's parked token:
+		// tok.ID is already the token that was parked (we looked it up via
+		// tokenAwaiting(t.TaskToken) above, and moveAlongSingleFlow does not change
+		// the token ID, only its NodeID). So tok.ID is the correct HostToken.
+		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
 		driveCmds, err := drive(def, &s, t.OccurredAt())
 		if err != nil {
 			return StepResult{}, err
 		}
 		cmds = append(cmds, driveCmds...)
 		return StepResult{State: s, Commands: cmds}, nil
+
+	case SignalReceived:
+		// Broadcast semantics within the instance: resume every token that is
+		// awaiting this signal name. Tokens are processed in slice order for
+		// determinism. A signal that matches no token (and no gateway arm, and no
+		// boundary arm) is a clean no-op — mergeVars runs ONLY when at least one
+		// match is found.
+		//
+		// NOTE: mergeVars is deferred until after match-checking so that a no-match
+		// delivery does not mutate instance variables (Task-2 review fix).
+		//
+		// Dispatch order for signal:
+		// 1) event-based gateway arm (first-event-wins).
+		// 2) boundary event arm (interrupting/non-interrupting).
+		// 3) standalone parked-signal tokens (broadcast).
+		//
+		// INTENTIONAL BROADCAST: A single signal name may simultaneously resolve a
+		// gateway arm (step 1), fire a boundary arm (step 2), AND resume one or more
+		// standalone parked-signal tokens (step 3) within the same Step call. All
+		// three dispatch points are evaluated in order; matching is not mutually
+		// exclusive across them. Using the same signal name on competing constructs
+		// (e.g. an event-gateway arm and a standalone catch) is permitted by the
+		// engine but is the definition author's responsibility — a future model.Validate
+		// rule could warn about ambiguous multi-construct signal names.
+		//
+		// SNAPSHOT SEMANTICS (Fix 2): BPMN signal delivery is a single event at
+		// the delivery instant — only tokens already awaiting the signal AT DELIVERY
+		// TIME should catch it. We snapshot the set of token IDs awaiting this
+		// signal BEFORE running steps 1 and 2 (gateway-arm and boundary-arm
+		// processing). Step 3 only resumes tokens whose ID is in that snapshot.
+		// A token spawned by a non-interrupting boundary or gateway resolution
+		// during this Step is NOT in the snapshot and will not be re-consumed by
+		// the same delivery.
+		snapshotIDs := s.tokenIDsAwaitingSignal(t.Name)
+
+		var signalCmds []Command
+		matched := false
+
+		// 1) Check whether the signal matches an event-gateway arm.
+		if ae := s.armedEventBySignal(t.Name); ae != nil {
+			if !matched {
+				mergeVars(&s, t.Payload)
+				matched = true
+			}
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			signalCmds = append(signalCmds, gwCmds...)
+		}
+
+		// 2) Check whether the signal matches a boundary arm.
+		if ba := s.boundaryArmBySignal(t.Name); ba != nil {
+			if !matched {
+				mergeVars(&s, t.Payload)
+				matched = true
+			}
+			baCmds, err := fireBoundaryArm(def, &s, *ba, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			signalCmds = append(signalCmds, baCmds...)
+		}
+
+		// 3) Resume all standalone parked-signal tokens that were in the snapshot
+		// (i.e. awaiting this signal at the delivery instant). Tokens spawned by
+		// steps 1 or 2 above are not in the snapshot and will not be consumed here.
+		for _, tokenID := range snapshotIDs {
+			tok := s.tokenByID(tokenID)
+			// Skip if the token was consumed by an interrupting boundary (step 2)
+			// or is no longer awaiting this signal.
+			if tok == nil || tok.AwaitSignal != t.Name {
+				continue
+			}
+			if !matched {
+				mergeVars(&s, t.Payload)
+				matched = true
+			}
+			tok.AwaitSignal = ""
+			tok.State = TokenActive
+			s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+			driveCmds, err := drive(def, &s, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			signalCmds = append(signalCmds, driveCmds...)
+		}
+		return StepResult{State: s, Commands: signalCmds}, nil
+
+	case MessageReceived:
+		// Point-to-point semantics: resume the single token whose AwaitMessage
+		// matches the name AND whose AwaitMessageKey matches the correlation key.
+		// A message that matches no token (and no gateway arm) is a clean no-op.
+		//
+		// NOTE: mergeVars is deferred until after match-checking so that a no-match
+		// delivery does not mutate instance variables (Task-2 review fix).
+
+		// Check whether the message matches an event-gateway arm (first-event-wins).
+		if ae := s.armedEventByMessage(t.Name, t.CorrelationKey); ae != nil {
+			mergeVars(&s, t.Payload)
+			gwCmds, err := resolveGatewayWin(def, &s, *ae, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: gwCmds}, nil
+		}
+
+		tok := s.tokenAwaitingMessage(t.Name, t.CorrelationKey)
+		if tok == nil {
+			// No matching token: clean no-op (message may be for a different instance
+			// or arrived after the instance advanced).
+			return StepResult{State: s, Commands: nil}, nil
+		}
+		mergeVars(&s, t.Payload)
+		tok.AwaitMessage = ""
+		tok.AwaitMessageKey = ""
+		tok.State = TokenActive
+		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: driveCmds}, nil
 
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
@@ -209,6 +383,12 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
+			// Arm any boundary events attached to this host activity.
+			bndCmds, err := armBoundaries(def, s, tok.ID, node.ID, at)
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, bndCmds...)
 
 		case model.KindUserTask:
 			taskToken := s.nextTaskToken()
@@ -275,6 +455,12 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			cmds = append(cmds, AwaitHuman{TaskToken: taskToken, Eligibility: spec})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = taskToken
+			// Arm any boundary events attached to this host activity.
+			bndCmds, err := armBoundaries(def, s, tok.ID, node.ID, at)
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, bndCmds...)
 
 		case model.KindIntermediateCatchEvent:
 			if node.TimerDuration != "" {
@@ -291,9 +477,25 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				})
 				tok.State = TokenWaitingCommand
 				tok.AwaitCommand = timerID
+			} else if node.SignalName != "" {
+				// Signal intermediate catch event: park the token awaiting the signal.
+				// The SignalReceived trigger (broadcast) will resume it later.
+				tok.State = TokenWaitingCommand
+				tok.AwaitSignal = node.SignalName
+			} else if node.MessageName != "" {
+				// Message intermediate catch event: park the token awaiting the message.
+				// Evaluate the correlation key (if set) now against instance variables
+				// for determinism; store the resolved key on the token.
+				resolvedKey, err := conditions.EvalString(node.CorrelationKey, s.Variables)
+				if err != nil {
+					return cmds, fmt.Errorf("engine: message node %q correlation key: %w", node.ID, err)
+				}
+				tok.State = TokenWaitingCommand
+				tok.AwaitMessage = node.MessageName
+				tok.AwaitMessageKey = resolvedKey
 			} else {
-				// Non-timer intermediate catch event: park the token.
-				// Other event variants (message, signal, etc.) arrive in later plans.
+				// Non-timer, non-signal, non-message intermediate catch event: park.
+				// Further event variants arrive in later plans.
 				tok.State = TokenWaitingCommand
 			}
 
@@ -332,6 +534,75 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				}
 			}
 
+		case model.KindEventBasedGateway:
+			// Event-based gateway: arm all outgoing catch-event branches simultaneously.
+			// The gateway token is parked; the first armed event to fire wins and
+			// routes the token to that arm's branch, cancelling sibling arms.
+			//
+			// Routing: for each outgoing flow (definition order) we look at the target
+			// catch-event node and create an armedEvent record. Timer arms also emit a
+			// ScheduleTimer. Signal and message arms are recorded only (delivery happens
+			// via SignalReceived/MessageReceived triggers later).
+			//
+			// The gateway token is parked with a sentinel AwaitCommand set to
+			// "evtgw:<tokenID>" so firstActive() skips it, while still being
+			// identifiable as a gateway-parked token. The ArmedEvents slice is the
+			// primary correlation table — the gateway token is found via armedEvent.GatewayToken.
+			sentinel := "evtgw:" + tok.ID
+			tok.State = TokenWaitingCommand
+			tok.AwaitCommand = sentinel
+			for _, f := range def.Outgoing(node.ID) {
+				catchNode, ok := def.Node(f.Target)
+				if !ok {
+					continue
+				}
+				ae := armedEvent{
+					GatewayToken: tok.ID,
+					CatchNode:    catchNode.ID,
+					Flow:         f.ID,
+				}
+				if catchNode.TimerDuration != "" {
+					dur, err := conditions.EvalDuration(catchNode.TimerDuration, s.Variables)
+					if err != nil {
+						return cmds, fmt.Errorf("engine: event-gateway %q timer arm %q: %w", node.ID, catchNode.ID, err)
+					}
+					timerID := s.nextTimerID()
+					cmds = append(cmds, ScheduleTimer{
+						TimerID: timerID,
+						Token:   tok.ID,
+						FireAt:  at.Add(dur),
+						Kind:    TimerIntermediate,
+					})
+					ae.TimerID = timerID
+				} else if catchNode.SignalName != "" {
+					ae.Signal = catchNode.SignalName
+				} else if catchNode.MessageName != "" {
+					resolvedKey, err := conditions.EvalString(catchNode.CorrelationKey, s.Variables)
+					if err != nil {
+						return cmds, fmt.Errorf("engine: event-gateway %q message arm %q correlation key: %w", node.ID, catchNode.ID, err)
+					}
+					ae.Message = catchNode.MessageName
+					ae.MessageKey = resolvedKey
+				}
+				s.ArmedEvents = append(s.ArmedEvents, ae)
+			}
+
+		case model.KindIntermediateThrowEvent:
+			if node.SignalName != "" {
+				// Signal intermediate throw: emit ThrowSignal and continue along the
+				// single outgoing flow. The runtime broadcasts the signal; the engine
+				// does not wait for delivery (fire-and-forget from the engine's view).
+				cmds = append(cmds, ThrowSignal{
+					Name:    node.SignalName,
+					Payload: nil, // no per-instance payload from throw nodes in this plan
+				})
+				s.moveAlongSingleFlow(def, tok, at)
+			} else {
+				// Non-signal intermediate throw: park for future plans (e.g. message
+				// throw, error throw). Parking avoids an infinite drive loop.
+				tok.State = TokenWaitingCommand
+			}
+
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
@@ -363,6 +634,45 @@ func (s *InstanceState) tokenAwaiting(cmdID string) *Token {
 	for i := range s.Tokens {
 		if s.Tokens[i].AwaitCommand == cmdID {
 			return &s.Tokens[i]
+		}
+	}
+	return nil
+}
+
+// tokenByID returns the first token whose ID matches, or nil.
+func (s *InstanceState) tokenByID(tokenID string) *Token {
+	for i := range s.Tokens {
+		if s.Tokens[i].ID == tokenID {
+			return &s.Tokens[i]
+		}
+	}
+	return nil
+}
+
+// tokenIDsAwaitingSignal returns a snapshot of the token IDs (in slice order)
+// of all tokens currently awaiting the given signal name. The returned slice
+// captures the state at the call instant; tokens added to s.Tokens after this
+// call are NOT included. Used by SignalReceived dispatch to implement snapshot
+// semantics: only tokens awaiting the signal AT DELIVERY TIME are resumed.
+func (s *InstanceState) tokenIDsAwaitingSignal(name string) []string {
+	var ids []string
+	for i := range s.Tokens {
+		if s.Tokens[i].AwaitSignal == name {
+			ids = append(ids, s.Tokens[i].ID)
+		}
+	}
+	return ids
+}
+
+// tokenAwaitingMessage returns the first token whose AwaitMessage matches name
+// AND whose AwaitMessageKey matches correlationKey. An empty correlationKey on
+// the token (no key configured on the catch node) matches only when the
+// incoming MessageReceived.CorrelationKey is also empty.
+func (s *InstanceState) tokenAwaitingMessage(name, correlationKey string) *Token {
+	for i := range s.Tokens {
+		t := &s.Tokens[i]
+		if t.AwaitMessage == name && t.AwaitMessageKey == correlationKey {
+			return t
 		}
 	}
 	return nil
@@ -621,6 +931,222 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 	return "", fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
 }
 
+// resolveGatewayWin routes an event-based gateway when one of its armed events
+// fires. It is called from the TimerFired/SignalReceived/MessageReceived handlers
+// in Step when the fired event correlates to an armedEvent entry.
+//
+// Contract:
+//   - The winning arm is identified by ae (the armedEvent that matched).
+//   - The gateway token (ae.GatewayToken) is moved directly to the catch node's
+//     outgoing target (skipping the catch node itself — it has already "fired").
+//   - All armedEvent entries for this gateway are removed; CancelTimer commands are
+//     emitted for any sibling timer arms (the winning arm's TimerID is also in the
+//     removal list and a CancelTimer is emitted for it too — but it fired, so the
+//     runtime should handle a redundant cancel gracefully; alternatively, we skip
+//     cancelling the winner's timer since it already fired). We SKIP cancelling the
+//     winner's timer since it has already fired and no longer exists in the scheduler.
+//   - drive() is called to advance execution beyond the routed target.
+func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time) ([]Command, error) {
+	// Find the gateway token.
+	tok := s.tokenAwaiting("evtgw:" + ae.GatewayToken)
+	if tok == nil {
+		// Gateway token is gone (already resolved by another concurrent path).
+		// This is a late/duplicate trigger: clean no-op.
+		// Remove any stale armed events for this gateway.
+		s.removeArmedEventsForGateway(ae.GatewayToken)
+		return nil, nil
+	}
+
+	// Find the catch node's outgoing target so we can skip directly to the branch.
+	// The catch node has "fired" by the arriving event; we route the gateway token
+	// straight to the catch node's outgoing target (its downstream node).
+	catchOuts := def.Outgoing(ae.CatchNode)
+	var branchTarget string
+	if len(catchOuts) > 0 {
+		branchTarget = catchOuts[0].Target
+	}
+
+	// Activate the gateway token and route it to the branch target.
+	tok.AwaitCommand = ""
+	tok.State = TokenActive
+	if branchTarget != "" {
+		// Close the gateway-node visit and open a visit at the branch target,
+		// skipping the catch node (it fires implicitly).
+		s.closeVisit(tok.ID, tok.NodeID, at)
+		tok.NodeID = branchTarget
+		tok.EnteredAt = at
+		s.openVisit(tok.ID, branchTarget, at)
+	} else {
+		// Fallback: move along the gateway's outgoing flow to the catch node.
+		// model.Validate rejects a catch node with no outgoing flow, so this
+		// branch is unreachable in a validated definition. It is retained as a
+		// defensive fallback so the engine degrades gracefully rather than
+		// panicking if an unvalidated definition is passed.
+		s.moveAlongSingleFlow(def, tok, at)
+	}
+
+	// Remove ALL armedEvent entries for this gateway (winning + sibling arms).
+	// The winning arm's timer (if it was a timer arm) is excluded from CancelTimer
+	// commands because it already fired and no longer exists in the scheduler.
+	// All sibling timer arms are cancelled.
+	winningTimerID := ae.TimerID
+	siblingsToCancel := s.removeArmedEventsForGateway(ae.GatewayToken)
+
+	var cmds []Command
+	for _, tid := range siblingsToCancel {
+		if tid == winningTimerID {
+			continue // skip cancelling the timer that already fired
+		}
+		cmds = append(cmds, CancelTimer{TimerID: tid})
+	}
+
+	// Drive forward from the branch target.
+	driveCmds, err := drive(def, s, at)
+	if err != nil {
+		return nil, err
+	}
+	cmds = append(cmds, driveCmds...)
+	return cmds, nil
+}
+
+// armBoundaries finds all KindBoundaryEvent nodes with AttachedTo == hostNode,
+// records a boundaryArm for each, and returns ScheduleTimer commands for timer
+// boundaries. Called from the ServiceTask and UserTask park points in drive.
+//
+// Definition-scan order is deterministic (Nodes slice order); boundary arms are
+// appended in the same order so s.Boundaries is deterministic.
+//
+// A bad TimerDuration expression is returned as a wrapped error — consistent with
+// the intermediate-timer and SLA paths — so callers can fail fast rather than
+// silently no-arming the boundary.
+func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time) ([]Command, error) {
+	var cmds []Command
+	for _, n := range def.Nodes {
+		if n.Kind != model.KindBoundaryEvent || n.AttachedTo != hostNode {
+			continue
+		}
+		// Find the boundary's single outgoing flow.
+		outs := def.Outgoing(n.ID)
+		if len(outs) == 0 {
+			continue // unreachable if model.Validate passes
+		}
+		flowID := outs[0].ID
+
+		arm := boundaryArm{
+			HostToken:       hostTokenID,
+			HostNode:        hostNode,
+			BoundaryNode:    n.ID,
+			Flow:            flowID,
+			NonInterrupting: n.NonInterrupting,
+		}
+
+		if n.TimerDuration != "" {
+			dur, err := conditions.EvalDuration(n.TimerDuration, s.Variables)
+			if err != nil {
+				return nil, fmt.Errorf("engine: boundary %q on %q: %w", n.ID, hostNode, err)
+			}
+			timerID := s.nextTimerID()
+			arm.TimerID = timerID
+			cmds = append(cmds, ScheduleTimer{
+				TimerID: timerID,
+				Token:   hostTokenID,
+				FireAt:  at.Add(dur),
+				Kind:    TimerIntermediate,
+			})
+		} else if n.SignalName != "" {
+			arm.Signal = n.SignalName
+		}
+		s.Boundaries = append(s.Boundaries, arm)
+	}
+	return cmds, nil
+}
+
+// fireBoundaryArm executes a boundary event arm that has fired. It is called
+// from the TimerFired and SignalReceived handlers.
+//
+// For interrupting boundaries (!ba.NonInterrupting):
+//  1. Verify the host token is still parked. If not, it's a late/stale fire → no-op.
+//  2. Cancel any SLA/reminder timers on the host (UserTask) via cancelTimersByTaskToken
+//     using the host's taskToken (AwaitCommand == taskToken for UserTask hosts).
+//  3. Consume the host token (close its visit, remove from slice).
+//  4. Remove ALL boundary arms for this host (emit CancelTimer for timer siblings).
+//  5. Place a new Active token at the boundary's outgoing flow target.
+//  6. Drive forward.
+//
+// For non-interrupting boundaries (ba.NonInterrupting):
+//  1. Verify the host token is still parked. If not, no-op.
+//  2. Leave the host parked.
+//  3. Remove ONLY this boundary arm (fired once; do not re-arm — repeating out of scope).
+//  4. Place an additional Active token at the boundary's outgoing flow target.
+//  5. Drive forward (the new token).
+func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time) ([]Command, error) {
+	// Find the host token by ID (not by AwaitCommand — the host token parks on
+	// taskToken/cmdID, not on the boundary timer). If the token is gone (already
+	// consumed by another path), this is a late fire — clean no-op.
+	hostTok := s.tokenByID(ba.HostToken)
+	if hostTok == nil {
+		// Also clean up stale boundary arms for this host (defensive).
+		s.removeBoundaryArmsForHost(ba.HostToken)
+		return nil, nil
+	}
+
+	// Resolve the boundary's outgoing flow target.
+	var flowTarget string
+	for _, f := range def.Flows {
+		if f.ID == ba.Flow {
+			flowTarget = f.Target
+			break
+		}
+	}
+	if flowTarget == "" {
+		// No target: unreachable if model.Validate passes (boundary must have outgoing flow).
+		return nil, fmt.Errorf("engine: boundary %q: outgoing flow %q not found", ba.BoundaryNode, ba.Flow)
+	}
+
+	var cmds []Command
+
+	if !ba.NonInterrupting {
+		// Interrupting: consume the host, cancel its task timers and boundary siblings.
+
+		// Cancel SLA/reminder timers for the host (UserTask case: AwaitCommand == taskToken).
+		// For a ServiceTask host, AwaitCommand is a cmdID (not a taskToken), so
+		// cancelTimersByTaskToken will find no records — which is correct.
+		hostTaskToken := hostTok.AwaitCommand
+		for _, timerID := range s.cancelTimersByTaskToken(hostTaskToken, "") {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
+
+		// Consume the host token (close its visit, remove from slice).
+		s.consumeToken(hostTok, at)
+
+		// Remove ALL boundary arms for this host and emit CancelTimer for timer siblings.
+		// The fired arm's timerID (if any) is included; it already fired so the
+		// runtime's cancel is idempotent — no special handling needed.
+		for _, timerID := range s.removeBoundaryArmsForHost(ba.HostToken) {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
+
+		// Place a new Active token at the boundary's outgoing flow target.
+		s.placeToken(flowTarget, at)
+	} else {
+		// Non-interrupting: leave host parked, spawn an additional token.
+
+		// Remove only THIS boundary arm (it fired once; no re-arm in scope).
+		s.removeBoundaryArm(ba.HostToken, ba.BoundaryNode)
+
+		// Spawn a new Active token at the boundary's outgoing flow target.
+		s.placeToken(flowTarget, at)
+	}
+
+	// Drive forward (the newly placed token(s)).
+	driveCmds, err := drive(def, s, at)
+	if err != nil {
+		return nil, err
+	}
+	cmds = append(cmds, driveCmds...)
+	return cmds, nil
+}
+
 // handleSLAFired processes a TimerFired event for an SLA timer. It is called
 // from the TimerFired handler in Step when the timer record's Kind is TimerSLA.
 //
@@ -848,5 +1374,11 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy Timers: timerRecord is a value type (no pointers), so a slice copy
 	// is sufficient to ensure mutations to the clone do not affect the original.
 	s.Timers = append([]timerRecord(nil), st.Timers...)
+	// Deep-copy ArmedEvents: armedEvent is a value type (no pointers), so a slice
+	// copy is sufficient.
+	s.ArmedEvents = append([]armedEvent(nil), st.ArmedEvents...)
+	// Deep-copy Boundaries: boundaryArm is a value type (no pointers), so a slice
+	// copy is sufficient.
+	s.Boundaries = append([]boundaryArm(nil), st.Boundaries...)
 	return s
 }

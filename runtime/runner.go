@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
@@ -12,6 +13,12 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
+
+// msgKey is the composite key used to look up a message waiter by name+correlation.
+type msgKey struct {
+	Name           string
+	CorrelationKey string
+}
 
 // Runner is the reference single-process driver loop.
 type Runner struct {
@@ -24,6 +31,14 @@ type Runner struct {
 	tasks    humantask.TaskStore
 	authz    authz.Authorizer
 	sched    Scheduler
+	sigbus   *SignalBus
+
+	// msgMu guards msgWaiters.
+	msgMu sync.Mutex
+	// msgWaiters maps a (messageName, correlationKey) pair to the instance ID
+	// that is waiting on it. Message catch events are 1:1 (each correlation key
+	// routes to exactly one instance), so a simple map suffices.
+	msgWaiters map[msgKey]string
 }
 
 // Option is a functional option for Runner. Optional capability bundles (human
@@ -54,6 +69,17 @@ func WithScheduler(sched Scheduler) Option {
 	return func(r *Runner) { r.sched = sched }
 }
 
+// WithSignalBus wires a [SignalBus] into the Runner, enabling signal throw
+// commands (ThrowSignal). Without this option any process that reaches a signal
+// throw node will return a descriptive error.
+//
+// After each deliverLoop iteration the runner reconciles the instance's
+// AwaitSignal tokens with the bus (via [SignalBus.Sync]) so that a later
+// [SignalBus.Publish] reaches all parked instances.
+func WithSignalBus(bus *SignalBus) Option {
+	return func(r *Runner) { r.sigbus = bus }
+}
+
 // NewRunner constructs a Runner with the five required core ports (cat, clk,
 // store, jnl, out) and any optional capability bundles supplied as functional
 // options.
@@ -68,6 +94,7 @@ func WithScheduler(sched Scheduler) Option {
 // Optional capabilities (via Option):
 //   - [WithHumanTasks]: human-task support (resolver, task store, authorizer).
 //   - [WithScheduler]: timer scheduling support.
+//   - [WithSignalBus]: signal broadcast support (ThrowSignal).
 func NewRunner(
 	cat action.Catalog,
 	clk clock.Clock,
@@ -77,11 +104,12 @@ func NewRunner(
 	opts ...Option,
 ) *Runner {
 	r := &Runner{
-		cat:   cat,
-		clk:   clk,
-		store: store,
-		jnl:   jnl,
-		out:   out,
+		cat:        cat,
+		clk:        clk,
+		store:      store,
+		jnl:        jnl,
+		out:        out,
+		msgWaiters: make(map[msgKey]string),
 	}
 	for _, o := range opts {
 		o(r)
@@ -122,6 +150,10 @@ func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, inst
 // perform (action results, etc.) until all commands are resolved or the engine
 // parks. It encapsulates the journal→Step→save→perform cycle shared by Run and
 // Deliver.
+//
+// After each save, if a SignalBus is configured, the loop reconciles the
+// instance's AwaitSignal tokens with the bus so that a future
+// [SignalBus.Publish] reaches this instance.
 func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, trg engine.Trigger) (engine.InstanceState, error) {
 	queue := []engine.Trigger{trg}
 
@@ -141,6 +173,10 @@ func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, 
 			return st, fmt.Errorf("runtime: save: %w", err)
 		}
 
+		// Reconcile signal-bus and message waiters after each state save so both
+		// the SignalBus and msgWaiters maps always reflect the current parked state.
+		r.syncWaiters(st)
+
 		for _, c := range res.Commands {
 			next, err := r.perform(ctx, def, st, c)
 			if err != nil {
@@ -152,6 +188,82 @@ func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, 
 		}
 	}
 	return st, nil
+}
+
+// syncWaiters reconciles both the SignalBus subscriptions and the internal
+// message-waiter table for st after each deliverLoop save. It calls
+// syncSignalBus (if a bus is configured) and syncMsgWaiters so both are
+// always consistent with the current parked state of the instance.
+func (r *Runner) syncWaiters(st engine.InstanceState) {
+	r.syncSignalBus(st)
+	r.syncMsgWaiters(st)
+}
+
+// syncSignalBus reconciles st's AwaitSignal tokens with the SignalBus, if one
+// is configured. This is a no-op when r.sigbus is nil.
+func (r *Runner) syncSignalBus(st engine.InstanceState) {
+	if r.sigbus == nil {
+		return
+	}
+	var awaiting []string
+	for _, tok := range st.Tokens {
+		if tok.AwaitSignal != "" {
+			awaiting = append(awaiting, tok.AwaitSignal)
+		}
+	}
+	r.sigbus.Sync(st.InstanceID, awaiting)
+}
+
+// syncMsgWaiters reconciles the runner's internal message-waiter table with the
+// current state of st. It registers new message-awaiting tokens and removes
+// entries that are no longer waiting.
+func (r *Runner) syncMsgWaiters(st engine.InstanceState) {
+	r.msgMu.Lock()
+	defer r.msgMu.Unlock()
+
+	// Remove all existing entries for this instance.
+	for k, id := range r.msgWaiters {
+		if id == st.InstanceID {
+			delete(r.msgWaiters, k)
+		}
+	}
+
+	// Re-register from current tokens.
+	for _, tok := range st.Tokens {
+		if tok.AwaitMessage != "" {
+			k := msgKey{Name: tok.AwaitMessage, CorrelationKey: tok.AwaitMessageKey}
+			r.msgWaiters[k] = st.InstanceID
+		}
+	}
+}
+
+// findMessageWaiter returns the instance ID that is currently waiting for a
+// message with the given name and correlation key, and whether one was found.
+func (r *Runner) findMessageWaiter(name, correlationKey string) (string, bool) {
+	r.msgMu.Lock()
+	defer r.msgMu.Unlock()
+	id, ok := r.msgWaiters[msgKey{Name: name, CorrelationKey: correlationKey}]
+	return id, ok
+}
+
+// DeliverMessage finds the single process instance that is currently waiting for
+// a message with the given name and correlationKey, then delivers a
+// [engine.MessageReceived] trigger to it. If no matching instance is found it
+// is a clean no-op.
+//
+// The runner tracks message waiters internally via [syncMsgWaiters], which is
+// called after each deliverLoop iteration. This keeps the state in sync without
+// requiring an enumeration API on StateStore.
+//
+// def is required to call Deliver on the matched instance.
+func (r *Runner) DeliverMessage(ctx context.Context, def *model.ProcessDefinition, name, correlationKey string, payload map[string]any) error {
+	instanceID, found := r.findMessageWaiter(name, correlationKey)
+	if !found {
+		return nil
+	}
+	trg := engine.NewMessageReceived(r.clk.Now(), name, correlationKey, payload)
+	_, err := r.Deliver(ctx, def, instanceID, trg)
+	return err
 }
 
 // perform executes one command and returns the resulting trigger, if any.
@@ -265,6 +377,15 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			return nil, fmt.Errorf("runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
 		}
 		r.sched.Cancel(cmd.TimerID)
+		return nil, nil
+
+	case engine.ThrowSignal:
+		if r.sigbus == nil {
+			return nil, fmt.Errorf("runtime: perform ThrowSignal %q: no SignalBus configured", cmd.Name)
+		}
+		if err := r.sigbus.Publish(ctx, cmd.Name, cmd.Payload); err != nil {
+			return nil, fmt.Errorf("runtime: perform ThrowSignal %q: %w", cmd.Name, err)
+		}
 		return nil, nil
 
 	default:

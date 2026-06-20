@@ -27,6 +27,73 @@ type timerRecord struct {
 	NodeID string
 }
 
+// armedEvent is the engine's bookkeeping entry for a single arm of an event-based
+// gateway. When a KindEventBasedGateway is driven, one armedEvent is recorded for
+// each outgoing catch-event node. The first arm to fire wins; its siblings are
+// cancelled (CancelTimer for timer arms; drop for signal/message arms).
+//
+// Design:
+//   - GatewayToken is the parked token ID on the gateway node. When an arm wins,
+//     this token is moved to the winning arm's branch target.
+//   - CatchNode is the BPMN node id of the catch-event (timer/signal/message). It
+//     is used to look up the arm in O(n) on ArmedEvents — deterministic slice order.
+//   - Flow is the sequence flow ID from the gateway to the catch node. The target of
+//     this flow is the catch node itself; the token skips the catch node and is
+//     directly routed to the catch node's single outgoing target (first-event-wins
+//     routing: the catch node has already "fired" when its arm is selected).
+//   - TimerID is non-empty for timer arms; it is the ID passed to ScheduleTimer and
+//     is needed to emit CancelTimer for loser timer arms.
+//   - Signal is non-empty for signal arms.
+//   - Message / MessageKey are non-empty for message arms (MessageKey is the
+//     resolved correlation key, empty if not configured on the node).
+//
+// All fields are plain strings (value type); cloneState copies the slice shallowly,
+// which is correct because there are no pointer fields.
+type armedEvent struct {
+	// GatewayToken is the parked token ID on the event-based gateway.
+	GatewayToken string
+	// CatchNode is the BPMN node id of the catch-event arm.
+	CatchNode string
+	// Flow is the sequence flow ID from the gateway to the catch node.
+	Flow string
+	// TimerID is the scheduled timer id for timer arms (empty for signal/message arms).
+	TimerID string
+	// Signal is the signal name for signal arms (empty for timer/message arms).
+	Signal string
+	// Message is the message name for message arms (empty for timer/signal arms).
+	Message string
+	// MessageKey is the resolved correlation key for message arms (empty if no key).
+	MessageKey string
+}
+
+// boundaryArm is the engine's bookkeeping entry for a single armed boundary
+// event attached to a parked host activity token. One entry exists per boundary
+// event node while the host is parked; entries are removed when the boundary
+// fires or when the host completes first.
+//
+// Flat value struct (no pointers): cloneState can copy the slice shallowly.
+// Appended in definition-scan order so the slice is deterministic.
+type boundaryArm struct {
+	// HostToken is the ID of the parked host activity token.
+	HostToken string
+	// HostNode is the BPMN node id of the host activity.
+	HostNode string
+	// BoundaryNode is the BPMN node id of the boundary event.
+	BoundaryNode string
+	// Flow is the ID of the boundary event's outgoing sequence flow (the path
+	// to take when the boundary fires).
+	Flow string
+	// NonInterrupting mirrors model.Node.NonInterrupting; false = interrupting
+	// (BPMN default), true = non-interrupting.
+	NonInterrupting bool
+	// TimerID is the scheduled timer id for timer boundary events. Empty for
+	// signal boundary events.
+	TimerID string
+	// Signal is the signal name for signal boundary events. Empty for timer
+	// boundary events.
+	Signal string
+}
+
 // Status is the lifecycle state of a process instance.
 type Status int
 
@@ -54,8 +121,20 @@ type Token struct {
 	ScopeID      string
 	State        TokenState
 	AwaitCommand string // CommandID this token is parked on, if any
-	Payload      map[string]any
-	EnteredAt    time.Time
+	// AwaitSignal is the signal name this token is parked on (signal intermediate
+	// catch event). The token resumes when a SignalReceived trigger with a matching
+	// Name is delivered.
+	AwaitSignal string
+	// AwaitMessage is the message name this token is parked on (message
+	// intermediate catch event). The token resumes when a MessageReceived trigger
+	// with a matching Name (and AwaitMessageKey, if set) is delivered.
+	AwaitMessage string
+	// AwaitMessageKey is the resolved correlation key for a message catch event.
+	// It is evaluated from model.Node.CorrelationKey against the instance variables
+	// at park time. Empty means no key was configured — match on name alone.
+	AwaitMessageKey string
+	Payload         map[string]any
+	EnteredAt       time.Time
 }
 
 // NodeVisit is one traversal of one node by one token (audit/history).
@@ -88,6 +167,20 @@ type InstanceState struct {
 	// late/duplicate TimerFired is a clean no-op.
 	// Appended in TimerSeq order; iteration is deterministic by construction.
 	Timers []timerRecord
+
+	// ArmedEvents holds the set of pending arms for in-flight event-based gateways.
+	// Each entry corresponds to one catch-event arm of a parked gateway token.
+	// Entries are appended in definition (outgoing-flow) order and removed in bulk
+	// when any arm wins (all arms for that gateway are removed together).
+	// A late trigger for a removed arm finds no matching armedEvent and is a no-op.
+	ArmedEvents []armedEvent
+
+	// Boundaries holds the set of pending arms for in-flight boundary events
+	// attached to parked host activity tokens. One entry per boundary event
+	// node while the host is parked. Entries are appended in definition-scan
+	// order (deterministic). Removed when the boundary fires or the host
+	// completes first (cancellation).
+	Boundaries []boundaryArm
 
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
@@ -165,6 +258,143 @@ func (s *InstanceState) cancelAllTimers() []Command {
 	}
 	s.Timers = nil
 	return cmds
+}
+
+// cancelAllArmsAndBoundaries returns CancelTimer commands for every timer arm
+// in s.ArmedEvents (event-gateway timer arms) and s.Boundaries (boundary timer
+// arms) that has a non-empty TimerID, then clears both slices. Iteration is in
+// slice order (ArmedEvents first, then Boundaries) for determinism.
+//
+// This is called alongside cancelAllTimers on the ActionFailed terminal path to
+// prevent gateway and boundary timer arms from leaking as orphaned scheduled
+// tasks in the runtime scheduler.
+//
+// NOTE: A comprehensive sweep across ALL terminal transitions (not just
+// ActionFailed) and multi-token scenarios is deferred to the errors/compensation
+// plan (Plan 8). This covers ActionFailed specifically, consistent with the
+// Plan-5 precedent for cancelAllTimers.
+func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
+	var cmds []Command
+	for _, ae := range s.ArmedEvents {
+		if ae.TimerID != "" {
+			cmds = append(cmds, CancelTimer{TimerID: ae.TimerID})
+		}
+	}
+	s.ArmedEvents = nil
+	for _, ba := range s.Boundaries {
+		if ba.TimerID != "" {
+			cmds = append(cmds, CancelTimer{TimerID: ba.TimerID})
+		}
+	}
+	s.Boundaries = nil
+	return cmds
+}
+
+// armedEventByTimer returns a pointer to the first armedEvent with the given
+// timerID, or nil if none exists.
+func (s *InstanceState) armedEventByTimer(timerID string) *armedEvent {
+	for i := range s.ArmedEvents {
+		if s.ArmedEvents[i].TimerID == timerID {
+			return &s.ArmedEvents[i]
+		}
+	}
+	return nil
+}
+
+// armedEventBySignal returns a pointer to the first armedEvent with the given
+// signal name, or nil if none exists.
+func (s *InstanceState) armedEventBySignal(name string) *armedEvent {
+	for i := range s.ArmedEvents {
+		if s.ArmedEvents[i].Signal == name {
+			return &s.ArmedEvents[i]
+		}
+	}
+	return nil
+}
+
+// armedEventByMessage returns a pointer to the first armedEvent whose Message
+// matches name and whose MessageKey matches correlationKey, or nil if none.
+func (s *InstanceState) armedEventByMessage(name, correlationKey string) *armedEvent {
+	for i := range s.ArmedEvents {
+		ae := &s.ArmedEvents[i]
+		if ae.Message == name && ae.MessageKey == correlationKey {
+			return ae
+		}
+	}
+	return nil
+}
+
+// removeArmedEventsForGateway removes all armedEvent entries whose GatewayToken
+// matches the given token ID, returning the TimerIDs of any timer-arm entries so
+// the caller can emit CancelTimer commands for them.
+func (s *InstanceState) removeArmedEventsForGateway(gatewayToken string) []string {
+	var cancelTimerIDs []string
+	out := make([]armedEvent, 0, len(s.ArmedEvents))
+	for _, ae := range s.ArmedEvents {
+		if ae.GatewayToken == gatewayToken {
+			if ae.TimerID != "" {
+				cancelTimerIDs = append(cancelTimerIDs, ae.TimerID)
+			}
+			continue
+		}
+		out = append(out, ae)
+	}
+	s.ArmedEvents = out
+	return cancelTimerIDs
+}
+
+// boundaryArmByTimer returns a pointer to the first boundaryArm with the given
+// timerID, or nil if none exists.
+func (s *InstanceState) boundaryArmByTimer(timerID string) *boundaryArm {
+	for i := range s.Boundaries {
+		if s.Boundaries[i].TimerID == timerID {
+			return &s.Boundaries[i]
+		}
+	}
+	return nil
+}
+
+// boundaryArmBySignal returns a pointer to the first boundaryArm with the given
+// signal name, or nil if none exists.
+func (s *InstanceState) boundaryArmBySignal(name string) *boundaryArm {
+	for i := range s.Boundaries {
+		if s.Boundaries[i].Signal == name {
+			return &s.Boundaries[i]
+		}
+	}
+	return nil
+}
+
+// removeBoundaryArmsForHost removes all boundaryArm entries for the given
+// hostToken, returning the TimerIDs of any timer-boundary arms so the caller
+// can emit CancelTimer commands for them.
+func (s *InstanceState) removeBoundaryArmsForHost(hostToken string) []string {
+	var cancelTimerIDs []string
+	out := make([]boundaryArm, 0, len(s.Boundaries))
+	for _, ba := range s.Boundaries {
+		if ba.HostToken == hostToken {
+			if ba.TimerID != "" {
+				cancelTimerIDs = append(cancelTimerIDs, ba.TimerID)
+			}
+			continue
+		}
+		out = append(out, ba)
+	}
+	s.Boundaries = out
+	return cancelTimerIDs
+}
+
+// removeBoundaryArm removes the single boundaryArm entry with the given
+// (hostToken, boundaryNode) pair. It is a no-op if no such entry exists.
+func (s *InstanceState) removeBoundaryArm(hostToken, boundaryNode string) {
+	out := make([]boundaryArm, 0, len(s.Boundaries))
+	for _, ba := range s.Boundaries {
+		if ba.HostToken == hostToken && ba.BoundaryNode == boundaryNode {
+			continue
+		}
+		out = append(out, ba)
+	}
+	s.Boundaries = out
 }
 
 // Clone returns a deep copy of the InstanceState. All slice and map fields are

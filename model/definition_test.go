@@ -72,6 +72,82 @@ func TestNodeUserTaskFields(t *testing.T) {
 	assert.Equal(t, "amount > 1000", n.EligibilityExpr)
 }
 
+// TestNodeEventBoundaryFields asserts that the five new event/boundary fields
+// on model.Node round-trip through ProcessDefinition.Node correctly.
+func TestNodeEventBoundaryFields(t *testing.T) {
+	cases := []struct {
+		name string
+		node model.Node
+	}{
+		{
+			name: "signal-catch",
+			node: model.Node{
+				ID:         "sig-catch",
+				Kind:       model.KindIntermediateCatchEvent,
+				SignalName: "order.placed",
+			},
+		},
+		{
+			name: "message-catch",
+			node: model.Node{
+				ID:             "msg-catch",
+				Kind:           model.KindIntermediateCatchEvent,
+				MessageName:    "payment.received",
+				CorrelationKey: "order.id",
+			},
+		},
+		{
+			name: "signal-throw",
+			node: model.Node{
+				ID:         "sig-throw",
+				Kind:       model.KindIntermediateThrowEvent,
+				SignalName: "order.shipped",
+			},
+		},
+		{
+			// Zero-value NonInterrupting (false) = interrupting — the BPMN default.
+			name: "boundary-interrupting-default",
+			node: model.Node{
+				ID:              "boundary-1",
+				Kind:            model.KindBoundaryEvent,
+				SignalName:      "cancel.signal",
+				AttachedTo:      "task-1",
+				NonInterrupting: false,
+			},
+		},
+		{
+			// NonInterrupting: true = non-interrupting boundary event.
+			name: "boundary-non-interrupting",
+			node: model.Node{
+				ID:              "boundary-2",
+				Kind:            model.KindBoundaryEvent,
+				MessageName:     "reminder.msg",
+				AttachedTo:      "task-2",
+				NonInterrupting: true,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			d := &model.ProcessDefinition{
+				ID:      "p-event",
+				Version: 1,
+				Nodes:   []model.Node{tc.node},
+				Flows:   []model.SequenceFlow{},
+			}
+			n, ok := d.Node(tc.node.ID)
+			require.True(t, ok)
+			assert.Equal(t, tc.node.SignalName, n.SignalName)
+			assert.Equal(t, tc.node.MessageName, n.MessageName)
+			assert.Equal(t, tc.node.CorrelationKey, n.CorrelationKey)
+			assert.Equal(t, tc.node.AttachedTo, n.AttachedTo)
+			assert.Equal(t, tc.node.NonInterrupting, n.NonInterrupting)
+		})
+	}
+}
+
 // TestNodeTimerSLAReminderFields asserts that the six new timer/SLA/reminder
 // fields on model.Node round-trip through ProcessDefinition.Node correctly.
 func TestNodeTimerSLAReminderFields(t *testing.T) {

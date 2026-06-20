@@ -57,6 +57,35 @@ type Node struct {
 	ReminderEvery string
 	// ReminderAction is the name of the ServiceAction to invoke on each reminder.
 	ReminderAction string
+
+	// Event correlation fields (signal/message catch/throw and boundary events).
+
+	// SignalName is the signal reference for a signal catch/throw event or a
+	// signal boundary event (KindIntermediateCatchEvent, KindIntermediateThrowEvent,
+	// KindBoundaryEvent).
+	SignalName string
+	// MessageName is the message reference for a message catch event or a
+	// message boundary event (KindIntermediateCatchEvent, KindBoundaryEvent).
+	MessageName string
+	// CorrelationKey is an expr expression evaluated at runtime to derive the
+	// correlation key for message matching. Optional; empty means no correlation.
+	// This field is a plain string in the model — evaluation happens in the engine.
+	CorrelationKey string
+
+	// Boundary event fields (KindBoundaryEvent).
+
+	// AttachedTo is the ID of the host activity node this boundary event is
+	// attached to. Must reference an existing activity node (e.g. KindServiceTask,
+	// KindUserTask, KindReceiveTask, KindSendTask, KindBusinessRuleTask,
+	// KindSubProcess, KindCallActivity).
+	AttachedTo string
+	// NonInterrupting controls the boundary event interrupting behavior.
+	// Zero-value (false) means interrupting: the host activity is cancelled when
+	// the boundary event fires (the BPMN default). Set NonInterrupting: true for a
+	// non-interrupting boundary event, where the host activity keeps running and an
+	// additional token is spawned on the boundary's outgoing flow.
+	// The engine reads this as: interrupting = !node.NonInterrupting.
+	NonInterrupting bool
 }
 
 // SequenceFlow is a directed edge between two nodes.

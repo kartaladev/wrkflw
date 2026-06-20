@@ -108,3 +108,33 @@ type TimerFired struct {
 func NewTimerFired(at time.Time, timerID string) TimerFired {
 	return TimerFired{baseTrigger: baseTrigger{at: at}, TimerID: timerID}
 }
+
+// SignalReceived reports that a named signal has been broadcast. Every token in
+// the instance awaiting that signal name will be resumed (broadcast semantics).
+// Payload is optional additional data carried by the signal; it is merged into
+// the instance variables before each resumed token drives forward.
+type SignalReceived struct {
+	baseTrigger
+	Name    string
+	Payload map[string]any
+}
+
+// NewSignalReceived builds a SignalReceived trigger stamped with the given time.
+func NewSignalReceived(at time.Time, name string, payload map[string]any) SignalReceived {
+	return SignalReceived{baseTrigger: baseTrigger{at: at}, Name: name, Payload: payload}
+}
+
+// MessageReceived reports that a named message has been delivered to this
+// instance. The single token awaiting that message name and correlation key is
+// resumed. If no token matches the trigger is a clean no-op.
+type MessageReceived struct {
+	baseTrigger
+	Name           string
+	CorrelationKey string
+	Payload        map[string]any
+}
+
+// NewMessageReceived builds a MessageReceived trigger stamped with the given time.
+func NewMessageReceived(at time.Time, name, correlationKey string, payload map[string]any) MessageReceived {
+	return MessageReceived{baseTrigger: baseTrigger{at: at}, Name: name, CorrelationKey: correlationKey, Payload: payload}
+}
