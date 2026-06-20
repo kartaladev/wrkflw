@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
@@ -187,6 +188,233 @@ func parallelSubProcessDef() *model.ProcessDefinition {
 	}
 }
 
+// eventSubProcessDef builds:
+//
+// outer:  outer-start → sub (KindSubProcess) → outer-end
+//
+// sub's inner def:
+//
+//	inner-start → inner-user (KindUserTask) → inner-end
+//	[KindEventSubProcess "evtsub"] triggered by signal "cancel"
+//	  evtsub-inner:  evtsub-start(signal "cancel") → evtsub-svc(ServiceTask "cancel-action") → evtsub-end
+//
+// If interrupting==true the event sub-process is interrupting (NonInterrupting=false).
+// If interrupting==false the event sub-process is NON-interrupting (NonInterrupting=true).
+func eventSubProcessDef(nonInterrupting bool) *model.ProcessDefinition {
+	evtsubInner := &model.ProcessDefinition{
+		ID: "evtsub-inner", Version: 1,
+		Nodes: []model.Node{
+			{ID: "evtsub-start", Kind: model.KindStartEvent, SignalName: "cancel"},
+			{ID: "evtsub-svc", Kind: model.KindServiceTask, Action: "cancel-action"},
+			{ID: "evtsub-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
+			{ID: "ef2", Source: "evtsub-svc", Target: "evtsub-end"},
+		},
+	}
+
+	inner := &model.ProcessDefinition{
+		ID: "inner-evtsub", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-user", Kind: model.KindUserTask},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+			{ID: "evtsub", Kind: model.KindEventSubProcess, NonInterrupting: nonInterrupting, Subprocess: evtsubInner},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-user"},
+			{ID: "if2", Source: "inner-user", Target: "inner-end"},
+		},
+	}
+
+	return &model.ProcessDefinition{
+		ID: "outer-evtsub", Version: 1,
+		Nodes: []model.Node{
+			{ID: "outer-start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+		},
+	}
+}
+
+// TestInterruptingEventSubprocessCancelsParentScope verifies the interrupting event
+// sub-process scenario:
+//
+//  1. Start → enters sub → inner scope opens, user-task "inner-user" parks.
+//  2. Deliver SignalReceived{"cancel"} → the interrupting event sub-process fires:
+//     - The user-task token in the inner scope is cancelled.
+//     - A new scope opens for the event sub-process; evtsub-svc fires (InvokeAction "cancel-action").
+//  3. Complete "cancel-action" → evtsub scope drains → since interrupting, this
+//     completes the enclosing sub-process scope → outer-end → CompleteInstance.
+//  4. A late HumanCompleted for the cancelled task is a clean no-op.
+func TestInterruptingEventSubprocessCancelsParentScope(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := eventSubProcessDef(false) // interrupting
+
+	// ---- Step 1: StartInstance — outer-start → sub → inner-start → inner-user (parks) ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-evtsub"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// inner-user should be parked (AwaitHuman command).
+	require.Len(t, r1.State.Tokens, 1, "expected one parked token at inner-user")
+	assert.Equal(t, "inner-user", r1.State.Tokens[0].NodeID)
+	taskToken := r1.State.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskToken, "user-task token must have AwaitCommand set")
+
+	// Sub-process scope must be open.
+	require.Len(t, r1.State.Scopes, 1, "expected one scope open for sub")
+	innerScopeID := r1.State.Scopes[0].ID
+
+	// ---- Step 2: SignalReceived{"cancel"} — interrupting event sub-process fires ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+
+	// The user-task token in the inner scope must be cancelled (gone).
+	for _, tok := range r2.State.Tokens {
+		assert.NotEqual(t, "inner-user", tok.NodeID,
+			"inner-user token must be cancelled by interrupting event sub-process")
+	}
+
+	// A new (child) scope must be open for the event sub-process.
+	// The original inner scope may be closed (interrupting) OR still listed.
+	// The evtsub scope parent is the inner scope.
+	var evtsubScope *engine.Scope
+	for i := range r2.State.Scopes {
+		sc := &r2.State.Scopes[i]
+		if sc.ParentID == innerScopeID {
+			evtsubScope = sc
+			break
+		}
+	}
+	require.NotNil(t, evtsubScope, "expected a child scope for the event sub-process")
+
+	// InvokeAction for "cancel-action" must have been emitted.
+	var cancelCmdID string
+	for _, cmd := range r2.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "cancel-action" {
+			cancelCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, cancelCmdID, "expected InvokeAction for cancel-action")
+
+	// ---- Step 3: ActionCompleted for cancel-action — evtsub scope drains → outer completes ----
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), cancelCmdID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
+	assert.Empty(t, r3.State.Tokens, "all tokens must be consumed on completion")
+	assert.Empty(t, r3.State.Scopes, "all scopes must be closed on completion")
+	require.NotNil(t, r3.State.EndedAt)
+
+	found := false
+	for _, cmd := range r3.Commands {
+		if _, ok := cmd.(engine.CompleteInstance); ok {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected CompleteInstance command after event sub-process completion")
+
+	// ---- Step 4: Late HumanCompleted is a clean no-op ----
+	r4, err := engine.Step(def, r3.State,
+		engine.NewHumanCompleted(at.Add(3*time.Second), taskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
+	// Should error with ErrTokenNotFound (task token no longer exists) OR be a no-op.
+	// Either is acceptable; we just verify it doesn't panic and the state is unchanged.
+	if err == nil {
+		assert.Equal(t, engine.StatusCompleted, r4.State.Status,
+			"state should remain completed on late HumanCompleted")
+	}
+}
+
+// TestNonInterruptingEventSubprocessRunsAlongside verifies the non-interrupting
+// event sub-process scenario:
+//
+//  1. Start → sub enters → inner-user parks.
+//  2. SignalReceived{"cancel"} → non-interrupting event sub-process spawns ALONGSIDE:
+//     - inner-user is NOT cancelled (still parked).
+//     - evtsub-svc fires (InvokeAction "cancel-action").
+//  3. Complete "cancel-action" → evtsub scope drains → but inner scope still has
+//     inner-user; instance still running.
+//  4. Complete inner-user → inner scope drains → outer-end → CompleteInstance.
+func TestNonInterruptingEventSubprocessRunsAlongside(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := eventSubProcessDef(true) // non-interrupting
+
+	// ---- Step 1: StartInstance ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-nonintr"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.Tokens, 1)
+	assert.Equal(t, "inner-user", r1.State.Tokens[0].NodeID)
+	taskToken := r1.State.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskToken)
+
+	// ---- Step 2: SignalReceived{"cancel"} — non-interrupting: spawn alongside ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+
+	// inner-user token must STILL be present (non-interrupting: host not cancelled).
+	userTaskPresent := false
+	for _, tok := range r2.State.Tokens {
+		if tok.NodeID == "inner-user" {
+			userTaskPresent = true
+		}
+	}
+	assert.True(t, userTaskPresent, "inner-user must still be parked (non-interrupting)")
+
+	// InvokeAction for "cancel-action" must have been emitted.
+	var cancelCmdID string
+	for _, cmd := range r2.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "cancel-action" {
+			cancelCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, cancelCmdID, "expected InvokeAction for cancel-action")
+
+	// ---- Step 3: Complete cancel-action — evtsub scope drains, instance still running ----
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), cancelCmdID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r3.State.Status, "instance still running: inner-user still pending")
+
+	// inner-user token must STILL be present.
+	userTaskStillPresent := false
+	for _, tok := range r3.State.Tokens {
+		if tok.NodeID == "inner-user" {
+			userTaskStillPresent = true
+		}
+	}
+	assert.True(t, userTaskStillPresent, "inner-user must still be parked after evtsub completes")
+
+	// ---- Step 4: Complete inner-user → inner scope drains → outer completes ----
+	task := r3.State.Tasks[0]
+	r4, err := engine.Step(def, r3.State,
+		engine.NewHumanCompleted(at.Add(3*time.Second), task.TaskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r4.State.Status)
+	assert.Empty(t, r4.State.Tokens, "all tokens consumed on completion")
+	assert.Empty(t, r4.State.Scopes, "all scopes closed on completion")
+
+	found := false
+	for _, cmd := range r4.Commands {
+		if _, ok := cmd.(engine.CompleteInstance); ok {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected CompleteInstance")
+}
+
 // TestParallelGatewayInsideSubProcess verifies that a parallel fork-join nested
 // inside a sub-process keeps all forked tokens in the sub-process scope.
 //
@@ -258,4 +486,128 @@ func TestParallelGatewayInsideSubProcess(t *testing.T) {
 	require.Len(t, r3.Commands, 1, "expected exactly one CompleteInstance command")
 	_, ok := r3.Commands[0].(engine.CompleteInstance)
 	require.True(t, ok, "expected CompleteInstance, got %T", r3.Commands[0])
+}
+
+// timerEventSubProcessDef builds:
+//
+// outer:  outer-start → sub (KindSubProcess) → outer-end
+//
+// sub's inner def:
+//
+//	inner-start → inner-svc (ServiceTask "inner-action") → inner-end
+//	[KindEventSubProcess "evtsub"] triggered by timer "1h" (interrupting)
+//	  evtsub-inner:  evtsub-start(timer "1h") → evtsub-svc(ServiceTask "timeout-action") → evtsub-end
+func timerEventSubProcessDef() *model.ProcessDefinition {
+	evtsubInner := &model.ProcessDefinition{
+		ID: "evtsub-timer-inner", Version: 1,
+		Nodes: []model.Node{
+			{ID: "evtsub-start", Kind: model.KindStartEvent, TimerDuration: `"1h"`},
+			{ID: "evtsub-svc", Kind: model.KindServiceTask, Action: "timeout-action"},
+			{ID: "evtsub-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
+			{ID: "ef2", Source: "evtsub-svc", Target: "evtsub-end"},
+		},
+	}
+	inner := &model.ProcessDefinition{
+		ID: "inner-timer-evtsub", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-action"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+			{ID: "evtsub", Kind: model.KindEventSubProcess, NonInterrupting: false, Subprocess: evtsubInner},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
+			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "outer-timer-evtsub", Version: 1,
+		Nodes: []model.Node{
+			{ID: "outer-start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+		},
+	}
+}
+
+// TestTimerEventSubprocessArmsOnScopeOpen verifies that a timer-triggered event
+// sub-process arms correctly (emits ScheduleTimer) when the sub-process scope opens.
+// When the timer fires, the interrupting event sub-process fires, cancelling the
+// normal inner-svc path and running the timeout path instead.
+func TestTimerEventSubprocessArmsOnScopeOpen(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := timerEventSubProcessDef()
+
+	// ---- Step 1: StartInstance → sub enters → inner-svc fires InvokeAction + ScheduleTimer (evtsub arm) ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-timer-esp"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Should have: InvokeAction for inner-action + ScheduleTimer for the timer arm.
+	var schedTimer engine.ScheduleTimer
+	var innerCmdID string
+	for _, cmd := range r1.Commands {
+		switch c := cmd.(type) {
+		case engine.InvokeAction:
+			innerCmdID = c.CommandID
+		case engine.ScheduleTimer:
+			schedTimer = c
+		}
+	}
+	require.NotEmpty(t, innerCmdID, "expected InvokeAction for inner-action")
+	require.NotEmpty(t, schedTimer.TimerID, "expected ScheduleTimer for event sub-process timer arm")
+
+	// The event sub-process arm must be recorded in state (1 arm for "evtsub").
+	assert.Len(t, r1.State.EventSubprocesses, 1,
+		"expected one event sub-process arm recorded")
+
+	// ---- Step 2: Timer fires (interrupting) → inner-svc token cancelled, evtsub-svc fires ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(at.Add(time.Hour), schedTimer.TimerID), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+
+	// inner-svc token must be gone (interrupting).
+	for _, tok := range r2.State.Tokens {
+		assert.NotEqual(t, "inner-svc", tok.NodeID, "inner-svc must be cancelled")
+	}
+	// InvokeAction for timeout-action.
+	var timeoutCmdID string
+	for _, cmd := range r2.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "timeout-action" {
+			timeoutCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, timeoutCmdID, "expected InvokeAction for timeout-action")
+
+	// ---- Step 3: Complete timeout-action → evtsub scope drains → outer completes ----
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Hour), timeoutCmdID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
+	assert.Empty(t, r3.State.Tokens)
+	assert.Empty(t, r3.State.Scopes)
+
+	found := false
+	for _, cmd := range r3.Commands {
+		if _, ok := cmd.(engine.CompleteInstance); ok {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected CompleteInstance")
+
+	// The evtsub arm was cancelled (CancelTimer) as part of arming cleanup?
+	// Actually: timer arm fires = removeEventSubprocessArmsForScope (all arms removed on fire),
+	// so no CancelTimer for the winner's timer. No other timer arms to cancel.
+	// Normal inner-action's ScheduleTimer was the evtsub arm timer — it was the fired timer.
+	// A CancelTimer for the inner-action's InvokeAction command is NOT emitted (no way to cancel
+	// in-flight service invocations in this plan). That's expected.
 }

@@ -99,6 +99,40 @@ type boundaryArm struct {
 	Signal string
 }
 
+// eventSubprocessArm is the engine's bookkeeping entry for a single armed event
+// sub-process that is waiting to be triggered. One entry is created per
+// KindEventSubProcess node when the enclosing scope opens (or on StartInstance
+// for top-level event sub-processes). The entry is removed when the trigger fires
+// (one-shot) or when the enclosing scope closes/completes normally.
+//
+// Design mirrors boundaryArm but is keyed to an enclosing SCOPE rather than a
+// host activity token.
+//
+// Flat value struct (no pointers): cloneState copies the slice shallowly (correct
+// because there are no pointer fields). Appended in definition-scan order so the
+// slice is deterministic.
+type eventSubprocessArm struct {
+	// EnclosingScopeID is the ID of the scope inside which this event sub-process
+	// lives. Empty string means the root scope (top-level event sub-process).
+	EnclosingScopeID string
+	// EventSubprocessNode is the BPMN node ID of the KindEventSubProcess node in
+	// the enclosing scope's definition.
+	EventSubprocessNode string
+	// NonInterrupting mirrors model.Node.NonInterrupting on the KindEventSubProcess
+	// node. false = interrupting (BPMN default); true = non-interrupting.
+	NonInterrupting bool
+	// Signal is the signal name from the event sub-process's nested start event.
+	// Non-empty for signal-triggered event sub-processes.
+	Signal string
+	// TimerID is the scheduled timer ID for timer-triggered event sub-processes.
+	// Non-empty for timer-triggered event sub-processes.
+	TimerID string
+	// Message is the message name for message-triggered event sub-processes.
+	Message string
+	// MessageKey is the resolved correlation key for message-triggered event sub-processes.
+	MessageKey string
+}
+
 // CompensationRecord is a minimal record of a completed compensable activity
 // within a scope. Plan 8 (compensation/rollback) will populate and consume
 // these records; they are kept minimal here — just enough to identify the
@@ -232,6 +266,12 @@ type InstanceState struct {
 	// removed when it exits. Scopes form a tree via Scope.ParentID.
 	// Iteration is in openScope (ScopeSeq) order, which is deterministic.
 	Scopes []Scope
+
+	// EventSubprocesses holds the set of pending arms for in-flight event
+	// sub-processes. One entry per KindEventSubProcess node while its enclosing
+	// scope is active. Entries are appended in definition-scan order (deterministic).
+	// Removed when the trigger fires (one-shot) or when the enclosing scope closes.
+	EventSubprocesses []eventSubprocessArm
 
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
@@ -449,6 +489,72 @@ func (s *InstanceState) removeBoundaryArm(hostToken, boundaryNode string) {
 		out = append(out, ba)
 	}
 	s.Boundaries = out
+}
+
+// eventSubprocessArmBySignal returns a pointer to the first eventSubprocessArm
+// with the given signal name, or nil if none exists.
+func (s *InstanceState) eventSubprocessArmBySignal(name string) *eventSubprocessArm {
+	for i := range s.EventSubprocesses {
+		if s.EventSubprocesses[i].Signal == name {
+			return &s.EventSubprocesses[i]
+		}
+	}
+	return nil
+}
+
+// eventSubprocessArmByTimer returns a pointer to the first eventSubprocessArm
+// with the given timerID, or nil if none exists.
+func (s *InstanceState) eventSubprocessArmByTimer(timerID string) *eventSubprocessArm {
+	for i := range s.EventSubprocesses {
+		if s.EventSubprocesses[i].TimerID == timerID {
+			return &s.EventSubprocesses[i]
+		}
+	}
+	return nil
+}
+
+// eventSubprocessArmByMessage returns a pointer to the first eventSubprocessArm
+// whose Message matches name and whose MessageKey matches correlationKey, or nil.
+func (s *InstanceState) eventSubprocessArmByMessage(name, correlationKey string) *eventSubprocessArm {
+	for i := range s.EventSubprocesses {
+		ea := &s.EventSubprocesses[i]
+		if ea.Message == name && ea.MessageKey == correlationKey {
+			return ea
+		}
+	}
+	return nil
+}
+
+// removeEventSubprocessArm removes the single eventSubprocessArm for the given
+// (enclosingScopeID, eventSubprocessNode) pair. It is a no-op if no such entry exists.
+func (s *InstanceState) removeEventSubprocessArm(enclosingScopeID, espNode string) {
+	out := make([]eventSubprocessArm, 0, len(s.EventSubprocesses))
+	for _, ea := range s.EventSubprocesses {
+		if ea.EnclosingScopeID == enclosingScopeID && ea.EventSubprocessNode == espNode {
+			continue
+		}
+		out = append(out, ea)
+	}
+	s.EventSubprocesses = out
+}
+
+// removeEventSubprocessArmsForScope removes all eventSubprocessArm entries
+// whose EnclosingScopeID matches the given scopeID, returning the TimerIDs of
+// any timer-armed entries so the caller can emit CancelTimer commands.
+func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []string {
+	var cancelTimerIDs []string
+	out := make([]eventSubprocessArm, 0, len(s.EventSubprocesses))
+	for _, ea := range s.EventSubprocesses {
+		if ea.EnclosingScopeID == scopeID {
+			if ea.TimerID != "" {
+				cancelTimerIDs = append(cancelTimerIDs, ea.TimerID)
+			}
+			continue
+		}
+		out = append(out, ea)
+	}
+	s.EventSubprocesses = out
+	return cancelTimerIDs
 }
 
 // openScope creates a new Scope for the given nodeID nested inside
