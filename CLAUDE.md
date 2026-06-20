@@ -9,14 +9,15 @@ deliverable is an **importable Go module**; there is no daemon we own and run. T
 intent lives in `REQUIREMENTS.md` — read it before any design work. The load-bearing
 properties that shape every decision:
 
-- **Library-first, always**. The product is the `pkg/` API that a consumer imports and
-  embeds in *their* application. Every feature must be reachable and ergonomic through that
-  API. When a design choice trades library ergonomics for server convenience, library
-  ergonomics win.
+- **Library-first, always**. The product is the **module-root public API** (the exported
+  packages at the repo root — e.g. `engine/`, `model/`, `runtime/`; **no `pkg/` prefix**, see
+  ADR-0004) that a consumer imports and embeds in *their* application. Every feature must be
+  reachable and ergonomic through that API. When a design choice trades library ergonomics for
+  server convenience, library ergonomics win.
 - **Transports are library-provided, not shipped binaries**. The REST and gRPC surfaces
   exist so a consumer can *mount* them in their own server — expose them as
-  constructors/handlers/`http.Handler` / gRPC `ServiceRegistrar` registrations from `pkg/`,
-  configured by the consumer's DI and lifecycle. "Standalone (sidecar / container)" is a
+  constructors/handlers/`http.Handler` / gRPC `ServiceRegistrar` registrations from the public
+  root packages, configured by the consumer's DI and lifecycle. "Standalone (sidecar / container)" is a
   deployment shape the **consumer** assembles from these pieces; we do not own a `main`.
   Any binaries in this repo are **example/reference wiring only**, never the product.
 - Server/transport concerns must **never leak into the engine core** — the core depends on
@@ -41,6 +42,7 @@ properties that shape every decision:
 | Expressions | `github.com/expr-lang/expr` | all in-definition / in-execution expressions |
 | Eventing | [`watermill`](https://github.com/ThreeDotsLabs/watermill), **outbox publishing** | **never import watermill from workflow code** — go through the eventing abstraction (no vendor lock-in) |
 | Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.21.2** | hard pin; timers, SLA waiters, in-wait actions |
+| Time source | [`jonboulle/clockwork`](https://github.com/jonboulle/clockwork) | implements the in-repo `clock.Clock` interface (ADR-0003) — **never import clockwork from engine/workflow code**, depend on `clock.Clock`; shared with gocron so a fake clock drives both engine + scheduler in tests; core never reads the wall clock |
 | Authorization | pluggable; **casbin** as the baseline | role, resource-privilege, **and attribute-based** (data/process-variable) evaluation |
 | DI container | [`samber/do` v2](https://github.com/samber/do) | application-layer wiring only — see Dependency Injection below |
 | Tests w/ external resources | [`testcontainers-go`](https://github.com/testcontainers/testcontainers-go) | real Postgres/MinIO/SNS in tests, never mocked |
@@ -48,13 +50,16 @@ properties that shape every decision:
 ## Repository Layout (single Go module)
 
 One `go.mod` at the repo root. **Library consumers import this single module path** — the
-exported `pkg/` API *is* the product.
+exported **module-root packages** *are* the product. There is **no `pkg/` prefix** (ADR-0004):
+public packages live directly at the repo root.
 
-- `pkg/` — the **public engine library** and its value/stateless helpers. This is the entire
-  API surface for embedded consumers. Token execution, process-definition model, gateway
-  logic, the service-action catalog interface, the eventing/authz/persistence
-  *abstractions*, and the **transport adapters consumers mount** (REST `http.Handler`
-  factories, gRPC service registrations) all live here.
+- **Module-root packages** (e.g. `engine/`, `model/`, `action/`, `authz/`, `runtime/`) — the
+  **public engine library** and its value/stateless helpers. This is the entire API surface for
+  embedded consumers. Token execution, process-definition model, gateway logic, the
+  service-action catalog interface, the eventing/authz/persistence *abstractions*, and the
+  **transport adapters consumers mount** (REST `http.Handler` factories, gRPC service
+  registrations) all live here. Consumers import them as `github.com/zakyalvan/krtlwrkflw/engine`,
+  etc.
 - `internal/` — non-exported implementation details (concrete persistence, outbox plumbing,
   casbin adapters, watermill wiring) that consumers must not import.
 - `examples/` — optional **reference wiring** showing how a consumer embeds the engine and
@@ -72,8 +77,8 @@ plans go in `docs/plans/` — regardless of where a skill's defaults would place
 them.
 
 There is no `cmd/` of owned daemons. If a reference binary is genuinely useful, it lives in
-`examples/` and stays thin — all real behaviour belongs in `pkg/` so it is testable and
-reusable by consumers.
+`examples/` and stays thin — all real behaviour belongs in the public root packages so it is
+testable and reusable by consumers.
 
 ## Architecture (the big picture)
 
@@ -121,8 +126,8 @@ ask for, and record the decision as an ADR.
 ```bash
 go build ./...                                   # build everything
 go test ./...                                    # all tests (workspace-wide)
-go test ./pkg/<package>/...                      # one package
-go test -run '^TestName$' ./pkg/<package>/...    # a single test
+go test ./<package>/...                          # one package (root-level, e.g. ./engine/...)
+go test -run '^TestName$' ./<package>/...        # a single test
 go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 golangci-lint run ./...                          # lint (clean before done)
 go generate ./...                                # regenerate mocks (mockgen) etc.
@@ -135,9 +140,9 @@ running Docker daemon.
 
 ## Dependency Injection
 
-Because this is a library, **DI is a consumer choice, not something we impose**. The `pkg/`
-API must be fully usable with plain constructors and interface parameters — never require a
-consumer to adopt `samber/do` to use the engine.
+Because this is a library, **DI is a consumer choice, not something we impose**. The public
+root-package API must be fully usable with plain constructors and interface parameters — never
+require a consumer to adopt `samber/do` to use the engine.
 
 `samber/do` v2 is used **internally and in `examples/` reference wiring** to compose the
 engine's own stateful collaborators (services, repositories, orchestrators, background
@@ -172,7 +177,7 @@ When working, you must always:
 3. Use [testcontainers-go](https://github.com/testcontainers/testcontainers-go) for tests requiring heavy external resources (database, MinIO, SNS). For database tests, prefer the shared `database.RunTestDatabase(t, opts...)` helper once it exists.
 4. Use the project's `table-test`, `use-testcontainers`, and `use-mockgen` skills alongside `cc-skills-golang:golang-testing`. These custom skills override or extend parts of `golang-testing`.
 5. Prefer **black-box tests** (use `<package>_test`).
-6. Write testable examples (https://go.dev/blog/examples) for code directly consumed by library users — the embedded-engine `pkg/` API especially.
+6. Write testable examples (https://go.dev/blog/examples) for code directly consumed by library users — the embedded-engine root-package API especially.
 7. **Dependency injection**: see the Dependency Injection section above.
 
 ## TDD Operational Discipline (READ BEFORE EVERY NEW SYMBOL)
@@ -190,8 +195,9 @@ change to an existing symbol:
 
 1. **Red** — Write the test file (or extend the existing one) with the new
    assertion. Save it.
-2. **Red verification** — Run `go test ./pkg/<package>/...` in a Bash tool
-   call. **The build must fail or the assertion must fail.** The failure
+2. **Red verification** — Run `go test ./<package>/...` (root-level, e.g.
+   `./engine/...`) in a Bash tool call. **The build must fail or the
+   assertion must fail.** The failure
    itself is the evidence that step 1 happened before step 3. A compile
    error like `undefined: NewThing` is a valid red state.
 3. **Green** — Write the minimum implementation that makes the test pass.
@@ -255,7 +261,7 @@ On completion of any change, verify:
 
 1. Don't ignore pre-existing errors in packages you aren't working on. Never excuse them as "not caused by this session." Queue them as follow-up tasks and address by priority.
 2. Stick to skills explicitly listed under "Rule of Thumbs". If a skill outside that list seems applicable, ask before using it.
-3. Never import watermill, casbin, or gocron directly from workflow/engine code — go through the in-repo abstraction so vendors stay swappable.
+3. Never import watermill, casbin, gocron, or clockwork directly from workflow/engine code — go through the in-repo abstraction (the eventing interface, the `Authorizer`, the scheduler port, the `clock.Clock` interface) so vendors stay swappable.
 
 ## Git Discipline
 
