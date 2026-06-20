@@ -357,6 +357,54 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		}
 		return StepResult{State: s, Commands: signalCmds}, nil
 
+	case SubInstanceCompleted:
+		// A child process instance (started by StartSubInstance) has finished
+		// successfully. Resume the parent token that was parked at the call-activity
+		// node, merge the child's output variables into the parent, then drive forward.
+		//
+		// Mirror of ActionCompleted: find the parked token by CommandID, merge vars,
+		// activate the token, move along its single outgoing flow, then drive.
+		tok := s.tokenAwaiting(t.CommandID)
+		if tok == nil {
+			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
+		}
+		mergeVars(&s, t.Output)
+		tok.State = TokenActive
+		tok.AwaitCommand = ""
+		// Advance the token past the call-activity node using the token's scope
+		// definition (call-activity nodes can live inside a sub-process scope).
+		tdef, err := defForScope(def, &s, tok.ScopeID)
+		if err != nil {
+			return StepResult{}, err
+		}
+		s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: driveCmds}, nil
+
+	case SubInstanceFailed:
+		// A child process instance has terminated with an error. For this plan (Plan 7),
+		// a failed child fails the parent instance (boundary error events are Plan 8).
+		// Mirror of ActionFailed: find the parked token, set StatusFailed, emit
+		// FailInstance, and cancel all timers/arms to clean up.
+		//
+		// Plan 8 note: when a boundary error event is present on the call-activity
+		// node, SubInstanceFailed should route to it instead of failing the parent.
+		// This fallback (FailInstance) is correct until Plan 8 arrives.
+		tok := s.tokenAwaiting(t.CommandID)
+		if tok == nil {
+			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
+		}
+		s.Status = StatusFailed
+		ended := t.OccurredAt()
+		s.EndedAt = &ended
+		cmds := []Command{FailInstance{Err: t.Err}}
+		cmds = append(cmds, s.cancelAllTimers()...)
+		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+		return StepResult{State: s, Commands: cmds}, nil
+
 	case MessageReceived:
 		// Point-to-point semantics: resume the single token whose AwaitMessage
 		// matches the name AND whose AwaitMessageKey matches the correlation key.
@@ -917,6 +965,25 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				}
 				s.ArmedEvents = append(s.ArmedEvents, ae)
 			}
+
+		case model.KindCallActivity:
+			// Call activity: emit StartSubInstance and park the token. The runtime
+			// resolves DefRef via a DefinitionRegistry, runs the child to completion,
+			// and returns a SubInstanceCompleted / SubInstanceFailed trigger that
+			// resumes this parked token. No scope is opened here; the child instance
+			// is fully isolated (separate instance lifecycle).
+			//
+			// Input: pass a copy of the current process variables so the child starts
+			// with the parent's context. The parent does NOT read/write the child's
+			// variables during the child's execution; they are merged on completion.
+			cmdID := s.nextCommandID()
+			cmds = append(cmds, StartSubInstance{
+				CommandID: cmdID,
+				DefRef:    node.DefRef,
+				Input:     copyVars(s.Variables),
+			})
+			tok.State = TokenWaitingCommand
+			tok.AwaitCommand = cmdID
 
 		case model.KindIntermediateThrowEvent:
 			if node.SignalName != "" {

@@ -875,6 +875,151 @@ func TestRootLevelEventSubprocessCompletes(t *testing.T) {
 	assert.True(t, found, "expected CompleteInstance after root-level ESP completes")
 }
 
+// ---- Call Activity tests ----
+
+// callActivityDef builds a parent definition:
+//
+//	parent-start → call (KindCallActivity, DefRef:"child") → parent-end
+//
+// The child definition is referenced by DefRef only; the engine does not need
+// the actual child definition (it just emits StartSubInstance with the DefRef).
+func callActivityDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "parent", Version: 1,
+		Nodes: []model.Node{
+			{ID: "parent-start", Kind: model.KindStartEvent},
+			{ID: "call", Kind: model.KindCallActivity, DefRef: "child"},
+			{ID: "parent-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "pf1", Source: "parent-start", Target: "call"},
+			{ID: "pf2", Source: "call", Target: "parent-end"},
+		},
+	}
+}
+
+// TestCallActivityEmitsStartSubInstanceAndParks verifies that the engine:
+//  1. On StartInstance: drives to the call-activity node, emits a StartSubInstance
+//     command, and parks the token (TokenWaitingCommand, AwaitCommand == CommandID).
+//  2. On SubInstanceCompleted: merges Output into vars, resumes the token past the
+//     call-activity node, drives to parent-end → CompleteInstance.
+func TestCallActivityEmitsStartSubInstanceAndParks(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := callActivityDef()
+
+	// ---- Step 1: StartInstance ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i1"},
+		engine.NewStartInstance(at, map[string]any{"x": 1}), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Exactly one StartSubInstance command must have been emitted.
+	require.Len(t, r1.Commands, 1, "expected exactly one command after start (StartSubInstance)")
+	ssi, ok := r1.Commands[0].(engine.StartSubInstance)
+	require.True(t, ok, "expected StartSubInstance, got %T", r1.Commands[0])
+	assert.Equal(t, "child", ssi.DefRef)
+	assert.NotEmpty(t, ssi.CommandID, "StartSubInstance.CommandID must be non-empty")
+
+	// Input must be a copy of the parent variables.
+	assert.Equal(t, map[string]any{"x": 1}, ssi.Input)
+
+	// Token must be parked at the call-activity node with AwaitCommand == CommandID.
+	require.Len(t, r1.State.Tokens, 1)
+	tok := r1.State.Tokens[0]
+	assert.Equal(t, "call", tok.NodeID)
+	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, ssi.CommandID, tok.AwaitCommand)
+
+	// No scope opened (call-activity is a separate instance, not an embedded scope).
+	assert.Empty(t, r1.State.Scopes, "call-activity must not open a scope")
+
+	// ---- Step 2: SubInstanceCompleted ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSubInstanceCompleted(at.Add(time.Second), ssi.CommandID, map[string]any{"result": "done"}),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Instance must be completed.
+	assert.Equal(t, engine.StatusCompleted, r2.State.Status)
+	assert.Empty(t, r2.State.Tokens, "all tokens must be consumed on completion")
+	require.NotNil(t, r2.State.EndedAt)
+
+	// Child output must be merged into parent variables.
+	assert.Equal(t, "done", r2.State.Variables["result"])
+	assert.Equal(t, 1, r2.State.Variables["x"], "original parent vars must be retained")
+
+	// Exactly one CompleteInstance command.
+	require.Len(t, r2.Commands, 1)
+	_, ok = r2.Commands[0].(engine.CompleteInstance)
+	require.True(t, ok, "expected CompleteInstance, got %T", r2.Commands[0])
+}
+
+// TestCallActivitySubInstanceFailedFailsParent verifies that SubInstanceFailed
+// (with a matching CommandID) transitions the parent instance to StatusFailed and
+// emits FailInstance + cancellation commands.
+func TestCallActivitySubInstanceFailedFailsParent(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := callActivityDef()
+
+	// ---- Step 1: StartInstance → parks at call ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i2"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.Commands, 1)
+	ssi, ok := r1.Commands[0].(engine.StartSubInstance)
+	require.True(t, ok)
+
+	// ---- Step 2: SubInstanceFailed ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSubInstanceFailed(at.Add(time.Second), ssi.CommandID, "child blew up"),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Parent must be failed.
+	assert.Equal(t, engine.StatusFailed, r2.State.Status)
+	require.NotNil(t, r2.State.EndedAt)
+
+	// FailInstance must be the first command.
+	require.NotEmpty(t, r2.Commands)
+	fi, ok := r2.Commands[0].(engine.FailInstance)
+	require.True(t, ok, "expected FailInstance, got %T", r2.Commands[0])
+	assert.Contains(t, fi.Err, "child blew up")
+}
+
+// TestSubInstanceCompletedUnknownCommandID verifies that a SubInstanceCompleted
+// with an unrecognised CommandID returns ErrTokenNotFound (mirrors ActionCompleted).
+func TestSubInstanceCompletedUnknownCommandID(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := callActivityDef()
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i3"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	_, err = engine.Step(def, r1.State,
+		engine.NewSubInstanceCompleted(at.Add(time.Second), "nonexistent-cmd", nil),
+		engine.StepOptions{})
+	require.Error(t, err)
+	require.ErrorIs(t, err, engine.ErrTokenNotFound)
+}
+
+// TestSubInstanceFailedUnknownCommandID verifies that a SubInstanceFailed with
+// an unrecognised CommandID returns ErrTokenNotFound.
+func TestSubInstanceFailedUnknownCommandID(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := callActivityDef()
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i4"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	_, err = engine.Step(def, r1.State,
+		engine.NewSubInstanceFailed(at.Add(time.Second), "nonexistent-cmd", "err"),
+		engine.StepOptions{})
+	require.Error(t, err)
+	require.ErrorIs(t, err, engine.ErrTokenNotFound)
+}
+
 // TestEventSubprocessArmCancelledOnNormalScopeClose is Fix 3 / M2.
 //
 // Scenario: A sub-process contains a TIMER event-subprocess arm that does NOT fire.

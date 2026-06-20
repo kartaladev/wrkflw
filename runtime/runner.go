@@ -32,6 +32,7 @@ type Runner struct {
 	authz    authz.Authorizer
 	sched    Scheduler
 	sigbus   *SignalBus
+	defsReg  DefinitionRegistry
 
 	// msgMu guards msgWaiters.
 	msgMu sync.Mutex
@@ -78,6 +79,18 @@ func WithScheduler(sched Scheduler) Option {
 // [SignalBus.Publish] reaches all parked instances.
 func WithSignalBus(bus *SignalBus) Option {
 	return func(r *Runner) { r.sigbus = bus }
+}
+
+// WithDefinitions wires a [DefinitionRegistry] into the Runner, enabling
+// [engine.StartSubInstance] commands (call activities). Without this option,
+// any process that reaches a KindCallActivity node will return a descriptive
+// error rather than panicking.
+//
+// The registry resolves DefRef strings (as stored on KindCallActivity nodes)
+// to *model.ProcessDefinition values. Use [NewMapDefinitionRegistry] to build
+// an in-memory registry from a plain map.
+func WithDefinitions(reg DefinitionRegistry) Option {
+	return func(r *Runner) { r.defsReg = reg }
 }
 
 // NewRunner constructs a Runner with the five required core ports (cat, clk,
@@ -387,6 +400,50 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			return nil, fmt.Errorf("runtime: perform ThrowSignal %q: %w", cmd.Name, err)
 		}
 		return nil, nil
+
+	case engine.StartSubInstance:
+		// Nil-registry guard: a missing registry is a configuration error, not a
+		// retryable runtime failure, so we fail fast with a descriptive message.
+		if r.defsReg == nil {
+			return nil, fmt.Errorf("runtime: perform StartSubInstance %q: no definition registry configured (use WithDefinitions)", cmd.DefRef)
+		}
+		childDef, err := r.defsReg.Lookup(cmd.DefRef)
+		if err != nil {
+			return nil, fmt.Errorf("runtime: perform StartSubInstance %q: registry lookup: %w", cmd.DefRef, err)
+		}
+
+		// Derive a deterministic child instance ID from the parent and command ID.
+		// Scheme: "<parentInstanceID>-sub-<commandID>"
+		// This is unique within the runner's store as long as commandIDs are unique
+		// (which the engine guarantees via CmdSeq).
+		// Guard note: a definition calling itself (direct or via a cycle) would
+		// cause infinite recursion here. That scenario is the definition author's
+		// responsibility; detecting it is out of scope for this plan.
+		childInstanceID := st.InstanceID + "-sub-" + cmd.CommandID
+
+		// Run the child to completion (synchronous within perform). The child uses
+		// the same Runner so it shares the store, journal, outbox, catalog, and
+		// scheduler. The child's Run call drives the child's deliverLoop until the
+		// child parks or completes.
+		childSt, err := r.Run(ctx, childDef, childInstanceID, cmd.Input)
+		if err != nil {
+			// Child run returned a hard error (e.g. storage failure). Propagate as
+			// SubInstanceFailed so the parent instance can respond.
+			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID, err.Error()), nil
+		}
+
+		// Translate the child's terminal status into a parent trigger.
+		switch childSt.Status {
+		case engine.StatusCompleted:
+			// Pass the child's final variables back as the Output so the parent can
+			// merge them. This gives the parent access to everything the child computed.
+			return engine.NewSubInstanceCompleted(r.clk.Now(), cmd.CommandID, childSt.Variables), nil
+		default:
+			// StatusFailed or any other non-completed terminal state.
+			errMsg := "child instance " + childInstanceID + " did not complete"
+			// Surface the child's FailInstance command error message if available.
+			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID, errMsg), nil
+		}
 
 	default:
 		return nil, fmt.Errorf("runtime: unsupported command %T", c)
