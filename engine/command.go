@@ -86,6 +86,16 @@ type UpdateTask struct {
 	Task humantask.HumanTask
 }
 
+// ThrowSignal asks the runtime to broadcast a named signal to all interested
+// subscribers (other process instances or external listeners). It is emitted
+// when execution passes through a KindIntermediateThrowEvent node whose
+// SignalName is set. The runtime is responsible for delivering the signal;
+// the engine continues past the throw node without waiting for delivery.
+type ThrowSignal struct {
+	Name    string
+	Payload map[string]any
+}
+
 func (InvokeAction) isCommand()    {}
 func (CompleteInstance) isCommand() {}
 func (FailInstance) isCommand()    {}
@@ -93,3 +103,4 @@ func (AwaitHuman) isCommand()      {}
 func (UpdateTask) isCommand()      {}
 func (ScheduleTimer) isCommand()   {}
 func (CancelTimer) isCommand()     {}
+func (ThrowSignal) isCommand()     {}

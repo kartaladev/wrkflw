@@ -54,8 +54,20 @@ type Token struct {
 	ScopeID      string
 	State        TokenState
 	AwaitCommand string // CommandID this token is parked on, if any
-	Payload      map[string]any
-	EnteredAt    time.Time
+	// AwaitSignal is the signal name this token is parked on (signal intermediate
+	// catch event). The token resumes when a SignalReceived trigger with a matching
+	// Name is delivered.
+	AwaitSignal string
+	// AwaitMessage is the message name this token is parked on (message
+	// intermediate catch event). The token resumes when a MessageReceived trigger
+	// with a matching Name (and AwaitMessageKey, if set) is delivered.
+	AwaitMessage string
+	// AwaitMessageKey is the resolved correlation key for a message catch event.
+	// It is evaluated from model.Node.CorrelationKey against the instance variables
+	// at park time. Empty means no key was configured — match on name alone.
+	AwaitMessageKey string
+	Payload         map[string]any
+	EnteredAt       time.Time
 }
 
 // NodeVisit is one traversal of one node by one token (audit/history).

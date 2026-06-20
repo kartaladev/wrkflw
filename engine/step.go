@@ -170,6 +170,52 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		cmds = append(cmds, driveCmds...)
 		return StepResult{State: s, Commands: cmds}, nil
 
+	case SignalReceived:
+		// Broadcast semantics within the instance: resume every token that is
+		// awaiting this signal name. Tokens are processed in slice order for
+		// determinism. A signal that matches no token is a clean no-op.
+		mergeVars(&s, t.Payload)
+		var signalCmds []Command
+		for {
+			// Resume all parked-signal tokens in a single pass, driving each.
+			// Because drive() may park or consume tokens, we scan for the next
+			// awaiting-signal token after each drive round so the slice stays stable.
+			tok := s.tokenAwaitingSignal(t.Name)
+			if tok == nil {
+				break
+			}
+			tok.AwaitSignal = ""
+			tok.State = TokenActive
+			s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+			driveCmds, err := drive(def, &s, t.OccurredAt())
+			if err != nil {
+				return StepResult{}, err
+			}
+			signalCmds = append(signalCmds, driveCmds...)
+		}
+		return StepResult{State: s, Commands: signalCmds}, nil
+
+	case MessageReceived:
+		// Point-to-point semantics: resume the single token whose AwaitMessage
+		// matches the name AND whose AwaitMessageKey matches the correlation key.
+		// A message that matches no token is a clean no-op.
+		mergeVars(&s, t.Payload)
+		tok := s.tokenAwaitingMessage(t.Name, t.CorrelationKey)
+		if tok == nil {
+			// No matching token: clean no-op (message may be for a different instance
+			// or arrived after the instance advanced).
+			return StepResult{State: s, Commands: nil}, nil
+		}
+		tok.AwaitMessage = ""
+		tok.AwaitMessageKey = ""
+		tok.State = TokenActive
+		s.moveAlongSingleFlow(def, tok, t.OccurredAt())
+		driveCmds, err := drive(def, &s, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: driveCmds}, nil
+
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
@@ -291,9 +337,25 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				})
 				tok.State = TokenWaitingCommand
 				tok.AwaitCommand = timerID
+			} else if node.SignalName != "" {
+				// Signal intermediate catch event: park the token awaiting the signal.
+				// The SignalReceived trigger (broadcast) will resume it later.
+				tok.State = TokenWaitingCommand
+				tok.AwaitSignal = node.SignalName
+			} else if node.MessageName != "" {
+				// Message intermediate catch event: park the token awaiting the message.
+				// Evaluate the correlation key (if set) now against instance variables
+				// for determinism; store the resolved key on the token.
+				resolvedKey, err := conditions.EvalString(node.CorrelationKey, s.Variables)
+				if err != nil {
+					return cmds, fmt.Errorf("engine: message node %q correlation key: %w", node.ID, err)
+				}
+				tok.State = TokenWaitingCommand
+				tok.AwaitMessage = node.MessageName
+				tok.AwaitMessageKey = resolvedKey
 			} else {
-				// Non-timer intermediate catch event: park the token.
-				// Other event variants (message, signal, etc.) arrive in later plans.
+				// Non-timer, non-signal, non-message intermediate catch event: park.
+				// Further event variants arrive in later plans.
 				tok.State = TokenWaitingCommand
 			}
 
@@ -332,6 +394,22 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 				}
 			}
 
+		case model.KindIntermediateThrowEvent:
+			if node.SignalName != "" {
+				// Signal intermediate throw: emit ThrowSignal and continue along the
+				// single outgoing flow. The runtime broadcasts the signal; the engine
+				// does not wait for delivery (fire-and-forget from the engine's view).
+				cmds = append(cmds, ThrowSignal{
+					Name:    node.SignalName,
+					Payload: nil, // no per-instance payload from throw nodes in this plan
+				})
+				s.moveAlongSingleFlow(def, tok, at)
+			} else {
+				// Non-signal intermediate throw: park for future plans (e.g. message
+				// throw, error throw). Parking avoids an infinite drive loop.
+				tok.State = TokenWaitingCommand
+			}
+
 		default:
 			// Node kinds beyond linear flow arrive in later plans; park the
 			// token so the loop terminates rather than spinning.
@@ -363,6 +441,31 @@ func (s *InstanceState) tokenAwaiting(cmdID string) *Token {
 	for i := range s.Tokens {
 		if s.Tokens[i].AwaitCommand == cmdID {
 			return &s.Tokens[i]
+		}
+	}
+	return nil
+}
+
+// tokenAwaitingSignal returns the first token whose AwaitSignal matches name
+// (tokens are stored in TokenSeq order, so iteration is deterministic).
+func (s *InstanceState) tokenAwaitingSignal(name string) *Token {
+	for i := range s.Tokens {
+		if s.Tokens[i].AwaitSignal == name {
+			return &s.Tokens[i]
+		}
+	}
+	return nil
+}
+
+// tokenAwaitingMessage returns the first token whose AwaitMessage matches name
+// AND whose AwaitMessageKey matches correlationKey. An empty correlationKey on
+// the token (no key configured on the catch node) matches only when the
+// incoming MessageReceived.CorrelationKey is also empty.
+func (s *InstanceState) tokenAwaitingMessage(name, correlationKey string) *Token {
+	for i := range s.Tokens {
+		t := &s.Tokens[i]
+		if t.AwaitMessage == name && t.AwaitMessageKey == correlationKey {
+			return t
 		}
 	}
 	return nil

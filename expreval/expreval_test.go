@@ -244,6 +244,58 @@ func TestEvalDuration(t *testing.T) {
 	}
 }
 
+func TestEvalString(t *testing.T) {
+	tests := map[string]struct {
+		code   string
+		env    map[string]any
+		assert func(t *testing.T, got string, err error)
+	}{
+		"string literal": {
+			code: `"hello"`, env: nil,
+			assert: func(t *testing.T, got string, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "hello", got)
+			},
+		},
+		"string variable": {
+			code: "orderId", env: map[string]any{"orderId": "ORD-42"},
+			assert: func(t *testing.T, got string, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "ORD-42", got)
+			},
+		},
+		"int variable formats to string": {
+			code: "id", env: map[string]any{"id": 99},
+			assert: func(t *testing.T, got string, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "99", got)
+			},
+		},
+		"bool variable formats to string": {
+			code: "flag", env: map[string]any{"flag": true},
+			assert: func(t *testing.T, got string, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "true", got)
+			},
+		},
+		"syntax error": {
+			code: "orderId >", env: map[string]any{"orderId": "x"},
+			assert: func(t *testing.T, got string, err error) {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "expreval:")
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := expreval.New()
+			got, err := e.EvalString(tc.code, tc.env)
+			tc.assert(t, got, err)
+		})
+	}
+}
+
 func TestEvalBoolMemoizes(t *testing.T) {
 	e := expreval.New()
 	// Same code evaluated twice with different envs must use the cached program
