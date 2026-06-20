@@ -1,7 +1,6 @@
 package runtime_test
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -82,6 +81,12 @@ func TestMemStoreCommit(t *testing.T) {
 				require.Len(t, entries, 2)
 			},
 		},
+		"commit on missing instance": {
+			assert: func(t *testing.T, ms *runtime.MemStore) {
+				_, err := ms.Commit(t.Context(), 1, step("missing-id", "a"))
+				require.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -89,5 +94,3 @@ func TestMemStoreCommit(t *testing.T) {
 		})
 	}
 }
-
-var _ = errors.Is // keep errors import if unused after edits

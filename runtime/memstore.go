@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"slices"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
@@ -75,8 +76,8 @@ func (m *MemStore) Commit(_ context.Context, expected Token, step AppliedStep) (
 
 // Entries returns the recorded trigger history for id (JournalReader).
 func (m *MemStore) Entries(_ context.Context, id string) ([]engine.Trigger, error) {
-	return m.journal[id], nil
+	return slices.Clone(m.journal[id]), nil
 }
 
 // Events returns all buffered outbox events, in append order (test accessor).
-func (m *MemStore) Events() []OutboxEvent { return m.events }
+func (m *MemStore) Events() []OutboxEvent { return slices.Clone(m.events) }
