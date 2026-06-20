@@ -118,6 +118,35 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		}
 		return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
 
+	case CancelRequested:
+		// Admin trigger: terminate the instance immediately.
+		// 1. Consume ALL tokens (clear s.Tokens).
+		// 2. Set Status = StatusTerminated; set EndedAt from the trigger's OccurredAt.
+		// 3. Emit FailInstance{Err:"cancelled"} as the terminal command (reusing the
+		//    existing FailInstance command type avoids adding a new sealed command; the
+		//    "cancelled" error string distinguishes it from error-propagation failures).
+		// 4. Cancel any outstanding timers, gateway arms, and boundary arms via the
+		//    existing cancelAllTimers() + cancelAllArmsAndBoundaries() helpers.
+		//
+		// Behavior on an already-terminal instance: the logic is idempotent — there
+		// are no tokens or timers to cancel, and Status is overwritten to Terminated.
+		// No error is returned; the caller is responsible for not sending CancelRequested
+		// to an already-terminal instance in production.
+		ended := t.OccurredAt()
+		s.Status = StatusTerminated
+		s.EndedAt = &ended
+		// Consume all tokens (clear visit records as well).
+		for i := range s.Tokens {
+			tok := &s.Tokens[i]
+			s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
+		}
+		s.Tokens = nil
+		// Emit the terminal command and cancel all outstanding scheduler resources.
+		cmds := []Command{FailInstance{Err: "cancelled"}}
+		cmds = append(cmds, s.cancelAllTimers()...)
+		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+		return StepResult{State: s, Commands: cmds}, nil
+
 	case CompensateRequested:
 		// Admin/debug reverse-order compensation trigger.
 		// 1. Set status to StatusCompensating.
@@ -2368,8 +2397,12 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 			}
 			// startIndex = the last eligible record = len(records)-1
 			// (all records after toNodeIdx — no change needed; startIndex already set).
+		} else {
+			// ToNode was specified but not found in the compensation records.
+			// Return a descriptive error so that an admin typo is surfaced rather
+			// than silently rolling back everything.
+			return StepResult{}, fmt.Errorf("engine: compensation target node %q not found in scope records", t.ToNode)
 		}
-		// If ToNode not found in records, we compensate all records (startIndex = len-1).
 	}
 
 	if startIndex < 0 {

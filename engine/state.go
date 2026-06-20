@@ -250,12 +250,12 @@ type NodeVisit struct {
 //   - ToNode: the rollback target — compensation walks back to (but not
 //     including) this node. Empty means "roll back everything".
 //   - NextIndex: the index into the relevant CompensationRecord slice of the
-//     NEXT record to emit. The walk proceeds from len(records)-1 down to 0
-//     (reverse order). Initially set to len(records)-1 (the most-recently
-//     completed record). Decremented by one after each ActionCompleted while
-//     Status == StatusCompensating. The active InvokeAction's CommandID is
-//     tracked in ActiveCmdID so ActionCompleted can distinguish a compensation
-//     response from a normal one.
+//     record currently in-flight (most recently emitted). The walk proceeds
+//     from len(records)-1 down to 0 (reverse order). Initially set to
+//     len(records)-1 (the most-recently completed record). Decremented by one
+//     after each ActionCompleted while Status == StatusCompensating. The active
+//     InvokeAction's CommandID is tracked in ActiveCmdID so ActionCompleted can
+//     distinguish a compensation response from a normal one.
 //   - ActiveCmdID: the CommandID of the in-flight compensation InvokeAction.
 //     When ActionCompleted arrives with this CommandID and Status ==
 //     StatusCompensating, the engine advances the cursor to the next record
@@ -268,8 +268,9 @@ type compensationCursor struct {
 	ScopeID string
 	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
 	ToNode string
-	// NextIndex is the index of the next CompensationRecord to emit.
-	// Counts DOWN from len(records)-1 to 0.
+	// NextIndex is the index of the CompensationRecord currently in-flight
+	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
+	// compensation actions complete; the next record to emit is NextIndex-1.
 	NextIndex int
 	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
 	// in flight. Cleared when the step completes.

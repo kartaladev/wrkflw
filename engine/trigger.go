@@ -203,5 +203,24 @@ func NewCompensateRequested(at time.Time, toNode string) CompensateRequested {
 	return CompensateRequested{baseTrigger: baseTrigger{at: at}, ToNode: toNode}
 }
 
-// Compile-time assertions: CompensateRequested must satisfy Trigger.
+// CancelRequested is an admin trigger that immediately terminates a running
+// process instance. The engine consumes all in-flight tokens, cancels any
+// outstanding timers and boundary/gateway arms, sets Status to StatusTerminated,
+// and emits FailInstance{Err:"cancelled"} as the terminal command.
+//
+// Behavior on an already-terminal instance (StatusCompleted, StatusFailed,
+// StatusTerminated): the trigger is accepted without error; the status is
+// overwritten to StatusTerminated (idempotent intent) and no harmful side effects
+// occur since there are no live tokens or timers to cancel.
+type CancelRequested struct {
+	baseTrigger
+}
+
+// NewCancelRequested builds a CancelRequested trigger stamped with the given time.
+func NewCancelRequested(at time.Time) CancelRequested {
+	return CancelRequested{baseTrigger: baseTrigger{at: at}}
+}
+
+// Compile-time assertions: CompensateRequested and CancelRequested must satisfy Trigger.
 var _ Trigger = CompensateRequested{}
+var _ Trigger = CancelRequested{}

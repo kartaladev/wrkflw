@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
@@ -677,4 +678,271 @@ func TestActionFailedPropagatesToBoundaryError(t *testing.T) {
 		require.NotNil(t, fi, "FailInstance must be emitted for unhandled root-level ActionFailed")
 		assert.Equal(t, "boom", fi.Err)
 	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 4: CancelRequested — cancel instance with timer/await cleanup
+// ─────────────────────────────────────────────────────────────────────────────
+
+// cancelWithTimerDef builds a process whose single service task has a boundary
+// timer so that when the instance is cancelled, both the parked token and an
+// armed timer are in flight.
+//
+//	Root: start → svc(Action:"work") → end
+//	      svc has a timer boundary (30s) → timeout-path → end-timeout
+func cancelWithTimerDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-cancel", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "svc", Kind: model.KindServiceTask, Action: "work"},
+			// Timer boundary on svc (30-second deadline).
+			{
+				ID:            "bnd-timer",
+				Kind:          model.KindBoundaryEvent,
+				AttachedTo:    "svc",
+				TimerDuration: `"30s"`,
+			},
+			{ID: "timeout-end", Kind: model.KindEndEvent},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start-svc", Source: "start", Target: "svc"},
+			{ID: "f-svc-end", Source: "svc", Target: "end"},
+			{ID: "f-bnd-end", Source: "bnd-timer", Target: "timeout-end"},
+		},
+	}
+}
+
+// cancelUserTaskDef builds a process with a user task parked and waiting for a
+// human actor. Used to verify CancelRequested clears all tokens without a timer
+// arm (simpler scenario).
+//
+//	Root: start → userTask → end
+func cancelUserTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-cancel-ut", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "userTask", Kind: model.KindUserTask},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "userTask"},
+			{ID: "f2", Source: "userTask", Target: "end"},
+		},
+	}
+}
+
+// TestCancelRequestedTerminates verifies that CancelRequested terminates a
+// running instance:
+//   - All tokens are consumed (s.Tokens empty).
+//   - Status becomes StatusTerminated.
+//   - EndedAt is set to the trigger's OccurredAt.
+//   - A terminal FailInstance{Err:"cancelled"} command is emitted.
+//   - Any outstanding armed timers receive a CancelTimer command.
+//   - A late trigger after cancellation (HumanCompleted) returns ErrTokenNotFound
+//     (clean deterministic error, not a panic).
+func TestCancelRequestedTerminates(t *testing.T) {
+	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	cancelAt := at.Add(5 * time.Second)
+
+	t.Run("service-task-with-boundary-timer", func(t *testing.T) {
+		def := cancelWithTimerDef()
+
+		// Start the instance: start → svc parks, boundary timer armed.
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-cancel-1"},
+			engine.NewStartInstance(at, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		require.Equal(t, engine.StatusRunning, r1.State.Status)
+
+		// Collect the InvokeAction command ID.
+		var invokeCmd *engine.InvokeAction
+		for _, c := range r1.Commands {
+			if ia, ok := c.(engine.InvokeAction); ok {
+				vv := ia
+				invokeCmd = &vv
+				break
+			}
+		}
+		require.NotNil(t, invokeCmd, "expected InvokeAction for work")
+
+		// Collect armed boundary timer.
+		var scheduleTimer *engine.ScheduleTimer
+		for _, c := range r1.Commands {
+			if st, ok := c.(engine.ScheduleTimer); ok {
+				vv := st
+				scheduleTimer = &vv
+				break
+			}
+		}
+		require.NotNil(t, scheduleTimer, "expected ScheduleTimer for boundary timer")
+
+		// One token must be parked at svc, one Boundaries arm must exist.
+		require.Len(t, r1.State.Tokens, 1)
+		assert.Equal(t, "svc", r1.State.Tokens[0].NodeID)
+
+		// CancelRequested: should terminate the instance.
+		r2, err := engine.Step(def, r1.State,
+			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
+		require.NoError(t, err)
+
+		// Status must be StatusTerminated.
+		assert.Equal(t, engine.StatusTerminated, r2.State.Status, "CancelRequested must set StatusTerminated")
+
+		// EndedAt must be set to cancelAt.
+		require.NotNil(t, r2.State.EndedAt, "EndedAt must be set on cancellation")
+		assert.Equal(t, cancelAt, *r2.State.EndedAt, "EndedAt must equal the trigger's OccurredAt")
+
+		// All tokens must be cleared.
+		assert.Empty(t, r2.State.Tokens, "all tokens must be consumed on cancellation")
+
+		// Terminal FailInstance{Err:"cancelled"} must be emitted.
+		var fi *engine.FailInstance
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.FailInstance); ok {
+				vv := v
+				fi = &vv
+				break
+			}
+		}
+		require.NotNil(t, fi, "FailInstance must be emitted on cancel")
+		assert.Equal(t, "cancelled", fi.Err, "FailInstance.Err must be 'cancelled'")
+
+		// CancelTimer must be emitted for the boundary timer.
+		var cancelTimer *engine.CancelTimer
+		for _, c := range r2.Commands {
+			if ct, ok := c.(engine.CancelTimer); ok {
+				if ct.TimerID == scheduleTimer.TimerID {
+					vv := ct
+					cancelTimer = &vv
+					break
+				}
+			}
+		}
+		require.NotNil(t, cancelTimer, "CancelTimer must be emitted for the outstanding boundary timer")
+
+		// Late trigger after cancellation: ActionCompleted for the already-cancelled
+		// token → ErrTokenNotFound (deterministic, no panic).
+		_, lateErr := engine.Step(def, r2.State,
+			engine.NewActionCompleted(cancelAt.Add(time.Second), invokeCmd.CommandID, nil), engine.StepOptions{})
+		require.Error(t, lateErr, "a late ActionCompleted after cancel must return an error")
+		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound, "late trigger must return ErrTokenNotFound")
+	})
+
+	t.Run("user-task-parked", func(t *testing.T) {
+		def := cancelUserTaskDef()
+
+		// Start the instance: start → userTask parks.
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-cancel-2"},
+			engine.NewStartInstance(at, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		require.Equal(t, engine.StatusRunning, r1.State.Status)
+
+		// One token parked at userTask.
+		require.Len(t, r1.State.Tokens, 1)
+		assert.Equal(t, "userTask", r1.State.Tokens[0].NodeID)
+
+		// Collect task token for late-trigger test.
+		taskToken := r1.State.Tokens[0].AwaitCommand
+		require.NotEmpty(t, taskToken, "userTask token must have AwaitCommand set")
+
+		// CancelRequested.
+		r2, err := engine.Step(def, r1.State,
+			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
+		require.NoError(t, err)
+
+		assert.Equal(t, engine.StatusTerminated, r2.State.Status)
+		require.NotNil(t, r2.State.EndedAt)
+		assert.Equal(t, cancelAt, *r2.State.EndedAt)
+		assert.Empty(t, r2.State.Tokens)
+
+		// FailInstance{Err:"cancelled"} must be emitted.
+		var fi *engine.FailInstance
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.FailInstance); ok {
+				vv := v
+				fi = &vv
+				break
+			}
+		}
+		require.NotNil(t, fi)
+		assert.Equal(t, "cancelled", fi.Err)
+
+		// Late trigger: HumanCompleted after cancel → ErrTokenNotFound.
+		_, lateErr := engine.Step(def, r2.State,
+			engine.NewHumanCompleted(cancelAt.Add(time.Second), taskToken, nil,
+				authz.Actor{ID: "u1"}), engine.StepOptions{})
+		require.Error(t, lateErr)
+		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound)
+	})
+
+	t.Run("already-terminal-is-noop-or-error", func(t *testing.T) {
+		// Cancelling an already-completed instance: CancelRequested on a completed
+		// instance returns ErrUnknownTrigger because a terminal instance has no
+		// live tokens; the trigger is treated as a clean no-op / unknown-state error.
+		// For simplicity, we document that CancelRequested on a StatusCompleted instance
+		// still sets StatusTerminated (same logic; idempotent). The caller must NOT
+		// send CancelRequested to a completed instance; this just ensures no panic.
+		//
+		// We verify the call completes without panicking and emits no harmful side effects.
+		def := cancelUserTaskDef()
+		completedState := engine.InstanceState{
+			InstanceID: "i-cancel-term",
+			Status:     engine.StatusCompleted,
+		}
+		// Should not panic; the result is deterministic.
+		r, err := engine.Step(def, completedState,
+			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
+		require.NoError(t, err, "CancelRequested on a completed instance must not error")
+		// Post-cancel: status is terminal (Terminated), tokens still empty.
+		assert.Equal(t, engine.StatusTerminated, r.State.Status)
+		assert.Empty(t, r.State.Tokens)
+	})
+}
+
+// TestCompensateRequestedUnknownToNodeErrors verifies that when CompensateRequested
+// specifies a ToNode that does not match any compensation record in scope,
+// the engine returns a descriptive error rather than silently rolling back everything.
+//
+// This is the Task-3 review fix folded into Task 4.
+func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
+	// Build a simple process with one compensable service task.
+	def := &model.ProcessDefinition{
+		ID: "p-comp-unknown", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "svc", Kind: model.KindServiceTask, Action: "charge", CompensationAction: "refund"},
+			{ID: "userTask", Kind: model.KindUserTask},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "svc"},
+			{ID: "f2", Source: "svc", Target: "userTask"},
+			{ID: "f3", Source: "userTask", Target: "end"},
+		},
+	}
+
+	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+
+	// Start → svc parks with InvokeAction.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-comp-unk"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	ia := r1.Commands[0].(engine.InvokeAction)
+
+	// Complete svc → userTask parks. Compensation record for "svc" is recorded.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(time.Second), ia.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status)
+	require.Len(t, r2.State.RootCompensations, 1, "one compensation record for svc")
+
+	// CompensateRequested with a ToNode that is NOT in the compensation records.
+	_, err = engine.Step(def, r2.State,
+		engine.NewCompensateRequested(at.Add(2*time.Second), "nonexistent-node"),
+		engine.StepOptions{})
+	require.Error(t, err, "CompensateRequested with unknown ToNode must return an error")
+	assert.Contains(t, err.Error(), "nonexistent-node",
+		"error message must identify the unknown ToNode")
 }

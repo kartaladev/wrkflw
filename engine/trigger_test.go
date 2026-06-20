@@ -96,6 +96,9 @@ var (
 // Compile-time interface assertion: CompensateRequested must satisfy engine.Trigger.
 var _ engine.Trigger = engine.CompensateRequested{}
 
+// Compile-time interface assertion: CancelRequested must satisfy engine.Trigger.
+var _ engine.Trigger = engine.CancelRequested{}
+
 // TestCompensateRequestedFields asserts that NewCompensateRequested stamps OccurredAt
 // and stores ToNode faithfully.
 func TestCompensateRequestedFields(t *testing.T) {
@@ -116,6 +119,14 @@ func TestCompensateRequestedFields(t *testing.T) {
 			assert.Equal(t, tc.toNode, cr.ToNode, "ToNode must be stored faithfully")
 		})
 	}
+}
+
+// TestCancelRequestedFields asserts that NewCancelRequested stamps OccurredAt
+// faithfully and satisfies the Trigger interface.
+func TestCancelRequestedFields(t *testing.T) {
+	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	cr := engine.NewCancelRequested(at)
+	assert.Equal(t, at, cr.OccurredAt(), "OccurredAt must match the given time")
 }
 
 // TestTimerFiredSatisfiesTrigger asserts TimerFired satisfies Trigger and
