@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
@@ -22,34 +23,70 @@ type Runner struct {
 	resolver humantask.ActorResolver
 	tasks    humantask.TaskStore
 	authz    authz.Authorizer
+	sched    Scheduler
 }
 
-// NewRunner constructs a Runner with all required ports.
+// Option is a functional option for Runner. Optional capability bundles (human
+// tasks, scheduler) are configured via options; required core dependencies are
+// positional in NewRunner.
+type Option func(*Runner)
+
+// WithHumanTasks wires the human-task capability into the Runner. Without this
+// option, any process that reaches a user-task node will return a descriptive
+// error rather than panic.
 //
-// cat is the service-action catalog (may be nil for processes with no service tasks).
-// resolver resolves eligibility specs to candidate actors.
-// tasks persists human-task records.
-// az authorizes actors against task eligibility specs (used by TaskService, not Step).
+//   - resolver resolves an eligibility spec to the candidate actor list.
+//   - tasks persists human-task records.
+//   - az authorizes actors against task eligibility specs (used by TaskService,
+//     not by the engine core).
+func WithHumanTasks(resolver humantask.ActorResolver, tasks humantask.TaskStore, az authz.Authorizer) Option {
+	return func(r *Runner) {
+		r.resolver = resolver
+		r.tasks = tasks
+		r.authz = az
+	}
+}
+
+// WithScheduler wires a Scheduler into the Runner, enabling timer commands
+// (ScheduleTimer / CancelTimer). Without this option any process that reaches a
+// timer node will return a descriptive error.
+func WithScheduler(sched Scheduler) Option {
+	return func(r *Runner) { r.sched = sched }
+}
+
+// NewRunner constructs a Runner with the five required core ports (cat, clk,
+// store, jnl, out) and any optional capability bundles supplied as functional
+// options.
+//
+// Required ports:
+//   - cat: the service-action catalog (may be nil for processes with no service tasks).
+//   - clk: the time source. Pass a fake clock in tests.
+//   - store: the authoritative instance state store.
+//   - jnl: the append-only trigger journal.
+//   - out: the outbox writer for domain events.
+//
+// Optional capabilities (via Option):
+//   - [WithHumanTasks]: human-task support (resolver, task store, authorizer).
+//   - [WithScheduler]: timer scheduling support.
 func NewRunner(
 	cat action.Catalog,
 	clk clock.Clock,
 	store StateStore,
 	jnl Journal,
 	out OutboxWriter,
-	resolver humantask.ActorResolver,
-	tasks humantask.TaskStore,
-	az authz.Authorizer,
+	opts ...Option,
 ) *Runner {
-	return &Runner{
-		cat:      cat,
-		clk:      clk,
-		store:    store,
-		jnl:      jnl,
-		out:      out,
-		resolver: resolver,
-		tasks:    tasks,
-		authz:    az,
+	r := &Runner{
+		cat:   cat,
+		clk:   clk,
+		store: store,
+		jnl:   jnl,
+		out:   out,
 	}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
 }
 
 // Run starts an instance and drives it to a terminal state or until the engine
@@ -64,7 +101,8 @@ func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instance
 // resulting commands (feeding follow-up triggers back through the loop).
 //
 // It is the entry point for external triggers such as HumanClaimed and
-// HumanCompleted that arrive after Run has returned (parked at a human task).
+// HumanCompleted that arrive after Run has returned (parked at a human task),
+// and for TimerFired triggers delivered by the scheduler's fire callback.
 //
 // Authorization contract: human-task triggers (HumanClaimed, HumanReassigned,
 // HumanCompleted) MUST originate from TaskService, which performs authorization
@@ -104,7 +142,7 @@ func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, 
 		}
 
 		for _, c := range res.Commands {
-			next, err := r.perform(ctx, st, c)
+			next, err := r.perform(ctx, def, st, c)
 			if err != nil {
 				return st, err
 			}
@@ -118,8 +156,11 @@ func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, 
 
 // perform executes one command and returns the resulting trigger, if any.
 // st is the current instance state, used for variable access when resolving
-// human-task candidates.
-func (r *Runner) perform(ctx context.Context, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
+// human-task candidates. def is the process definition, captured by timer
+// fire callbacks that need to call Deliver.
+//
+//nolint:cyclop // the command switch is intentionally exhaustive; each case is simple.
+func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
 	switch cmd := c.(type) {
 	case engine.InvokeAction:
 		if r.cat == nil {
@@ -193,6 +234,37 @@ func (r *Runner) perform(ctx context.Context, st engine.InstanceState, c engine.
 		if err := r.tasks.Upsert(ctx, cmd.Task); err != nil {
 			return nil, fmt.Errorf("runtime: update task: %w", err)
 		}
+		return nil, nil
+
+	case engine.ScheduleTimer:
+		if r.sched == nil {
+			return nil, fmt.Errorf("runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
+		}
+		// Capture the values needed by the fire callback; do not close over
+		// mutable references to cmd (already a value type, so this is safe).
+		instanceID := st.InstanceID
+		timerID := cmd.TimerID
+		r.sched.Schedule(cmd.TimerID, cmd.FireAt, func() {
+			// This callback runs from the scheduler's goroutine (or Tick caller).
+			// Use a background context: the originating request context may have
+			// been cancelled by the time the timer fires.
+			fireCtx := context.Background()
+			trg := engine.NewTimerFired(r.clk.Now(), timerID)
+			if _, err := r.Deliver(fireCtx, def, instanceID, trg); err != nil {
+				slog.Error("runtime: timer fire: Deliver failed",
+					"timerID", timerID,
+					"instanceID", instanceID,
+					"err", err,
+				)
+			}
+		})
+		return nil, nil
+
+	case engine.CancelTimer:
+		if r.sched == nil {
+			return nil, fmt.Errorf("runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
+		}
+		r.sched.Cancel(cmd.TimerID)
 		return nil, nil
 
 	default:
