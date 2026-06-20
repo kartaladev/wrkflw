@@ -8,8 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -185,6 +187,191 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	// Parent must have failed.
 	assert.Equal(t, engine.StatusFailed, st.Status)
 	require.NotNil(t, st.EndedAt)
+}
+
+// parkingChildDef builds a child definition that parks at a user task:
+//
+//	child-start → child-user (KindUserTask) → child-end
+//
+// Without a resolver wired, the runner cannot proceed and the child stays
+// StatusRunning (parked). This is the definition for Fix 1 RED test.
+func parkingChildDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "parking-child", Version: 1,
+		Nodes: []model.Node{
+			{ID: "child-start", Kind: model.KindStartEvent},
+			{ID: "child-user", Kind: model.KindUserTask},
+			{ID: "child-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "cf1", Source: "child-start", Target: "child-user"},
+			{ID: "cf2", Source: "child-user", Target: "child-end"},
+		},
+	}
+}
+
+// parkingParentDef builds a parent that calls the parking child.
+func parkingParentDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "parking-parent", Version: 1,
+		Nodes: []model.Node{
+			{ID: "parent-start", Kind: model.KindStartEvent},
+			{ID: "call", Kind: model.KindCallActivity, DefRef: "parking-child"},
+			{ID: "parent-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "pf1", Source: "parent-start", Target: "call"},
+			{ID: "pf2", Source: "call", Target: "parent-end"},
+		},
+	}
+}
+
+// TestCallActivityParkedChildFailsParentWithClearError (Fix 1, TDD RED→GREEN):
+//
+// When the synchronous runner drives a child that parks (e.g. a user task),
+// r.Run returns childSt.Status == StatusRunning. The runner must fail the parent
+// with a CLEAR, diagnosable error message that:
+//   - mentions the word "parked" or "does not support" so the limitation is obvious, and
+//   - does NOT emit the misleading generic "did not complete" message.
+//
+// The child definition has a KindUserTask; WithHumanTasks is wired so the child
+// successfully reaches AwaitHuman (resolver resolves, task is persisted), then
+// returns nil/nil (parks). The child ends with StatusRunning.
+//
+// This test pins the explicit-parked-child contract so consumers get a
+// meaningful error instead of a silent failure.
+func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
+	ctx := t.Context()
+
+	clk := clock.System()
+	store := runtime.NewMemStateStore()
+	jnl := runtime.NewMemJournal()
+	out := runtime.NewMemOutbox()
+
+	parkingChild := parkingChildDef()
+	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		"parking-child": parkingChild,
+	})
+
+	// Wire human tasks so the child can park at the user task (StatusRunning).
+	// The child will reach AwaitHuman, resolve candidates (empty list is fine),
+	// persist the task, and return nil/nil — leaving childSt.Status == StatusRunning.
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
+	tasks := humantask.NewMemTaskStore()
+	runner := runtime.NewRunner(nil, clk, store, jnl, out,
+		runtime.WithDefinitions(reg),
+		runtime.WithHumanTasks(resolver, tasks, nil),
+	)
+
+	parent := parkingParentDef()
+	st, err := runner.Run(ctx, parent, "parking-parent-i1", nil)
+	require.NoError(t, err, "runner.Run must not return a hard error: the failure is a SubInstanceFailed trigger")
+
+	// Parent must have failed (SubInstanceFailed causes parent failure).
+	assert.Equal(t, engine.StatusFailed, st.Status, "parent must be StatusFailed when child parks")
+	require.NotNil(t, st.EndedAt, "parent must have an EndedAt on failure")
+
+	// The outbox must carry the failure event; check its error message is diagnosable.
+	events := out.Events()
+	var failEvent *runtime.OutboxEvent
+	for i := range events {
+		if events[i].Topic == "instance.failed" {
+			e := events[i]
+			failEvent = &e
+			break
+		}
+	}
+	require.NotNil(t, failEvent, "expected 'instance.failed' outbox event for parent")
+
+	// Fix 1: the error message must explicitly name the limitation.
+	errMsg, _ := failEvent.Payload["error"].(string)
+	assert.True(t,
+		contains(errMsg, "parked") || contains(errMsg, "does not support"),
+		"error message must mention 'parked' or 'does not support', got: %q", errMsg,
+	)
+}
+
+// contains is a simple substring helper to avoid importing strings in this file.
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
+		func() bool {
+			for i := 0; i <= len(s)-len(sub); i++ {
+				if s[i:i+len(sub)] == sub {
+					return true
+				}
+			}
+			return false
+		}())
+}
+
+// selfRefDef builds a definition whose call-activity references itself
+// (A → call[DefRef:"self-ref"] → end). Running it causes unbounded synchronous
+// recursion in the current implementation. Fix 2 adds a depth guard that returns
+// a descriptive error instead of stack-overflowing.
+func selfRefDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "self-ref", Version: 1,
+		Nodes: []model.Node{
+			{ID: "sr-start", Kind: model.KindStartEvent},
+			{ID: "sr-call", Kind: model.KindCallActivity, DefRef: "self-ref"},
+			{ID: "sr-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "sf1", Source: "sr-start", Target: "sr-call"},
+			{ID: "sf2", Source: "sr-call", Target: "sr-end"},
+		},
+	}
+}
+
+// TestCallActivityRecursionDepthLimited (Fix 2, TDD RED→GREEN):
+//
+// A definition whose call activity references itself causes unbounded synchronous
+// recursion in r.Run. The depth guard must stop recursion at maxCallActivityDepth
+// and return a clean SubInstanceFailed with a descriptive error that mentions the
+// depth limit — NOT a stack overflow / panic.
+//
+// Observing RED: before the fix, running this test would either stackoverflow-crash
+// the test binary or timeout. The test is written to expect the CLEAN error path;
+// absence of that path (crash/panic) constitutes the RED state.
+func TestCallActivityRecursionDepthLimited(t *testing.T) {
+	ctx := t.Context()
+
+	clk := clock.System()
+	store := runtime.NewMemStateStore()
+	jnl := runtime.NewMemJournal()
+	out := runtime.NewMemOutbox()
+
+	def := selfRefDef()
+	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		"self-ref": def,
+	})
+
+	runner := runtime.NewRunner(nil, clk, store, jnl, out, runtime.WithDefinitions(reg))
+
+	// This must not panic / stack-overflow. The depth guard must kick in and
+	// fail the parent instance with a descriptive error.
+	require.NotPanics(t, func() {
+		st, err := runner.Run(ctx, def, "self-ref-i1", nil)
+		require.NoError(t, err, "runner.Run must not return a hard error")
+		assert.Equal(t, engine.StatusFailed, st.Status,
+			"instance must be StatusFailed when call-activity depth limit is exceeded")
+	}, "recursion must not cause a panic or stack overflow")
+
+	// Check outbox for a diagnosable error.
+	events := out.Events()
+	var failMsg string
+	for _, e := range events {
+		if e.Topic == "instance.failed" {
+			if m, ok := e.Payload["error"].(string); ok {
+				failMsg = m
+				break
+			}
+		}
+	}
+	assert.True(t,
+		contains(failMsg, "depth") || contains(failMsg, "recursive") || contains(failMsg, "limit"),
+		"failure message must mention depth/recursive/limit, got: %q", failMsg,
+	)
 }
 
 // TestStartSubInstanceNoRegistry verifies that if StartSubInstance is performed

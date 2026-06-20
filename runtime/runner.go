@@ -14,6 +14,38 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
+// callDepthKey is the private context key used to thread the call-activity
+// recursion depth counter through perform → r.Run → deliverLoop → perform chains.
+// It is unexported so that no caller outside this package can set or read it
+// accidentally; the helpers callDepth / withCallDepth are the only access points.
+type callDepthKey struct{}
+
+// maxCallActivityDepth is the maximum nesting depth allowed for synchronous
+// call-activity invocations. Exceeding this limit returns a descriptive
+// SubInstanceFailed error instead of allowing unbounded recursion that would
+// eventually cause a stack overflow or exhaust memory.
+//
+// The current child instance ID scheme appends the full parent ID, causing
+// child IDs to grow roughly as O(2^depth). A limit of 10 is more than
+// sufficient for any realistic workflow while staying safely below the point
+// at which string allocations become infeasible. True async call activities
+// (a future enhancement) do not use this counter at all.
+const maxCallActivityDepth = 10
+
+// callDepth returns the current call-activity nesting depth stored in ctx.
+// Returns 0 if no depth has been set (i.e. the outermost call).
+func callDepth(ctx context.Context) int {
+	if d, ok := ctx.Value(callDepthKey{}).(int); ok {
+		return d
+	}
+	return 0
+}
+
+// withCallDepth returns a child context with the call-activity depth set to d.
+func withCallDepth(ctx context.Context, d int) context.Context {
+	return context.WithValue(ctx, callDepthKey{}, d)
+}
+
 // msgKey is the composite key used to look up a message waiter by name+correlation.
 type msgKey struct {
 	Name           string
@@ -412,20 +444,37 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			return nil, fmt.Errorf("runtime: perform StartSubInstance %q: registry lookup: %w", cmd.DefRef, err)
 		}
 
+		// Fix 2: Recursion / cycle depth guard.
+		//
+		// A definition whose call activity references itself (direct: A→A, or via a
+		// cycle: A→B→A) causes unbounded synchronous recursion through perform →
+		// r.Run → deliverLoop → perform, which ultimately stack-overflows. We thread
+		// the depth counter through ctx so every nested call increments it; when the
+		// limit is reached we return a descriptive SubInstanceFailed instead of
+		// crashing. The synchronous runner only supports children that run to
+		// completion in one pass; async call activities (a future enhancement) would
+		// not use this counter.
+		depth := callDepth(ctx)
+		if depth >= maxCallActivityDepth {
+			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+				fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+					"the synchronous runner does not support cyclic or deeply nested call activities",
+					maxCallActivityDepth, cmd.DefRef),
+			), nil
+		}
+		childCtx := withCallDepth(ctx, depth+1)
+
 		// Derive a deterministic child instance ID from the parent and command ID.
 		// Scheme: "<parentInstanceID>-sub-<commandID>"
 		// This is unique within the runner's store as long as commandIDs are unique
 		// (which the engine guarantees via CmdSeq).
-		// Guard note: a definition calling itself (direct or via a cycle) would
-		// cause infinite recursion here. That scenario is the definition author's
-		// responsibility; detecting it is out of scope for this plan.
 		childInstanceID := st.InstanceID + "-sub-" + cmd.CommandID
 
 		// Run the child to completion (synchronous within perform). The child uses
 		// the same Runner so it shares the store, journal, outbox, catalog, and
 		// scheduler. The child's Run call drives the child's deliverLoop until the
 		// child parks or completes.
-		childSt, err := r.Run(ctx, childDef, childInstanceID, cmd.Input)
+		childSt, err := r.Run(childCtx, childDef, childInstanceID, cmd.Input)
 		if err != nil {
 			// Child run returned a hard error (e.g. storage failure). Propagate as
 			// SubInstanceFailed so the parent instance can respond.
@@ -438,11 +487,32 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			// Pass the child's final variables back as the Output so the parent can
 			// merge them. This gives the parent access to everything the child computed.
 			return engine.NewSubInstanceCompleted(r.clk.Now(), cmd.CommandID, childSt.Variables), nil
+
+		case engine.StatusRunning:
+			// Fix 1: Explicit parked-child error.
+			//
+			// The child parked (StatusRunning) without completing. This happens when
+			// the child contains a node that requires external input — a human task,
+			// timer, signal catch event, or its own call activity — that cannot be
+			// resolved within a single synchronous Run. The synchronous reference
+			// runner does not support re-entering a parked child; async call activities
+			// are a future enhancement.
+			//
+			// Return a clear, diagnosable error message so the consumer understands
+			// the limitation rather than receiving a generic "did not complete" message.
+			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+				fmt.Sprintf("runtime: call activity child %q parked (status running): "+
+					"the synchronous runner does not support children that wait on human tasks, "+
+					"timers, or events; async call activity is a future enhancement",
+					childInstanceID),
+			), nil
+
 		default:
-			// StatusFailed or any other non-completed terminal state.
-			errMsg := "child instance " + childInstanceID + " did not complete"
-			// Surface the child's FailInstance command error message if available.
-			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID, errMsg), nil
+			// StatusFailed or any other non-completed, non-running terminal state.
+			// Include the numeric status in the message so failures are diagnosable.
+			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+				fmt.Sprintf("runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
+			), nil
 		}
 
 	default:

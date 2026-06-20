@@ -1003,6 +1003,110 @@ func TestSubInstanceCompletedUnknownCommandID(t *testing.T) {
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
 }
 
+// callActivityWithParallelUserTaskDef builds a definition where a parallel gateway
+// splits into two concurrent branches:
+//
+//	Branch A: user-task with SLA "1h" → merge-join (adds a timerRecord to Timers)
+//	Branch B: call-activity (DefRef "child") → merge-join
+//	merge-join (parallel, converging) → end
+//
+// The SLA timer on the user-task records a timerRecord in state.Timers.
+// When SubInstanceFailed arrives for the call-activity, cancelAllTimers must
+// emit CancelTimer for the SLA timer — proving the cleanup path is complete.
+func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "ca-sla-parent", Version: 1,
+		Nodes: []model.Node{
+			{ID: "p-start", Kind: model.KindStartEvent},
+			{ID: "p-fork", Kind: model.KindParallelGateway},
+			{ID: "p-user", Kind: model.KindUserTask, SLADuration: `"1h"`},
+			{ID: "p-call", Kind: model.KindCallActivity, DefRef: "child"},
+			{ID: "p-join", Kind: model.KindParallelGateway},
+			{ID: "p-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "p-start", Target: "p-fork"},
+			{ID: "f2", Source: "p-fork", Target: "p-user"},
+			{ID: "f3", Source: "p-fork", Target: "p-call"},
+			{ID: "f4", Source: "p-user", Target: "p-join"},
+			{ID: "f5", Source: "p-call", Target: "p-join"},
+			{ID: "f6", Source: "p-join", Target: "p-end"},
+		},
+	}
+}
+
+// TestCallActivitySubInstanceFailedCancelsOutstandingTimers (Fix 3 assertion):
+//
+// A parent definition has both a parallel user-task (with SLA timer) and a
+// call-activity branch. When StartInstance drives, both branches start:
+//   - A ScheduleTimer (SLA) is emitted for the user-task → timerRecord in state.Timers.
+//   - A StartSubInstance is emitted for the call-activity → token parks.
+//
+// When SubInstanceFailed arrives, the engine must:
+//  1. Emit FailInstance (transition to StatusFailed).
+//  2. Emit CancelTimer for the SLA timer, proving cancelAllTimers runs on the
+//     SubInstanceFailed path and cleans up all outstanding timer records.
+func TestCallActivitySubInstanceFailedCancelsOutstandingTimers(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := callActivityWithParallelUserTaskDef()
+
+	// ---- Step 1: StartInstance → parallel fork → SLA timer + call-activity starts ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-sla-i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Find the ScheduleTimer (SLA) and StartSubInstance commands.
+	var slaTimerID string
+	var ssiCmdID string
+	for _, cmd := range r1.Commands {
+		switch c := cmd.(type) {
+		case engine.ScheduleTimer:
+			if c.Kind == engine.TimerSLA {
+				slaTimerID = c.TimerID
+			}
+		case engine.StartSubInstance:
+			ssiCmdID = c.CommandID
+		}
+	}
+	require.NotEmpty(t, slaTimerID, "expected ScheduleTimer (SLA) for the user-task branch")
+	require.NotEmpty(t, ssiCmdID, "expected StartSubInstance for the call-activity branch")
+
+	// SLA timer must be recorded in state.Timers.
+	require.NotEmpty(t, r1.State.Timers, "SLA timerRecord must be recorded in Timers")
+
+	// ---- Step 2: SubInstanceFailed → parent must fail AND cancel the SLA timer ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSubInstanceFailed(at.Add(time.Second), ssiCmdID, "child blew up"),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Parent must be failed.
+	assert.Equal(t, engine.StatusFailed, r2.State.Status, "parent must be StatusFailed")
+	require.NotNil(t, r2.State.EndedAt)
+
+	// FailInstance must be present.
+	failInstFound := false
+	cancelTimerFound := false
+	for _, cmd := range r2.Commands {
+		switch c := cmd.(type) {
+		case engine.FailInstance:
+			failInstFound = true
+			assert.Contains(t, c.Err, "child blew up")
+		case engine.CancelTimer:
+			if c.TimerID == slaTimerID {
+				cancelTimerFound = true
+			}
+		}
+	}
+	assert.True(t, failInstFound, "FailInstance must be emitted on SubInstanceFailed")
+	assert.True(t, cancelTimerFound,
+		"CancelTimer for SLA timer %q must be emitted on SubInstanceFailed (cancelAllTimers path)", slaTimerID)
+
+	// Timer must be gone from state after cleanup.
+	assert.Empty(t, r2.State.Timers, "Timers must be empty after cancelAllTimers on failure path")
+}
+
 // TestSubInstanceFailedUnknownCommandID verifies that a SubInstanceFailed with
 // an unrecognised CommandID returns ErrTokenNotFound.
 func TestSubInstanceFailedUnknownCommandID(t *testing.T) {
