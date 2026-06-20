@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	ErrUnknownTrigger = errors.New("engine: unknown trigger")
-	ErrTokenNotFound  = errors.New("engine: no token awaiting command")
+	ErrUnknownTrigger      = errors.New("engine: unknown trigger")
+	ErrTokenNotFound       = errors.New("engine: no token awaiting command")
+	ErrMicroNotImplemented = errors.New("engine: micro stepping not implemented")
 )
 
 // StepMode selects how far one Step advances. Micro behaves as Macro in this
@@ -32,6 +33,10 @@ type StepResult struct {
 // Step applies one trigger to the instance state and returns the new state plus
 // the commands the runtime must perform. It is pure: it does not mutate st.
 func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
+	if opt.Mode == Micro {
+		return StepResult{}, ErrMicroNotImplemented
+	}
+
 	s := cloneState(st)
 
 	switch t := trg.(type) {

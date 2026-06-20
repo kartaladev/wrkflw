@@ -2,35 +2,59 @@ package runtime
 
 import "github.com/zakyalvan/krtlwrkflw/engine"
 
-type memStateStore struct{ m map[string]engine.InstanceState }
+// Compile-time checks that the in-memory fakes satisfy the ports.
+var (
+	_ StateStore    = (*MemStateStore)(nil)
+	_ Journal       = (*MemJournal)(nil)
+	_ JournalReader = (*MemJournal)(nil)
+	_ OutboxWriter  = (*MemOutbox)(nil)
+)
 
-func NewMemStateStore() StateStore { return &memStateStore{m: map[string]engine.InstanceState{}} }
+// MemStateStore is an in-memory StateStore for tests and reference wiring.
+type MemStateStore struct{ m map[string]engine.InstanceState }
 
-func (s *memStateStore) Load(id string) (engine.InstanceState, bool) {
+func NewMemStateStore() *MemStateStore { return &MemStateStore{m: map[string]engine.InstanceState{}} }
+
+func (s *MemStateStore) Load(id string) (engine.InstanceState, error) {
 	st, ok := s.m[id]
-	return st, ok
-}
-func (s *memStateStore) Save(st engine.InstanceState) { s.m[st.InstanceID] = st }
-
-type memJournal struct{ m map[string][]engine.Trigger }
-
-func NewMemJournal() *memJournal { return &memJournal{m: map[string][]engine.Trigger{}} }
-
-func (j *memJournal) Append(id string, trg engine.Trigger) { j.m[id] = append(j.m[id], trg) }
-func (j *memJournal) Entries(id string) []engine.Trigger   { return j.m[id] }
-
-type memOutbox struct {
-	events []struct {
-		Topic   string
-		Payload map[string]any
+	if !ok {
+		return engine.InstanceState{}, ErrInstanceNotFound
 	}
+	return st, nil
 }
 
-func NewMemOutbox() *memOutbox { return &memOutbox{} }
-
-func (o *memOutbox) Write(topic string, payload map[string]any) {
-	o.events = append(o.events, struct {
-		Topic   string
-		Payload map[string]any
-	}{topic, payload})
+func (s *MemStateStore) Save(st engine.InstanceState) error {
+	s.m[st.InstanceID] = st
+	return nil
 }
+
+// MemJournal is an in-memory Journal (and JournalReader) for tests and reference wiring.
+type MemJournal struct{ m map[string][]engine.Trigger }
+
+func NewMemJournal() *MemJournal { return &MemJournal{m: map[string][]engine.Trigger{}} }
+
+func (j *MemJournal) Append(id string, trg engine.Trigger) error {
+	j.m[id] = append(j.m[id], trg)
+	return nil
+}
+
+func (j *MemJournal) Entries(id string) []engine.Trigger { return j.m[id] }
+
+// OutboxEvent is one recorded domain event.
+type OutboxEvent struct {
+	Topic   string
+	Payload map[string]any
+}
+
+// MemOutbox is an in-memory OutboxWriter for tests and reference wiring.
+type MemOutbox struct{ events []OutboxEvent }
+
+func NewMemOutbox() *MemOutbox { return &MemOutbox{} }
+
+func (o *MemOutbox) Write(topic string, payload map[string]any) error {
+	o.events = append(o.events, OutboxEvent{Topic: topic, Payload: payload})
+	return nil
+}
+
+// Events returns the recorded outbox events.
+func (o *MemOutbox) Events() []OutboxEvent { return o.events }

@@ -38,14 +38,17 @@ type ActionFailed struct {
 	Retryable bool
 }
 
+// NewStartInstance builds a StartInstance trigger stamped with the given time.
 func NewStartInstance(at time.Time, vars map[string]any) StartInstance {
 	return StartInstance{baseTrigger: baseTrigger{at: at}, Vars: vars}
 }
 
+// NewActionCompleted builds an ActionCompleted trigger reporting a successful service-action result.
 func NewActionCompleted(at time.Time, commandID string, output map[string]any) ActionCompleted {
 	return ActionCompleted{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Output: output}
 }
 
+// NewActionFailed builds an ActionFailed trigger reporting a service-action error and whether it is retryable.
 func NewActionFailed(at time.Time, commandID, errMsg string, retryable bool) ActionFailed {
 	return ActionFailed{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Err: errMsg, Retryable: retryable}
 }

@@ -31,15 +31,19 @@ func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instance
 
 	for len(queue) > 0 {
 		trg := queue[0]
-		queue = queue[1:]
+		queue = queue[1:] // illustrative FIFO: a real driver would not retain the whole history in a live slice
 
-		r.jnl.Append(instanceID, trg)
+		if err := r.jnl.Append(instanceID, trg); err != nil {
+			return st, fmt.Errorf("runtime: journal: %w", err)
+		}
 		res, err := engine.Step(def, st, trg, engine.StepOptions{})
 		if err != nil {
 			return st, fmt.Errorf("runtime: step: %w", err)
 		}
 		st = res.State
-		r.store.Save(st)
+		if err := r.store.Save(st); err != nil {
+			return st, fmt.Errorf("runtime: save: %w", err)
+		}
 
 		for _, c := range res.Commands {
 			next, err := r.perform(ctx, c)
@@ -69,11 +73,15 @@ func (r *Runner) perform(ctx context.Context, c engine.Command) (engine.Trigger,
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 
 	case engine.CompleteInstance:
-		r.out.Write("instance.completed", cmd.Result)
+		if err := r.out.Write("instance.completed", cmd.Result); err != nil {
+			return nil, fmt.Errorf("runtime: outbox: %w", err)
+		}
 		return nil, nil
 
 	case engine.FailInstance:
-		r.out.Write("instance.failed", map[string]any{"error": cmd.Err})
+		if err := r.out.Write("instance.failed", map[string]any{"error": cmd.Err}); err != nil {
+			return nil, fmt.Errorf("runtime: outbox: %w", err)
+		}
 		return nil, nil
 
 	default:

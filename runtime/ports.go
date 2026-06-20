@@ -3,20 +3,32 @@
 // later sub-projects replace the in-memory ports with real implementations.
 package runtime
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import (
+	"errors"
+
+	"github.com/zakyalvan/krtlwrkflw/engine"
+)
+
+// ErrInstanceNotFound is returned by StateStore.Load when no instance exists for the id.
+var ErrInstanceNotFound = errors.New("runtime: instance not found")
 
 // StateStore persists the authoritative instance snapshot.
 type StateStore interface {
-	Load(id string) (engine.InstanceState, bool)
-	Save(st engine.InstanceState)
+	Load(id string) (engine.InstanceState, error)
+	Save(st engine.InstanceState) error
 }
 
 // Journal is the append-only audit ledger of applied triggers.
 type Journal interface {
-	Append(id string, trg engine.Trigger)
+	Append(id string, trg engine.Trigger) error
 }
 
-// OutboxWriter records domain events for later relay (no-op in memory here).
+// JournalReader exposes the recorded trigger history for replay/audit.
+type JournalReader interface {
+	Entries(id string) []engine.Trigger
+}
+
+// OutboxWriter records domain events for later relay.
 type OutboxWriter interface {
-	Write(topic string, payload map[string]any)
+	Write(topic string, payload map[string]any) error
 }
