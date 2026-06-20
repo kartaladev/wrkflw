@@ -148,6 +148,110 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 	}
 }
 
+// TestNodeSubProcessField asserts that a KindSubProcess node with a nested
+// Subprocess *ProcessDefinition round-trips through ProcessDefinition.Node.
+func TestNodeSubProcessField(t *testing.T) {
+	nested := &model.ProcessDefinition{
+		ID:      "nested-proc",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "ns-start", Kind: model.KindStartEvent},
+			{ID: "ns-task", Kind: model.KindServiceTask, Action: "inner-action"},
+			{ID: "ns-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "nf1", Source: "ns-start", Target: "ns-task"},
+			{ID: "nf2", Source: "ns-task", Target: "ns-end"},
+		},
+	}
+
+	sp := model.Node{
+		ID:        "subprocess-1",
+		Kind:      model.KindSubProcess,
+		Name:      "Inner Subprocess",
+		Subprocess: nested,
+	}
+
+	d := &model.ProcessDefinition{
+		ID:      "outer",
+		Version: 1,
+		Nodes:   []model.Node{sp},
+		Flows:   []model.SequenceFlow{},
+	}
+
+	n, ok := d.Node("subprocess-1")
+	require.True(t, ok)
+	assert.Equal(t, model.KindSubProcess, n.Kind)
+	assert.Equal(t, "Inner Subprocess", n.Name)
+	require.NotNil(t, n.Subprocess)
+	assert.Equal(t, "nested-proc", n.Subprocess.ID)
+	assert.Len(t, n.Subprocess.Nodes, 3)
+	assert.Len(t, n.Subprocess.Flows, 2)
+}
+
+// TestNodeEventSubProcessField asserts that a KindEventSubProcess node with a
+// nested Subprocess *ProcessDefinition round-trips correctly.
+func TestNodeEventSubProcessField(t *testing.T) {
+	nested := &model.ProcessDefinition{
+		ID:      "event-nested-proc",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "es-start", Kind: model.KindStartEvent, SignalName: "cancel.signal"},
+			{ID: "es-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "ef1", Source: "es-start", Target: "es-end"},
+		},
+	}
+
+	esp := model.Node{
+		ID:        "event-sub-1",
+		Kind:      model.KindEventSubProcess,
+		Name:      "Cancel Handler",
+		Subprocess: nested,
+	}
+
+	d := &model.ProcessDefinition{
+		ID:      "outer2",
+		Version: 1,
+		Nodes:   []model.Node{esp},
+		Flows:   []model.SequenceFlow{},
+	}
+
+	n, ok := d.Node("event-sub-1")
+	require.True(t, ok)
+	assert.Equal(t, model.KindEventSubProcess, n.Kind)
+	require.NotNil(t, n.Subprocess)
+	assert.Equal(t, "event-nested-proc", n.Subprocess.ID)
+	// The trigger is encoded on the nested start event's SignalName field.
+	starts := n.Subprocess.StartNodes()
+	require.Len(t, starts, 1)
+	assert.Equal(t, "cancel.signal", starts[0].SignalName)
+}
+
+// TestNodeCallActivityDefRef asserts that a KindCallActivity node with a DefRef
+// field round-trips through ProcessDefinition.Node correctly.
+func TestNodeCallActivityDefRef(t *testing.T) {
+	ca := model.Node{
+		ID:     "call-1",
+		Kind:   model.KindCallActivity,
+		Name:   "Call External Process",
+		DefRef: "external-process-v2",
+	}
+
+	d := &model.ProcessDefinition{
+		ID:      "outer3",
+		Version: 1,
+		Nodes:   []model.Node{ca},
+		Flows:   []model.SequenceFlow{},
+	}
+
+	n, ok := d.Node("call-1")
+	require.True(t, ok)
+	assert.Equal(t, model.KindCallActivity, n.Kind)
+	assert.Equal(t, "external-process-v2", n.DefRef)
+}
+
 // TestNodeTimerSLAReminderFields asserts that the six new timer/SLA/reminder
 // fields on model.Node round-trip through ProcessDefinition.Node correctly.
 func TestNodeTimerSLAReminderFields(t *testing.T) {

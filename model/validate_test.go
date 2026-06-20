@@ -334,3 +334,179 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+// validSubprocessDef returns a well-formed embedded subprocess definition
+// (start → service task → end) for use in outer process tests.
+func validSubprocessDef(id string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      id,
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "ns-start", Kind: model.KindStartEvent},
+			{ID: "ns-task", Kind: model.KindServiceTask, Action: "inner"},
+			{ID: "ns-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "nf1", Source: "ns-start", Target: "ns-task"},
+			{ID: "nf2", Source: "ns-task", Target: "ns-end"},
+		},
+	}
+}
+
+func TestValidateSubProcess(t *testing.T) {
+	tests := map[string]struct {
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		"valid subprocess with valid nested definition": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: validSubprocessDef("inner")},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"subprocess with nil Subprocess pointer is invalid": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: nil},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrMissingSubprocess)
+			},
+		},
+		"event-subprocess with nil Subprocess pointer is invalid": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "esp", Kind: model.KindEventSubProcess, Subprocess: nil},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "esp"},
+					{ID: "f2", Source: "esp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrMissingSubprocess)
+			},
+		},
+		"subprocess whose nested definition is malformed (start-has-incoming) propagates error": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+						ID:      "bad-inner",
+						Version: 1,
+						Nodes: []model.Node{
+							{ID: "ns-start", Kind: model.KindStartEvent},
+							{ID: "ns-task", Kind: model.KindServiceTask, Action: "inner"},
+							{ID: "ns-end", Kind: model.KindEndEvent},
+						},
+						Flows: []model.SequenceFlow{
+							{ID: "nf1", Source: "ns-start", Target: "ns-task"},
+							{ID: "nf2", Source: "ns-task", Target: "ns-end"},
+							// illegal: flow into the start event
+							{ID: "nf3", Source: "ns-task", Target: "ns-start"},
+						},
+					}},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				// The nested error is propagated and is unwrappable.
+				require.ErrorIs(t, err, model.ErrStartHasIncoming)
+			},
+		},
+		"subprocess whose nested definition is malformed (dangling flow) propagates error": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+						ID:      "bad-inner-2",
+						Version: 1,
+						Nodes: []model.Node{
+							{ID: "ns-start", Kind: model.KindStartEvent},
+							{ID: "ns-end", Kind: model.KindEndEvent},
+						},
+						Flows: []model.SequenceFlow{
+							{ID: "nf1", Source: "ns-start", Target: "ghost-node"}, // dangling
+						},
+					}},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDanglingFlow)
+			},
+		},
+		"call-activity with non-empty DefRef is valid": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "ca", Kind: model.KindCallActivity, DefRef: "some-external-process"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "ca"},
+					{ID: "f2", Source: "ca", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"call-activity with empty DefRef is invalid": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "ca", Kind: model.KindCallActivity, DefRef: ""},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "ca"},
+					{ID: "f2", Source: "ca", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrMissingDefRef)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
