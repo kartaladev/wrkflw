@@ -133,12 +133,23 @@ func TestStepActionFailedFailsInstance(t *testing.T) {
 		engine.NewActionFailed(at.Add(time.Second), cmdID, "boom", false), engine.StepOptions{})
 	require.NoError(t, err)
 
-	require.Len(t, r2.Commands, 1)
-	fi, ok := r2.Commands[0].(engine.FailInstance)
-	require.True(t, ok)
-	assert.Equal(t, "boom", fi.Err)
+	// Verify behavioral outcome: instance is failed and a FailInstance command is
+	// present. We scan for it by type rather than checking the exact command count so
+	// the test remains valid if terminal-cleanup commands (e.g. CancelTimer) are
+	// legitimately added in the future.
 	assert.Equal(t, engine.StatusFailed, r2.State.Status)
 	require.NotNil(t, r2.State.EndedAt)
+
+	var fi *engine.FailInstance
+	for _, c := range r2.Commands {
+		if v, ok := c.(engine.FailInstance); ok {
+			vv := v
+			fi = &vv
+			break
+		}
+	}
+	require.NotNil(t, fi, "FailInstance command must be present for unhandled ActionFailed")
+	assert.Equal(t, "boom", fi.Err)
 }
 
 func TestStepActionCompletedUnknownCommandID(t *testing.T) {

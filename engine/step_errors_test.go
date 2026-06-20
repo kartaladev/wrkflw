@@ -283,6 +283,316 @@ func TestUnhandledErrorFailsInstance(t *testing.T) {
 	}
 }
 
+// directBoundaryOnRootSvcDef builds:
+//
+//	Root: start → svc → end
+//	      svc has a boundary error event "E1" → recover → end-recover
+//
+// When svc's ActionFailed fires (errorCode="E1"), the boundary attached directly to
+// svc (at root level, no sub-process scope) should catch the error, route to
+// recover, and NOT fail the instance.
+func directBoundaryOnRootSvcDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-direct-bnd", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "svc", Kind: model.KindServiceTask, Action: "svc-action"},
+			// Direct boundary error event on svc (specific error code "E1")
+			{
+				ID:         "bnd-svc-err",
+				Kind:       model.KindBoundaryEvent,
+				AttachedTo: "svc",
+				ErrorCode:  "E1",
+			},
+			{ID: "recover", Kind: model.KindServiceTask, Action: "recover-action"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end-recover", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start-svc", Source: "start", Target: "svc"},
+			{ID: "f-svc-end", Source: "svc", Target: "end"},
+			{ID: "f-bnd-recover", Source: "bnd-svc-err", Target: "recover"},
+			{ID: "f-recover-end", Source: "recover", Target: "end-recover"},
+		},
+	}
+}
+
+// directBoundaryCatchAllOnRootSvcDef builds:
+//
+//	Root: start → svc → end
+//	      svc has a catch-all boundary error event (ErrorCode=="") → recover → end-recover
+func directBoundaryCatchAllOnRootSvcDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-direct-bnd-catchall", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "svc", Kind: model.KindServiceTask, Action: "svc-action"},
+			// Catch-all boundary error event on svc
+			{
+				ID:         "bnd-svc-err",
+				Kind:       model.KindBoundaryEvent,
+				AttachedTo: "svc",
+				ErrorCode:  "",
+			},
+			{ID: "recover", Kind: model.KindServiceTask, Action: "recover-action"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end-recover", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start-svc", Source: "start", Target: "svc"},
+			{ID: "f-svc-end", Source: "svc", Target: "end"},
+			{ID: "f-bnd-recover", Source: "bnd-svc-err", Target: "recover"},
+			{ID: "f-recover-end", Source: "recover", Target: "end-recover"},
+		},
+	}
+}
+
+// directBoundaryOnInnerSvcInSubprocessDef builds:
+//
+//	Root: start → sub(sp) → end
+//	Nested (sp): start → inner-svc → end-inner
+//	             inner-svc has a boundary error event "INNER_ERR" → inner-recover → end-recover
+//
+// When inner-svc's ActionFailed fires, the boundary attached DIRECTLY to inner-svc
+// (inside the sub-process scope) should catch the error. Only inner-svc's token is
+// consumed; the sub-process scope stays open with inner-recover running.
+func directBoundaryOnInnerSvcInSubprocessDef() *model.ProcessDefinition {
+	nestedDef := &model.ProcessDefinition{
+		ID: "sp-direct-bnd-inner", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-action"},
+			// Boundary attached directly to inner-svc (specific error code)
+			{
+				ID:         "inner-bnd",
+				Kind:       model.KindBoundaryEvent,
+				AttachedTo: "inner-svc",
+				ErrorCode:  "INNER_ERR",
+			},
+			{ID: "inner-recover", Kind: model.KindServiceTask, Action: "inner-recover-action"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+			{ID: "inner-end-recover", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "fi-start-svc", Source: "inner-start", Target: "inner-svc"},
+			{ID: "fi-svc-end", Source: "inner-svc", Target: "inner-end"},
+			{ID: "fi-bnd-recover", Source: "inner-bnd", Target: "inner-recover"},
+			{ID: "fi-recover-end", Source: "inner-recover", Target: "inner-end-recover"},
+		},
+	}
+
+	return &model.ProcessDefinition{
+		ID: "p-direct-bnd-inner", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "sp", Kind: model.KindSubProcess, Subprocess: nestedDef},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f-start-sp", Source: "start", Target: "sp"},
+			{ID: "f-sp-end", Source: "sp", Target: "end"},
+		},
+	}
+}
+
+// TestActionFailedCaughtByDirectBoundary verifies that a KindBoundaryEvent error
+// event attached DIRECTLY to the failing activity (not just to an enclosing
+// sub-process) is matched when ActionFailed fires, even when the failing token is
+// at root scope (ScopeID == "").
+//
+// This is the critical regression test for Fix 1: previously propagateError only
+// walked ENCLOSING SCOPES, so a root-level service task with a direct boundary
+// would wrongly FailInstance instead of routing to the recovery path.
+func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
+	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+
+	t.Run("root-level-svc-specific-error-code", func(t *testing.T) {
+		def := directBoundaryOnRootSvcDef()
+
+		// Step 1: Start → svc parks with InvokeAction.
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			engine.NewStartInstance(at, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		require.Equal(t, engine.StatusRunning, r1.State.Status)
+
+		var ia *engine.InvokeAction
+		for _, c := range r1.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				ia = &vv
+				break
+			}
+		}
+		require.NotNil(t, ia, "expected InvokeAction for svc-action")
+		assert.Equal(t, "svc-action", ia.Name)
+
+		// Step 2: ActionFailed with errorCode matching boundary's ErrorCode "E1" →
+		// boundary on svc should catch it → recover-action invoked → NOT FailInstance.
+		r2, err := engine.Step(def, r1.State,
+			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "E1", false), engine.StepOptions{})
+		require.NoError(t, err)
+
+		// Instance must NOT fail — direct boundary catches the error.
+		assert.Equal(t, engine.StatusRunning, r2.State.Status, "instance must still be running (direct boundary caught error)")
+		assert.Nil(t, r2.State.EndedAt, "EndedAt must NOT be set when error is caught")
+
+		// Must NOT emit FailInstance.
+		for _, c := range r2.Commands {
+			if _, ok := c.(engine.FailInstance); ok {
+				t.Fatal("FailInstance must NOT be emitted when direct boundary catches the error")
+			}
+		}
+
+		// Recovery action must be invoked.
+		var recoverIA *engine.InvokeAction
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				recoverIA = &vv
+			}
+		}
+		require.NotNil(t, recoverIA, "expected InvokeAction for recover-action")
+		assert.Equal(t, "recover-action", recoverIA.Name)
+
+		// Exactly one token must remain — parked at recover.
+		require.Len(t, r2.State.Tokens, 1, "exactly one token must remain (at recover)")
+		assert.Equal(t, "recover", r2.State.Tokens[0].NodeID)
+		// Token must be in root scope (same scope as the failing svc).
+		assert.Equal(t, "", r2.State.Tokens[0].ScopeID, "recovery token must be in root scope")
+	})
+
+	t.Run("root-level-svc-catch-all-boundary", func(t *testing.T) {
+		def := directBoundaryCatchAllOnRootSvcDef()
+
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			engine.NewStartInstance(at, nil), engine.StepOptions{})
+		require.NoError(t, err)
+
+		var ia *engine.InvokeAction
+		for _, c := range r1.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				ia = &vv
+				break
+			}
+		}
+		require.NotNil(t, ia)
+
+		// ActionFailed with any error code — catch-all boundary should catch it.
+		r2, err := engine.Step(def, r1.State,
+			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "any-error", false), engine.StepOptions{})
+		require.NoError(t, err)
+
+		assert.Equal(t, engine.StatusRunning, r2.State.Status, "catch-all direct boundary must catch any error")
+
+		for _, c := range r2.Commands {
+			if _, ok := c.(engine.FailInstance); ok {
+				t.Fatal("FailInstance must NOT be emitted when catch-all direct boundary catches the error")
+			}
+		}
+
+		var recoverIA *engine.InvokeAction
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				recoverIA = &vv
+			}
+		}
+		require.NotNil(t, recoverIA, "expected InvokeAction for recover-action")
+		assert.Equal(t, "recover-action", recoverIA.Name)
+	})
+
+	t.Run("root-level-svc-error-code-mismatch-still-fails", func(t *testing.T) {
+		// Boundary has ErrorCode "E1" but ActionFailed throws "OTHER" → no match → FailInstance.
+		def := directBoundaryOnRootSvcDef()
+
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			engine.NewStartInstance(at, nil), engine.StepOptions{})
+		require.NoError(t, err)
+
+		var ia *engine.InvokeAction
+		for _, c := range r1.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				ia = &vv
+				break
+			}
+		}
+		require.NotNil(t, ia)
+
+		// ActionFailed with error code that does NOT match the boundary's "E1".
+		r2, err := engine.Step(def, r1.State,
+			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "OTHER", false), engine.StepOptions{})
+		require.NoError(t, err)
+
+		assert.Equal(t, engine.StatusFailed, r2.State.Status, "mismatched error code must still fail instance")
+
+		var fi *engine.FailInstance
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.FailInstance); ok {
+				vv := v
+				fi = &vv
+				break
+			}
+		}
+		require.NotNil(t, fi, "FailInstance must be emitted when error code doesn't match boundary")
+		assert.Equal(t, "OTHER", fi.Err)
+	})
+
+	t.Run("direct-boundary-on-inner-svc-inside-subprocess", func(t *testing.T) {
+		// A boundary attached to inner-svc INSIDE a sub-process is a direct-attachment
+		// check on the token's own scope def. The sub-process scope stays open after
+		// the direct boundary fires (only inner-svc's token is cancelled).
+		def := directBoundaryOnInnerSvcInSubprocessDef()
+
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			engine.NewStartInstance(at, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		require.Equal(t, engine.StatusRunning, r1.State.Status)
+		// Sub-process scope must be open.
+		require.Len(t, r1.State.Scopes, 1, "sub-process scope must be open")
+
+		var ia *engine.InvokeAction
+		for _, c := range r1.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				ia = &vv
+				break
+			}
+		}
+		require.NotNil(t, ia, "expected InvokeAction for inner-action")
+		assert.Equal(t, "inner-action", ia.Name)
+
+		// ActionFailed with matching error code → direct boundary on inner-svc catches it.
+		r2, err := engine.Step(def, r1.State,
+			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "INNER_ERR", false), engine.StepOptions{})
+		require.NoError(t, err)
+
+		// Instance must NOT fail.
+		assert.Equal(t, engine.StatusRunning, r2.State.Status, "direct boundary on inner-svc must catch error")
+
+		for _, c := range r2.Commands {
+			if _, ok := c.(engine.FailInstance); ok {
+				t.Fatal("FailInstance must NOT be emitted when direct boundary on inner-svc catches error")
+			}
+		}
+
+		// Recovery action must be invoked.
+		var recoverIA *engine.InvokeAction
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				recoverIA = &vv
+			}
+		}
+		require.NotNil(t, recoverIA, "expected InvokeAction for inner-recover-action")
+		assert.Equal(t, "inner-recover-action", recoverIA.Name)
+
+		// The sub-process scope must still be open (only inner-svc's token was consumed).
+		assert.Len(t, r2.State.Scopes, 1, "sub-process scope must remain open (only svc token cancelled, not whole scope)")
+	})
+}
+
 // TestActionFailedPropagatesToBoundaryError verifies two complementary behaviors:
 //  1. A ServiceTask ActionFailed INSIDE a sub-process that has a catch-all
 //     boundary error handler → error is caught, recovery path runs, NOT FailInstance.
