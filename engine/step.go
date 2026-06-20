@@ -147,8 +147,12 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time) ([]Comm
 			}
 
 		case model.KindInclusiveGateway:
-			if err := s.forkInclusive(def, tok, node, at); err != nil {
-				return cmds, err
+			if len(def.Incoming(node.ID)) > 1 {
+				s.tryInclusiveJoin(def, tok, node, at)
+			} else {
+				if err := s.forkInclusive(def, tok, node, at); err != nil {
+					return cmds, err
+				}
 			}
 
 		default:
@@ -322,6 +326,65 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 	for _, f := range def.Outgoing(node.ID) {
 		s.placeToken(f.Target, at)
 	}
+}
+
+// tryInclusiveJoin parks the arriving token at an OR-join and fires only once no
+// token other than those already parked at the join can still reach it (so it
+// never waits for branches that were never activated). On firing it consumes all
+// tokens parked at the join and creates one Active token per outgoing flow.
+func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, at time.Time) {
+	tok.State = TokenAtJoin
+
+	canReach := nodesThatCanReach(def, node.ID)
+	for i := range s.Tokens {
+		t := &s.Tokens[i]
+		if t.NodeID == node.ID && t.State == TokenAtJoin {
+			continue // already arrived at the join
+		}
+		if canReach[t.NodeID] {
+			return // some token can still reach the join; keep waiting
+		}
+	}
+
+	// Fire: consume all tokens parked at this join, then fork to outgoing flows.
+	kept := make([]Token, 0, len(s.Tokens))
+	for _, t := range s.Tokens {
+		if t.NodeID == node.ID && t.State == TokenAtJoin {
+			s.closeVisit(t.ID, t.NodeID, at)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	s.Tokens = kept
+	for _, f := range def.Outgoing(node.ID) {
+		s.placeToken(f.Target, at)
+	}
+}
+
+// nodesThatCanReach returns the set of node IDs (excluding target) from which
+// target is reachable by following sequence flows forward. Implemented as a
+// reverse breadth-first search from target over incoming flows; the visited guard
+// makes it safe on graphs with cycles that do not pass through target.
+func nodesThatCanReach(def *model.ProcessDefinition, target string) map[string]bool {
+	canReach := make(map[string]bool)
+	var queue []string
+	enqueue := func(n string) {
+		if n != target && !canReach[n] {
+			canReach[n] = true
+			queue = append(queue, n)
+		}
+	}
+	for _, f := range def.Incoming(target) {
+		enqueue(f.Source)
+	}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, f := range def.Incoming(n) {
+			enqueue(f.Source)
+		}
+	}
+	return canReach
 }
 
 // selectExclusiveTarget picks the target of an exclusive gateway: the first
