@@ -58,11 +58,9 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	})
 
 	sched := runtime.NewMemScheduler(fc)
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
-	r := runtime.NewRunner(cat, fc, store, jnl, out, runtime.WithScheduler(sched))
+	r := runtime.NewRunner(cat, fc, store, runtime.WithScheduler(sched))
 
 	def := timerIntermediateDef()
 	const instanceID = "timer-e2e-1"
@@ -81,7 +79,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	require.NoError(t, sched.Tick(ctx))
 
 	// After Tick, the instance should be completed.
-	final, err := store.Load(instanceID)
+	final, _, err := store.Load(ctx, instanceID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status, "instance must be StatusCompleted after timer fires and service runs")
 	assert.True(t, serviceRan, "service action must have run after timer fired")
@@ -89,7 +87,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	assert.Empty(t, final.Tokens, "no tokens remain after completion")
 
 	// Outbox recorded instance.completed.
-	evs := out.Events()
+	evs := store.Events()
 	require.NotEmpty(t, evs)
 	assert.Equal(t, "instance.completed", evs[len(evs)-1].Topic)
 }
@@ -103,12 +101,12 @@ func slaUserTaskDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			{ID: "start", Kind: model.KindStartEvent},
 			{
-				ID:          "review",
-				Kind:        model.KindUserTask,
+				ID:             "review",
+				Kind:           model.KindUserTask,
 				CandidateRoles: []string{"reviewer"},
-				SLADuration: `"30m"`,
-				SLAFlow:     "escalate",
-				SLAAction:   "notify-escalation",
+				SLADuration:    `"30m"`,
+				SLAFlow:        "escalate",
+				SLAAction:      "notify-escalation",
 			},
 			{ID: "end-normal", Kind: model.KindEndEvent},
 			{ID: "end-escalated", Kind: model.KindEndEvent},
@@ -145,12 +143,10 @@ func TestRunnerUserTaskSLAFiresUnderFakeClock(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 	sched := runtime.NewMemScheduler(fc)
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
 	r := runtime.NewRunner(
-		cat, fc, store, jnl, out,
+		cat, fc, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),
 	)
@@ -177,7 +173,7 @@ func TestRunnerUserTaskSLAFiresUnderFakeClock(t *testing.T) {
 	require.NoError(t, sched.Tick(ctx))
 
 	// After Tick, the instance must have taken the escalation path.
-	final, err := store.Load(instanceID)
+	final, _, err := store.Load(ctx, instanceID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status,
 		"instance must be StatusCompleted via the escalation path")

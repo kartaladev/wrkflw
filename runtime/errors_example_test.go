@@ -122,11 +122,9 @@ func TestSagaCompensationRollback(t *testing.T) {
 	// structurally satisfies clock.Clock (it implements Now() time.Time).
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC))
 
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
-	runner := runtime.NewRunner(cat, fakeClock, store, jnl, out)
+	runner := runtime.NewRunner(cat, fakeClock, store)
 
 	def := sagaDef()
 
@@ -187,7 +185,7 @@ func boundaryErrorDef() *model.ProcessDefinition {
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "risky"},
-			{ID: "f2", Source: "risky", Target: "end"},          // normal path
+			{ID: "f2", Source: "risky", Target: "end"},           // normal path
 			{ID: "f3", Source: "err-boundary", Target: "recover"}, // recovery path
 			{ID: "f4", Source: "recover", Target: "end-recovery"},
 		},
@@ -208,11 +206,9 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 	})
 
 	clk := clock.System()
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
-	runner := runtime.NewRunner(cat, clk, store, jnl, out)
+	runner := runtime.NewRunner(cat, clk, store)
 
 	def := boundaryErrorDef()
 
@@ -232,7 +228,7 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 		"risky-action must run first (fails), then recover-action on the boundary recovery path")
 
 	// The outbox must carry instance.completed (not instance.failed).
-	events := out.Events()
+	events := store.Events()
 	var foundCompleted bool
 	for _, e := range events {
 		if e.Topic == "instance.completed" {

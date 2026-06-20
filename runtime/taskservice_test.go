@@ -31,9 +31,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	r := runtime.NewRunner(
 		nil,
 		clk,
-		runtime.NewMemStateStore(),
-		runtime.NewMemJournal(),
-		runtime.NewMemOutbox(),
+		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -74,9 +72,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	r := runtime.NewRunner(
 		nil,
 		clk,
-		runtime.NewMemStateStore(),
-		runtime.NewMemJournal(),
-		runtime.NewMemOutbox(),
+		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -138,9 +134,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	r := runtime.NewRunner(
 		nil,
 		clk,
-		runtime.NewMemStateStore(),
-		runtime.NewMemJournal(),
-		runtime.NewMemOutbox(),
+		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -187,9 +181,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 	r := runtime.NewRunner(
 		nil,
 		clk,
-		runtime.NewMemStateStore(),
-		runtime.NewMemJournal(),
-		runtime.NewMemOutbox(),
+		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 

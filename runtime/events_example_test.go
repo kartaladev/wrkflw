@@ -84,9 +84,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
 	def := signalCatchDef("approved")
 
@@ -99,7 +97,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 		return err
 	})
 
-	r = runtime.NewRunner(nil, fc, store, jnl, out, runtime.WithSignalBus(bus))
+	r = runtime.NewRunner(nil, fc, store, runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := r.Run(ctx, def, "inst-1", nil)
@@ -120,11 +118,11 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	err = bus.Publish(ctx, "approved", map[string]any{"decision": "yes"})
 	require.NoError(t, err)
 
-	final1, err := store.Load("inst-1")
+	final1, _, err := store.Load(ctx, "inst-1")
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final1.Status, "inst-1 must complete")
 
-	final2, err := store.Load("inst-2")
+	final2, _, err := store.Load(ctx, "inst-2")
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final2.Status, "inst-2 must complete")
 }
@@ -148,7 +146,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	r := runtime.NewRunner(nil, clockwork.NewFakeClock(), runtime.NewMemStateStore(), runtime.NewMemJournal(), runtime.NewMemOutbox())
+	r := runtime.NewRunner(nil, clockwork.NewFakeClock(), runtime.NewMemStore())
 	// WithSignalBus intentionally omitted.
 
 	_, err := r.Run(t.Context(), def, "i1", nil)
@@ -164,9 +162,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 	sched := runtime.NewMemScheduler(fc)
 	def := eventGatewayDef()
 
@@ -178,7 +174,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 		return err
 	})
 
-	r = runtime.NewRunner(nil, fc, store, jnl, out,
+	r = runtime.NewRunner(nil, fc, store,
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -192,7 +188,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	fc.Advance(1*time.Hour + 1*time.Second)
 	require.NoError(t, sched.Tick(ctx))
 
-	final, err := store.Load(instanceID)
+	final, _, err := store.Load(ctx, instanceID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status, "timer branch must complete")
 	assert.Empty(t, final.Tokens, "no tokens remain")
@@ -211,9 +207,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 	sched := runtime.NewMemScheduler(fc)
 	def := eventGatewayDef()
 
@@ -223,7 +217,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 		return err
 	})
 
-	r = runtime.NewRunner(nil, fc, store, jnl, out,
+	r = runtime.NewRunner(nil, fc, store,
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -240,7 +234,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	err = bus.Publish(ctx, "approved", map[string]any{"from": "bus"})
 	require.NoError(t, err)
 
-	final, err := store.Load(instanceID)
+	final, _, err := store.Load(ctx, instanceID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status, "signal branch must complete")
 	assert.Empty(t, final.Tokens, "no tokens remain")
@@ -250,7 +244,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	require.NoError(t, sched.Tick(ctx))
 
 	// State must still be completed (not re-driven by a ghost timer).
-	stillFinal, err := store.Load(instanceID)
+	stillFinal, _, err := store.Load(ctx, instanceID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, stillFinal.Status, "must still be completed after Tick")
 }
@@ -261,12 +255,10 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	ctx := t.Context()
 	fc := clockwork.NewFakeClock()
 
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 	def := messageCatchDef("order-shipped")
 
-	r := runtime.NewRunner(nil, fc, store, jnl, out)
+	r := runtime.NewRunner(nil, fc, store)
 
 	// Start two instances with different orderId values.
 	_, err := r.Run(ctx, def, "order-100", map[string]any{"orderId": "100"})
@@ -280,11 +272,11 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	require.NoError(t, err)
 
 	// order-100 must complete; order-200 must still be running.
-	final100, err := store.Load("order-100")
+	final100, _, err := store.Load(ctx, "order-100")
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final100.Status, "order-100 must complete")
 
-	final200, err := store.Load("order-200")
+	final200, _, err := store.Load(ctx, "order-200")
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, final200.Status, "order-200 must remain running")
 }

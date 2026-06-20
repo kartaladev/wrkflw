@@ -51,14 +51,12 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 	clk := clock.System()
-	jnl := runtime.NewMemJournal()
+	store := runtime.NewMemStore()
 
 	r := runtime.NewRunner(
 		nil, // no service actions needed for this process
 		clk,
-		runtime.NewMemStateStore(),
-		jnl,
-		runtime.NewMemOutbox(),
+		store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -115,7 +113,8 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 
 	// Journal: StartInstance + HumanClaimed + HumanCompleted (Run's StartInstance
 	// plus two Deliver calls).
-	entries := jnl.Entries(instanceID)
+	entries, err := store.Entries(ctx, instanceID)
+	require.NoError(t, err)
 	require.Len(t, entries, 3, "journal must record StartInstance + HumanClaimed + HumanCompleted")
 	assert.IsType(t, engine.StartInstance{}, entries[0])
 	assert.IsType(t, engine.HumanClaimed{}, entries[1])
@@ -145,7 +144,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
-	r := runtime.NewRunner(nil, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), runtime.NewMemOutbox())
+	r := runtime.NewRunner(nil, clock.System(), runtime.NewMemStore())
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
 	_, err := r.Deliver(ctx, approvalDef(), "non-existent", trg)
