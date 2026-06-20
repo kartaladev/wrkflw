@@ -65,6 +65,12 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 	assert.Empty(t, final.Tokens)
 	assert.Equal(t, true, final.Variables["a"])
 	assert.Equal(t, true, final.Variables["b"])
+
+	// Every NodeVisit opened during the fork/join must be properly closed: no
+	// visit should have a nil LeftAt (which would indicate a dangling open visit).
+	for _, v := range final.History {
+		assert.NotNilf(t, v.LeftAt, "NodeVisit for node %q (token %q) was never closed", v.NodeID, v.TokenID)
+	}
 }
 
 func TestRunnerExecutesLinearProcess(t *testing.T) {
