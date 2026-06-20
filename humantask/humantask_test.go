@@ -30,3 +30,24 @@ func TestErrTaskNotFound_IsError(t *testing.T) {
 	assert.Error(t, humantask.ErrTaskNotFound)
 	assert.Contains(t, humantask.ErrTaskNotFound.Error(), "not found")
 }
+
+// TestHumanTaskIsOpen verifies that IsOpen returns true only for Unclaimed and
+// Claimed states, and false for Completed and Cancelled.
+func TestHumanTaskIsOpen(t *testing.T) {
+	tests := []struct {
+		name     string
+		state    humantask.TaskState
+		wantOpen bool
+	}{
+		{"Unclaimed is open", humantask.Unclaimed, true},
+		{"Claimed is open", humantask.Claimed, true},
+		{"Completed is not open", humantask.Completed, false},
+		{"Cancelled is not open", humantask.Cancelled, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ht := humantask.HumanTask{State: tc.state}
+			assert.Equal(t, tc.wantOpen, ht.IsOpen())
+		})
+	}
+}

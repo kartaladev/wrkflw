@@ -148,6 +148,25 @@ func (s *InstanceState) cancelTimersByTaskToken(taskToken, excludeTimerID string
 	return toCancel
 }
 
+// cancelAllTimers returns a CancelTimer command for every outstanding timer
+// record in s.Timers (in deterministic slice order) and empties s.Timers.
+// Call this on any terminal-failure path to avoid orphaned timers in the
+// scheduler.
+//
+// NOTE: A comprehensive sweep across ALL terminal transitions (not just
+// ActionFailed) is deferred to the errors/compensation plan (Plan 8).
+func (s *InstanceState) cancelAllTimers() []Command {
+	if len(s.Timers) == 0 {
+		return nil
+	}
+	cmds := make([]Command, 0, len(s.Timers))
+	for _, tr := range s.Timers {
+		cmds = append(cmds, CancelTimer{TimerID: tr.TimerID})
+	}
+	s.Timers = nil
+	return cmds
+}
+
 // Clone returns a deep copy of the InstanceState. All slice and map fields are
 // independently allocated so that mutations to the returned state do not affect
 // the receiver (and vice versa).

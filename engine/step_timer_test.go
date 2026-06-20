@@ -473,6 +473,14 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	assert.Equal(t, engine.TimerInWait, nextST1.Kind)
 	assert.Equal(t, fire1At.Add(time.Hour), nextST1.FireAt, "next reminder must fire at firedAt+1h")
 	assert.NotEqual(t, reminder1ID, nextST1.TimerID, "re-scheduled reminder must have a new timer id")
+	// Guard against double-schedule regression: exactly ONE ScheduleTimer(InWait) per fire.
+	var inWaitCount1 int
+	for _, c := range r2.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
+			inWaitCount1++
+		}
+	}
+	assert.Equal(t, 1, inWaitCount1, "exactly one ScheduleTimer(InWait) must be emitted per reminder fire; got %d", inWaitCount1)
 
 	// Token must NOT move — still parked at userTask.
 	require.Len(t, r2.State.Tokens, 1)
@@ -513,6 +521,14 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	assert.Equal(t, fire2At.Add(time.Hour), nextST2.FireAt, "third reminder must fire at fire2At+1h")
 	assert.NotEqual(t, reminder1ID, nextST2.TimerID, "third reminder id must differ from first")
 	assert.NotEqual(t, reminder2ID, nextST2.TimerID, "third reminder id must differ from second")
+	// Guard against double-schedule regression: exactly ONE ScheduleTimer(InWait) per fire.
+	var inWaitCount2 int
+	for _, c := range r3.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
+			inWaitCount2++
+		}
+	}
+	assert.Equal(t, 1, inWaitCount2, "exactly one ScheduleTimer(InWait) must be emitted per reminder fire; got %d", inWaitCount2)
 
 	// ---- Step 4: complete the task → CancelTimer for outstanding reminder ----
 	reminder3ID := nextST2.TimerID
@@ -544,6 +560,75 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	require.NoError(t, err, "late reminder TimerFired must not error")
 	assert.Empty(t, r5.Commands, "late reminder TimerFired must emit no commands; got: %v", r5.Commands)
 	assert.Equal(t, engine.StatusCompleted, r5.State.Status, "instance must remain completed after late reminder")
+}
+
+// TestInWaitReminderNoActionStillReschedules verifies that when ReminderEvery is
+// set but ReminderAction is empty, the reminder timer still reschedules (emits a
+// fresh ScheduleTimer{TimerInWait}) but does NOT emit an InvokeAction.
+// This proves the action field is genuinely optional.
+func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
+	// Use a definition with ReminderEvery but no ReminderAction.
+	def := &model.ProcessDefinition{
+		ID:      "p-reminder-noaction",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{
+				ID:            "userTask",
+				Kind:          model.KindUserTask,
+				CandidateRoles: []string{"manager"},
+				ReminderEvery: `"1h"`,
+				// ReminderAction intentionally empty
+			},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "userTask"},
+			{ID: "f2", Source: "userTask", Target: "end"},
+		},
+	}
+
+	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Start → parked at userTask.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Find the reminder timer ID from entry commands.
+	var reminderID string
+	for _, c := range r1.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
+			reminderID = st.TimerID
+		}
+	}
+	require.NotEmpty(t, reminderID, "ScheduleTimer(InWait) must be emitted on entry")
+
+	// Fire the reminder.
+	fire1At := startAt.Add(time.Hour)
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(fire1At, reminderID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Must NOT emit InvokeAction (no ReminderAction configured).
+	for _, c := range r2.Commands {
+		if _, ok := c.(engine.InvokeAction); ok {
+			t.Errorf("InvokeAction must NOT be emitted when ReminderAction is empty; got: %v", c)
+		}
+	}
+
+	// Must emit exactly one ScheduleTimer(InWait) for the next reminder.
+	var nextReminderST engine.ScheduleTimer
+	var foundNextST bool
+	for _, c := range r2.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
+			nextReminderST = st
+			foundNextST = true
+		}
+	}
+	require.True(t, foundNextST, "ScheduleTimer(InWait) must be emitted even when ReminderAction is empty; got: %v", r2.Commands)
+	assert.Equal(t, fire1At.Add(time.Hour), nextReminderST.FireAt, "next reminder fires at firedAt+interval")
+	assert.NotEqual(t, reminderID, nextReminderST.TimerID, "re-scheduled reminder must have a new timer id")
 }
 
 // TestInWaitReminderCancelledBySLA verifies that when the SLA fires on a user task
@@ -605,4 +690,111 @@ func TestInWaitReminderCancelledBySLA(t *testing.T) {
 
 	// Instance completes via the escalate path.
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
+}
+
+// TestActionFailedCancelsOutstandingTimers verifies that when ActionFailed
+// transitions the instance to StatusFailed, every outstanding timer record in
+// s.Timers receives a CancelTimer command and s.Timers is cleared.
+//
+// Scenario: a process has a user-task node (with an SLA timer outstanding) AND
+// a service-task node awaiting a command.  ActionFailed on the service-task
+// command must emit FailInstance AND a CancelTimer for the SLA timer that was
+// guarding the user task.
+func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
+	// parallelSLADef returns a process that:
+	//   Start → parallelFork → userTask (SLA 3h, slaFlow:"esc", slaAction:"notify")
+	//                       → serviceTask("work")
+	//   Both userTask and serviceTask converge at a join → end
+	//   We only need the fork: two tokens are live at the same time.
+	//
+	// For simplicity, use a definition where both branches lead to an end event
+	// directly (no join) — the important invariant is that two tokens exist
+	// simultaneously: one at userTask (WaitingCommand on taskToken, SLA timer in
+	// s.Timers) and one at serviceTask (WaitingCommand on commandID).
+	def := &model.ProcessDefinition{
+		ID:      "p-parallel-sla",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "fork", Kind: model.KindParallelGateway},
+			{
+				ID:             "userTask",
+				Kind:           model.KindUserTask,
+				CandidateRoles: []string{"manager"},
+				SLADuration:    `"3h"`,
+				SLAFlow:        "esc",
+				SLAAction:      "notify",
+			},
+			{ID: "svcTask", Kind: model.KindServiceTask, Action: "work"},
+			{ID: "endA", Kind: model.KindEndEvent},
+			{ID: "endB", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "fork"},
+			{ID: "f2", Source: "fork", Target: "userTask"},
+			{ID: "f3", Source: "fork", Target: "svcTask"},
+			{ID: "f4", Source: "userTask", Target: "endA"},
+			{ID: "esc", Source: "userTask", Target: "endA"},
+			{ID: "f5", Source: "svcTask", Target: "endB"},
+		},
+	}
+
+	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	// Start: drives into parallelFork → both branches resolve.
+	// userTask parks with AwaitHuman + ScheduleTimer(SLA).
+	// svcTask parks with InvokeAction.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Locate the SLA timer ID and the service-task command ID.
+	var slaTimerID string
+	var svcCmdID string
+	for _, c := range r1.Commands {
+		switch v := c.(type) {
+		case engine.ScheduleTimer:
+			if v.Kind == engine.TimerSLA {
+				slaTimerID = v.TimerID
+			}
+		case engine.InvokeAction:
+			svcCmdID = v.CommandID
+		}
+	}
+	require.NotEmpty(t, slaTimerID, "SLA timer must be scheduled after Start")
+	require.NotEmpty(t, svcCmdID, "InvokeAction for service task must be emitted after Start")
+
+	// Verify the SLA timer is in s.Timers.
+	require.Len(t, r1.State.Timers, 1, "exactly one timer record (SLA) must be in s.Timers")
+	assert.Equal(t, slaTimerID, r1.State.Timers[0].TimerID)
+
+	// Now feed ActionFailed for the service-task command.
+	failAt := startAt.Add(30 * time.Minute)
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionFailed(failAt, svcCmdID, "work exploded", false), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Instance must be StatusFailed.
+	assert.Equal(t, engine.StatusFailed, r2.State.Status)
+	assert.NotNil(t, r2.State.EndedAt)
+
+	// Commands must include FailInstance AND CancelTimer for the outstanding SLA timer.
+	var foundFail bool
+	var foundCancelSLA bool
+	for _, c := range r2.Commands {
+		switch v := c.(type) {
+		case engine.FailInstance:
+			foundFail = true
+		case engine.CancelTimer:
+			if v.TimerID == slaTimerID {
+				foundCancelSLA = true
+			}
+		}
+	}
+	assert.True(t, foundFail, "ActionFailed must emit FailInstance; got: %v", r2.Commands)
+	assert.True(t, foundCancelSLA, "ActionFailed must emit CancelTimer for outstanding SLA timer (id=%s); got: %v", slaTimerID, r2.Commands)
+
+	// s.Timers must be cleared after ActionFailed.
+	assert.Empty(t, r2.State.Timers, "s.Timers must be empty after ActionFailed cancels all outstanding timers")
 }

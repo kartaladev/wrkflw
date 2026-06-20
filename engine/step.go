@@ -28,6 +28,10 @@ const (
 
 type StepOptions struct{ Mode StepMode }
 
+// StepResult is the output of a single [Step] call. Commands is the ordered
+// list of side effects the runtime must perform. On a no-op step (e.g. a stale
+// TimerFired with no matching token) Commands may be nil; callers should use
+// len(Commands) rather than Commands != nil to check for work to do.
 type StepResult struct {
 	State    InstanceState
 	Commands []Command
@@ -80,7 +84,9 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		s.Status = StatusFailed
 		ended := t.OccurredAt()
 		s.EndedAt = &ended
-		return StepResult{State: s, Commands: []Command{FailInstance{Err: t.Err}}}, nil
+		cmds := []Command{FailInstance{Err: t.Err}}
+		cmds = append(cmds, s.cancelAllTimers()...)
+		return StepResult{State: s, Commands: cmds}, nil
 
 	case HumanClaimed:
 		task := s.TaskByToken(t.TaskToken)
@@ -101,7 +107,10 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{State: s, Commands: []Command{UpdateTask{Task: *task}}}, nil
 
 	case TimerFired:
-		// Look up the timer record first; this handles both intermediate and SLA timers.
+		// s.Timers holds only SLA (TimerSLA) and in-wait/reminder (TimerInWait)
+		// records. Intermediate timers (TimerIntermediate) are never appended to
+		// s.Timers; for those, the token parks on the TimerID as its AwaitCommand,
+		// so they route via the tokenAwaiting path below.
 		rec := s.timerByID(t.TimerID)
 		if rec != nil {
 			switch rec.Kind {
@@ -109,10 +118,6 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				return handleSLAFired(def, &s, *rec, t.OccurredAt())
 			case TimerInWait:
 				return handleReminderFired(def, &s, *rec, t.OccurredAt())
-			default:
-				// For intermediate timers recorded here, fall through to the
-				// tokenAwaiting path which is still valid because
-				// intermediate-timer tokens park on the TimerID as their AwaitCommand.
 			}
 		}
 
@@ -639,10 +644,11 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 	}
 
 	// If the task has already been completed or cancelled, treat as no-op.
-	// Fix C: treat both Completed and Cancelled as "already resolved" so a
-	// duplicate SLA fire after cancellation is also a clean no-op.
+	// task.IsOpen() returns true only for Unclaimed or Claimed states; both
+	// Completed and Cancelled are "already resolved", including a duplicate SLA
+	// fire after cancellation.
 	task := s.TaskByToken(rec.TaskToken)
-	if task != nil && task.State != humantask.Unclaimed && task.State != humantask.Claimed {
+	if task != nil && !task.IsOpen() {
 		s.removeTimer(rec.TimerID)
 		return StepResult{State: *s, Commands: nil}, nil
 	}
@@ -733,9 +739,11 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
-	// If the task is already resolved (Completed or Cancelled), stale no-op.
+	// If the task is nil (already resolved/advanced) or no longer open
+	// (Completed or Cancelled), the reminder is stale — clean no-op, remove
+	// the stale record. A nil task means no open task: treat as not-open.
 	task := s.TaskByToken(rec.TaskToken)
-	if task != nil && task.State != humantask.Unclaimed && task.State != humantask.Claimed {
+	if task == nil || !task.IsOpen() {
 		s.removeTimer(rec.TimerID)
 		return StepResult{State: *s, Commands: nil}, nil
 	}
