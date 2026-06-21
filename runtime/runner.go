@@ -66,6 +66,10 @@ type Runner struct {
 	sched    Scheduler
 	sigbus   *SignalBus
 	defsReg  DefinitionRegistry
+	// jitter supplies the random fraction used to de-synchronize retry backoff.
+	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
+	// trigger so that engine replay remains deterministic.
+	jitter JitterSource
 
 	// msgMu guards msgWaiters.
 	msgMu sync.Mutex
@@ -126,6 +130,10 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 	return func(r *Runner) { r.defsReg = reg }
 }
 
+// WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).
+// Inject a deterministic source in tests to produce predictable fire-at times.
+func WithJitterSource(src JitterSource) Option { return func(r *Runner) { r.jitter = src } }
+
 // NewRunner constructs a Runner with the three required core ports (cat, clk,
 // store) and any optional capability bundles supplied as functional options.
 //
@@ -153,6 +161,7 @@ func NewRunner(
 		cat:        cat,
 		clk:        clk,
 		store:      store,
+		jitter:     NewJitterSource(),
 		msgWaiters: make(map[msgKey]string),
 	}
 	for _, o := range opts {
@@ -344,7 +353,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		}
 		out, err := a.Do(ctx, cmd.Input)
 		if err != nil {
-			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, err.Error(), true), nil
+			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), true, r.jitter.Fraction()), nil
 		}
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 
