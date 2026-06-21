@@ -96,6 +96,11 @@ func WithHistoryCap(n int) Option { return postgres.WithHistoryCap(n) }
 // drains with sub-poll-interval latency (ADR-0022). Opt-in; default off.
 func WithOutboxNotify() Option { return postgres.WithOutboxNotify() }
 
+// WithListenNotify makes the relay LISTEN on wrkflw_outbox and drain on each
+// NOTIFY (emitted by a Store configured with WithOutboxNotify), keeping the poll
+// interval as a fallback (ADR-0022). Opt-in; default off.
+func WithListenNotify() RelayOption { return postgres.WithListenNotify() }
+
 // RelayOption configures a Relay (alias of postgres.RelayOption).
 type RelayOption = postgres.RelayOption
 

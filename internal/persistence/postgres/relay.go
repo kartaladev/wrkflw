@@ -49,6 +49,7 @@ type Relay struct {
 	maxDelivery  int
 	backoffBase  time.Duration
 	backoffMax   time.Duration
+	listen       bool // wake the poll loop on NOTIFY wrkflw_outbox (ADR-0022)
 
 	// staged telemetry option values; assembled into tel after all RelayOptions
 	// have been applied in NewRelay.
@@ -99,6 +100,13 @@ func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
 		}
 	}
 }
+
+// WithListenNotify makes Run LISTEN on wrkflw_outbox (on a dedicated pool
+// connection) and drain immediately when a Store with WithOutboxNotify announces
+// new events, instead of waiting for the next poll tick. The poll interval stays
+// as a fallback for missed notifications, restarts, and multi-worker fan-out
+// (ADR-0022). Default: off (pure polling).
+func WithListenNotify() RelayOption { return func(r *Relay) { r.listen = true } }
 
 // WithRelayLogger sets the structured logger used by the relay for drain logs.
 // Default: slog.Default().
@@ -155,8 +163,73 @@ func filterNilOpts(opts ...observability.Option) []observability.Option {
 	return out
 }
 
+// drainUntilEmpty repeatedly drains batches until DrainOnce reports an empty
+// batch (coalescing a burst of notifications into one sweep) or an error.
+func (r *Relay) drainUntilEmpty(ctx context.Context) error {
+	for {
+		n, err := r.DrainOnce(ctx)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil
+		}
+	}
+}
+
+// listenLoop holds a dedicated pool connection, LISTENs on the outbox channel,
+// and signals wake on each notification. It reconnects on transient failures;
+// the poll fallback covers any gap. It returns when ctx is cancelled.
+func (r *Relay) listenLoop(ctx context.Context, wake chan<- struct{}) {
+	for ctx.Err() == nil {
+		conn, err := r.pool.Acquire(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			r.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "persistence: relay listen acquire failed",
+				append(r.tel.LogAttrs(ctx), slog.Any("error", err))...)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(r.pollInterval):
+			}
+			continue
+		}
+		if _, err := conn.Exec(ctx, "LISTEN "+outboxNotifyChannel); err != nil {
+			conn.Release()
+			if ctx.Err() != nil {
+				return
+			}
+			r.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "persistence: relay LISTEN failed",
+				append(r.tel.LogAttrs(ctx), slog.Any("error", err))...)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(r.pollInterval):
+			}
+			continue
+		}
+		for ctx.Err() == nil {
+			if _, err := conn.Conn().WaitForNotification(ctx); err != nil {
+				break // connection lost or ctx done; outer loop reconnects
+			}
+			select {
+			case wake <- struct{}{}:
+			default: // a wake is already pending; coalesce
+			}
+		}
+		conn.Release()
+	}
+}
+
 // Run drains the outbox on each poll interval tick until ctx is cancelled.
 // It returns ctx.Err() when the context is done.
+//
+// When WithListenNotify is set Run also starts a listenLoop goroutine that
+// LISTENs on wrkflw_outbox and signals an immediate drain on each NOTIFY.
+// The poll ticker stays as a fallback for missed notifications, restarts, and
+// multi-worker fan-out (ADR-0022).
 //
 // Publish failures no longer terminate Run: with per-row isolation they are
 // recorded against the failing row (retry / quarantine) and the loop keeps
@@ -165,8 +238,15 @@ func filterNilOpts(opts ...observability.Option) []observability.Option {
 func (r *Relay) Run(ctx context.Context) error {
 	ticker := time.NewTicker(r.pollInterval)
 	defer ticker.Stop()
-	// Attempt an immediate drain before waiting for the first tick.
-	if _, err := r.DrainOnce(ctx); err != nil {
+
+	var wake chan struct{}
+	if r.listen {
+		wake = make(chan struct{}, 1)
+		go r.listenLoop(ctx, wake)
+	}
+
+	// Attempt an immediate drain before waiting for the first signal.
+	if err := r.drainUntilEmpty(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return ctx.Err()
 		}
@@ -177,7 +257,14 @@ func (r *Relay) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if _, err := r.DrainOnce(ctx); err != nil {
+			if err := r.drainUntilEmpty(ctx); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return ctx.Err()
+				}
+				return err
+			}
+		case <-wake:
+			if err := r.drainUntilEmpty(ctx); err != nil {
 				if errors.Is(err, context.Canceled) {
 					return ctx.Err()
 				}
