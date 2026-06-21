@@ -118,6 +118,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		var topic string
 		var rawPayload []byte
 		var instanceID, dedupKey string
+		// scan order matches the SELECT projection: id, topic, payload, instance_id, dedup_key
 		if err := rows.Scan(&id, &topic, &rawPayload, &instanceID, &dedupKey); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("postgres: relay: scan: %w", err)

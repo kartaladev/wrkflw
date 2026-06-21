@@ -1,7 +1,6 @@
 package eventing_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -18,7 +17,7 @@ func (f *fakePub) Close() error                                  { return nil }
 func TestNewPublisherReturnsWorkingRuntimePublisher(t *testing.T) {
 	fp := &fakePub{}
 	var pub runtime.Publisher = eventing.NewPublisher(fp)
-	err := pub.Publish(context.Background(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), runtime.OutboxEvent{
 		Topic: "instance.completed", Payload: map[string]any{"ok": true}, DedupKey: "i:1:0",
 	})
 	require.NoError(t, err)

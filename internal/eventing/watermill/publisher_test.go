@@ -1,7 +1,6 @@
 package watermill_test
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -73,7 +72,7 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 				fp.err = errors.New("broker down")
 			}
 			pub := watermillpub.NewPublisher(fp)
-			err := pub.Publish(context.Background(), tc.event)
+			err := pub.Publish(t.Context(), tc.event)
 			tc.assert(t, fp, err)
 		})
 	}

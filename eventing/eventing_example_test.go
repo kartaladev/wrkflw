@@ -12,7 +12,7 @@ import (
 // receiving it on the subscriber side.
 func ExampleNewGoChannelPublisher() {
 	pub, sub, closer := eventing.NewGoChannelPublisher()
-	defer closer.Close()
+	defer func() { _ = closer.Close() }()
 
 	ctx := context.Background()
 	msgs, _ := sub.Subscribe(ctx, "instance.completed")
