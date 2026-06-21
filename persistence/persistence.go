@@ -288,3 +288,22 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.
 func NewCallLinkStore(pool *pgxpool.Pool) runtime.CallLinkStore {
 	return postgres.NewCallLinkStore(pool)
 }
+
+// NewCallNotifier builds a durable call-activity notifier over pool: it claims
+// terminal call links and resumes parked parents (SubInstanceCompleted/Failed)
+// idempotently. Run it in a goroutine (notifier.Run) or drain manually (DrainOnce).
+//
+// Typical wiring (simulating a process restart over the same DB pool):
+//
+//	notifier := persistence.NewCallNotifier(pool,
+//	    runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, id string, trg engine.Trigger) error {
+//	        _, err := runner.Deliver(ctx, def, id, trg)
+//	        return err
+//	    }),
+//	    reg,
+//	    clock.System(),
+//	)
+//	go notifier.Run(ctx)
+func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, clk clock.Clock, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+	return runtime.NewCallNotifier(postgres.NewCallLinkStore(pool), deliver, reg, clk, opts...)
+}
