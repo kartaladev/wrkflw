@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"sync"
@@ -10,8 +11,9 @@ import (
 
 // Compile-time checks: MemStore satisfies both ports.
 var (
-	_ Store         = (*MemStore)(nil)
-	_ JournalReader = (*MemStore)(nil)
+	_ Store          = (*MemStore)(nil)
+	_ JournalReader  = (*MemStore)(nil)
+	_ InstanceLister = (*MemStore)(nil)
 )
 
 // memInstance is the in-memory record for one instance.
@@ -95,4 +97,87 @@ func (m *MemStore) Events() []OutboxEvent {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return slices.Clone(m.events)
+}
+
+// List returns a keyset-cursor-paginated page of instance summaries.
+//
+// Items are ordered deterministically by (StartedAt DESC, InstanceID DESC).
+// When filter.Status is non-nil, only instances with that status are included.
+// Cursor encodes the last-seen (StartedAt, InstanceID); items at-or-after that
+// position (under DESC ordering) are skipped. Limit is clamped via normalizeLimit.
+func (m *MemStore) List(_ context.Context, filter InstanceFilter) (InstancePage, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// snapshot + filter
+	all := make([]InstanceSummary, 0, len(m.instances))
+	for _, inst := range m.instances {
+		st := inst.state
+		if filter.Status != nil && st.Status != *filter.Status {
+			continue
+		}
+		all = append(all, InstanceSummary{
+			InstanceID: st.InstanceID,
+			DefID:      st.DefID,
+			DefVersion: st.DefVersion,
+			Status:     st.Status,
+			StartedAt:  st.StartedAt,
+			EndedAt:    st.EndedAt,
+		})
+	}
+
+	// sort DESC by (StartedAt, InstanceID)
+	slices.SortFunc(all, func(a, b InstanceSummary) int {
+		if c := cmp.Compare(b.StartedAt.UnixNano(), a.StartedAt.UnixNano()); c != 0 {
+			return c
+		}
+		return cmp.Compare(b.InstanceID, a.InstanceID)
+	})
+
+	// apply cursor: skip items that are at or before the cursor position
+	// under DESC ordering (i.e. items with StartedAt > cursorTime, or equal
+	// time with InstanceID >= cursorID are already included; we drop those
+	// with StartedAt == cursorTime && InstanceID >= cursorID, and all items
+	// with StartedAt > cursorTime have a LATER time, i.e. come BEFORE the
+	// cursor in desc order).
+	//
+	// Keyset semantics for DESC order:
+	//   next page contains rows WHERE (started_at, instance_id) < (cursorTime, cursorID)
+	//   i.e. started_at < cursorTime, OR started_at==cursorTime AND instance_id < cursorID
+	if filter.Cursor != "" {
+		cursorTime, cursorID, err := DecodeCursor(filter.Cursor)
+		if err != nil {
+			return InstancePage{}, err
+		}
+		start := 0
+		for start < len(all) {
+			it := all[start]
+			// item is strictly less than (cursorTime, cursorID) in the keyset sense?
+			lessThan := it.StartedAt.Before(cursorTime) ||
+				(it.StartedAt.Equal(cursorTime) && it.InstanceID < cursorID)
+			if lessThan {
+				break
+			}
+			start++
+		}
+		all = all[start:]
+	}
+
+	limit := NormalizeLimit(filter.Limit)
+	hasMore := len(all) > limit
+	if hasMore {
+		all = all[:limit]
+	}
+
+	var nextCursor string
+	if hasMore && len(all) > 0 {
+		last := all[len(all)-1]
+		nextCursor = EncodeCursor(last.StartedAt, last.InstanceID)
+	}
+
+	return InstancePage{
+		Items:      all,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
 }

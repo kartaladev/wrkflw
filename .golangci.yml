@@ -3,3 +3,13 @@ run:
   timeout: 5m
 linters:
   default: standard   # errcheck, govet, ineffassign, staticcheck, unused
+issues:
+  exclude-rules:
+    # Generated protobuf/gRPC code — do not lint.
+    - path: transport/grpc/workflowpb/
+      linters:
+        - errcheck
+        - govet
+        - ineffassign
+        - staticcheck
+        - unused

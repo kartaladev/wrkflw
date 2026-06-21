@@ -160,16 +160,21 @@ the entire routing surface:
 
 ```go
 mux := http.NewServeMux()
-mux.Handle("POST /instances",                  startHandler)
-mux.Handle("GET  /instances/{id}",             getHandler)
-mux.Handle("POST /instances/{id}/signals",     signalHandler)
-mux.Handle("POST /messages",                   messageHandler)
-mux.Handle("POST /tasks/{token}/claim",        claimHandler)
-mux.Handle("POST /tasks/{token}/complete",     completeHandler)
-mux.Handle("POST /tasks/{token}/reassign",     reassignHandler)
+mux.Handle("POST /instances",              startHandler)
+mux.Handle("GET  /instances/{id}",         getHandler)
+mux.Handle("POST /instances/{id}/signals", signalHandler)
+mux.Handle("POST /messages",               messageHandler)
+mux.Handle("POST /tasks/{token}/claim",    claimHandler)
+mux.Handle("POST /tasks/{token}/complete", completeHandler)
+mux.Handle("POST /tasks/{token}/reassign", reassignHandler)
 // admin routes mounted under the admin middleware — see §6:
-mux.Handle("GET /admin/instances",             adminMW(listHandler))
+mux.Handle("GET /admin/instances",         adminMW(listHandler))
 ```
+
+Note: there is no `POST /instances/{id}/cancel` route and no unauthenticated
+`GET /instances` list — the only list endpoint is the admin-gated
+`GET /admin/instances`. `CancelInstance` is not implemented in v1; it is a
+deferred follow-up.
 
 Path variables are read with `r.PathValue("id")` / `r.PathValue("token")`. The
 routes are **root-relative**; `NewHandler` returns the `*http.ServeMux` and the

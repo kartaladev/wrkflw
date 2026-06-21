@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package wrkflw.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb;workflowpb";
+
+// WorkflowService exposes the workflow engine's Service facade over gRPC.
+// Consumers register this service on their own grpc.Server via
+// RegisterWorkflowServiceServer; this package never owns a listener.
+service WorkflowService {
+  // StartInstance creates and starts a new process instance from a definition.
+  rpc StartInstance(StartInstanceRequest) returns (InstanceResponse);
+
+  // GetInstance returns the current state of an existing instance.
+  rpc GetInstance(GetInstanceRequest) returns (InstanceResponse);
+
+  // DeliverSignal resumes a parked instance by delivering a named signal.
+  rpc DeliverSignal(DeliverSignalRequest) returns (InstanceResponse);
+
+  // DeliverMessage routes a message to the waiting instance by (name, correlation key).
+  rpc DeliverMessage(DeliverMessageRequest) returns (DeliverMessageResponse);
+
+  // ClaimTask authorizes the actor and claims a human task.
+  rpc ClaimTask(ClaimTaskRequest) returns (InstanceResponse);
+
+  // CompleteTask authorizes the actor and completes a human task.
+  rpc CompleteTask(CompleteTaskRequest) returns (InstanceResponse);
+
+  // ReassignTask authorizes the reassigner and reassigns a human task.
+  rpc ReassignTask(ReassignTaskRequest) returns (InstanceResponse);
+
+  // ListInstances returns a paginated list of instance summaries.
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+}
+
+// ---- Request messages ----
+
+message StartInstanceRequest {
+  // def_ref is the process-definition reference (e.g. "my-process:1" or alias).
+  string def_ref = 1;
+  // instance_id is the caller-supplied identifier for the new instance.
+  string instance_id = 2;
+  // vars is the initial set of process variables.
+  google.protobuf.Struct vars = 3;
+}
+
+message GetInstanceRequest {
+  string instance_id = 1;
+}
+
+message DeliverSignalRequest {
+  string instance_id = 1;
+  // signal is the name of the signal to deliver (e.g. "approved").
+  string signal = 2;
+  // payload is optional variables attached to the signal.
+  google.protobuf.Struct payload = 3;
+}
+
+message DeliverMessageRequest {
+  string def_ref = 1;
+  string name = 2;
+  string correlation_key = 3;
+  google.protobuf.Struct payload = 4;
+}
+
+message Actor {
+  string id = 1;
+  repeated string roles = 2;
+  google.protobuf.Struct attributes = 3;
+}
+
+message ClaimTaskRequest {
+  string task_token = 1;
+  Actor actor = 2;
+}
+
+message CompleteTaskRequest {
+  string task_token = 1;
+  Actor actor = 2;
+  google.protobuf.Struct output = 3;
+}
+
+message ReassignTaskRequest {
+  string task_token = 1;
+  string from = 2;
+  string to = 3;
+  Actor by = 4;
+}
+
+message ListInstancesRequest {
+  // status filters by lifecycle state. Empty string means all statuses.
+  string status = 1;
+  // limit is the page size (default 50, max 200).
+  int32 limit = 2;
+  // cursor is the opaque keyset pagination token from the previous response.
+  string cursor = 3;
+}
+
+// ---- Response messages ----
+
+// Instance is the stable gRPC projection of engine.InstanceState.
+message Instance {
+  string instance_id = 1;
+  string def_id = 2;
+  int32 def_version = 3;
+  string status = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp ended_at = 6;
+  google.protobuf.Struct variables = 7;
+}
+
+// InstanceResponse carries a single Instance result.
+message InstanceResponse {
+  Instance instance = 1;
+}
+
+// DeliverMessageResponse is the empty result of DeliverMessage.
+message DeliverMessageResponse {}
+
+// InstanceSummary is a lightweight projection for list results.
+message InstanceSummary {
+  string instance_id = 1;
+  string def_id = 2;
+  int32 def_version = 3;
+  string status = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp ended_at = 6;
+}
+
+// ListInstancesResponse is a page of instance summaries.
+message ListInstancesResponse {
+  repeated InstanceSummary items = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}

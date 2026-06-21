@@ -242,11 +242,10 @@ The engine core depends on interfaces only. The next sub-projects implement them
 
 - **Persistence** — ✅ COMPLETE, merged to `main`. See section above.
 - **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
-- **Scheduling** — ✅ COMPLETE, merged to `main`. See "Scheduling (gocron) sub-project" section below.
-- **Authorization** — ✅ COMPLETE, merged to `main`. See "Authorization (casbin) sub-project" section below.
-- **Transports** — REST `http.Handler` factories + gRPC `ServiceRegistrar` registrations the consumer
-  mounts (library-provided, never a shipped binary; ADR-0004 / CLAUDE.md).
-- **Admin monitoring** + **`ProcessInstance` response customization**.
+- **Scheduling** — ✅ COMPLETE, merged to `main`. See "Scheduling (gocron) sub-project" section above.
+- **Authorization** — ✅ COMPLETE, merged to `main`. See "Authorization (casbin) sub-project" section above.
+- **Transports** — ✅ COMPLETE, merged to `main`. See "Transports (REST/gRPC) sub-project" section below.
+- **Admin monitoring** + **`ProcessInstance` response customization** — ✅ included in the Transports sub-project (admin middleware + keyset pagination + `WithInstanceMapper` response customization).
 
 ## How to run the next sub-project (the workflow that built Plans 1–8)
 
@@ -278,3 +277,57 @@ execute, with ADRs for significant decisions, branch → SDD → merge to `main`
 - **Hard-won lesson:** the plan's example code can be wrong — **trust the test, not the plan listing**;
   observe the red state. Ground every edit against the then-current code (the engine grew a lot).
 - **gitignored scratch:** `cover.out`, `.superpowers/` (SDD briefs/reports/ledger/diffs). Don't commit them.
+
+---
+
+## Transports (REST/gRPC) sub-project — ✅ COMPLETE, merged to `main`
+
+Built on branch `feat/transports-rest-grpc` (HEAD `24a4644`). Design: spec
+`docs/specs/2026-06-21-transports-rest-grpc-design.md`, plan `docs/plans/2026-06-21-transports-rest-grpc.md`,
+ADRs 0011 (consumer-mounted transports, no shipped binary) and 0004 (public packages at module root).
+Gate: `go test -race ./...` green, `service` 86.7%, `transport/rest` 90.1%, `transport/grpc` 86.0%
+(`workflowpb` generated package excluded from bar — 0% expected), `runtime` 94.7%, lint clean (0 issues),
+no grpc/protobuf/net-http in `engine`/`model`; `service` is transport-neutral.
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `runtime/` — `InstanceLister` port | `InstanceLister` interface (`List(ctx, cursor, limit, filters) ([]InstanceSummary, nextCursor string, err)`) with keyset cursor codec (`encodeCursor`/`decodeCursor`, base64url-encoded `id:created_at` pairs). `MemStore` implements `InstanceLister` via an in-memory sorted scan; `internal/persistence/postgres` implements it with a keyset SQL query. `InstanceSummary` carries `ID`, `DefID`, `DefVersion`, `Status`, `CreatedAt`, `EndedAt`, `Variables`. | Task 1 |
+| `service/` — transport-agnostic facade | `service.New(runner, lister, reg) *Service` — eight operations: `StartInstance`, `GetInstance`, `DeliverSignal`, `DeliverMessage`, `ClaimTask`, `ReassignTask`, `CompleteTask`, `ListInstances`. Resolves `ProcessDefinition` by `DefID:DefVersion` from the registry; passes all instance ops through `runtime.Runner`. Fully usable without any transport import. Note: `CancelInstance` is NOT in v1 — it is a deferred follow-up. | Task 2 |
+| `transport/rest` — stdlib HTTP handler | `rest.NewHandler(svc, ...Option) http.Handler` — stdlib `*http.ServeMux` (no third-party router), mountable under `http.StripPrefix`. Routes: `POST /instances`, `GET /instances/{id}`, `POST /instances/{id}/signals`, `POST /messages`, `POST /tasks/{token}/claim`, `POST /tasks/{token}/complete`, `POST /tasks/{token}/reassign`. There is no `POST /instances/{id}/cancel` and no unauthenticated `GET /instances` — the only list route is `GET /admin/instances` (admin only, see Task 4). `WithInstanceMapper(fn)` customizes the `InstanceResponse` shape applied to ALL instance-returning endpoints. `WriteHTTPError(w, err)` maps sentinel errors to HTTP status codes. | Task 3 |
+| `transport/rest` — admin monitoring | `GET /admin/instances` — keyset-paginated instance list scoped to admin callers; `?status=`, `?limit=` filters; cursor-based `next_cursor` in response. `WithAdminMiddleware(mw)` installs a middleware gate on all `/admin/*` routes; default-deny (403) when no middleware is configured. Admin routes are fully separated from consumer routes so the consumer can mount them on a different sub-path or omit them. | Task 4 |
+| `transport/grpc` — gRPC service | `workflowpb` package: `.proto` at `transport/grpc/proto/workflow.proto`; committed generated `workflow.pb.go` + `workflow_grpc.pb.go` via `protoc` (no `buf` needed at build time). `RegisterWorkflowServiceServer(s grpc.ServiceRegistrar, svc *service.Service)` registers the implementation. `mapToGRPCStatus(err) error` translates sentinel errors to gRPC status codes. Tested end-to-end via `google.golang.org/grpc/interop/grpc_testing` + `bufconn` in-process dialer (no real network). | Task 5 |
+
+### Key design decisions (ADRs)
+
+- **ADR-0011** — consumer-mounted transports, no shipped binary. Both `rest.NewHandler` and
+  `RegisterWorkflowServiceServer` return/register into caller-provided server infrastructure. The
+  consumer chooses how to compose, secure, and start the server. `wrkflw` ships no `main`.
+- **ADR-0004** — public packages at module root (no `pkg/` prefix). `service/`, `transport/rest/`,
+  `transport/grpc/` are all importable directly as `github.com/zakyalvan/krtlwrkflw/service`, etc.
+
+### Deferred follow-ups (deliberate, not bugs)
+
+1. **422/FailedPrecondition for wrong-state transitions** — currently wrong-state errors (e.g. claiming
+   a completed task, cancelling a finished instance) map to 500/Internal and `codes.Internal` because
+   there is no typed wrong-state sentinel yet. Add a sentinel (e.g. `ErrWrongState`) in `service/` and
+   wire it to 422/`FailedPrecondition` in both transport layers.
+2. **`DeliverMessage` requires a `*ProcessDefinition` from the caller** — `Runner.DeliverMessage`
+   accepts a `*model.ProcessDefinition`; the `service.Service` facade currently requires the caller to
+   supply a `DefRef` (id + version) so it can resolve the definition. A cleaner API would have the
+   runner/facade look up the definition from the matched waiting instance directly. Deferred until
+   the runner's `Deliver` port is revisited.
+3. **REST deny-body Content-Type** — FIXED (pre-merge): `denyAllMiddleware` now emits a proper
+   JSON body with `Content-Type: application/json` via `writeJSON`.
+4. **Admin pagination total-count assertion** — the no-skip (first-page) assertion in the admin list
+   tests does not cover total-count (no `X-Total-Count` header or `total` field shipped). Add total-count
+   if admin UI needs it.
+5. **Streaming/watch endpoints, OpenAPI/grpc-gateway, richer admin filters** — the current surface is
+   request/response only. Server-streaming (watch for instance-state changes), an OpenAPI spec (via
+   grpc-gateway or swag), and richer admin query filters (date range, def-id filter, multi-status) are
+   follow-up features.
+6. **`ended_at` non-optional in proto** — `EndedAt` is a `google.protobuf.Timestamp` (nullable) in the
+   proto but non-optional in `InstanceSummary.EndedAt time.Time`; the gRPC mapping emits a zero-value
+   timestamp for running instances. Make `EndedAt` a `*time.Time` in `InstanceSummary` or add a separate
+   `has_ended` bool in the proto to avoid the zero-timestamp ambiguity.
