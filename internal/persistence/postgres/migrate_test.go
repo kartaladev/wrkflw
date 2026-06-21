@@ -42,3 +42,52 @@ func TestMigrateFailsOnClosedPool(t *testing.T) {
 	err := pg.Migrate(t.Context(), pool)
 	require.Error(t, err, "Migrate on a closed pool must return an error")
 }
+
+// TestMigration0003AddsDLQAndDedup verifies that migration 0003 adds the DLQ
+// columns to wrkflw_outbox and creates the wrkflw_processed_message table.
+func TestMigration0003AddsDLQAndDedup(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	// Assert new columns exist on wrkflw_outbox.
+	dlqColumns := []string{"status", "retry_count", "next_attempt_at", "last_error"}
+	for _, col := range dlqColumns {
+		var exists bool
+		err := pool.QueryRow(t.Context(),
+			`SELECT EXISTS (
+				SELECT FROM information_schema.columns
+				WHERE table_name = 'wrkflw_outbox' AND column_name = $1
+			)`, col,
+		).Scan(&exists)
+		require.NoError(t, err)
+		require.True(t, exists, "column wrkflw_outbox.%s should exist after migration 0003", col)
+	}
+
+	// Assert wrkflw_processed_message table exists.
+	var tableExists bool
+	err := pool.QueryRow(t.Context(),
+		`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'wrkflw_processed_message')`,
+	).Scan(&tableExists)
+	require.NoError(t, err)
+	require.True(t, tableExists, "table wrkflw_processed_message should exist after migration 0003")
+
+	// Assert the new indexes exist.
+	indexes := []string{"wrkflw_outbox_claim_idx", "wrkflw_outbox_dead_idx"}
+	for _, idx := range indexes {
+		var idxExists bool
+		err := pool.QueryRow(t.Context(),
+			`SELECT EXISTS (SELECT FROM pg_indexes WHERE indexname = $1)`, idx,
+		).Scan(&idxExists)
+		require.NoError(t, err)
+		require.True(t, idxExists, "index %s should exist after migration 0003", idx)
+	}
+
+	// Assert the old unpublished index no longer exists.
+	var oldIdxExists bool
+	err = pool.QueryRow(t.Context(),
+		`SELECT EXISTS (SELECT FROM pg_indexes WHERE indexname = 'wrkflw_outbox_unpublished_idx')`,
+	).Scan(&oldIdxExists)
+	require.NoError(t, err)
+	require.False(t, oldIdxExists, "index wrkflw_outbox_unpublished_idx should be dropped after migration 0003")
+}
