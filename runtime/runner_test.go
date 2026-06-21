@@ -3,10 +3,14 @@ package runtime_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
@@ -223,6 +227,96 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 	// Both ScheduleTimer and CancelTimer use the same "no Scheduler configured" pattern.
 	assert.Contains(t, err.Error(), "no Scheduler configured",
 		"ScheduleTimer/CancelTimer nil-guard must mention 'no Scheduler configured'")
+}
+
+// onceConflictStore wraps *runtime.MemStore and injects a single ErrConcurrentUpdate
+// on the first Commit call whose step.Trigger is an engine.TimerFired. All other
+// calls (before or after the triggered conflict) delegate to the inner store.
+//
+// This lets TestTimerFireRetriesOnCASConflict drive a deterministic CAS conflict on
+// the timer-fire path without any concurrency or timing gymnastics.
+type onceConflictStore struct {
+	inner     *runtime.MemStore
+	triggered atomic.Bool
+}
+
+func (s *onceConflictStore) Create(ctx context.Context, step runtime.AppliedStep) (runtime.Token, error) {
+	return s.inner.Create(ctx, step)
+}
+
+func (s *onceConflictStore) Load(ctx context.Context, id string) (engine.InstanceState, runtime.Token, error) {
+	return s.inner.Load(ctx, id)
+}
+
+func (s *onceConflictStore) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
+	if _, ok := step.Trigger.(engine.TimerFired); ok && s.triggered.CompareAndSwap(false, true) {
+		// First TimerFired Commit → simulate CAS conflict.
+		return 0, runtime.ErrConcurrentUpdate
+	}
+	return s.inner.Commit(ctx, expected, step)
+}
+
+// conflictTimerDef returns: start → timer-catch("10s") → end.
+// No service tasks; the timer catch is the only external wait.
+func conflictTimerDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "conflict-timer",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "wait10s", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"10s"`},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "wait10s"},
+			{ID: "f2", Source: "wait10s", Target: "end"},
+		},
+	}
+}
+
+// TestTimerFireRetriesOnCASConflict verifies that the runner retries Deliver on
+// ErrConcurrentUpdate during the timer-fire callback, so a single CAS conflict
+// never silently drops the TimerFired trigger.
+//
+// Without the bounded-retry fix the runner logs the error and returns, leaving the
+// instance parked forever (StatusRunning). With the fix the instance reaches
+// StatusCompleted after the retry re-delivers the trigger.
+func TestTimerFireRetriesOnCASConflict(t *testing.T) {
+	ctx := t.Context()
+
+	startAt := time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC)
+	fc := clockwork.NewFakeClockAt(startAt)
+
+	inner := runtime.NewMemStore()
+	store := &onceConflictStore{inner: inner}
+	sched := runtime.NewMemScheduler(fc)
+
+	r := runtime.NewRunner(nil, fc, store, runtime.WithScheduler(sched))
+
+	def := conflictTimerDef()
+	const instanceID = "conflict-timer-1"
+
+	// Run → parks at the intermediate-catch timer node.
+	parked, err := r.Run(ctx, def, instanceID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, parked.Status,
+		"instance must park at the timer node")
+
+	// Advance clock past the 10-second FireAt and Tick → fires the timer callback.
+	// The callback calls Deliver → Commit, which returns ErrConcurrentUpdate on the
+	// first attempt (injected by onceConflictStore). The retry loop must succeed on
+	// the second attempt.
+	fc.Advance(11 * time.Second)
+	require.NoError(t, sched.Tick(ctx))
+
+	// Assert the instance completed (not parked) — proves the retry re-delivered.
+	final, _, err := inner.Load(ctx, instanceID)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, final.Status,
+		"instance must reach StatusCompleted after retry on CAS conflict")
+	assert.Empty(t, final.Tokens, "no tokens remain after completion")
+	// Self-certifying: confirm the CAS-conflict injection path was actually taken.
+	assert.True(t, store.triggered.Load(), "onceConflictStore must have injected a CAS conflict")
 }
 
 // TestDeliverLoopPropagatesConcurrentUpdate verifies that when the Store's Create
