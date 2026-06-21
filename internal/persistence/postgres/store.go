@@ -120,6 +120,12 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 		return 0, err
 	}
 
+	if step.NewCallLink != nil {
+		if err := insertCallLink(ctx, tx, *step.NewCallLink, now); err != nil {
+			return 0, mapConflict(err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("postgres: create: commit: %w", err)
 	}
@@ -201,6 +207,12 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		return 0, mapConflict(err)
 	}
 
+	if step.CallOutcome != nil {
+		if err := flipCallLink(ctx, tx, step.State.InstanceID, *step.CallOutcome, now); err != nil {
+			return 0, mapConflict(err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return 0, mapConflict(fmt.Errorf("postgres: commit: %w", err))
 	}
@@ -280,4 +292,68 @@ func mapConflict(err error) error {
 		return runtime.ErrConcurrentUpdate
 	}
 	return err
+}
+
+// insertCallLink writes a new wrkflw_call_links row with status='running' inside
+// the given transaction. It is called during Store.Create when the applied step
+// carries a NewCallLink — the insert is atomic with the child instance INSERT
+// (ADR-0025 crash-safety seam).
+func insertCallLink(ctx context.Context, db DBTX, link runtime.CallLink, createdAt time.Time) error {
+	if _, err := db.Exec(ctx,
+		`INSERT INTO wrkflw_call_links
+		   (child_instance_id, parent_instance_id, parent_command_id, parent_def_id, parent_def_version, depth, status, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,'running',$7)`,
+		link.ChildInstanceID,
+		link.ParentInstanceID,
+		link.ParentCommandID,
+		link.ParentDefID,
+		link.ParentDefVersion,
+		link.Depth,
+		createdAt,
+	); err != nil {
+		return fmt.Errorf("postgres: create: call link: %w", err)
+	}
+	return nil
+}
+
+// flipCallLink updates the wrkflw_call_links row for childInstanceID to the
+// terminal status implied by outcome (completed or failed) inside the given
+// transaction. It is called during Store.Commit when the applied step carries a
+// CallOutcome — the flip is atomic with the snapshot UPDATE (ADR-0025).
+//
+// For a root instance (no link row) the UPDATE affects zero rows, which is a
+// clean no-op; the caller must NOT treat zero rows as an error.
+func flipCallLink(ctx context.Context, db DBTX, childInstanceID string, outcome runtime.CallOutcome, updatedAt time.Time) error {
+	status := "failed"
+	if outcome.Completed {
+		status = "completed"
+	}
+
+	var outputJSON []byte
+	if outcome.Completed && len(outcome.Output) > 0 {
+		b, err := json.Marshal(outcome.Output)
+		if err != nil {
+			return fmt.Errorf("postgres: commit: call link: marshal output: %w", err)
+		}
+		outputJSON = b
+	}
+
+	var errText *string
+	if !outcome.Completed && outcome.Err != "" {
+		errText = &outcome.Err
+	}
+
+	if _, err := db.Exec(ctx,
+		`UPDATE wrkflw_call_links
+		    SET status = $2, output = $3, error = $4
+		  WHERE child_instance_id = $1`,
+		childInstanceID,
+		status,
+		outputJSON,
+		errText,
+	); err != nil {
+		return fmt.Errorf("postgres: commit: call link: %w", err)
+	}
+	// Zero rows affected = root instance (no link row) — clean no-op, not an error.
+	return nil
 }
