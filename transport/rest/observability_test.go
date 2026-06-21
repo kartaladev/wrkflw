@@ -55,7 +55,7 @@ func TestRESTRequestSpanAttributes(t *testing.T) {
 		path       string
 		body       string
 		wantStatus int
-		wantTarget string
+		assert     func(t *testing.T, spans []sdktrace.ReadOnlySpan)
 	}
 
 	cases := []testCase{
@@ -65,7 +65,34 @@ func TestRESTRequestSpanAttributes(t *testing.T) {
 			path:       "/instances",
 			body:       `{"def_ref":"greeting","instance_id":"attr-test-1"}`,
 			wantStatus: http.StatusCreated,
-			wantTarget: "/instances",
+			assert: func(t *testing.T, spans []sdktrace.ReadOnlySpan) {
+				t.Helper()
+				var found bool
+				var gotMethod, gotTarget string
+				for _, s := range spans {
+					if strings.HasPrefix(s.Name(), "wrkflw.rest") {
+						found = true
+						for _, attr := range s.Attributes() {
+							switch string(attr.Key) {
+							case "http.method":
+								gotMethod = attr.Value.AsString()
+							case "http.target":
+								gotTarget = attr.Value.AsString()
+							}
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("expected a wrkflw.rest span; got %d spans: %v",
+						len(spans), spanNames(spans))
+				}
+				if gotMethod != http.MethodPost {
+					t.Errorf("http.method attribute = %q, want %q", gotMethod, http.MethodPost)
+				}
+				if gotTarget != "/instances" {
+					t.Errorf("http.target attribute = %q, want %q", gotTarget, "/instances")
+				}
+			},
 		},
 		{
 			name:       "GET /instances/{id} has span with correct attributes",
@@ -73,7 +100,34 @@ func TestRESTRequestSpanAttributes(t *testing.T) {
 			path:       "/instances/get-attr-1",
 			body:       "",
 			wantStatus: http.StatusNotFound,
-			wantTarget: "/instances/get-attr-1",
+			assert: func(t *testing.T, spans []sdktrace.ReadOnlySpan) {
+				t.Helper()
+				var found bool
+				var gotMethod, gotTarget string
+				for _, s := range spans {
+					if strings.HasPrefix(s.Name(), "wrkflw.rest") {
+						found = true
+						for _, attr := range s.Attributes() {
+							switch string(attr.Key) {
+							case "http.method":
+								gotMethod = attr.Value.AsString()
+							case "http.target":
+								gotTarget = attr.Value.AsString()
+							}
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("expected a wrkflw.rest span; got %d spans: %v",
+						len(spans), spanNames(spans))
+				}
+				if gotMethod != http.MethodGet {
+					t.Errorf("http.method attribute = %q, want %q", gotMethod, http.MethodGet)
+				}
+				if gotTarget != "/instances/get-attr-1" {
+					t.Errorf("http.target attribute = %q, want %q", gotTarget, "/instances/get-attr-1")
+				}
+			},
 		},
 	}
 
@@ -86,12 +140,7 @@ func TestRESTRequestSpanAttributes(t *testing.T) {
 			tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
 			h := rest.NewHandler(svc, rest.WithTracerProvider(tp))
 
-			var bodyReader *strings.Reader
-			if tc.body != "" {
-				bodyReader = strings.NewReader(tc.body)
-			} else {
-				bodyReader = strings.NewReader("")
-			}
+			bodyReader := strings.NewReader(tc.body)
 			req := httptest.NewRequest(tc.method, tc.path, bodyReader)
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
@@ -101,31 +150,7 @@ func TestRESTRequestSpanAttributes(t *testing.T) {
 				t.Fatalf("want %d, got %d — body: %s", tc.wantStatus, rec.Code, rec.Body.String())
 			}
 
-			var found bool
-			var gotMethod, gotTarget string
-			for _, s := range sr.Ended() {
-				if strings.HasPrefix(s.Name(), "wrkflw.rest") {
-					found = true
-					for _, attr := range s.Attributes() {
-						switch string(attr.Key) {
-						case "http.method":
-							gotMethod = attr.Value.AsString()
-						case "http.target":
-							gotTarget = attr.Value.AsString()
-						}
-					}
-				}
-			}
-			if !found {
-				t.Fatalf("expected a wrkflw.rest span; got %d spans: %v",
-					len(sr.Ended()), spanNames(sr.Ended()))
-			}
-			if gotMethod != tc.method {
-				t.Errorf("http.method attribute = %q, want %q", gotMethod, tc.method)
-			}
-			if gotTarget != tc.wantTarget {
-				t.Errorf("http.target attribute = %q, want %q", gotTarget, tc.wantTarget)
-			}
+			tc.assert(t, sr.Ended())
 		})
 	}
 }
