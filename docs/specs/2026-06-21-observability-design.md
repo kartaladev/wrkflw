@@ -215,8 +215,9 @@ runtime's `perform` path — never from inside the engine. `instances_active` us
   labels.
 - **Logs:** a capturing `slog.Handler` (records `slog.Record`s); assert level, message, and the
   presence of standard keys incl. `trace_id` when a span is active.
-- **Purity guard:** extend the existing vendor-isolation test so `engine/` and `model/` import **no**
-  `go.opentelemetry.io/...` package (the same style of guard used for watermill/casbin/gocron).
+- **Purity guard:** add a new import-guard test (none exists today; prior tracks verified purity by
+  hand) that parses every non-test `.go` file in `engine/` and `model/` and asserts **none** import a
+  `go.opentelemetry.io/...` package. This becomes the regression net for the core's purity.
 - Coverage ≥ 85% on every touched package; `go test -race ./...` green; `golangci-lint run ./...`
   clean. (Run the Postgres package with limited container parallelism — `-p 1` — per the resilience
   track's note.)
