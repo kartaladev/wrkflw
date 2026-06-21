@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 
@@ -384,6 +385,11 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			Candidates:  candidateIDs,
 			State:       humantask.Unclaimed,
 			CreatedAt:   r.clk.Now(),
+			// Snapshot the process variables so attribute-based eligibility predicates
+			// that reference data variables (e.g. vars["region"] == "EU") are
+			// deterministically evaluated against the state at task-creation time.
+			// maps.Clone returns nil when st.Variables is nil, which is safe.
+			Vars: maps.Clone(st.Variables),
 		}
 		// Copy NodeID from the in-state task record if present.
 		if t := st.TaskByToken(cmd.TaskToken); t != nil {

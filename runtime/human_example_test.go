@@ -151,3 +151,95 @@ func TestDeliverLoadError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runtime: deliver: load:")
 }
+
+// TestRunnerSnapshotsVarsIntoHumanTask verifies that the runner, when it performs
+// an AwaitHuman command, copies the current process variables into
+// HumanTask.Vars as a defensive snapshot — so attribute-based eligibility
+// predicates that reference data variables work correctly without aliasing the
+// live process-variable map.
+func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
+	ctx := t.Context()
+
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	taskStore := humantask.NewMemTaskStore()
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
+		"manager": {manager},
+	})
+	az := authz.RoleAuthorizer{}
+	clk := clock.System()
+
+	r := runtime.NewRunner(
+		nil,
+		clk,
+		runtime.NewMemStore(),
+		runtime.WithHumanTasks(resolver, taskStore, az),
+	)
+
+	// Start with non-nil process variables so the snapshot is meaningful.
+	instanceVars := map[string]any{"region": "EU", "priority": 1}
+	_, err := r.Run(ctx, approvalDef(), "snap-inst-1", instanceVars)
+	require.NoError(t, err)
+
+	// After Run parks, the task must be in the store with Vars populated.
+	claimable, err := taskStore.ClaimableBy(ctx, manager)
+	require.NoError(t, err)
+	require.Len(t, claimable, 1)
+
+	task := claimable[0]
+	assert.Equal(t, map[string]any{"region": "EU", "priority": 1}, task.Vars,
+		"task.Vars must be a copy of the process variables at task-creation time")
+
+	// Defensive-copy proof: mutating instanceVars after Run must NOT change task.Vars.
+	instanceVars["region"] = "US"
+	fetched, err := taskStore.Get(ctx, task.TaskToken)
+	require.NoError(t, err)
+	assert.Equal(t, "EU", fetched.Vars["region"],
+		"mutating the original vars map must not change the snapshotted task.Vars")
+}
+
+// TestRunnerAttributeOverVarsEndToEnd verifies the full vars-plumbing path:
+// the runner snapshots process variables into HumanTask.Vars at task-creation
+// time, and TaskService.Claim enforces an attribute predicate that references
+// those variables (vars["region"] == "EU").
+func TestRunnerAttributeOverVarsEndToEnd(t *testing.T) {
+	cases := map[string]struct {
+		instanceID string
+		region     string
+		assertErr  func(t *testing.T, err error)
+	}{
+		"matching region claims": {
+			instanceID: "inst-attr-eu",
+			region:     "EU",
+			assertErr:  func(t *testing.T, err error) { assert.NoError(t, err) },
+		},
+		"non-matching region denied": {
+			instanceID: "inst-attr-us",
+			region:     "US",
+			assertErr: func(t *testing.T, err error) {
+				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			taskStore := humantask.NewMemTaskStore()
+			az := authz.RoleAuthorizer{}
+			clk := clock.System()
+			svc := runtime.NewTaskService(taskStore, az, clk)
+
+			// Upsert a task whose Vars snapshot matches what the runner would set,
+			// proven by TestRunnerSnapshotsVarsIntoHumanTask. The attribute predicate
+			// is the sole gate (no role constraint).
+			require.NoError(t, taskStore.Upsert(t.Context(), humantask.HumanTask{
+				TaskToken:   "tok-attr-" + tc.instanceID,
+				Eligibility: authz.AuthzSpec{Attribute: `vars["region"] == "EU"`},
+				Vars:        map[string]any{"region": tc.region},
+				State:       humantask.Unclaimed,
+			}))
+
+			_, err := svc.Claim(t.Context(), "tok-attr-"+tc.instanceID, authz.Actor{ID: "alice"})
+			tc.assertErr(t, err)
+		})
+	}
+}
