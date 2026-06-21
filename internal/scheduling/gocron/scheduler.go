@@ -19,26 +19,45 @@ import (
 // shares the engine's clockwork time source so one fake-clock advance drives
 // both engine timestamps and timer firing (ADR-0003, ADR-0009).
 type GocronScheduler struct {
-	sched gocron.Scheduler
-	clk   clockwork.Clock
+	sched  gocron.Scheduler
+	clk    clockwork.Clock
+	logger *slog.Logger
 
 	mu   sync.Mutex
 	jobs map[string]uuid.UUID // timerID -> gocron job ID
 }
 
+// Option configures a [GocronScheduler].
+type Option func(*GocronScheduler)
+
+// WithLogger sets the structured logger used by the scheduler (default:
+// [slog.Default]). A nil value is ignored.
+func WithLogger(l *slog.Logger) Option {
+	return func(s *GocronScheduler) {
+		if l != nil {
+			s.logger = l
+		}
+	}
+}
+
 // NewGocronScheduler constructs and starts a gocron-backed scheduler driven by
 // clk. The caller must Close it to avoid leaking gocron's executor goroutine.
-func NewGocronScheduler(clk clockwork.Clock) (*GocronScheduler, error) {
-	s, err := gocron.NewScheduler(gocron.WithClock(clk))
+func NewGocronScheduler(clk clockwork.Clock, opts ...Option) (*GocronScheduler, error) {
+	gs, err := gocron.NewScheduler(gocron.WithClock(clk))
 	if err != nil {
 		return nil, err
 	}
-	s.Start() // non-blocking
-	return &GocronScheduler{
-		sched: s,
-		clk:   clk,
-		jobs:  make(map[string]uuid.UUID),
-	}, nil
+	gs.Start() // non-blocking
+	s := &GocronScheduler{
+		sched:  gs,
+		clk:    clk,
+		logger: slog.Default(),
+		jobs:   make(map[string]uuid.UUID),
+	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
 }
 
 // Schedule registers a one-time timer that calls fire at or after fireAt. If a
@@ -75,7 +94,7 @@ func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()
 		})),
 	)
 	if err != nil {
-		slog.Error("gocron: schedule timer failed", "timerID", timerID, "error", err)
+		s.logger.Error("gocron: schedule timer failed", "timerID", timerID, "error", err)
 		return
 	}
 	s.jobs[timerID] = job.ID()
@@ -92,7 +111,7 @@ func (s *GocronScheduler) Cancel(timerID string) {
 	}
 	delete(s.jobs, timerID)
 	if err := s.sched.RemoveJob(id); err != nil && !errors.Is(err, gocron.ErrJobNotFound) {
-		slog.Error("gocron: cancel timer failed", "timerID", timerID, "error", err)
+		s.logger.Error("gocron: cancel timer failed", "timerID", timerID, "error", err)
 	}
 }
 

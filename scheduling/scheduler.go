@@ -6,6 +6,7 @@ package scheduling
 
 import (
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -29,11 +30,39 @@ var (
 	_ io.Closer         = (*Scheduler)(nil)
 )
 
+// config holds façade-level options.
+type config struct {
+	logger *slog.Logger
+}
+
+// Option configures a [Scheduler].
+type Option func(*config)
+
+// WithLogger sets the scheduler's structured logger (default: [slog.Default]).
+// A nil value is ignored.
+func WithLogger(l *slog.Logger) Option {
+	return func(c *config) {
+		if l != nil {
+			c.logger = l
+		}
+	}
+}
+
 // NewScheduler constructs and starts a gocron-backed [Scheduler] driven by
 // clk. The returned scheduler must be closed via [Scheduler.Close] when the
 // application shuts down.
-func NewScheduler(clk clockwork.Clock) (*Scheduler, error) {
-	impl, err := gocronsched.NewGocronScheduler(clk)
+func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
+	cfg := &config{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
+	var internalOpts []gocronsched.Option
+	if cfg.logger != nil {
+		internalOpts = append(internalOpts, gocronsched.WithLogger(cfg.logger))
+	}
+
+	impl, err := gocronsched.NewGocronScheduler(clk, internalOpts...)
 	if err != nil {
 		return nil, err
 	}

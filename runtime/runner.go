@@ -592,23 +592,23 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 					return
 				}
 				if !errors.Is(err, ErrConcurrentUpdate) {
-					slog.Error("runtime: timer fire: Deliver failed",
-						"timerID", timerID,
-						"instanceID", instanceID,
-						"err", err,
-					)
+					r.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver failed",
+						append(r.obs.tel.LogAttrs(fireCtx),
+							slog.String("timer_id", timerID),
+							slog.String("instance_id", instanceID),
+							slog.Any("error", err))...)
 					return
 				}
 				// ErrConcurrentUpdate: another Deliver won the CAS; Deliver
 				// internally reloads fresh state on the next call. Retry
 				// immediately (no sleep needed — store reloads on each Deliver).
 			}
-			slog.Error("runtime: timer fire: Deliver permanently dropped after CAS conflicts",
-				"timerID", timerID,
-				"instanceID", instanceID,
-				"attempts", maxAttempts,
-				"err", err,
-			)
+			r.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver permanently dropped after CAS conflicts",
+				append(r.obs.tel.LogAttrs(fireCtx),
+					slog.String("timer_id", timerID),
+					slog.String("instance_id", instanceID),
+					slog.Int("attempts", maxAttempts),
+					slog.Any("error", err))...)
 		})
 		return nil, nil
 
