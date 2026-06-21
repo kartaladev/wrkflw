@@ -132,11 +132,15 @@ func (e *Engine) GetInstance(ctx context.Context, instanceID string) (engine.Ins
 }
 
 // DeliverSignal resumes a process instance that is parked at a signal-catch
-// node by delivering a SignalReceived trigger.
+// node by delivering a SignalReceived trigger. Returns ErrConflict when the
+// instance has already reached a terminal state.
 func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (engine.InstanceState, error) {
 	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {
 		return engine.InstanceState{}, fmt.Errorf("service: deliver signal: %w", err)
+	}
+	if isTerminal(st.Status) {
+		return engine.InstanceState{}, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, req.InstanceID)
 	}
 	trg := engine.NewSignalReceived(e.clk.Now(), req.Signal, req.Payload)
 	newSt, err := e.runner.Deliver(ctx, def, st.InstanceID, trg)
@@ -216,19 +220,26 @@ func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*mod
 
 // deliverTaskTrigger is the shared helper for ClaimTask, CompleteTask, and
 // ReassignTask. It looks up the task by token to get the owning instance ID,
-// resolves the definition for that instance, and delivers the trigger.
+// checks that both the task and its instance are in a state that accepts the
+// operation, resolves the definition, and delivers the trigger.
 func (e *Engine) deliverTaskTrigger(ctx context.Context, taskToken string, trg engine.Trigger) (engine.InstanceState, error) {
 	task, err := e.taskStore.Get(ctx, taskToken)
 	if err != nil {
 		return engine.InstanceState{}, fmt.Errorf("service: deliver task trigger: get task: %w", err)
 	}
-	def, _, err := e.resolveDefinition(ctx, task.InstanceID)
+	if !task.IsOpen() {
+		return engine.InstanceState{}, fmt.Errorf("%w: task %q is not open", ErrConflict, taskToken)
+	}
+	def, st, err := e.resolveDefinition(ctx, task.InstanceID)
 	if err != nil {
 		return engine.InstanceState{}, fmt.Errorf("service: deliver task trigger: resolve definition: %w", err)
 	}
-	st, err := e.runner.Deliver(ctx, def, task.InstanceID, trg)
+	if isTerminal(st.Status) {
+		return engine.InstanceState{}, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, task.InstanceID)
+	}
+	newSt, err := e.runner.Deliver(ctx, def, task.InstanceID, trg)
 	if err != nil {
 		return engine.InstanceState{}, fmt.Errorf("service: deliver task trigger: deliver: %w", err)
 	}
-	return st, nil
+	return newSt, nil
 }
