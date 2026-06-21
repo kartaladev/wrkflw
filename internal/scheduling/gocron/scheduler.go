@@ -20,6 +20,7 @@ import (
 // both engine timestamps and timer firing (ADR-0003, ADR-0009).
 type GocronScheduler struct {
 	sched gocron.Scheduler
+	clk   clockwork.Clock
 
 	mu   sync.Mutex
 	jobs map[string]uuid.UUID // timerID -> gocron job ID
@@ -35,6 +36,7 @@ func NewGocronScheduler(clk clockwork.Clock) (*GocronScheduler, error) {
 	s.Start() // non-blocking
 	return &GocronScheduler{
 		sched: s,
+		clk:   clk,
 		jobs:  make(map[string]uuid.UUID),
 	}, nil
 }
@@ -42,6 +44,8 @@ func NewGocronScheduler(clk clockwork.Clock) (*GocronScheduler, error) {
 // Schedule registers a one-time timer that calls fire at or after fireAt. If a
 // timer with the same timerID already exists it is replaced. Best-effort: a
 // gocron job-creation error is logged and the timer is not armed.
+//
+// If fireAt is not in the future per the clock, the timer fires immediately.
 func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -51,8 +55,16 @@ func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()
 		delete(s.jobs, timerID)
 	}
 
+	var timing gocron.OneTimeJobStartAtOption
+	if fireAt.After(s.clk.Now()) {
+		timing = gocron.OneTimeJobStartDateTime(fireAt)
+	} else {
+		// fireAt is in the past or exactly now; fire immediately.
+		timing = gocron.OneTimeJobStartImmediately()
+	}
+
 	job, err := s.sched.NewJob(
-		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(fireAt)),
+		gocron.OneTimeJob(timing),
 		gocron.NewTask(fire),
 		gocron.WithEventListeners(gocron.AfterJobRuns(func(jobID uuid.UUID, _ string) {
 			s.mu.Lock()

@@ -143,3 +143,32 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 		})
 	}
 }
+
+// TestSchedulePastFireAtFiresImmediately verifies that scheduling a timer whose
+// fireAt is in the past (or equal to now) fires the callback immediately
+// instead of being silently dropped.
+func TestSchedulePastFireAtFiresImmediately(t *testing.T) {
+	startTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	clk := clockwork.NewFakeClockAt(startTime)
+
+	s, err := sched.NewGocronScheduler(clk)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	fired := make(chan struct{}, 1)
+	// fireAt is 1 second in the past — currently dropped by the bug.
+	pastFireAt := startTime.Add(-1 * time.Second)
+	s.Schedule("past-timer", pastFireAt, func() {
+		fired <- struct{}{}
+	})
+
+	// OneTimeJobStartImmediately fires without any clock advance needed.
+	require.Eventually(t, func() bool {
+		select {
+		case <-fired:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond, "callback should fire immediately for past fireAt")
+}
