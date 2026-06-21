@@ -145,7 +145,7 @@ The `Relay` is broker-agnostic: it polls the outbox with `FOR UPDATE SKIP LOCKED
 
 ---
 
-## Scheduling (gocron) sub-project — ✅ IMPLEMENTED on `feat/scheduling-gocron` (pending review + merge)
+## Scheduling (gocron) sub-project — ✅ COMPLETE, merged to `main`
 
 Built on branch `feat/scheduling-gocron` (HEAD `87c0ca6`, including the whole-branch-review
 fix wave). Design: spec
@@ -205,7 +205,7 @@ The engine core depends on interfaces only. The next sub-projects implement them
 
 - **Persistence** — ✅ COMPLETE, merged to `main`. See section above.
 - **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
-- **Scheduling** — ✅ IMPLEMENTED on `feat/scheduling-gocron` (pending final whole-branch review + merge). See "Scheduling (gocron) sub-project" section below.
+- **Scheduling** — ✅ COMPLETE, merged to `main`. See "Scheduling (gocron) sub-project" section below.
 - **Authorization** — casbin behind the `authz.Authorizer`.
 - **Transports** — REST `http.Handler` factories + gRPC `ServiceRegistrar` registrations the consumer
   mounts (library-provided, never a shipped binary; ADR-0004 / CLAUDE.md).
