@@ -1,7 +1,6 @@
 package casbin_test
 
 import (
-	"errors"
 	"testing"
 
 	casbinv2 "github.com/casbin/casbin/v2"
@@ -83,6 +82,18 @@ func TestAuthorizer_Authorize(t *testing.T) {
 				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
 			},
 		},
+		"two-token privilege allow: employee may doc read": {
+			spec:   authz.AuthzSpec{Privileges: []string{"doc read"}},
+			actor:  bob,
+			assert: func(t *testing.T, err error) { assert.NoError(t, err) },
+		},
+		"two-token privilege deny: employee may not doc write": {
+			spec:  authz.AuthzSpec{Privileges: []string{"doc write"}},
+			actor: bob,
+			assert: func(t *testing.T, err error) {
+				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
+			},
+		},
 		"attribute allow over actor": {
 			spec:   authz.AuthzSpec{Attribute: `actor.Attributes["region"] == "EU"`},
 			actor:  alice,
@@ -132,5 +143,9 @@ func TestAuthorizer_Authorize(t *testing.T) {
 
 func TestAuthorizer_ImplementsPort(t *testing.T) {
 	var _ authz.Authorizer = casbinauthz.New(newEnforcer(t))
-	assert.True(t, errors.Is(authz.ErrNotAuthorized, authz.ErrNotAuthorized))
+	// Real denial case: verify that a denial from Authorize returns ErrNotAuthorized.
+	a := casbinauthz.New(newEnforcer(t))
+	bob := authz.Actor{ID: "bob", Roles: []string{"employee"}}
+	err := a.Authorize(t.Context(), authz.AuthzSpec{Roles: []string{"manager"}}, bob, nil)
+	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
 }

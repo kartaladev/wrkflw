@@ -31,9 +31,15 @@ func New(e *casbinv2.SyncedEnforcer) *Authorizer {
 }
 
 // Authorize evaluates the three checks in order, short-circuiting on the first
-// denial. An empty spec allows. A casbin deny or a failed role/attribute check
-// returns authz.ErrNotAuthorized; a genuine casbin/expr engine error is wrapped
-// and propagated.
+// denial. An empty spec allows.
+//
+// Error asymmetry: A policy DENIAL (casbin Enforce returns false) or a failed
+// role/attribute check returns authz.ErrNotAuthorized. A genuine casbin/expr
+// ENGINE error (e.g., remote-adapter failure, expression parse error) is wrapped
+// and propagated as a different error type, NOT ErrNotAuthorized. Both paths are
+// fail-closed: the caller blocks the action on any non-nil error. In-memory
+// adapter (string-based) cannot error; remote adapters may; expr-lang errors are
+// mapped to ErrNotAuthorized by the attribute check.
 func (a *Authorizer) Authorize(_ context.Context, spec authz.AuthzSpec, actor authz.Actor, vars map[string]any) error {
 	// Step 1: role check with hierarchy.
 	if len(spec.Roles) > 0 {
