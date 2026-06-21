@@ -3,7 +3,6 @@ package service_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -89,7 +88,7 @@ func TestErrConflict_CancelledTask(t *testing.T) {
 		InstanceID: "any-instance-id",
 		NodeID:     "approve",
 		State:      humantask.Cancelled,
-		CreatedAt:  time.Now(),
+		CreatedAt:  h.clk.Now(), // use the test harness clock for time-source consistency
 	}
 	require.NoError(t, h.taskStore.Upsert(ctx, closedTask))
 
@@ -101,4 +100,30 @@ func TestErrConflict_CancelledTask(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, service.ErrConflict, "claiming a cancelled task must return ErrConflict")
+}
+
+// TestErrConflict_HappyPath_ClaimOpen verifies that claiming a genuinely Open task
+// does NOT return ErrConflict — the happy-path contract for ClaimTask.
+func TestErrConflict_HappyPath_ClaimOpen(t *testing.T) {
+	def := approvalDef()
+	h := newHarness(t, def)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+
+	ctx := t.Context()
+
+	// Start the instance — parks at the user task node with the task in Open state.
+	parked, err := h.runner.Run(ctx, def, "happy-claim-open", nil)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
+	require.Len(t, parked.Tokens, 1)
+	taskToken := parked.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskToken, "task token must be set")
+
+	// Claiming the still-open task must succeed without conflict.
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	_, claimErr := svc.ClaimTask(ctx, service.ClaimTaskRequest{
+		TaskToken: taskToken,
+		Actor:     manager,
+	})
+	require.NoError(t, claimErr, "claiming an Open task must succeed (no ErrConflict on the happy path)")
 }

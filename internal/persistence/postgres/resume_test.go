@@ -72,9 +72,11 @@ func boundaryResumeDef() *model.ProcessDefinition {
 // instance's snapshot survives a real Postgres reload through a brand-new Store
 // (simulating a process restart) and resumes to completion when the timer fires.
 //
-// This validates the JSON round-trip of InstanceState.Timers via the JSONB snapshot
-// column: if reloaded.Timers is empty the test fails immediately, surfacing a real
-// persistence bug rather than a test weakness.
+// This validates the JSON round-trip of the parked token's AwaitCommand field via
+// the JSONB snapshot column: intermediate-catch-event timers park the engine token
+// with AwaitCommand set to the timer ID (they do NOT use InstanceState.Timers). If
+// the reloaded token's AwaitCommand is empty the test fails immediately, surfacing a
+// real persistence bug rather than a test weakness.
 func TestPostgresParkedTimerResumesAfterReload(t *testing.T) {
 	t.Parallel()
 
@@ -134,12 +136,11 @@ func TestPostgresParkedTimerResumesAfterReload(t *testing.T) {
 	// over store2. The original sched1 was in-memory and died with runner #1; we
 	// use the timer ID from the reloaded token to fire manually.
 	fc.Advance(1*time.Hour + time.Second)
-	timerID := reloadedTimerID
 
 	sched2 := runtime.NewMemScheduler(fc)
 	r2 := runtime.NewRunner(cat, fc, store2, runtime.WithScheduler(sched2))
 
-	final, err := r2.Deliver(t.Context(), def, id, engine.NewTimerFired(fc.Now(), timerID))
+	final, err := r2.Deliver(t.Context(), def, id, engine.NewTimerFired(fc.Now(), reloadedTimerID))
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, final.Status,
 		"instance must reach StatusCompleted after the timer fires and the service task runs")
