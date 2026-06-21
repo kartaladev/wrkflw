@@ -79,9 +79,10 @@ var (
 
 // Compile-time checks: internal concrete types must satisfy the public interfaces.
 var (
-	_ Store            = (*postgres.Store)(nil)
-	_ DefinitionStore  = (*postgres.DefinitionStore)(nil)
-	_ Relay            = (*postgres.Relay)(nil)
+	_ Store                 = (*postgres.Store)(nil)
+	_ DefinitionStore       = (*postgres.DefinitionStore)(nil)
+	_ Relay                 = (*postgres.Relay)(nil)
+	_ runtime.InstanceLister = (*postgres.Lister)(nil)
 )
 
 // OpenPostgres constructs a Postgres-backed runtime.Store + JournalReader over pool.
@@ -146,4 +147,21 @@ func WithPollInterval(d time.Duration) RelayOption {
 // Default: 100.
 func WithBatchSize(n int) RelayOption {
 	return postgres.WithBatchSize(n)
+}
+
+// NewLister constructs the Postgres-backed runtime.InstanceLister for
+// admin-list and monitoring use-cases. It executes a keyset-cursor-paginated
+// query over wrkflw_instances and projects only the columns in
+// runtime.InstanceSummary (no full snapshot read).
+//
+// Migrate must have been applied before the first call to List.
+//
+// Example:
+//
+//	pool, _ := pgxpool.New(ctx, dsn)
+//	persistence.Migrate(ctx, pool)
+//	lister := persistence.NewLister(pool)
+//	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
+func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
+	return postgres.NewLister(pool)
 }
