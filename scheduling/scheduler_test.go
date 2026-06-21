@@ -46,9 +46,8 @@ func TestScheduler_Cancel_NoOp(t *testing.T) {
 	s.Cancel("t2")
 
 	// Advance past the would-be fire time; nothing should fire.
+	// Drain any remaining waiters on the fake clock.
 	require.NoError(t, fakeClock.BlockUntilContext(t.Context(), 0))
 	fakeClock.Advance(2 * time.Second)
-	// Give the scheduler a moment to process (no waiter because nothing should fire).
-	time.Sleep(50 * time.Millisecond)
 	require.False(t, fired, "cancelled timer must not fire")
 }

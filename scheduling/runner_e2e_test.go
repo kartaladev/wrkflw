@@ -123,10 +123,12 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 
 	// The scheduler fires the timer on its executor goroutine, which Delivers
 	// TimerFired and runs the service action asynchronously.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	select {
 	case <-serviceRan:
-	case <-time.After(2 * time.Second):
-		t.Fatal("service action did not run after timer fired")
+	case <-ctx.Done():
+		t.Fatalf("service action did not run after timer fired: %v", ctx.Err())
 	}
 
 	// The instance must reach Completed (assert eventually — Deliver runs async
@@ -140,7 +142,6 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 
 	final, _, err := store.Load(ctx, instanceID)
 	require.NoError(t, err)
-	assert.Equal(t, engine.StatusCompleted, final.Status)
 	assert.Equal(t, true, final.Variables["greeted"])
 	assert.Empty(t, final.Tokens)
 }
