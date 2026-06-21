@@ -359,7 +359,24 @@ func (r *Runner) deliverLoop(
 		}
 
 		events := outboxEventsFor(res.Commands)
-		appliedStep := AppliedStep{State: st, Trigger: t, Events: events}
+
+		// Compute a CallOutcome when this step transitions the instance into a
+		// terminal status AND a CallLinkStore is configured. The Store's Commit
+		// implementation uses this to flip the call link to terminal atomically
+		// (one transaction / one MemStore lock). For root instances the Store
+		// treats a missing link as a no-op, so setting CallOutcome unconditionally
+		// on terminal is safe even without special-casing here.
+		var outcome *CallOutcome
+		if r.callLinks != nil && isTerminal(st.Status) && !isTerminal(prevStatus) {
+			switch st.Status {
+			case engine.StatusCompleted:
+				outcome = &CallOutcome{Completed: true, Output: copyVarsForOutcome(st.Variables)}
+			default: // StatusFailed, StatusTerminated, or any other terminal
+				outcome = &CallOutcome{Completed: false, Err: terminalErr(st)}
+			}
+		}
+
+		appliedStep := AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome}
 
 		if create {
 			// Attach the firstCallLink to the Create step (child async path only).
@@ -407,6 +424,36 @@ func (r *Runner) runChild(ctx context.Context, def *model.ProcessDefinition, chi
 	st := engine.InstanceState{InstanceID: childInstanceID}
 	_, err := r.deliverLoop(ctx, def, st, 0, true, link, engine.NewStartInstance(r.clk.Now(), vars))
 	return err
+}
+
+// terminalErr derives a short, human-readable error message from a terminal
+// instance state. It prefers the first recorded incident's error text (the most
+// concrete description of what went wrong); if no incidents are present it
+// falls back to a status-keyed generic message.
+func terminalErr(st engine.InstanceState) string {
+	if len(st.Incidents) > 0 {
+		return st.Incidents[0].Error
+	}
+	switch st.Status {
+	case engine.StatusTerminated:
+		return "instance terminated"
+	default:
+		return "instance failed"
+	}
+}
+
+// copyVarsForOutcome returns a shallow copy of vars to avoid aliasing the
+// live InstanceState.Variables map via the CallOutcome.Output reference.
+// Returns nil when vars is nil (preserving the zero value).
+func copyVarsForOutcome(vars map[string]any) map[string]any {
+	if vars == nil {
+		return nil
+	}
+	out := make(map[string]any, len(vars))
+	for k, v := range vars {
+		out[k] = v
+	}
+	return out
 }
 
 // syncWaiters reconciles both the SignalBus subscriptions and the internal
