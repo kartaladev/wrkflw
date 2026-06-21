@@ -699,22 +699,21 @@ Gate (final, Task 6 verified — 2026-06-22):
 - `go test -race` (all non-Docker packages): **PASS** ✅ — 18 packages, 0 failures
 - `go test -race -p 1 ./internal/authz/casbin/... ./casbinauthz/... ./internal/persistence/postgres/...`: **PASS** ✅
 - `casbinauthz` per-package coverage: **90.9%** ✅ (≥85%)
-- `internal/authz/casbin` per-package coverage: **73.1%** ⚠️ (below 85% — see concern below)
+- `internal/authz/casbin` per-package coverage: **85.6%** ✅ (≥85%)
 - `golangci-lint run ./...`: **0 issues** ✅
-- Confinement guard (`TestCasbinConfinement`): **PASS** ✅ — casbin absent from engine/model/runtime/persistence transitive deps
+- Confinement guard (`TestCasbinConfinement`): **PASS** ✅ — casbin absent from engine/model/runtime/persistence transitive deps (proven to bite: 25 violations when casbin injected into runtime, clean after revert)
 - No ORM in go.mod: **CLEAN** ✅ (`gorm`/`go-pg`/`sqlx`/`ent` absent)
 - casbin version: **v2.135.0** ✅ (pinned, not bumped)
+- Opus whole-branch review: **Ready to merge: Yes** — no Critical/Important; all binding invariants (callback race-fix ordering, watcher leak/connection-release, no `RemoveFilteredPolicy` over-deletion, separate version table, façade type confinement, additive-only) verified.
 
-**Coverage concern:** `internal/authz/casbin` scores 73.1% per-package because `db.go`
-(`NewDBEnforcer`, `noopCloser.Close`, `watcherCloser.Close`) is 0% when measured against
-the internal package test suite alone — the tests that exercise those paths live in
-`casbinauthz/casbinauthz_db_test.go`, which covers the façade and transitively exercises
-`NewDBEnforcer`, but coverage is attributed to the calling package (`casbinauthz`), not
-the callee. Combined coverage of both packages is 75.6% total. This is a pre-existing
-measurement artifact from Tasks 1–5; the logic is integration-tested end-to-end through
-the façade. Adding a `db_test.go` inside `internal/authz/casbin` that calls `NewDBEnforcer`
-directly (white-box, using the Postgres testcontainer) would lift coverage above 85%.
-Deferred as a follow-up (see below).
+**Coverage note (resolved):** `internal/authz/casbin` initially measured 73.1% because `db.go`
+(`NewDBEnforcer`, the two closers) is exercised only from `casbinauthz/casbinauthz_db_test.go`
+(coverage attributed to the caller). Closed by adding `internal/authz/casbin/db_test.go`
+(black-box) that calls `NewDBEnforcer` directly (watcher-enabled / disabled / invalid-model
+paths) plus three watcher error-branch tests (Update error, listen acquire/LISTEN failures via
+fault injection) → **85.6%**. `NewDBEnforcer` itself sits at 66.7%; its three remaining error
+branches (`NewSyncedEnforcer`/`SetWatcher`/`SetUpdateCallback` failing) are structurally
+unreachable in black-box because the production watcher never returns an error.
 
 ### What shipped (by layer)
 
@@ -738,26 +737,25 @@ Deferred as a follow-up (see below).
 
 ### Deferred follow-ups
 
-1. **`internal/authz/casbin` direct unit tests for `db.go`** — adding a `db_test.go` file in
-   the internal package that exercises `NewDBEnforcer` directly (with the Postgres testcontainer)
-   would lift per-package coverage above the 85% gate. Currently the only coverage comes from
-   the façade's integration tests in `casbinauthz/casbinauthz_db_test.go`.
-2. **`FilteredAdapter` / incremental `WatcherEx` updates for large policy sets** — `LoadPolicy`
+1. **`FilteredAdapter` / incremental `WatcherEx` updates for large policy sets** — `LoadPolicy`
    re-reads the entire `casbin_rule` table on every watcher-triggered reload. For large policy
    sets this is expensive. Implementing `casbin/persist.FilteredAdapter` (partial load) and the
    `casbin/persist.WatcherEx` interface (per-rule delta updates instead of full reload) would cut
    reload cost significantly. Deferred until policy-set sizes warrant it.
-3. **Policy-admin REST/gRPC surface** — `NewCasbinAuthorizerFromDB` provides policy persistence
+2. **Policy-admin REST/gRPC surface** — `NewCasbinAuthorizerFromDB` provides policy persistence
    but no API to add/remove/list rules at runtime (other than direct DB manipulation). A
    `casbinauthz.PolicyAdmin` interface with REST/gRPC endpoints (e.g. `POST /admin/policy`,
    `DELETE /admin/policy/{id}`, `GET /admin/policy`) is a follow-up; the persisted `pgAdapter`
    is the backend.
-4. **Watcher reconnect-delay not tunable** — the `backoff` helper uses a fixed 250 ms–5 s
-   exponential backoff with 20% jitter. There is no `DBOption` to override reconnect parameters.
-   A `WithWatcherReconnectBackoff(min, max time.Duration)` option would make this configurable
+3. **Watcher reconnect-delay not tunable** — the `backoff` helper uses a fixed
+   `watcherReconnectDelay` constant (1 s), no jitter. There is no `DBOption` to override it.
+   A `WithWatcherReconnectBackoff(...)` option (and optional jitter) would make this configurable
    for consumers with stricter SLA requirements.
-5. **Separate `casbin_goose_db_version` table note** — the casbin migration intentionally uses
-   a separate `casbin_goose_db_version` version table (via `goose.SetTableName`) to avoid
-   version-number conflicts with the main `wrkflw_goose_db_version`. Consumers calling both
-   `persistence.Migrate` and `casbinauthz.MigrateCasbin` will see two version tables in their
-   schema; this is expected and documented.
+4. **Separate `casbin_goose_db_version` table note** — the casbin migration intentionally uses
+   a separate `casbin_goose_db_version` version table (via `goose.WithTableName`) to avoid
+   version-number conflicts with the persistence migration set's `goose_db_version`. Consumers
+   calling both `persistence.Migrate` and `casbinauthz.MigrateCasbin` will see two goose version
+   tables in their schema; this is expected and documented.
+5. **`context.Background()` in adapter/watcher methods** — casbin's `persist.Adapter`/`Watcher`
+   method signatures take no `context`, so the pgx calls inside them cannot propagate a caller
+   deadline/cancellation. A context-aware adapter wrapper (storing a base context) is a follow-up.
