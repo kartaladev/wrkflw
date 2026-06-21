@@ -225,8 +225,21 @@ func NewRunner(
 // Run starts an instance and drives it to a terminal state or until the engine
 // parks (e.g. awaiting a human task). It returns the state at the point it stopped.
 func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
+		attribute.String("wrkflw.instance_id", instanceID),
+		attribute.String("wrkflw.def_id", def.ID),
+		attribute.Int("wrkflw.def_version", def.Version),
+	))
+	defer span.End()
 	st := engine.InstanceState{InstanceID: instanceID}
-	return r.deliverLoop(ctx, def, st, 0, true, engine.NewStartInstance(r.clk.Now(), vars))
+	out, err := r.deliverLoop(ctx, def, st, 0, true, engine.NewStartInstance(r.clk.Now(), vars))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetAttributes(attribute.String("wrkflw.status", statusName(out.Status)))
+	}
+	return out, err
 }
 
 // Deliver loads the current instance state, applies one trigger via engine.Step,
@@ -244,11 +257,23 @@ func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instance
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
 func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Deliver", trace.WithAttributes(
+		attribute.String("wrkflw.instance_id", instanceID),
+		attribute.String("wrkflw.trigger", triggerName(trg)),
+	))
+	defer span.End()
 	st, token, err := r.store.Load(ctx, instanceID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return engine.InstanceState{}, fmt.Errorf("runtime: deliver: load: %w", err)
 	}
-	return r.deliverLoop(ctx, def, st, token, false, trg)
+	out, err := r.deliverLoop(ctx, def, st, token, false, trg)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return out, err
 }
 
 // deliverLoop applies triggers from queue and then any follow-up triggers emitted
@@ -426,7 +451,11 @@ func (r *Runner) DeliverMessage(ctx context.Context, def *model.ProcessDefinitio
 // point for recovering a retry-exhausted activity. Delegates through Deliver so
 // the trigger is journalled and persisted.
 func (r *Runner) ResolveIncident(ctx context.Context, def *model.ProcessDefinition, instanceID, incidentID string, addAttempts int) (engine.InstanceState, error) {
-	return r.Deliver(ctx, def, instanceID, engine.NewResolveIncident(r.clk.Now(), incidentID, addAttempts))
+	st, err := r.Deliver(ctx, def, instanceID, engine.NewResolveIncident(r.clk.Now(), incidentID, addAttempts))
+	if err == nil {
+		r.obs.incidentsResolved.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+	}
+	return st, err
 }
 
 // perform executes one command and returns the resulting trigger, if any.
@@ -445,10 +474,23 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		if !ok {
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
-		out, err := a.Do(ctx, cmd.Input)
+		actx, aspan := r.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name, trace.WithAttributes(
+			attribute.String("wrkflw.action", cmd.Name),
+		))
+		start := r.clk.Now()
+		out, err := a.Do(actx, cmd.Input)
+		elapsed := r.clk.Now().Sub(start).Seconds()
 		if err != nil {
+			aspan.RecordError(err)
+			aspan.SetStatus(codes.Error, err.Error())
+			r.obs.actionDuration.Record(actx, elapsed,
+				metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", "error")))
+			aspan.End()
 			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), true, r.jitter.Fraction()), nil
 		}
+		r.obs.actionDuration.Record(actx, elapsed,
+			metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", "ok")))
+		aspan.End()
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 
 	case engine.CompleteInstance:
@@ -520,6 +562,9 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 	case engine.ScheduleTimer:
 		if r.sched == nil {
 			return nil, fmt.Errorf("runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
+		}
+		if cmd.Kind == engine.TimerRetry {
+			r.obs.actionRetries.Add(ctx, 1)
 		}
 		// Capture the values needed by the fire callback; do not close over
 		// mutable references to cmd (already a value type, so this is safe).

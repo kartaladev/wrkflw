@@ -15,6 +15,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -66,6 +67,12 @@ func dpAttributesMatch(attrs attribute.Set, filter map[string]string) bool {
 // histogramCount returns the total number of observations recorded for a
 // Float64Histogram instrument (sum of all data-point Counts).
 func histogramCount(rm metricdata.ResourceMetrics, name string) uint64 {
+	return histogramCountFiltered(rm, name, nil)
+}
+
+// histogramCountFiltered returns the total Count across data-points whose
+// attributes contain all key/value pairs in filter (nil filter matches any).
+func histogramCountFiltered(rm metricdata.ResourceMetrics, name string, filter map[string]string) uint64 {
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
 			if m.Name != name {
@@ -77,7 +84,9 @@ func histogramCount(rm metricdata.ResourceMetrics, name string) uint64 {
 			}
 			var total uint64
 			for _, dp := range hist.DataPoints {
-				total += dp.Count
+				if dpAttributesMatch(dp.Attributes, filter) {
+					total += dp.Count
+				}
 			}
 			return total
 		}
@@ -188,5 +197,56 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 	// Assert the step-duration histogram received at least one observation.
 	if c := histogramCount(rm, "wrkflw_step_duration_seconds"); c == 0 {
 		t.Fatal("wrkflw_step_duration_seconds has 0 observations, want ≥1")
+	}
+}
+
+// TestActionSpanAndDurationMetric verifies that running a linear
+// start→service-task→end process produces:
+//   - spans "wrkflw.runner.Run", "wrkflw.step", and "wrkflw.action charge",
+//   - one observation in wrkflw_action_duration_seconds{action=charge,outcome=ok}.
+func TestActionSpanAndDurationMetric(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"charge": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return map[string]any{"charged": true}, nil
+		}),
+	})
+
+	chargeDef := &model.ProcessDefinition{
+		ID: "payment", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "charge", Kind: model.KindServiceTask, Action: "charge"},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "charge"},
+			{ID: "f2", Source: "charge", Target: "end"},
+		},
+	}
+
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore(),
+		runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
+	if _, err := r.Run(t.Context(), chargeDef, "i1", map[string]any{}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, s := range sr.Ended() {
+		names[s.Name()] = true
+	}
+	for _, want := range []string{"wrkflw.runner.Run", "wrkflw.step", "wrkflw.action charge"} {
+		if !names[want] {
+			t.Fatalf("missing span %q; got %v", want, names)
+		}
+	}
+
+	rm := collect(t, reader)
+	if c := histogramCountFiltered(rm, "wrkflw_action_duration_seconds", map[string]string{"action": "charge", "outcome": "ok"}); c != 1 {
+		t.Fatalf("wrkflw_action_duration_seconds{action=charge,outcome=ok} count = %d, want 1", c)
 	}
 }
