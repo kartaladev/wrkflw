@@ -13,6 +13,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
@@ -23,6 +24,7 @@ import (
 type server struct {
 	workflowpb.UnimplementedWorkflowServiceServer
 	svc service.Service
+	tel observability.Telemetry
 }
 
 // RegisterWorkflowServiceServer constructs a WorkflowService gRPC implementation
@@ -42,24 +44,37 @@ type server struct {
 // unauthenticated enumeration of all process instances.
 //
 // Per-method authorization built into this package is a tracked follow-up.
-func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Service) {
-	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc})
+func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Service, opts ...Option) {
+	cfg := &serverConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+	tel := observability.New(
+		"github.com/zakyalvan/krtlwrkflw/transport/grpc",
+		nonNilOpts(cfg.logOpt, cfg.tpOpt, cfg.mpOpt)...,
+	)
+	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc, tel: tel})
 }
 
 // ---- RPC implementations ----
 
 // StartInstance creates a new process instance.
 func (s *server) StartInstance(ctx context.Context, req *workflowpb.StartInstanceRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "StartInstance")
+	defer span.End()
+
 	st, err := s.svc.StartInstance(ctx, service.StartInstanceRequest{
 		DefRef:     req.GetDefRef(),
 		InstanceID: req.GetInstanceId(),
 		Vars:       structToMap(req.GetVars()),
 	})
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 	proto, err := instanceToProto(st)
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
 	}
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
@@ -67,12 +82,17 @@ func (s *server) StartInstance(ctx context.Context, req *workflowpb.StartInstanc
 
 // GetInstance returns the current state of an instance.
 func (s *server) GetInstance(ctx context.Context, req *workflowpb.GetInstanceRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "GetInstance")
+	defer span.End()
+
 	st, err := s.svc.GetInstance(ctx, req.GetInstanceId())
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 	proto, err := instanceToProto(st)
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
 	}
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
@@ -80,16 +100,21 @@ func (s *server) GetInstance(ctx context.Context, req *workflowpb.GetInstanceReq
 
 // DeliverSignal resumes a parked instance with a named signal.
 func (s *server) DeliverSignal(ctx context.Context, req *workflowpb.DeliverSignalRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "DeliverSignal")
+	defer span.End()
+
 	st, err := s.svc.DeliverSignal(ctx, service.DeliverSignalRequest{
 		InstanceID: req.GetInstanceId(),
 		Signal:     req.GetSignal(),
 		Payload:    structToMap(req.GetPayload()),
 	})
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 	proto, err := instanceToProto(st)
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
 	}
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
@@ -101,6 +126,9 @@ func (s *server) DeliverSignal(ctx context.Context, req *workflowpb.DeliverSigna
 // an instance was waiting for the message. If no instance matches the given name
 // and correlationKey, the message is silently dropped and OK is still returned.
 func (s *server) DeliverMessage(ctx context.Context, req *workflowpb.DeliverMessageRequest) (*workflowpb.DeliverMessageResponse, error) {
+	ctx, span := s.startSpan(ctx, "DeliverMessage")
+	defer span.End()
+
 	err := s.svc.DeliverMessage(ctx, service.DeliverMessageRequest{
 		DefRef:         req.GetDefRef(),
 		Name:           req.GetName(),
@@ -108,6 +136,7 @@ func (s *server) DeliverMessage(ctx context.Context, req *workflowpb.DeliverMess
 		Payload:        structToMap(req.GetPayload()),
 	})
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 	return &workflowpb.DeliverMessageResponse{}, nil
@@ -115,15 +144,20 @@ func (s *server) DeliverMessage(ctx context.Context, req *workflowpb.DeliverMess
 
 // ClaimTask authorizes and claims a human task.
 func (s *server) ClaimTask(ctx context.Context, req *workflowpb.ClaimTaskRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "ClaimTask")
+	defer span.End()
+
 	st, err := s.svc.ClaimTask(ctx, service.ClaimTaskRequest{
 		TaskToken: req.GetTaskToken(),
 		Actor:     protoToActor(req.GetActor()),
 	})
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 	proto, err := instanceToProto(st)
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
 	}
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
@@ -131,16 +165,21 @@ func (s *server) ClaimTask(ctx context.Context, req *workflowpb.ClaimTaskRequest
 
 // CompleteTask authorizes and completes a human task.
 func (s *server) CompleteTask(ctx context.Context, req *workflowpb.CompleteTaskRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "CompleteTask")
+	defer span.End()
+
 	st, err := s.svc.CompleteTask(ctx, service.CompleteTaskRequest{
 		TaskToken: req.GetTaskToken(),
 		Actor:     protoToActor(req.GetActor()),
 		Output:    structToMap(req.GetOutput()),
 	})
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 	proto, err := instanceToProto(st)
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
 	}
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
@@ -148,6 +187,9 @@ func (s *server) CompleteTask(ctx context.Context, req *workflowpb.CompleteTaskR
 
 // ReassignTask authorizes and reassigns a human task.
 func (s *server) ReassignTask(ctx context.Context, req *workflowpb.ReassignTaskRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "ReassignTask")
+	defer span.End()
+
 	st, err := s.svc.ReassignTask(ctx, service.ReassignTaskRequest{
 		TaskToken: req.GetTaskToken(),
 		From:      req.GetFrom(),
@@ -155,10 +197,12 @@ func (s *server) ReassignTask(ctx context.Context, req *workflowpb.ReassignTaskR
 		By:        protoToActor(req.GetBy()),
 	})
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 	proto, err := instanceToProto(st)
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
 	}
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
@@ -166,6 +210,9 @@ func (s *server) ReassignTask(ctx context.Context, req *workflowpb.ReassignTaskR
 
 // ListInstances returns a paginated list of instance summaries.
 func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstancesRequest) (*workflowpb.ListInstancesResponse, error) {
+	ctx, span := s.startSpan(ctx, "ListInstances")
+	defer span.End()
+
 	filter := runtime.InstanceFilter{
 		Limit:  int(req.GetLimit()),
 		Cursor: req.GetCursor(),
@@ -173,13 +220,16 @@ func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstance
 	if st := req.GetStatus(); st != "" {
 		parsed, err := parseStatus(st)
 		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "unknown status filter %q", st)
+			listErr := status.Errorf(codes.InvalidArgument, "unknown status filter %q", st)
+			recordSpanErr(span, listErr)
+			return nil, listErr
 		}
 		filter.Status = &parsed
 	}
 
 	page, err := s.svc.ListInstances(ctx, filter)
 	if err != nil {
+		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
 

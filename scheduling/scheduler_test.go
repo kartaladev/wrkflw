@@ -2,12 +2,15 @@ package scheduling_test
 
 import (
 	"io"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
@@ -50,4 +53,124 @@ func TestScheduler_Cancel_NoOp(t *testing.T) {
 	require.NoError(t, fakeClock.BlockUntilContext(t.Context(), 0))
 	fakeClock.Advance(2 * time.Second)
 	require.False(t, fired, "cancelled timer must not fire")
+}
+
+// TestNewScheduler_WithLogger verifies that the WithLogger façade option is
+// accepted and that the resulting scheduler constructs and fires correctly.
+func TestNewScheduler_WithLogger(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []tc{
+		{
+			name: "WithLogger propagates custom logger without error",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				logger := slog.New(slog.Default().Handler())
+				s, err := scheduling.NewScheduler(clk, scheduling.WithLogger(logger))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+
+				// Verify scheduler still fires correctly with injected logger.
+				var wg sync.WaitGroup
+				wg.Add(1)
+				s.Schedule("wl-t1", clk.Now().Add(time.Second), func() { wg.Done() })
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				clk.Advance(time.Second)
+				wg.Wait()
+			},
+		},
+		{
+			name: "WithLogger nil is a no-op — construction succeeds",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				s, err := scheduling.NewScheduler(clk, scheduling.WithLogger(nil))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "no options still constructs correctly",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				s, err := scheduling.NewScheduler(clk)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.assert(t)
+		})
+	}
+}
+
+// TestNewScheduler_ObservabilityOptions verifies that WithTracerProvider and
+// WithMeterProvider are accepted by the façade and that the resulting scheduler
+// constructs without panicking. Per spec §4, the scheduler holds these options
+// for parity with other components (relay, runtime, transports); no spans or
+// metrics are emitted in this track.
+func TestNewScheduler_ObservabilityOptions(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []tc{
+		{
+			name: "WithTracerProvider constructs without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				s, err := scheduling.NewScheduler(clk, scheduling.WithTracerProvider(tp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "WithMeterProvider constructs without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				s, err := scheduling.NewScheduler(clk, scheduling.WithMeterProvider(mp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "all three options together construct without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				l := slog.New(slog.Default().Handler())
+				s, err := scheduling.NewScheduler(clk,
+					scheduling.WithTracerProvider(tp),
+					scheduling.WithMeterProvider(mp),
+					scheduling.WithLogger(l),
+				)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.assert(t)
+		})
+	}
 }

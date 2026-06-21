@@ -9,11 +9,17 @@ import (
 	"strings"
 	"sync"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
@@ -76,6 +82,17 @@ type Runner struct {
 	// default and a failed action behaves as before (error boundary or instance failure).
 	// Set via [WithDefaultRetryPolicy].
 	defaultRetryPolicy *model.RetryPolicy
+
+	// logOpt, tpOpt, mpOpt are staged observability options collected by the
+	// With* option functions and passed together to newRunnerObs after the option
+	// loop. They are nil when the corresponding With* option was not provided.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	// obs carries the logger/tracer/meter and the pre-built process instruments.
+	// Always non-nil after NewRunner (defaults to noop providers + slog.Default()).
+	obs *runnerObs
 
 	// msgMu guards msgWaiters.
 	msgMu sync.Mutex
@@ -150,6 +167,24 @@ func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
 	return func(r *Runner) { r.defaultRetryPolicy = &p }
 }
 
+// WithLogger sets the structured logger used by the Runner (default: [slog.Default]).
+// A nil value is ignored.
+func WithLogger(l *slog.Logger) Option {
+	return func(r *Runner) { r.logOpt = observability.WithLogger(l) }
+}
+
+// WithTracerProvider sets the OTel tracer provider used by the Runner
+// (default: the OTel global provider). A nil value is ignored.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(r *Runner) { r.tpOpt = observability.WithTracerProvider(tp) }
+}
+
+// WithMeterProvider sets the OTel meter provider used by the Runner
+// (default: the OTel global provider). A nil value is ignored.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(r *Runner) { r.mpOpt = observability.WithMeterProvider(mp) }
+}
+
 // NewRunner constructs a Runner with the three required core ports (cat, clk,
 // store) and any optional capability bundles supplied as functional options.
 //
@@ -183,14 +218,28 @@ func NewRunner(
 	for _, o := range opts {
 		o(r)
 	}
+	r.obs = newRunnerObs(r.logOpt, r.tpOpt, r.mpOpt)
 	return r
 }
 
 // Run starts an instance and drives it to a terminal state or until the engine
 // parks (e.g. awaiting a human task). It returns the state at the point it stopped.
 func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
+		attribute.String("wrkflw.instance_id", instanceID),
+		attribute.String("wrkflw.def_id", def.ID),
+		attribute.Int("wrkflw.def_version", def.Version),
+	))
+	defer span.End()
 	st := engine.InstanceState{InstanceID: instanceID}
-	return r.deliverLoop(ctx, def, st, 0, true, engine.NewStartInstance(r.clk.Now(), vars))
+	out, err := r.deliverLoop(ctx, def, st, 0, true, engine.NewStartInstance(r.clk.Now(), vars))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetAttributes(attribute.String("wrkflw.status", statusName(out.Status)))
+	}
+	return out, err
 }
 
 // Deliver loads the current instance state, applies one trigger via engine.Step,
@@ -208,11 +257,23 @@ func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instance
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
 func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Deliver", trace.WithAttributes(
+		attribute.String("wrkflw.instance_id", instanceID),
+		attribute.String("wrkflw.trigger", triggerName(trg)),
+	))
+	defer span.End()
 	st, token, err := r.store.Load(ctx, instanceID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return engine.InstanceState{}, fmt.Errorf("runtime: deliver: load: %w", err)
 	}
-	return r.deliverLoop(ctx, def, st, token, false, trg)
+	out, err := r.deliverLoop(ctx, def, st, token, false, trg)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return out, err
 }
 
 // deliverLoop applies triggers from queue and then any follow-up triggers emitted
@@ -240,11 +301,45 @@ func (r *Runner) deliverLoop(
 		t := queue[0]
 		queue = queue[1:]
 
+		prevStatus := st.Status
+		prevIncidents := len(st.Incidents)
+
+		stepCtx, span := r.obs.tracer().Start(ctx, "wrkflw.step", trace.WithAttributes(
+			attribute.String("wrkflw.instance_id", st.InstanceID),
+			attribute.String("wrkflw.def_id", def.ID),
+			attribute.String("wrkflw.trigger", triggerName(t)),
+		))
+		start := r.clk.Now()
 		res, err := engine.Step(def, st, t, engine.StepOptions{DefaultRetryPolicy: r.defaultRetryPolicy})
+		r.obs.stepDuration.Record(stepCtx, r.clk.Now().Sub(start).Seconds(),
+			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			span.End()
 			return st, fmt.Errorf("runtime: step: %w", err)
 		}
 		st = res.State
+		span.SetAttributes(
+			attribute.Int("wrkflw.command_count", len(res.Commands)),
+			attribute.String("wrkflw.status", statusName(st.Status)),
+		)
+		span.End()
+
+		if create {
+			r.obs.instStarted.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+			r.obs.instActive.Add(ctx, 1)
+		}
+		if isTerminal(st.Status) && !isTerminal(prevStatus) {
+			r.obs.instCompleted.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("def", def.ID),
+				attribute.String("status", statusName(st.Status)),
+			))
+			r.obs.instActive.Add(ctx, -1)
+		}
+		if len(st.Incidents) > prevIncidents {
+			r.obs.incidentsRaised.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+		}
 
 		events := outboxEventsFor(res.Commands)
 		appliedStep := AppliedStep{State: st, Trigger: t, Events: events}
@@ -263,7 +358,7 @@ func (r *Runner) deliverLoop(
 		r.syncWaiters(st)
 
 		for _, c := range res.Commands {
-			next, err := r.perform(ctx, def, st, c)
+			next, err := r.perform(stepCtx, def, st, c)
 			if err != nil {
 				return st, err
 			}
@@ -356,7 +451,11 @@ func (r *Runner) DeliverMessage(ctx context.Context, def *model.ProcessDefinitio
 // point for recovering a retry-exhausted activity. Delegates through Deliver so
 // the trigger is journalled and persisted.
 func (r *Runner) ResolveIncident(ctx context.Context, def *model.ProcessDefinition, instanceID, incidentID string, addAttempts int) (engine.InstanceState, error) {
-	return r.Deliver(ctx, def, instanceID, engine.NewResolveIncident(r.clk.Now(), incidentID, addAttempts))
+	st, err := r.Deliver(ctx, def, instanceID, engine.NewResolveIncident(r.clk.Now(), incidentID, addAttempts))
+	if err == nil {
+		r.obs.incidentsResolved.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+	}
+	return st, err
 }
 
 // perform executes one command and returns the resulting trigger, if any.
@@ -368,17 +467,38 @@ func (r *Runner) ResolveIncident(ctx context.Context, def *model.ProcessDefiniti
 func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
 	switch cmd := c.(type) {
 	case engine.InvokeAction:
+		actx, aspan := r.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name,
+			trace.WithAttributes(attribute.String("wrkflw.action", cmd.Name)))
+		outcome := "error"
+		var elapsed float64
+		defer func() {
+			r.obs.actionDuration.Record(actx, elapsed,
+				metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", outcome)))
+			aspan.End()
+		}()
+
 		if r.cat == nil {
+			err := errors.New("no action catalog: " + cmd.Name)
+			aspan.RecordError(err)
+			aspan.SetStatus(codes.Error, err.Error())
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "no action catalog: "+cmd.Name, false), nil
 		}
 		a, ok := r.cat.Resolve(cmd.Name)
 		if !ok {
+			err := errors.New("unknown action: " + cmd.Name)
+			aspan.RecordError(err)
+			aspan.SetStatus(codes.Error, err.Error())
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
-		out, err := a.Do(ctx, cmd.Input)
+		start := r.clk.Now()
+		out, err := a.Do(actx, cmd.Input)
+		elapsed = r.clk.Now().Sub(start).Seconds()
 		if err != nil {
+			aspan.RecordError(err)
+			aspan.SetStatus(codes.Error, err.Error())
 			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), true, r.jitter.Fraction()), nil
 		}
+		outcome = "ok"
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 
 	case engine.CompleteInstance:
@@ -435,6 +555,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		if err := r.tasks.Upsert(ctx, task); err != nil {
 			return nil, fmt.Errorf("runtime: upsert task: %w", err)
 		}
+		r.obs.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "created")))
 		// No follow-up trigger: the instance parks here.
 		return nil, nil
 
@@ -450,6 +571,9 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 	case engine.ScheduleTimer:
 		if r.sched == nil {
 			return nil, fmt.Errorf("runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
+		}
+		if cmd.Kind == engine.TimerRetry {
+			r.obs.actionRetries.Add(ctx, 1)
 		}
 		// Capture the values needed by the fire callback; do not close over
 		// mutable references to cmd (already a value type, so this is safe).
@@ -468,23 +592,23 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 					return
 				}
 				if !errors.Is(err, ErrConcurrentUpdate) {
-					slog.Error("runtime: timer fire: Deliver failed",
-						"timerID", timerID,
-						"instanceID", instanceID,
-						"err", err,
-					)
+					r.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver failed",
+						append(r.obs.tel.LogAttrs(fireCtx),
+							slog.String("timer_id", timerID),
+							slog.String("instance_id", instanceID),
+							slog.Any("error", err))...)
 					return
 				}
 				// ErrConcurrentUpdate: another Deliver won the CAS; Deliver
 				// internally reloads fresh state on the next call. Retry
 				// immediately (no sleep needed — store reloads on each Deliver).
 			}
-			slog.Error("runtime: timer fire: Deliver permanently dropped after CAS conflicts",
-				"timerID", timerID,
-				"instanceID", instanceID,
-				"attempts", maxAttempts,
-				"err", err,
-			)
+			r.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver permanently dropped after CAS conflicts",
+				append(r.obs.tel.LogAttrs(fireCtx),
+					slog.String("timer_id", timerID),
+					slog.String("instance_id", instanceID),
+					slog.Int("attempts", maxAttempts),
+					slog.Any("error", err))...)
 		})
 		return nil, nil
 

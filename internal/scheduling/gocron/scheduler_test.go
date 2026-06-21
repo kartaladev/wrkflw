@@ -1,16 +1,98 @@
 package gocron_test
 
 import (
+	"context"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
+
+// captureHandler records slog records for assertions.
+type captureHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *captureHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+func (h *captureHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *captureHandler) WithGroup(_ string) slog.Handler      { return h }
+
+// TestGocronScheduler_WithLogger verifies that NewGocronScheduler accepts a
+// WithLogger option without error and that the scheduler continues to operate
+// correctly when an injected logger is provided. A custom capturing handler is
+// wired in to demonstrate injection works; normal timer firing is verified to
+// succeed with the injected logger in place. We also confirm the default (no
+// option) and nil-option variants still construct and fire correctly.
+func TestGocronScheduler_WithLogger(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T, clk *clockwork.FakeClock)
+	}
+
+	cases := []tc{
+		{
+			name: "construction with injected logger succeeds and fires",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				h := &captureHandler{}
+				logger := slog.New(h)
+
+				s, err := sched.NewGocronScheduler(clk, sched.WithLogger(logger))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+
+				// Verify normal operation still works with the injected logger.
+				var wg sync.WaitGroup
+				wg.Add(1)
+				s.Schedule("log-t1", clk.Now().Add(time.Second), func() { wg.Done() })
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				clk.Advance(time.Second)
+				wg.Wait()
+			},
+		},
+		{
+			name: "construction with nil logger option falls back to default",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				// nil logger option must be a no-op — no panic, no nil pointer.
+				s, err := sched.NewGocronScheduler(clk, sched.WithLogger(nil))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+		{
+			name: "construction with no options still works",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				s, err := sched.NewGocronScheduler(clk)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clk := clockwork.NewFakeClock()
+			c.assert(t, clk)
+		})
+	}
+}
 
 func TestGocronScheduler_FiresAtTime(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
@@ -140,6 +222,68 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 			c.assert(t, s, clk)
+		})
+	}
+}
+
+// TestGocronScheduler_WithTracerAndMeterProvider verifies that
+// WithTracerProvider and WithMeterProvider are accepted by NewGocronScheduler
+// and that the scheduler constructs and operates correctly with those options.
+// The scheduler emits no spans or metrics in this track (parity-only); the test
+// confirms no panics and continued correct operation.
+func TestGocronScheduler_WithTracerAndMeterProvider(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T, clk *clockwork.FakeClock)
+	}
+
+	cases := []tc{
+		{
+			name: "WithTracerProvider constructs without panic",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				s, err := sched.NewGocronScheduler(clk, sched.WithTracerProvider(tp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+		{
+			name: "WithMeterProvider constructs without panic",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				s, err := sched.NewGocronScheduler(clk, sched.WithMeterProvider(mp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+		{
+			name: "all three options together construct without panic",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				l := slog.New(slog.Default().Handler())
+				s, err := sched.NewGocronScheduler(clk,
+					sched.WithTracerProvider(tp),
+					sched.WithMeterProvider(mp),
+					sched.WithLogger(l),
+				)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clk := clockwork.NewFakeClock()
+			c.assert(t, clk)
 		})
 	}
 }

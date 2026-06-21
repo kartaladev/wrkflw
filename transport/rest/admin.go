@@ -91,7 +91,7 @@ func (h *handler) handleAdminListInstances(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	h.writeJSON(w, r, http.StatusOK, resp)
 }
 
 // handleResolveIncident handles POST /admin/instances/{id}/incidents/{incidentID}/resolve.
@@ -123,7 +123,7 @@ func (h *handler) handleResolveIncident(w http.ResponseWriter, r *http.Request) 
 		WriteHTTPError(w, err)
 		return
 	}
-	h.renderInstance(w, http.StatusOK, st)
+	h.renderInstance(w, r, http.StatusOK, st)
 }
 
 // parseStatus converts a status string (as emitted by statusString) back to an engine.Status.

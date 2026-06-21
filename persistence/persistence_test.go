@@ -5,11 +5,15 @@ package persistence_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/database"
@@ -196,4 +200,42 @@ func TestNewRelayDrainsOutbox(t *testing.T) {
 	assert.Equal(t, 1, n, "relay must drain exactly one outbox event")
 	require.Len(t, pub.events, 1)
 	assert.Equal(t, "instance.completed", pub.events[0].Topic)
+}
+
+// TestRelayTelemetryOptions verifies that the three telemetry façade options
+// (WithRelayLogger, WithRelayTracerProvider, WithRelayMeterProvider) are accepted
+// by NewRelay and that a wrkflw.relay.batch span is emitted through the injected
+// TracerProvider when DrainOnce is called.
+func TestRelayTelemetryOptions(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, persistence.Migrate(t.Context(), pool))
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+
+	mp := sdkmetric.NewMeterProvider()
+	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+
+	relay := persistence.NewRelay(pool, &capturingPublisher{},
+		persistence.WithRelayLogger(slog.Default()),
+		persistence.WithRelayTracerProvider(tp),
+		persistence.WithRelayMeterProvider(mp),
+	)
+	require.NotNil(t, relay)
+
+	n, err := relay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 0, n, "empty outbox: 0 rows published")
+
+	// A batch span must be emitted even for an empty drain.
+	ended := sr.Ended()
+	var saw bool
+	for _, s := range ended {
+		if s.Name() == "wrkflw.relay.batch" {
+			saw = true
+			break
+		}
+	}
+	assert.True(t, saw, "expected a wrkflw.relay.batch span from the injected TracerProvider")
 }

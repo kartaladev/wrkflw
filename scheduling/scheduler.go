@@ -6,9 +6,12 @@ package scheduling
 
 import (
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -29,11 +32,71 @@ var (
 	_ io.Closer         = (*Scheduler)(nil)
 )
 
+// config holds façade-level options.
+type config struct {
+	logger *slog.Logger
+	tp     trace.TracerProvider
+	mp     metric.MeterProvider
+}
+
+// Option configures a [Scheduler].
+type Option func(*config)
+
+// WithLogger sets the scheduler's structured logger (default: [slog.Default]).
+// A nil value is ignored.
+func WithLogger(l *slog.Logger) Option {
+	return func(c *config) {
+		if l != nil {
+			c.logger = l
+		}
+	}
+}
+
+// WithTracerProvider sets the OTel TracerProvider for the scheduler.
+// Default: the OTel global provider. The scheduler emits no spans in this
+// track (API parity only — consistent with relay/rest/grpc). A nil value is
+// ignored.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(c *config) {
+		if tp != nil {
+			c.tp = tp
+		}
+	}
+}
+
+// WithMeterProvider sets the OTel MeterProvider for the scheduler.
+// Default: the OTel global provider. The scheduler emits no metrics in this
+// track (API parity only — consistent with relay/rest/grpc). A nil value is
+// ignored.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(c *config) {
+		if mp != nil {
+			c.mp = mp
+		}
+	}
+}
+
 // NewScheduler constructs and starts a gocron-backed [Scheduler] driven by
 // clk. The returned scheduler must be closed via [Scheduler.Close] when the
 // application shuts down.
-func NewScheduler(clk clockwork.Clock) (*Scheduler, error) {
-	impl, err := gocronsched.NewGocronScheduler(clk)
+func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
+	cfg := &config{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
+	var internalOpts []gocronsched.Option
+	if cfg.logger != nil {
+		internalOpts = append(internalOpts, gocronsched.WithLogger(cfg.logger))
+	}
+	if cfg.tp != nil {
+		internalOpts = append(internalOpts, gocronsched.WithTracerProvider(cfg.tp))
+	}
+	if cfg.mp != nil {
+		internalOpts = append(internalOpts, gocronsched.WithMeterProvider(cfg.mp))
+	}
+
+	impl, err := gocronsched.NewGocronScheduler(clk, internalOpts...)
 	if err != nil {
 		return nil, err
 	}
