@@ -315,6 +315,8 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final.Status,
 		"instance must reach StatusCompleted after retry on CAS conflict")
 	assert.Empty(t, final.Tokens, "no tokens remain after completion")
+	// Self-certifying: confirm the CAS-conflict injection path was actually taken.
+	assert.True(t, store.triggered.Load(), "onceConflictStore must have injected a CAS conflict")
 }
 
 // TestDeliverLoopPropagatesConcurrentUpdate verifies that when the Store's Create

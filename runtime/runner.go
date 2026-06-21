@@ -421,7 +421,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			trg := engine.NewTimerFired(r.clk.Now(), timerID)
 			const maxAttempts = 5
 			var err error
-			for attempt := 1; attempt <= maxAttempts; attempt++ {
+			for range maxAttempts {
 				if _, err = r.Deliver(fireCtx, def, instanceID, trg); err == nil {
 					return
 				}
