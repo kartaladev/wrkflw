@@ -117,10 +117,11 @@ var (
 
 // Compile-time checks: internal concrete types must satisfy the public interfaces.
 var (
-	_ Store                 = (*postgres.Store)(nil)
-	_ DefinitionStore       = (*postgres.DefinitionStore)(nil)
-	_ Relay                 = (*postgres.Relay)(nil)
-	_ runtime.InstanceLister = (*postgres.Lister)(nil)
+	_ Store                   = (*postgres.Store)(nil)
+	_ DefinitionStore         = (*postgres.DefinitionStore)(nil)
+	_ Relay                   = (*postgres.Relay)(nil)
+	_ runtime.InstanceLister  = (*postgres.Lister)(nil)
+	_ runtime.CallLinkStore   = (*postgres.CallLinkStore)(nil)
 )
 
 // OpenPostgres constructs a Postgres-backed runtime.Store + JournalReader over pool.
@@ -269,4 +270,21 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.
 		return nil, nil, err
 	}
 	return o, o, nil
+}
+
+// NewCallLinkStore constructs the Postgres-backed runtime.CallLinkStore (read/claim
+// side). It provides ClaimPending, MarkNotified, and LookupChild over the
+// wrkflw_call_links table. The write side is fused into Store.Create /
+// Store.Commit (ADR-0025); use OpenPostgres for that.
+//
+// Migrate must have been applied before the first call to any method.
+//
+// Example:
+//
+//	pool, _ := pgxpool.New(ctx, dsn)
+//	persistence.Migrate(ctx, pool)
+//	cls := persistence.NewCallLinkStore(pool)
+//	pending, err := cls.ClaimPending(ctx, 100)
+func NewCallLinkStore(pool *pgxpool.Pool) runtime.CallLinkStore {
+	return postgres.NewCallLinkStore(pool)
 }
