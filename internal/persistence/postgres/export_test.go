@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -41,6 +42,61 @@ func (e errDBTX) Begin(_ context.Context) (pgx.Tx, error)                { retur
 func (e errDBTX) SendBatch(_ context.Context, _ *pgx.Batch) pgx.BatchResults {
 	return nil
 }
+
+// NewDefinitionStoreFromDB exposes the internal constructor for white-box testing
+// of error paths without a real Postgres pool.
+func NewDefinitionStoreFromDB(db DBTX) *DefinitionStore { return newDefinitionStoreFromDB(db) }
+
+// TestDefinitionStorePutExecError covers the DB exec error branch in PutDefinition.
+func TestDefinitionStorePutExecError(t *testing.T) {
+	injected := errors.New("injected put exec error")
+	ds := newDefinitionStoreFromDB(errDBTX{err: injected})
+	err := ds.PutDefinition(context.Background(), &model.ProcessDefinition{ID: "d", Version: 1})
+	require.ErrorContains(t, err, "injected put exec error")
+}
+
+// TestDefinitionStoreGetScanError covers the non-ErrNoRows scan error branch in GetDefinition.
+func TestDefinitionStoreGetScanError(t *testing.T) {
+	injected := errors.New("injected scan error")
+	// errDBTX.QueryRow returns nil; scanning nil pgx.Row panics in real pgx but we need
+	// to exercise the branch — use a scanErrorRow shim instead.
+	ds := newDefinitionStoreFromDB(errQueryRowDBTX{err: injected})
+	_, err := ds.GetDefinition(context.Background(), "d", 1)
+	require.ErrorContains(t, err, "injected scan error")
+}
+
+// TestDefinitionStoreLookupLatestScanError covers the non-ErrNoRows scan error
+// branch in the "latest version" path of Lookup.
+func TestDefinitionStoreLookupLatestScanError(t *testing.T) {
+	injected := errors.New("injected lookup scan error")
+	ds := newDefinitionStoreFromDB(errQueryRowDBTX{err: injected})
+	_, err := ds.Lookup("d") // no colon → latest-version path
+	require.ErrorContains(t, err, "injected lookup scan error")
+}
+
+// errQueryRowDBTX is a DBTX whose QueryRow returns a row that always errors.
+type errQueryRowDBTX struct {
+	err error
+}
+
+func (e errQueryRowDBTX) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, e.err
+}
+func (e errQueryRowDBTX) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+	return nil, e.err
+}
+func (e errQueryRowDBTX) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
+	return &errRow{err: e.err}
+}
+func (e errQueryRowDBTX) Begin(_ context.Context) (pgx.Tx, error)         { return nil, e.err }
+func (e errQueryRowDBTX) SendBatch(_ context.Context, _ *pgx.Batch) pgx.BatchResults {
+	return nil
+}
+
+// errRow is a pgx.Row whose Scan always returns the injected error.
+type errRow struct{ err error }
+
+func (r *errRow) Scan(_ ...any) error { return r.err }
 
 // TestWriteJournalExecError verifies that writeJournal propagates a DB exec error
 // (covers the "if _, err := db.Exec(...); err != nil" branch in writeJournal).
