@@ -2,7 +2,6 @@ package scheduling_test
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
@@ -37,36 +36,6 @@ func timerIntermediateE2EDef() *model.ProcessDefinition {
 	}
 }
 
-// syncStore wraps runtime.MemStore with a mutex to make it safe for concurrent
-// access. This is necessary for the gocron e2e test where gocron's executor
-// goroutine calls Deliver (which calls store.Commit) concurrently with the test
-// goroutine polling store.Load via require.Eventually.
-//
-// MemStore itself is intentionally single-threaded (designed for synchronous
-// MemScheduler.Tick usage); the gocron scheduler introduces genuine concurrency.
-type syncStore struct {
-	mu   sync.RWMutex
-	inner *runtime.MemStore
-}
-
-func (s *syncStore) Create(ctx context.Context, step runtime.AppliedStep) (runtime.Token, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.inner.Create(ctx, step)
-}
-
-func (s *syncStore) Load(ctx context.Context, id string) (engine.InstanceState, runtime.Token, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.inner.Load(ctx, id)
-}
-
-func (s *syncStore) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.inner.Commit(ctx, expected, step)
-}
-
 // TestGocronSchedulerDrivesRunnerToCompletion proves the gocron-backed scheduler
 // drives a real Runner identically to MemScheduler: ONE shared fake clock is the
 // runner's clock.Clock AND the scheduler's clockwork.Clock. Advancing the shared
@@ -81,8 +50,6 @@ func (s *syncStore) Commit(ctx context.Context, expected runtime.Token, step run
 //     goroutine has delivered TimerFired and the service action ran.
 //  3. require.Eventually polls the store for StatusCompleted as the final safety
 //     net for the async Deliver path completing its last engine step.
-//  4. syncStore wraps MemStore with a mutex, making Load/Commit concurrency-safe
-//     (required because gocron fires on its own goroutine while the test polls).
 func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	ctx := t.Context()
 
@@ -101,8 +68,7 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched.Close() })
 
-	inner := runtime.NewMemStore()
-	store := &syncStore{inner: inner}
+	store := runtime.NewMemStore()
 	r := runtime.NewRunner(cat, fc, store, runtime.WithScheduler(sched)) // same fc, as clock.Clock
 
 	def := timerIntermediateE2EDef()

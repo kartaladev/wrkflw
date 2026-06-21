@@ -1,6 +1,8 @@
 package runtime_test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,4 +95,63 @@ func TestMemStoreCommit(t *testing.T) {
 			tc.assert(t, runtime.NewMemStore())
 		})
 	}
+}
+
+// TestMemStoreConcurrentSafe verifies that MemStore is safe for concurrent use
+// from multiple goroutines. The test is designed to expose data races when run
+// with -race.
+func TestMemStoreConcurrentSafe(t *testing.T) {
+	const (
+		numWorkers  = 20
+		numCommits  = 10
+	)
+
+	ms := runtime.NewMemStore()
+	ctx := t.Context()
+
+	var wg sync.WaitGroup
+
+	// Start a goroutine that continuously reads Events() while workers are active.
+	stop := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = ms.Events()
+			}
+		}
+	}()
+
+	// Start N worker goroutines, each working on a distinct instanceID.
+	var workerWg sync.WaitGroup
+	for i := range numWorkers {
+		workerWg.Add(1)
+		go func(idx int) {
+			defer workerWg.Done()
+			instID := fmt.Sprintf("inst-%d", idx)
+			s := step(instID, fmt.Sprintf("topic-%d", idx))
+
+			tok, err := ms.Create(ctx, s)
+			if err != nil {
+				return
+			}
+
+			for range numCommits {
+				tok, err = ms.Commit(ctx, tok, step(instID, fmt.Sprintf("topic-%d-commit", idx)))
+				if err != nil {
+					return
+				}
+				_, _, _ = ms.Load(ctx, instID)
+				_, _ = ms.Entries(ctx, instID)
+			}
+		}(i)
+	}
+
+	workerWg.Wait()
+	close(stop)
+	wg.Wait()
 }
