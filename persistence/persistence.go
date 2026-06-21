@@ -19,6 +19,7 @@ package persistence
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"time"
 
@@ -81,6 +82,26 @@ type Relay interface {
 // Publisher is the broker-agnostic outbox publisher alias (same as runtime.Publisher).
 type Publisher = runtime.Publisher
 
+// Option configures the Postgres Store returned by OpenPostgres
+// (alias of postgres.StoreOption).
+type Option = postgres.StoreOption
+
+// WithHistoryCap bounds the inline instance History persisted in the snapshot
+// to every open visit plus at most n most-recent closed visits (ADR-0021).
+// Unset / n <= 0 keeps full inline history (current behavior). The journal
+// table remains the complete audit source.
+func WithHistoryCap(n int) Option { return postgres.WithHistoryCap(n) }
+
+// WithOutboxNotify makes the Store emit a transactional NOTIFY wrkflw_outbox
+// when a step inserts outbox rows, so a relay started with WithListenNotify
+// drains with sub-poll-interval latency (ADR-0022). Opt-in; default off.
+func WithOutboxNotify() Option { return postgres.WithOutboxNotify() }
+
+// WithListenNotify makes the relay LISTEN on wrkflw_outbox and drain on each
+// NOTIFY (emitted by a Store configured with WithOutboxNotify), keeping the poll
+// interval as a fallback (ADR-0022). Opt-in; default off.
+func WithListenNotify() RelayOption { return postgres.WithListenNotify() }
+
 // RelayOption configures a Relay (alias of postgres.RelayOption).
 type RelayOption = postgres.RelayOption
 
@@ -111,10 +132,10 @@ var (
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
-//	store, _ := persistence.OpenPostgres(ctx, pool)
+//	store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
 //	runner := runtime.NewRunner(nil, clock.System(), store)
-func OpenPostgres(_ context.Context, pool *pgxpool.Pool) (Store, error) {
-	return postgres.NewStore(pool), nil
+func OpenPostgres(_ context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
+	return postgres.NewStore(pool, opts...), nil
 }
 
 // Migrate applies the embedded schema migrations to pool. It is idempotent:
@@ -222,4 +243,30 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 //	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
 func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
 	return postgres.NewLister(pool)
+}
+
+// NewAdvisoryLockOwnership constructs a multi-process [runtime.Ownership]
+// backed by Postgres session advisory locks (ADR-0020), for use with
+// [runtime.NewCachingStore] across multiple replicas sharing one database.
+//
+// It holds a dedicated pool connection for its lifetime; close the returned
+// [io.Closer] at shutdown to release every held lock and return the connection.
+//
+// When used with a [runtime.CachingStore], always relinquish ownership through
+// [runtime.CachingStore.Release] (not the bare [runtime.Ownership.Release]), so
+// the cache evicts the instance's state on hand-off and a re-acquiring process
+// does not serve a stale cached entry.
+//
+// Example:
+//
+//	owner, closer, _ := persistence.NewAdvisoryLockOwnership(ctx, pool)
+//	defer closer.Close()
+//	store, _ := persistence.OpenPostgres(ctx, pool)
+//	cachingStore := runtime.NewCachingStore(store, owner, clock.System())
+func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.Ownership, io.Closer, error) {
+	o, err := postgres.NewAdvisoryLockOwnership(ctx, pool)
+	if err != nil {
+		return nil, nil, err
+	}
+	return o, o, nil
 }

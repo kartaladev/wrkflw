@@ -118,3 +118,6 @@ func TestWriteOutboxExecError(t *testing.T) {
 	err := writeOutbox(context.Background(), errDBTX{err: injected}, "inst-1", 1, events, time.Now())
 	require.ErrorContains(t, err, "injected outbox exec error")
 }
+
+// CapHistory exposes the unexported capHistory helper for black-box tests.
+var CapHistory = capHistory
