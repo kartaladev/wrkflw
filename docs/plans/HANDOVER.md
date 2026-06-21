@@ -103,35 +103,45 @@ These are deliberately deferred, not bugs in the shipped scope. The most importa
    same-named files (project convention is 1:1, see the test-file-naming memory); root-level event
    sub-process and message-arm-gateway paths have light coverage.
 
-## Persistence (PostgreSQL) sub-project — IMPLEMENTED, pending review+merge
+## Persistence (PostgreSQL) sub-project — ✅ COMPLETE, merged to `main`
 
-Branch: `feat/persistence-postgres` (HEAD `18f7ebc`). All 10 tasks are complete and verified.
-Gate: `go test -race ./...` green, total coverage 87.3%, touched packages all ≥85%, lint clean (0 issues),
-no forbidden imports (`watermill`/`casbin`/`gocron`/`ThreeDotsLabs`/`clockwork`) in production code.
+Built on branch `feat/persistence-postgres` (range `fb39a87..9f9ab0f`), reviewed (per-task + opus
+whole-branch), merged to `main`. All 10 plan tasks complete. Design: spec
+`docs/specs/2026-06-21-persistence-postgres-design.md`, plan `docs/plans/2026-06-21-persistence-postgres.md`,
+ADRs 0006–0008.
+Gate: `go test -race ./...` green, total coverage 87.3% (model 96.2%, runtime 94.6%,
+`internal/persistence/postgres` 86.0%, `persistence` 100%), lint clean (0 issues), no forbidden imports
+(`watermill`/`casbin`/`gocron`/`clockwork`) in production code.
 
 ### What shipped
 
 | Layer | What | Notes |
 |---|---|---|
-| `runtime/` port collapse | Replaced 3 separate in-memory ports (`StateStore`/`Journal`/`Outbox`) with a single transactional `Store` + `JournalReader` | ADR-0007; `MemStore` is the in-memory reference impl |
-| `internal/persistence/postgres/` | Postgres `Store`: transactional snapshot-JSONB writes with optimistic-CAS; `DefinitionStore`; outbox with SKIP LOCKED relay; goose migrations (4 tables: `process_instances`, `applied_steps`, `outbox_events`, `process_definitions`); trigger codec (`MarshalTrigger`/`UnmarshalTrigger`) | ADR-0006 (snapshot-JSONB schema), ADR-0008 |
-| `persistence/` root façade | `OpenPostgres`, `Migrate`, `NewRelay`, `NewDefinitionStore`; sentinel errors `ErrInstanceNotFound`, `ErrConcurrentUpdate`; `CachingDefinitionRegistry` (singleflight + in-memory LRU for hot-path definition reads) | ADR-0008 |
-| `database/` | `RunTestDatabase` testcontainers helper — shared by all Postgres integration tests; returns a `*pgxpool.Pool` backed by `postgres:17-alpine` | test-helper-only package (0% own coverage is expected) |
+| `runtime/` port collapse | Replaced 3 separate in-memory ports (`StateStore`/`Journal`/`OutboxWriter`) with a single transactional `Store` (`Create`/`Load`/`Commit`) + `JournalReader`; per-applied-trigger atomic commit with optimistic-version CAS (`ErrConcurrentUpdate`); outbox events derived by the pure `outboxEventsFor` helper. `runtime.Publisher`/`CachingDefinitionRegistry` (read-through TTL + singleflight; definitions immutable per `id:version` so no invalidation). | ADR-0007; `MemStore` is the in-memory reference impl |
+| `internal/persistence/postgres/` | Postgres `Store`: transactional snapshot-JSONB writes with optimistic-CAS + journal + outbox in one tx; `DefinitionStore`; broker-agnostic outbox `Relay` (`FOR UPDATE SKIP LOCKED`, at-least-once); goose migrations — **4 tables: `wrkflw_instances`, `wrkflw_journal`, `wrkflw_outbox`, `wrkflw_definitions`**; trigger codec (`MarshalTrigger`/`UnmarshalTrigger`, exhaustive over the 13 sealed variants) | ADR-0006, ADR-0008 |
+| `persistence/` root façade | `OpenPostgres`, `Migrate`, `NewRelay`, `NewDefinitionStore` — **all return stable port/interface types** (`Store`, `DefinitionStore`, `Relay` interfaces), never internal concrete structs (ADR-0008); sentinel aliases `ErrInstanceNotFound`/`ErrConcurrentUpdate` | ADR-0008 |
+| `database/` | `RunTestDatabase` testcontainers helper — shared by all Postgres integration tests; returns a `*pgxpool.Pool` backed by `postgres:17` | test-helper-only package (0% own coverage is expected) |
+| `model/` | `NodeKind` now has name-based JSON (`MarshalJSON`/`UnmarshalJSON`) so the persisted definition format is stable against iota reordering | whole-branch-review fix |
 
 ### Key design decisions (ADRs)
-- **ADR-0006** — snapshot-JSONB storage shape (one row per instance, JSONB state blob + projected columns for indexed queries).
-- **ADR-0007** — `Store` port collapse: three separate runtime interfaces replaced by a single transactional `Store` so `Commit` writes instance state + outbox in one atomic transaction.
-- **ADR-0008** — `persistence` / `internal/persistence/postgres` façade split: library consumers only import the root `persistence` package; all pgx/goose wiring stays unexported in `internal/`.
+- **ADR-0006** — snapshot-as-JSONB storage shape (one row per instance: JSONB `snapshot` source-of-truth + plain engine-written projected columns `status`/`def_id`/`version`/timestamps for indexed admin queries; no tree normalization in v1).
+- **ADR-0007** — per-step transactional `Store`: three runtime ports collapsed into one so `Commit` writes snapshot + journal + outbox atomically per applied trigger; optimistic CAS keeps the engine pure (no concurrency token in `InstanceState`).
+- **ADR-0008** — `persistence` (root façade) over `internal/persistence/postgres` (impl): consumers import only the root package, which exposes interface types; all pgx/goose wiring stays unexported.
 
 ### Relay design note
-The `Relay` in `internal/persistence/postgres` is broker-agnostic: it polls the outbox with SKIP LOCKED and calls a `persistence.Publisher` interface. A watermill adapter (to be written in the **Eventing** sub-project) will implement that interface — watermill is never imported here.
+The `Relay` is broker-agnostic: it polls the outbox with `FOR UPDATE SKIP LOCKED` and calls a `runtime.Publisher` interface (re-exported as `persistence.Publisher`). The **Eventing** sub-project will provide a watermill-backed `Publisher` — watermill is never imported here.
 
-### Deferred follow-ups (deliberate, not bugs)
-1. **Owned-instance cache** — instance state is fetched from Postgres on every `Run`/`Deliver`; a per-runner in-memory cache keyed by instance id would cut DB round-trips on hot flows.
-2. **History cap** — `applied_steps` grows unbounded; a configurable retention / archive policy is needed before large-scale use.
-3. **LISTEN/NOTIFY relay trigger** — current relay polls on a fixed interval; a Postgres `LISTEN`/`NOTIFY` push would reduce latency and DB load.
-4. **Per-aggregate relay ordering** — SKIP LOCKED gives throughput but no ordering guarantee within a single instance; a per-instance sequencing layer (e.g. advisory lock per instance) is needed if strict in-order delivery matters.
-5. **TOAST / fillfactor tuning** — large JSONB blobs will TOAST; setting `fillfactor=70` on `process_instances` to leave room for HOT updates is a DBA tuning step.
+### Deferred follow-ups (deliberate, not bugs — backlog for later sub-projects)
+1. **Owned-instance state cache** — instance state is fetched from Postgres on every `Run`/`Deliver`. A *single-writer* (instance-leased) cache is the only safe way to cache mutable state (a version-CAS protects writes but stale reads already fire side-effects); deferred. v1 caches only immutable definitions.
+2. **History / snapshot cap** — the `snapshot` JSONB grows with inline `History`; an optional retention cap is deferred (the journal `wrkflw_journal` remains the unbounded audit source).
+3. **LISTEN/NOTIFY relay trigger** — relay polls on a fixed interval; a Postgres `LISTEN`/`NOTIFY` push would cut latency/DB load (layered on the poll fallback).
+4. **Per-aggregate relay ordering** — `SKIP LOCKED` gives throughput, not strict per-instance order; partition claiming by `instance_id` if strict in-order delivery is needed.
+5. **Retry/DLQ + relay head-of-line** — full-batch rollback on a publish error means a persistent poison event blocks its batch (at-least-once intact). Poison isolation / retry-backoff executor is the resilience sub-project.
+6. **Parked-async persistence resume e2e** — the capstone e2e is start→end; add a test that parks on a timer/boundary, reloads from Postgres via a fresh `Store`, advances the fake clock, and resumes (the JSON round-trip of `Timers`/`ArmedEvents`/`Boundaries`/`EventSubprocesses` is structurally correct — exported fields — but only e2e-proven for the sync path). **Highest-value missing test.**
+7. **TOAST / fillfactor tuning** — the per-transition snapshot rewrite causes TOAST write amplification; lower `fillfactor` on `wrkflw_instances` + autovacuum tuning is a DBA step.
+8. **Numeric fidelity** — process-variable integers round-trip from JSONB as `float64` (standard `encoding/json`, documented spec §7); `json.Decoder.UseNumber()` is the escape hatch if a consumer needs int fidelity.
+9. **Instance-snapshot int enums** — `Status`/`TokenState`/`TimerKind` still serialize as ints in the snapshot (self-consistent within a version, unlike the now-name-based `NodeKind`); name-encode them too if cross-version snapshot stability is ever needed.
+10. **`DefinitionRegistry.Lookup` lacks `ctx`** — the Postgres impl uses `context.Background()`; adding `ctx` to the port is a follow-up.
 
 ---
 
@@ -139,7 +149,7 @@ The `Relay` in `internal/persistence/postgres` is broker-agnostic: it polls the 
 
 The engine core depends on interfaces only. The next sub-projects implement them (per CLAUDE.md):
 
-- **Persistence** — ✅ Implemented on `feat/persistence-postgres` (pending final whole-branch review + merge). See section above.
+- **Persistence** — ✅ COMPLETE, merged to `main`. See section above.
 - **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
 - **Scheduling** — gocron `Scheduler` (replace `MemScheduler`; shares the `clock.Clock`/clockwork so the
   same fake clock drives engine + scheduler in tests, per ADR-0003).
