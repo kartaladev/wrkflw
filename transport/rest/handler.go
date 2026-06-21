@@ -3,9 +3,11 @@ package rest
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -28,21 +30,39 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 		o(&cfg)
 	}
 
+	h := &handler{cfg: cfg, svc: svc}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /instances", handleStartInstance(svc, cfg))
-	mux.HandleFunc("GET /instances/{id}", handleGetInstance(svc, cfg))
-	mux.HandleFunc("POST /instances/{id}/signals", handleDeliverSignal(svc))
+	mux.HandleFunc("POST /instances", h.handleStartInstance)
+	mux.HandleFunc("GET /instances/{id}", h.handleGetInstance)
+	mux.HandleFunc("POST /instances/{id}/signals", h.handleDeliverSignal)
 	mux.HandleFunc("POST /messages", handleDeliverMessage(svc))
-	mux.HandleFunc("POST /tasks/{token}/claim", handleClaimTask(svc))
-	mux.HandleFunc("POST /tasks/{token}/complete", handleCompleteTask(svc))
-	mux.HandleFunc("POST /tasks/{token}/reassign", handleReassignTask(svc))
+	mux.HandleFunc("POST /tasks/{token}/claim", h.handleClaimTask)
+	mux.HandleFunc("POST /tasks/{token}/complete", h.handleCompleteTask)
+	mux.HandleFunc("POST /tasks/{token}/reassign", h.handleReassignTask)
 	return mux
+}
+
+// handler holds shared state for the route handlers that need cfg.
+type handler struct {
+	cfg config
+	svc service.Service
+}
+
+// renderInstance writes a process-instance response through cfg.instanceMapper so that
+// every instance-returning endpoint honours the consumer's custom mapper consistently.
+func (h *handler) renderInstance(w http.ResponseWriter, status int, st engine.InstanceState) {
+	writeJSON(w, status, h.cfg.instanceMapper(st))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		// The status header is already written, so the HTTP status cannot change.
+		// Log the error so it is not silently swallowed.
+		slog.Error("rest: encode response", "err", err)
+	}
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
@@ -53,72 +73,66 @@ func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-func handleStartInstance(svc service.Service, cfg config) http.HandlerFunc {
+func (h *handler) handleStartInstance(w http.ResponseWriter, r *http.Request) {
 	type reqBody struct {
 		DefRef     string         `json:"def_ref"`
 		InstanceID string         `json:"instance_id"`
 		Vars       map[string]any `json:"vars"`
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req reqBody
-		if !decodeBody(w, r, &req) {
-			return
-		}
-		if req.DefRef == "" || req.InstanceID == "" {
-			WriteHTTPError(w, fmt.Errorf("%w: def_ref and instance_id are required", ErrBadInput))
-			return
-		}
-		st, err := svc.StartInstance(r.Context(), service.StartInstanceRequest{
-			DefRef:     req.DefRef,
-			InstanceID: req.InstanceID,
-			Vars:       req.Vars,
-		})
-		if err != nil {
-			WriteHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusCreated, cfg.instanceMapper(st))
+	var req reqBody
+	if !decodeBody(w, r, &req) {
+		return
 	}
+	if req.DefRef == "" || req.InstanceID == "" {
+		WriteHTTPError(w, fmt.Errorf("%w: def_ref and instance_id are required", ErrBadInput))
+		return
+	}
+	st, err := h.svc.StartInstance(r.Context(), service.StartInstanceRequest{
+		DefRef:     req.DefRef,
+		InstanceID: req.InstanceID,
+		Vars:       req.Vars,
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.renderInstance(w, http.StatusCreated, st)
 }
 
-func handleGetInstance(svc service.Service, cfg config) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		st, err := svc.GetInstance(r.Context(), id)
-		if err != nil {
-			WriteHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, cfg.instanceMapper(st))
+func (h *handler) handleGetInstance(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st, err := h.svc.GetInstance(r.Context(), id)
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
 	}
+	h.renderInstance(w, http.StatusOK, st)
 }
 
-func handleDeliverSignal(svc service.Service) http.HandlerFunc {
+func (h *handler) handleDeliverSignal(w http.ResponseWriter, r *http.Request) {
 	type reqBody struct {
 		Signal  string         `json:"signal"`
 		Payload map[string]any `json:"payload"`
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		var req reqBody
-		if !decodeBody(w, r, &req) {
-			return
-		}
-		if req.Signal == "" {
-			WriteHTTPError(w, fmt.Errorf("%w: signal is required", ErrBadInput))
-			return
-		}
-		st, err := svc.DeliverSignal(r.Context(), service.DeliverSignalRequest{
-			InstanceID: id,
-			Signal:     req.Signal,
-			Payload:    req.Payload,
-		})
-		if err != nil {
-			WriteHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, NewInstanceView(st))
+	id := r.PathValue("id")
+	var req reqBody
+	if !decodeBody(w, r, &req) {
+		return
 	}
+	if req.Signal == "" {
+		WriteHTTPError(w, fmt.Errorf("%w: signal is required", ErrBadInput))
+		return
+	}
+	st, err := h.svc.DeliverSignal(r.Context(), service.DeliverSignalRequest{
+		InstanceID: id,
+		Signal:     req.Signal,
+		Payload:    req.Payload,
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.renderInstance(w, http.StatusOK, st)
 }
 
 func handleDeliverMessage(svc service.Service) http.HandlerFunc {
@@ -150,7 +164,7 @@ func handleDeliverMessage(svc service.Service) http.HandlerFunc {
 	}
 }
 
-func handleClaimTask(svc service.Service) http.HandlerFunc {
+func (h *handler) handleClaimTask(w http.ResponseWriter, r *http.Request) {
 	type actorBody struct {
 		ID    string   `json:"id"`
 		Roles []string `json:"roles"`
@@ -158,25 +172,23 @@ func handleClaimTask(svc service.Service) http.HandlerFunc {
 	type reqBody struct {
 		Actor actorBody `json:"actor"`
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := r.PathValue("token")
-		var req reqBody
-		if !decodeBody(w, r, &req) {
-			return
-		}
-		st, err := svc.ClaimTask(r.Context(), service.ClaimTaskRequest{
-			TaskToken: token,
-			Actor:     authz.Actor{ID: req.Actor.ID, Roles: req.Actor.Roles},
-		})
-		if err != nil {
-			WriteHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, NewInstanceView(st))
+	token := r.PathValue("token")
+	var req reqBody
+	if !decodeBody(w, r, &req) {
+		return
 	}
+	st, err := h.svc.ClaimTask(r.Context(), service.ClaimTaskRequest{
+		TaskToken: token,
+		Actor:     authz.Actor{ID: req.Actor.ID, Roles: req.Actor.Roles},
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.renderInstance(w, http.StatusOK, st)
 }
 
-func handleCompleteTask(svc service.Service) http.HandlerFunc {
+func (h *handler) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 	type actorBody struct {
 		ID    string   `json:"id"`
 		Roles []string `json:"roles"`
@@ -185,26 +197,24 @@ func handleCompleteTask(svc service.Service) http.HandlerFunc {
 		Actor  actorBody      `json:"actor"`
 		Output map[string]any `json:"output"`
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := r.PathValue("token")
-		var req reqBody
-		if !decodeBody(w, r, &req) {
-			return
-		}
-		st, err := svc.CompleteTask(r.Context(), service.CompleteTaskRequest{
-			TaskToken: token,
-			Actor:     authz.Actor{ID: req.Actor.ID, Roles: req.Actor.Roles},
-			Output:    req.Output,
-		})
-		if err != nil {
-			WriteHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, NewInstanceView(st))
+	token := r.PathValue("token")
+	var req reqBody
+	if !decodeBody(w, r, &req) {
+		return
 	}
+	st, err := h.svc.CompleteTask(r.Context(), service.CompleteTaskRequest{
+		TaskToken: token,
+		Actor:     authz.Actor{ID: req.Actor.ID, Roles: req.Actor.Roles},
+		Output:    req.Output,
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.renderInstance(w, http.StatusOK, st)
 }
 
-func handleReassignTask(svc service.Service) http.HandlerFunc {
+func (h *handler) handleReassignTask(w http.ResponseWriter, r *http.Request) {
 	type actorBody struct {
 		ID    string   `json:"id"`
 		Roles []string `json:"roles"`
@@ -214,22 +224,20 @@ func handleReassignTask(svc service.Service) http.HandlerFunc {
 		To   string    `json:"to"`
 		By   actorBody `json:"by"`
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := r.PathValue("token")
-		var req reqBody
-		if !decodeBody(w, r, &req) {
-			return
-		}
-		st, err := svc.ReassignTask(r.Context(), service.ReassignTaskRequest{
-			TaskToken: token,
-			From:      req.From,
-			To:        req.To,
-			By:        authz.Actor{ID: req.By.ID, Roles: req.By.Roles},
-		})
-		if err != nil {
-			WriteHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, NewInstanceView(st))
+	token := r.PathValue("token")
+	var req reqBody
+	if !decodeBody(w, r, &req) {
+		return
 	}
+	st, err := h.svc.ReassignTask(r.Context(), service.ReassignTaskRequest{
+		TaskToken: token,
+		From:      req.From,
+		To:        req.To,
+		By:        authz.Actor{ID: req.By.ID, Roles: req.By.Roles},
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.renderInstance(w, http.StatusOK, st)
 }

@@ -259,8 +259,8 @@ func TestHandlerDeliverMessage(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusAccepted && rec.Code != http.StatusNoContent {
-		t.Fatalf("want 202 or 204, got %d — body: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("want exactly 202 Accepted, got %d — body: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -580,5 +580,107 @@ func TestHandlerMountableUnderStripPrefix(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200 under /api/wf prefix, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandlerDeliverMessageStatus asserts that POST /messages returns exactly 202 Accepted.
+func TestHandlerDeliverMessageStatus(t *testing.T) {
+	def := messageProcess("order-created")
+	_, svc := newTestHarness(t, def)
+	h := rest.NewHandler(svc)
+
+	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "message-catch-order-created", InstanceID: "msg-status-1",
+		Vars: map[string]any{"orderId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+
+	body := jsonBody(t, map[string]any{
+		"def_ref":         "message-catch-order-created:1",
+		"name":            "order-created",
+		"correlation_key": "99",
+		"payload":         map[string]any{"created": true},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/messages", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("want exactly 202 Accepted, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandlerWithInstanceMapperAppliedToSignal asserts that a custom WithInstanceMapper
+// is applied to the POST /instances/{id}/signals response, not just GET /instances/{id}.
+func TestHandlerWithInstanceMapperAppliedToSignal(t *testing.T) {
+	def := signalProcess("pay")
+	_, svc := newTestHarness(t, def)
+
+	customMapper := func(st engine.InstanceState) any {
+		return map[string]string{"custom": "mapper-applied", "id": st.InstanceID}
+	}
+	h := rest.NewHandler(svc, rest.WithInstanceMapper(customMapper))
+
+	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "signal-catch-pay", InstanceID: "sig-mapper-1",
+	})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+
+	body := jsonBody(t, map[string]any{
+		"signal":  "pay",
+		"payload": map[string]any{},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/instances/sig-mapper-1/signals", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+	var view map[string]string
+	decodeBody(t, rec.Body.Bytes(), &view)
+	if view["custom"] != "mapper-applied" {
+		t.Fatalf("want custom mapper applied to signal response, got: %v", view)
+	}
+}
+
+// TestHandlerWithInstanceMapperAppliedToClaimTask asserts that a custom WithInstanceMapper
+// is applied to the POST /tasks/{token}/claim response.
+func TestHandlerWithInstanceMapperAppliedToClaimTask(t *testing.T) {
+	def := approvalProcess()
+	h2, svc := newTestHarness(t, def)
+
+	parked, err := h2.runner.Run(t.Context(), def, "approval-mapper-claim-1", nil)
+	if err != nil {
+		t.Fatalf("runner.Run: %v", err)
+	}
+	taskToken := parked.Tokens[0].AwaitCommand
+
+	customMapper := func(st engine.InstanceState) any {
+		return map[string]string{"custom": "mapper-applied", "id": st.InstanceID}
+	}
+	h := rest.NewHandler(svc, rest.WithInstanceMapper(customMapper))
+
+	body := jsonBody(t, map[string]any{
+		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/tasks/"+taskToken+"/claim", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+	var view map[string]string
+	decodeBody(t, rec.Body.Bytes(), &view)
+	if view["custom"] != "mapper-applied" {
+		t.Fatalf("want custom mapper applied to claim response, got: %v", view)
 	}
 }
