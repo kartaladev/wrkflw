@@ -28,12 +28,12 @@ func (errStore) Commit(_ context.Context, _ runtime.Token, _ runtime.AppliedStep
 	return 0, runtime.ErrConcurrentUpdate
 }
 
-// commitErrStore is a Store whose Create succeeds but Commit always fails.
-// Used to test the Commit failure path independently.
+// commitErrStore is a Store whose Create succeeds but Commit always fails
+// with ErrConcurrentUpdate. Used to test the Commit failure path independently.
 type commitErrStore struct{ *runtime.MemStore }
 
 func (s *commitErrStore) Commit(_ context.Context, _ runtime.Token, _ runtime.AppliedStep) (runtime.Token, error) {
-	return 0, errors.New("store: forced commit failure")
+	return 0, runtime.ErrConcurrentUpdate
 }
 
 // TestRunnerUnknownActionFailsInstance verifies that a catalog with no actions
@@ -73,7 +73,11 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 // TestRunnerStoreCreateErrorPropagates verifies that a Create failure from the
 // store is surfaced as a hard error from Run (wrapping ErrConcurrentUpdate).
 func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
-	cat := action.NewMapCatalog(nil)
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return nil, nil
+		}),
+	})
 	r := runtime.NewRunner(cat, clock.System(), errStore{runtime.NewMemStore()})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
@@ -95,6 +99,8 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
+	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
+		"ErrConcurrentUpdate from Commit must be surfaced via errors.Is")
 	assert.Contains(t, err.Error(), "runtime: commit:")
 }
 
