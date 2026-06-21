@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/database"
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -141,4 +142,51 @@ func TestPgListerDefaultLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, page.Items, 3)
 	require.False(t, page.HasMore)
+}
+
+// insertInstanceWithIncidents creates a new instance whose snapshot contains
+// incident records. It uses Store.Create with a pre-built InstanceState.
+func insertInstanceWithIncidents(t *testing.T, s *pg.Store, id string, at time.Time, incidents []engine.Incident) {
+	t.Helper()
+	_, err := s.Create(t.Context(), runtime.AppliedStep{
+		State: engine.InstanceState{
+			InstanceID: id,
+			DefID:      "d",
+			DefVersion: 1,
+			Status:     engine.StatusRunning,
+			StartedAt:  at,
+			Incidents:  incidents,
+		},
+		Trigger: engine.NewStartInstance(at, nil),
+	})
+	require.NoError(t, err, "insertInstanceWithIncidents %q", id)
+}
+
+// TestPgListerIncidentCount verifies that the Postgres lister correctly reads
+// the incident count from the snapshot JSONB column via the type-guarded
+// jsonb_array_length expression. One instance has one incident; another has none.
+func TestPgListerIncidentCount(t *testing.T) {
+	t.Parallel()
+	s, lister := newPgStoreWithLister(t)
+	base := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+
+	// Instance with one incident.
+	insertInstanceWithIncidents(t, s, "with-incident", base, []engine.Incident{
+		{ID: "inc-1", NodeID: "task", TokenID: "tok-1", Error: "boom"},
+	})
+	// Instance with no incidents.
+	insertInstance(t, s, "no-incident", engine.StatusRunning, base.Add(time.Minute))
+
+	page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 2, "want 2 items")
+
+	// page is ordered newest-first: no-incident (base+1m) comes before with-incident (base).
+	byID := make(map[string]runtime.InstanceSummary, len(page.Items))
+	for _, it := range page.Items {
+		byID[it.InstanceID] = it
+	}
+
+	assert.Equal(t, 1, byID["with-incident"].IncidentCount, "with-incident: want IncidentCount==1")
+	assert.Equal(t, 0, byID["no-incident"].IncidentCount, "no-incident: want IncidentCount==0")
 }

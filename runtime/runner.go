@@ -351,6 +351,14 @@ func (r *Runner) DeliverMessage(ctx context.Context, def *model.ProcessDefinitio
 	return err
 }
 
+// ResolveIncident clears the named incident on an instance, grants addAttempts
+// additional retries, and re-invokes the parked action. It is the admin entry
+// point for recovering a retry-exhausted activity. Delegates through Deliver so
+// the trigger is journalled and persisted.
+func (r *Runner) ResolveIncident(ctx context.Context, def *model.ProcessDefinition, instanceID, incidentID string, addAttempts int) (engine.InstanceState, error) {
+	return r.Deliver(ctx, def, instanceID, engine.NewResolveIncident(r.clk.Now(), incidentID, addAttempts))
+}
+
 // perform executes one command and returns the resulting trigger, if any.
 // st is the current instance state, used for variable access when resolving
 // human-task candidates. def is the process definition, captured by timer

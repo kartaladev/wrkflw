@@ -71,7 +71,10 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 
 	if filter.Status != nil && hasCursor {
 		rows, queryErr = l.pool.Query(ctx, `
-			SELECT instance_id, def_id, def_version, status, started_at, ended_at
+			SELECT instance_id, def_id, def_version, status, started_at, ended_at,
+			       CASE WHEN jsonb_typeof(snapshot->'Incidents') = 'array'
+			            THEN jsonb_array_length(snapshot->'Incidents')
+			            ELSE 0 END AS incident_count
 			FROM   wrkflw_instances
 			WHERE  status = $1
 			  AND  (started_at, instance_id) < ($2, $3)
@@ -80,7 +83,10 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 			int16(*filter.Status), cursorTime, cursorID, fetch)
 	} else if filter.Status != nil {
 		rows, queryErr = l.pool.Query(ctx, `
-			SELECT instance_id, def_id, def_version, status, started_at, ended_at
+			SELECT instance_id, def_id, def_version, status, started_at, ended_at,
+			       CASE WHEN jsonb_typeof(snapshot->'Incidents') = 'array'
+			            THEN jsonb_array_length(snapshot->'Incidents')
+			            ELSE 0 END AS incident_count
 			FROM   wrkflw_instances
 			WHERE  status = $1
 			ORDER  BY started_at DESC, instance_id DESC
@@ -88,7 +94,10 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 			int16(*filter.Status), fetch)
 	} else if hasCursor {
 		rows, queryErr = l.pool.Query(ctx, `
-			SELECT instance_id, def_id, def_version, status, started_at, ended_at
+			SELECT instance_id, def_id, def_version, status, started_at, ended_at,
+			       CASE WHEN jsonb_typeof(snapshot->'Incidents') = 'array'
+			            THEN jsonb_array_length(snapshot->'Incidents')
+			            ELSE 0 END AS incident_count
 			FROM   wrkflw_instances
 			WHERE  (started_at, instance_id) < ($1, $2)
 			ORDER  BY started_at DESC, instance_id DESC
@@ -96,7 +105,10 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 			cursorTime, cursorID, fetch)
 	} else {
 		rows, queryErr = l.pool.Query(ctx, `
-			SELECT instance_id, def_id, def_version, status, started_at, ended_at
+			SELECT instance_id, def_id, def_version, status, started_at, ended_at,
+			       CASE WHEN jsonb_typeof(snapshot->'Incidents') = 'array'
+			            THEN jsonb_array_length(snapshot->'Incidents')
+			            ELSE 0 END AS incident_count
 			FROM   wrkflw_instances
 			ORDER  BY started_at DESC, instance_id DESC
 			LIMIT  $1`,
@@ -111,23 +123,25 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 	items := make([]runtime.InstanceSummary, 0, fetch)
 	for rows.Next() {
 		var (
-			instanceID string
-			defID      string
-			defVersion int
-			status     int16
-			startedAt  time.Time
-			endedAt    *time.Time
+			instanceID    string
+			defID         string
+			defVersion    int
+			status        int16
+			startedAt     time.Time
+			endedAt       *time.Time
+			incidentCount int
 		)
-		if err := rows.Scan(&instanceID, &defID, &defVersion, &status, &startedAt, &endedAt); err != nil {
+		if err := rows.Scan(&instanceID, &defID, &defVersion, &status, &startedAt, &endedAt, &incidentCount); err != nil {
 			return runtime.InstancePage{}, fmt.Errorf("postgres lister: scan: %w", err)
 		}
 		items = append(items, runtime.InstanceSummary{
-			InstanceID: instanceID,
-			DefID:      defID,
-			DefVersion: defVersion,
-			Status:     engine.Status(status),
-			StartedAt:  startedAt,
-			EndedAt:    endedAt,
+			InstanceID:    instanceID,
+			DefID:         defID,
+			DefVersion:    defVersion,
+			Status:        engine.Status(status),
+			StartedAt:     startedAt,
+			EndedAt:       endedAt,
+			IncidentCount: incidentCount,
 		})
 	}
 	if err := rows.Err(); err != nil {
