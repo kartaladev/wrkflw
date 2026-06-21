@@ -1177,3 +1177,546 @@ func TestEventSubprocessArmCancelledOnNormalScopeClose(t *testing.T) {
 	assert.Empty(t, r2.State.EventSubprocesses,
 		"EventSubprocesses must be empty after scope closes normally")
 }
+
+// ---- Inner-scope topology tests (Task 6) ----
+
+// boundaryTimerInsideSubProcessDef builds:
+//
+// outer: outer-start → sub (KindSubProcess) → outer-end
+//
+// sub's inner def:
+//
+//	inner-start → inner-svc (ServiceTask "inner-action") → inner-end
+//	[KindBoundaryEvent "bnd-timer"] attached to inner-svc, interrupting, timer "2h"
+//	  bnd-timer → bnd-target (ServiceTask "escalate-action") → bnd-end
+func boundaryTimerInsideSubProcessDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "inner-bnd-timer", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-action"},
+			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "inner-svc",
+				TimerDuration: `"2h"`, NonInterrupting: false},
+			{ID: "bnd-target", Kind: model.KindServiceTask, Action: "escalate-action"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+			{ID: "bnd-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
+			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
+			{ID: "if3", Source: "bnd-timer", Target: "bnd-target"},
+			{ID: "if4", Source: "bnd-target", Target: "bnd-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "outer-bnd-timer", Version: 1,
+		Nodes: []model.Node{
+			{ID: "outer-start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+		},
+	}
+}
+
+// TestBoundaryTimerInsideSubProcess verifies that an interrupting boundary timer
+// attached to an activity nested inside a sub-process:
+//
+//  1. Arms the boundary timer (ScheduleTimer) within the child scope on scope entry.
+//  2. When the timer fires, the host token (inner-svc) is cancelled, a new token
+//     lands on bnd-target (InvokeAction for "escalate-action") — all within the
+//     child scope.
+//  3. Completing the escalation action drains the inner scope → outer-end →
+//     StatusCompleted (sub-process exits cleanly to the parent).
+func TestBoundaryTimerInsideSubProcess(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := boundaryTimerInsideSubProcessDef()
+
+	// ---- Step 1: StartInstance → sub enters → inner-svc parks + boundary timer armed ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "bnd-sub-i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Sub-process scope must be open.
+	require.Len(t, r1.State.Scopes, 1, "sub-process scope must be open")
+	scopeID := r1.State.Scopes[0].ID
+
+	// InvokeAction for inner-svc + ScheduleTimer for boundary.
+	var innerCmdID string
+	var bndTimerID string
+	for _, cmd := range r1.Commands {
+		switch c := cmd.(type) {
+		case engine.InvokeAction:
+			if c.Name == "inner-action" {
+				innerCmdID = c.CommandID
+			}
+		case engine.ScheduleTimer:
+			bndTimerID = c.TimerID
+		}
+	}
+	require.NotEmpty(t, innerCmdID, "expected InvokeAction for inner-action")
+	require.NotEmpty(t, bndTimerID, "expected ScheduleTimer for boundary timer")
+
+	// One token parked at inner-svc, in the sub-process scope.
+	require.Len(t, r1.State.Tokens, 1)
+	assert.Equal(t, "inner-svc", r1.State.Tokens[0].NodeID)
+	assert.Equal(t, scopeID, r1.State.Tokens[0].ScopeID,
+		"inner-svc token must carry the sub-process scope ID")
+
+	// Boundary arm must be recorded.
+	require.Len(t, r1.State.Boundaries, 1, "boundary arm must be recorded in state")
+
+	// ---- Step 2: Boundary timer fires → host cancelled, escalation path runs ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(at.Add(2*time.Hour), bndTimerID), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+
+	// inner-svc token must be gone (interrupting boundary cancelled it).
+	for _, tok := range r2.State.Tokens {
+		assert.NotEqual(t, "inner-svc", tok.NodeID,
+			"inner-svc token must be cancelled by interrupting boundary timer")
+	}
+
+	// InvokeAction for "escalate-action" must have been emitted.
+	var escalateCmdID string
+	for _, cmd := range r2.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "escalate-action" {
+			escalateCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, escalateCmdID, "expected InvokeAction for escalate-action")
+
+	// bnd-target token must be within the same scope.
+	require.Len(t, r2.State.Tokens, 1)
+	assert.Equal(t, "bnd-target", r2.State.Tokens[0].NodeID)
+	assert.Equal(t, scopeID, r2.State.Tokens[0].ScopeID,
+		"bnd-target token must remain in the sub-process scope")
+
+	// Scope still open (boundary path not yet drained).
+	require.Len(t, r2.State.Scopes, 1, "scope must still be open after boundary fires")
+
+	// ---- Step 3: Complete escalation → inner scope drains → outer-end → StatusCompleted ----
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Hour+time.Second), escalateCmdID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r3.State.Status,
+		"instance must complete after boundary path drains the sub-process scope")
+	assert.Empty(t, r3.State.Tokens, "all tokens must be consumed on completion")
+	assert.Empty(t, r3.State.Scopes, "sub-process scope must be closed on completion")
+	require.NotNil(t, r3.State.EndedAt)
+
+	found := false
+	for _, cmd := range r3.Commands {
+		if _, ok := cmd.(engine.CompleteInstance); ok {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected CompleteInstance after sub-process exits via boundary path")
+}
+
+// eventBasedGatewayInsideSubProcessDef builds:
+//
+// outer: outer-start → sub (KindSubProcess) → outer-end
+//
+// sub's inner def:
+//
+//	inner-start → evtgw (KindEventBasedGateway)
+//	  → timer-catch (IntermediateCatchEvent timer "1h") → svc-timer → inner-end
+//	  → signal-catch (IntermediateCatchEvent signal "approved") → svc-signal → inner-end2
+func eventBasedGatewayInsideSubProcessDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "inner-evtgw", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "evtgw", Kind: model.KindEventBasedGateway},
+			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
+			{ID: "signal-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "approved"},
+			{ID: "svc-timer", Kind: model.KindServiceTask, Action: "timer-action"},
+			{ID: "svc-signal", Kind: model.KindServiceTask, Action: "signal-action"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+			{ID: "inner-end2", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "evtgw"},
+			{ID: "if2", Source: "evtgw", Target: "timer-catch"},
+			{ID: "if3", Source: "evtgw", Target: "signal-catch"},
+			{ID: "if4", Source: "timer-catch", Target: "svc-timer"},
+			{ID: "if5", Source: "signal-catch", Target: "svc-signal"},
+			{ID: "if6", Source: "svc-timer", Target: "inner-end"},
+			{ID: "if7", Source: "svc-signal", Target: "inner-end2"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "outer-evtgw", Version: 1,
+		Nodes: []model.Node{
+			{ID: "outer-start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+		},
+	}
+}
+
+// TestEventBasedGatewayInsideSubProcess verifies that an event-based gateway
+// nested inside a sub-process races its arms correctly within the child scope,
+// and the sub-process exits cleanly when the winning branch completes.
+//
+// Scenario: signal wins over the timer.
+//  1. Start → sub enters → event gateway arms (timer + signal) in child scope.
+//  2. SignalReceived("approved") → first-event-wins: signal branch proceeds
+//     (InvokeAction for signal-action); timer arm cancelled (CancelTimer emitted).
+//  3. Complete signal-action → inner scope drains → outer-end → StatusCompleted.
+func TestEventBasedGatewayInsideSubProcess(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := eventBasedGatewayInsideSubProcessDef()
+
+	// ---- Step 1: StartInstance → sub enters → event gateway parks with arms ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "evtgw-sub-i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Sub-process scope must be open.
+	require.Len(t, r1.State.Scopes, 1, "sub-process scope must be open")
+	scopeID := r1.State.Scopes[0].ID
+
+	// One token: the event gateway parked.
+	require.Len(t, r1.State.Tokens, 1)
+	assert.Equal(t, "evtgw", r1.State.Tokens[0].NodeID)
+	assert.Equal(t, scopeID, r1.State.Tokens[0].ScopeID,
+		"gateway token must carry the sub-process scope ID")
+
+	// Two armed events: timer arm + signal arm.
+	assert.Len(t, r1.State.ArmedEvents, 2, "both gateway arms must be recorded in ArmedEvents")
+
+	// ScheduleTimer for timer-catch arm.
+	var timerID string
+	for _, cmd := range r1.Commands {
+		if st, ok := cmd.(engine.ScheduleTimer); ok {
+			timerID = st.TimerID
+		}
+	}
+	require.NotEmpty(t, timerID, "expected ScheduleTimer for timer-catch arm")
+
+	// ---- Step 2: SignalReceived("approved") → signal wins; timer arm cancelled ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSignalReceived(at.Add(30*time.Minute), "approved", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+
+	// InvokeAction for signal-action must be emitted.
+	var signalCmdID string
+	for _, cmd := range r2.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "signal-action" {
+			signalCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, signalCmdID, "expected InvokeAction for signal-action")
+
+	// CancelTimer for the loser timer arm must be emitted.
+	cancelFound := false
+	for _, cmd := range r2.Commands {
+		if ct, ok := cmd.(engine.CancelTimer); ok && ct.TimerID == timerID {
+			cancelFound = true
+		}
+	}
+	assert.True(t, cancelFound, "expected CancelTimer for loser timer arm")
+
+	// All armed events must be cleared (gateway resolved).
+	assert.Empty(t, r2.State.ArmedEvents, "ArmedEvents must be empty after gateway resolves")
+
+	// Token at svc-signal within the scope.
+	require.Len(t, r2.State.Tokens, 1)
+	assert.Equal(t, "svc-signal", r2.State.Tokens[0].NodeID)
+	assert.Equal(t, scopeID, r2.State.Tokens[0].ScopeID,
+		"svc-signal token must remain in the sub-process scope")
+
+	// ---- Step 3: Complete signal-action → inner scope drains → outer-end → StatusCompleted ----
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(time.Hour), signalCmdID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r3.State.Status,
+		"instance must complete after event-gateway signal branch drains sub-process scope")
+	assert.Empty(t, r3.State.Tokens, "all tokens must be consumed on completion")
+	assert.Empty(t, r3.State.Scopes, "sub-process scope must be closed on completion")
+	require.NotNil(t, r3.State.EndedAt)
+
+	found := false
+	for _, cmd := range r3.Commands {
+		if _, ok := cmd.(engine.CompleteInstance); ok {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected CompleteInstance after event-gateway sub-process exits")
+}
+
+// inclusiveGatewayInsideSubProcessDef builds:
+//
+// outer: outer-start → sub (KindSubProcess) → outer-end
+//
+// sub's inner def (OR-fork + OR-join diamond):
+//
+//	inner-start → orsplit (KindInclusiveGateway) -{a>0}-> ta ; -{b>0}-> tb
+//	ta, tb → orjoin (KindInclusiveGateway) → post (ServiceTask "post-action") → inner-end
+func inclusiveGatewayInsideSubProcessDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "inner-or", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "orsplit", Kind: model.KindInclusiveGateway},
+			{ID: "ta", Kind: model.KindServiceTask, Action: "action-a"},
+			{ID: "tb", Kind: model.KindServiceTask, Action: "action-b"},
+			{ID: "orjoin", Kind: model.KindInclusiveGateway},
+			{ID: "post", Kind: model.KindServiceTask, Action: "post-action"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "orsplit"},
+			{ID: "if2", Source: "orsplit", Target: "ta", Condition: "a > 0"},
+			{ID: "if3", Source: "orsplit", Target: "tb", Condition: "b > 0"},
+			{ID: "if4", Source: "ta", Target: "orjoin"},
+			{ID: "if5", Source: "tb", Target: "orjoin"},
+			{ID: "if6", Source: "orjoin", Target: "post"},
+			{ID: "if7", Source: "post", Target: "inner-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "outer-or", Version: 1,
+		Nodes: []model.Node{
+			{ID: "outer-start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+		},
+	}
+}
+
+// TestInclusiveGatewayInsideSubProcess verifies that an inclusive (OR) gateway
+// fork+join nested inside a sub-process correctly activates multiple branches,
+// joins them within the child scope, and the sub-process exits cleanly.
+//
+// Variables: {a:1, b:1} → both branches taken.
+//  1. Start → sub enters → orsplit forks to ta AND tb (both conditions true).
+//  2. Complete ta → OR-join waits (tb still reachable).
+//  3. Complete tb → OR-join fires (both arrived) → post-action invoked.
+//  4. Complete post-action → inner-end drains scope → outer-end → StatusCompleted.
+func TestInclusiveGatewayInsideSubProcess(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := inclusiveGatewayInsideSubProcessDef()
+
+	// ---- Step 1: StartInstance → sub enters → orsplit forks to ta AND tb ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "or-sub-i1"},
+		engine.NewStartInstance(at, map[string]any{"a": 1, "b": 1}), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Sub-process scope must be open.
+	require.Len(t, r1.State.Scopes, 1, "sub-process scope must be open")
+	scopeID := r1.State.Scopes[0].ID
+
+	// Two tokens: ta and tb, both in the sub-process scope.
+	require.Len(t, r1.State.Tokens, 2, "OR-fork must produce two tokens for a>0 and b>0")
+	nodeIDs := []string{r1.State.Tokens[0].NodeID, r1.State.Tokens[1].NodeID}
+	assert.ElementsMatch(t, []string{"ta", "tb"}, nodeIDs, "forked tokens must land on ta and tb")
+	for _, tok := range r1.State.Tokens {
+		assert.Equal(t, scopeID, tok.ScopeID,
+			"forked token at %q must carry sub-process scope ID", tok.NodeID)
+	}
+
+	// Two InvokeAction commands: action-a and action-b.
+	require.Len(t, r1.Commands, 2, "expected two InvokeAction commands after OR-fork")
+	cmdsByName := make(map[string]string)
+	for _, cmd := range r1.Commands {
+		ia, ok := cmd.(engine.InvokeAction)
+		require.True(t, ok, "expected InvokeAction, got %T", cmd)
+		cmdsByName[ia.Name] = ia.CommandID
+	}
+	assert.Contains(t, cmdsByName, "action-a")
+	assert.Contains(t, cmdsByName, "action-b")
+
+	// ---- Step 2: Complete action-a → OR-join must wait (tb still reachable) ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(time.Second), cmdsByName["action-a"], nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+	// OR-join must NOT fire yet (tb can still deliver).
+	assert.Empty(t, r2.Commands, "OR-join must not fire while tb can still reach it")
+	// Scope still open.
+	require.Len(t, r2.State.Scopes, 1, "scope must still be open after first branch completes")
+
+	// ---- Step 3: Complete action-b → OR-join fires → post-action invoked ----
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), cmdsByName["action-b"], nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r3.State.Status, "instance still running (post-action pending)")
+
+	// Exactly one InvokeAction for post-action (join fired once, not twice).
+	require.Len(t, r3.Commands, 1, "OR-join must fire exactly once")
+	postCmd, ok := r3.Commands[0].(engine.InvokeAction)
+	require.True(t, ok, "expected InvokeAction for post-action")
+	assert.Equal(t, "post-action", postCmd.Name)
+
+	// ---- Step 4: Complete post-action → inner-end drains scope → outer-end → StatusCompleted ----
+	r4, err := engine.Step(def, r3.State,
+		engine.NewActionCompleted(at.Add(3*time.Second), postCmd.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, r4.State.Status,
+		"instance must complete after inclusive gateway join drains sub-process scope")
+	assert.Empty(t, r4.State.Tokens, "all tokens must be consumed on completion")
+	assert.Empty(t, r4.State.Scopes, "sub-process scope must be closed on completion")
+	require.NotNil(t, r4.State.EndedAt)
+
+	found := false
+	for _, cmd := range r4.Commands {
+		if _, ok := cmd.(engine.CompleteInstance); ok {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected CompleteInstance after inclusive-gateway sub-process exits")
+}
+
+// slaUserTaskInsideSubProcessDef builds:
+//
+// outer: outer-start → sub (KindSubProcess) → outer-end
+//
+// sub's inner def:
+//
+//	inner-start → inner-user (KindUserTask, SLADuration "30m", SLAFlow "inner-escalate",
+//	              SLAAction "notify-action") → inner-end
+//	inner-user → (inner-escalate flow) → escalate-node (KindEndEvent)
+func slaUserTaskInsideSubProcessDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "inner-sla", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{
+				ID:             "inner-user",
+				Kind:           model.KindUserTask,
+				CandidateRoles: []string{"reviewer"},
+				SLADuration:    `"30m"`,
+				SLAFlow:        "inner-escalate",
+				SLAAction:      "notify-action",
+			},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+			{ID: "escalate-node", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-user"},
+			{ID: "if2", Source: "inner-user", Target: "inner-end"},
+			{ID: "inner-escalate", Source: "inner-user", Target: "escalate-node"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "outer-sla", Version: 1,
+		Nodes: []model.Node{
+			{ID: "outer-start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+		},
+	}
+}
+
+// TestSLAUserTaskInsideSubProcess verifies that an SLA timer on a user task
+// nested inside a sub-process:
+//
+//  1. Arms the SLA timer (ScheduleTimer) and parks the user task within the child scope.
+//  2. When the SLA timer fires (task NOT completed), the escalation path runs within
+//     the child scope (InvokeAction for "notify-action"), the task is cancelled
+//     (UpdateTask), and the token moves to the escalation end node.
+//  3. The escalation end drains the inner scope → outer-end → StatusCompleted
+//     (sub-process exits cleanly to the parent).
+func TestSLAUserTaskInsideSubProcess(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := slaUserTaskInsideSubProcessDef()
+
+	// ---- Step 1: StartInstance → sub enters → user-task parks + SLA armed ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "sla-sub-i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r1.State.Status)
+
+	// Sub-process scope must be open.
+	require.Len(t, r1.State.Scopes, 1, "sub-process scope must be open")
+	scopeID := r1.State.Scopes[0].ID
+
+	// AwaitHuman + ScheduleTimer(SLA) emitted.
+	var slaTimerID string
+	var taskToken string
+	for _, cmd := range r1.Commands {
+		switch c := cmd.(type) {
+		case engine.AwaitHuman:
+			taskToken = c.TaskToken
+		case engine.ScheduleTimer:
+			if c.Kind == engine.TimerSLA {
+				slaTimerID = c.TimerID
+			}
+		}
+	}
+	require.NotEmpty(t, taskToken, "expected AwaitHuman for inner-user task")
+	require.NotEmpty(t, slaTimerID, "expected ScheduleTimer(SLA) for inner-user task")
+
+	// One token parked at inner-user, in the sub-process scope.
+	require.Len(t, r1.State.Tokens, 1)
+	assert.Equal(t, "inner-user", r1.State.Tokens[0].NodeID)
+	assert.Equal(t, scopeID, r1.State.Tokens[0].ScopeID,
+		"inner-user token must carry the sub-process scope ID")
+
+	// ---- Step 2: SLA fires (task NOT completed) → escalation path inside scope ----
+	fireAt := at.Add(30 * time.Minute)
+	r2, err := engine.Step(def, r1.State,
+		engine.NewTimerFired(fireAt, slaTimerID), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// InvokeAction for notify-action, UpdateTask (cancelled), and CompleteInstance
+	// (because escalate-node is an EndEvent, inner scope drains → outer completes).
+	var foundNotify bool
+	var foundUpdateTask bool
+	var foundComplete bool
+	for _, cmd := range r2.Commands {
+		switch c := cmd.(type) {
+		case engine.InvokeAction:
+			if c.Name == "notify-action" {
+				foundNotify = true
+			}
+		case engine.UpdateTask:
+			if c.Task.TaskToken == taskToken {
+				foundUpdateTask = true
+			}
+		case engine.CompleteInstance:
+			foundComplete = true
+		}
+	}
+	assert.True(t, foundNotify, "expected InvokeAction for notify-action on SLA breach")
+	assert.True(t, foundUpdateTask, "expected UpdateTask (task cancelled) on SLA breach")
+	assert.True(t, foundComplete,
+		"expected CompleteInstance: escalation end drains inner scope → outer-end reached")
+
+	// Instance must be completed (escalate-node is EndEvent → inner scope drains → outer-end).
+	assert.Equal(t, engine.StatusCompleted, r2.State.Status,
+		"instance must complete after SLA breach escalation path drains sub-process scope")
+	assert.Empty(t, r2.State.Tokens, "all tokens must be consumed on completion")
+	assert.Empty(t, r2.State.Scopes, "sub-process scope must be closed on completion")
+	require.NotNil(t, r2.State.EndedAt)
+}

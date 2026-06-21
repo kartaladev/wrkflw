@@ -12,8 +12,9 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/service"
+	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 )
 
 // TestMapToGRPCStatus verifies that the error-to-gRPC-status mapping in
@@ -36,6 +37,7 @@ func TestMapToGRPCStatus(t *testing.T) {
 		{"bad cursor", runtime.ErrBadCursor, codes.InvalidArgument},
 		{"unknown error", errors.New("boom"), codes.Internal},
 		{"wrapped not found", fmt.Errorf("wrap: %w", runtime.ErrInstanceNotFound), codes.NotFound},
+		{"conflict state", fmt.Errorf("x: %w", service.ErrConflict), codes.FailedPrecondition},
 	}
 
 	for _, tc := range tests {

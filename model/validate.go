@@ -46,6 +46,12 @@ var (
 	// DefRef field. A call-activity must name the top-level definition it
 	// delegates to so the runtime registry can resolve it at execution time.
 	ErrMissingDefRef = errors.New("model: call-activity node missing definition reference")
+	// ErrMixedGateway is returned when a gateway node has both more than one
+	// incoming flow and more than one outgoing flow. Such a gateway is
+	// structurally ambiguous — it combines join and split semantics in a single
+	// node, leading to silent mis-routing. Pure split (1-in/N-out), pure join
+	// (N-in/1-out), and pass-through (1-in/1-out) remain valid. ADR-0014.
+	ErrMixedGateway = errors.New("model: gateway both splits and joins")
 	// ErrBoundaryErrorHost is returned when a boundary error event
 	// (KindBoundaryEvent with no TimerDuration/SignalName/MessageName) is
 	// attached to an activity that cannot throw a BPMN error. Only
@@ -141,6 +147,25 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 			if target.Kind != KindIntermediateCatchEvent {
 				errs = append(errs, fmt.Errorf("%w: flow %q from event-based gateway %q targets %q (kind %d)", ErrEventGatewayTarget, f.ID, n.ID, f.Target, target.Kind))
 			}
+		}
+	}
+
+	// Mixed split+join gateway: a gateway with both >1 incoming and >1 outgoing
+	// flows is structurally ambiguous and is rejected. Pure split (1-in/N-out),
+	// pure join (N-in/1-out), and pass-through (1-in/1-out) are all valid.
+	// ADR-0014.
+	gatewayKinds := map[NodeKind]bool{
+		KindExclusiveGateway:  true,
+		KindInclusiveGateway:  true,
+		KindParallelGateway:   true,
+		KindEventBasedGateway: true,
+	}
+	for _, n := range d.Nodes {
+		if !gatewayKinds[n.Kind] {
+			continue
+		}
+		if len(d.Incoming(n.ID)) > 1 && len(d.Outgoing(n.ID)) > 1 {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrMixedGateway, n.ID))
 		}
 	}
 

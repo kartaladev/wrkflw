@@ -326,6 +326,80 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err)
 			},
 		},
+		// Mixed split+join gateway rules (ADR-0014)
+		"mixed gateway both splits and joins": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "gw", Kind: model.KindExclusiveGateway},
+					{ID: "c", Kind: model.KindServiceTask, Action: "c"},
+					{ID: "d", Kind: model.KindServiceTask, Action: "d"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f0", Source: "start", Target: "a"},
+					{ID: "f0b", Source: "start", Target: "b"}, // start splits to a and b
+					{ID: "f1", Source: "a", Target: "gw"},
+					{ID: "f2", Source: "b", Target: "gw"},     // gw has 2 incoming
+					{ID: "f3", Source: "gw", Target: "c"},
+					{ID: "f4", Source: "gw", Target: "d"},     // gw has 2 outgoing → mixed
+					{ID: "f5", Source: "c", Target: "end"},
+					{ID: "f6", Source: "d", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrMixedGateway)
+			},
+		},
+		"pure split gateway is valid": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "gw", Kind: model.KindParallelGateway},
+					{ID: "c", Kind: model.KindServiceTask, Action: "c"},
+					{ID: "d", Kind: model.KindServiceTask, Action: "d"},
+					{ID: "j", Kind: model.KindParallelGateway},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "gw"},
+					{ID: "f2", Source: "gw", Target: "c"},
+					{ID: "f3", Source: "gw", Target: "d"},
+					{ID: "f4", Source: "c", Target: "j"},
+					{ID: "f5", Source: "d", Target: "j"},
+					{ID: "f6", Source: "j", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"pure join gateway is valid": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "j", Kind: model.KindParallelGateway},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "a"},
+					{ID: "f2", Source: "start", Target: "b"},
+					{ID: "f3", Source: "a", Target: "j"},
+					{ID: "f4", Source: "b", Target: "j"},
+					{ID: "f5", Source: "j", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -500,6 +574,45 @@ func TestValidateSubProcess(t *testing.T) {
 			},
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrMissingDefRef)
+			},
+		},
+		"mixed gateway nested inside subprocess propagates ErrMixedGateway": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+						ID:      "inner-mixed",
+						Version: 1,
+						Nodes: []model.Node{
+							{ID: "ns-start", Kind: model.KindStartEvent},
+							{ID: "na", Kind: model.KindServiceTask, Action: "na"},
+							{ID: "nb", Kind: model.KindServiceTask, Action: "nb"},
+							{ID: "ngw", Kind: model.KindParallelGateway},
+							{ID: "nc", Kind: model.KindServiceTask, Action: "nc"},
+							{ID: "nd", Kind: model.KindServiceTask, Action: "nd"},
+							{ID: "ns-end", Kind: model.KindEndEvent},
+						},
+						Flows: []model.SequenceFlow{
+							{ID: "nf0", Source: "ns-start", Target: "na"},
+							{ID: "nf0b", Source: "ns-start", Target: "nb"},
+							{ID: "nf1", Source: "na", Target: "ngw"},
+							{ID: "nf2", Source: "nb", Target: "ngw"},
+							{ID: "nf3", Source: "ngw", Target: "nc"},
+							{ID: "nf4", Source: "ngw", Target: "nd"},
+							{ID: "nf5", Source: "nc", Target: "ns-end"},
+							{ID: "nf6", Source: "nd", Target: "ns-end"},
+						},
+					}},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrMixedGateway)
 			},
 		},
 	}

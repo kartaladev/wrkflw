@@ -10,14 +10,16 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
 
 func TestMapToHTTPError(t *testing.T) {
 	tests := []struct {
-		name       string
-		err        error
-		wantStatus int
+		name          string
+		err           error
+		wantStatus    int
+		wantErrorCode string // if non-empty, assert body["error"] == wantErrorCode
 	}{
 		{
 			name:       "instance not found",
@@ -55,6 +57,12 @@ func TestMapToHTTPError(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
+			name:          "conflict state",
+			err:           fmt.Errorf("wrap: %w", service.ErrConflict),
+			wantStatus:    http.StatusUnprocessableEntity,
+			wantErrorCode: "conflict_state",
+		},
+		{
 			name:       "unknown error",
 			err:        fmt.Errorf("some unexpected error"),
 			wantStatus: http.StatusInternalServerError,
@@ -76,6 +84,9 @@ func TestMapToHTTPError(t *testing.T) {
 			}
 			if body["message"] == "" {
 				t.Fatal("want non-empty 'message' field in body")
+			}
+			if tc.wantErrorCode != "" && body["error"] != tc.wantErrorCode {
+				t.Fatalf("want body error code %q got %q", tc.wantErrorCode, body["error"])
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
 // ErrBadInput is the sentinel for 400-class decode/validation errors.
@@ -39,6 +40,8 @@ func classifyError(err error) (int, string) {
 	case errors.Is(err, runtime.ErrBadCursor),
 		errors.Is(err, ErrBadInput):
 		return http.StatusBadRequest, "bad_request"
+	case errors.Is(err, service.ErrConflict):
+		return http.StatusUnprocessableEntity, "conflict_state"
 	default:
 		return http.StatusInternalServerError, "internal_error"
 	}

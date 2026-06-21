@@ -77,31 +77,39 @@ daemon we own). Authoritative references — **read these first**:
 
 These are deliberately deferred, not bugs in the shipped scope. The most important first:
 
-1. **Nested-scope compensation (MUST-FIX before relying on compensation in nested sagas).** A completed
-   sub-process scope's `Scope.Compensations` are dropped on `closeScope`, so `CompensateRequested`
-   (which today targets only `RootCompensations`) cannot roll back activities that ran inside a
-   now-closed sub-process. Fix: on regular sub-process exit, hoist the closing scope's `Compensations`
-   into the parent (or an archive keyed by closed scope id) **before** `closeScope`; make
-   `CompensateRequested`/the reserved `Compensate{ScopeID,FromNode}` command scope-targetable. (Plan-8
-   e2e is flat/root-level, so nothing regresses today.)
-2. **`Compensate` command is reserved/inert.** `Compensate{ScopeID,FromNode}` is in the sealed set but
-   not emitted or consumed (godoc says so honestly). Wire it as part of (1).
+1. **Nested-scope compensation — DONE (ADR-0013).** On regular sub-process exit, the closing
+   scope's `Compensations` are now hoisted into the parent scope's compensation list before
+   `closeScope` discards the child scope, so `CompensateRequested` can roll back activities that
+   ran inside a now-closed sub-process. The `Correctness & tests hardening` sub-project
+   (Task 1) implemented and tested this via `hoistCompensations(childID, parentID)` in `engine/step.go`.
+2. **`Compensate` command is reserved for scope-targeted use.** `Compensate{ScopeID,FromNode}`
+   is in the sealed set but not emitted or consumed (godoc says so honestly). It is reserved to
+   be wired as the scope-targeted rollback command (companion to item 1 above) — a deliberate
+   deferred follow-up.
 3. **Async call activity.** `perform StartSubInstance` runs the child **synchronously** via `r.Run`; a
    child that parks (human task/timer/signal) returns a clear "synchronous runner does not support
    parked children" error. True async call activity (parent stays parked; `SubInstanceCompleted`
    delivered when the child finishes independently) is a later architectural change. Child instance id
    is linear (`<parent>-sub-c<n>`); depth guard = 64.
-4. **Typed/paired gateway validation.** `model.Validate` doesn't distinguish a *converging* vs
-   *diverging* gateway by incoming-count, so a mis-authored gateway can misroute silently. Add a
-   structural rule when typed gateways / a diamond-validation pass lands.
-5. **Inner-scope topology tests.** Scope propagation through forks/boundaries/event-gateways/SLA timers
-   *inside* a sub-process is code-correct; only parallel-fork-in-subprocess has a dedicated test. Add
-   tests for boundary/event-gateway/inclusive/SLA inside a sub-process.
+4. **Typed/paired gateway validation — PARTIALLY DONE (ADR-0014).** The mixed-gateway rule
+   (a node may not mix both `KindExclusiveGateway` incoming/outgoing flows with parallel-join
+   semantics) was added to `model.Validate` as `ErrMixedGateway` in the `Correctness & tests
+   hardening` sub-project (Task 2). Full diverging-vs-converging structural validation (diamond
+   pairing, reachability checks) remains a deferred follow-up.
+5. **Inner-scope topology tests — DONE.** Tests for boundary-event, event-based gateway, inclusive
+   gateway, and SLA-timer scope propagation *inside* a sub-process were added in the `Correctness
+   & tests hardening` sub-project (Task 6). A `fireBoundaryArm` scope-resolution bug was found
+   and fixed as part of this work (commit `82badcd`): the boundary outgoing flow was being resolved
+   from the root definition instead of the containing sub-process scope.
 6. **Retry/backoff/poison executor.** `ActionFailed.Retryable` + `InvokeAction.RetryPolicy` are carried
    but the retry executor (backoff, max attempts, poison queue) is a runtime/productionization concern.
 7. **Minor test hardening** (non-blocking): a few `*_example_test.go`-bundled unit tests could move to
    same-named files (project convention is 1:1, see the test-file-naming memory); root-level event
    sub-process and message-arm-gateway paths have light coverage.
+8. **Pre-existing flaky singleflight test** — `runtime.TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`
+   fails intermittently under `-race` load (a timing-sensitive singleflight barrier). Confirmed
+   pre-existing and unrelated to the correctness-hardening sub-project; tracked as a follow-up
+   for the `runtime` package.
 
 ## Persistence (PostgreSQL) sub-project — ✅ COMPLETE, merged to `main`
 
@@ -137,7 +145,11 @@ The `Relay` is broker-agnostic: it polls the outbox with `FOR UPDATE SKIP LOCKED
 3. **LISTEN/NOTIFY relay trigger** — relay polls on a fixed interval; a Postgres `LISTEN`/`NOTIFY` push would cut latency/DB load (layered on the poll fallback).
 4. **Per-aggregate relay ordering** — `SKIP LOCKED` gives throughput, not strict per-instance order; partition claiming by `instance_id` if strict in-order delivery is needed.
 5. **Retry/DLQ + relay head-of-line** — full-batch rollback on a publish error means a persistent poison event blocks its batch (at-least-once intact). Poison isolation / retry-backoff executor is the resilience sub-project.
-6. **Parked-async persistence resume e2e** — the capstone e2e is start→end; add a test that parks on a timer/boundary, reloads from Postgres via a fresh `Store`, advances the fake clock, and resumes (the JSON round-trip of `Timers`/`ArmedEvents`/`Boundaries`/`EventSubprocesses` is structurally correct — exported fields — but only e2e-proven for the sync path). **Highest-value missing test.**
+6. **Parked-async persistence resume e2e — DONE.** `TestPostgresParkedTimerResumesAfterReload`
+   and `TestPostgresParkedBoundaryResumesAfterReload` (in `internal/persistence/postgres/resume_test.go`)
+   added in the `Correctness & tests hardening` sub-project (Task 5): parks on a timer/boundary,
+   reloads from Postgres via a brand-new `Store`, advances the fake clock, and resumes to
+   `StatusCompleted`. Proves the JSONB round-trip of `token.AwaitCommand` and `Boundaries`.
 7. **TOAST / fillfactor tuning** — the per-transition snapshot rewrite causes TOAST write amplification; lower `fillfactor` on `wrkflw_instances` + autovacuum tuning is a DBA step.
 8. **Numeric fidelity** — process-variable integers round-trip from JSONB as `float64` (standard `encoding/json`, documented spec §7); `json.Decoder.UseNumber()` is the escape hatch if a consumer needs int fidelity.
 9. **Instance-snapshot int enums** — `Status`/`TokenState`/`TimerKind` still serialize as ints in the snapshot (self-consistent within a version, unlike the now-name-based `NodeKind`); name-encode them too if cross-version snapshot stability is ever needed.
@@ -342,10 +354,12 @@ no grpc/protobuf/net-http in `engine`/`model`; `service` is transport-neutral.
 
 ### Deferred follow-ups (deliberate, not bugs)
 
-1. **422/FailedPrecondition for wrong-state transitions** — currently wrong-state errors (e.g. claiming
-   a completed task, cancelling a finished instance) map to 500/Internal and `codes.Internal` because
-   there is no typed wrong-state sentinel yet. Add a sentinel (e.g. `ErrWrongState`) in `service/` and
-   wire it to 422/`FailedPrecondition` in both transport layers.
+1. **422/FailedPrecondition for wrong-state transitions — DONE (`service.ErrConflict`).** Added
+   `service.ErrConflict` sentinel in the `Correctness & tests hardening` sub-project (Tasks 3–4):
+   `service.ClaimTask` and `service.DeliverSignal` wrap wrong-state errors with `ErrConflict`;
+   `transport/rest` maps it to HTTP 422 with body error code `"conflict_state"`;
+   `transport/grpc` maps it to `codes.FailedPrecondition`. The engine-level wrong-state sentinel
+   (for callers using the engine directly, bypassing `service/`) remains a deferred follow-up.
 2. **`DeliverMessage` requires a `*ProcessDefinition` from the caller** — `Runner.DeliverMessage`
    accepts a `*model.ProcessDefinition`; the `service.Service` facade currently requires the caller to
    supply a `DefRef` (id + version) so it can resolve the definition. A cleaner API would have the

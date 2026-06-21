@@ -687,6 +687,25 @@ func (s *InstanceState) tokensInScope(scopeID string) int {
 	return count
 }
 
+// hoistCompensations moves childID's accumulated compensation records into its
+// parent (parentID), appended in completion order, so they remain rollback-able
+// after the child scope closes. parentID "" targets RootCompensations. The
+// child's own slice is cleared. No-op if the child has no records or is not found.
+func (s *InstanceState) hoistCompensations(childID, parentID string) {
+	child := s.scopeByID(childID)
+	if child == nil || len(child.Compensations) == 0 {
+		return
+	}
+	if parentID == "" {
+		s.RootCompensations = append(s.RootCompensations, child.Compensations...)
+	} else if parent := s.scopeByID(parentID); parent != nil {
+		// The parent always exists here by construction: scopes close child-first,
+		// so a closing scope's parent is either root ("") or a still-open ancestor.
+		parent.Compensations = append(parent.Compensations, child.Compensations...)
+	}
+	child.Compensations = nil
+}
+
 // closeScope removes the Scope with the given scopeID from s.Scopes. It is a
 // no-op if no scope with that ID exists. Child scopes (those whose ParentID
 // equals scopeID) are NOT automatically removed — callers are responsible for
