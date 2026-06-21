@@ -50,6 +50,17 @@ func TestWatermillLoggerDebug(t *testing.T) {
 	require.Contains(t, out, "batch")
 }
 
+func TestWatermillLoggerTrace(t *testing.T) {
+	var buf bytes.Buffer
+	wl := newTestLogger(&buf)
+	// Trace maps to Debug in slog; output is emitted because handler is set to LevelDebug.
+	wl.Trace("trace event", watermill.LogFields{"id": "t-1"})
+
+	out := buf.String()
+	require.Contains(t, out, "trace event")
+	require.Contains(t, out, "id")
+}
+
 func TestWatermillLoggerWith(t *testing.T) {
 	var buf bytes.Buffer
 	wl := newTestLogger(&buf)

@@ -2,6 +2,7 @@ package watermill_test
 
 import (
 	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -80,4 +81,26 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 
 func TestPublisherImplementsRuntimePublisher(t *testing.T) {
 	var _ runtime.Publisher = (*watermillpub.Publisher)(nil)
+}
+
+func TestPublishMarshalErrorPropagates(t *testing.T) {
+	// A channel cannot be JSON-marshalled; this exercises the marshal-error path.
+	pub := watermillpub.NewPublisher(&fakePub{})
+	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+		Topic:   "instance.broken",
+		Payload: map[string]any{"bad": make(chan int)},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "marshal payload")
+}
+
+func TestNewPublisherWithLogger(t *testing.T) {
+	// Verify WithLogger option is accepted and a Publish call still works.
+	fp := &fakePub{}
+	pub := watermillpub.NewPublisher(fp, watermillpub.WithLogger(slog.Default()))
+	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+		Topic: "instance.started", Payload: map[string]any{"ok": true}, DedupKey: "i:4:0",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "instance.started", fp.topic)
 }
