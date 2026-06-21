@@ -147,12 +147,25 @@ The `Relay` is broker-agnostic: it polls the outbox with `FOR UPDATE SKIP LOCKED
 
 ## Scheduling (gocron) sub-project — ✅ IMPLEMENTED on `feat/scheduling-gocron` (pending review + merge)
 
-Built on branch `feat/scheduling-gocron` (HEAD `e0de457`). Design: spec
+Built on branch `feat/scheduling-gocron` (HEAD `87c0ca6`, including the whole-branch-review
+fix wave). Design: spec
 `docs/specs/2026-06-21-scheduling-gocron-design.md`, plan `docs/plans/2026-06-21-scheduling-gocron.md`,
 ADR-0009.
-Gate: `go test -race ./...` green, `internal/scheduling/gocron` 85.7%, `scheduling` 85.7%,
-total coverage 87.3%, lint clean (0 issues), gocron not imported from `engine`/`runtime`/`model`
+Gate: `go test -race ./...` green, `internal/scheduling/gocron` 87.5%, `scheduling` 85.7%,
+`runtime` 94.5%, lint clean (0 issues), gocron not imported from `engine`/`runtime`/`model`
 production code, clockwork not in `engine`/`runtime`/`model` production code.
+
+### Whole-branch-review fixes (post-implementation, HEAD `87c0ca6`)
+
+- **R4a (`runtime/memstore.go`)** — `MemStore` is now goroutine-safe (`sync.RWMutex` guards
+  all five methods). The async scheduler makes concurrent `Deliver` real, so the e2e
+  `syncStore` wrapper was removed in favour of `runtime.NewMemStore()` directly.
+- **R4b (`runtime/runner.go`)** — the timer-fire callback no longer silently drops
+  `TimerFired` on a CAS conflict: it now retries `Deliver` (reload-per-attempt) up to 5 times
+  on `ErrConcurrentUpdate`, logging loudly if all attempts are exhausted. Non-CAS errors keep
+  the single log-and-return behaviour.
+- **Minor (`internal/scheduling/gocron/scheduler.go`)** — a non-future `fireAt` now fires
+  immediately (`gocron.OneTimeJobStartImmediately()`) instead of being dropped.
 
 ### What shipped
 
@@ -160,7 +173,7 @@ production code, clockwork not in `engine`/`runtime`/`model` production code.
 |---|---|---|
 | `internal/scheduling/gocron/` | `GocronScheduler` — implements `runtime.Scheduler` backed by gocron v2.21.2; mutex-guarded `timerID→uuid` map; `Schedule` replaces any existing job for the same timer (cancel + re-add); `Cancel` is a no-op for unknown IDs (`ErrJobNotFound`-safe); `Close` calls gocron `Shutdown`; `AfterJobRuns` hook cleans the map entry after the job fires so the map stays bounded. Shares the same `clockwork.Clock` instance as the `Runner` so a single `FakeClock.Advance` drives both the engine and the scheduler in tests (ADR-0003). | ADR-0009 |
 | `scheduling/` root façade | `NewScheduler(clock, ...Option) (runtime.Scheduler, io.Closer)` — consumers import only this root package; compile-time `var _ runtime.Scheduler` + `var _ io.Closer` assertions guard the contract. Never exposes internal gocron types. | ADR-0009 |
-| `runtime/` | `MemScheduler` retained — tests that require only the pure engine (no gocron dependency) still use it. `runner.go` already accepts `runtime.Scheduler`; no runtime changes were needed. | |
+| `runtime/` | `MemScheduler` retained — tests that require only the pure engine (no gocron dependency) still use it. `runner.go` already accepts `runtime.Scheduler`. The whole-branch-review fix wave added two runtime changes (see "Whole-branch-review fixes"): a goroutine-safe `MemStore` (R4a) and bounded retry-with-reload on the timer-fire `Deliver` (R4b). | |
 | Tests | Unit tests for `GocronScheduler` use `clockwork.NewFakeClock`, `BlockUntilContext` arm barrier before `Advance`, and synchronize on actual callback execution via WaitGroup/channel (not on `Advance` returning). Capstone e2e: one shared fake clock is both the runner's `clock.Clock` and the scheduler's `clockwork.Clock`; a timer-waiter process drives start→fire→resume→`StatusCompleted`. | |
 
 ### Key design decision (ADR)
