@@ -29,10 +29,11 @@ opus whole-branch review → merge to main → push`, exactly like the sub-proje
    multi-process ownership (`NewAdvisoryLockOwnership`). ADRs 0020–0022.
    See the "Performance/caching sub-project" section below.
 5. **Next focus** (previously "Also outstanding"): DB casbin policy adapter (Authz
-   deferred #1), true async call activity (engine follow-up #3), and the pre-existing flaky
-   singleflight test `runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`.
-   Also queue: `persistence`/`internal/persistence/postgres` coverage gaps (see
-   Performance/caching deferred follow-up #5).
+   deferred #1) and true async call activity (engine follow-up #3). ✅ The pre-existing flaky
+   singleflight test (`runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`)
+   was FIXED 2026-06-22 (root cause was a TOCTOU in `CachingDefinitionRegistry.Lookup`, not a test
+   barrier — see tracked-follow-up #8 below). The Performance/caching coverage gaps were also closed
+   in that track (persistence 100%, internal/persistence/postgres 85.3%).
 
 **How to execute a track:** follow "How to run the next sub-project" + "Binding conventions"
 sections below (subagent-driven development, visible RED→GREEN per task, opus final review). The
@@ -150,10 +151,14 @@ These are deliberately deferred, not bugs in the shipped scope. The most importa
 7. **Minor test hardening** (non-blocking): a few `*_example_test.go`-bundled unit tests could move to
    same-named files (project convention is 1:1, see the test-file-naming memory); root-level event
    sub-process and message-arm-gateway paths have light coverage.
-8. **Pre-existing flaky singleflight test** — `runtime.TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`
-   fails intermittently under `-race` load (a timing-sensitive singleflight barrier). Confirmed
-   pre-existing and unrelated to the correctness-hardening sub-project; tracked as a follow-up
-   for the `runtime` package.
+8. **Pre-existing flaky singleflight test — ✅ FIXED (2026-06-22, merge see below).** Root cause was a
+   check-then-act gap in `CachingDefinitionRegistry.Lookup` between the fast-path cache check and
+   `singleflight.Group.Do`: a straggler that missed the fast path could start a fresh flight after the
+   first flight had already cached and freed the key, issuing a redundant `backing.Lookup` (2–4 calls
+   observed under `-race`). Fixed by double-checking the cache at the top of the `Do` closure so any
+   flight running after the cache is populated short-circuits — collapsing stragglers to exactly one
+   backing call regardless of scheduling. Verified 500× `-race`. (Not a "timing-sensitive barrier" in
+   the test as previously assumed — a real TOCTOU in the production code.)
 
 ## Persistence (PostgreSQL) sub-project — ✅ COMPLETE, merged to `main`
 
@@ -457,9 +462,9 @@ engine/model purity CLEAN.
    embedded consumers calling the engine/runtime directly still get untyped wrong-state errors.
 4. **Compensation-on-error / cancel paths** — only *normal* sub-process exit hoists; error/cancel
    scope-close compensation semantics are a separate design.
-5. **Pre-existing flaky singleflight test** —
-   `runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call` can flake
-   under `-race`; tracked, not yet stabilized.
+5. **Pre-existing flaky singleflight test — ✅ FIXED (2026-06-22).** Was a TOCTOU in
+   `CachingDefinitionRegistry.Lookup` (fast-path check / `singleflight.Do` gap), not a test barrier;
+   fixed by an in-flight cache re-check. See tracked-follow-up #8 in the engine-core section.
 
 ---
 
