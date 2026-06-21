@@ -18,6 +18,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
 // mapToGRPCStatus classifies a domain error into the appropriate gRPC status.
@@ -27,6 +28,7 @@ import (
 //   - authz.ErrNotAuthorized → codes.PermissionDenied
 //   - runtime.ErrConcurrentUpdate → codes.Aborted
 //   - runtime.ErrBadCursor → codes.InvalidArgument
+//   - service.ErrConflict → codes.FailedPrecondition
 //   - everything else → codes.Internal
 func mapToGRPCStatus(err error) error {
 	switch {
@@ -40,6 +42,8 @@ func mapToGRPCStatus(err error) error {
 		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, runtime.ErrBadCursor):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, service.ErrConflict):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	default:
 		return status.Error(codes.Internal, err.Error())
 	}

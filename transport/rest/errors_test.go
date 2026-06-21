@@ -10,6 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
 
@@ -53,6 +54,11 @@ func TestMapToHTTPError(t *testing.T) {
 			name:       "bad input sentinel",
 			err:        fmt.Errorf("wrap: %w", rest.ErrBadInput),
 			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "conflict state",
+			err:        fmt.Errorf("wrap: %w", service.ErrConflict),
+			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:       "unknown error",
