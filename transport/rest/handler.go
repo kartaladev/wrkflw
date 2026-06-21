@@ -27,7 +27,8 @@ import (
 //
 // Admin routes (wrapped by the configured admin middleware):
 //
-//	GET    /admin/instances            — keyset-paginated instance monitoring
+//	GET    /admin/instances                                    — keyset-paginated instance monitoring
+//	POST   /admin/instances/{id}/incidents/{incidentID}/resolve — resolve an open incident and resume execution
 //
 // Default-deny: admin routes return 403 Forbidden when no WithAdminMiddleware option
 // is supplied. Consumers must explicitly opt in by providing a middleware that
@@ -52,8 +53,9 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 	// Admin routes are mounted under the consumer-supplied admin middleware.
 	// cfg.adminMiddleware defaults to denyAllMiddleware (set by defaultConfig) so
 	// that admin endpoints are never openly accessible without an explicit opt-in.
-	adminHandler := cfg.adminMiddleware(http.HandlerFunc(h.handleAdminListInstances))
-	mux.Handle("GET /admin/instances", adminHandler)
+	mux.Handle("GET /admin/instances", cfg.adminMiddleware(http.HandlerFunc(h.handleAdminListInstances)))
+	mux.Handle("POST /admin/instances/{id}/incidents/{incidentID}/resolve",
+		cfg.adminMiddleware(http.HandlerFunc(h.handleResolveIncident)))
 
 	return mux
 }

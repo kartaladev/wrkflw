@@ -76,3 +76,16 @@ type ReassignTaskRequest struct {
 	// task's eligibility spec).
 	By authz.Actor
 }
+
+// ResolveIncidentRequest carries the parameters for resolving an open incident
+// on a process instance that has exhausted its automatic retry budget.
+type ResolveIncidentRequest struct {
+	// InstanceID identifies the process instance that owns the incident.
+	InstanceID string
+	// IncidentID is the unique identifier of the incident to resolve.
+	IncidentID string
+	// AddAttempts is the number of additional execution attempts to grant the
+	// failing node before the operator considers the incident resolved.
+	// Values ≤ 0 are treated as 1 by the Engine implementation.
+	AddAttempts int
+}
