@@ -736,7 +736,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			cmds = append(cmds, InvokeAction{
 				CommandID: cmdID,
 				Name:      node.Action,
-				Input:     copyVars(s.Variables),
+				Input:     serviceActionInput(s, node),
 			})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
@@ -2561,12 +2561,13 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 		return nil, fmt.Errorf("engine: reinvoke: node %q not found", tok.NodeID)
 	}
 
-	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly.
+	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly,
+	// including the stable idempotency key (see serviceActionInput).
 	cmdID := s.nextCommandID()
 	cmds := []Command{InvokeAction{
 		CommandID: cmdID,
 		Name:      node.Action,
-		Input:     copyVars(s.Variables),
+		Input:     serviceActionInput(s, node),
 	}}
 	tok.State = TokenWaitingCommand
 	tok.AwaitCommand = cmdID
@@ -2857,6 +2858,25 @@ func copyVars(in map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// serviceActionInput builds the Input map for a node's primary ServiceAction
+// invocation. It copies the instance variables and stamps a stable,
+// attempt-independent idempotency key ("<instanceID>:<nodeID>") so action
+// authors can dedup external side effects across retries.
+//
+// v1 scope: only the primary service-task action carries this key. SLA,
+// reminder, and compensation actions do NOT — those are separate fire-once
+// operations on the same node; stamping instanceID:nodeID on them would
+// collide with the primary action's key and could cause an external system to
+// wrongly dedup distinct operations.
+func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
+	in := copyVars(s.Variables)
+	if in == nil {
+		in = map[string]any{}
+	}
+	in["_idempotencyKey"] = s.InstanceID + ":" + node.ID
+	return in
 }
 
 func cloneState(st InstanceState) InstanceState {

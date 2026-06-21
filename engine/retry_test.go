@@ -309,6 +309,68 @@ func hasFailInstance(cmds []engine.Command) bool {
 	return false
 }
 
+// firstInvokeAction scans commands for the first InvokeAction and returns it.
+// Fails the test if none is found.
+func firstInvokeAction(t *testing.T, cmds []engine.Command) engine.InvokeAction {
+	t.Helper()
+	for _, c := range cmds {
+		if ia, ok := c.(engine.InvokeAction); ok {
+			return ia
+		}
+	}
+	t.Fatal("no InvokeAction found in commands")
+	return engine.InvokeAction{}
+}
+
+// firstScheduleTimer scans commands for the first ScheduleTimer (any kind) and
+// returns it. Fails the test if none is found.
+func firstScheduleTimer(t *testing.T, cmds []engine.Command) engine.ScheduleTimer {
+	t.Helper()
+	for _, c := range cmds {
+		if st, ok := c.(engine.ScheduleTimer); ok {
+			return st
+		}
+	}
+	t.Fatal("no ScheduleTimer found in commands")
+	return engine.ScheduleTimer{}
+}
+
+// TestInvokeActionCarriesStableIdempotencyKey verifies that:
+//  1. The first InvokeAction for a service-task carries
+//     Input["_idempotencyKey"] == "<instanceID>:<nodeID>".
+//  2. After a retryable failure the re-invocation carries the SAME key
+//     (stable across retries — no attempt number suffix).
+func TestInvokeActionCarriesStableIdempotencyKey(t *testing.T) {
+	def := retryDef(&model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2})
+
+	// Drive start → service task.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+		engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	inv1 := firstInvokeAction(t, r1.Commands)
+	require.Equal(t, "p:task", inv1.Input["_idempotencyKey"],
+		"first invocation must carry stable idempotency key")
+
+	// Deliver retryable failure → retry timer scheduled.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionFailedJittered(time.Unix(10, 0), inv1.CommandID, "boom", true, 0.5),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	timerID := firstScheduleTimer(t, r2.Commands).TimerID
+
+	// Fire the retry timer → re-invocation.
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(time.Unix(11, 0), timerID),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	inv2 := firstInvokeAction(t, r3.Commands)
+	require.Equal(t, "p:task", inv2.Input["_idempotencyKey"],
+		"re-invocation after retry must carry the SAME idempotency key (attempt-independent)")
+}
+
 // TestStepExhaustion exercises the terminal-exhaustion precedence:
 // (1) catch-flow (RecoveryFlow), (2) error boundary, (3) incident. All three
 // cases share the call shape: drive start → fail terminally → assert.
