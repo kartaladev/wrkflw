@@ -171,6 +171,49 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 		}
+		// Retry interception: when the node (or the default policy) carries a retry
+		// policy and the failure is non-terminal, schedule a TimerRetry instead of
+		// propagating the error immediately.
+		tdef, err := defForScope(def, &s, tok.ScopeID)
+		if err != nil {
+			return StepResult{}, err
+		}
+		node, _ := tdef.Node(tok.NodeID)
+		if eff, hasPolicy := effectiveRetryPolicy(node, opt); hasPolicy {
+			attempt := tok.RetryAttempts
+			terminal := !t.Retryable ||
+				eff.IsNonRetryable(t.Err) ||
+				(eff.MaxAttempts != 0 && attempt+1 >= eff.MaxAttempts) ||
+				(eff.MaxElapsed > 0 && !tok.RetryStartedAt.IsZero() &&
+					t.OccurredAt().Sub(tok.RetryStartedAt) > eff.MaxElapsed)
+			if !terminal {
+				delay := time.Duration(t.JitterFraction * float64(eff.Backoff(attempt)))
+				fireAt := t.OccurredAt().Add(delay)
+				timerID := s.nextTimerID()
+				retryCmds := []Command{ScheduleTimer{
+					TimerID: timerID,
+					Token:   tok.ID,
+					FireAt:  fireAt,
+					Kind:    TimerRetry,
+				}}
+				s.Timers = append(s.Timers, timerRecord{
+					TimerID: timerID,
+					Kind:    TimerRetry,
+					Token:   tok.ID,
+					NodeID:  tok.NodeID,
+					ScopeID: tok.ScopeID,
+				})
+				tok.RetryAttempts++
+				if tok.RetryStartedAt.IsZero() {
+					tok.RetryStartedAt = t.OccurredAt()
+				}
+				tok.State = TokenWaitingCommand
+				tok.AwaitCommand = timerID
+				return StepResult{State: s, Commands: append(preCmds, retryCmds...)}, nil
+			}
+			// terminal → Task 7 will handle exhaustion/incident; for now fall through
+			// to the existing propagateError path unchanged.
+		}
 		// Route through propagateError: if a boundary error handler is found in
 		// the scope chain (direct-attachment or enclosing-scope), the error is
 		// caught and execution continues on the recovery path (no FailInstance).
@@ -2587,6 +2630,23 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		return StepResult{}, err
 	}
 	return StepResult{State: *s, Commands: driveCmds}, nil
+}
+
+// ---- retry helpers ----
+
+// effectiveRetryPolicy returns the retry policy to apply for the given node and
+// step options, plus a boolean indicating whether a policy is in effect.
+// Precedence: node-level policy > StepOptions.DefaultRetryPolicy > none.
+// The returned policy has been normalized via [model.RetryPolicy.Normalize].
+func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, bool) {
+	switch {
+	case node.RetryPolicy != nil:
+		return node.RetryPolicy.Normalize(), true
+	case opt.DefaultRetryPolicy != nil:
+		return opt.DefaultRetryPolicy.Normalize(), true
+	default:
+		return model.RetryPolicy{}, false
+	}
 }
 
 // ---- value helpers ----
