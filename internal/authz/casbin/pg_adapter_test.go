@@ -25,6 +25,55 @@ e = some(where (p.eft == allow))
 m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
 `
 
+func TestPGAdapterAutoSaveMutations(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, authzcasbin.MigrateCasbin(t.Context(), pool))
+	a := authzcasbin.NewPGAdapter(pool)
+
+	// AddPolicy persists.
+	require.NoError(t, a.AddPolicy("p", "p", []string{"admin", "data1", "read"}))
+	require.NoError(t, a.AddPolicy("p", "p", []string{"admin", "data2", "read"}))
+	require.NoError(t, a.AddPolicy("p", "p", []string{"viewer", "data1", "read"}))
+
+	load := func() model.Model {
+		m, err := model.NewModelFromString(rbacModel)
+		require.NoError(t, err)
+		require.NoError(t, a.LoadPolicy(m))
+		return m
+	}
+
+	m := load()
+	ok, err := m.HasPolicy("p", "p", []string{"admin", "data1", "read"})
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	ok, err = m.HasPolicy("p", "p", []string{"viewer", "data1", "read"})
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	// RemovePolicy deletes exactly that rule.
+	require.NoError(t, a.RemovePolicy("p", "p", []string{"admin", "data1", "read"}))
+	m = load()
+	ok, err = m.HasPolicy("p", "p", []string{"admin", "data1", "read"})
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	ok, err = m.HasPolicy("p", "p", []string{"admin", "data2", "read"})
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	// RemoveFilteredPolicy(fieldIndex=0, "viewer") removes all rules whose v0=viewer.
+	require.NoError(t, a.RemoveFilteredPolicy("p", "p", 0, "viewer"))
+	m = load()
+	ok, err = m.HasPolicy("p", "p", []string{"viewer", "data1", "read"})
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	ok, err = m.HasPolicy("p", "p", []string{"admin", "data2", "read"})
+	require.NoError(t, err)
+	assert.True(t, ok)
+}
+
 func TestPGAdapterSaveLoadRoundTrip(t *testing.T) {
 	pool := database.RunTestDatabase(t)
 	require.NoError(t, authzcasbin.MigrateCasbin(t.Context(), pool))

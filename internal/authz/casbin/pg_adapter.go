@@ -2,7 +2,6 @@ package casbin
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/casbin/casbin/v2/model"
@@ -14,14 +13,10 @@ import (
 // Compile-time assertion: pgAdapter satisfies casbin's persist.Adapter.
 var _ persist.Adapter = (*pgAdapter)(nil)
 
-// errNotImpl is returned by the auto-save stubs (AddPolicy / RemovePolicy /
-// RemoveFilteredPolicy) until Task 3 implements them.
-var errNotImpl = errors.New("casbin pgadapter: auto-save method not yet implemented")
-
 // pgAdapter is a pgx-native casbin persist.Adapter backed by the casbin_rule
 // table. Rules are stored as (ptype, v0..v5); unused trailing fields are empty
-// strings. The auto-save methods (Add/Remove/RemoveFiltered) are stubbed until
-// Task 3.
+// strings. It supports casbin's Auto-Save feature: AddPolicy/RemovePolicy/
+// RemoveFilteredPolicy persist policy changes directly to the database.
 type pgAdapter struct {
 	pool *pgxpool.Pool
 }
@@ -123,11 +118,51 @@ func (a *pgAdapter) SavePolicy(m model.Model) error {
 	return nil
 }
 
-// AddPolicy is a stub — auto-save implemented in Task 3.
-func (a *pgAdapter) AddPolicy(string, string, []string) error { return errNotImpl }
+// AddPolicy inserts one rule (Auto-Save).
+func (a *pgAdapter) AddPolicy(_ string, ptype string, rule []string) error {
+	v := padRule(rule)
+	if _, err := a.pool.Exec(context.Background(),
+		`INSERT INTO casbin_rule (ptype, v0, v1, v2, v3, v4, v5) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		ptype, v[0], v[1], v[2], v[3], v[4], v[5]); err != nil {
+		return fmt.Errorf("casbin pgadapter: add: %w", err)
+	}
+	return nil
+}
 
-// RemovePolicy is a stub — auto-save implemented in Task 3.
-func (a *pgAdapter) RemovePolicy(string, string, []string) error { return errNotImpl }
+// RemovePolicy deletes rows matching the exact rule (Auto-Save).
+func (a *pgAdapter) RemovePolicy(_ string, ptype string, rule []string) error {
+	v := padRule(rule)
+	if _, err := a.pool.Exec(context.Background(),
+		`DELETE FROM casbin_rule
+		  WHERE ptype=$1 AND v0=$2 AND v1=$3 AND v2=$4 AND v3=$5 AND v4=$6 AND v5=$7`,
+		ptype, v[0], v[1], v[2], v[3], v[4], v[5]); err != nil {
+		return fmt.Errorf("casbin pgadapter: remove: %w", err)
+	}
+	return nil
+}
 
-// RemoveFilteredPolicy is a stub — auto-save implemented in Task 3.
-func (a *pgAdapter) RemoveFilteredPolicy(string, string, int, ...string) error { return errNotImpl }
+// RemoveFilteredPolicy deletes rows matching ptype plus the provided non-empty
+// filter fields starting at fieldIndex (Auto-Save). Empty filter values are
+// treated as "don't care" (casbin semantics).
+func (a *pgAdapter) RemoveFilteredPolicy(_ string, ptype string, fieldIndex int, fieldValues ...string) error {
+	args := []any{ptype}
+	where := "ptype = $1"
+	col := 2
+	for i, val := range fieldValues {
+		if val == "" {
+			continue // skip don't-care slots
+		}
+		idx := fieldIndex + i
+		if idx < 0 || idx > 5 {
+			continue
+		}
+		where += fmt.Sprintf(" AND v%d = $%d", idx, col)
+		args = append(args, val)
+		col++
+	}
+	if _, err := a.pool.Exec(context.Background(),
+		`DELETE FROM casbin_rule WHERE `+where, args...); err != nil {
+		return fmt.Errorf("casbin pgadapter: remove filtered: %w", err)
+	}
+	return nil
+}
