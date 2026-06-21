@@ -2,12 +2,18 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -15,6 +21,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -200,23 +207,9 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 	}
 }
 
-// TestActionSpanAndDurationMetric verifies that running a linear
-// start→service-task→end process produces:
-//   - spans "wrkflw.runner.Run", "wrkflw.step", and "wrkflw.action charge",
-//   - one observation in wrkflw_action_duration_seconds{action=charge,outcome=ok}.
-func TestActionSpanAndDurationMetric(t *testing.T) {
-	sr := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
-			return map[string]any{"charged": true}, nil
-		}),
-	})
-
-	chargeDef := &model.ProcessDefinition{
+// paymentDef returns a minimal start→charge(service)→end process definition.
+func paymentDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "payment", Version: 1,
 		Nodes: []model.Node{
 			{ID: "start", Kind: model.KindStartEvent},
@@ -228,25 +221,208 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			{ID: "f2", Source: "charge", Target: "end"},
 		},
 	}
+}
 
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore(),
-		runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
-	if _, err := r.Run(t.Context(), chargeDef, "i1", map[string]any{}); err != nil {
-		t.Fatalf("run: %v", err)
+// TestActionSpanAndDurationMetric verifies that running a start→service-task→end
+// process produces:
+//   - spans "wrkflw.runner.Run", "wrkflw.step", and "wrkflw.action charge",
+//   - exactly one observation in wrkflw_action_duration_seconds per outcome.
+//
+// M1: the error-outcome row additionally asserts that the span carries Error
+// status, covering the restructured I1 path that was previously untraced.
+func TestActionSpanAndDurationMetric(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name        string
+		actionFunc  func(_ context.Context, _ map[string]any) (map[string]any, error)
+		wantOutcome string
+		assert      func(t *testing.T, sr *tracetest.SpanRecorder, rm metricdata.ResourceMetrics)
 	}
 
-	names := map[string]bool{}
+	cases := []testCase{
+		{
+			name: "ok outcome records span and metric",
+			actionFunc: func(_ context.Context, _ map[string]any) (map[string]any, error) {
+				return map[string]any{"charged": true}, nil
+			},
+			wantOutcome: "ok",
+			assert: func(t *testing.T, sr *tracetest.SpanRecorder, rm metricdata.ResourceMetrics) {
+				t.Helper()
+				names := map[string]bool{}
+				for _, s := range sr.Ended() {
+					names[s.Name()] = true
+				}
+				for _, want := range []string{"wrkflw.runner.Run", "wrkflw.step", "wrkflw.action charge"} {
+					assert.Truef(t, names[want], "missing span %q; got %v", want, names)
+				}
+				c := histogramCountFiltered(rm, "wrkflw_action_duration_seconds", map[string]string{"action": "charge", "outcome": "ok"})
+				assert.EqualValues(t, 1, c, "wrkflw_action_duration_seconds{action=charge,outcome=ok} count = %d, want 1", c)
+			},
+		},
+		{
+			// M1: action returns an error; the restructured I1 span must be recorded
+			// with Error status and the duration histogram must capture one sample
+			// with outcome=error (elapsed==0 is honest: a.Do was called but failed).
+			name: "error outcome records span with error status and metric",
+			actionFunc: func(_ context.Context, _ map[string]any) (map[string]any, error) {
+				return nil, errors.New("payment declined")
+			},
+			wantOutcome: "error",
+			assert: func(t *testing.T, sr *tracetest.SpanRecorder, rm metricdata.ResourceMetrics) {
+				t.Helper()
+				var actionSpanFound bool
+				for _, s := range sr.Ended() {
+					if s.Name() == "wrkflw.action charge" {
+						actionSpanFound = true
+						assert.Equal(t, codes.Error, s.Status().Code,
+							"action span must carry Error status on action failure")
+					}
+				}
+				assert.True(t, actionSpanFound, "wrkflw.action charge span must be recorded even on failure")
+				c := histogramCountFiltered(rm, "wrkflw_action_duration_seconds", map[string]string{"action": "charge", "outcome": "error"})
+				assert.EqualValues(t, 1, c, "wrkflw_action_duration_seconds{action=charge,outcome=error} count = %d, want 1", c)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sr := tracetest.NewSpanRecorder()
+			tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+			reader := sdkmetric.NewManualReader()
+			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+			cat := action.NewMapCatalog(map[string]action.ServiceAction{
+				"charge": action.Func(tc.actionFunc),
+			})
+			r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore(),
+				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
+
+			_, _ = r.Run(t.Context(), paymentDef(), "i1", map[string]any{})
+
+			rm := collect(t, reader)
+			tc.assert(t, sr, rm)
+		})
+	}
+}
+
+// TestIncidentsResolvedMetric drives an instance to an incident (via MaxAttempts=1)
+// then calls ResolveIncident and asserts wrkflw_incidents_resolved_total{def=...}==1.
+// This is M2: covers the incidentsResolved counter that was previously untested.
+func TestIncidentsResolvedMetric(t *testing.T) {
+	t.Parallel()
+
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	T := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clk := clockwork.NewFakeClockAt(T)
+
+	var calls atomic.Int32
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			if calls.Add(1) == 1 {
+				return nil, errors.New("first call fails")
+			}
+			return map[string]any{"done": true}, nil
+		}),
+	})
+
+	def := &model.ProcessDefinition{
+		ID: "incident-obs", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "task", Kind: model.KindServiceTask, Action: "a"},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+		},
+	}
+
+	runner := runtime.NewRunner(cat, clk, runtime.NewMemStore(),
+		runtime.WithMeterProvider(mp),
+		// MaxAttempts=1: first failure parks immediately as an incident.
+		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
+			MaxAttempts:     1,
+			InitialInterval: time.Second,
+			BackoffCoef:     1,
+			MaxInterval:     time.Minute,
+		}),
+	)
+
+	// Step 1: Run → first action failure → incident, instance parks.
+	st, err := runner.Run(t.Context(), def, "obs-inc-1", nil)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, st.Status, "instance must park as running with an incident")
+	require.Len(t, st.Incidents, 1, "want exactly one incident after first failure")
+
+	incID := st.Incidents[0].ID
+
+	// Step 2: ResolveIncident → action succeeds on second call → instance completes.
+	st2, err := runner.ResolveIncident(t.Context(), def, "obs-inc-1", incID, 2)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, st2.Status, "instance must complete after resolve")
+
+	// Step 3: Assert wrkflw_incidents_resolved_total{def=incident-obs} == 1.
+	rm := collect(t, reader)
+	v := counterValue(rm, "wrkflw_incidents_resolved_total", map[string]string{"def": "incident-obs"})
+	assert.EqualValues(t, 1, v, "wrkflw_incidents_resolved_total{def=incident-obs} = %d, want 1", v)
+}
+
+// TestDeliverSpan verifies that Runner.Deliver produces a "wrkflw.runner.Deliver" span.
+// This is M3: covers the Deliver entry-point span that was previously untested.
+func TestDeliverSpan(t *testing.T) {
+	t.Parallel()
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+
+	T := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clk := clockwork.NewFakeClockAt(T)
+
+	// Use a message-catch process: start → catch-message → end.
+	// The CorrelationKey is a literal expression `"ord-42"` (quoted so the engine
+	// evaluates it to the string "ord-42" without referencing a process variable).
+	// After Run parks at the catch-message node, we Deliver a MessageReceived
+	// trigger — that single Deliver call must produce a "wrkflw.runner.Deliver" span.
+	msgDef := &model.ProcessDefinition{
+		ID: "msg-deliver-obs", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "catch", Kind: model.KindIntermediateCatchEvent, MessageName: "pay.confirmed", CorrelationKey: `"ord-42"`},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "catch"},
+			{ID: "f2", Source: "catch", Target: "end"},
+		},
+	}
+
+	store := runtime.NewMemStore()
+	runner := runtime.NewRunner(nil, clk, store, runtime.WithTracerProvider(tp))
+
+	// Run parks at the catch-message node.
+	parked, err := runner.Run(t.Context(), msgDef, "del-obs-1", nil)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, parked.Status, "instance must park at the catch-message node")
+
+	// Deliver a MessageReceived trigger — this is the Deliver call we want to trace.
+	trg := engine.NewMessageReceived(clk.Now(), "pay.confirmed", "ord-42", map[string]any{"ref": "pay-1"})
+	final, err := runner.Deliver(t.Context(), msgDef, "del-obs-1", trg)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, final.Status, "instance must complete after message delivery")
+
+	// Assert the "wrkflw.runner.Deliver" span was recorded.
+	var deliverSpanFound bool
 	for _, s := range sr.Ended() {
-		names[s.Name()] = true
-	}
-	for _, want := range []string{"wrkflw.runner.Run", "wrkflw.step", "wrkflw.action charge"} {
-		if !names[want] {
-			t.Fatalf("missing span %q; got %v", want, names)
+		if s.Name() == "wrkflw.runner.Deliver" {
+			deliverSpanFound = true
 		}
 	}
-
-	rm := collect(t, reader)
-	if c := histogramCountFiltered(rm, "wrkflw_action_duration_seconds", map[string]string{"action": "charge", "outcome": "ok"}); c != 1 {
-		t.Fatalf("wrkflw_action_duration_seconds{action=charge,outcome=ok} count = %d, want 1", c)
-	}
+	assert.True(t, deliverSpanFound, "wrkflw.runner.Deliver span must be recorded by Runner.Deliver")
 }

@@ -467,30 +467,38 @@ func (r *Runner) ResolveIncident(ctx context.Context, def *model.ProcessDefiniti
 func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
 	switch cmd := c.(type) {
 	case engine.InvokeAction:
+		actx, aspan := r.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name,
+			trace.WithAttributes(attribute.String("wrkflw.action", cmd.Name)))
+		outcome := "error"
+		var elapsed float64
+		defer func() {
+			r.obs.actionDuration.Record(actx, elapsed,
+				metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", outcome)))
+			aspan.End()
+		}()
+
 		if r.cat == nil {
+			err := errors.New("no action catalog: " + cmd.Name)
+			aspan.RecordError(err)
+			aspan.SetStatus(codes.Error, err.Error())
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "no action catalog: "+cmd.Name, false), nil
 		}
 		a, ok := r.cat.Resolve(cmd.Name)
 		if !ok {
+			err := errors.New("unknown action: " + cmd.Name)
+			aspan.RecordError(err)
+			aspan.SetStatus(codes.Error, err.Error())
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
-		actx, aspan := r.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name, trace.WithAttributes(
-			attribute.String("wrkflw.action", cmd.Name),
-		))
 		start := r.clk.Now()
 		out, err := a.Do(actx, cmd.Input)
-		elapsed := r.clk.Now().Sub(start).Seconds()
+		elapsed = r.clk.Now().Sub(start).Seconds()
 		if err != nil {
 			aspan.RecordError(err)
 			aspan.SetStatus(codes.Error, err.Error())
-			r.obs.actionDuration.Record(actx, elapsed,
-				metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", "error")))
-			aspan.End()
 			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), true, r.jitter.Fraction()), nil
 		}
-		r.obs.actionDuration.Record(actx, elapsed,
-			metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", "ok")))
-		aspan.End()
+		outcome = "ok"
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 
 	case engine.CompleteInstance:
