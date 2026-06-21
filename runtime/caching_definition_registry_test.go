@@ -94,13 +94,22 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 				block := make(chan struct{})
 				backing.block = block
 
+				// Deterministic barrier: track when all caller goroutines are ready to call Lookup.
+				const numGoroutines = 50
+				var arrived sync.WaitGroup
+				arrived.Add(numGoroutines)
+
 				var wg sync.WaitGroup
-				for range 50 {
+				for range numGoroutines {
 					wg.Add(1)
-					go func() { defer wg.Done(); _, _ = c.Lookup("d:1") }()
+					go func() {
+						defer wg.Done()
+						arrived.Done() // Signal that this caller is about to call Lookup
+						_, _ = c.Lookup("d:1")
+					}()
 				}
-				// Give goroutines time to start and block.
-				time.Sleep(10 * time.Millisecond)
+				// Wait for all N caller goroutines to signal readiness before unblocking the backing stub.
+				arrived.Wait()
 				close(block)
 				wg.Wait()
 
