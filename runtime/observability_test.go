@@ -20,8 +20,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -372,6 +374,128 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	rm := collect(t, reader)
 	v := counterValue(rm, "wrkflw_incidents_resolved_total", map[string]string{"def": "incident-obs"})
 	assert.EqualValues(t, 1, v, "wrkflw_incidents_resolved_total{def=incident-obs} = %d, want 1", v)
+}
+
+// TestHumanTaskLifecycleCounter verifies that wrkflw_human_tasks_total is
+// incremented for each lifecycle event emitted by Runner and TaskService.
+//
+//   - {event=created}    : emitted by Runner when it parks at a user task.
+//   - {event=claimed}    : emitted by TaskService.Claim on success.
+//   - {event=reassigned} : emitted by TaskService.Reassign on success.
+//   - {event=completed}  : emitted by TaskService.Complete on success.
+//
+// Both Runner and TaskService use the same metric name and instrumentation
+// scope so their increments aggregate into one stream.
+func TestHumanTaskLifecycleCounter(t *testing.T) {
+	t.Parallel()
+
+	type eventCase struct {
+		event string
+		assert func(t *testing.T, rm metricdata.ResourceMetrics)
+	}
+
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	admin := authz.Actor{ID: "admin", Roles: []string{"manager"}}
+
+	cases := []eventCase{
+		{
+			event: "created",
+			assert: func(t *testing.T, rm metricdata.ResourceMetrics) {
+				t.Helper()
+				v := counterValue(rm, "wrkflw_human_tasks_total", map[string]string{"event": "created"})
+				assert.EqualValues(t, 1, v, "want wrkflw_human_tasks_total{event=created}==1")
+			},
+		},
+		{
+			event: "claimed",
+			assert: func(t *testing.T, rm metricdata.ResourceMetrics) {
+				t.Helper()
+				v := counterValue(rm, "wrkflw_human_tasks_total", map[string]string{"event": "claimed"})
+				assert.EqualValues(t, 1, v, "want wrkflw_human_tasks_total{event=claimed}==1")
+			},
+		},
+		{
+			event: "reassigned",
+			assert: func(t *testing.T, rm metricdata.ResourceMetrics) {
+				t.Helper()
+				v := counterValue(rm, "wrkflw_human_tasks_total", map[string]string{"event": "reassigned"})
+				assert.EqualValues(t, 1, v, "want wrkflw_human_tasks_total{event=reassigned}==1")
+			},
+		},
+		{
+			event: "completed",
+			assert: func(t *testing.T, rm metricdata.ResourceMetrics) {
+				t.Helper()
+				v := counterValue(rm, "wrkflw_human_tasks_total", map[string]string{"event": "completed"})
+				assert.EqualValues(t, 1, v, "want wrkflw_human_tasks_total{event=completed}==1")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.event, func(t *testing.T) {
+			t.Parallel()
+
+			reader := sdkmetric.NewManualReader()
+			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+			taskStore := humantask.NewMemTaskStore()
+			resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
+				"manager": {manager, admin},
+			})
+			az := authz.RoleAuthorizer{}
+			clk := clock.System()
+
+			r := runtime.NewRunner(
+				nil,
+				clk,
+				runtime.NewMemStore(),
+				runtime.WithHumanTasks(resolver, taskStore, az),
+				runtime.WithMeterProvider(mp),
+			)
+			svc := runtime.NewTaskService(taskStore, az, clk,
+				runtime.WithTaskServiceMeterProvider(mp))
+
+			def := approvalDef()
+			const instID = "htlc-inst"
+
+			// Run parks at the user task → emits {event=created}.
+			_, err := r.Run(t.Context(), def, instID, nil)
+			require.NoError(t, err, "Run must succeed and park at user task")
+
+			claimable, err := taskStore.ClaimableBy(t.Context(), manager)
+			require.NoError(t, err)
+			require.Len(t, claimable, 1)
+			taskToken := claimable[0].TaskToken
+
+			if tc.event == "claimed" || tc.event == "reassigned" || tc.event == "completed" {
+				// Claim → emits {event=claimed}.
+				claimTrg, err := svc.Claim(t.Context(), taskToken, manager)
+				require.NoError(t, err)
+				_, err = r.Deliver(t.Context(), def, instID, claimTrg)
+				require.NoError(t, err)
+			}
+
+			if tc.event == "reassigned" || tc.event == "completed" {
+				// Reassign → emits {event=reassigned}.
+				reassignTrg, err := svc.Reassign(t.Context(), taskToken, manager.ID, admin.ID, admin)
+				require.NoError(t, err)
+				_, err = r.Deliver(t.Context(), def, instID, reassignTrg)
+				require.NoError(t, err)
+			}
+
+			if tc.event == "completed" {
+				// Complete → emits {event=completed}.
+				completeTrg, err := svc.Complete(t.Context(), taskToken, admin, map[string]any{"approved": true})
+				require.NoError(t, err)
+				_, err = r.Deliver(t.Context(), def, instID, completeTrg)
+				require.NoError(t, err)
+			}
+
+			rm := collect(t, reader)
+			tc.assert(t, rm)
+		})
+	}
 }
 
 // TestDeliverSpan verifies that Runner.Deliver produces a "wrkflw.runner.Deliver" span.

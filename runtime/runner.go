@@ -555,6 +555,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		if err := r.tasks.Upsert(ctx, task); err != nil {
 			return nil, fmt.Errorf("runtime: upsert task: %w", err)
 		}
+		r.obs.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "created")))
 		// No follow-up trigger: the instance parks here.
 		return nil, nil
 
