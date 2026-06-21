@@ -2,8 +2,12 @@ package grpctransport
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -40,7 +44,11 @@ func (s *server) StartInstance(ctx context.Context, req *workflowpb.StartInstanc
 	if err != nil {
 		return nil, mapToGRPCStatus(err)
 	}
-	return &workflowpb.InstanceResponse{Instance: instanceToProto(st)}, nil
+	proto, err := instanceToProto(st)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
 // GetInstance returns the current state of an instance.
@@ -49,7 +57,11 @@ func (s *server) GetInstance(ctx context.Context, req *workflowpb.GetInstanceReq
 	if err != nil {
 		return nil, mapToGRPCStatus(err)
 	}
-	return &workflowpb.InstanceResponse{Instance: instanceToProto(st)}, nil
+	proto, err := instanceToProto(st)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
 // DeliverSignal resumes a parked instance with a named signal.
@@ -62,7 +74,11 @@ func (s *server) DeliverSignal(ctx context.Context, req *workflowpb.DeliverSigna
 	if err != nil {
 		return nil, mapToGRPCStatus(err)
 	}
-	return &workflowpb.InstanceResponse{Instance: instanceToProto(st)}, nil
+	proto, err := instanceToProto(st)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
 // DeliverMessage routes a message to a waiting instance.
@@ -88,7 +104,11 @@ func (s *server) ClaimTask(ctx context.Context, req *workflowpb.ClaimTaskRequest
 	if err != nil {
 		return nil, mapToGRPCStatus(err)
 	}
-	return &workflowpb.InstanceResponse{Instance: instanceToProto(st)}, nil
+	proto, err := instanceToProto(st)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
 // CompleteTask authorizes and completes a human task.
@@ -101,7 +121,11 @@ func (s *server) CompleteTask(ctx context.Context, req *workflowpb.CompleteTaskR
 	if err != nil {
 		return nil, mapToGRPCStatus(err)
 	}
-	return &workflowpb.InstanceResponse{Instance: instanceToProto(st)}, nil
+	proto, err := instanceToProto(st)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
 // ReassignTask authorizes and reassigns a human task.
@@ -115,7 +139,11 @@ func (s *server) ReassignTask(ctx context.Context, req *workflowpb.ReassignTaskR
 	if err != nil {
 		return nil, mapToGRPCStatus(err)
 	}
-	return &workflowpb.InstanceResponse{Instance: instanceToProto(st)}, nil
+	proto, err := instanceToProto(st)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
 // ListInstances returns a paginated list of instance summaries.
@@ -125,7 +153,10 @@ func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstance
 		Cursor: req.GetCursor(),
 	}
 	if st := req.GetStatus(); st != "" {
-		parsed := parseStatus(st)
+		parsed, err := parseStatus(st)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "unknown status filter %q", st)
+		}
 		filter.Status = &parsed
 	}
 
@@ -148,9 +179,29 @@ func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstance
 
 // ---- Conversion helpers ----
 
+// toStruct converts a map[string]any to *structpb.Struct, returning an error
+// when the map contains a value that cannot be represented as a proto Struct
+// (e.g. time.Time, []byte, channel, or other non-JSON-compatible types).
+// A nil map returns (nil, nil).
+func toStruct(m map[string]any) (*structpb.Struct, error) {
+	if m == nil {
+		return nil, nil
+	}
+	s, err := structpb.NewStruct(m)
+	if err != nil {
+		return nil, fmt.Errorf("structpb conversion: %w", err)
+	}
+	return s, nil
+}
+
 // instanceToProto converts an engine.InstanceState to a workflowpb.Instance.
-func instanceToProto(st engine.InstanceState) *workflowpb.Instance {
-	vars, _ := structpb.NewStruct(st.Variables)
+// Returns an error when the instance's Variables map contains a value that
+// cannot be serialized to a proto Struct.
+func instanceToProto(st engine.InstanceState) (*workflowpb.Instance, error) {
+	vars, err := toStruct(st.Variables)
+	if err != nil {
+		return nil, err
+	}
 	inst := &workflowpb.Instance{
 		InstanceId: st.InstanceID,
 		DefId:      st.DefID,
@@ -162,7 +213,7 @@ func instanceToProto(st engine.InstanceState) *workflowpb.Instance {
 	if st.EndedAt != nil {
 		inst.EndedAt = timestamppb.New(*st.EndedAt)
 	}
-	return inst
+	return inst, nil
 }
 
 // summaryToProto converts a runtime.InstanceSummary to a workflowpb.InstanceSummary.
@@ -223,21 +274,28 @@ func statusToString(s engine.Status) string {
 	}
 }
 
-// parseStatus parses a status string to engine.Status. Unknown strings return StatusRunning.
-func parseStatus(s string) engine.Status {
+// errUnknownStatus is returned by parseStatus when the input string does not
+// match any known engine.Status value.
+var errUnknownStatus = errors.New("unknown status")
+
+// parseStatus parses a status string to engine.Status. An unrecognised
+// non-empty string returns (0, errUnknownStatus); callers should surface that
+// as codes.InvalidArgument. An empty string is not a valid input; callers
+// must guard on that before calling parseStatus.
+func parseStatus(s string) (engine.Status, error) {
 	switch s {
 	case "running":
-		return engine.StatusRunning
+		return engine.StatusRunning, nil
 	case "completed":
-		return engine.StatusCompleted
+		return engine.StatusCompleted, nil
 	case "failed":
-		return engine.StatusFailed
+		return engine.StatusFailed, nil
 	case "compensating":
-		return engine.StatusCompensating
+		return engine.StatusCompensating, nil
 	case "terminated":
-		return engine.StatusTerminated
+		return engine.StatusTerminated, nil
 	default:
-		return engine.StatusRunning
+		return 0, fmt.Errorf("%w: %q", errUnknownStatus, s)
 	}
 }
 

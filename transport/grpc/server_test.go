@@ -18,6 +18,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -575,4 +576,129 @@ func TestClaimTaskWithActorAttributes(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
+}
+
+// stubService is a minimal service.Service implementation that returns a
+// pre-configured InstanceState from GetInstance, allowing the test to inject
+// non-JSON-serializable values into Variables.
+type stubService struct {
+	service.Service // embed to satisfy interface; only GetInstance is overridden
+	state           engine.InstanceState
+}
+
+func (s *stubService) GetInstance(_ context.Context, _ string) (engine.InstanceState, error) {
+	return s.state, nil
+}
+
+// newStubHarness stands up a bufconn gRPC server backed by a stubService.
+func newStubHarness(t *testing.T, svc service.Service) workflowpb.WorkflowServiceClient {
+	t.Helper()
+
+	lis := bufconn.Listen(bufSize)
+	grpcServer := grpc.NewServer()
+	grpctransport.RegisterWorkflowServiceServer(grpcServer, svc)
+
+	t.Cleanup(func() { grpcServer.Stop() })
+	go func() { _ = grpcServer.Serve(lis) }()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return workflowpb.NewWorkflowServiceClient(conn)
+}
+
+// TestGetInstanceNonSerializableVariablesReturnsInternal verifies that when
+// the service returns an InstanceState whose Variables map contains a value
+// that cannot be represented as protobuf Struct (e.g. a channel), GetInstance
+// returns codes.Internal instead of silently dropping the field.
+func TestGetInstanceNonSerializableVariablesReturnsInternal(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubService{
+		state: engine.InstanceState{
+			InstanceID: "stub-inst-1",
+			DefID:      "stub-def",
+			DefVersion: 1,
+			Status:     engine.StatusRunning,
+			Variables:  map[string]any{"ch": make(chan int)}, // non-JSON-serializable
+		},
+	}
+
+	client := newStubHarness(t, stub)
+
+	_, err := client.GetInstance(t.Context(), &workflowpb.GetInstanceRequest{
+		InstanceId: "stub-inst-1",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+}
+
+// TestListInstancesUnknownStatusReturnsInvalidArgument verifies that providing
+// an unrecognized status filter string returns codes.InvalidArgument instead of
+// silently defaulting to running instances.
+func TestListInstancesUnknownStatusReturnsInvalidArgument(t *testing.T) {
+	t.Parallel()
+	h := newGRPCHarness(t, serverLinearDef())
+
+	_, err := h.client.ListInstances(t.Context(), &workflowpb.ListInstancesRequest{
+		Status: "junk",
+		Limit:  10,
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// TestListInstancesEmptyStatusReturnsAll verifies that an empty status filter
+// returns all instances regardless of their status.
+func TestListInstancesEmptyStatusReturnsAll(t *testing.T) {
+	t.Parallel()
+	h := newGRPCHarness(t, serverLinearDef())
+	ctx := t.Context()
+
+	// Start one instance (it will complete immediately for the linear def).
+	_, err := h.client.StartInstance(ctx, &workflowpb.StartInstanceRequest{
+		DefRef:     "greeting",
+		InstanceId: "empty-filter-inst-1",
+		Vars:       mustStruct(map[string]any{"name": "x"}),
+	})
+	require.NoError(t, err)
+
+	// Empty status — no filter, should return all instances.
+	listResp, err := h.client.ListInstances(ctx, &workflowpb.ListInstancesRequest{
+		Limit: 10,
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, listResp.Items)
+}
+
+// TestListInstancesCompletedStatusFiltersCorrectly verifies that status:"completed"
+// correctly returns only completed instances.
+func TestListInstancesCompletedStatusFiltersCorrectly(t *testing.T) {
+	t.Parallel()
+	h := newGRPCHarness(t, serverLinearDef())
+	ctx := t.Context()
+
+	_, err := h.client.StartInstance(ctx, &workflowpb.StartInstanceRequest{
+		DefRef:     "greeting",
+		InstanceId: "completed-filter-inst-1",
+		Vars:       mustStruct(map[string]any{"name": "y"}),
+	})
+	require.NoError(t, err)
+
+	listResp, err := h.client.ListInstances(ctx, &workflowpb.ListInstancesRequest{
+		Status: "completed",
+		Limit:  10,
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, listResp.Items)
+	for _, item := range listResp.Items {
+		assert.Equal(t, "completed", item.Status)
+	}
 }
