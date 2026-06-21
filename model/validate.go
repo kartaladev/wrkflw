@@ -58,6 +58,17 @@ var (
 	// KindServiceTask, KindSubProcess, and KindCallActivity may host a
 	// boundary error event; user tasks and task variants are not valid hosts.
 	ErrBoundaryErrorHost = errors.New("model: boundary error event attached to non-error-throwing activity")
+	// ErrInvalidRetryPolicy is returned when a node's RetryPolicy carries
+	// field values that violate the documented constraints: MaxAttempts must be
+	// ≥ 0, InitialInterval and MaxInterval must be ≥ 0, and BackoffCoef must
+	// be ≥ 1.0 whenever InitialInterval is positive (a coefficient below 1.0
+	// would shrink delays on successive attempts instead of growing them).
+	ErrInvalidRetryPolicy = errors.New("model: invalid retry policy")
+	// ErrInvalidRecoveryFlow is returned when a node's RecoveryFlow names a
+	// sequence-flow ID that does not exist in the process definition or whose
+	// Source is not the node itself. A recovery flow must be a real outgoing
+	// flow of the node that carries it.
+	ErrInvalidRecoveryFlow = errors.New("model: invalid recovery flow")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -226,6 +237,29 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		}
 		if n.DefRef == "" {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingDefRef, n.ID))
+		}
+	}
+
+	// RetryPolicy and RecoveryFlow field-level constraints (all node kinds).
+	for _, n := range d.Nodes {
+		if n.RetryPolicy != nil {
+			p := *n.RetryPolicy
+			if p.MaxAttempts < 0 || p.InitialInterval < 0 || p.MaxInterval < 0 ||
+				(p.InitialInterval > 0 && p.BackoffCoef < 1.0) {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrInvalidRetryPolicy, n.ID))
+			}
+		}
+		if n.RecoveryFlow != "" {
+			found := false
+			for _, f := range d.Flows {
+				if f.ID == n.RecoveryFlow && f.Source == n.ID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				errs = append(errs, fmt.Errorf("%w: node %q flow %q", ErrInvalidRecoveryFlow, n.ID, n.RecoveryFlow))
+			}
 		}
 	}
 

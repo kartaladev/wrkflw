@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -622,6 +623,49 @@ func TestValidateSubProcess(t *testing.T) {
 			tc.assert(t, model.Validate(tc.def))
 		})
 	}
+}
+
+// TestValidateRejectsBadRetryPolicy checks that Validate returns
+// ErrInvalidRetryPolicy when a node carries a RetryPolicy whose fields violate
+// the documented invariants (here: BackoffCoef below 1.0 with a positive
+// InitialInterval).
+func TestValidateRejectsBadRetryPolicy(t *testing.T) {
+	bad := -1.0 // BackoffCoef below 1.0 with a positive interval is invalid
+	def := &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "task", Kind: model.KindServiceTask, Action: "a",
+				RetryPolicy: &model.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+		},
+	}
+	err := model.Validate(def)
+	require.ErrorIs(t, err, model.ErrInvalidRetryPolicy)
+}
+
+// TestValidateRejectsRecoveryFlowNotFromNode checks that Validate returns
+// ErrInvalidRecoveryFlow when a node's RecoveryFlow names a flow ID that does
+// not exist or whose Source is not the node itself.
+func TestValidateRejectsRecoveryFlowNotFromNode(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "task", Kind: model.KindServiceTask, Action: "a", RecoveryFlow: "nope"},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+		},
+	}
+	err := model.Validate(def)
+	require.ErrorIs(t, err, model.ErrInvalidRecoveryFlow)
 }
 
 // TestValidateCyclicSubprocessDoesNotPanic verifies that Validate does not

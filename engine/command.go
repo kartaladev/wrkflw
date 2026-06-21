@@ -24,6 +24,9 @@ const (
 	// TimerInWait is a recurring in-wait timer (e.g. reminder) that fires
 	// periodically during a wait period.
 	TimerInWait
+	// TimerRetry is a one-shot timer that the runtime schedules to re-invoke
+	// a failed action after its backoff (plus optional jitter) has elapsed.
+	TimerRetry
 )
 
 // String returns the name of the TimerKind for debugging/logging.
@@ -35,6 +38,8 @@ func (k TimerKind) String() string {
 		return "TimerSLA"
 	case TimerInWait:
 		return "TimerInWait"
+	case TimerRetry:
+		return "TimerRetry"
 	default:
 		return "TimerKind(unknown)"
 	}

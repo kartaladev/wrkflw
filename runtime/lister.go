@@ -90,6 +90,11 @@ type InstanceSummary struct {
 	// EndedAt is the time the instance reached a terminal state, or nil if
 	// the instance is still running.
 	EndedAt *time.Time
+	// IncidentCount is the number of open incidents on this instance. An
+	// incident is created when a retryable action exhausts its retry budget
+	// (or encounters a non-retryable error). A non-zero value indicates the
+	// instance is parked and requires operator intervention via ResolveIncident.
+	IncidentCount int
 }
 
 // InstancePage is one page of results from InstanceLister.List.

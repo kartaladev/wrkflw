@@ -117,12 +117,13 @@ func (m *MemStore) List(_ context.Context, filter InstanceFilter) (InstancePage,
 			continue
 		}
 		all = append(all, InstanceSummary{
-			InstanceID: st.InstanceID,
-			DefID:      st.DefID,
-			DefVersion: st.DefVersion,
-			Status:     st.Status,
-			StartedAt:  st.StartedAt,
-			EndedAt:    st.EndedAt,
+			InstanceID:    st.InstanceID,
+			DefID:         st.DefID,
+			DefVersion:    st.DefVersion,
+			Status:        st.Status,
+			StartedAt:     st.StartedAt,
+			EndedAt:       st.EndedAt,
+			IncidentCount: len(st.Incidents),
 		})
 	}
 

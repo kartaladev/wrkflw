@@ -66,6 +66,16 @@ type Runner struct {
 	sched    Scheduler
 	sigbus   *SignalBus
 	defsReg  DefinitionRegistry
+	// jitter supplies the random fraction used to de-synchronize retry backoff.
+	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
+	// trigger so that engine replay remains deterministic.
+	jitter JitterSource
+
+	// defaultRetryPolicy is the fallback retry policy applied to any action-bearing
+	// node that declares no RetryPolicy of its own. When nil, retry is disabled by
+	// default and a failed action behaves as before (error boundary or instance failure).
+	// Set via [WithDefaultRetryPolicy].
+	defaultRetryPolicy *model.RetryPolicy
 
 	// msgMu guards msgWaiters.
 	msgMu sync.Mutex
@@ -126,6 +136,20 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 	return func(r *Runner) { r.defsReg = reg }
 }
 
+// WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).
+// Inject a deterministic source in tests to produce predictable fire-at times.
+func WithJitterSource(src JitterSource) Option { return func(r *Runner) { r.jitter = src } }
+
+// WithDefaultRetryPolicy sets the fallback retry policy applied to any action-bearing
+// node that declares no RetryPolicy of its own. Without this option, retry is disabled
+// by default and a failed action behaves as before (error boundary or instance failure).
+//
+// The policy value is copied on each call, so subsequent mutations by the caller do
+// not affect the Runner.
+func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
+	return func(r *Runner) { r.defaultRetryPolicy = &p }
+}
+
 // NewRunner constructs a Runner with the three required core ports (cat, clk,
 // store) and any optional capability bundles supplied as functional options.
 //
@@ -153,6 +177,7 @@ func NewRunner(
 		cat:        cat,
 		clk:        clk,
 		store:      store,
+		jitter:     NewJitterSource(),
 		msgWaiters: make(map[msgKey]string),
 	}
 	for _, o := range opts {
@@ -215,7 +240,7 @@ func (r *Runner) deliverLoop(
 		t := queue[0]
 		queue = queue[1:]
 
-		res, err := engine.Step(def, st, t, engine.StepOptions{})
+		res, err := engine.Step(def, st, t, engine.StepOptions{DefaultRetryPolicy: r.defaultRetryPolicy})
 		if err != nil {
 			return st, fmt.Errorf("runtime: step: %w", err)
 		}
@@ -326,6 +351,14 @@ func (r *Runner) DeliverMessage(ctx context.Context, def *model.ProcessDefinitio
 	return err
 }
 
+// ResolveIncident clears the named incident on an instance, grants addAttempts
+// additional retries, and re-invokes the parked action. It is the admin entry
+// point for recovering a retry-exhausted activity. Delegates through Deliver so
+// the trigger is journalled and persisted.
+func (r *Runner) ResolveIncident(ctx context.Context, def *model.ProcessDefinition, instanceID, incidentID string, addAttempts int) (engine.InstanceState, error) {
+	return r.Deliver(ctx, def, instanceID, engine.NewResolveIncident(r.clk.Now(), incidentID, addAttempts))
+}
+
 // perform executes one command and returns the resulting trigger, if any.
 // st is the current instance state, used for variable access when resolving
 // human-task candidates. def is the process definition, captured by timer
@@ -344,7 +377,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		}
 		out, err := a.Do(ctx, cmd.Input)
 		if err != nil {
-			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, err.Error(), true), nil
+			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), true, r.jitter.Fraction()), nil
 		}
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 

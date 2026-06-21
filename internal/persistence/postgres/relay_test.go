@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/database"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
@@ -75,6 +76,70 @@ func countPublished(t *testing.T, pool *pgxpool.Pool) int {
 	).Scan(&n)
 	require.NoError(t, err)
 	return n
+}
+
+// outboxRowState returns the status, retry_count, and next_attempt_at of the
+// single outbox row (use only when exactly one row is present).
+func outboxRowState(t *testing.T, pool *pgxpool.Pool) (status string, retry int, nextAttempt time.Time) {
+	t.Helper()
+	err := pool.QueryRow(t.Context(),
+		`SELECT status, retry_count, next_attempt_at FROM wrkflw_outbox`,
+	).Scan(&status, &retry, &nextAttempt)
+	require.NoError(t, err)
+	return status, retry, nextAttempt
+}
+
+// outboxRowStateByDedup returns the status, retry_count, and next_attempt_at of
+// the outbox row with the given dedup_key.
+func outboxRowStateByDedup(t *testing.T, pool *pgxpool.Pool, dedup string) (status string, retry int, nextAttempt time.Time) {
+	t.Helper()
+	err := pool.QueryRow(t.Context(),
+		`SELECT status, retry_count, next_attempt_at FROM wrkflw_outbox WHERE dedup_key = $1`,
+		dedup,
+	).Scan(&status, &retry, &nextAttempt)
+	require.NoError(t, err)
+	return status, retry, nextAttempt
+}
+
+// seedOutboxRow inserts a single pending outbox row with explicit resilience
+// columns so a test can control the claim predicate (status / next_attempt_at).
+func seedOutboxRow(t *testing.T, pool *pgxpool.Pool, dedup string, nextAttempt time.Time) {
+	t.Helper()
+	_, err := pool.Exec(t.Context(),
+		`INSERT INTO wrkflw_outbox
+		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+		 VALUES ($1, $2, $3::jsonb, $4, $5, 'pending', 0, $6)`,
+		"poison-test", "test.event", `{}`, dedup, nextAttempt.UTC(), nextAttempt.UTC(),
+	)
+	require.NoError(t, err, "seed outbox row %s", dedup)
+}
+
+// poisonPub fails Publish for events whose DedupKey matches poisonKey and
+// succeeds for all others. It counts publishes per dedup key.
+type poisonPub struct {
+	mu        sync.Mutex
+	poisonKey string
+	counts    map[string]int
+}
+
+func newPoisonPub(poisonKey string) *poisonPub {
+	return &poisonPub{poisonKey: poisonKey, counts: map[string]int{}}
+}
+
+func (p *poisonPub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.counts[ev.DedupKey]++
+	if ev.DedupKey == p.poisonKey {
+		return errors.New("poison: permanent failure")
+	}
+	return nil
+}
+
+func (p *poisonPub) publishCount(dedup string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.counts[dedup]
 }
 
 // TestRelayDrainsRows seeds 3 unpublished rows, calls DrainOnce, asserts all 3
@@ -165,8 +230,10 @@ func TestRelaySkipLockedNoDoublePublish(t *testing.T) {
 }
 
 // TestRelayPublishErrorLeavesRowUnpublished verifies at-least-once semantics:
-// a Publish failure must roll back the entire batch so no rows are silently
-// lost (they stay claimable for retry).
+// a Publish failure must NOT mark the row published; the row is quarantined for
+// retry (status stays 'pending', retry_count climbs) and stays claimable. With
+// per-row isolation DrainOnce no longer returns an error for a publish failure —
+// it persists the row's retry state and reports 0 successfully-published rows.
 func TestRelayPublishErrorLeavesRowUnpublished(t *testing.T) {
 	t.Parallel()
 	pool := database.RunTestDatabase(t)
@@ -175,10 +242,15 @@ func TestRelayPublishErrorLeavesRowUnpublished(t *testing.T) {
 	seedOutbox(t, pool, 1)
 
 	relay := pg.NewRelay(pool, failingPub{})
-	_, err := relay.DrainOnce(t.Context())
-	require.Error(t, err, "DrainOnce must propagate the publisher error")
+	n, err := relay.DrainOnce(t.Context())
+	require.NoError(t, err, "a single poison row is quarantined, not propagated as a drain error")
+	require.Equal(t, 0, n, "no row was successfully published")
 	require.Equal(t, 1, countUnpublished(t, pool), "row must remain unpublished for retry")
 	require.Equal(t, 0, countPublished(t, pool))
+
+	status, retry, _ := outboxRowState(t, pool)
+	require.Equal(t, "pending", status, "row stays pending after a transient failure")
+	require.Equal(t, 1, retry, "retry_count incremented")
 }
 
 // TestRelayRunCancellation verifies that Run returns promptly when ctx is
@@ -251,81 +323,53 @@ func TestRelayBatchSizeOption(t *testing.T) {
 	require.Equal(t, 0, countUnpublished(t, pool))
 }
 
-// TestRelayRunFailFastOnInitialDrainError verifies that Run fails immediately
-// (fail-fast) if the initial DrainOnce before the first tick returns a non-cancel
-// error, rather than swallowing it. This ensures symmetric error handling with
-// the in-loop drain.
-func TestRelayRunFailFastOnInitialDrainError(t *testing.T) {
+// TestRelayRunAbsorbsPublishFailures verifies that, with per-row isolation, a
+// persistently-failing Publisher no longer terminates Run (the old fail-fast
+// behaviour). The poison row is quarantined for retry while Run keeps polling;
+// Run returns only on context cancellation. This is the head-of-line-blocking
+// fix: a broker outage no longer crashes the relay loop.
+func TestRelayRunAbsorbsPublishFailures(t *testing.T) {
 	t.Parallel()
 	pool := database.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
-	// Seed 1 row so the first drain attempts to publish.
+	// Seed 1 row so each drain attempts to publish and fails.
 	seedOutbox(t, pool, 1)
 
 	relay := pg.NewRelay(pool, failingPub{}, pg.WithPollInterval(10*time.Millisecond))
 
 	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- relay.Run(ctx) }()
 
-	// Run must return promptly with the publish error, not swallow it and keep polling.
+	// Poll until the poison row has been retried at least once (up to 5s).
+	// This replaces a fixed sleep and makes the assertion stable on loaded machines.
+	require.Eventually(t, func() bool {
+		// Fail the test immediately if Run has already terminated — that is the
+		// behaviour we are guarding against.
+		select {
+		case err := <-done:
+			t.Errorf("Run terminated unexpectedly on a publish failure: %v", err)
+			return true // stop polling; the outer assertion will fail
+		default:
+		}
+		_, retry, _ := outboxRowState(t, pool)
+		return retry >= 1
+	}, 5*time.Second, 20*time.Millisecond, "relay should retry the poison row at least once without terminating Run")
+
+	// Cancellation is the only thing that stops Run.
+	cancel()
 	select {
 	case err := <-done:
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "broker: down")
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return within 2s after initial drain error")
+		t.Fatal("Run did not return within 2s after ctx cancellation")
 	}
-}
 
-// TestRelayRunFailFastOnInLoopDrainError verifies that Run exits immediately
-// with a non-cancel error returned from DrainOnce during the ticker loop,
-// not attempting another poll cycle.
-func TestRelayRunFailFastOnInLoopDrainError(t *testing.T) {
-	t.Parallel()
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, pg.Migrate(t.Context(), pool))
-
-	// Use a publisher that succeeds on the initial drain but fails on the second.
-	pub := &failAfterNPub{successCount: 1}
-	relay := pg.NewRelay(pool, pub, pg.WithPollInterval(10*time.Millisecond))
-
-	// Seed 2 rows: first will be published in initial drain (success),
-	// second will trigger the error in the in-loop drain.
-	seedOutbox(t, pool, 2)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- relay.Run(ctx) }()
-
-	// Run must return promptly with the publish error after the first successful drain.
-	select {
-	case err := <-done:
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "injected error")
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return within 2s after in-loop drain error")
-	}
-}
-
-// failAfterNPub publishes successfully for the first N calls, then fails.
-type failAfterNPub struct {
-	successCount int
-	count        int
-	mu           sync.Mutex
-}
-
-func (p *failAfterNPub) Publish(_ context.Context, _ runtime.OutboxEvent) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.count++
-	if p.count > p.successCount {
-		return errors.New("injected error")
-	}
-	return nil
+	// The poison row stayed pending and was retried (retry_count climbed).
+	status, retry, _ := outboxRowState(t, pool)
+	require.Equal(t, "pending", status)
+	require.GreaterOrEqual(t, retry, 1, "the poison row was retried at least once")
 }
 
 // capturingPub records the full OutboxEvents it receives (not just topics).
@@ -390,4 +434,163 @@ func TestRelayDrainOncePayloadUnmarshalError(t *testing.T) {
 	require.Error(t, err, "DrainOnce must propagate the Unmarshal error")
 	require.Contains(t, err.Error(), "relay: unmarshal payload",
 		"error message should indicate JSON unmarshal failure")
+}
+
+// TestRelayPoisonIsolation verifies per-row isolation, backoff, and dead-letter
+// quarantine (ADR-0017). A poison row that always fails to publish must NOT block
+// a healthy peer in the same batch (no head-of-line blocking), and must be
+// retried with exponential backoff until it is quarantined as 'dead' after
+// MaxDeliveryAttempts. The healthy row is published exactly once and never again.
+func TestRelayPoisonIsolation(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	base := time.Now().UTC().Truncate(time.Second)
+	fc := clockwork.NewFakeClockAt(base)
+
+	// Seed two due pending rows: a poison row and a healthy row.
+	seedOutboxRow(t, pool, "poison", base)
+	seedOutboxRow(t, pool, "healthy", base)
+
+	const maxDelivery = 3
+	pub := newPoisonPub("poison")
+	relay := pg.NewRelay(pool, pub,
+		pg.WithClock(fc),
+		pg.WithMaxDeliveryAttempts(maxDelivery),
+		pg.WithRelayBackoff(time.Second, 30*time.Second),
+	)
+
+	// Drain #1: healthy is delivered despite poison failing in the same batch.
+	n, err := relay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "exactly one row (healthy) was successfully published")
+
+	hStatus, _, _ := outboxRowStateByDedup(t, pool, "healthy")
+	require.Equal(t, "published", hStatus, "healthy row published despite poison failure")
+
+	pStatus, pRetry, pNext := outboxRowStateByDedup(t, pool, "poison")
+	require.Equal(t, "pending", pStatus, "poison row stays pending for retry")
+	require.Equal(t, 1, pRetry, "poison retry_count incremented")
+	require.True(t, pNext.After(base), "poison next_attempt_at pushed into the future by backoff")
+	require.Equal(t, 1, pub.publishCount("healthy"), "healthy published once")
+
+	// Keep draining; each time advance the fake clock past the poison row's
+	// backoff so it becomes due again. retry_count climbs until quarantine.
+	for pRetry < maxDelivery {
+		// Advance well past any backoff window so the row is due.
+		fc.Advance(2 * time.Minute)
+		n, err = relay.DrainOnce(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, 0, n, "no new healthy rows; poison keeps failing")
+		pStatus, pRetry, _ = outboxRowStateByDedup(t, pool, "poison")
+	}
+
+	require.Equal(t, "dead", pStatus, "poison quarantined to dead after MaxDeliveryAttempts")
+
+	// A dead row is no longer claimed.
+	fc.Advance(2 * time.Minute)
+	n, err = relay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+
+	// Healthy stayed published and was published exactly once throughout.
+	hStatus, _, _ = outboxRowStateByDedup(t, pool, "healthy")
+	require.Equal(t, "published", hStatus)
+	require.Equal(t, 1, pub.publishCount("healthy"), "healthy never re-published")
+}
+
+// TestRelayDLQAdmin verifies the ListDeadLettered and Redrive DLQ admin API
+// (ADR-0017). It seeds one 'dead' and one 'pending' row, checks ListDeadLettered
+// returns only the dead row, and Redrive flips it back to 'pending' so a
+// subsequent DrainOnce can pick it up again.
+func TestRelayDLQAdmin(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	base := time.Now().UTC().Truncate(time.Second)
+	fc := clockwork.NewFakeClockAt(base)
+
+	// Seed a dead row directly (status='dead', retry_count=5, last_error='boom').
+	var deadID int64
+	err := pool.QueryRow(t.Context(),
+		`INSERT INTO wrkflw_outbox
+		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at, last_error)
+		 VALUES ($1, $2, $3::jsonb, $4, $5, 'dead', 5, $5, 'boom')
+		 RETURNING id`,
+		"dlq-test-instance", "dlq.event", `{}`, "dlq-dead-1", base.UTC(),
+	).Scan(&deadID)
+	require.NoError(t, err, "seed dead row")
+
+	// Seed a pending row to confirm ListDeadLettered doesn't return it.
+	var pendingID int64
+	err = pool.QueryRow(t.Context(),
+		`INSERT INTO wrkflw_outbox
+		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+		 VALUES ($1, $2, $3::jsonb, $4, $5, 'pending', 0, $5)
+		 RETURNING id`,
+		"dlq-test-instance", "other.event", `{}`, "dlq-pending-1", base.UTC(),
+	).Scan(&pendingID)
+	require.NoError(t, err, "seed pending row")
+
+	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithClock(fc))
+
+	// ListDeadLettered must return exactly the one dead row.
+	dead, err := relay.ListDeadLettered(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, dead, 1, "only the dead row should be returned")
+	require.Equal(t, deadID, dead[0].ID)
+	require.Equal(t, "dlq-test-instance", dead[0].InstanceID)
+	require.Equal(t, "dlq.event", dead[0].Topic)
+	require.Equal(t, 5, dead[0].RetryCount)
+	require.Equal(t, "boom", dead[0].LastError)
+
+	// Redrive with no ids must return 0, no error.
+	n, err := relay.Redrive(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 0, n, "Redrive with no ids should be a no-op")
+
+	// Redrive a pending row ID (not dead) must return 0 (only dead rows are eligible).
+	n, err = relay.Redrive(t.Context(), pendingID)
+	require.NoError(t, err)
+	require.Equal(t, 0, n, "Redrive on a pending row must be a no-op")
+
+	// Redrive the dead row: must return 1.
+	n, err = relay.Redrive(t.Context(), deadID)
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "Redrive must requeue exactly 1 row")
+
+	// Verify the redriven row is now pending with reset state.
+	var (
+		status     string
+		retryCount int
+		lastErrPtr *string
+		nextAttempt time.Time
+	)
+	err = pool.QueryRow(t.Context(),
+		`SELECT status, retry_count, last_error, next_attempt_at FROM wrkflw_outbox WHERE id = $1`,
+		deadID,
+	).Scan(&status, &retryCount, &lastErrPtr, &nextAttempt)
+	require.NoError(t, err)
+	require.Equal(t, "pending", status, "redriven row must be pending")
+	require.Equal(t, 0, retryCount, "redriven row must have retry_count reset to 0")
+	require.Nil(t, lastErrPtr, "redriven row must have last_error cleared")
+	require.True(t, !nextAttempt.After(fc.Now()), "redriven row next_attempt_at must be <= now")
+
+	// A subsequent DrainOnce with a healthy publisher must publish the redriven row.
+	pub := &recordingPub{}
+	healthyRelay := pg.NewRelay(pool, pub, pg.WithClock(fc))
+	n, err = healthyRelay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	// The pending (non-dead) row seeded above + the redriven row = 2 due rows.
+	require.GreaterOrEqual(t, n, 1, "at least the redriven row must be published")
+
+	// Confirm the redriven row is now published.
+	var finalStatus string
+	err = pool.QueryRow(t.Context(),
+		`SELECT status FROM wrkflw_outbox WHERE id = $1`, deadID,
+	).Scan(&finalStatus)
+	require.NoError(t, err)
+	require.Equal(t, "published", finalStatus, "redriven row must be published after drain")
 }

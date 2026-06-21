@@ -26,6 +26,7 @@ const (
 	kindSubInstanceFailed    = "sub_instance_failed"
 	kindCompensateRequested  = "compensate_requested"
 	kindCancelRequested      = "cancel_requested"
+	kindResolveIncident      = "resolve_incident"
 )
 
 // AllTriggerKinds lists every trigger kind discriminator the codec handles.
@@ -44,6 +45,7 @@ var AllTriggerKinds = []string{
 	kindSubInstanceFailed,
 	kindCompensateRequested,
 	kindCancelRequested,
+	kindResolveIncident,
 }
 
 // triggerEnvelope is the flat JSON shape written to wrkflw_journal.payload.
@@ -66,6 +68,9 @@ type triggerEnvelope struct {
 	Name           string         `json:"name,omitempty"`
 	CorrelationKey string         `json:"correlation_key,omitempty"`
 	ToNode         string         `json:"to_node,omitempty"`
+	Jitter         float64        `json:"jitter,omitempty"`
+	IncidentID     string         `json:"incident_id,omitempty"`
+	AddAttempts    int            `json:"add_attempts,omitempty"`
 }
 
 // MarshalTrigger serialises a sealed Trigger to JSON and returns the JSON bytes,
@@ -84,7 +89,7 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 	case engine.ActionCompleted:
 		kind, env.CommandID, env.Output = kindActionCompleted, v.CommandID, v.Output
 	case engine.ActionFailed:
-		kind, env.CommandID, env.Err, env.Retryable = kindActionFailed, v.CommandID, v.Err, v.Retryable
+		kind, env.CommandID, env.Err, env.Retryable, env.Jitter = kindActionFailed, v.CommandID, v.Err, v.Retryable, v.JitterFraction
 	case engine.HumanCompleted:
 		kind, env.TaskToken, env.Output, env.Actor = kindHumanCompleted, v.TaskToken, v.Output, v.Actor
 	case engine.HumanClaimed:
@@ -105,6 +110,8 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 		kind, env.ToNode = kindCompensateRequested, v.ToNode
 	case engine.CancelRequested:
 		kind = kindCancelRequested
+	case engine.ResolveIncident:
+		kind, env.IncidentID, env.AddAttempts = kindResolveIncident, v.IncidentID, v.AddAttempts
 	default:
 		return nil, "", fmt.Errorf("postgres: marshal trigger: unhandled variant %T", t)
 	}
@@ -129,7 +136,7 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 	case kindActionCompleted:
 		return engine.NewActionCompleted(env.At, env.CommandID, env.Output), nil
 	case kindActionFailed:
-		return engine.NewActionFailed(env.At, env.CommandID, env.Err, env.Retryable), nil
+		return engine.NewActionFailedJittered(env.At, env.CommandID, env.Err, env.Retryable, env.Jitter), nil
 	case kindHumanCompleted:
 		return engine.NewHumanCompleted(env.At, env.TaskToken, env.Output, env.Actor), nil
 	case kindHumanClaimed:
@@ -150,6 +157,8 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 		return engine.NewCompensateRequested(env.At, env.ToNode), nil
 	case kindCancelRequested:
 		return engine.NewCancelRequested(env.At), nil
+	case kindResolveIncident:
+		return engine.NewResolveIncident(env.At, env.IncidentID, env.AddAttempts), nil
 	default:
 		return nil, fmt.Errorf("postgres: unmarshal trigger: unknown kind %q", kind)
 	}

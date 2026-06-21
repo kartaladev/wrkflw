@@ -16,16 +16,13 @@ opus whole-branch review → merge to main → push`, exactly like the sub-proje
 
 1. **Correctness & tests** — ✅ COMPLETE, merged `314358c` (2026-06-21). See the
    "Correctness & tests hardening sub-project" section below.
-2. **Resilience (retry/backoff/DLQ)** — ⏭️ **NEXT.** The named REQUIREMENTS feature ("A process
-   error must be able to be retried. Consider also other resilient aspect"). Composing deferred
-   items: engine-core follow-up #6 (retry/backoff/poison executor — `ActionFailed.Retryable` +
-   `InvokeAction.RetryPolicy` are *carried* but no executor exists), Persistence deferred #5
-   (relay retry/DLQ + head-of-line poison isolation), and idempotency/backoff design. Largest
-   track; needs new ADR(s). Start with `superpowers:brainstorming` (surface the real forks:
-   retry-executor placement runtime-vs-engine, backoff policy model, poison/DLQ table,
-   idempotency keys) and CLAUDE.md's mandated workflow-management research.
-3. **Observability** — metrics + traces + slog across engine/runtime/transports (REQUIREMENTS
-   line 17); only the eventing slice exists today.
+2. **Resilience (retry/backoff/DLQ)** — ✅ COMPLETE, merged (2026-06-21). The named REQUIREMENTS
+   feature ("A process error must be able to be retried"). Engine-modeled retry executor,
+   catch-flow→incident exhaustion, outbox relay poison isolation + DLQ, idempotency. ADRs
+   0015–0018. See the "Resilience (retry/backoff/DLQ) sub-project" section below.
+3. **Observability** — ⏭️ **NEXT.** metrics + traces + slog across engine/runtime/transports
+   (REQUIREMENTS line 17); only the eventing slice exists today. Start with
+   `superpowers:brainstorming` + the standard track workflow below.
 4. **Performance/caching** — owned-instance single-writer (leased) state cache for the hot
    Run/Deliver read path (Persistence deferred #1), history/snapshot cap (#2), optional
    LISTEN/NOTIFY relay trigger (#3).
@@ -141,8 +138,11 @@ These are deliberately deferred, not bugs in the shipped scope. The most importa
    & tests hardening` sub-project (Task 6). A `fireBoundaryArm` scope-resolution bug was found
    and fixed as part of this work (commit `82badcd`): the boundary outgoing flow was being resolved
    from the root definition instead of the containing sub-process scope.
-6. **Retry/backoff/poison executor.** `ActionFailed.Retryable` + `InvokeAction.RetryPolicy` are carried
-   but the retry executor (backoff, max attempts, poison queue) is a runtime/productionization concern.
+6. **Retry/backoff/poison executor — DONE (ADRs 0015–0018).** Built in the `Resilience` sub-project:
+   engine-modeled retry executor (retries ride the timer machinery; runtime-recorded jitter keeps
+   `Step` deterministic), catch-flow→error-boundary→incident exhaustion, outbox relay per-row poison
+   isolation + dead-letter quarantine, and idempotency (stable action key + `Deduper`). See the
+   "Resilience (retry/backoff/DLQ) sub-project" section below.
 7. **Minor test hardening** (non-blocking): a few `*_example_test.go`-bundled unit tests could move to
    same-named files (project convention is 1:1, see the test-file-naming memory); root-level event
    sub-process and message-arm-gateway paths have light coverage.
@@ -456,3 +456,73 @@ engine/model purity CLEAN.
 5. **Pre-existing flaky singleflight test** —
    `runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call` can flake
    under `-race`; tracked, not yet stabilized.
+
+---
+
+## Resilience (retry/backoff/DLQ/idempotency) sub-project — ✅ COMPLETE, merged to `main`
+
+Second track of the **deferred-backlog run**. Built on branch `feat/resilience-retry-dlq`
+(HEAD `4673325`), 20 SDD tasks + opus whole-branch review (**Ready to merge: Yes-with-nits**;
+no blocking issues, all 5 binding invariants confirmed). Design: spec
+`docs/specs/2026-06-21-resilience-retry-dlq-design.md`, plan
+`docs/plans/2026-06-21-resilience-retry-dlq.md`, ADRs 0015–0018.
+Gate: `go test -race ./...` green, touched pkgs all ≥85% (engine 85.6%, model 95.8%, runtime 94.8%,
+service 87.0%, transport/rest 90.2%, `internal/persistence/postgres` 86.8%, `persistence` 100%),
+lint 0, engine/model purity CLEAN (`math/rand` only in `runtime/jitter.go`; `clockwork` test-only).
+**Run the Postgres package with limited container parallelism** (`go test -p 1` / `-parallel N`) — high
+concurrency exhausts Docker and surfaces spurious testcontainers startup failures (NOT regressions).
+
+### Key design (ADRs 0015–0018)
+
+- **ADR-0015 — engine-modeled retry executor.** A retry IS a timer: the runtime samples a jitter
+  fraction at the edge and records it on `ActionFailed.JitterFraction`; the pure `Step` computes a
+  deterministic `FireAt = OccurredAt + JitterFraction × Backoff(attempt)` (Full Jitter) and emits
+  `ScheduleTimer{Kind: TimerRetry}`; the existing `Scheduler` fires it; `TimerFired{TimerRetry}`
+  re-invokes the action. **Retry is opt-in** — absent an effective `RetryPolicy` (node policy or
+  `StepOptions.DefaultRetryPolicy`), `ActionFailed` behaves exactly as before (`propagateError`).
+- **ADR-0016 — exhaustion precedence Catch → boundary → Incident.** On a terminal failure with a
+  policy: route `Node.RecoveryFlow` (injecting `_error`/`_errorMessage`/`_errorAttempts`) → else the
+  existing error-boundary `propagateError` (now via a `raiseIncidentOnUnhandled` flag) → else raise an
+  `Incident` (token → `TokenIncident`, instance stays `StatusRunning`), admin-resumable via the new
+  `ResolveIncident` trigger.
+- **ADR-0017 — outbox relay poison isolation / DLQ.** `wrkflw_outbox` gains
+  `status`/`retry_count`/`next_attempt_at`/`last_error`; the relay claims
+  `WHERE status='pending' AND next_attempt_at<=now`, isolates per row (a publish error quarantines
+  only that row with backoff, → `dead` after `maxDelivery`; healthy peers still commit `published`),
+  fixing head-of-line blocking. **Contract change:** `Run`/`DrainOnce` no longer fail-fast on a
+  publish/broker error (they absorb + quarantine); infra errors still propagate. `ListDeadLettered` /
+  `Redrive` admin API.
+- **ADR-0018 — idempotency.** Engine stamps a stable `_idempotencyKey = instanceID:nodeID` (attempt-
+  independent) on the primary service-task action; a `wrkflw_processed_message` table + `Deduper`
+  (`Seen(ctx, tx, subscriber, messageID)` via `INSERT … ON CONFLICT DO NOTHING`, committed in the
+  consumer's own tx) give consumers exactly-once *effect* over at-least-once delivery.
+
+### What shipped (by layer)
+
+| Layer | What |
+|---|---|
+| `model/` | `RetryPolicy` value type (`Backoff`/`Normalize`/`IsNonRetryable`/`DefaultRetryPolicy`); `Node.RetryPolicy *RetryPolicy` + `Node.RecoveryFlow`; `Validate` sentinels `ErrInvalidRetryPolicy`/`ErrInvalidRecoveryFlow` (recursive). |
+| `engine/` | `ActionFailed.JitterFraction`; `ResolveIncident` trigger; `TimerRetry` kind; `Token.RetryAttempts`/`RetryStartedAt`; `Incident`/`InstanceState.Incidents`/`IncidentSeq`; `TokenIncident`; `StepOptions.DefaultRetryPolicy`; retry-schedule + `handleRetryFired` + exhaustion + `ResolveIncident` + `reinvokeServiceAction` + `serviceActionInput` (idempotency key); `cloneState` extended. |
+| `runtime/` | `JitterSource` port + `math/rand/v2` impl + `WithJitterSource`; `WithDefaultRetryPolicy`; `Runner.ResolveIncident`; `InstanceSummary.IncidentCount`. |
+| `internal/persistence/postgres/` | trigger codec for jitter + `ResolveIncident`; migration `0003_resilience.sql` (outbox DLQ cols + `wrkflw_processed_message`); relay per-row isolation + `RelayBackoff` + dead quarantine + `ListDeadLettered`/`Redrive`; `Deduper`; `TestPostgresParkedRetryResumesAfterReload`. |
+| `persistence/` | `Relay` interface +`ListDeadLettered`/`Redrive`; `WithRelayClock`/`WithMaxDeliveryAttempts`/`WithRelayBackoff`; `Deduper`/`NewDeduper`. |
+| `runtime/` shared | `runtime.DeadLetter` value type (façade return type, no import cycle). |
+| `service/` + `transport/rest` | `service.ResolveIncident`; REST `POST /admin/instances/{id}/incidents/{incidentID}/resolve` (admin-gated, default-deny 403); `IncidentCount` in the admin list response. |
+
+### Deferred follow-ups (recorded by the opus whole-branch review)
+
+1. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
+   runtime/persistence APIs exist; only the gRPC proto regen + REST DLQ endpoints are unbuilt (spec §8/§11).
+2. **`wrkflw_processed_message` retention/pruning job** — the dedup table grows unbounded; a TTL prune
+   (well past `maxDelivery × max backoff`) is an operator task.
+3. **REST resolve-incident empty-body fidelity** — a genuinely empty body (Content-Length 0) hits
+   `decodeBody`'s `io.EOF`→400; tests only send `{}`. Accept EOF as "defaults" or require a `{}` body.
+4. **`RetryPolicy.Backoff` overflow guard** — safe in-engine (always `Normalize()`d, positive
+   `MaxInterval` caps first), but a directly-constructed non-normalized policy with `MaxInterval==0` +
+   huge attempt could overflow `time.Duration(d)`; consider a defensive cap inside `Backoff`.
+5. **casbin-gated per-incident authz** — `ResolveIncident` is gated only by the transport admin
+   middleware in v1; a per-incident attribute rule is future work.
+6. **Cosmetic test/doc nits** (non-blocking, from per-task reviews): a few single-case tests use bare
+   `t.Fatal` vs testify; `countUnpublished` counts dead rows as unpublished; `RelayBackoff` dead
+   post-loop guard; godoc phrasings (`Backoff` "0=first retry", `RetryStartedAt` "wall-clock").
+   The one timing-sensitive relay test was deflaked pre-merge (poll instead of `time.Sleep`).

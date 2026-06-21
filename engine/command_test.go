@@ -212,6 +212,17 @@ func TestCancelTimerFieldsRoundTrip(t *testing.T) {
 	assert.Equal(t, "tmr-cancel-me", cmd.TimerID)
 }
 
+// TestTimerRetryDistinctAndStringable asserts that TimerRetry is distinct from all
+// other TimerKind constants and has a non-empty, non-"unknown" String() value.
+func TestTimerRetryDistinctAndStringable(t *testing.T) {
+	if engine.TimerRetry == engine.TimerIntermediate || engine.TimerRetry == engine.TimerSLA || engine.TimerRetry == engine.TimerInWait {
+		t.Fatal("TimerRetry not distinct")
+	}
+	if engine.TimerRetry.String() == "" || engine.TimerRetry.String() == "TimerKind(unknown)" {
+		t.Fatalf("TimerRetry.String() = %q", engine.TimerRetry.String())
+	}
+}
+
 // TestInstanceStateTasksDeepCopied asserts that cloneState (via Step) deep-copies
 // Tasks so that mutating the returned state's Tasks does not affect the input.
 func TestInstanceStateTasksDeepCopied(t *testing.T) {

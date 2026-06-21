@@ -8,17 +8,19 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
 // instanceSummaryView is the admin-list JSON projection of a runtime.InstanceSummary.
 // It intentionally omits large fields (tokens, history, tasks) to keep the payload small.
 type instanceSummaryView struct {
-	InstanceID string     `json:"instance_id"`
-	DefID      string     `json:"def_id"`
-	DefVersion int        `json:"def_version"`
-	Status     string     `json:"status"`
-	StartedAt  time.Time  `json:"started_at"`
-	EndedAt    *time.Time `json:"ended_at,omitempty"`
+	InstanceID    string     `json:"instance_id"`
+	DefID         string     `json:"def_id"`
+	DefVersion    int        `json:"def_version"`
+	Status        string     `json:"status"`
+	StartedAt     time.Time  `json:"started_at"`
+	EndedAt       *time.Time `json:"ended_at,omitempty"`
+	IncidentCount int        `json:"incident_count"`
 }
 
 // adminListResponse is the JSON envelope returned by GET /admin/instances.
@@ -79,16 +81,49 @@ func (h *handler) handleAdminListInstances(w http.ResponseWriter, r *http.Reques
 	}
 	for i, s := range page.Items {
 		resp.Items[i] = instanceSummaryView{
-			InstanceID: s.InstanceID,
-			DefID:      s.DefID,
-			DefVersion: s.DefVersion,
-			Status:     statusString(s.Status),
-			StartedAt:  s.StartedAt,
-			EndedAt:    s.EndedAt,
+			InstanceID:    s.InstanceID,
+			DefID:         s.DefID,
+			DefVersion:    s.DefVersion,
+			Status:        statusString(s.Status),
+			StartedAt:     s.StartedAt,
+			EndedAt:       s.EndedAt,
+			IncidentCount: s.IncidentCount,
 		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleResolveIncident handles POST /admin/instances/{id}/incidents/{incidentID}/resolve.
+//
+// It accepts an optional JSON body:
+//
+//	{"add_attempts": N}   — number of additional execution attempts to grant (default 1 when absent or ≤ 0)
+//
+// On success it responds with 200 and the resulting instance body rendered via
+// the consumer-configured instance mapper. On error it delegates to WriteHTTPError.
+func (h *handler) handleResolveIncident(w http.ResponseWriter, r *http.Request) {
+	instanceID := r.PathValue("id")
+	incidentID := r.PathValue("incidentID")
+
+	type reqBody struct {
+		AddAttempts int `json:"add_attempts"`
+	}
+	var body reqBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	st, err := h.svc.ResolveIncident(r.Context(), service.ResolveIncidentRequest{
+		InstanceID:  instanceID,
+		IncidentID:  incidentID,
+		AddAttempts: body.AddAttempts,
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.renderInstance(w, http.StatusOK, st)
 }
 
 // parseStatus converts a status string (as emitted by statusString) back to an engine.Status.

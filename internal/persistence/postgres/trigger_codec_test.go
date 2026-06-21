@@ -51,6 +51,15 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 				require.Equal(t, "boom", got.(engine.ActionFailed).Err)
 				require.Equal(t, "c1", got.(engine.ActionFailed).CommandID)
 				require.True(t, got.(engine.ActionFailed).Retryable)
+				require.Equal(t, 0.0, got.(engine.ActionFailed).JitterFraction, "NewActionFailed must produce zero jitter")
+			},
+		},
+		"ResolveIncident": {
+			in: engine.NewResolveIncident(at, "p-inc0", 3),
+			assert: func(t *testing.T, got engine.Trigger) {
+				require.IsType(t, engine.ResolveIncident{}, got)
+				require.Equal(t, "p-inc0", got.(engine.ResolveIncident).IncidentID)
+				require.Equal(t, 3, got.(engine.ResolveIncident).AddAttempts)
 			},
 		},
 		"HumanCompleted": {
@@ -151,6 +160,31 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 		pg.AllTriggerKinds, gotKinds)
 }
 
+// TestActionFailedJitterRoundTrip asserts that JitterFraction survives a
+// MarshalTrigger→UnmarshalTrigger round-trip. ActionFailedJittered is NOT a
+// separate Trigger variant — it is ActionFailed with a non-zero JitterFraction —
+// so this test is separate from the exhaustiveness table to avoid double-counting
+// the "action_failed" kind.
+func TestActionFailedJitterRoundTrip(t *testing.T) {
+	at := time.Unix(1700000000, 0).UTC()
+	in := engine.NewActionFailedJittered(at, "c-jit", "boom-jit", true, 0.375)
+
+	data, kind, err := pg.MarshalTrigger(in)
+	require.NoError(t, err)
+	require.Equal(t, "action_failed", kind)
+
+	got, err := pg.UnmarshalTrigger(kind, data)
+	require.NoError(t, err)
+
+	af, ok := got.(engine.ActionFailed)
+	require.True(t, ok)
+	require.Equal(t, "c-jit", af.CommandID)
+	require.Equal(t, "boom-jit", af.Err)
+	require.True(t, af.Retryable)
+	require.Equal(t, 0.375, af.JitterFraction, "JitterFraction must survive round-trip")
+	require.True(t, in.OccurredAt().Equal(got.OccurredAt()))
+}
+
 func TestActionFailedNotRetryable(t *testing.T) {
 	at := time.Unix(1700000000, 0).UTC()
 	in := engine.NewActionFailed(at, "cmd-fatal", "unrecoverable error", false)
@@ -171,4 +205,20 @@ func TestActionFailedNotRetryable(t *testing.T) {
 func TestUnmarshalTriggerUnknownKind(t *testing.T) {
 	_, err := pg.UnmarshalTrigger("does.not.exist", []byte(`{}`))
 	require.Error(t, err)
+}
+
+// TestActionFailedJitterBackwardCompat verifies that an old journal row written
+// before JitterFraction existed (no "jitter" key in JSON) unmarshals cleanly
+// with JitterFraction==0. No migration is needed for existing rows.
+func TestActionFailedJitterBackwardCompat(t *testing.T) {
+	// Simulate old payload: no "jitter" key at all.
+	oldPayload := []byte(`{"at":"2024-01-01T00:00:00Z","command_id":"old-cmd","err":"old error","retryable":true}`)
+	got, err := pg.UnmarshalTrigger("action_failed", oldPayload)
+	require.NoError(t, err)
+	af, ok := got.(engine.ActionFailed)
+	require.True(t, ok)
+	require.Equal(t, "old-cmd", af.CommandID)
+	require.Equal(t, "old error", af.Err)
+	require.True(t, af.Retryable)
+	require.Equal(t, 0.0, af.JitterFraction, "missing jitter key must default to 0 — no migration needed")
 }

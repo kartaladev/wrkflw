@@ -50,6 +50,15 @@ type Service interface {
 
 	// ListInstances returns a paginated list of instance summaries matching the filter.
 	ListInstances(ctx context.Context, filter runtime.InstanceFilter) (runtime.InstancePage, error)
+
+	// ResolveIncident clears an open incident on a process instance, grants
+	// addAttempts additional execution attempts (≤ 0 defaults to 1), and
+	// re-drives the instance. It delegates to Runner.ResolveIncident after
+	// resolving the process definition from the registry.
+	//
+	// Returns the resulting InstanceState (parked or completed) on success.
+	// Propagates runtime.ErrInstanceNotFound when no instance exists for the ID.
+	ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (engine.InstanceState, error)
 }
 
 // Engine is the concrete implementation of Service. It wires together the
@@ -197,6 +206,25 @@ func (e *Engine) ListInstances(ctx context.Context, filter runtime.InstanceFilte
 		return runtime.InstancePage{}, fmt.Errorf("service: list instances: %w", err)
 	}
 	return page, nil
+}
+
+// ResolveIncident resolves an open incident on a process instance by resolving
+// its definition from the registry and delegating to Runner.ResolveIncident.
+// AddAttempts ≤ 0 is coerced to 1 so callers always grant at least one attempt.
+func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (engine.InstanceState, error) {
+	def, _, err := e.resolveDefinition(ctx, req.InstanceID)
+	if err != nil {
+		return engine.InstanceState{}, fmt.Errorf("service: resolve incident: %w", err)
+	}
+	addAttempts := req.AddAttempts
+	if addAttempts <= 0 {
+		addAttempts = 1
+	}
+	st, err := e.runner.ResolveIncident(ctx, def, req.InstanceID, req.IncidentID, addAttempts)
+	if err != nil {
+		return engine.InstanceState{}, fmt.Errorf("service: resolve incident: %w", err)
+	}
+	return st, nil
 }
 
 // resolveDefinition loads the instance state by instanceID, then looks up its

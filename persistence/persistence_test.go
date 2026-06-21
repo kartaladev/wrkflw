@@ -161,6 +161,9 @@ func TestRelayOptionsConstructors(t *testing.T) {
 	relay := persistence.NewRelay(pool, pub,
 		persistence.WithPollInterval(50*time.Millisecond),
 		persistence.WithBatchSize(10),
+		persistence.WithRelayClock(clock.System()),
+		persistence.WithMaxDeliveryAttempts(5),
+		persistence.WithRelayBackoff(time.Second, time.Minute),
 	)
 	require.NotNil(t, relay)
 

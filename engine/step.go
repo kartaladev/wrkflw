@@ -28,7 +28,14 @@ const (
 	Micro
 )
 
-type StepOptions struct{ Mode StepMode }
+// StepOptions controls optional behaviour of a [Step] call.
+type StepOptions struct {
+	// Mode selects the step granularity: [Macro] (default) or [Micro].
+	Mode StepMode
+	// DefaultRetryPolicy is the fallback retry policy applied when a node does
+	// not carry its own RetryPolicy. nil means retry is disabled by default.
+	DefaultRetryPolicy *model.RetryPolicy
+}
 
 // StepResult is the output of a single [Step] call. Commands is the ordered
 // list of side effects the runtime must perform. On a no-op step (e.g. a stale
@@ -164,6 +171,92 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 		}
+		// Retry interception: when the node (or the default policy) carries a retry
+		// policy and the failure is non-terminal, schedule a TimerRetry instead of
+		// propagating the error immediately.
+		tdef, err := defForScope(def, &s, tok.ScopeID)
+		if err != nil {
+			return StepResult{}, err
+		}
+		node, _ := tdef.Node(tok.NodeID)
+		if eff, hasPolicy := effectiveRetryPolicy(node, opt); hasPolicy {
+			attempt := tok.RetryAttempts
+			terminal := !t.Retryable ||
+				eff.IsNonRetryable(t.Err) ||
+				(eff.MaxAttempts != 0 && attempt+1 >= eff.MaxAttempts) ||
+				(eff.MaxElapsed > 0 && !tok.RetryStartedAt.IsZero() &&
+					t.OccurredAt().Sub(tok.RetryStartedAt) > eff.MaxElapsed)
+			if !terminal {
+				delay := time.Duration(t.JitterFraction * float64(eff.Backoff(attempt)))
+				fireAt := t.OccurredAt().Add(delay)
+				timerID := s.nextTimerID()
+				retryCmds := []Command{ScheduleTimer{
+					TimerID: timerID,
+					Token:   tok.ID,
+					FireAt:  fireAt,
+					Kind:    TimerRetry,
+				}}
+				s.Timers = append(s.Timers, timerRecord{
+					TimerID: timerID,
+					Kind:    TimerRetry,
+					Token:   tok.ID,
+					NodeID:  tok.NodeID,
+					ScopeID: tok.ScopeID,
+				})
+				tok.RetryAttempts++
+				if tok.RetryStartedAt.IsZero() {
+					tok.RetryStartedAt = t.OccurredAt()
+				}
+				tok.State = TokenWaitingCommand
+				tok.AwaitCommand = timerID
+				return StepResult{State: s, Commands: append(preCmds, retryCmds...)}, nil
+			}
+			// Terminal exhaustion: precedence is (1) catch-flow → (2) error
+			// boundary → (3) incident.
+			if node.RecoveryFlow != "" {
+				// (1) Catch-flow: inject error context onto instance variables and
+				// route the failing token down RecoveryFlow.
+				if s.Variables == nil {
+					s.Variables = map[string]any{}
+				}
+				s.Variables["_errorMessage"] = t.Err
+				// Total executions: initial attempt plus all retries.
+				s.Variables["_errorAttempts"] = tok.RetryAttempts + 1
+				if node.ErrorCode != "" {
+					s.Variables["_error"] = node.ErrorCode
+				}
+				// Resolve the RecoveryFlow target (mirror the SLAFlow routing in
+				// handleSLAFired: scan the scope def's flows for the flow ID).
+				var target string
+				for _, f := range tdef.Flows {
+					if f.ID == node.RecoveryFlow {
+						target = f.Target
+						break
+					}
+				}
+				if target == "" {
+					return StepResult{}, fmt.Errorf("engine: retry exhaustion: RecoveryFlow %q not found for node %q", node.RecoveryFlow, node.ID)
+				}
+				tok.RetryAttempts = 0
+				tok.RetryStartedAt = time.Time{}
+				tok.AwaitCommand = ""
+				tok.State = TokenActive
+				s.moveTokenToTarget(tok, target, t.OccurredAt())
+				driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
+				if err != nil {
+					return StepResult{}, err
+				}
+				return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
+			}
+			// (2)+(3): no catch-flow → let propagateError catch the error via a
+			// boundary handler; if none is found, raise an incident (the
+			// raiseIncidentOnUnhandled=true flag) instead of failing the instance.
+			errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode, true)
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: append(preCmds, errCmds...)}, nil
+		}
 		// Route through propagateError: if a boundary error handler is found in
 		// the scope chain (direct-attachment or enclosing-scope), the error is
 		// caught and execution continues on the recovery path (no FailInstance).
@@ -172,7 +265,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// behavior for root-level service tasks with no handler.
 		// Pass tok.ID so the direct-attachment branch consumes THIS specific
 		// token, not the first token found at the same NodeID+ScopeID.
-		errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode)
+		errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode, false)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -231,11 +324,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{State: s, Commands: eaCmds}, nil
 		}
 
-		// 4) SLA/in-wait timer record.
-		// s.Timers holds only SLA (TimerSLA) and in-wait/reminder (TimerInWait)
-		// records. Intermediate timers (TimerIntermediate) are never appended to
-		// s.Timers; for those, the token parks on the TimerID as its AwaitCommand,
-		// so they route via the tokenAwaiting path below.
+		// 4) SLA/in-wait/retry timer record.
+		// s.Timers holds SLA (TimerSLA), in-wait/reminder (TimerInWait), and retry
+		// (TimerRetry) records. Intermediate timers (TimerIntermediate) are never
+		// appended to s.Timers; for those, the token parks on the TimerID as its
+		// AwaitCommand, so they route via the tokenAwaiting path below.
 		rec := s.timerByID(t.TimerID)
 		if rec != nil {
 			switch rec.Kind {
@@ -243,6 +336,8 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				return handleSLAFired(def, &s, *rec, t.OccurredAt(), opt.Mode)
 			case TimerInWait:
 				return handleReminderFired(def, &s, *rec, t.OccurredAt())
+			case TimerRetry:
+				return handleRetryFired(def, &s, *rec, t.OccurredAt(), opt.Mode)
 			}
 		}
 
@@ -520,6 +615,43 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		}
 		return StepResult{State: s, Commands: driveCmds}, nil
 
+	case ResolveIncident:
+		// Admin trigger: clear a parked incident, grant additional retry budget,
+		// and re-invoke the stalled service action so the process can continue.
+		//
+		// Idempotency: an unknown or already-cleared IncidentID is a clean no-op;
+		// a missing token (removed by a concurrent path) clears the record and
+		// returns without re-invoking.
+		idx := -1
+		for i := range s.Incidents {
+			if s.Incidents[i].ID == t.IncidentID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			// Unknown or already-resolved incident: idempotent no-op.
+			return StepResult{State: s, Commands: nil}, nil
+		}
+		inc := s.Incidents[idx]
+		// Remove the incident from the slice (order-preserving, avoids aliasing).
+		s.Incidents = append(s.Incidents[:idx], s.Incidents[idx+1:]...)
+		tok := s.tokenByID(inc.TokenID)
+		if tok == nil {
+			// Token is gone (concurrent resolution); incident cleared, no re-invoke.
+			return StepResult{State: s, Commands: nil}, nil
+		}
+		// Grant the additional retry budget: reducing RetryAttempts by AddAttempts
+		// effectively gives the action that many more opportunities before the
+		// policy declares it terminal again.
+		tok.RetryAttempts = max(0, tok.RetryAttempts-t.AddAttempts)
+		tok.State = TokenActive
+		cmds, err := reinvokeServiceAction(def, &s, tok, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: cmds}, nil
+
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
@@ -604,7 +736,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			cmds = append(cmds, InvokeAction{
 				CommandID: cmdID,
 				Name:      node.Action,
-				Input:     copyVars(s.Variables),
+				Input:     serviceActionInput(s, node),
 			})
 			tok.State = TokenWaitingCommand
 			tok.AwaitCommand = cmdID
@@ -738,7 +870,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			// as failingTokenID (the error-end token is already consumed above).
 			currentScopeID := tok.ScopeID
 			s.consumeToken(tok, at)
-			errCmds, propErr := propagateError(def, s, currentScopeID, "", "", node.ErrorCode, at, mode)
+			errCmds, propErr := propagateError(def, s, currentScopeID, "", "", node.ErrorCode, at, mode, false)
 			if propErr != nil {
 				return cmds, propErr
 			}
@@ -1241,6 +1373,13 @@ func (s *InstanceState) nextTimerID() string {
 	return fmt.Sprintf("%s-tm%d", s.InstanceID, s.TimerSeq)
 }
 
+// nextIncidentID returns the next deterministic incident ID of the form
+// "<instanceID>-inc<IncidentSeq>", advancing the monotonic IncidentSeq counter.
+func (s *InstanceState) nextIncidentID() string {
+	s.IncidentSeq++
+	return fmt.Sprintf("%s-inc%d", s.InstanceID, s.IncidentSeq)
+}
+
 // setVisitActor sets the ActorID on the most recent open NodeVisit for the
 // given (tokenID, nodeID) pair. Used to record who completed a human task.
 //
@@ -1620,7 +1759,10 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 // ID ensures only the exact failing token is removed. For the KindErrorEndEvent path
 // (originatingNodeID == ""), the error-end token is already consumed by drive before
 // propagateError is called, so failingTokenID is unused.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode) ([]Command, error) {
+// raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
+// unhandled error parks the failing token as a [TokenIncident] and keeps the
+// instance running (admin-resumable) instead of setting StatusFailed.
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, raiseIncidentOnUnhandled bool) ([]Command, error) {
 	// ── Step 1: Direct-attachment check ──────────────────────────────────────
 	// Only when the caller provides an originating node (ActionFailed path).
 	// Inspect the failing token's OWN scope definition for a boundary error event
@@ -1821,6 +1963,33 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	}
 
 	// No handler found anywhere in the scope chain → unhandled error.
+	if raiseIncidentOnUnhandled {
+		// Do NOT fail the instance. Raise an incident on the failing token and
+		// keep the instance running (admin-resumable). Used by the retry-
+		// exhaustion path when an effective policy exists but neither a catch
+		// flow nor a boundary handled the terminal failure.
+		failingTok := s.tokenByID(failingTokenID)
+		attempts, cmdID := 1, ""
+		if failingTok != nil {
+			// Attempts is the total executions: the initial attempt plus all
+			// retries (RetryAttempts counts retries only).
+			attempts = failingTok.RetryAttempts + 1
+			cmdID = failingTok.AwaitCommand
+			failingTok.State = TokenIncident
+		}
+		s.Incidents = append(s.Incidents, Incident{
+			ID:        s.nextIncidentID(),
+			TokenID:   failingTokenID,
+			NodeID:    originatingNodeID,
+			ScopeID:   scopeID,
+			CommandID: cmdID,
+			Error:     errorCode,
+			Attempts:  attempts,
+			CreatedAt: at,
+		})
+		return nil, nil
+	}
+
 	// Set instance to failed and perform terminal cleanup.
 	s.Status = StatusFailed
 	ended := at
@@ -2375,6 +2544,73 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
+// reinvokeServiceAction re-emits an InvokeAction for tok's node, re-parks tok
+// on the new command ID, and re-arms its boundary events. It is shared by the
+// retry-timer path (handleRetryFired) and the incident-resolution path
+// (ResolveIncident) so both use an identical re-invocation sequence.
+//
+// The caller is responsible for any pre-work specific to each path (e.g.
+// removing the consumed timer record before calling this for the retry path).
+func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time) ([]Command, error) {
+	tdef, err := defForScope(def, s, tok.ScopeID)
+	if err != nil {
+		return nil, fmt.Errorf("engine: reinvoke: %w", err)
+	}
+	node, ok := tdef.Node(tok.NodeID)
+	if !ok {
+		return nil, fmt.Errorf("engine: reinvoke: node %q not found", tok.NodeID)
+	}
+
+	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly,
+	// including the stable idempotency key (see serviceActionInput).
+	cmdID := s.nextCommandID()
+	cmds := []Command{InvokeAction{
+		CommandID: cmdID,
+		Name:      node.Action,
+		Input:     serviceActionInput(s, node),
+	}}
+	tok.State = TokenWaitingCommand
+	tok.AwaitCommand = cmdID
+
+	// Re-arm boundary events (SLA timers, reminder timers) so they are active
+	// for this invocation attempt.
+	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
+	if err != nil {
+		return cmds, err
+	}
+	return append(cmds, bndCmds...), nil
+}
+
+// handleRetryFired processes a TimerFired event for a TimerRetry timer. It is
+// called from the TimerFired handler in Step after Task 5 parks a token on a
+// retry timer following a retryable ActionFailed.
+//
+// Contract:
+//   - If the parked token is gone (stale/duplicate retry fire), clean no-op.
+//   - Otherwise: removes the consumed timer record, re-emits InvokeAction for
+//     the node (mirroring the service-task drive path), re-parks the token on
+//     the new command ID, and re-arms any boundary events (which Task 5 cancelled
+//     on failure) so SLA and reminder timers are active for the retry attempt.
+func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode) (StepResult, error) {
+	// Find the parked token. The token was parked with AwaitCommand == rec.TimerID
+	// by Task 5 (ActionFailed retry path). If absent, the timer fired after the
+	// instance advanced via another path (race / duplicate): clean no-op.
+	tok := s.tokenAwaiting(rec.TimerID)
+	if tok == nil {
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// Consume the timer record so a duplicate fire is a no-op.
+	s.removeTimer(rec.TimerID)
+
+	// Re-invoke the service action via the shared helper.
+	cmds, err := reinvokeServiceAction(def, s, tok, at)
+	if err != nil {
+		return StepResult{}, fmt.Errorf("engine: retry fired: %w", err)
+	}
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
 // ── Compensation helpers ──────────────────────────────────────────────────────
 
 // compensationRecordsForScope returns a read-only slice of CompensationRecords for
@@ -2582,6 +2818,23 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	return StepResult{State: *s, Commands: driveCmds}, nil
 }
 
+// ---- retry helpers ----
+
+// effectiveRetryPolicy returns the retry policy to apply for the given node and
+// step options, plus a boolean indicating whether a policy is in effect.
+// Precedence: node-level policy > StepOptions.DefaultRetryPolicy > none.
+// The returned policy has been normalized via [model.RetryPolicy.Normalize].
+func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, bool) {
+	switch {
+	case node.RetryPolicy != nil:
+		return node.RetryPolicy.Normalize(), true
+	case opt.DefaultRetryPolicy != nil:
+		return opt.DefaultRetryPolicy.Normalize(), true
+	default:
+		return model.RetryPolicy{}, false
+	}
+}
+
 // ---- value helpers ----
 
 func mergeVars(s *InstanceState, in map[string]any) {
@@ -2605,6 +2858,25 @@ func copyVars(in map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// serviceActionInput builds the Input map for a node's primary ServiceAction
+// invocation. It copies the instance variables and stamps a stable,
+// attempt-independent idempotency key ("<instanceID>:<nodeID>") so action
+// authors can dedup external side effects across retries.
+//
+// v1 scope: only the primary service-task action carries this key. SLA,
+// reminder, and compensation actions do NOT — those are separate fire-once
+// operations on the same node; stamping instanceID:nodeID on them would
+// collide with the primary action's key and could cause an external system to
+// wrongly dedup distinct operations.
+func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
+	in := copyVars(s.Variables)
+	if in == nil {
+		in = map[string]any{}
+	}
+	in["_idempotencyKey"] = s.InstanceID + ":" + node.ID
+	return in
 }
 
 func cloneState(st InstanceState) InstanceState {
@@ -2690,6 +2962,12 @@ func cloneState(st InstanceState) InstanceState {
 			}
 			s.Scopes[i] = cs
 		}
+	}
+	// Deep-copy Incidents: Incident is a flat value struct (all fields are plain
+	// scalars — no pointers or maps), so an append-copy of the slice is sufficient
+	// to ensure mutations to the clone's Incidents do not affect the original.
+	if len(st.Incidents) > 0 {
+		s.Incidents = append([]Incident(nil), st.Incidents...)
 	}
 	return s
 }

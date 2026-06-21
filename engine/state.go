@@ -206,6 +206,10 @@ const (
 	TokenActive TokenState = iota
 	TokenWaitingCommand
 	TokenAtJoin
+	// TokenIncident marks a token that has exhausted its retry budget (or hit a
+	// non-retryable error) and is now parked as an incident. The token remains in
+	// this state until an operator resolves the incident (e.g. via retry or skip).
+	TokenIncident
 )
 
 // Token marks where execution currently sits and what it is waiting on.
@@ -227,8 +231,42 @@ type Token struct {
 	// It is evaluated from model.Node.CorrelationKey against the instance variables
 	// at park time. Empty means no key was configured — match on name alone.
 	AwaitMessageKey string
-	Payload         map[string]any
-	EnteredAt       time.Time
+	Payload   map[string]any
+	EnteredAt time.Time
+
+	// RetryAttempts is the number of execution attempts already made for this
+	// token's current node (0 = first attempt has not started yet, 1 = one
+	// attempt has completed or failed, etc.).
+	RetryAttempts int
+	// RetryStartedAt is the wall-clock time when the first retry attempt was
+	// initiated. It serves as the anchor for MaxElapsed budget calculations.
+	// Zero value means the token is not currently retrying.
+	RetryStartedAt time.Time
+}
+
+// Incident records a token that has exhausted its retry budget (or encountered a
+// non-retryable error) and is now parked awaiting operator intervention. An
+// incident is created when the engine transitions a token to [TokenIncident].
+type Incident struct {
+	// ID is the unique identifier for this incident, generated deterministically
+	// from InstanceState.IncidentSeq.
+	ID string
+	// TokenID is the ID of the token that encountered the error.
+	TokenID string
+	// NodeID is the node where the failure occurred.
+	NodeID string
+	// ScopeID is the execution scope of the failed token ("" = root scope).
+	ScopeID string
+	// CommandID is the ID of the command that triggered the failure (e.g. the
+	// InvokeAction command whose response was ActionFailed).
+	CommandID string
+	// Error is the error message or error code reported by the failing action.
+	Error string
+	// Attempts is the total number of execution attempts made before the incident
+	// was opened (includes the initial attempt plus all retries).
+	Attempts int
+	// CreatedAt is the time the incident was created.
+	CreatedAt time.Time
 }
 
 // NodeVisit is one traversal of one node by one token (audit/history).
@@ -343,6 +381,12 @@ type InstanceState struct {
 	// deep-copy code is required.
 	Compensating compensationCursor
 
+	// Incidents holds all open incident records for this instance. An incident is
+	// created when a token transitions to [TokenIncident] (retry budget exhausted
+	// or non-retryable error). Incidents are resolved (removed) when an operator
+	// retries or skips the failed node.
+	Incidents []Incident
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
@@ -351,6 +395,9 @@ type InstanceState struct {
 	// ScopeSeq is the monotonic counter used to generate deterministic scope
 	// IDs of the form "<instanceID>-s<ScopeSeq>".
 	ScopeSeq int
+	// IncidentSeq is the monotonic counter used to generate deterministic incident
+	// IDs of the form "<instanceID>-inc<IncidentSeq>".
+	IncidentSeq int
 }
 
 // TaskByToken returns a pointer to the HumanTask with the given taskToken, or

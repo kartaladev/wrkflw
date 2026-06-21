@@ -40,6 +40,10 @@ type ActionFailed struct {
 	CommandID string
 	Err       string
 	Retryable bool
+	// JitterFraction is a value in [0,1) sampled by the runtime and applied to
+	// the backoff duration in Step to spread retry storms across multiple workers.
+	// Zero means no jitter (the default when constructed via NewActionFailed).
+	JitterFraction float64
 }
 
 // NewStartInstance builds a StartInstance trigger stamped with the given time.
@@ -52,9 +56,17 @@ func NewActionCompleted(at time.Time, commandID string, output map[string]any) A
 	return ActionCompleted{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Output: output}
 }
 
-// NewActionFailed builds an ActionFailed trigger reporting a service-action error and whether it is retryable.
+// NewActionFailed builds an ActionFailed trigger reporting a service-action error
+// and whether it is retryable. JitterFraction defaults to 0 (no jitter).
 func NewActionFailed(at time.Time, commandID, errMsg string, retryable bool) ActionFailed {
-	return ActionFailed{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Err: errMsg, Retryable: retryable}
+	return NewActionFailedJittered(at, commandID, errMsg, retryable, 0)
+}
+
+// NewActionFailedJittered builds an ActionFailed trigger with an explicit
+// jitter fraction in [0,1). The runtime samples jitter and applies it to the
+// backoff duration so that concurrent retries spread their load across workers.
+func NewActionFailedJittered(at time.Time, commandID, errMsg string, retryable bool, jitter float64) ActionFailed {
+	return ActionFailed{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Err: errMsg, Retryable: retryable, JitterFraction: jitter}
 }
 
 // HumanCompleted reports that a human-task node was completed by an actor.
@@ -233,6 +245,28 @@ func NewCancelRequested(at time.Time) CancelRequested {
 	return CancelRequested{baseTrigger: baseTrigger{at: at}}
 }
 
+// ResolveIncident is an admin trigger that clears a parked incident, optionally
+// grants additional retry attempts, and re-invokes the stalled action. The engine
+// increments the token's remaining-attempts counter by AddAttempts before resuming.
+type ResolveIncident struct {
+	baseTrigger
+	// IncidentID identifies the parked incident to resolve.
+	IncidentID string
+	// AddAttempts is the number of additional retry attempts granted when the
+	// incident is cleared. Zero means resume with whatever attempts remain.
+	AddAttempts int
+}
+
+// NewResolveIncident builds a ResolveIncident trigger stamped with the given time.
+// incidentID is the parked incident to clear; addAttempts is the extra retry budget
+// granted (may be zero).
+func NewResolveIncident(at time.Time, incidentID string, addAttempts int) ResolveIncident {
+	return ResolveIncident{baseTrigger: baseTrigger{at: at}, IncidentID: incidentID, AddAttempts: addAttempts}
+}
+
 // Compile-time assertions: CompensateRequested and CancelRequested must satisfy Trigger.
 var _ Trigger = CompensateRequested{}
 var _ Trigger = CancelRequested{}
+
+// Compile-time assertion: ResolveIncident must satisfy Trigger.
+var _ Trigger = ResolveIncident{}

@@ -54,11 +54,25 @@ type DefinitionStore interface {
 // interface so consumers are not bound to the concrete *postgres.Relay.
 type Relay interface {
 	// Run drains the outbox on each poll tick until ctx is cancelled.
-	// Non-cancel errors from DrainOnce terminate the loop (fail-fast).
+	// Publish failures are absorbed per-row: a failing row is retried with
+	// exponential backoff and quarantined to a dead-letter status after
+	// MaxDeliveryAttempts; Run continues polling. Only infrastructure errors
+	// (claim or commit failures) propagate and terminate the loop. Run always
+	// returns ctx.Err() on cancellation.
 	Run(ctx context.Context) error
 	// DrainOnce claims and publishes one batch of outbox rows synchronously.
 	// Returns the number of rows published.
 	DrainOnce(ctx context.Context) (int, error)
+	// ListDeadLettered returns up to limit dead-lettered outbox rows, oldest
+	// first. Dead rows were quarantined after exhausting MaxDeliveryAttempts
+	// failed publish attempts. Use Redrive to re-queue selected rows.
+	ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error)
+	// Redrive resets the given dead rows back to pending (retry_count=0,
+	// next_attempt_at=now) so they are eligible for a future DrainOnce.
+	// Only rows with status='dead' are affected; others are silently skipped.
+	// Returns the number of rows successfully re-queued. Passing no ids is a
+	// no-op (returns 0, nil).
+	Redrive(ctx context.Context, ids ...int64) (int, error)
 }
 
 // Publisher is the broker-agnostic outbox publisher alias (same as runtime.Publisher).
@@ -132,7 +146,11 @@ func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.D
 // Call relay.Run(ctx) in a goroutine to start continuous polling, or call
 // relay.DrainOnce(ctx) to drain a single batch synchronously.
 //
-// Available options: persistence.WithPollInterval, persistence.WithBatchSize.
+// Available options: persistence.WithPollInterval, persistence.WithBatchSize,
+// persistence.WithRelayClock, persistence.WithMaxDeliveryAttempts, and
+// persistence.WithRelayBackoff. The relay isolates publish failures per row
+// (a poison event never blocks healthy peers) and quarantines a row to a
+// dead-letter status after MaxDeliveryAttempts (ADR-0017).
 func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) Relay {
 	return postgres.NewRelay(pool, pub, opts...)
 }
@@ -147,6 +165,25 @@ func WithPollInterval(d time.Duration) RelayOption {
 // Default: 100.
 func WithBatchSize(n int) RelayOption {
 	return postgres.WithBatchSize(n)
+}
+
+// WithRelayClock sets the clock the relay uses to stamp published_at /
+// next_attempt_at and to evaluate which rows are due. Default: clock.System().
+func WithRelayClock(clk clock.Clock) RelayOption {
+	return postgres.WithClock(clk)
+}
+
+// WithMaxDeliveryAttempts sets how many failed publish attempts a row tolerates
+// before it is quarantined to a dead-letter status. Default: 10.
+func WithMaxDeliveryAttempts(n int) RelayOption {
+	return postgres.WithMaxDeliveryAttempts(n)
+}
+
+// WithRelayBackoff sets the base and maximum interval of the capped exponential
+// backoff applied to a row's next retry after a failed publish.
+// Defaults: base 1s, max 1m.
+func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
+	return postgres.WithRelayBackoff(base, maxInterval)
 }
 
 // NewLister constructs the Postgres-backed runtime.InstanceLister for

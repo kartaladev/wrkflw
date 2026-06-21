@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -17,6 +18,14 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
+
+// resumeFixedJitter is a deterministic JitterSource that always returns the
+// same fraction. Defined locally in this package (postgres_test) so that the
+// retry fire-at time is fully deterministic without depending on runtime_test
+// internals (fixedJitter lives in package runtime_test and is unexported here).
+type resumeFixedJitter struct{ f float64 }
+
+func (j resumeFixedJitter) Fraction() float64 { return j.f }
 
 // timerResumeDef returns: start → wait(PT1H intermediate-catch timer) → finish(service) → end.
 func timerResumeDef() *model.ProcessDefinition {
@@ -234,4 +243,164 @@ func TestPostgresParkedBoundaryResumesAfterReload(t *testing.T) {
 	require.True(t, ran, "service action 'finish' must have run after boundary timer fired")
 	require.Empty(t, final.Tokens, "no tokens must remain after completion")
 	require.Empty(t, final.Boundaries, "boundary arms must be cleared after the boundary fires")
+}
+
+// retryResumeDef returns a minimal process: start → task(action "a", RetryPolicy) → end.
+// The RetryPolicy uses a 1-hour InitialInterval so the retry timer is clearly in the
+// future (the test clock starts before the fire-at). MaxAttempts=3 gives two retries.
+func retryResumeDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "pg-retry-resume",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{
+				ID:     "task",
+				Kind:   model.KindServiceTask,
+				Action: "a",
+				RetryPolicy: &model.RetryPolicy{
+					MaxAttempts:     3,
+					InitialInterval: time.Hour,
+					BackoffCoef:     2,
+					MaxInterval:     24 * time.Hour,
+				},
+			},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+		},
+	}
+}
+
+// TestPostgresParkedRetryResumesAfterReload proves that a retry-parked instance
+// survives a process restart (brand-new Store over the same pool) and resumes to
+// completion when the retry timer fires.
+//
+// Scenario:
+//  1. r1.Run → action "a" fails on attempt 1 → engine schedules a TimerRetry at T+1h
+//     and parks the token with AwaitCommand = timerID, RetryAttempts = 1.
+//  2. Reload via brand-new store2 — asserts that Token.AwaitCommand, Token.RetryAttempts,
+//     and the TimerRetry record in InstanceState.Timers all survive the JSONB round-trip.
+//  3. fc.Advance(1h+1s) → r2.Deliver TimerFired → action "a" succeeds on attempt 2
+//     → StatusCompleted with the action invoked exactly twice.
+//
+// A JSONB-codec gap (e.g. RetryAttempts dropped from the snapshot) fails the
+// reload assertions and surfaces the bug immediately rather than causing a silent
+// wrong-count mismatch.
+func TestPostgresParkedRetryResumesAfterReload(t *testing.T) {
+	t.Parallel()
+
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	startAt := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+	fc := clockwork.NewFakeClockAt(startAt)
+
+	// attempts counts how many times action "a" has been invoked across both runners.
+	// The closure is captured by reference so both r1 and r2 share the counter via cat.
+	attempts := 0
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, errors.New("transient")
+			}
+			return map[string]any{"done": true}, nil
+		}),
+	})
+
+	def := retryResumeDef()
+	const id = "pg-retry-resume-1"
+
+	// fixedJitter{1.0}: Fraction() always returns 1.0.
+	// Attempt 0 backoff: InitialInterval × BackoffCoef^0 = 1h × 1 = 1h.
+	// FireAt = startAt + 1.0×1h = startAt + 1h. Deterministic and unambiguous.
+	jitter := resumeFixedJitter{f: 1.0}
+
+	// ── Runner #1: drive the instance until it parks on the retry timer ──
+
+	store1 := pg.NewStore(pool)
+	sched1 := runtime.NewMemScheduler(fc)
+	r1 := runtime.NewRunner(cat, fc, store1,
+		runtime.WithScheduler(sched1),
+		runtime.WithJitterSource(jitter),
+	)
+
+	parked, err := r1.Run(t.Context(), def, id, nil)
+	require.NoError(t, err, "Run must not return a hard error on the first attempt failure")
+
+	// Instance must be running (parked), not failed — retry policy intercepts.
+	require.Equal(t, engine.StatusRunning, parked.Status,
+		"instance must be running (parked at retry timer) after first attempt fails")
+	require.Equal(t, 1, attempts, "action 'a' must have been called exactly once by r1.Run")
+
+	// The parked token's AwaitCommand is the retry timer ID; RetryAttempts == 1.
+	require.Len(t, parked.Tokens, 1, "exactly one token must be parked")
+	require.Equal(t, "task", parked.Tokens[0].NodeID, "parked token must be at the 'task' node")
+	parkedTimerID := parked.Tokens[0].AwaitCommand
+	require.NotEmpty(t, parkedTimerID,
+		"parked token's AwaitCommand must be the retry timer ID")
+	require.Equal(t, 1, parked.Tokens[0].RetryAttempts,
+		"parked token must record RetryAttempts == 1 after the first failure")
+
+	// The Timers slice must contain exactly one TimerRetry record.
+	require.Len(t, parked.Timers, 1, "exactly one timer record must be in InstanceState.Timers")
+	require.Equal(t, engine.TimerRetry, parked.Timers[0].Kind,
+		"the timer record must have Kind == TimerRetry")
+	require.Equal(t, parkedTimerID, parked.Timers[0].TimerID,
+		"the timer record's TimerID must match the token's AwaitCommand")
+
+	// ── Simulate process restart: brand-new Store over the same pool ──
+	// Only Postgres rows survive; in-memory sched1 is discarded.
+
+	store2 := pg.NewStore(pool)
+	reloaded, _, err := store2.Load(t.Context(), id)
+	require.NoError(t, err, "store2.Load must succeed after Postgres persist")
+
+	// Core round-trip assertions: these catch snapshot/codec gaps.
+	require.Equal(t, engine.StatusRunning, reloaded.Status,
+		"reloaded status must still be running")
+	require.Len(t, reloaded.Tokens, 1,
+		"the parked token must survive the JSONB round-trip")
+	require.Equal(t, "task", reloaded.Tokens[0].NodeID,
+		"reloaded token must still be at the 'task' node")
+	reloadedTimerID := reloaded.Tokens[0].AwaitCommand
+	require.NotEmpty(t, reloadedTimerID,
+		"reloaded token's AwaitCommand (retry timer ID) must survive the round-trip")
+	require.Equal(t, parkedTimerID, reloadedTimerID,
+		"retry timer ID must be identical before and after Postgres reload")
+	require.Equal(t, 1, reloaded.Tokens[0].RetryAttempts,
+		"Token.RetryAttempts must survive the JSONB round-trip (codec gap check)")
+
+	// The TimerRetry record must also survive.
+	require.Len(t, reloaded.Timers, 1,
+		"the TimerRetry record must survive the JSONB round-trip (codec gap check)")
+	require.Equal(t, engine.TimerRetry, reloaded.Timers[0].Kind,
+		"reloaded timer record must have Kind == TimerRetry")
+	require.Equal(t, reloadedTimerID, reloaded.Timers[0].TimerID,
+		"reloaded timer record's TimerID must match the reloaded token's AwaitCommand")
+
+	// ── Advance clock past retry fire-at; deliver TimerFired via runner #2 ──
+
+	fc.Advance(time.Hour + time.Second) // clock is now startAt+1h+1s → past fire-at
+
+	sched2 := runtime.NewMemScheduler(fc)
+	r2 := runtime.NewRunner(cat, fc, store2,
+		runtime.WithScheduler(sched2),
+		runtime.WithJitterSource(jitter),
+	)
+
+	final, err := r2.Deliver(t.Context(), def, id, engine.NewTimerFired(fc.Now(), reloadedTimerID))
+	require.NoError(t, err, "r2.Deliver must not return a hard error")
+
+	require.Equal(t, engine.StatusCompleted, final.Status,
+		"instance must reach StatusCompleted after the retry timer fires and the action succeeds")
+	require.Equal(t, 2, attempts,
+		"action 'a' must have been invoked exactly twice total (once failing, once succeeding)")
+	require.Empty(t, final.Tokens,
+		"no tokens must remain after completion")
+	require.Empty(t, final.Timers,
+		"no timer records must remain after successful completion")
 }

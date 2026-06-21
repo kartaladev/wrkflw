@@ -58,6 +58,21 @@ type Node struct {
 	// ReminderAction is the name of the ServiceAction to invoke on each reminder.
 	ReminderAction string
 
+	// RetryPolicy is the optional per-node retry policy. When nil the runtime
+	// applies its configured default. Non-nil values are validated by
+	// [Validate]: MaxAttempts must be ≥ 0, InitialInterval and MaxInterval must
+	// be ≥ 0, and BackoffCoef must be ≥ 1.0 whenever InitialInterval is
+	// positive (a coefficient below 1.0 would collapse delays instead of
+	// growing them).
+	RetryPolicy *RetryPolicy
+
+	// RecoveryFlow is the ID of the sequence flow to take when this node's
+	// retries are exhausted — the Step-Functions "Catch" equivalent. The flow
+	// must already exist in the process definition and its Source must be this
+	// node. An empty string means no catch-flow: the error propagates to the
+	// caller or ends the instance.
+	RecoveryFlow string
+
 	// CompensationAction is the name of the ServiceAction to invoke as compensation
 	// when this activity is rolled back (Plan 8 compensation/rollback). Non-empty
 	// only on activity nodes (KindServiceTask, KindSubProcess, etc.) that participate
