@@ -54,11 +54,25 @@ type DefinitionStore interface {
 // interface so consumers are not bound to the concrete *postgres.Relay.
 type Relay interface {
 	// Run drains the outbox on each poll tick until ctx is cancelled.
-	// Non-cancel errors from DrainOnce terminate the loop (fail-fast).
+	// Publish failures are absorbed per-row: a failing row is retried with
+	// exponential backoff and quarantined to a dead-letter status after
+	// MaxDeliveryAttempts; Run continues polling. Only infrastructure errors
+	// (claim or commit failures) propagate and terminate the loop. Run always
+	// returns ctx.Err() on cancellation.
 	Run(ctx context.Context) error
 	// DrainOnce claims and publishes one batch of outbox rows synchronously.
 	// Returns the number of rows published.
 	DrainOnce(ctx context.Context) (int, error)
+	// ListDeadLettered returns up to limit dead-lettered outbox rows, oldest
+	// first. Dead rows were quarantined after exhausting MaxDeliveryAttempts
+	// failed publish attempts. Use Redrive to re-queue selected rows.
+	ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error)
+	// Redrive resets the given dead rows back to pending (retry_count=0,
+	// next_attempt_at=now) so they are eligible for a future DrainOnce.
+	// Only rows with status='dead' are affected; others are silently skipped.
+	// Returns the number of rows successfully re-queued. Passing no ids is a
+	// no-op (returns 0, nil).
+	Redrive(ctx context.Context, ids ...int64) (int, error)
 }
 
 // Publisher is the broker-agnostic outbox publisher alias (same as runtime.Publisher).

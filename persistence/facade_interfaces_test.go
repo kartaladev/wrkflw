@@ -63,3 +63,25 @@ func TestNewRelayReturnsInterface(t *testing.T) {
 	// compile-time proof. Assert non-nil as a runtime sanity check.
 	assert.NotNil(t, relay)
 }
+
+// TestNewRelayDLQAdminViaFacade verifies that the DLQ admin methods
+// (ListDeadLettered, Redrive) are accessible through the persistence.Relay
+// interface returned by persistence.NewRelay (ADR-0008).
+func TestNewRelayDLQAdminViaFacade(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, persistence.Migrate(t.Context(), pool))
+
+	pub := &capturingPublisher{}
+	relay := persistence.NewRelay(pool, pub)
+
+	// ListDeadLettered on an empty outbox must return an empty (nil) slice.
+	dead, err := relay.ListDeadLettered(t.Context(), 10)
+	require.NoError(t, err)
+	assert.Empty(t, dead, "no dead rows yet — empty outbox")
+
+	// Redrive with no ids must return 0, nil (no-op).
+	n, err := relay.Redrive(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+}

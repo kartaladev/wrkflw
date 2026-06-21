@@ -136,6 +136,66 @@ func (r *Relay) Run(ctx context.Context) error {
 	}
 }
 
+// ListDeadLettered returns up to limit dead-lettered outbox rows ordered by id
+// ascending (oldest first). Dead rows have status='dead' and were quarantined
+// after exhausting MaxDeliveryAttempts consecutive publish failures.
+//
+// Use Redrive to re-queue selected rows for re-delivery.
+func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, instance_id, topic, retry_count, COALESCE(last_error, ''), created_at
+		   FROM wrkflw_outbox
+		  WHERE status = 'dead'
+		  ORDER BY id
+		  LIMIT $1`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: relay: list dead-lettered: %w", err)
+	}
+	defer rows.Close()
+
+	var out []runtime.DeadLetter
+	for rows.Next() {
+		var dl runtime.DeadLetter
+		if err := rows.Scan(&dl.ID, &dl.InstanceID, &dl.Topic, &dl.RetryCount, &dl.LastError, &dl.CreatedAt); err != nil {
+			return nil, fmt.Errorf("postgres: relay: list dead-lettered: scan: %w", err)
+		}
+		out = append(out, dl)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: relay: list dead-lettered: rows: %w", err)
+	}
+	return out, nil
+}
+
+// Redrive resets the given dead outbox rows back to status='pending' with
+// retry_count=0, last_error=NULL, and next_attempt_at=now (via r.clk). Only
+// rows that are currently status='dead' are affected; rows with any other status
+// are silently skipped. Returns the number of rows successfully re-queued.
+//
+// Passing no ids is a no-op (returns 0, nil).
+func (r *Relay) Redrive(ctx context.Context, ids ...int64) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	now := r.clk.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE wrkflw_outbox
+		    SET status = 'pending',
+		        retry_count = 0,
+		        next_attempt_at = $1,
+		        last_error = NULL
+		  WHERE status = 'dead'
+		    AND id = ANY($2)`,
+		now, ids,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: relay: redrive: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // DrainOnce claims one batch of due pending outbox rows (status='pending' AND
 // next_attempt_at <= now, ORDER BY id FOR UPDATE SKIP LOCKED), publishes each via
 // the Publisher, and records each row's outcome independently in the same

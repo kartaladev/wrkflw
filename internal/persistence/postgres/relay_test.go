@@ -492,3 +492,98 @@ func TestRelayPoisonIsolation(t *testing.T) {
 	require.Equal(t, "published", hStatus)
 	require.Equal(t, 1, pub.publishCount("healthy"), "healthy never re-published")
 }
+
+// TestRelayDLQAdmin verifies the ListDeadLettered and Redrive DLQ admin API
+// (ADR-0017). It seeds one 'dead' and one 'pending' row, checks ListDeadLettered
+// returns only the dead row, and Redrive flips it back to 'pending' so a
+// subsequent DrainOnce can pick it up again.
+func TestRelayDLQAdmin(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	base := time.Now().UTC().Truncate(time.Second)
+	fc := clockwork.NewFakeClockAt(base)
+
+	// Seed a dead row directly (status='dead', retry_count=5, last_error='boom').
+	var deadID int64
+	err := pool.QueryRow(t.Context(),
+		`INSERT INTO wrkflw_outbox
+		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at, last_error)
+		 VALUES ($1, $2, $3::jsonb, $4, $5, 'dead', 5, $5, 'boom')
+		 RETURNING id`,
+		"dlq-test-instance", "dlq.event", `{}`, "dlq-dead-1", base.UTC(),
+	).Scan(&deadID)
+	require.NoError(t, err, "seed dead row")
+
+	// Seed a pending row to confirm ListDeadLettered doesn't return it.
+	var pendingID int64
+	err = pool.QueryRow(t.Context(),
+		`INSERT INTO wrkflw_outbox
+		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+		 VALUES ($1, $2, $3::jsonb, $4, $5, 'pending', 0, $5)
+		 RETURNING id`,
+		"dlq-test-instance", "other.event", `{}`, "dlq-pending-1", base.UTC(),
+	).Scan(&pendingID)
+	require.NoError(t, err, "seed pending row")
+
+	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithClock(fc))
+
+	// ListDeadLettered must return exactly the one dead row.
+	dead, err := relay.ListDeadLettered(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, dead, 1, "only the dead row should be returned")
+	require.Equal(t, deadID, dead[0].ID)
+	require.Equal(t, "dlq-test-instance", dead[0].InstanceID)
+	require.Equal(t, "dlq.event", dead[0].Topic)
+	require.Equal(t, 5, dead[0].RetryCount)
+	require.Equal(t, "boom", dead[0].LastError)
+
+	// Redrive with no ids must return 0, no error.
+	n, err := relay.Redrive(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 0, n, "Redrive with no ids should be a no-op")
+
+	// Redrive a pending row ID (not dead) must return 0 (only dead rows are eligible).
+	n, err = relay.Redrive(t.Context(), pendingID)
+	require.NoError(t, err)
+	require.Equal(t, 0, n, "Redrive on a pending row must be a no-op")
+
+	// Redrive the dead row: must return 1.
+	n, err = relay.Redrive(t.Context(), deadID)
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "Redrive must requeue exactly 1 row")
+
+	// Verify the redriven row is now pending with reset state.
+	var (
+		status     string
+		retryCount int
+		lastErrPtr *string
+		nextAttempt time.Time
+	)
+	err = pool.QueryRow(t.Context(),
+		`SELECT status, retry_count, last_error, next_attempt_at FROM wrkflw_outbox WHERE id = $1`,
+		deadID,
+	).Scan(&status, &retryCount, &lastErrPtr, &nextAttempt)
+	require.NoError(t, err)
+	require.Equal(t, "pending", status, "redriven row must be pending")
+	require.Equal(t, 0, retryCount, "redriven row must have retry_count reset to 0")
+	require.Nil(t, lastErrPtr, "redriven row must have last_error cleared")
+	require.True(t, !nextAttempt.After(fc.Now()), "redriven row next_attempt_at must be <= now")
+
+	// A subsequent DrainOnce with a healthy publisher must publish the redriven row.
+	pub := &recordingPub{}
+	healthyRelay := pg.NewRelay(pool, pub, pg.WithClock(fc))
+	n, err = healthyRelay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	// The pending (non-dead) row seeded above + the redriven row = 2 due rows.
+	require.GreaterOrEqual(t, n, 1, "at least the redriven row must be published")
+
+	// Confirm the redriven row is now published.
+	var finalStatus string
+	err = pool.QueryRow(t.Context(),
+		`SELECT status FROM wrkflw_outbox WHERE id = $1`, deadID,
+	).Scan(&finalStatus)
+	require.NoError(t, err)
+	require.Equal(t, "published", finalStatus, "redriven row must be published after drain")
+}
