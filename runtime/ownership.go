@@ -18,7 +18,10 @@ type Ownership interface {
 	// Acquire reports whether this process owns instanceID, taking ownership if
 	// it is free. owned=false means another process owns it: do not cache.
 	Acquire(ctx context.Context, instanceID string) (owned bool, err error)
-	// Release relinquishes ownership of instanceID (triggers cache eviction).
+	// Release relinquishes ownership of instanceID. A CachingStore must evict
+	// the instance's cached state when ownership is relinquished — relinquish
+	// through CachingStore.Release so the cache stays coherent (a re-acquired
+	// instance must not serve a stale cached entry, ADR-0020).
 	Release(ctx context.Context, instanceID string) error
 }
 

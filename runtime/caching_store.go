@@ -225,6 +225,19 @@ func (c *CachingStore) Commit(ctx context.Context, expected Token, step AppliedS
 	return tok, nil
 }
 
+// Release relinquishes ownership of an instance and evicts its cached state,
+// so a future re-acquisition re-reads the backing Store rather than serving a
+// now-possibly-stale cached entry. Consumers using a CachingStore MUST relinquish
+// ownership through THIS method (not the bare Ownership), or a re-acquired
+// instance may serve stale state until its TTL expires (ADR-0020).
+//
+// The eviction is performed before forwarding to owner.Release so the cache entry
+// is gone even if the underlying Release call errors.
+func (c *CachingStore) Release(ctx context.Context, id string) error {
+	c.evict(id) // evict FIRST so the entry is gone even if owner.Release errors
+	return c.owner.Release(ctx, id)
+}
+
 // Entries forwards to the backing Store's JournalReader if it implements one;
 // the journal is never cached. Returns an error if the backing is not a reader.
 func (c *CachingStore) Entries(ctx context.Context, id string) ([]engine.Trigger, error) {

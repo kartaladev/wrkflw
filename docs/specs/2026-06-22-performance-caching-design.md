@@ -249,7 +249,7 @@ feeding a wakeup channel into the existing `select`:
 for {
     select {
     case <-ctx.Done():   return ctx.Err()
-    case <-ticker.C:     drainUntilEmpty(ctx)   // existing poll FALLBACK, unchanged
+    case <-ticker.C:     drainUntilEmpty(ctx)   // poll FALLBACK — also drains to empty
     case <-notifyCh:     drainUntilEmpty(ctx)   // new: woken by NOTIFY
     }
 }
@@ -259,9 +259,11 @@ for {
   reconnects), restarts, and the case where one relay worker holds the listen
   connection while peers poll. NOTIFY is a latency optimization layered on top, never
   a correctness dependency.
-- On wakeup, drain until `DrainOnce` returns 0 (coalesce a burst of notifications
-  into one drain sweep). `DrainOnce`'s per-row poison isolation (ADR-0017) is
-  unchanged.
+- Both the poll and notify cases call `drainUntilEmpty` (loop `DrainOnce` until 0),
+  so the poll path now also drains to empty per tick rather than issuing a single
+  `DrainOnce`; this is a throughput improvement shared by both wake paths. A burst of
+  notifications is coalesced into one drain sweep. `DrainOnce`'s per-row poison
+  isolation (ADR-0017) is unchanged.
 - Listener resilience: on a dropped listen connection, log, re-acquire, re-`LISTEN`;
   the poll fallback covers the gap.
 

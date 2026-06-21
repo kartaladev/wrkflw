@@ -15,6 +15,7 @@ func capHistory(st engine.InstanceState, n int) engine.InstanceState {
 		return st
 	}
 	// Count closed visits to compute the keep-threshold for the most-recent n.
+	// History is append-only on node entry, so append position == chronological order.
 	closedTotal := 0
 	for i := range st.History {
 		if st.History[i].LeftAt != nil {

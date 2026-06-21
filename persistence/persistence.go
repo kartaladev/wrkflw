@@ -132,7 +132,7 @@ var (
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
-//	store, _ := persistence.OpenPostgres(ctx, pool)
+//	store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
 //	runner := runtime.NewRunner(nil, clock.System(), store)
 func OpenPostgres(_ context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
 	return postgres.NewStore(pool, opts...), nil
@@ -251,6 +251,11 @@ func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
 //
 // It holds a dedicated pool connection for its lifetime; close the returned
 // [io.Closer] at shutdown to release every held lock and return the connection.
+//
+// When used with a [runtime.CachingStore], always relinquish ownership through
+// [runtime.CachingStore.Release] (not the bare [runtime.Ownership.Release]), so
+// the cache evicts the instance's state on hand-off and a re-acquiring process
+// does not serve a stale cached entry.
 //
 // Example:
 //

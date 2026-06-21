@@ -168,3 +168,26 @@ func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
 	require.NoError(t, err)
 	<-done
 }
+
+func TestCachingStoreReleaseEvicts(t *testing.T) {
+	cs := &countingStore{backing: runtime.NewMemStore()}
+	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, clockwork.NewFakeClock(), runtime.WithCacheTTL(time.Hour))
+
+	id := "rel1"
+	_, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
+	require.NoError(t, err)
+
+	// Confirm the entry is cached: an owned Load must NOT hit the backing.
+	_, _, err = store.Load(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), cs.loads.Load(), "write-through Create must populate cache; Load must be a hit")
+
+	// Release must evict the cached entry.
+	require.NoError(t, store.Release(t.Context(), id))
+
+	// The next owned Load must re-read from the backing (cache was evicted).
+	before := cs.loads.Load()
+	_, _, err = store.Load(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, before+1, cs.loads.Load(), "Release must evict the cache; next Load must re-read the backing")
+}

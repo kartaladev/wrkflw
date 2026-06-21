@@ -33,9 +33,10 @@ replacing it.
 - **Read side** — `Relay.Run` (opt-in `WithListenNotify()`) acquires a dedicated pool
   connection, runs `LISTEN wrkflw_outbox`, and in a goroutine loops
   `conn.WaitForNotification(ctx)`, feeding a wakeup channel into the existing
-  `select`. The poll `ticker` **stays as the fallback** case, unchanged. On any
-  wakeup (tick or notify) the relay drains until `DrainOnce` returns 0, coalescing a
-  burst of notifications into one drain sweep. The per-row poison isolation / DLQ
+  `select`. The poll `ticker` **stays as the fallback** case. On any wakeup (tick
+  or notify) the relay calls `drainUntilEmpty` — looping `DrainOnce` until it
+  returns 0 — so both paths share the same drain-to-empty behavior and a burst of
+  notifications is coalesced into one drain sweep. The per-row poison isolation / DLQ
   (ADR-0017) is unchanged. On a dropped listen connection the relay logs,
   re-acquires, and re-`LISTEN`s; the poll covers the gap.
 
