@@ -23,13 +23,16 @@ opus whole-branch review → merge to main → push`, exactly like the sub-proje
 3. **Observability** — ✅ COMPLETE, merged (2026-06-22). Metrics + traces + slog across
    runtime/transports/scheduling/eventing/persistence-relay (REQUIREMENTS line 17). ADR-0019.
    See the "Observability (metrics/traces/slog) sub-project" section below.
-4. **Performance/caching** — ⏭️ **NEXT.** Owned-instance single-writer (leased) state cache
-   for the hot Run/Deliver read path (Persistence deferred #1), history/snapshot cap (#2),
-   optional LISTEN/NOTIFY relay trigger (#3). Start with `superpowers:brainstorming` + the
-   standard track workflow below.
-5. **Also outstanding** (fold in or schedule separately): DB casbin policy adapter (Authz
+4. **Performance/caching** — ✅ COMPLETE, branch `feat/performance-caching` (2026-06-22).
+   Owned-instance write-through cache (`CachingStore`), history/snapshot cap (`WithHistoryCap`),
+   LISTEN/NOTIFY relay wakeup (`WithOutboxNotify` + `WithListenNotify`), advisory-lock
+   multi-process ownership (`NewAdvisoryLockOwnership`). ADRs 0020–0022.
+   See the "Performance/caching sub-project" section below.
+5. **Next focus** (previously "Also outstanding"): DB casbin policy adapter (Authz
    deferred #1), true async call activity (engine follow-up #3), and the pre-existing flaky
    singleflight test `runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`.
+   Also queue: `persistence`/`internal/persistence/postgres` coverage gaps (see
+   Performance/caching deferred follow-up #5).
 
 **How to execute a track:** follow "How to run the next sub-project" + "Binding conventions"
 sections below (subagent-driven development, visible RED→GREEN per task, opus final review). The
@@ -593,3 +596,68 @@ Gate: `go test -race ./runtime/...` green, lint 0, engine/model purity CLEAN (co
 10. **REST/relay `WithMeterProvider` parity** — both accept the option for future use but emit no
     metrics yet; route-level request counters/latency histograms and relay throughput counters are
     a follow-up.
+
+---
+
+## Performance/caching sub-project — ✅ COMPLETE
+
+Fourth track of the **deferred-backlog run**. Built on branch `feat/performance-caching`
+(2026-06-22; merge-base from `main` after the Observability track). Design:
+spec `docs/specs/2026-06-22-performance-caching.md`, plan
+`docs/plans/2026-06-22-performance-caching.md`, ADRs 0020–0022.
+
+Gate (Task 9 run — actual numbers from `go test -coverprofile`):
+- `runtime`: **94.9%** ✅ — `go test -race ./runtime/...` green
+- `persistence` façade: **68.2%** ⚠️ — below the 85% bar (see follow-up #5)
+- `internal/persistence/postgres`: **83.4%** ⚠️ — marginally below 85% (see follow-up #5)
+- Combined total across the three packages: **89.1%**
+- `golangci-lint run ./...`: **0 issues** ✅
+- `go test ./engine/... -run TestCorePurity` (`TestCorePurityNoOTel`): **PASS** ✅
+- Vendor purity grep (`watermill|casbin|gocron|clockwork` in `engine`/`model` deps): **PURE** ✅
+
+### What shipped (by layer)
+
+| Layer | What | Task |
+|---|---|---|
+| `internal/persistence/postgres/` — `capHistory` | `capHistory(history []engine.NodeVisit, n int)` keeps every open visit (nil `LeftAt`) plus the n most-recent closed visits; input not mutated; n≤0 is a no-op. | 1 |
+| `internal/persistence/postgres/` — `WithHistoryCap` | `WithHistoryCap(n int) StoreOption` wires `capHistory` into `Store.Create`/`Commit` before the JSONB snapshot write; default (unset) preserves full inline history; `persistence.WithHistoryCap` façade re-exports it. | 2 |
+| `internal/persistence/postgres/` — NOTIFY | `WithOutboxNotify() StoreOption` emits a transactional `NOTIFY wrkflw_outbox` inside the same transaction when at least one outbox row was inserted; opt-in, default off. | 3 |
+| `internal/persistence/postgres/` — LISTEN relay | `WithListenNotify() RelayOption` opens a dedicated `LISTEN wrkflw_outbox` connection; on each `NOTIFY` the relay calls `DrainOnce` immediately, well before the poll-interval tick; the poll-fallback remains active. | 4 |
+| `runtime/` — `Ownership` port | `Ownership` interface (`Acquire(ctx, id) (bool, error)` / `Release(ctx, id) error`); `AlwaysOwn{}` (always owns, no-op release) for single-replica or sticky deployments. | 5 |
+| `runtime/` — `CachingStore` | `CachingStore` write-through LRU+TTL store decorator (`NewCachingStore(backing, owner, clk, ...CachingStoreOption)`). Owned instances are served from cache; non-owned bypass. `ErrConcurrentUpdate` evicts the stale entry. Per-instance keyed mutex serializes concurrent Load/Commit. `WithCacheTTL` / `WithCacheMaxEntries` options. | 6 |
+| `runtime/` — `CachingStore` tests | TTL expiry forces reload; LRU evicts at cap; concurrent Load/Commit coherent under `-race`. | 7 |
+| `internal/persistence/postgres/` — advisory-lock `Ownership` | `NewAdvisoryLockOwnership(ctx, pool)` holds a dedicated connection; `Acquire` uses `pg_try_advisory_lock` (sticky); `Release` uses `pg_advisory_unlock`; tests: A acquires, B blocked, A releases, B acquires. `persistence.NewAdvisoryLockOwnership` façade. | 8 |
+| `runtime/` — testable example | `ExampleNewCachingStore` in `runtime/caching_store_example_test.go`: wires `NewCachingStore(NewMemStore(), AlwaysOwn{}, clock.System())` as the runner store, parks an instance at a signal-catch node, delivers `SignalReceived("approved")` — the second Deliver is served from cache — prints `"completed"`. | 9 |
+
+### Key design decisions (ADRs)
+
+- **ADR-0020** — `CachingStore` + `Ownership` port: write-through, single-writer cache gated by
+  `Ownership.Acquire`; the optimistic-concurrency CAS (`ErrConcurrentUpdate`) is the backstop.
+  `AlwaysOwn` for in-process / sticky; Postgres advisory lock for multi-replica.
+- **ADR-0021** — history cap: `capHistory` keeps all open visits (never dropped) plus the n
+  most-recent closed; the journal table remains the complete audit source; cap is per-store, not
+  per-definition.
+- **ADR-0022** — LISTEN/NOTIFY relay trigger: opt-in transactional `NOTIFY` from `Store` + opt-in
+  `LISTEN` goroutine in the relay, layered on top of the existing poll fallback so the relay
+  remains correct without NOTIFY.
+
+### Deferred follow-ups
+
+1. **Lease-column ownership alternative** — the advisory-lock implementation ties ownership to
+   a Postgres session; a `lease_owner` column + heartbeat approach survives connection churn. A
+   follow-up ADR can weigh the trade-offs.
+2. **Per-worker push fairness** — with multiple relay workers each `LISTEN`ing, all receive every
+   `NOTIFY`; they all race to claim. A single designated listener that fans out internally avoids
+   thundering-herd. Deferred.
+3. **`Store` Load/Commit spans and metrics** — Observability follow-up #7: `wrkflw_store_duration_seconds`
+   histogram for Postgres store operations. Still unbuilt.
+4. **History-cap per-definition granularity** — the cap is set at store construction; a per-definition
+   cap (e.g. `model.Node.HistoryCap`) would allow fine-grained control. Deferred.
+5. **`persistence` façade and `internal/persistence/postgres` coverage gaps** — four new one-liner
+   façade functions (`WithHistoryCap`, `WithOutboxNotify`, `WithListenNotify`,
+   `NewAdvisoryLockOwnership`) are exercised only via integration tests in the internal package;
+   the `persistence` façade sits at 68.2% and `internal/persistence/postgres` at 83.4% (vs ≥85%
+   target). To close: add façade-level Postgres integration tests calling these constructors with a
+   real container, covering `WithHistoryCap` snap + `WithOutboxNotify` + `WithListenNotify` NOTIFY
+   receipt + `NewAdvisoryLockOwnership` acquire/release. The `listenLoop` low-coverage branch
+   (40.9%) needs a short LISTEN/NOTIFY integration test. No production code changes needed.
