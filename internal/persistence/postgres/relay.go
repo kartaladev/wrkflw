@@ -8,25 +8,40 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 // Relay drains wrkflw_outbox and hands each event to a runtime.Publisher
-// (at-least-once delivery). It claims rows with FOR UPDATE SKIP LOCKED so
-// multiple concurrent Relay instances cooperate without double-publishing.
+// (at-least-once delivery). It claims due pending rows with FOR UPDATE SKIP
+// LOCKED so multiple concurrent Relay instances cooperate without
+// double-publishing.
 //
-// Publish errors cause the entire batch transaction to roll back — no row is
-// marked published-but-not-delivered. The row stays claimable for the next poll.
+// Per-row isolation (ADR-0017): each claimed row's outcome is recorded
+// independently within the single drain transaction. A successful Publish marks
+// only that row published; a failed Publish increments that row's retry_count
+// and pushes next_attempt_at out by a capped exponential backoff — it does NOT
+// roll back the batch. A persistently-failing ("poison") row therefore never
+// blocks healthy peers claimed alongside it (no head-of-line blocking); healthy
+// events are delivered while the poison row is retried on its own schedule.
 //
-// Known limitation: a persistently-failing Publisher call rolls back the entire
-// batch on every poll cycle (head-of-line blocking); healthy events claimed in
-// the same batch are withheld until the poison event is resolved. Poison-event
-// isolation / dead-lettering is deferred to the retry/DLQ sub-project.
+// Dead-letter quarantine: once a row's retry_count reaches MaxDeliveryAttempts
+// it is moved to status 'dead' and is no longer claimed, isolating it for
+// operator inspection rather than retrying forever.
+//
+// Ordering: global FIFO is not guaranteed when a row fails — its delivery is
+// deferred relative to later-arriving healthy rows. Per ADR-0017 ordering loss
+// is bounded to the affected row's own lane (its instance/dedup partition);
+// healthy rows in other lanes proceed unaffected.
 type Relay struct {
 	pool         *pgxpool.Pool
 	pub          runtime.Publisher
+	clk          clock.Clock
 	pollInterval time.Duration
 	batch        int
+	maxDelivery  int
+	backoffBase  time.Duration
+	backoffMax   time.Duration
 }
 
 // RelayOption configures a Relay.
@@ -40,10 +55,49 @@ func WithPollInterval(d time.Duration) RelayOption { return func(r *Relay) { r.p
 // Default: 100.
 func WithBatchSize(n int) RelayOption { return func(r *Relay) { r.batch = n } }
 
+// WithClock sets the clock used to stamp published_at / next_attempt_at and to
+// evaluate the claim predicate. Default: clock.System(). Tests inject a fake
+// clock so backoff windows are deterministic.
+func WithClock(clk clock.Clock) RelayOption { return func(r *Relay) { r.clk = clk } }
+
+// WithMaxDeliveryAttempts sets how many failed publish attempts a row tolerates
+// before it is quarantined to status 'dead'. Default: 10. A value <= 0 is
+// ignored (the default is kept).
+func WithMaxDeliveryAttempts(n int) RelayOption {
+	return func(r *Relay) {
+		if n > 0 {
+			r.maxDelivery = n
+		}
+	}
+}
+
+// WithRelayBackoff sets the base and maximum interval of the capped exponential
+// backoff applied to a row's next_attempt_at after a failed publish.
+// Defaults: base 1s, max 1m. Non-positive values are ignored.
+func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
+	return func(r *Relay) {
+		if base > 0 {
+			r.backoffBase = base
+		}
+		if maxInterval > 0 {
+			r.backoffMax = maxInterval
+		}
+	}
+}
+
 // NewRelay constructs a Relay that drains the outbox in pool and publishes each
 // event via pub.
 func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) *Relay {
-	r := &Relay{pool: pool, pub: pub, pollInterval: time.Second, batch: 100}
+	r := &Relay{
+		pool:         pool,
+		pub:          pub,
+		clk:          clock.System(),
+		pollInterval: time.Second,
+		batch:        100,
+		maxDelivery:  10,
+		backoffBase:  time.Second,
+		backoffMax:   time.Minute,
+	}
 	for _, o := range opts {
 		o(r)
 	}
@@ -52,9 +106,11 @@ func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) *R
 
 // Run drains the outbox on each poll interval tick until ctx is cancelled.
 // It returns ctx.Err() when the context is done.
-// Non-cancel errors from DrainOnce are propagated and terminate the loop (fail-fast).
-// Transient-error resilience (retry/backoff) is the caller's responsibility and is
-// deferred to the resilience sub-project — callers may restart Run to retry.
+//
+// Publish failures no longer terminate Run: with per-row isolation they are
+// recorded against the failing row (retry / quarantine) and the loop keeps
+// polling. Only infrastructure errors (claim/commit failures) are propagated
+// and terminate the loop fail-fast.
 func (r *Relay) Run(ctx context.Context) error {
 	ticker := time.NewTicker(r.pollInterval)
 	defer ticker.Stop()
@@ -80,14 +136,24 @@ func (r *Relay) Run(ctx context.Context) error {
 	}
 }
 
-// DrainOnce claims one batch of unpublished outbox rows (ORDER BY id FOR UPDATE
-// SKIP LOCKED), publishes each via the Publisher, then marks them published in
-// the same transaction.
+// DrainOnce claims one batch of due pending outbox rows (status='pending' AND
+// next_attempt_at <= now, ORDER BY id FOR UPDATE SKIP LOCKED), publishes each via
+// the Publisher, and records each row's outcome independently in the same
+// transaction:
 //
-// If any Publish call fails the entire transaction is rolled back — no row is
-// marked published for that batch. The rows remain claimable on the next call.
-// Returns the number of rows successfully published.
+//   - on success: status='published', published_at=now.
+//   - on failure: retry_count++, next_attempt_at=now+backoff, last_error=err; the
+//     row is quarantined to status='dead' once retry_count reaches
+//     MaxDeliveryAttempts, otherwise it stays 'pending' for a future drain.
+//
+// A publish failure does NOT abort the drain — healthy rows in the same batch are
+// still marked published. The whole batch commits atomically. At-least-once is
+// preserved: a row becomes 'published' only after a successful Publish.
+//
+// Returns the number of rows successfully published in this drain.
 func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
+	now := r.clk.Now()
+
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("postgres: relay: begin tx: %w", err)
@@ -95,21 +161,22 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	rows, err := tx.Query(ctx,
-		`SELECT id, topic, payload, instance_id, dedup_key
+		`SELECT id, topic, payload, instance_id, dedup_key, retry_count
 		   FROM wrkflw_outbox
-		  WHERE published_at IS NULL
+		  WHERE status = 'pending' AND next_attempt_at <= $1
 		  ORDER BY id
 		    FOR UPDATE SKIP LOCKED
-		  LIMIT $1`,
-		r.batch,
+		  LIMIT $2`,
+		now, r.batch,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("postgres: relay: claim: %w", err)
 	}
 
 	type claim struct {
-		id    int64
-		event runtime.OutboxEvent
+		id         int64
+		retryCount int
+		event      runtime.OutboxEvent
 	}
 
 	var claims []claim
@@ -118,8 +185,9 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		var topic string
 		var rawPayload []byte
 		var instanceID, dedupKey string
-		// scan order matches the SELECT projection: id, topic, payload, instance_id, dedup_key
-		if err := rows.Scan(&id, &topic, &rawPayload, &instanceID, &dedupKey); err != nil {
+		var retryCount int
+		// scan order matches the SELECT projection.
+		if err := rows.Scan(&id, &topic, &rawPayload, &instanceID, &dedupKey, &retryCount); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("postgres: relay: scan: %w", err)
 		}
@@ -128,7 +196,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 			rows.Close()
 			return 0, fmt.Errorf("postgres: relay: unmarshal payload id=%d: %w", id, err)
 		}
-		claims = append(claims, claim{id: id, event: runtime.OutboxEvent{
+		claims = append(claims, claim{id: id, retryCount: retryCount, event: runtime.OutboxEvent{
 			Topic:      topic,
 			Payload:    payload,
 			DedupKey:   dedupKey,
@@ -144,24 +212,41 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
+	published := 0
 	for _, c := range claims {
-		// Publish the event; on failure roll back so the row stays unpublished.
-		if err := r.pub.Publish(ctx, c.event); err != nil {
-			return 0, fmt.Errorf("postgres: relay: publish id=%d: %w", c.id, err)
+		// Publish the event. Both branches record their outcome in the open tx;
+		// a failure must NOT return early — that would roll back healthy peers
+		// already marked published in this batch (head-of-line blocking).
+		if pubErr := r.pub.Publish(ctx, c.event); pubErr != nil {
+			newRetry := c.retryCount + 1
+			status := "pending"
+			if newRetry >= r.maxDelivery {
+				status = "dead"
+			}
+			nextAttempt := now.Add(RelayBackoff(c.retryCount, r.backoffBase, r.backoffMax))
+			if _, err := tx.Exec(ctx,
+				`UPDATE wrkflw_outbox
+				    SET retry_count = $2, status = $3, next_attempt_at = $4, last_error = $5
+				  WHERE id = $1`,
+				c.id, newRetry, status, nextAttempt, pubErr.Error(),
+			); err != nil {
+				return 0, fmt.Errorf("postgres: relay: quarantine id=%d: %w", c.id, err)
+			}
+			continue
 		}
-		// Mark this single row published immediately after successful delivery,
-		// inside the open transaction. If the tx later fails to commit, the row
-		// remains unpublished (at-least-once rather than at-most-once).
+		// Mark this row published, inside the open transaction. If the tx later
+		// fails to commit the row remains pending (at-least-once, not at-most-once).
 		if _, err := tx.Exec(ctx,
-			`UPDATE wrkflw_outbox SET published_at = NOW() WHERE id = $1`,
-			c.id,
+			`UPDATE wrkflw_outbox SET status = 'published', published_at = $2 WHERE id = $1`,
+			c.id, now,
 		); err != nil {
 			return 0, fmt.Errorf("postgres: relay: mark published id=%d: %w", c.id, err)
 		}
+		published++
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("postgres: relay: commit: %w", err)
 	}
-	return len(claims), nil
+	return published, nil
 }
