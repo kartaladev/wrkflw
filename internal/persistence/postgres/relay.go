@@ -17,6 +17,11 @@ import (
 //
 // Publish errors cause the entire batch transaction to roll back — no row is
 // marked published-but-not-delivered. The row stays claimable for the next poll.
+//
+// Known limitation: a persistently-failing Publisher call rolls back the entire
+// batch on every poll cycle (head-of-line blocking); healthy events claimed in
+// the same batch are withheld until the poison event is resolved. Poison-event
+// isolation / dead-lettering is deferred to the retry/DLQ sub-project.
 type Relay struct {
 	pool         *pgxpool.Pool
 	pub          runtime.Publisher
@@ -47,12 +52,17 @@ func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) *R
 
 // Run drains the outbox on each poll interval tick until ctx is cancelled.
 // It returns ctx.Err() when the context is done.
-// Non-publish errors from DrainOnce are propagated and terminate the loop.
+// Non-cancel errors from DrainOnce are propagated and terminate the loop (fail-fast).
+// Transient-error resilience (retry/backoff) is the caller's responsibility and is
+// deferred to the resilience sub-project — callers may restart Run to retry.
 func (r *Relay) Run(ctx context.Context) error {
 	ticker := time.NewTicker(r.pollInterval)
 	defer ticker.Stop()
 	// Attempt an immediate drain before waiting for the first tick.
-	if _, err := r.DrainOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	if _, err := r.DrainOnce(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return ctx.Err()
+		}
 		return err
 	}
 	for {

@@ -250,3 +250,32 @@ func TestRelayBatchSizeOption(t *testing.T) {
 
 	require.Equal(t, 0, countUnpublished(t, pool))
 }
+
+// TestRelayRunFailFastOnInitialDrainError verifies that Run fails immediately
+// (fail-fast) if the initial DrainOnce before the first tick returns a non-cancel
+// error, rather than swallowing it. This ensures symmetric error handling with
+// the in-loop drain.
+func TestRelayRunFailFastOnInitialDrainError(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	// Seed 1 row so the first drain attempts to publish.
+	seedOutbox(t, pool, 1)
+
+	relay := pg.NewRelay(pool, failingPub{}, pg.WithPollInterval(10*time.Millisecond))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- relay.Run(ctx) }()
+
+	// Run must return promptly with the publish error, not swallow it and keep polling.
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "broker: down")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return within 2s after initial drain error")
+	}
+}
