@@ -9,11 +9,15 @@ import (
 	"strings"
 	"sync"
 
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
@@ -76,6 +80,17 @@ type Runner struct {
 	// default and a failed action behaves as before (error boundary or instance failure).
 	// Set via [WithDefaultRetryPolicy].
 	defaultRetryPolicy *model.RetryPolicy
+
+	// logOpt, tpOpt, mpOpt are staged observability options collected by the
+	// With* option functions and passed together to newRunnerObs after the option
+	// loop. They are nil when the corresponding With* option was not provided.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	// obs carries the logger/tracer/meter and the pre-built process instruments.
+	// Always non-nil after NewRunner (defaults to noop providers + slog.Default()).
+	obs *runnerObs
 
 	// msgMu guards msgWaiters.
 	msgMu sync.Mutex
@@ -150,6 +165,24 @@ func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
 	return func(r *Runner) { r.defaultRetryPolicy = &p }
 }
 
+// WithLogger sets the structured logger used by the Runner (default: [slog.Default]).
+// A nil value is ignored.
+func WithLogger(l *slog.Logger) Option {
+	return func(r *Runner) { r.logOpt = observability.WithLogger(l) }
+}
+
+// WithTracerProvider sets the OTel tracer provider used by the Runner
+// (default: the OTel global provider). A nil value is ignored.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(r *Runner) { r.tpOpt = observability.WithTracerProvider(tp) }
+}
+
+// WithMeterProvider sets the OTel meter provider used by the Runner
+// (default: the OTel global provider). A nil value is ignored.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(r *Runner) { r.mpOpt = observability.WithMeterProvider(mp) }
+}
+
 // NewRunner constructs a Runner with the three required core ports (cat, clk,
 // store) and any optional capability bundles supplied as functional options.
 //
@@ -183,6 +216,7 @@ func NewRunner(
 	for _, o := range opts {
 		o(r)
 	}
+	r.obs = newRunnerObs(r.logOpt, r.tpOpt, r.mpOpt)
 	return r
 }
 
