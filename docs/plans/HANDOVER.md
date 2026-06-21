@@ -28,9 +28,11 @@ opus whole-branch review → merge to main → push`, exactly like the sub-proje
    LISTEN/NOTIFY relay wakeup (`WithOutboxNotify` + `WithListenNotify`), advisory-lock
    multi-process ownership (`NewAdvisoryLockOwnership`). ADRs 0020–0022.
    See the "Performance/caching sub-project" section below.
-5. **Next focus** (previously "Also outstanding"): DB casbin policy adapter (Authz
-   deferred #1) and true async call activity (engine follow-up #3). ✅ The pre-existing flaky
-   singleflight test (`runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`)
+5. **Next focus** (previously "Also outstanding"):
+   - **DB casbin policy adapter (Authz deferred #1)** — ✅ DONE, branch `feat/casbin-db-adapter`
+     (2026-06-22). See "DB casbin policy adapter" section below. ADR-0023.
+   - **True async call activity (engine follow-up #3)** — still outstanding (no branch yet).
+   ✅ The pre-existing flaky singleflight test (`runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`)
    was FIXED 2026-06-22 (root cause was a TOCTOU in `CachingDefinitionRegistry.Lookup`, not a test
    barrier — see tracked-follow-up #8 below). The Performance/caching coverage gaps were also closed
    in that track (persistence 100%, internal/persistence/postgres 85.3%).
@@ -683,3 +685,77 @@ now `drainUntilEmpty`/drain-to-empty, not "unchanged"; `capHistory` append-order
 7. **Relay LISTEN test establish-sleep** — `relay_listen_test.go` uses a fixed 200 ms wait for the
    listener to establish before writing the event; on a very slow CI host this could race. Prefer
    polling for the `LISTEN` to be established (opus-review Minor; test-only, non-blocking).
+
+---
+
+## DB casbin policy adapter — ✅ COMPLETE
+
+Fifth track of the **deferred-backlog run**. Built on branch `feat/casbin-db-adapter`
+(merge-base `610982e`, the `feat/performance-caching` merge onto `main`, 2026-06-22).
+Design: spec `docs/specs/2026-06-22-casbin-db-adapter-design.md`,
+plan `docs/plans/2026-06-22-casbin-db-adapter.md`, ADR-0023.
+
+Gate (final, Task 6 verified — 2026-06-22):
+- `go test -race` (all non-Docker packages): **PASS** ✅ — 18 packages, 0 failures
+- `go test -race -p 1 ./internal/authz/casbin/... ./casbinauthz/... ./internal/persistence/postgres/...`: **PASS** ✅
+- `casbinauthz` per-package coverage: **90.9%** ✅ (≥85%)
+- `internal/authz/casbin` per-package coverage: **85.6%** ✅ (≥85%)
+- `golangci-lint run ./...`: **0 issues** ✅
+- Confinement guard (`TestCasbinConfinement`): **PASS** ✅ — casbin absent from engine/model/runtime/persistence transitive deps (proven to bite: 25 violations when casbin injected into runtime, clean after revert)
+- No ORM in go.mod: **CLEAN** ✅ (`gorm`/`go-pg`/`sqlx`/`ent` absent)
+- casbin version: **v2.135.0** ✅ (pinned, not bumped)
+- Opus whole-branch review: **Ready to merge: Yes** — no Critical/Important; all binding invariants (callback race-fix ordering, watcher leak/connection-release, no `RemoveFilteredPolicy` over-deletion, separate version table, façade type confinement, additive-only) verified.
+
+**Coverage note (resolved):** `internal/authz/casbin` initially measured 73.1% because `db.go`
+(`NewDBEnforcer`, the two closers) is exercised only from `casbinauthz/casbinauthz_db_test.go`
+(coverage attributed to the caller). Closed by adding `internal/authz/casbin/db_test.go`
+(black-box) that calls `NewDBEnforcer` directly (watcher-enabled / disabled / invalid-model
+paths) plus three watcher error-branch tests (Update error, listen acquire/LISTEN failures via
+fault injection) → **85.6%**. `NewDBEnforcer` itself sits at 66.7%; its three remaining error
+branches (`NewSyncedEnforcer`/`SetWatcher`/`SetUpdateCallback` failing) are structurally
+unreachable in black-box because the production watcher never returns an error.
+
+### What shipped (by layer)
+
+| Layer | What | Notes |
+|---|---|---|
+| `internal/authz/casbin/migrate.go` + `casbinauthz.MigrateCasbin` | `MigrateCasbin(ctx, pool)` runs goose migrations tracked in a **separate `casbin_goose_db_version` table** (independent of `wrkflw_goose_db_version`). Creates `casbin_rule(id, ptype, v0–v5, created_at)` with a unique constraint on `(ptype,v0–v5)`. Idempotent; safe to call multiple times. | ADR-0023; separate version table prevents version-number conflicts with the main `persistence.Migrate` |
+| `internal/authz/casbin/pg_adapter.go` + exports | `pgAdapter` implements `casbin/persist.Adapter` over pgx/v5. `LoadPolicy` reads all rows and feeds the casbin model via `model.AddPolicy`. `SavePolicy` truncates then bulk-inserts (single-pass with padded 6-column rules). `AddPolicy`/`RemovePolicy`/`RemoveFilteredPolicy` are incremental mutations persisted immediately. Padding/trimming (`padRule`/`ruleFromCols`) ensures row format is correct regardless of policy arity. `NewPGAdapter` (exported via `export_test.go`) for black-box tests. | ADR-0023 §3 |
+| `internal/authz/casbin/pg_watcher.go` | `pgWatcher` implements `casbin/persist.Watcher` via `pgconn.LISTEN`/`NOTIFY`. `Update(s)` sends a `NOTIFY` whose payload is `{nodeID}:{s}` (the colon-separated node identifier allows self-filtering). The background `listen` loop ignores notifications where the payload's node prefix matches this node's ID, so a node does not reload on its own writes. `Close` cancels the listen loop and closes the dedicated connection. `backoff` (unexported) gives a jitter-retry helper for reconnects. `SetUpdateCallback` wires the handler. | ADR-0023 §4 |
+| `internal/authz/casbin/db.go` | `NewDBEnforcer(ctx, pool, DBConfig)` assembles a `*casbin.SyncedEnforcer` over `pgAdapter`. When `WatcherEnabled`, creates and wires a `pgWatcher`. **Critical race fix:** casbin's `SetWatcher` internally calls `w.SetUpdateCallback(func(string){ _ = e.LoadPolicy() })` where `e` is the BASE `*Enforcer` (not mutex-synchronized). We override the callback *after* `SetWatcher` to call `enforcer.LoadPolicy()` on the `*SyncedEnforcer` so the lock is held during reload. `DBConfig` carries `ModelText`, `WatcherEnabled`, `WatcherChannel`, `NodeID`. | ADR-0023 §5 |
+| `casbinauthz/` façade additions | `MigrateCasbin(ctx, pool)` re-exported; `DBOption` functional options: `WithModel`, `WithoutWatcher`, `WithWatcherChannel`, `WithNodeID`; `defaultNodeID()` generates a per-process random node ID. `NewCasbinAuthorizerFromDB(ctx, pool, ...DBOption) (authz.Authorizer, io.Closer, error)` — builds enforcer via `NewDBEnforcer`, wraps via the existing `NewCasbinAuthorizer` single-wrapping path, returns the stable `authz.Authorizer` interface + `io.Closer`. | ADR-0023 §6 |
+
+### Key design decision (ADR)
+
+- **ADR-0023** — pgx-native DB casbin policy adapter + LISTEN/NOTIFY watcher, following the
+  same façade/internal layer pattern as ADR-0008/ADR-0009/ADR-0010. `casbinauthz` and
+  `internal/authz/casbin` are the only packages importing casbin (enforced by the
+  `TestCasbinConfinement` guard). The `*SyncedEnforcer`-callback override is the critical
+  fix preventing a data-race on policy reload in multi-node deployments. A separate
+  `casbin_goose_db_version` table keeps the casbin migration version independent of the
+  main persistence schema version.
+
+### Deferred follow-ups
+
+1. **`FilteredAdapter` / incremental `WatcherEx` updates for large policy sets** — `LoadPolicy`
+   re-reads the entire `casbin_rule` table on every watcher-triggered reload. For large policy
+   sets this is expensive. Implementing `casbin/persist.FilteredAdapter` (partial load) and the
+   `casbin/persist.WatcherEx` interface (per-rule delta updates instead of full reload) would cut
+   reload cost significantly. Deferred until policy-set sizes warrant it.
+2. **Policy-admin REST/gRPC surface** — `NewCasbinAuthorizerFromDB` provides policy persistence
+   but no API to add/remove/list rules at runtime (other than direct DB manipulation). A
+   `casbinauthz.PolicyAdmin` interface with REST/gRPC endpoints (e.g. `POST /admin/policy`,
+   `DELETE /admin/policy/{id}`, `GET /admin/policy`) is a follow-up; the persisted `pgAdapter`
+   is the backend.
+3. **Watcher reconnect-delay not tunable** — the `backoff` helper uses a fixed
+   `watcherReconnectDelay` constant (1 s), no jitter. There is no `DBOption` to override it.
+   A `WithWatcherReconnectBackoff(...)` option (and optional jitter) would make this configurable
+   for consumers with stricter SLA requirements.
+4. **Separate `casbin_goose_db_version` table note** — the casbin migration intentionally uses
+   a separate `casbin_goose_db_version` version table (via `goose.WithTableName`) to avoid
+   version-number conflicts with the persistence migration set's `goose_db_version`. Consumers
+   calling both `persistence.Migrate` and `casbinauthz.MigrateCasbin` will see two goose version
+   tables in their schema; this is expected and documented.
+5. **`context.Background()` in adapter/watcher methods** — casbin's `persist.Adapter`/`Watcher`
+   method signatures take no `context`, so the pgx calls inside them cannot propagate a caller
+   deadline/cancellation. A context-aware adapter wrapper (storing a base context) is a follow-up.
