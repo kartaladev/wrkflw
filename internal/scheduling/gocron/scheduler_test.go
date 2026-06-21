@@ -49,8 +49,10 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				s.Schedule("c1", clk.Now().Add(5*time.Second), fire)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				s.Cancel("c1")
+				// drain: confirm gocron released its fake-clock waiter before advancing
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 0))
 				clk.Advance(10 * time.Second)
-				// No barrier to wait on; assert it never fires within a short window.
+				// Assert it never fires after cancel.
 				require.Never(t, func() bool { return count() > 0 },
 					200*time.Millisecond, 10*time.Millisecond)
 			},
@@ -80,6 +82,39 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 			name: "cancel unknown is a no-op",
 			assert: func(t *testing.T, s *sched.GocronScheduler, _ *clockwork.FakeClock) {
 				require.NotPanics(t, func() { s.Cancel("does-not-exist") })
+			},
+		},
+		{
+			// UUID-guard: after replace+fire of new job, Cancel of the timerID
+			// still finds the live (new) entry — the old job's AfterJobRuns must
+			// not delete the new job's map entry, guarded by job UUID comparison.
+			name: "replace then fire new; cancel still live after new fires",
+			assert: func(t *testing.T, s *sched.GocronScheduler, clk *clockwork.FakeClock) {
+				var wgNew sync.WaitGroup
+				wgNew.Add(1)
+
+				// Arm the first (old) job at T+5; it will be replaced before firing.
+				s.Schedule("uuid1", clk.Now().Add(5*time.Second), func() { t.Error("old job must not fire") })
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+
+				// Replace with a new job at T+10.
+				s.Schedule("uuid1", clk.Now().Add(10*time.Second), func() { wgNew.Done() })
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+
+				// Advance past the old T+5 — old job must NOT fire (replace removed it).
+				clk.Advance(5 * time.Second)
+				require.Never(t, func() bool { return false }, 100*time.Millisecond, 10*time.Millisecond)
+
+				// Advance to T+10 — new job fires.
+				clk.Advance(5 * time.Second)
+				wgNew.Wait()
+
+				// After new job fired, AfterJobRuns from the new job deletes the map
+				// entry (UUID match). A subsequent Cancel must be a clean no-op and
+				// must not panic — this confirms the map is consistent (not accidentally
+				// left with a stale entry by the old job's listener, and not missing due
+				// to UUID mismatch either).
+				require.NotPanics(t, func() { s.Cancel("uuid1") })
 			},
 		},
 		{

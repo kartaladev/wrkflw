@@ -54,9 +54,11 @@ func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()
 	job, err := s.sched.NewJob(
 		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(fireAt)),
 		gocron.NewTask(fire),
-		gocron.WithEventListeners(gocron.AfterJobRuns(func(uuid.UUID, string) {
+		gocron.WithEventListeners(gocron.AfterJobRuns(func(jobID uuid.UUID, _ string) {
 			s.mu.Lock()
-			delete(s.jobs, timerID)
+			if cur, ok := s.jobs[timerID]; ok && cur == jobID {
+				delete(s.jobs, timerID)
+			}
 			s.mu.Unlock()
 		})),
 	)
