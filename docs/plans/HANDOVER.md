@@ -103,14 +103,44 @@ These are deliberately deferred, not bugs in the shipped scope. The most importa
    same-named files (project convention is 1:1, see the test-file-naming memory); root-level event
    sub-process and message-arm-gateway paths have light coverage.
 
+## Persistence (PostgreSQL) sub-project — IMPLEMENTED, pending review+merge
+
+Branch: `feat/persistence-postgres` (HEAD `18f7ebc`). All 10 tasks are complete and verified.
+Gate: `go test -race ./...` green, total coverage 87.3%, touched packages all ≥85%, lint clean (0 issues),
+no forbidden imports (`watermill`/`casbin`/`gocron`/`ThreeDotsLabs`/`clockwork`) in production code.
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `runtime/` port collapse | Replaced 3 separate in-memory ports (`StateStore`/`Journal`/`Outbox`) with a single transactional `Store` + `JournalReader` | ADR-0007; `MemStore` is the in-memory reference impl |
+| `internal/persistence/postgres/` | Postgres `Store`: transactional snapshot-JSONB writes with optimistic-CAS; `DefinitionStore`; outbox with SKIP LOCKED relay; goose migrations (4 tables: `process_instances`, `applied_steps`, `outbox_events`, `process_definitions`); trigger codec (`MarshalTrigger`/`UnmarshalTrigger`) | ADR-0006 (snapshot-JSONB schema), ADR-0008 |
+| `persistence/` root façade | `OpenPostgres`, `Migrate`, `NewRelay`, `NewDefinitionStore`; sentinel errors `ErrInstanceNotFound`, `ErrConcurrentUpdate`; `CachingDefinitionRegistry` (singleflight + in-memory LRU for hot-path definition reads) | ADR-0008 |
+| `database/` | `RunTestDatabase` testcontainers helper — shared by all Postgres integration tests; returns a `*pgxpool.Pool` backed by `postgres:17-alpine` | test-helper-only package (0% own coverage is expected) |
+
+### Key design decisions (ADRs)
+- **ADR-0006** — snapshot-JSONB storage shape (one row per instance, JSONB state blob + projected columns for indexed queries).
+- **ADR-0007** — `Store` port collapse: three separate runtime interfaces replaced by a single transactional `Store` so `Commit` writes instance state + outbox in one atomic transaction.
+- **ADR-0008** — `persistence` / `internal/persistence/postgres` façade split: library consumers only import the root `persistence` package; all pgx/goose wiring stays unexported in `internal/`.
+
+### Relay design note
+The `Relay` in `internal/persistence/postgres` is broker-agnostic: it polls the outbox with SKIP LOCKED and calls a `persistence.Publisher` interface. A watermill adapter (to be written in the **Eventing** sub-project) will implement that interface — watermill is never imported here.
+
+### Deferred follow-ups (deliberate, not bugs)
+1. **Owned-instance cache** — instance state is fetched from Postgres on every `Run`/`Deliver`; a per-runner in-memory cache keyed by instance id would cut DB round-trips on hot flows.
+2. **History cap** — `applied_steps` grows unbounded; a configurable retention / archive policy is needed before large-scale use.
+3. **LISTEN/NOTIFY relay trigger** — current relay polls on a fixed interval; a Postgres `LISTEN`/`NOTIFY` push would reduce latency and DB load.
+4. **Per-aggregate relay ordering** — SKIP LOCKED gives throughput but no ordering guarantee within a single instance; a per-instance sequencing layer (e.g. advisory lock per instance) is needed if strict in-order delivery matters.
+5. **TOAST / fillfactor tuning** — large JSONB blobs will TOAST; setting `fillfactor=70` on `process_instances` to leave room for HOT updates is a DBA tuning step.
+
+---
+
 ## What's next: productionization sub-projects (each its own brainstorm → spec → plan → SDD cycle)
 
 The engine core depends on interfaces only. The next sub-projects implement them (per CLAUDE.md):
 
-- **Persistence** — PostgreSQL 17 `StateStore`/`Journal`/`Outbox` + hot-path cache (the in-repo
-  abstractions already exist; `runtime/memory.go` is the reference impl to replace).
-- **Eventing** — watermill over the transactional outbox (behind the eventing abstraction; never import
-  watermill from engine/workflow code).
+- **Persistence** — ✅ Implemented on `feat/persistence-postgres` (pending final whole-branch review + merge). See section above.
+- **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
 - **Scheduling** — gocron `Scheduler` (replace `MemScheduler`; shares the `clock.Clock`/clockwork so the
   same fake clock drives engine + scheduler in tests, per ADR-0003).
 - **Authorization** — casbin behind the `authz.Authorizer`.
