@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
@@ -274,11 +276,45 @@ func (r *Runner) deliverLoop(
 		t := queue[0]
 		queue = queue[1:]
 
+		prevStatus := st.Status
+		prevIncidents := len(st.Incidents)
+
+		stepCtx, span := r.obs.tracer().Start(ctx, "wrkflw.step", trace.WithAttributes(
+			attribute.String("wrkflw.instance_id", st.InstanceID),
+			attribute.String("wrkflw.def_id", def.ID),
+			attribute.String("wrkflw.trigger", triggerName(t)),
+		))
+		start := r.clk.Now()
 		res, err := engine.Step(def, st, t, engine.StepOptions{DefaultRetryPolicy: r.defaultRetryPolicy})
+		r.obs.stepDuration.Record(stepCtx, r.clk.Now().Sub(start).Seconds(),
+			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			span.End()
 			return st, fmt.Errorf("runtime: step: %w", err)
 		}
 		st = res.State
+		span.SetAttributes(
+			attribute.Int("wrkflw.command_count", len(res.Commands)),
+			attribute.String("wrkflw.status", statusName(st.Status)),
+		)
+		span.End()
+
+		if create {
+			r.obs.instStarted.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+			r.obs.instActive.Add(ctx, 1)
+		}
+		if isTerminal(st.Status) && !isTerminal(prevStatus) {
+			r.obs.instCompleted.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("def", def.ID),
+				attribute.String("status", statusName(st.Status)),
+			))
+			r.obs.instActive.Add(ctx, -1)
+		}
+		if len(st.Incidents) > prevIncidents {
+			r.obs.incidentsRaised.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+		}
 
 		events := outboxEventsFor(res.Commands)
 		appliedStep := AppliedStep{State: st, Trigger: t, Events: events}
@@ -297,7 +333,7 @@ func (r *Runner) deliverLoop(
 		r.syncWaiters(st)
 
 		for _, c := range res.Commands {
-			next, err := r.perform(ctx, def, st, c)
+			next, err := r.perform(stepCtx, def, st, c)
 			if err != nil {
 				return st, err
 			}
