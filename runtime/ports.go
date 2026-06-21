@@ -21,10 +21,16 @@ type JournalReader interface {
 // Token is an opaque optimistic-concurrency token (Postgres: a bigint version).
 type Token int64
 
-// OutboxEvent is one domain event to relay.
+// OutboxEvent is one domain event to relay. DedupKey and InstanceID are
+// populated when the event is read back from a persisted outbox row; they let a
+// publisher set a stable message identity (DedupKey) and a per-instance
+// partition/ordering key (InstanceID). They are empty for events not sourced
+// from a persisted row.
 type OutboxEvent struct {
-	Topic   string
-	Payload map[string]any
+	Topic      string
+	Payload    map[string]any
+	DedupKey   string
+	InstanceID string
 }
 
 // AppliedStep is the atomic persistence unit for exactly one applied trigger:
