@@ -389,6 +389,9 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			// that reference data variables (e.g. vars["region"] == "EU") are
 			// deterministically evaluated against the state at task-creation time.
 			// maps.Clone returns nil when st.Variables is nil, which is safe.
+			// Note: this is a SHALLOW copy — top-level keys are copied defensively,
+			// but nested maps/slices remain shared with the instance variables;
+			// eligibility predicates should rely on top-level scalar variables only.
 			Vars: maps.Clone(st.Variables),
 		}
 		// Copy NodeID from the in-state task record if present.

@@ -197,48 +197,109 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 		"mutating the original vars map must not change the snapshotted task.Vars")
 }
 
-// TestRunnerAttributeOverVarsEndToEnd verifies the full vars-plumbing path:
-// the runner snapshots process variables into HumanTask.Vars at task-creation
-// time, and TaskService.Claim enforces an attribute predicate that references
-// those variables (vars["region"] == "EU").
-func TestRunnerAttributeOverVarsEndToEnd(t *testing.T) {
-	cases := map[string]struct {
-		instanceID string
-		region     string
-		assertErr  func(t *testing.T, err error)
-	}{
-		"matching region claims": {
-			instanceID: "inst-attr-eu",
-			region:     "EU",
-			assertErr:  func(t *testing.T, err error) { assert.NoError(t, err) },
+// approvalWithEligibilityExprDef returns a process: start → userTask("approve",
+// role "approver", EligibilityExpr vars["region"] == "EU") → end.
+// The EligibilityExpr is mapped to AuthzSpec.Attribute by the engine so that
+// attribute-based authorization is enforced at Claim time over snapshotted vars.
+func approvalWithEligibilityExprDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "approval-with-attr",
+		Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{
+				ID:              "approve",
+				Kind:            model.KindUserTask,
+				CandidateRoles:  []string{"approver"},
+				EligibilityExpr: `vars["region"] == "EU"`,
+			},
+			{ID: "end", Kind: model.KindEndEvent},
 		},
-		"non-matching region denied": {
-			instanceID: "inst-attr-us",
-			region:     "US",
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "approve"},
+			{ID: "f2", Source: "approve", Target: "end"},
+		},
+	}
+}
+
+// TestRunnerAttributeOverVarsThroughRunner verifies the FULL runner→snapshot→claim
+// chain: the runner snapshots process variables into HumanTask.Vars when it
+// performs an AwaitHuman command, and TaskService.Claim enforces the
+// EligibilityExpr predicate against those snapshotted vars. The task is NOT
+// pre-populated — it is created exclusively by runner.Run so the test exercises
+// the real end-to-end path.
+//
+// Two instances are run:
+//  1. region="EU"  → Claim succeeds (predicate true).
+//  2. region="US"  → Claim returns ErrNotAuthorized (predicate false).
+func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
+	approver := authz.Actor{ID: "alice", Roles: []string{"approver"}}
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
+		"approver": {approver},
+	})
+	def := approvalWithEligibilityExprDef()
+
+	cases := []struct {
+		name      string
+		instID    string
+		region    string
+		assertErr func(t *testing.T, err error)
+	}{
+		{
+			name:      "matching region claims",
+			instID:    "inst-attr-through-runner-eu",
+			region:    "EU",
+			assertErr: func(t *testing.T, err error) { assert.NoError(t, err) },
+		},
+		{
+			name:   "non-matching region denied",
+			instID: "inst-attr-through-runner-us",
+			region: "US",
 			assertErr: func(t *testing.T, err error) {
 				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
 			},
 		},
 	}
 
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+
+			// Each sub-test gets its own isolated stores so they do not share state.
 			taskStore := humantask.NewMemTaskStore()
 			az := authz.RoleAuthorizer{}
 			clk := clock.System()
+			store := runtime.NewMemStore()
+
+			r := runtime.NewRunner(
+				nil, // no service actions needed
+				clk,
+				store,
+				runtime.WithHumanTasks(resolver, taskStore, az),
+			)
+
+			// Step 1: Run the process — the runner must create the HumanTask and
+			// snapshot the process variables into task.Vars. No manual Upsert.
+			parkedState, err := r.Run(ctx, def, tc.instID, map[string]any{"region": tc.region})
+			require.NoError(t, err)
+			require.Equal(t, engine.StatusRunning, parkedState.Status, "instance must park at the user task")
+			require.Len(t, parkedState.Tokens, 1, "exactly one parked token expected")
+
+			// The parked token's AwaitCommand is the task token (engine assigns it).
+			taskToken := parkedState.Tokens[0].AwaitCommand
+			require.NotEmpty(t, taskToken, "task token must be set on the parked token")
+
+			// Step 2: Verify the runner populated task.Vars from the process variables
+			// (not pre-upserted): the snapshotted vars must carry the region value.
+			storedTask, err := taskStore.Get(ctx, taskToken)
+			require.NoError(t, err)
+			assert.Equal(t, tc.region, storedTask.Vars["region"],
+				"runner must snapshot process vars into task.Vars at task-creation time")
+
+			// Step 3: Claim — the TaskService evaluates the EligibilityExpr against
+			// the snapshotted vars. Result depends on whether region matches the predicate.
 			svc := runtime.NewTaskService(taskStore, az, clk)
-
-			// Upsert a task whose Vars snapshot matches what the runner would set,
-			// proven by TestRunnerSnapshotsVarsIntoHumanTask. The attribute predicate
-			// is the sole gate (no role constraint).
-			require.NoError(t, taskStore.Upsert(t.Context(), humantask.HumanTask{
-				TaskToken:   "tok-attr-" + tc.instanceID,
-				Eligibility: authz.AuthzSpec{Attribute: `vars["region"] == "EU"`},
-				Vars:        map[string]any{"region": tc.region},
-				State:       humantask.Unclaimed,
-			}))
-
-			_, err := svc.Claim(t.Context(), "tok-attr-"+tc.instanceID, authz.Actor{ID: "alice"})
+			_, err = svc.Claim(ctx, taskToken, approver)
 			tc.assertErr(t, err)
 		})
 	}
