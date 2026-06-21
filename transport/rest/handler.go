@@ -3,11 +3,16 @@ package rest
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -39,13 +44,19 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 		o(&cfg)
 	}
 
+	// Build telemetry, filtering out any nil observability options.
+	cfg.tel = observability.New(
+		"github.com/zakyalvan/krtlwrkflw/transport/rest",
+		nonNilOpts(cfg.logOpt, cfg.tpOpt, cfg.mpOpt)...,
+	)
+
 	h := &handler{cfg: cfg, svc: svc}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /instances", h.handleStartInstance)
 	mux.HandleFunc("GET /instances/{id}", h.handleGetInstance)
 	mux.HandleFunc("POST /instances/{id}/signals", h.handleDeliverSignal)
-	mux.HandleFunc("POST /messages", handleDeliverMessage(svc))
+	mux.HandleFunc("POST /messages", h.handleDeliverMessage)
 	mux.HandleFunc("POST /tasks/{token}/claim", h.handleClaimTask)
 	mux.HandleFunc("POST /tasks/{token}/complete", h.handleCompleteTask)
 	mux.HandleFunc("POST /tasks/{token}/reassign", h.handleReassignTask)
@@ -57,7 +68,18 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 	mux.Handle("POST /admin/instances/{id}/incidents/{incidentID}/resolve",
 		cfg.adminMiddleware(http.HandlerFunc(h.handleResolveIncident)))
 
-	return mux
+	return h.traceMiddleware(mux)
+}
+
+// nonNilOpts returns only the non-nil observability.Option values from opts.
+func nonNilOpts(opts ...observability.Option) []observability.Option {
+	out := make([]observability.Option, 0, len(opts))
+	for _, o := range opts {
+		if o != nil {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // handler holds shared state for the route handlers that need cfg.
@@ -66,19 +88,37 @@ type handler struct {
 	svc service.Service
 }
 
-// renderInstance writes a process-instance response through cfg.instanceMapper so that
-// every instance-returning endpoint honours the consumer's custom mapper consistently.
-func (h *handler) renderInstance(w http.ResponseWriter, status int, st engine.InstanceState) {
-	writeJSON(w, status, h.cfg.instanceMapper(st))
+// traceMiddleware wraps the given handler with a per-request OTel span.
+// It extracts W3C trace context from the incoming request headers so that
+// distributed traces propagate correctly across service boundaries.
+func (h *handler) traceMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx, span := h.cfg.tel.Tracer.Start(ctx, "wrkflw.rest "+r.Method, trace.WithAttributes(
+			attribute.String("http.method", r.Method),
+			attribute.String("http.target", r.URL.Path),
+		))
+		defer span.End()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+// renderInstance writes a process-instance response through cfg.instanceMapper so that
+// every instance-returning endpoint honours the consumer's custom mapper consistently.
+func (h *handler) renderInstance(w http.ResponseWriter, r *http.Request, status int, st engine.InstanceState) {
+	h.writeJSON(w, r, status, h.cfg.instanceMapper(st))
+}
+
+// writeJSON serialises v as JSON with the given HTTP status. If encoding fails after
+// the header is flushed, the error is logged through the injected telemetry logger
+// so that no package-global slog call is made.
+func (h *handler) writeJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		// The status header is already written, so the HTTP status cannot change.
 		// Log the error so it is not silently swallowed.
-		slog.Error("rest: encode response", "err", err)
+		h.cfg.tel.Logger.ErrorContext(r.Context(), "rest: encode response", "err", err)
 	}
 }
 
@@ -113,7 +153,7 @@ func (h *handler) handleStartInstance(w http.ResponseWriter, r *http.Request) {
 		WriteHTTPError(w, err)
 		return
 	}
-	h.renderInstance(w, http.StatusCreated, st)
+	h.renderInstance(w, r, http.StatusCreated, st)
 }
 
 func (h *handler) handleGetInstance(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +163,7 @@ func (h *handler) handleGetInstance(w http.ResponseWriter, r *http.Request) {
 		WriteHTTPError(w, err)
 		return
 	}
-	h.renderInstance(w, http.StatusOK, st)
+	h.renderInstance(w, r, http.StatusOK, st)
 }
 
 func (h *handler) handleDeliverSignal(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +189,7 @@ func (h *handler) handleDeliverSignal(w http.ResponseWriter, r *http.Request) {
 		WriteHTTPError(w, err)
 		return
 	}
-	h.renderInstance(w, http.StatusOK, st)
+	h.renderInstance(w, r, http.StatusOK, st)
 }
 
 // handleDeliverMessage handles POST /messages.
@@ -158,33 +198,31 @@ func (h *handler) handleDeliverSignal(w http.ResponseWriter, r *http.Request) {
 // that an instance was waiting for the message. If no instance matches the given
 // name and correlationKey, the message is silently dropped and 202 is still
 // returned.
-func handleDeliverMessage(svc service.Service) http.HandlerFunc {
+func (h *handler) handleDeliverMessage(w http.ResponseWriter, r *http.Request) {
 	type reqBody struct {
 		DefRef         string         `json:"def_ref"`
 		Name           string         `json:"name"`
 		CorrelationKey string         `json:"correlation_key"`
 		Payload        map[string]any `json:"payload"`
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req reqBody
-		if !decodeBody(w, r, &req) {
-			return
-		}
-		if req.DefRef == "" || req.Name == "" {
-			WriteHTTPError(w, fmt.Errorf("%w: def_ref and name are required", ErrBadInput))
-			return
-		}
-		if err := svc.DeliverMessage(r.Context(), service.DeliverMessageRequest{
-			DefRef:         req.DefRef,
-			Name:           req.Name,
-			CorrelationKey: req.CorrelationKey,
-			Payload:        req.Payload,
-		}); err != nil {
-			WriteHTTPError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusAccepted)
+	var req reqBody
+	if !decodeBody(w, r, &req) {
+		return
 	}
+	if req.DefRef == "" || req.Name == "" {
+		WriteHTTPError(w, fmt.Errorf("%w: def_ref and name are required", ErrBadInput))
+		return
+	}
+	if err := h.svc.DeliverMessage(r.Context(), service.DeliverMessageRequest{
+		DefRef:         req.DefRef,
+		Name:           req.Name,
+		CorrelationKey: req.CorrelationKey,
+		Payload:        req.Payload,
+	}); err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *handler) handleClaimTask(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +246,7 @@ func (h *handler) handleClaimTask(w http.ResponseWriter, r *http.Request) {
 		WriteHTTPError(w, err)
 		return
 	}
-	h.renderInstance(w, http.StatusOK, st)
+	h.renderInstance(w, r, http.StatusOK, st)
 }
 
 func (h *handler) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +272,7 @@ func (h *handler) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 		WriteHTTPError(w, err)
 		return
 	}
-	h.renderInstance(w, http.StatusOK, st)
+	h.renderInstance(w, r, http.StatusOK, st)
 }
 
 func (h *handler) handleReassignTask(w http.ResponseWriter, r *http.Request) {
@@ -262,5 +300,5 @@ func (h *handler) handleReassignTask(w http.ResponseWriter, r *http.Request) {
 		WriteHTTPError(w, err)
 		return
 	}
-	h.renderInstance(w, http.StatusOK, st)
+	h.renderInstance(w, r, http.StatusOK, st)
 }

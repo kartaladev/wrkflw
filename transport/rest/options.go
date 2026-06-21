@@ -1,9 +1,15 @@
 package rest
 
 import (
+	"encoding/json"
+	"log/slog"
 	"net/http"
 
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 )
 
 // config holds the resolved handler configuration.
@@ -12,6 +18,14 @@ type config struct {
 	// adminMiddleware wraps the admin routes. If nil, the built-in denyAllMiddleware
 	// is used so the admin endpoints are never openly accessible (default-deny).
 	adminMiddleware func(http.Handler) http.Handler
+
+	// observability options — nil entries are filtered out before calling observability.New.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	// tel is the built Telemetry; populated in NewHandler after opts are applied.
+	tel observability.Telemetry
 }
 
 // denyAllMiddleware is the default admin middleware: it always returns 403 Forbidden
@@ -19,7 +33,9 @@ type config struct {
 // middleware via WithAdminMiddleware.
 func denyAllMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusForbidden, map[string]string{
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"error":   "forbidden",
 			"message": "admin access requires WithAdminMiddleware",
 		})
@@ -67,4 +83,22 @@ func WithAdminMiddleware(mw func(http.Handler) http.Handler) Option {
 	return func(c *config) {
 		c.adminMiddleware = mw
 	}
+}
+
+// WithLogger sets the structured logger used by the REST handler. A nil value
+// is ignored and slog.Default() is kept.
+func WithLogger(l *slog.Logger) Option {
+	return func(c *config) { c.logOpt = observability.WithLogger(l) }
+}
+
+// WithTracerProvider sets the OTel tracer provider used by the REST handler.
+// A nil value is ignored and the OTel global provider is used.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(c *config) { c.tpOpt = observability.WithTracerProvider(tp) }
+}
+
+// WithMeterProvider sets the OTel meter provider used by the REST handler.
+// A nil value is ignored and the OTel global provider is used.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(c *config) { c.mpOpt = observability.WithMeterProvider(mp) }
 }
