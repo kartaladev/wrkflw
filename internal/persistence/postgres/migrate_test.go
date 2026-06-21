@@ -31,3 +31,14 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	require.NoError(t, pg.Migrate(t.Context(), pool)) // second run is a no-op
 }
+
+// TestMigrateFailsOnClosedPool verifies that Migrate surfaces a provider.Up error
+// when the underlying *sql.DB cannot reach the database (pool is closed before use).
+func TestMigrateFailsOnClosedPool(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	pool.Close() // close the pool so stdlib.OpenDBFromPool yields an unusable *sql.DB
+
+	err := pg.Migrate(t.Context(), pool)
+	require.Error(t, err, "Migrate on a closed pool must return an error")
+}
