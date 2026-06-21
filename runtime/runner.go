@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -418,13 +419,30 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			// been cancelled by the time the timer fires.
 			fireCtx := context.Background()
 			trg := engine.NewTimerFired(r.clk.Now(), timerID)
-			if _, err := r.Deliver(fireCtx, def, instanceID, trg); err != nil {
-				slog.Error("runtime: timer fire: Deliver failed",
-					"timerID", timerID,
-					"instanceID", instanceID,
-					"err", err,
-				)
+			const maxAttempts = 5
+			var err error
+			for attempt := 1; attempt <= maxAttempts; attempt++ {
+				if _, err = r.Deliver(fireCtx, def, instanceID, trg); err == nil {
+					return
+				}
+				if !errors.Is(err, ErrConcurrentUpdate) {
+					slog.Error("runtime: timer fire: Deliver failed",
+						"timerID", timerID,
+						"instanceID", instanceID,
+						"err", err,
+					)
+					return
+				}
+				// ErrConcurrentUpdate: another Deliver won the CAS; Deliver
+				// internally reloads fresh state on the next call. Retry
+				// immediately (no sleep needed — store reloads on each Deliver).
 			}
+			slog.Error("runtime: timer fire: Deliver permanently dropped after CAS conflicts",
+				"timerID", timerID,
+				"instanceID", instanceID,
+				"attempts", maxAttempts,
+				"err", err,
+			)
 		})
 		return nil, nil
 
