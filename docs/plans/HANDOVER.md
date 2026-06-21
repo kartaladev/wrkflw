@@ -236,12 +236,45 @@ casbin not imported outside `internal/authz/casbin` + `casbinauthz`, pinned at `
 
 ---
 
+## Eventing (watermill) sub-project — ✅ COMPLETE
+
+Built on branch `feat/eventing-watermill` (HEAD `38a1a47`). Design: spec
+`docs/specs/2026-06-21-eventing-watermill-design.md`, plan `docs/plans/2026-06-21-eventing-watermill.md`,
+ADR-0012 (watermill adapter behind the `eventing` façade; never imported from engine/model/runtime).
+Gate: `go test -race ./...` green (all packages including `internal/persistence/postgres` via Docker),
+total coverage on touched packages **97.6%** (`eventing` 100%, `internal/eventing/watermill` 96.6%),
+lint clean (0 issues), watermill not present in `engine`/`model`/`runtime` (vendor-isolation guard: CLEAN).
+watermill v1.5.2, OTel API v1.43.0 (SDK only in test files).
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `runtime/` — `OutboxEvent` extended | Added `DedupKey string` and `InstanceID string` fields to `runtime.OutboxEvent` so the watermill adapter can set a stable message UUID and per-instance metadata without reaching into engine internals. | Task 1 |
+| `internal/persistence/postgres/relay.go` | Relay scans and maps `DedupKey`/`InstanceID` columns from `wrkflw_outbox`; a column-order comment documents the `rows.Scan` projection order. | Task 1 |
+| `internal/eventing/watermill/` | `Publisher` adapter: maps one `OutboxEvent` → one watermill message (DedupKey→UUID, InstanceID→metadata); emits one OTel span (`eventing.publish`) and increments `wrkflw_eventing_published_total` counter (attributes: `status=ok/error`); records error status on the span on failure. `NewWatermillLogger` slog bridge: forwards watermill's `Info`/`Debug`/`Trace`/`Error`/`With` to a `*slog.Logger`. `WithLogger`/`WithTracerProvider`/`WithMeterProvider` options. | Tasks 2–3 |
+| `eventing/` root façade | `NewPublisher(pub, ...Option) runtime.Publisher` — wraps any `message.Publisher` as a `runtime.Publisher`; `NewGoChannelPublisher(...Option) (runtime.Publisher, message.Subscriber, io.Closer)` — in-process GoChannel for tests and simple deployments. Façade re-exports the three option constructors; watermill is confined to this package and `internal/eventing/watermill`. Compile-time `var _ runtime.Publisher` guard. | Tasks 4–5 |
+| GoChannel e2e | `ExampleNewGoChannelPublisher` exercises start→subscribe→publish→receive in a single in-process test; confirms message UUID, metadata, and payload round-trip correctly. | Task 5 |
+
+### Key design decision (ADR)
+
+- **ADR-0012** — watermill adapter behind the `eventing` façade (same layer pattern as ADR-0008/ADR-0009): consumers import only `eventing.NewPublisher`/`NewGoChannelPublisher` which return `runtime.Publisher`; all watermill wiring stays in `internal/eventing/watermill`. Ensures watermill is never transitively imported from engine/model/runtime code.
+
+### Deferred follow-ups
+
+1. **Broker-specific constructors** — `NewGoChannelPublisher` ships for in-process use; production deployments need constructor helpers for Kafka, NATS, AWS SNS, etc. Each is a thin `eventing.NewKafkaPublisher(cfg, ...Option)` wrapping the corresponding watermill adapter. Deferred to a broker-specific sub-project.
+2. **Richer event envelope / topic-mapping** — the current mapping uses `ev.Topic` verbatim as the watermill topic and stores it in `Metadata["topic"]`. A topic-routing function option (e.g. `WithTopicMapper(fn)`) and a richer envelope schema (schema version, event type, causation/correlation IDs) are deferred.
+3. **Retry / DLQ poison isolation** — the `Relay` rolls back the entire batch on a publisher error (head-of-line blocking). Poison-event isolation and retry-with-backoff are the resilience sub-project; the relay deliberately defers this.
+4. **Optional LISTEN/NOTIFY relay trigger** — the relay polls on a fixed interval; a Postgres `LISTEN`/`NOTIFY` push would cut latency and DB load (layered on the poll fallback). Deferred from the Persistence sub-project and still unbuilt.
+
+---
+
 ## What's next: productionization sub-projects (each its own brainstorm → spec → plan → SDD cycle)
 
 The engine core depends on interfaces only. The next sub-projects implement them (per CLAUDE.md):
 
 - **Persistence** — ✅ COMPLETE, merged to `main`. See section above.
-- **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
+- **Eventing** — ✅ COMPLETE, merged to `main`. See "Eventing (watermill) sub-project" section above.
 - **Scheduling** — ✅ COMPLETE, merged to `main`. See "Scheduling (gocron) sub-project" section above.
 - **Authorization** — ✅ COMPLETE, merged to `main`. See "Authorization (casbin) sub-project" section above.
 - **Transports** — ✅ COMPLETE, merged to `main`. See "Transports (REST/gRPC) sub-project" section below.
