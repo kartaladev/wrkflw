@@ -73,6 +73,21 @@ func (c *CachingDefinitionRegistry) Lookup(defRef string) (*model.ProcessDefinit
 
 	// Slow path: single-flight to ensure exactly one backing call per key.
 	v, err, _ := c.group.Do(defRef, func() (any, error) {
+		// Double-check the cache inside the flight. The fast-path check above and
+		// this Do are not atomic: a prior flight for this key may have completed
+		// (populating the cache and freeing the singleflight key) in the window
+		// between a straggler's fast-path miss and its arrival here. Re-checking
+		// collapses that straggler onto the cached value instead of issuing a
+		// redundant backing call — making single-call suppression robust to
+		// goroutine-scheduling skew, not just to strictly-overlapping flights.
+		now := c.clk.Now()
+		c.mu.Lock()
+		if e, ok := c.entries[defRef]; ok && now.Before(e.expiresAt) {
+			c.mu.Unlock()
+			return e.def, nil
+		}
+		c.mu.Unlock()
+
 		def, err := c.backing.Lookup(defRef)
 		if err != nil {
 			// Do NOT cache errors — let the next caller retry the backing.
