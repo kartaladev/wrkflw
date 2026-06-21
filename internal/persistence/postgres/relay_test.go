@@ -279,3 +279,75 @@ func TestRelayRunFailFastOnInitialDrainError(t *testing.T) {
 		t.Fatal("Run did not return within 2s after initial drain error")
 	}
 }
+
+// TestRelayRunFailFastOnInLoopDrainError verifies that Run exits immediately
+// with a non-cancel error returned from DrainOnce during the ticker loop,
+// not attempting another poll cycle.
+func TestRelayRunFailFastOnInLoopDrainError(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	// Use a publisher that succeeds on the initial drain but fails on the second.
+	pub := &failAfterNPub{successCount: 1}
+	relay := pg.NewRelay(pool, pub, pg.WithPollInterval(10*time.Millisecond))
+
+	// Seed 2 rows: first will be published in initial drain (success),
+	// second will trigger the error in the in-loop drain.
+	seedOutbox(t, pool, 2)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- relay.Run(ctx) }()
+
+	// Run must return promptly with the publish error after the first successful drain.
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "injected error")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return within 2s after in-loop drain error")
+	}
+}
+
+// failAfterNPub publishes successfully for the first N calls, then fails.
+type failAfterNPub struct {
+	successCount int
+	count        int
+	mu           sync.Mutex
+}
+
+func (p *failAfterNPub) Publish(_ context.Context, _ runtime.OutboxEvent) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.count++
+	if p.count > p.successCount {
+		return errors.New("injected error")
+	}
+	return nil
+}
+
+// TestRelayDrainOncePayloadUnmarshalError verifies that an invalid JSON payload
+// (e.g., a non-object value like a string) causes Unmarshal to fail, and the
+// error is properly wrapped and returned.
+func TestRelayDrainOncePayloadUnmarshalError(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	// Insert a row with a JSON string value (not an object).
+	// When DrainOnce tries to unmarshal it into map[string]any, it will fail.
+	_, err := pool.Exec(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
+		 VALUES ($1, $2, $3::jsonb, $4, NOW())`,
+		"unmarshal-error", "test.topic", `"string value"`, "dedup-unmarshal-1",
+	)
+	require.NoError(t, err)
+
+	relay := pg.NewRelay(pool, &recordingPub{})
+	_, err = relay.DrainOnce(t.Context())
+	require.Error(t, err, "DrainOnce must propagate the Unmarshal error")
+	require.Contains(t, err.Error(), "relay: unmarshal payload",
+		"error message should indicate JSON unmarshal failure")
+}

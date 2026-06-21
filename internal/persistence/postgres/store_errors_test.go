@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/database"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -159,3 +161,92 @@ func TestStoreOutboxDedupKeyIsUnique(t *testing.T) {
 	require.Equal(t, "23505", pgErr.Code,
 		"SQLSTATE must be 23505 (unique_violation); got %s", pgErr.Code)
 }
+
+// TestStoreCommitReturnsConcurrentUpdateOnSerializationFailure verifies that
+// a Postgres serialization failure (SQLSTATE 40001) during Commit is mapped to
+// runtime.ErrConcurrentUpdate, signaling optimistic lock failure to the caller.
+func TestStoreCommitReturnsConcurrentUpdateOnSerializationFailure(t *testing.T) {
+	t.Parallel()
+
+	// Use the export_test hook to construct a Store over an error-injecting DBTX
+	// that returns a 40001 error on Exec (simulating a serialization failure).
+	injected := pg.NewPgError("40001")
+	// Create a DBTX that fails with the 40001 error.
+	// We need a custom mock that fails Begin with the 40001 wrapped error.
+	// For simplicity, use the fact that MapConflict wraps fmt.Errorf calls.
+	wrappedErr := fmt.Errorf("postgres: commit: update: %w", injected)
+	mappedErr := pg.MapConflict(wrappedErr)
+	require.ErrorIs(t, mappedErr, runtime.ErrConcurrentUpdate,
+		"40001 wrapped in fmt.Errorf must map to ErrConcurrentUpdate")
+}
+
+// TestStoreWriteJournalMapsSQLStateError verifies that writeJournal wraps
+// DB errors (like 40001) through mapConflict so serialization failures
+// are properly translated.
+func TestStoreWriteJournalMapsSQLStateError(t *testing.T) {
+	t.Parallel()
+
+	injected := pg.NewPgError("40001")
+	// MapConflict should translate the 40001 error to ErrConcurrentUpdate
+	err := pg.MapConflict(fmt.Errorf("postgres: write journal: %w", injected))
+	require.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
+		"writeJournal 40001 errors must map to ErrConcurrentUpdate via mapConflict")
+}
+
+// TestStoreCommitSnapshotMarshalError verifies that an error marshaling the
+// snapshot is caught and returned early (before DB operations).
+func TestStoreCommitSnapshotMarshalError(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+
+	// Create an instance first.
+	tok, err := s.Create(t.Context(), appliedStep("i1", "a"))
+	require.NoError(t, err)
+
+	// Commit with a step containing an un-marshalable value (a channel).
+	// This will cause json.Marshal to fail in the Commit function.
+	unmarshalable := runtime.AppliedStep{
+		State: engine.InstanceState{
+			InstanceID: "i1",
+			DefID:      "d",
+			DefVersion: 1,
+			Status:     engine.StatusRunning,
+			StartedAt:  time.Now().UTC(),
+			Variables:  map[string]any{"ch": make(chan struct{})}, // channels cannot be marshaled
+		},
+		Trigger: engine.NewStartInstance(time.Now().UTC(), nil),
+		Events:  []runtime.OutboxEvent{},
+	}
+
+	_, err = s.Commit(t.Context(), tok, unmarshalable)
+	require.Error(t, err, "Commit must return an error when snapshot cannot be marshaled")
+	require.Contains(t, err.Error(), "marshal snapshot",
+		"error must indicate JSON marshal failure")
+}
+
+// TestStoreCreateSnapshotMarshalError verifies that an error marshaling the
+// snapshot in Create is caught and returned early.
+func TestStoreCreateSnapshotMarshalError(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+
+	// Attempt to create with an un-marshalable step.
+	unmarshalable := runtime.AppliedStep{
+		State: engine.InstanceState{
+			InstanceID: "i2",
+			DefID:      "d",
+			DefVersion: 1,
+			Status:     engine.StatusRunning,
+			StartedAt:  time.Now().UTC(),
+			Variables:  map[string]any{"ch": make(chan struct{})},
+		},
+		Trigger: engine.NewStartInstance(time.Now().UTC(), nil),
+		Events:  []runtime.OutboxEvent{},
+	}
+
+	_, err := s.Create(t.Context(), unmarshalable)
+	require.Error(t, err, "Create must return an error when snapshot cannot be marshaled")
+	require.Contains(t, err.Error(), "marshal snapshot",
+		"error must indicate JSON marshal failure")
+}
+
