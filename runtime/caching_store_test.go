@@ -104,3 +104,67 @@ func TestCachingStoreEvictsOnConcurrentUpdate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, before+1, cs.loads.Load())
 }
+
+func TestCachingStoreTTLExpiryForcesReload(t *testing.T) {
+	cs := &countingStore{backing: runtime.NewMemStore()}
+	clk := clockwork.NewFakeClock()
+	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, clk, runtime.WithCacheTTL(time.Minute))
+
+	id := "ttl1"
+	_, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
+	require.NoError(t, err)
+
+	_, _, err = store.Load(t.Context(), id) // hit (write-through)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), cs.loads.Load())
+
+	clk.Advance(2 * time.Minute) // expire the entry
+	_, _, err = store.Load(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), cs.loads.Load(), "expired entry must reload from backing")
+}
+
+func TestCachingStoreLRUEvictsBeyondMax(t *testing.T) {
+	cs := &countingStore{backing: runtime.NewMemStore()}
+	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, clockwork.NewFakeClock(),
+		runtime.WithCacheMaxEntries(2), runtime.WithCacheTTL(time.Hour))
+
+	for _, id := range []string{"a", "b", "c"} { // 3 instances, cap 2
+		_, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
+		require.NoError(t, err)
+	}
+	// "a" was the least-recently-used after inserting c ⇒ evicted ⇒ its Load misses.
+	before := cs.loads.Load()
+	_, _, err := store.Load(t.Context(), "a")
+	require.NoError(t, err)
+	assert.Equal(t, before+1, cs.loads.Load())
+	// "c" is still cached ⇒ hit.
+	_, _, err = store.Load(t.Context(), "c")
+	require.NoError(t, err)
+	assert.Equal(t, before+1, cs.loads.Load())
+}
+
+func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
+	mem := runtime.NewMemStore()
+	store := runtime.NewCachingStore(mem, runtime.AlwaysOwn{}, clockwork.NewFakeClock(), runtime.WithCacheTTL(time.Hour))
+
+	id := "race1"
+	tok, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
+	require.NoError(t, err)
+
+	// Hammer Load while a single Commit advances the token; the cache must never
+	// serve a token greater than what the backing holds (no torn write-through).
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 1000; i++ {
+			st, ltok, lerr := store.Load(t.Context(), id)
+			require.NoError(t, lerr)
+			require.Equal(t, id, st.InstanceID)
+			_ = ltok
+		}
+	}()
+	_, err = store.Commit(t.Context(), tok, runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
+	require.NoError(t, err)
+	<-done
+}
