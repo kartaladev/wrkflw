@@ -33,10 +33,10 @@ func (h *captureHandler) WithGroup(_ string) slog.Handler      { return h }
 
 // TestGocronScheduler_WithLogger verifies that NewGocronScheduler accepts a
 // WithLogger option without error and that the scheduler continues to operate
-// correctly when an injected logger is provided. The capturing handler is wired
-// in; any error-path log produced by the scheduler must go through it rather
-// than the global default. We also confirm the default (no option) variant still
-// constructs and fires correctly.
+// correctly when an injected logger is provided. A custom capturing handler is
+// wired in to demonstrate injection works; normal timer firing is verified to
+// succeed with the injected logger in place. We also confirm the default (no
+// option) and nil-option variants still construct and fire correctly.
 func TestGocronScheduler_WithLogger(t *testing.T) {
 	type tc struct {
 		name   string
