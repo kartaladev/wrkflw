@@ -71,6 +71,12 @@ type Runner struct {
 	// trigger so that engine replay remains deterministic.
 	jitter JitterSource
 
+	// defaultRetryPolicy is the fallback retry policy applied to any action-bearing
+	// node that declares no RetryPolicy of its own. When nil, retry is disabled by
+	// default and a failed action behaves as before (error boundary or instance failure).
+	// Set via [WithDefaultRetryPolicy].
+	defaultRetryPolicy *model.RetryPolicy
+
 	// msgMu guards msgWaiters.
 	msgMu sync.Mutex
 	// msgWaiters maps a (messageName, correlationKey) pair to the instance ID
@@ -133,6 +139,16 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 // WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).
 // Inject a deterministic source in tests to produce predictable fire-at times.
 func WithJitterSource(src JitterSource) Option { return func(r *Runner) { r.jitter = src } }
+
+// WithDefaultRetryPolicy sets the fallback retry policy applied to any action-bearing
+// node that declares no RetryPolicy of its own. Without this option, retry is disabled
+// by default and a failed action behaves as before (error boundary or instance failure).
+//
+// The policy value is copied on each call, so subsequent mutations by the caller do
+// not affect the Runner.
+func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
+	return func(r *Runner) { r.defaultRetryPolicy = &p }
+}
 
 // NewRunner constructs a Runner with the three required core ports (cat, clk,
 // store) and any optional capability bundles supplied as functional options.
@@ -224,7 +240,7 @@ func (r *Runner) deliverLoop(
 		t := queue[0]
 		queue = queue[1:]
 
-		res, err := engine.Step(def, st, t, engine.StepOptions{})
+		res, err := engine.Step(def, st, t, engine.StepOptions{DefaultRetryPolicy: r.defaultRetryPolicy})
 		if err != nil {
 			return st, fmt.Errorf("runtime: step: %w", err)
 		}
