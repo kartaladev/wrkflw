@@ -6,9 +6,11 @@
 package eventing
 
 import (
+	"io"
 	"log/slog"
 
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"go.opentelemetry.io/otel/metric"
@@ -44,6 +46,23 @@ func NewPublisher(pub message.Publisher, opts ...Option) runtime.Publisher {
 		fn(&o)
 	}
 	return watermillpub.NewPublisher(pub, toInternal(o)...)
+}
+
+// NewGoChannelPublisher builds an in-process GoChannel pub/sub and returns a
+// runtime.Publisher over it, the matching Subscriber (for in-process consumers
+// or tests), and an io.Closer to release it. No external broker is required.
+// GoChannel ships in watermill core, so this adds no broker dependency.
+func NewGoChannelPublisher(opts ...Option) (runtime.Publisher, message.Subscriber, io.Closer) {
+	var o options
+	for _, fn := range opts {
+		fn(&o)
+	}
+	logger := o.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	gc := gochannel.NewGoChannel(gochannel.Config{}, watermillpub.NewWatermillLogger(logger))
+	return NewPublisher(gc, opts...), gc, gc
 }
 
 func toInternal(o options) []watermillpub.Option {
