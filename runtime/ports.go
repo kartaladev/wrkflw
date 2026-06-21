@@ -40,6 +40,12 @@ type AppliedStep struct {
 	State   engine.InstanceState
 	Trigger engine.Trigger
 	Events  []OutboxEvent
+	// NewCallLink, when non-nil, records a parent↔child call link atomically with
+	// this step (set on the child's first Create). ADR-0025.
+	NewCallLink *CallLink
+	// CallOutcome, when non-nil, flips THIS instance's call link to terminal
+	// atomically with this step (set on the child's terminal Commit). ADR-0025.
+	CallOutcome *CallOutcome
 }
 
 // ErrConcurrentUpdate is returned by Store.Commit when the expected token is
