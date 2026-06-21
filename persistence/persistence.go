@@ -19,6 +19,7 @@ package persistence
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"time"
 
@@ -242,4 +243,25 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 //	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
 func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
 	return postgres.NewLister(pool)
+}
+
+// NewAdvisoryLockOwnership constructs a multi-process [runtime.Ownership]
+// backed by Postgres session advisory locks (ADR-0020), for use with
+// [runtime.NewCachingStore] across multiple replicas sharing one database.
+//
+// It holds a dedicated pool connection for its lifetime; close the returned
+// [io.Closer] at shutdown to release every held lock and return the connection.
+//
+// Example:
+//
+//	owner, closer, _ := persistence.NewAdvisoryLockOwnership(ctx, pool)
+//	defer closer.Close()
+//	store, _ := persistence.OpenPostgres(ctx, pool)
+//	cachingStore := runtime.NewCachingStore(store, owner, clock.System())
+func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.Ownership, io.Closer, error) {
+	o, err := postgres.NewAdvisoryLockOwnership(ctx, pool)
+	if err != nil {
+		return nil, nil, err
+	}
+	return o, o, nil
 }
