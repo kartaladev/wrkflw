@@ -1913,9 +1913,17 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 		return nil, nil
 	}
 
+	// Resolve the effective definition for the boundary's scope. A boundary event
+	// inside a sub-process must look up its outgoing flow in the INNER definition,
+	// not the top-level one. defForScope returns the inner def for a scoped token.
+	tdef, err := defForScope(def, s, hostTok.ScopeID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Resolve the boundary's outgoing flow target.
 	var flowTarget string
-	for _, f := range def.Flows {
+	for _, f := range tdef.Flows {
 		if f.ID == ba.Flow {
 			flowTarget = f.Target
 			break
