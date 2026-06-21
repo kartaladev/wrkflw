@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 )
@@ -30,7 +29,7 @@ type runnerObs struct {
 // only sees real, non-nil options.
 func newRunnerObs(opts ...observability.Option) *runnerObs {
 	// Filter out nil options (fields that were never set by a With* option).
-	real := opts[:0]
+	var real []observability.Option
 	for _, o := range opts {
 		if o != nil {
 			real = append(real, o)
@@ -51,9 +50,3 @@ func newRunnerObs(opts ...observability.Option) *runnerObs {
 	}
 }
 
-// tracer returns the OTel tracer scoped to the runner instrumentation name.
-// Used by Tasks 4–6 (span emission); declared here so the compiler validates
-// the accessor against the struct layout before those tasks land.
-//
-//nolint:unused // intentionally pre-declared; consumed by Tasks 4–6
-func (o *runnerObs) tracer() trace.Tracer { return o.tel.Tracer }
