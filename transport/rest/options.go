@@ -19,7 +19,10 @@ type config struct {
 // middleware via WithAdminMiddleware.
 func denyAllMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":"forbidden","message":"admin access requires WithAdminMiddleware"}`, http.StatusForbidden)
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":   "forbidden",
+			"message": "admin access requires WithAdminMiddleware",
+		})
 	})
 }
 

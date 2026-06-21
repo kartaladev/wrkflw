@@ -28,6 +28,20 @@ type server struct {
 // RegisterWorkflowServiceServer constructs a WorkflowService gRPC implementation
 // and registers it with the given grpc.ServiceRegistrar. The consumer owns the
 // grpc.Server; this package never creates or starts one.
+//
+// SECURITY: this service includes the ListInstances RPC, which is an ADMIN-SCOPED
+// enumeration of ALL process instances with NO built-in authorization gate.
+// Unlike the REST transport (which mounts GET /admin/instances behind a
+// default-deny WithAdminMiddleware), the gRPC service registers as a single unit
+// and provides no per-method interceptor on its own.
+//
+// Consumers MUST gate this service — or at minimum the ListInstances method —
+// with an appropriate grpc.UnaryInterceptor (or an auth interceptor on the
+// *grpc.Server) that enforces authentication and authorization before the RPC
+// reaches the handler. Registering without such an interceptor exposes
+// unauthenticated enumeration of all process instances.
+//
+// Per-method authorization built into this package is a tracked follow-up.
 func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Service) {
 	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc})
 }
@@ -82,6 +96,10 @@ func (s *server) DeliverSignal(ctx context.Context, req *workflowpb.DeliverSigna
 }
 
 // DeliverMessage routes a message to a waiting instance.
+//
+// Delivery is best-effort fire-and-forget: an OK status does NOT guarantee that
+// an instance was waiting for the message. If no instance matches the given name
+// and correlationKey, the message is silently dropped and OK is still returned.
 func (s *server) DeliverMessage(ctx context.Context, req *workflowpb.DeliverMessageRequest) (*workflowpb.DeliverMessageResponse, error) {
 	err := s.svc.DeliverMessage(ctx, service.DeliverMessageRequest{
 		DefRef:         req.GetDefRef(),

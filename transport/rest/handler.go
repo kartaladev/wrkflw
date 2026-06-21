@@ -150,6 +150,12 @@ func (h *handler) handleDeliverSignal(w http.ResponseWriter, r *http.Request) {
 	h.renderInstance(w, http.StatusOK, st)
 }
 
+// handleDeliverMessage handles POST /messages.
+//
+// Delivery is best-effort fire-and-forget: a 202 Accepted does NOT guarantee
+// that an instance was waiting for the message. If no instance matches the given
+// name and correlationKey, the message is silently dropped and 202 is still
+// returned.
 func handleDeliverMessage(svc service.Service) http.HandlerFunc {
 	type reqBody struct {
 		DefRef         string         `json:"def_ref"`
