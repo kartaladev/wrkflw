@@ -1,0 +1,78 @@
+// Package service provides a transport-agnostic Service facade that unifies
+// the workflow engine's core capabilities behind a single interface. REST and
+// gRPC transports depend exclusively on this package; they never import the
+// engine core directly.
+package service
+
+import "github.com/zakyalvan/krtlwrkflw/authz"
+
+// StartInstanceRequest carries the parameters for starting a new process instance.
+type StartInstanceRequest struct {
+	// DefRef is the process-definition reference used to look up the definition
+	// in the registry. The registry keys are either "DefID:DefVersion" or a
+	// short alias registered by the consumer.
+	DefRef string
+	// InstanceID is the caller-supplied identifier for the new instance.
+	InstanceID string
+	// Vars is the initial set of process variables.
+	Vars map[string]any
+}
+
+// DeliverSignalRequest carries the parameters for delivering a signal to a
+// running process instance.
+type DeliverSignalRequest struct {
+	// InstanceID identifies the target process instance.
+	InstanceID string
+	// Signal is the name of the signal to deliver (e.g. "approved").
+	Signal string
+	// Payload is an optional map of variables attached to the signal.
+	Payload map[string]any
+}
+
+// DeliverMessageRequest carries the parameters for delivering a message.
+// The runner's internal message-waiter table routes the message to the
+// correct instance by (Name, CorrelationKey) without needing the caller
+// to know which instance is waiting.
+type DeliverMessageRequest struct {
+	// DefRef is the process-definition reference; the definition is resolved
+	// via the registry before calling Runner.DeliverMessage.
+	DefRef string
+	// Name is the message name.
+	Name string
+	// CorrelationKey is the value that routes the message to a specific instance.
+	CorrelationKey string
+	// Payload is an optional set of message variables.
+	Payload map[string]any
+}
+
+// ClaimTaskRequest carries the parameters for claiming a human task.
+type ClaimTaskRequest struct {
+	// TaskToken is the opaque token that identifies the human task.
+	TaskToken string
+	// Actor is the principal claiming the task.
+	Actor authz.Actor
+}
+
+// CompleteTaskRequest carries the parameters for completing a human task.
+type CompleteTaskRequest struct {
+	// TaskToken is the opaque token that identifies the human task.
+	TaskToken string
+	// Actor is the principal completing the task.
+	Actor authz.Actor
+	// Output is the set of output variables produced by the task.
+	Output map[string]any
+}
+
+// ReassignTaskRequest carries the parameters for reassigning a human task
+// from one actor to another.
+type ReassignTaskRequest struct {
+	// TaskToken is the opaque token that identifies the human task.
+	TaskToken string
+	// From is the actor ID of the current claimant.
+	From string
+	// To is the actor ID of the new claimant.
+	To string
+	// By is the principal performing the reassignment (must satisfy the
+	// task's eligibility spec).
+	By authz.Actor
+}
