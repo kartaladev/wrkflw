@@ -91,6 +91,11 @@ type Option = postgres.StoreOption
 // table remains the complete audit source.
 func WithHistoryCap(n int) Option { return postgres.WithHistoryCap(n) }
 
+// WithOutboxNotify makes the Store emit a transactional NOTIFY wrkflw_outbox
+// when a step inserts outbox rows, so a relay started with WithListenNotify
+// drains with sub-poll-interval latency (ADR-0022). Opt-in; default off.
+func WithOutboxNotify() Option { return postgres.WithOutboxNotify() }
+
 // RelayOption configures a Relay (alias of postgres.RelayOption).
 type RelayOption = postgres.RelayOption
 

@@ -20,12 +20,18 @@ var (
 	_ runtime.JournalReader = (*Store)(nil)
 )
 
+// outboxNotifyChannel is the Postgres NOTIFY channel the relay listens on
+// (ADR-0022). The notification carries no payload — it is a bare wakeup; the
+// relay still claims rows via FOR UPDATE SKIP LOCKED.
+const outboxNotifyChannel = "wrkflw_outbox"
+
 // Store is the Postgres-backed runtime.Store + JournalReader. It performs
 // snapshot CAS + journal append + outbox inserts atomically in a single pgx.Tx
 // per applied trigger.
 type Store struct {
 	pool       *pgxpool.Pool
-	historyCap int // <= 0 means no cap (full inline history)
+	historyCap int  // <= 0 means no cap (full inline history)
+	notify     bool // emit NOTIFY wrkflw_outbox on outbox insert when true
 }
 
 // StoreOption configures a Store.
@@ -36,6 +42,25 @@ type StoreOption func(*Store)
 // default) keeps full inline history. The wrkflw_journal table is unaffected
 // and remains the complete audit source.
 func WithHistoryCap(n int) StoreOption { return func(s *Store) { s.historyCap = n } }
+
+// WithOutboxNotify makes Create/Commit emit NOTIFY wrkflw_outbox inside the
+// committing transaction whenever the step inserted at least one outbox row, so
+// a listening relay (WithListenNotify) wakes immediately instead of waiting for
+// its next poll tick. Steps that produce no events emit no notification.
+func WithOutboxNotify() StoreOption { return func(s *Store) { s.notify = true } }
+
+// maybeNotify issues a transactional NOTIFY when notify is enabled and the step
+// produced outbox events. Errors propagate so the whole step rolls back.
+func (s *Store) maybeNotify(ctx context.Context, db DBTX, events []runtime.OutboxEvent) error {
+	if !s.notify || len(events) == 0 {
+		return nil
+	}
+	// Channel name cannot be parameterized; it is a fixed constant.
+	if _, err := db.Exec(ctx, "NOTIFY "+outboxNotifyChannel); err != nil {
+		return fmt.Errorf("postgres: notify outbox: %w", err)
+	}
+	return nil
+}
 
 // NewStore constructs a Store over the given pool. The pool must already have
 // migrations applied (see Migrate).
@@ -90,6 +115,9 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 	}
 	if err := writeOutbox(ctx, tx, step.State.InstanceID, version, step.Events, now); err != nil {
 		return 0, mapConflict(err)
+	}
+	if err := s.maybeNotify(ctx, tx, step.Events); err != nil {
+		return 0, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -167,6 +195,9 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		return 0, mapConflict(err)
 	}
 	if err := writeOutbox(ctx, tx, step.State.InstanceID, next, step.Events, now); err != nil {
+		return 0, mapConflict(err)
+	}
+	if err := s.maybeNotify(ctx, tx, step.Events); err != nil {
 		return 0, mapConflict(err)
 	}
 
