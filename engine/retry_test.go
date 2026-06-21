@@ -247,6 +247,58 @@ func hasInvokeActionForName(cmds []engine.Command, name string) bool {
 	return false
 }
 
+// hasInvokeActionForNode reports whether any InvokeAction command targets the
+// action of the node with the given ID in def.
+func hasInvokeActionForNode(t *testing.T, r engine.StepResult, def *model.ProcessDefinition, nodeID string) bool {
+	t.Helper()
+	node, ok := def.Node(nodeID)
+	if !ok {
+		t.Fatalf("hasInvokeActionForNode: node %q not found in definition", nodeID)
+	}
+	return hasInvokeActionForName(r.Commands, node.Action)
+}
+
+// TestStepResolveIncidentReinvokes verifies that delivering a ResolveIncident
+// trigger for an existing incident clears the incident and re-emits an
+// InvokeAction for the parked node.
+func TestStepResolveIncidentReinvokes(t *testing.T) {
+	def := retryDef(&model.RetryPolicy{MaxAttempts: 1})
+
+	// Drive start → InvokeAction for "task".
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+		engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdID := findInvokeActionCmdID(t, r1.Commands)
+
+	// Deliver terminal ActionFailed (MaxAttempts:1 → first failure is terminal) → incident.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionFailed(time.Unix(1, 0), cmdID, "boom", true), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r2.State.Incidents, 1, "expected one incident after terminal failure")
+	incID := r2.State.Incidents[0].ID
+
+	// Resolve the incident, granting 2 extra attempts.
+	r3, err := engine.Step(def, r2.State,
+		engine.NewResolveIncident(time.Unix(2, 0), incID, 2), engine.StepOptions{})
+	require.NoError(t, err)
+
+	assert.Empty(t, r3.State.Incidents, "incident must be cleared after ResolveIncident")
+	assert.True(t, hasInvokeActionForNode(t, r3, def, "task"),
+		"action must be re-invoked after ResolveIncident")
+}
+
+// TestStepResolveUnknownIncidentNoop verifies that delivering a ResolveIncident
+// for an unknown incident ID is a clean no-op (no commands, no error).
+func TestStepResolveUnknownIncidentNoop(t *testing.T) {
+	def := retryDef(&model.RetryPolicy{MaxAttempts: 1})
+	base := engine.InstanceState{InstanceID: "p"}
+
+	r, err := engine.Step(def, base,
+		engine.NewResolveIncident(time.Unix(0, 0), "nope", 1), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, r.Commands, "unknown incident must be a no-op")
+}
+
 // hasFailInstance reports whether any FailInstance command is present.
 func hasFailInstance(cmds []engine.Command) bool {
 	for _, c := range cmds {

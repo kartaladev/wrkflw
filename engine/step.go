@@ -615,6 +615,43 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		}
 		return StepResult{State: s, Commands: driveCmds}, nil
 
+	case ResolveIncident:
+		// Admin trigger: clear a parked incident, grant additional retry budget,
+		// and re-invoke the stalled service action so the process can continue.
+		//
+		// Idempotency: an unknown or already-cleared IncidentID is a clean no-op;
+		// a missing token (removed by a concurrent path) clears the record and
+		// returns without re-invoking.
+		idx := -1
+		for i := range s.Incidents {
+			if s.Incidents[i].ID == t.IncidentID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			// Unknown or already-resolved incident: idempotent no-op.
+			return StepResult{State: s, Commands: nil}, nil
+		}
+		inc := s.Incidents[idx]
+		// Remove the incident from the slice (order-preserving, avoids aliasing).
+		s.Incidents = append(s.Incidents[:idx], s.Incidents[idx+1:]...)
+		tok := s.tokenByID(inc.TokenID)
+		if tok == nil {
+			// Token is gone (concurrent resolution); incident cleared, no re-invoke.
+			return StepResult{State: s, Commands: nil}, nil
+		}
+		// Grant the additional retry budget: reducing RetryAttempts by AddAttempts
+		// effectively gives the action that many more opportunities before the
+		// policy declares it terminal again.
+		tok.RetryAttempts = max(0, tok.RetryAttempts-t.AddAttempts)
+		tok.State = TokenActive
+		cmds, err := reinvokeServiceAction(def, &s, tok, t.OccurredAt())
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: s, Commands: cmds}, nil
+
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
@@ -2507,6 +2544,42 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
+// reinvokeServiceAction re-emits an InvokeAction for tok's node, re-parks tok
+// on the new command ID, and re-arms its boundary events. It is shared by the
+// retry-timer path (handleRetryFired) and the incident-resolution path
+// (ResolveIncident) so both use an identical re-invocation sequence.
+//
+// The caller is responsible for any pre-work specific to each path (e.g.
+// removing the consumed timer record before calling this for the retry path).
+func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time) ([]Command, error) {
+	tdef, err := defForScope(def, s, tok.ScopeID)
+	if err != nil {
+		return nil, fmt.Errorf("engine: reinvoke: %w", err)
+	}
+	node, ok := tdef.Node(tok.NodeID)
+	if !ok {
+		return nil, fmt.Errorf("engine: reinvoke: node %q not found", tok.NodeID)
+	}
+
+	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly.
+	cmdID := s.nextCommandID()
+	cmds := []Command{InvokeAction{
+		CommandID: cmdID,
+		Name:      node.Action,
+		Input:     copyVars(s.Variables),
+	}}
+	tok.State = TokenWaitingCommand
+	tok.AwaitCommand = cmdID
+
+	// Re-arm boundary events (SLA timers, reminder timers) so they are active
+	// for this invocation attempt.
+	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
+	if err != nil {
+		return cmds, err
+	}
+	return append(cmds, bndCmds...), nil
+}
+
 // handleRetryFired processes a TimerFired event for a TimerRetry timer. It is
 // called from the TimerFired handler in Step after Task 5 parks a token on a
 // retry timer following a retryable ActionFailed.
@@ -2529,34 +2602,11 @@ func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerR
 	// Consume the timer record so a duplicate fire is a no-op.
 	s.removeTimer(rec.TimerID)
 
-	// Resolve the effective definition for this token's scope (handles sub-process).
-	tdef, err := defForScope(def, s, tok.ScopeID)
+	// Re-invoke the service action via the shared helper.
+	cmds, err := reinvokeServiceAction(def, s, tok, at)
 	if err != nil {
 		return StepResult{}, fmt.Errorf("engine: retry fired: %w", err)
 	}
-	node, ok := tdef.Node(tok.NodeID)
-	if !ok {
-		return StepResult{}, fmt.Errorf("engine: retry fired: node %q not found", tok.NodeID)
-	}
-
-	// Re-emit the InvokeAction — mirrors the KindServiceTask drive path exactly.
-	cmdID := s.nextCommandID()
-	cmds := []Command{InvokeAction{
-		CommandID: cmdID,
-		Name:      node.Action,
-		Input:     copyVars(s.Variables),
-	}}
-	tok.State = TokenWaitingCommand
-	tok.AwaitCommand = cmdID
-
-	// Re-arm boundary events (SLA timers, reminder timers) which Task 5 cancelled
-	// on the failure path, so they are active for this retry attempt.
-	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
-	if err != nil {
-		return StepResult{}, err
-	}
-	cmds = append(cmds, bndCmds...)
-
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
