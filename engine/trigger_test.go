@@ -160,3 +160,29 @@ func TestTimerFiredFieldsRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// TestNewActionFailedJitteredCarriesFraction asserts that NewActionFailedJittered
+// stores JitterFraction and all other ActionFailed fields faithfully, and that
+// the result satisfies the Trigger interface.
+func TestNewActionFailedJitteredCarriesFraction(t *testing.T) {
+	at := time.Unix(0, 0)
+	f := engine.NewActionFailedJittered(at, "c-1", "boom", true, 0.5)
+	if f.JitterFraction != 0.5 || !f.Retryable || f.CommandID != "c-1" {
+		t.Fatalf("bad ActionFailed: %+v", f)
+	}
+	var _ engine.Trigger = f
+}
+
+// TestResolveIncidentIsTrigger asserts that ResolveIncident satisfies the Trigger
+// interface and that NewResolveIncident stores all fields faithfully.
+func TestResolveIncidentIsTrigger(t *testing.T) {
+	at := time.Unix(0, 0)
+	r := engine.NewResolveIncident(at, "p-in0", 2)
+	if r.IncidentID != "p-in0" || r.AddAttempts != 2 {
+		t.Fatalf("bad ResolveIncident: %+v", r)
+	}
+	var _ engine.Trigger = r
+	if !r.OccurredAt().Equal(at) {
+		t.Fatal("OccurredAt mismatch")
+	}
+}
