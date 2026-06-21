@@ -163,7 +163,7 @@ func (m *MemStore) List(_ context.Context, filter InstanceFilter) (InstancePage,
 		all = all[start:]
 	}
 
-	limit := normalizeLimit(filter.Limit)
+	limit := NormalizeLimit(filter.Limit)
 	hasMore := len(all) > limit
 	if hasMore {
 		all = all[:limit]

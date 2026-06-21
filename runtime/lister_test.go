@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -27,32 +28,26 @@ func TestDecodeCursorRejectsGarbage(t *testing.T) {
 	tests := []struct {
 		name   string
 		cursor string
-		assert func(t *testing.T, err error)
 	}{
 		{
 			name:   "not base64",
 			cursor: "!!!not-base64!!!",
-			assert: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatal("want error for non-base64 cursor")
-				}
-			},
 		},
 		{
 			name:   "base64 but not json",
 			cursor: "Zm9vYmFy", // "foobar"
-			assert: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatal("want error for non-json cursor")
-				}
-			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, err := runtime.DecodeCursor(tc.cursor)
-			tc.assert(t, err)
+			if err == nil {
+				t.Fatalf("want error for %s cursor", tc.name)
+			}
+			if !errors.Is(err, runtime.ErrBadCursor) {
+				t.Fatalf("want ErrBadCursor, got %v", err)
+			}
 		})
 	}
 }

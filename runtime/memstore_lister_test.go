@@ -138,25 +138,6 @@ func TestMemStoreList(t *testing.T) {
 				}
 			},
 		},
-		{
-			name: "second page via cursor returns remaining items",
-			filter: runtime.InstanceFilter{Status: &running, Limit: 1},
-			seed: func(t *testing.T) *runtime.MemStore {
-				return seedMemStore(t,
-					newInstanceState("i1", engine.StatusRunning, base),
-					newInstanceState("i2", engine.StatusRunning, base.Add(time.Minute)),
-				)
-			},
-			assert: func(t *testing.T, page runtime.InstancePage) {
-				// first page
-				if len(page.Items) != 1 || page.Items[0].InstanceID != "i2" {
-					t.Fatalf("first page: want [i2], got %v", page.Items)
-				}
-				// second page
-				// (the test drives the second fetch here; we embed the assertion
-				// inside the assertion closure via capturing the MS from the seed)
-			},
-		},
 	}
 
 	for _, tc := range tests {

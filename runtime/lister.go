@@ -43,9 +43,9 @@ func DecodeCursor(cursor string) (time.Time, string, error) {
 	return p.StartedAt, p.InstanceID, nil
 }
 
-// normalizeLimit clamps a requested limit to [1, 200] with a default of 50.
+// NormalizeLimit clamps a requested limit to [1, 200] with a default of 50.
 // Limit ≤ 0 returns the default (50); Limit > 200 is clamped to 200.
-func normalizeLimit(n int) int {
+func NormalizeLimit(n int) int {
 	switch {
 	case n <= 0:
 		return 50
@@ -104,7 +104,10 @@ type InstancePage struct {
 }
 
 // InstanceLister is the read-side port for enumerating process instances.
-// Implementations must return items in deterministic (StartedAt DESC, InstanceID DESC) order.
+// Implementations must return items ordered by (StartedAt DESC, InstanceID DESC),
+// where InstanceID uses lexicographic (string) comparison. This ordering is consistent
+// between MemStore and Postgres (varchar), so callers should use sortable instance IDs
+// (e.g. UUIDs/ULIDs) for intuitive ordering.
 type InstanceLister interface {
 	// List returns a page of process-instance summaries matching filter.
 	List(ctx context.Context, filter InstanceFilter) (InstancePage, error)

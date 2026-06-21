@@ -29,8 +29,7 @@ func NewLister(pool *pgxpool.Pool) *Lister { return &Lister{pool: pool} }
 // Items are ordered by (started_at DESC, instance_id DESC). When filter.Status
 // is non-nil, only instances with that status are included. filter.Cursor is
 // the opaque token produced by runtime.EncodeCursor; an empty cursor means
-// "start from the beginning". Limit is clamped via runtime.NormalizeLimit (the
-// exported shim in lister.go).
+// "start from the beginning". Limit is clamped via runtime.NormalizeLimit.
 //
 // The keyset predicate for the cursor is:
 //
@@ -39,7 +38,7 @@ func NewLister(pool *pgxpool.Pool) *Lister { return &Lister{pool: pool} }
 // which Postgres evaluates as a row-value comparison, matching the MemStore's
 // skip logic exactly so both implementations paginate identically.
 func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runtime.InstancePage, error) {
-	limit := normalizeLimit(filter.Limit)
+	limit := runtime.NormalizeLimit(filter.Limit)
 	fetch := limit + 1 // fetch one extra to detect HasMore
 
 	// Decode cursor (optional).
@@ -151,17 +150,4 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
-}
-
-// normalizeLimit is the package-local alias for the runtime helper.
-// It keeps the Lister free of redundant import cycles while reusing the shared clamping logic.
-func normalizeLimit(n int) int {
-	switch {
-	case n <= 0:
-		return 50
-	case n > 200:
-		return 200
-	default:
-		return n
-	}
 }
