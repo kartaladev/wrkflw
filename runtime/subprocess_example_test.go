@@ -89,9 +89,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	})
 
 	clk := clock.System()
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
 	// Build the definition registry with the child def.
 	child := childDef()
@@ -99,7 +97,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 		"child": child,
 	})
 
-	runner := runtime.NewRunner(cat, clk, store, jnl, out, runtime.WithDefinitions(reg))
+	runner := runtime.NewRunner(cat, clk, store, runtime.WithDefinitions(reg))
 
 	parent := parentCallDef()
 	st, err := runner.Run(ctx, parent, "parent-i1", map[string]any{"x": 42})
@@ -119,7 +117,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	// The child instance should also have been saved to the store (observable).
 	// Child instance ID follows the "<parentID>-sub-<commandID>" scheme.
 	// We check the parent completed and the outbox has the completion event.
-	events := out.Events()
+	events := store.Events()
 	require.NotEmpty(t, events, "at least one outbox event must be written")
 	// Find the parent instance.completed event.
 	found := false
@@ -143,9 +141,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	})
 
 	clk := clock.System()
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
 	// Child def uses a failing action.
 	failingChild := &model.ProcessDefinition{
@@ -179,7 +175,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		"failing-child": failingChild,
 	})
 
-	runner := runtime.NewRunner(cat, clk, store, jnl, out, runtime.WithDefinitions(reg))
+	runner := runtime.NewRunner(cat, clk, store, runtime.WithDefinitions(reg))
 
 	st, err := runner.Run(ctx, failingParent, "parent-fail-i1", nil)
 	require.NoError(t, err)
@@ -244,9 +240,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
 	parkingChild := parkingChildDef()
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
@@ -258,7 +252,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	// persist the task, and return nil/nil — leaving childSt.Status == StatusRunning.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	runner := runtime.NewRunner(nil, clk, store, jnl, out,
+	runner := runtime.NewRunner(nil, clk, store,
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -272,7 +266,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	require.NotNil(t, st.EndedAt, "parent must have an EndedAt on failure")
 
 	// The outbox must carry the failure event; check its error message is diagnosable.
-	events := out.Events()
+	events := store.Events()
 	var failEvent *runtime.OutboxEvent
 	for i := range events {
 		if events[i].Topic == "instance.failed" {
@@ -337,16 +331,14 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
 	def := selfRefDef()
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"self-ref": def,
 	})
 
-	runner := runtime.NewRunner(nil, clk, store, jnl, out, runtime.WithDefinitions(reg))
+	runner := runtime.NewRunner(nil, clk, store, runtime.WithDefinitions(reg))
 
 	// This must not panic / stack-overflow. The depth guard must kick in and
 	// fail the parent instance with a descriptive error.
@@ -358,7 +350,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	}, "recursion must not cause a panic or stack overflow")
 
 	// Check outbox for a diagnosable error.
-	events := out.Events()
+	events := store.Events()
 	var failMsg string
 	for _, e := range events {
 		if e.Topic == "instance.failed" {
@@ -381,12 +373,10 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := runtime.NewMemStateStore()
-	jnl := runtime.NewMemJournal()
-	out := runtime.NewMemOutbox()
+	store := runtime.NewMemStore()
 
 	// No WithDefinitions option.
-	runner := runtime.NewRunner(nil, clk, store, jnl, out)
+	runner := runtime.NewRunner(nil, clk, store)
 
 	parent := parentCallDef()
 	_, err := runner.Run(ctx, parent, "no-reg-i1", nil)

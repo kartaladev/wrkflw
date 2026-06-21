@@ -57,9 +57,7 @@ type msgKey struct {
 type Runner struct {
 	cat      action.Catalog
 	clk      clock.Clock
-	store    StateStore
-	jnl      Journal
-	out      OutboxWriter
+	store    Store
 	resolver humantask.ActorResolver
 	tasks    humantask.TaskStore
 	authz    authz.Authorizer
@@ -126,16 +124,18 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 	return func(r *Runner) { r.defsReg = reg }
 }
 
-// NewRunner constructs a Runner with the five required core ports (cat, clk,
-// store, jnl, out) and any optional capability bundles supplied as functional
-// options.
+// NewRunner constructs a Runner with the three required core ports (cat, clk,
+// store) and any optional capability bundles supplied as functional options.
 //
 // Required ports:
 //   - cat: the service-action catalog (may be nil for processes with no service tasks).
 //   - clk: the time source. Pass a fake clock in tests.
-//   - store: the authoritative instance state store.
-//   - jnl: the append-only trigger journal.
-//   - out: the outbox writer for domain events.
+//   - store: the transactional persistence port (snapshot + journal + outbox).
+//     See [Store]; the in-memory [MemStore] is the reference fake.
+//
+// ADR-0007 amends ADR-0005: the former store/jnl/out positionals collapse to
+// one transactional Store, so snapshot, journal, and outbox commit atomically
+// per applied trigger.
 //
 // Optional capabilities (via Option):
 //   - [WithHumanTasks]: human-task support (resolver, task store, authorizer).
@@ -144,17 +144,13 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 func NewRunner(
 	cat action.Catalog,
 	clk clock.Clock,
-	store StateStore,
-	jnl Journal,
-	out OutboxWriter,
+	store Store,
 	opts ...Option,
 ) *Runner {
 	r := &Runner{
 		cat:        cat,
 		clk:        clk,
 		store:      store,
-		jnl:        jnl,
-		out:        out,
 		msgWaiters: make(map[msgKey]string),
 	}
 	for _, o := range opts {
@@ -167,7 +163,7 @@ func NewRunner(
 // parks (e.g. awaiting a human task). It returns the state at the point it stopped.
 func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
 	st := engine.InstanceState{InstanceID: instanceID}
-	return r.deliverLoop(ctx, def, st, engine.NewStartInstance(r.clk.Now(), vars))
+	return r.deliverLoop(ctx, def, st, 0, true, engine.NewStartInstance(r.clk.Now(), vars))
 }
 
 // Deliver loads the current instance state, applies one trigger via engine.Step,
@@ -185,42 +181,58 @@ func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instance
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
 func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
-	st, err := r.store.Load(instanceID)
+	st, token, err := r.store.Load(ctx, instanceID)
 	if err != nil {
 		return engine.InstanceState{}, fmt.Errorf("runtime: deliver: load: %w", err)
 	}
-	return r.deliverLoop(ctx, def, st, trg)
+	return r.deliverLoop(ctx, def, st, token, false, trg)
 }
 
-// deliverLoop applies one trigger and then any follow-up triggers emitted by
-// perform (action results, etc.) until all commands are resolved or the engine
-// parks. It encapsulates the journal→Step→save→perform cycle shared by Run and
-// Deliver.
+// deliverLoop applies triggers from queue and then any follow-up triggers emitted
+// by perform (action results, etc.) until all commands are resolved or the engine
+// parks. It encapsulates the Step→outboxEventsFor→Create/Commit→perform cycle
+// shared by Run and Deliver.
 //
-// After each save, if a SignalBus is configured, the loop reconciles the
-// instance's AwaitSignal tokens with the bus so that a future
-// [SignalBus.Publish] reaches this instance.
-func (r *Runner) deliverLoop(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, trg engine.Trigger) (engine.InstanceState, error) {
+// token is the current optimistic-concurrency token; create=true on the very
+// first step (Run path, no row yet) and false on all subsequent steps.
+//
+// After each committed save, if a SignalBus or message waiters are configured,
+// the loop reconciles them so that a future [SignalBus.Publish] reaches this
+// instance.
+func (r *Runner) deliverLoop(
+	ctx context.Context,
+	def *model.ProcessDefinition,
+	st engine.InstanceState,
+	token Token,
+	create bool,
+	trg engine.Trigger,
+) (engine.InstanceState, error) {
 	queue := []engine.Trigger{trg}
 
 	for len(queue) > 0 {
 		t := queue[0]
 		queue = queue[1:]
 
-		if err := r.jnl.Append(st.InstanceID, t); err != nil {
-			return st, fmt.Errorf("runtime: journal: %w", err)
-		}
 		res, err := engine.Step(def, st, t, engine.StepOptions{})
 		if err != nil {
 			return st, fmt.Errorf("runtime: step: %w", err)
 		}
 		st = res.State
-		if err := r.store.Save(st); err != nil {
-			return st, fmt.Errorf("runtime: save: %w", err)
+
+		events := outboxEventsFor(res.Commands)
+		appliedStep := AppliedStep{State: st, Trigger: t, Events: events}
+
+		if create {
+			token, err = r.store.Create(ctx, appliedStep)
+			create = false
+		} else {
+			token, err = r.store.Commit(ctx, token, appliedStep)
+		}
+		if err != nil {
+			return st, fmt.Errorf("runtime: commit: %w", err)
 		}
 
-		// Reconcile signal-bus and message waiters after each state save so both
-		// the SignalBus and msgWaiters maps always reflect the current parked state.
+		// Reconcile signal-bus and message waiters after each committed save.
 		r.syncWaiters(st)
 
 		for _, c := range res.Commands {
@@ -299,7 +311,7 @@ func (r *Runner) findMessageWaiter(name, correlationKey string) (string, bool) {
 //
 // The runner tracks message waiters internally via [syncMsgWaiters], which is
 // called after each deliverLoop iteration. This keeps the state in sync without
-// requiring an enumeration API on StateStore.
+// requiring an enumeration API on Store.
 //
 // def is required to call Deliver on the matched instance.
 func (r *Runner) DeliverMessage(ctx context.Context, def *model.ProcessDefinition, name, correlationKey string, payload map[string]any) error {
@@ -335,15 +347,13 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 
 	case engine.CompleteInstance:
-		if err := r.out.Write("instance.completed", cmd.Result); err != nil {
-			return nil, fmt.Errorf("runtime: outbox: %w", err)
-		}
+		// Outbox event ("instance.completed") is derived by outboxEventsFor and
+		// written inside the Commit tx; nothing to perform here.
 		return nil, nil
 
 	case engine.FailInstance:
-		if err := r.out.Write("instance.failed", map[string]any{"error": cmd.Err}); err != nil {
-			return nil, fmt.Errorf("runtime: outbox: %w", err)
-		}
+		// Outbox event ("instance.failed") is derived by outboxEventsFor and
+		// written inside the Commit tx; nothing to perform here.
 		return nil, nil
 
 	case engine.AwaitHuman:

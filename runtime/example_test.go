@@ -57,7 +57,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			return map[string]any{"b": true}, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), runtime.NewMemOutbox())
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
 
 	final, err := r.Run(t.Context(), def, "i1", nil)
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 		})
 	}
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), runtime.NewMemOutbox())
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
 
 	final, err := r.Run(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
 	require.NoError(t, err)
@@ -126,8 +126,8 @@ func TestRunnerExecutesLinearProcess(t *testing.T) {
 			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
 		}),
 	})
-	jnl := runtime.NewMemJournal()
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), jnl, runtime.NewMemOutbox())
+	store := runtime.NewMemStore()
+	r := runtime.NewRunner(cat, clock.System(), store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", map[string]any{"name": "Ada"})
 	require.NoError(t, err)
@@ -137,5 +137,7 @@ func TestRunnerExecutesLinearProcess(t *testing.T) {
 	assert.Empty(t, final.Tokens)
 
 	// Journal recorded StartInstance + ActionCompleted (audit trail).
-	assert.Len(t, jnl.Entries("i1"), 2)
+	entries, err := store.Entries(t.Context(), "i1")
+	require.NoError(t, err)
+	assert.Len(t, entries, 2)
 }

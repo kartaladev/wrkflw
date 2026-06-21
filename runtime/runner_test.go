@@ -3,7 +3,6 @@ package runtime_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,53 +15,39 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
-// errStateStore is a StateStore whose Save always fails.
-type errStateStore struct{ runtime.StateStore }
+// errStore is a Store whose Create and Commit always fail with a concurrency error.
+// It embeds *runtime.MemStore so that Load still works for Deliver-based tests
+// that need an initial state.
+type errStore struct{ *runtime.MemStore }
 
-func (e *errStateStore) Save(_ engine.InstanceState) error { return errors.New("store: forced failure") }
-func (e *errStateStore) Load(id string) (engine.InstanceState, error) {
-	return engine.InstanceState{}, runtime.ErrInstanceNotFound
+func (errStore) Create(_ context.Context, _ runtime.AppliedStep) (runtime.Token, error) {
+	return 0, runtime.ErrConcurrentUpdate
 }
 
-// errJournal is a Journal whose Append always fails.
-type errJournal struct{}
-
-func (j *errJournal) Append(_ string, _ engine.Trigger) error {
-	return errors.New("journal: forced failure")
+func (errStore) Commit(_ context.Context, _ runtime.Token, _ runtime.AppliedStep) (runtime.Token, error) {
+	return 0, runtime.ErrConcurrentUpdate
 }
 
-// errOutbox is an OutboxWriter whose Write always fails.
-type errOutbox struct{}
+// commitErrStore is a Store whose Create succeeds but Commit always fails
+// with ErrConcurrentUpdate. Used to test the Commit failure path independently.
+type commitErrStore struct{ *runtime.MemStore }
 
-func (o *errOutbox) Write(_ string, _ map[string]any) error {
-	return errors.New("outbox: forced failure")
+func (s *commitErrStore) Commit(_ context.Context, _ runtime.Token, _ runtime.AppliedStep) (runtime.Token, error) {
+	return 0, runtime.ErrConcurrentUpdate
 }
 
-func TestMemOutboxEvents(t *testing.T) {
-	out := runtime.NewMemOutbox()
-	require.Empty(t, out.Events())
-
-	require.NoError(t, out.Write("instance.completed", map[string]any{"result": "ok"}))
-	require.NoError(t, out.Write("instance.failed", map[string]any{"error": "boom"}))
-
-	evs := out.Events()
-	require.Len(t, evs, 2)
-	assert.Equal(t, "instance.completed", evs[0].Topic)
-	assert.Equal(t, "instance.failed", evs[1].Topic)
-}
-
+// TestRunnerUnknownActionFailsInstance verifies that a catalog with no actions
+// causes the runner to produce FailInstance (recorded in the store's outbox).
 func TestRunnerUnknownActionFailsInstance(t *testing.T) {
-	// A catalog with no actions; the runner should receive ActionFailed and
-	// record a FailInstance command (outbox write "instance.failed").
 	cat := action.NewMapCatalog(nil)
-	out := runtime.NewMemOutbox()
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out)
+	store := runtime.NewMemStore()
+	r := runtime.NewRunner(cat, clock.System(), store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, final.Status)
 
-	evs := out.Events()
+	evs := store.Events()
 	require.Len(t, evs, 1)
 	assert.Equal(t, "instance.failed", evs[0].Topic)
 }
@@ -70,54 +55,53 @@ func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 func TestRunnerActionErrorFailsInstance(t *testing.T) {
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
-			return nil, fmt.Errorf("greet exploded")
+			return nil, errors.New("greet exploded")
 		}),
 	})
-	out := runtime.NewMemOutbox()
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), out)
+	store := runtime.NewMemStore()
+	r := runtime.NewRunner(cat, clock.System(), store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, final.Status)
 
-	evs := out.Events()
+	evs := store.Events()
 	require.Len(t, evs, 1)
 	assert.Equal(t, "instance.failed", evs[0].Topic)
 }
 
-func TestRunnerJournalAppendErrorPropagates(t *testing.T) {
-	cat := action.NewMapCatalog(nil)
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), &errJournal{}, runtime.NewMemOutbox())
-
-	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "runtime: journal:")
-}
-
-func TestRunnerStoreSaveErrorPropagates(t *testing.T) {
+// TestRunnerStoreCreateErrorPropagates verifies that a Create failure from the
+// store is surfaced as a hard error from Run (wrapping ErrConcurrentUpdate).
+func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), &errStateStore{}, runtime.NewMemJournal(), runtime.NewMemOutbox())
+	r := runtime.NewRunner(cat, clock.System(), errStore{runtime.NewMemStore()})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "runtime: save:")
+	assert.Contains(t, err.Error(), "runtime: commit:")
 }
 
-func TestRunnerOutboxWriteErrorPropagates(t *testing.T) {
+// TestRunnerStoreCommitErrorPropagates verifies that a Commit failure is surfaced
+// as a hard error from Run for subsequent steps (after Create succeeds).
+func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStateStore(), runtime.NewMemJournal(), &errOutbox{})
+	// commitErrStore: Create succeeds (first step), Commit fails (second step when
+	// ActionCompleted is delivered).
+	r := runtime.NewRunner(cat, clock.System(), &commitErrStore{runtime.NewMemStore()})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "runtime: outbox:")
+	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
+		"ErrConcurrentUpdate from Commit must be surfaced via errors.Is")
+	assert.Contains(t, err.Error(), "runtime: commit:")
 }
 
 // userTaskOnlyDef returns a process with a single user-task node: start → userTask → end.
@@ -145,9 +129,7 @@ func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 	r := runtime.NewRunner(
 		nil, // no catalog
 		clock.System(),
-		runtime.NewMemStateStore(),
-		runtime.NewMemJournal(),
-		runtime.NewMemOutbox(),
+		runtime.NewMemStore(),
 		// WithHumanTasks intentionally omitted to test error path.
 	)
 
@@ -181,9 +163,7 @@ func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
 	r := runtime.NewRunner(
 		nil,
 		clock.System(),
-		runtime.NewMemStateStore(),
-		runtime.NewMemJournal(),
-		runtime.NewMemOutbox(),
+		runtime.NewMemStore(),
 		// WithScheduler intentionally omitted.
 	)
 
@@ -235,9 +215,7 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 	r := runtime.NewRunner(
 		nil,
 		clock.System(),
-		runtime.NewMemStateStore(),
-		runtime.NewMemJournal(),
-		runtime.NewMemOutbox(),
+		runtime.NewMemStore(),
 		// WithScheduler intentionally omitted.
 	)
 	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
@@ -245,4 +223,20 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 	// Both ScheduleTimer and CancelTimer use the same "no Scheduler configured" pattern.
 	assert.Contains(t, err.Error(), "no Scheduler configured",
 		"ScheduleTimer/CancelTimer nil-guard must mention 'no Scheduler configured'")
+}
+
+// TestDeliverLoopPropagatesConcurrentUpdate verifies that when the Store's Create
+// returns ErrConcurrentUpdate, deliverLoop surfaces it wrapped so errors.Is matches.
+func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
+	// Use a simple linear def (start → greet → end) with a succeeding action.
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return map[string]any{"greeted": true}, nil
+		}),
+	})
+	r := runtime.NewRunner(cat, clock.System(), errStore{runtime.NewMemStore()})
+	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
+		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
 }

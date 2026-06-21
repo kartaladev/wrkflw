@@ -4,31 +4,46 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
-// ErrInstanceNotFound is returned by StateStore.Load when no instance exists for the id.
+// ErrInstanceNotFound is returned by Store.Load when no instance exists for the id.
 var ErrInstanceNotFound = errors.New("runtime: instance not found")
-
-// StateStore persists the authoritative instance snapshot.
-type StateStore interface {
-	Load(id string) (engine.InstanceState, error)
-	Save(st engine.InstanceState) error
-}
-
-// Journal is the append-only audit ledger of applied triggers.
-type Journal interface {
-	Append(id string, trg engine.Trigger) error
-}
 
 // JournalReader exposes the recorded trigger history for replay/audit.
 type JournalReader interface {
-	Entries(id string) []engine.Trigger
+	Entries(ctx context.Context, id string) ([]engine.Trigger, error)
 }
 
-// OutboxWriter records domain events for later relay.
-type OutboxWriter interface {
-	Write(topic string, payload map[string]any) error
+// Token is an opaque optimistic-concurrency token (Postgres: a bigint version).
+type Token int64
+
+// OutboxEvent is one domain event to relay.
+type OutboxEvent struct {
+	Topic   string
+	Payload map[string]any
+}
+
+// AppliedStep is the atomic persistence unit for exactly one applied trigger:
+// the new snapshot, the trigger that produced it, and the outbox events derived
+// from the resulting commands.
+type AppliedStep struct {
+	State   engine.InstanceState
+	Trigger engine.Trigger
+	Events  []OutboxEvent
+}
+
+// ErrConcurrentUpdate is returned by Store.Commit when the expected token is
+// stale (a concurrent writer advanced the instance first).
+var ErrConcurrentUpdate = errors.New("runtime: concurrent update")
+
+// Store is the transactional persistence port the Runner depends on. Commit
+// persists snapshot + journal + outbox atomically per applied trigger.
+type Store interface {
+	Create(ctx context.Context, step AppliedStep) (Token, error)
+	Load(ctx context.Context, id string) (engine.InstanceState, Token, error)
+	Commit(ctx context.Context, expected Token, step AppliedStep) (Token, error)
 }
