@@ -244,7 +244,7 @@ The engine core depends on interfaces only. The next sub-projects implement them
 - **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
 - **Scheduling** — ✅ COMPLETE, merged to `main`. See "Scheduling (gocron) sub-project" section above.
 - **Authorization** — ✅ COMPLETE, merged to `main`. See "Authorization (casbin) sub-project" section above.
-- **Transports** — ✅ IMPLEMENTED on `feat/transports-rest-grpc` (pending final whole-branch review + merge). See "Transports (REST/gRPC) sub-project" section below.
+- **Transports** — ✅ COMPLETE, merged to `main`. See "Transports (REST/gRPC) sub-project" section below.
 - **Admin monitoring** + **`ProcessInstance` response customization** — ✅ included in the Transports sub-project (admin middleware + keyset pagination + `WithInstanceMapper` response customization).
 
 ## How to run the next sub-project (the workflow that built Plans 1–8)
@@ -280,7 +280,7 @@ execute, with ADRs for significant decisions, branch → SDD → merge to `main`
 
 ---
 
-## Transports (REST/gRPC) sub-project — IMPLEMENTED on `feat/transports-rest-grpc` (pending review + merge)
+## Transports (REST/gRPC) sub-project — ✅ COMPLETE, merged to `main`
 
 Built on branch `feat/transports-rest-grpc` (HEAD `24a4644`). Design: spec
 `docs/specs/2026-06-21-transports-rest-grpc-design.md`, plan `docs/plans/2026-06-21-transports-rest-grpc.md`,
