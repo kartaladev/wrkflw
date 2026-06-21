@@ -20,6 +20,7 @@ import (
 	casbinv2 "github.com/casbin/casbin/v2"
 	casbinmodel "github.com/casbin/casbin/v2/model"
 	stringadapter "github.com/casbin/casbin/v2/persist/string-adapter"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	internalcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
@@ -99,4 +100,11 @@ func NewCasbinAuthorizerFromStrings(modelText, policyText string) (authz.Authori
 		return nil, fmt.Errorf("casbinauthz: build enforcer: %w", err)
 	}
 	return NewCasbinAuthorizer(e), nil
+}
+
+// MigrateCasbin applies the casbin_rule schema to pool (tracked in its own
+// casbin_goose_db_version table, independent of persistence.Migrate). Call it
+// before NewCasbinAuthorizerFromDB. Never auto-run on import.
+func MigrateCasbin(ctx context.Context, pool *pgxpool.Pool) error {
+	return internalcasbin.MigrateCasbin(ctx, pool)
 }
