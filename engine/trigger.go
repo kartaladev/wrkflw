@@ -182,8 +182,8 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 }
 
 // CompensateRequested is an admin/debug trigger that initiates reverse-order
-// compensation rollback for a running process instance. The engine walks the
-// relevant compensation records in reverse completion order, emitting one
+// compensation rollback for a running process instance. The engine walks
+// InstanceState.RootCompensations in reverse completion order, emitting one
 // InvokeAction per record (down to and excluding ToNode), then resumes at
 // ToNode (StatusRunning) or terminates (StatusTerminated) when ToNode is empty.
 //
@@ -191,15 +191,17 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 // is NOT re-run). An empty ToNode means "roll back everything" — the instance
 // ends in StatusTerminated when all records are exhausted.
 //
-// LIMITATION — root scope only: CompensateRequested currently targets only the
-// ROOT scope's compensation records (InstanceState.RootCompensations). Records
-// accumulated inside a sub-process scope are attached to the Scope entry, but
-// those scopes are CLOSED (and their Compensations dropped) when the sub-process
-// completes normally. As a result, completed sub-process scopes are not yet
-// rollback-able via this trigger. Consumers should not rely on CompensateRequested
-// reaching into historical sub-process records — this is a known limitation tracked
-// as a follow-up. The Compensate command (reserved, not yet emitted) is the intended
-// future vehicle for scope-targeted compensation.
+// Sub-process compensation (ADR-0013): when a sub-process scope closes normally,
+// its accumulated CompensationRecords are hoisted into the parent scope (or root)
+// before closeScope is called. As a result, completed sub-process activities are
+// rollback-able via this trigger — their records appear in RootCompensations in
+// completion order alongside root-level records, and the reverse walk reaches them
+// naturally.
+//
+// Scope-targeted compensation (Compensate command) remains RESERVED for future use
+// and is not yet emitted. It is intended for BPMN compensation boundary/throw event
+// handling, which requires a producer not yet built. CompensateRequested is the
+// only supported compensation entry point today.
 type CompensateRequested struct {
 	baseTrigger
 	// ToNode is the rollback target node ID. Compensation runs from the most-recently

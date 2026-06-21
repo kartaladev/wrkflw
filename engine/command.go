@@ -125,20 +125,26 @@ type StartSubInstance struct {
 //
 // Intended use (not yet implemented): an engine-internal cancel/error path could
 // emit Compensate to compensate a specific scope before terminating — for example,
-// compensating only the records of a sub-process scope rather than the whole
-// instance. ScopeID identifies the target scope ("" = root); FromNode is the most
-// recently completed node to start the reverse walk from ("" = all records in scope).
+// compensating only the records accumulated inside one sub-process scope rather than
+// the whole instance. ScopeID identifies the target scope ("" = root); FromNode is
+// the most recently completed node to start the reverse walk from ("" = all records
+// in scope).
 //
-// The current admin entry point for compensation is the CompensateRequested trigger
-// (a Trigger, not a Command), which compensates the ROOT scope's records.
-// Compensation records of COMPLETED sub-process scopes are dropped when the scope
-// closes and are not yet rollback-able via either path — this is a known limitation
-// tracked as a follow-up.
+// Current state of compensation:
+//   - The admin entry point is the CompensateRequested trigger (a Trigger, not a
+//     Command), which walks InstanceState.RootCompensations in reverse order.
+//   - When a sub-process scope closes normally, its accumulated CompensationRecords
+//     are HOISTED into the parent scope (or root) via hoistCompensations before
+//     closeScope is called (ADR-0013). Hoisted records are therefore reachable by
+//     the root CompensateRequested walk in reverse completion order.
+//   - Compensate{ScopeID, FromNode} remains RESERVED for future scope-targeted
+//     compensation, which requires a producer (e.g. a BPMN compensation boundary
+//     event or throw event) not yet built. Do not rely on this command being emitted.
 //
 // NOTE: FromNode is currently unused. There is no shared "compensationWalk"
-// function; both the CompensateRequested path (stepCompensateRequested in step.go)
-// and any future Compensate-command path will share the same cursor-based logic
-// once this command is wired.
+// function; the CompensateRequested path (stepCompensateRequested in step.go) and
+// any future Compensate-command path will share the same cursor-based logic once
+// this command is wired.
 type Compensate struct {
 	// ScopeID identifies the execution scope to compensate. Empty = root scope.
 	ScopeID string

@@ -940,6 +940,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 						for _, timerID := range s.removeEventSubprocessArmsForScope(currentScopeID) {
 							cmds = append(cmds, CancelTimer{TimerID: timerID})
 						}
+						s.hoistCompensations(currentScopeID, parentScopeID)
 						s.closeScope(currentScopeID)
 
 						// Resolve the parent definition and find the sub-process activity's

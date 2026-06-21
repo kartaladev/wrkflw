@@ -152,17 +152,16 @@ func TestNonCompensableActivityDoesNotRecord(t *testing.T) {
 		"non-compensable task must not append any record")
 }
 
-// TestCompensableActivityInsideSubProcessRecordsInSubProcessScope asserts that
-// a compensable service task INSIDE a sub-process records its CompensationRecord
-// in the SUB-PROCESS scope (via Scope.Compensations), NOT in the root scope
-// (InstanceState.RootCompensations).
+// TestCompensableActivityInsideSubProcessIsHoistedToRootOnClose asserts that
+// when a sub-process scope closes normally, its accumulated CompensationRecords
+// are hoisted into the parent (root) scope. This is the ADR-0013 hoist
+// behavior: records written to a Scope.Compensations while the scope is open
+// are moved to RootCompensations (or the parent Scope.Compensations) just
+// before closeScope, so the root CompensateRequested walk can reach them.
 //
-// We verify this by completing inner-svc, then checking the state BEFORE the
-// sub-process scope closes (at ActionCompleted time the scope is still open and
-// carries the record). After the scope closes, the record lives in a closed scope
-// that has been removed from s.Scopes — so we verify at the intermediate step that
-// (a) the sub-process scope has the record and (b) the root has none.
-func TestCompensableActivityInsideSubProcessRecordsInSubProcessScope(t *testing.T) {
+// Pre-ADR-0013: records were silently dropped on closeScope (the bug).
+// Post-ADR-0013: records are hoisted, making them rollback-able.
+func TestCompensableActivityInsideSubProcessIsHoistedToRootOnClose(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
 
 	def := compensableSubProcessDef()
@@ -181,11 +180,12 @@ func TestCompensableActivityInsideSubProcessRecordsInSubProcessScope(t *testing.
 	// Verify the sub-process scope is open in r1.
 	require.Len(t, r1.State.Scopes, 1, "sub-process scope must be open")
 	subScopeID := r1.State.Scopes[0].ID
+	assert.NotEmpty(t, subScopeID, "sub-process scope must have a non-empty ID")
 
 	completedAt := at.Add(3 * time.Second)
 
 	// Complete the inner service task. After this, inner-svc → inner-end → scope
-	// drains → scope closes → outer-end → instance completes.
+	// drains → hoistCompensations called → scope closes → outer-end → instance completes.
 	r2, err := engine.Step(def, r1.State,
 		engine.NewActionCompleted(completedAt, ia.CommandID, map[string]any{"confirmationCode": "ABC"}),
 		engine.StepOptions{})
@@ -194,20 +194,16 @@ func TestCompensableActivityInsideSubProcessRecordsInSubProcessScope(t *testing.
 	// Instance completes: start → sub(inner-start → inner-svc → inner-end) → end.
 	assert.Equal(t, engine.StatusCompleted, r2.State.Status)
 
-	// Root compensations must be EMPTY: the activity was inside the sub-process.
-	assert.Empty(t, r2.State.RootCompensations,
-		"root must NOT contain records from a sub-process's compensable task")
+	// The sub-process scope is now closed (removed from r2.State.Scopes).
+	assert.Empty(t, r2.State.Scopes, "sub-process scope must be closed")
 
-	// The sub-process scope is now closed (removed from r2.State.Scopes). We
-	// verify indirectly by checking that no root record leaked. The sub-process
-	// scope's compensation records live in Scope.Compensations during scope
-	// lifetime; they are available to consumers (e.g. Plan 8 compensator) that
-	// hold a reference to the scope before it is closed. The closed scope is
-	// gone from r2.State.Scopes — that is the correct behavior (Plan 8 will
-	// consume compensation records BEFORE closing the scope).
-	//
-	// Verify the scope ID for traceability.
-	assert.NotEmpty(t, subScopeID, "sub-process scope must have had a non-empty ID")
+	// ADR-0013 hoist: the inner activity's record must now be in RootCompensations.
+	require.Len(t, r2.State.RootCompensations, 1,
+		"inner activity's record must be hoisted to root when the sub-process scope closes")
+	assert.Equal(t, "inner-svc", r2.State.RootCompensations[0].NodeID,
+		"hoisted record NodeID must be the inner compensable activity")
+	assert.Equal(t, "cancel-booking", r2.State.RootCompensations[0].Action,
+		"hoisted record Action must be the inner activity's CompensationAction")
 }
 
 // TestCompensationRecordInputIsSnapshotNotReference asserts the Input stored in
@@ -237,6 +233,96 @@ func TestCompensationRecordInputIsSnapshotNotReference(t *testing.T) {
 	rec := r2.State.RootCompensations[0]
 	assert.Equal(t, "original", rec.Input["val"],
 		"Input must be a snapshot of variables BEFORE ActionCompleted output is merged")
+}
+
+// ── ADR-0013 regression: nested-scope compensation hoist ─────────────────────
+
+// compensableSubThenRootDef returns a process:
+//
+//	Outer: start → sub → rootUserTask → end
+//	Inner: inner-start → inner-svc(CompensationAction:"cancel-inner") → inner-end
+//
+// The root user task keeps the instance Running after the sub-process exits, so
+// a CompensateRequested can be issued and must reach the now-hoisted inner record.
+func compensableSubThenRootDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
+		ID: "nested-hoist", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
+			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "outer-hoist", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
+			{ID: "rootUserTask", Kind: model.KindUserTask},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "sub"},
+			{ID: "f2", Source: "sub", Target: "rootUserTask"},
+			{ID: "f3", Source: "rootUserTask", Target: "end"},
+		},
+	}
+}
+
+// TestHoistSubProcessCompensationToRoot is the ADR-0013 regression test.
+// It verifies that after a sub-process completes and its scope closes, the
+// inner compensable activity's record is hoisted into root, making it
+// reachable by a full CompensateRequested walk.
+func TestHoistSubProcessCompensationToRoot(t *testing.T) {
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	def := compensableSubThenRootDef()
+
+	// Step 1: start the instance — drives to inner-svc (InvokeAction).
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "hoist-inst-1"},
+		engine.NewStartInstance(at, map[string]any{"x": 1}),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.Commands, 1, "expected InvokeAction for inner-svc")
+	ia, ok := r1.Commands[0].(engine.InvokeAction)
+	require.True(t, ok, "expected InvokeAction")
+	require.Equal(t, "book-inner", ia.Name)
+
+	// Step 2: complete inner-svc — drives inner-svc → inner-end → scope closes
+	// → token placed at rootUserTask (AwaitHuman). Instance is Running.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(1*time.Second), ia.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status,
+		"instance must still be running (parked at rootUserTask)")
+	// Sub-process scope must be closed.
+	require.Empty(t, r2.State.Scopes, "sub-process scope must be closed")
+
+	// Key assertion (before fix this fails): inner-svc's record must be in
+	// RootCompensations after the scope hoist.
+	require.Len(t, r2.State.RootCompensations, 1,
+		"inner activity's compensation record must be hoisted to root after sub-process closes")
+	require.Equal(t, "inner-svc", r2.State.RootCompensations[0].NodeID)
+	require.Equal(t, "cancel-inner", r2.State.RootCompensations[0].Action)
+
+	// Step 3: issue full CompensateRequested — must emit cancel-inner.
+	compensateAt := at.Add(5 * time.Second)
+	r3, err := engine.Step(def, r2.State,
+		engine.NewCompensateRequested(compensateAt, ""),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	var gotActions []string
+	for _, c := range r3.Commands {
+		if invokeAction, ok2 := c.(engine.InvokeAction); ok2 {
+			gotActions = append(gotActions, invokeAction.Name)
+		}
+	}
+	require.Contains(t, gotActions, "cancel-inner",
+		"inner sub-process activity must be rollback-able after the scope closed")
 }
 
 // ── Task-1 gap: positive sub-process-scope compensation recording ────────────
@@ -518,4 +604,220 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 	assert.Equal(t, engine.StatusTerminated, r8.State.Status,
 		"full rollback with empty ToNode must leave instance in StatusTerminated")
 	assert.Empty(t, r8.State.Tokens, "no tokens remain after full rollback")
+}
+
+// ── ADR-0013: ordering and nested-depth tests ─────────────────────────────────
+
+// rootThenSubProcessCompensableDef returns a process:
+//
+//	start → rootSvc(CompensationAction:"root-comp") → sub(inner-svc CompensationAction:"inner-comp") → rootUserTask → end
+//
+// Completion order: rootSvc(1) → sub exits (inner-svc hoisted 2) → rootUserTask (parked).
+// Expected reverse-order: inner-comp first (most recent), root-comp second.
+func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
+		ID: "nested-order", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-book", CompensationAction: "inner-comp"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
+			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "order-proc", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "rootSvc", Kind: model.KindServiceTask, Action: "root-book", CompensationAction: "root-comp"},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
+			{ID: "rootUserTask", Kind: model.KindUserTask},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "rootSvc"},
+			{ID: "f2", Source: "rootSvc", Target: "sub"},
+			{ID: "f3", Source: "sub", Target: "rootUserTask"},
+			{ID: "f4", Source: "rootUserTask", Target: "end"},
+		},
+	}
+}
+
+// TestHoistCompensationOrderingReversed asserts that after a root compensable
+// activity completes, a sub-process containing a compensable inner activity
+// completes (hoisting the inner record), a full CompensateRequested emits
+// compensation InvokeActions in strict reverse completion order:
+// inner-comp (most recent, from sub-process hoist) then root-comp (earlier root).
+func TestHoistCompensationOrderingReversed(t *testing.T) {
+	at := time.Date(2026, 6, 21, 11, 0, 0, 0, time.UTC)
+	def := rootThenSubProcessCompensableDef()
+
+	// Step 1: start → rootSvc invoked.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "order-inst"},
+		engine.NewStartInstance(at, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.Commands, 1)
+	rootSvcCmd := r1.Commands[0].(engine.InvokeAction)
+	require.Equal(t, "root-book", rootSvcCmd.Name)
+
+	// Step 2: complete rootSvc → inner-svc invoked.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(1*time.Second), rootSvcCmd.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r2.Commands, 1)
+	innerSvcCmd := r2.Commands[0].(engine.InvokeAction)
+	require.Equal(t, "inner-book", innerSvcCmd.Name)
+
+	// root-comp is recorded in root.
+	require.Len(t, r2.State.RootCompensations, 1)
+	assert.Equal(t, "rootSvc", r2.State.RootCompensations[0].NodeID)
+
+	// Step 3: complete inner-svc → sub exits (inner record hoisted) → parks at rootUserTask.
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), innerSvcCmd.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r3.State.Status)
+
+	// After hoist: RootCompensations = [rootSvc(root-comp), inner-svc(inner-comp)].
+	require.Len(t, r3.State.RootCompensations, 2,
+		"root must have both root and hoisted inner compensation records")
+	assert.Equal(t, "rootSvc", r3.State.RootCompensations[0].NodeID,
+		"first record: rootSvc (completed earliest)")
+	assert.Equal(t, "inner-svc", r3.State.RootCompensations[1].NodeID,
+		"second record: inner-svc (completed later, hoisted from sub-process)")
+
+	// Step 4: full CompensateRequested → reverse order: inner-comp first, root-comp second.
+	compensateAt := at.Add(10 * time.Second)
+	r4, err := engine.Step(def, r3.State,
+		engine.NewCompensateRequested(compensateAt, ""),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompensating, r4.State.Status)
+	require.Len(t, r4.Commands, 1)
+	ia1 := r4.Commands[0].(engine.InvokeAction)
+	assert.Equal(t, "inner-comp", ia1.Name,
+		"first emitted compensation must be inner-comp (most recently completed)")
+
+	// Step 5: complete inner-comp → root-comp.
+	r5, err := engine.Step(def, r4.State,
+		engine.NewActionCompleted(compensateAt.Add(1*time.Second), ia1.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompensating, r5.State.Status)
+	require.Len(t, r5.Commands, 1)
+	ia2 := r5.Commands[0].(engine.InvokeAction)
+	assert.Equal(t, "root-comp", ia2.Name,
+		"second emitted compensation must be root-comp (earliest completed)")
+
+	// Step 6: complete root-comp → full rollback done → StatusTerminated.
+	r6, err := engine.Step(def, r5.State,
+		engine.NewActionCompleted(compensateAt.Add(2*time.Second), ia2.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusTerminated, r6.State.Status)
+}
+
+// twoLevelNestedCompensableDef returns a process with two levels of sub-process nesting:
+//
+//	Outer: start → outerSub → rootUserTask → end
+//	OuterSub: inner-start → innerSub → outer-end
+//	InnerSub: g-start → grandchildSvc(CompensationAction:"gc-comp") → g-end
+//
+// After both scopes close, the grandchild record must be reachable at root.
+func twoLevelNestedCompensableDef() *model.ProcessDefinition {
+	grandchild := &model.ProcessDefinition{
+		ID: "grandchild", Version: 1,
+		Nodes: []model.Node{
+			{ID: "g-start", Kind: model.KindStartEvent},
+			{ID: "grandchildSvc", Kind: model.KindServiceTask, Action: "gc-book", CompensationAction: "gc-comp"},
+			{ID: "g-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "gf1", Source: "g-start", Target: "grandchildSvc"},
+			{ID: "gf2", Source: "grandchildSvc", Target: "g-end"},
+		},
+	}
+	outerNested := &model.ProcessDefinition{
+		ID: "outer-nested", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "innerSub", Kind: model.KindSubProcess, Subprocess: grandchild},
+			{ID: "outer-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "of1", Source: "inner-start", Target: "innerSub"},
+			{ID: "of2", Source: "innerSub", Target: "outer-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "two-level", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "outerSub", Kind: model.KindSubProcess, Subprocess: outerNested},
+			{ID: "rootUserTask", Kind: model.KindUserTask},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "outerSub"},
+			{ID: "f2", Source: "outerSub", Target: "rootUserTask"},
+			{ID: "f3", Source: "rootUserTask", Target: "end"},
+		},
+	}
+}
+
+// TestHoistTwoLevelNestedCompensation verifies that a compensable activity at
+// grandchild depth (sub-process inside a sub-process) is reachable by a full
+// CompensateRequested after both scopes have closed. This proves the inductive
+// case: hoisting moves records up one level at a time, so two hoist operations
+// (grandchild → child → root) make the record reachable at root.
+func TestHoistTwoLevelNestedCompensation(t *testing.T) {
+	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	def := twoLevelNestedCompensableDef()
+
+	// Step 1: start → grandchildSvc invoked (two sub-process scopes opened).
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "two-level-inst"},
+		engine.NewStartInstance(at, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.Commands, 1)
+	gcCmd := r1.Commands[0].(engine.InvokeAction)
+	require.Equal(t, "gc-book", gcCmd.Name)
+
+	// Two scopes must be open: outerSub scope and innerSub scope.
+	require.Len(t, r1.State.Scopes, 2, "both outerSub and innerSub scopes must be open")
+
+	// Step 2: complete grandchildSvc → both scopes drain and close, hoisting twice
+	// (gc-comp: grandchild→innerSub, then innerSub→root), parks at rootUserTask.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(1*time.Second), gcCmd.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r2.State.Status)
+	assert.Empty(t, r2.State.Scopes, "both scopes must be closed")
+
+	// Grandchild record must be in RootCompensations after two hoist operations.
+	require.Len(t, r2.State.RootCompensations, 1,
+		"grandchild activity's record must reach root after two scope hoists")
+	assert.Equal(t, "grandchildSvc", r2.State.RootCompensations[0].NodeID)
+	assert.Equal(t, "gc-comp", r2.State.RootCompensations[0].Action)
+
+	// Step 3: full CompensateRequested must emit gc-comp.
+	compensateAt := at.Add(5 * time.Second)
+	r3, err := engine.Step(def, r2.State,
+		engine.NewCompensateRequested(compensateAt, ""),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	var gotActions []string
+	for _, c := range r3.Commands {
+		if ia, ok := c.(engine.InvokeAction); ok {
+			gotActions = append(gotActions, ia.Name)
+		}
+	}
+	require.Contains(t, gotActions, "gc-comp",
+		"grandchild activity must be rollback-able via root CompensateRequested after two-level hoist")
 }
