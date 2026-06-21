@@ -81,6 +81,16 @@ type Relay interface {
 // Publisher is the broker-agnostic outbox publisher alias (same as runtime.Publisher).
 type Publisher = runtime.Publisher
 
+// Option configures the Postgres Store returned by OpenPostgres
+// (alias of postgres.StoreOption).
+type Option = postgres.StoreOption
+
+// WithHistoryCap bounds the inline instance History persisted in the snapshot
+// to every open visit plus at most n most-recent closed visits (ADR-0021).
+// Unset / n <= 0 keeps full inline history (current behavior). The journal
+// table remains the complete audit source.
+func WithHistoryCap(n int) Option { return postgres.WithHistoryCap(n) }
+
 // RelayOption configures a Relay (alias of postgres.RelayOption).
 type RelayOption = postgres.RelayOption
 
@@ -113,8 +123,8 @@ var (
 //	persistence.Migrate(ctx, pool)
 //	store, _ := persistence.OpenPostgres(ctx, pool)
 //	runner := runtime.NewRunner(nil, clock.System(), store)
-func OpenPostgres(_ context.Context, pool *pgxpool.Pool) (Store, error) {
-	return postgres.NewStore(pool), nil
+func OpenPostgres(_ context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
+	return postgres.NewStore(pool, opts...), nil
 }
 
 // Migrate applies the embedded schema migrations to pool. It is idempotent:

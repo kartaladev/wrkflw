@@ -24,12 +24,28 @@ var (
 // snapshot CAS + journal append + outbox inserts atomically in a single pgx.Tx
 // per applied trigger.
 type Store struct {
-	pool *pgxpool.Pool
+	pool       *pgxpool.Pool
+	historyCap int // <= 0 means no cap (full inline history)
 }
+
+// StoreOption configures a Store.
+type StoreOption func(*Store)
+
+// WithHistoryCap bounds the inline History retained in the snapshot to every
+// open visit plus at most n most-recent closed visits (ADR-0021). n <= 0 (the
+// default) keeps full inline history. The wrkflw_journal table is unaffected
+// and remains the complete audit source.
+func WithHistoryCap(n int) StoreOption { return func(s *Store) { s.historyCap = n } }
 
 // NewStore constructs a Store over the given pool. The pool must already have
 // migrations applied (see Migrate).
-func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+func NewStore(pool *pgxpool.Pool, opts ...StoreOption) *Store {
+	s := &Store{pool: pool}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
 
 // endedAt extracts the optional EndedAt pointer from the state for DB writes.
 func endedAt(st engine.InstanceState) *time.Time { return st.EndedAt }
@@ -46,7 +62,7 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	snap, err := json.Marshal(step.State)
+	snap, err := json.Marshal(capHistory(step.State, s.historyCap))
 	if err != nil {
 		return 0, fmt.Errorf("postgres: create: marshal snapshot: %w", err)
 	}
@@ -120,7 +136,7 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	snap, err := json.Marshal(step.State)
+	snap, err := json.Marshal(capHistory(step.State, s.historyCap))
 	if err != nil {
 		return 0, fmt.Errorf("postgres: commit: marshal snapshot: %w", err)
 	}
