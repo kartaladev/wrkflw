@@ -145,14 +145,54 @@ The `Relay` is broker-agnostic: it polls the outbox with `FOR UPDATE SKIP LOCKED
 
 ---
 
+## Scheduling (gocron) sub-project — ✅ IMPLEMENTED on `feat/scheduling-gocron` (pending review + merge)
+
+Built on branch `feat/scheduling-gocron` (HEAD `e0de457`). Design: spec
+`docs/specs/2026-06-21-scheduling-gocron-design.md`, plan `docs/plans/2026-06-21-scheduling-gocron.md`,
+ADR-0009.
+Gate: `go test -race ./...` green, `internal/scheduling/gocron` 85.7%, `scheduling` 85.7%,
+total coverage 87.3%, lint clean (0 issues), gocron not imported from `engine`/`runtime`/`model`
+production code, clockwork not in `engine`/`runtime`/`model` production code.
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `internal/scheduling/gocron/` | `GocronScheduler` — implements `runtime.Scheduler` backed by gocron v2.21.2; mutex-guarded `timerID→uuid` map; `Schedule` replaces any existing job for the same timer (cancel + re-add); `Cancel` is a no-op for unknown IDs (`ErrJobNotFound`-safe); `Close` calls gocron `Shutdown`; `AfterJobRuns` hook cleans the map entry after the job fires so the map stays bounded. Shares the same `clockwork.Clock` instance as the `Runner` so a single `FakeClock.Advance` drives both the engine and the scheduler in tests (ADR-0003). | ADR-0009 |
+| `scheduling/` root façade | `NewScheduler(clock, ...Option) (runtime.Scheduler, io.Closer)` — consumers import only this root package; compile-time `var _ runtime.Scheduler` + `var _ io.Closer` assertions guard the contract. Never exposes internal gocron types. | ADR-0009 |
+| `runtime/` | `MemScheduler` retained — tests that require only the pure engine (no gocron dependency) still use it. `runner.go` already accepts `runtime.Scheduler`; no runtime changes were needed. | |
+| Tests | Unit tests for `GocronScheduler` use `clockwork.NewFakeClock`, `BlockUntilContext` arm barrier before `Advance`, and synchronize on actual callback execution via WaitGroup/channel (not on `Advance` returning). Capstone e2e: one shared fake clock is both the runner's `clock.Clock` and the scheduler's `clockwork.Clock`; a timer-waiter process drives start→fire→resume→`StatusCompleted`. | |
+
+### Key design decision (ADR)
+
+- **ADR-0009** — `scheduling` root façade over `internal/scheduling/gocron` (impl): the same
+  layer pattern as ADR-0008 for persistence — consumers import only the façade, which returns
+  `runtime.Scheduler` + `io.Closer`; all gocron wiring stays unexported. Ensures gocron is
+  **never imported transitively from engine/runtime/model code**.
+
+### Deferred follow-ups
+
+1. **Timer-fire CAS-drop [HIGH]** — `runner.go`'s `ScheduleTimer` fire callback only LOGS
+   `ErrConcurrentUpdate`, silently dropping the `TimerFired` trigger under concurrent `Deliver`.
+   Needs retry-with-reload on the fire path so a lost timer-fire is retried rather than silently
+   discarded.
+2. **`runtime.MemStore` not goroutine-safe** — async schedulers make concurrent `Deliver` real
+   (the fire callback runs on a gocron goroutine while the caller may be in `Run`/`Deliver`).
+   Add a mutex or a `runtime.NewSyncStore` wrapper so MemStore is safe under real concurrency.
+3. **Rehydration on restart** — timers persist in `InstanceState.Timers` (snapshot-JSONB via
+   the Postgres store) but full re-arming on startup requires a persistence "list pending timers"
+   enumeration query. Not built in v1: a restart loses in-memory gocron jobs until rehydration
+   lands. The Persistence `Store` is the prerequisite.
+
+---
+
 ## What's next: productionization sub-projects (each its own brainstorm → spec → plan → SDD cycle)
 
 The engine core depends on interfaces only. The next sub-projects implement them (per CLAUDE.md):
 
 - **Persistence** — ✅ COMPLETE, merged to `main`. See section above.
 - **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
-- **Scheduling** — gocron `Scheduler` (replace `MemScheduler`; shares the `clock.Clock`/clockwork so the
-  same fake clock drives engine + scheduler in tests, per ADR-0003).
+- **Scheduling** — ✅ IMPLEMENTED on `feat/scheduling-gocron` (pending final whole-branch review + merge). See "Scheduling (gocron) sub-project" section below.
 - **Authorization** — casbin behind the `authz.Authorizer`.
 - **Transports** — REST `http.Handler` factories + gRPC `ServiceRegistrar` registrations the consumer
   mounts (library-provided, never a shipped binary; ADR-0004 / CLAUDE.md).
