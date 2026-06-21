@@ -328,6 +328,46 @@ func (p *failAfterNPub) Publish(_ context.Context, _ runtime.OutboxEvent) error 
 	return nil
 }
 
+// capturingPub records the full OutboxEvents it receives (not just topics).
+type capturingPub struct {
+	mu     sync.Mutex
+	events []runtime.OutboxEvent
+}
+
+func (p *capturingPub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, ev)
+	return nil
+}
+
+// TestRelayPopulatesDedupAndInstanceID verifies the relay maps the outbox row's
+// instance_id and dedup_key columns onto the OutboxEvent it publishes, so a
+// watermill adapter can set a stable message UUID + partition key.
+func TestRelayPopulatesDedupAndInstanceID(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	_, err := pool.Exec(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
+		 VALUES ($1, $2, $3::jsonb, $4, $5)`,
+		"inst-42", "instance.completed", `{"ok":true}`, "inst-42:7:0", time.Now().UTC(),
+	)
+	require.NoError(t, err)
+
+	pub := &capturingPub{}
+	relay := pg.NewRelay(pool, pub)
+	n, err := relay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.Len(t, pub.events, 1)
+	require.Equal(t, "instance.completed", pub.events[0].Topic)
+	require.Equal(t, "inst-42", pub.events[0].InstanceID)
+	require.Equal(t, "inst-42:7:0", pub.events[0].DedupKey)
+	require.Equal(t, map[string]any{"ok": true}, pub.events[0].Payload)
+}
+
 // TestRelayDrainOncePayloadUnmarshalError verifies that an invalid JSON payload
 // (e.g., a non-object value like a string) causes Unmarshal to fail, and the
 // error is properly wrapped and returned.

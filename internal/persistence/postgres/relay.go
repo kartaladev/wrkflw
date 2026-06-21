@@ -95,7 +95,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	rows, err := tx.Query(ctx,
-		`SELECT id, topic, payload
+		`SELECT id, topic, payload, instance_id, dedup_key
 		   FROM wrkflw_outbox
 		  WHERE published_at IS NULL
 		  ORDER BY id
@@ -117,7 +117,8 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		var id int64
 		var topic string
 		var rawPayload []byte
-		if err := rows.Scan(&id, &topic, &rawPayload); err != nil {
+		var instanceID, dedupKey string
+		if err := rows.Scan(&id, &topic, &rawPayload, &instanceID, &dedupKey); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("postgres: relay: scan: %w", err)
 		}
@@ -126,7 +127,12 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 			rows.Close()
 			return 0, fmt.Errorf("postgres: relay: unmarshal payload id=%d: %w", id, err)
 		}
-		claims = append(claims, claim{id: id, event: runtime.OutboxEvent{Topic: topic, Payload: payload}})
+		claims = append(claims, claim{id: id, event: runtime.OutboxEvent{
+			Topic:      topic,
+			Payload:    payload,
+			DedupKey:   dedupKey,
+			InstanceID: instanceID,
+		}})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
