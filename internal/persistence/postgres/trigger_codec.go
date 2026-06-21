@@ -28,6 +28,24 @@ const (
 	kindCancelRequested      = "cancel_requested"
 )
 
+// AllTriggerKinds lists every trigger kind discriminator the codec handles.
+// Used by tests to cross-check exhaustiveness against the sealed Trigger variants.
+var AllTriggerKinds = []string{
+	kindStartInstance,
+	kindActionCompleted,
+	kindActionFailed,
+	kindHumanCompleted,
+	kindHumanClaimed,
+	kindHumanReassigned,
+	kindTimerFired,
+	kindSignalReceived,
+	kindMessageReceived,
+	kindSubInstanceCompleted,
+	kindSubInstanceFailed,
+	kindCompensateRequested,
+	kindCancelRequested,
+}
+
 // triggerEnvelope is the flat JSON shape written to wrkflw_journal.payload.
 // Fields unused by a given kind are omitted (omitempty). The At field carries
 // the trigger's OccurredAt timestamp and is always present.

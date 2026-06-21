@@ -13,20 +13,14 @@ import (
 // TestTriggerCodecRoundTrip asserts that every sealed engine.Trigger variant
 // survives a MarshalTrigger→UnmarshalTrigger round-trip losslessly.
 //
-// EXHAUSTIVENESS GUARD: every entry in this table MUST correspond to one of the
-// 13 sealed variants declared in engine/trigger.go. When a new variant is added
-// to the sealed set it MUST be added here too; the constant-count assertion below
-// acts as an explicit reminder.
-//
-// Currently covered (13 variants):
-//
-//	StartInstance, ActionCompleted, ActionFailed,
-//	HumanCompleted, HumanClaimed, HumanReassigned,
-//	TimerFired, SignalReceived, MessageReceived,
-//	SubInstanceCompleted, SubInstanceFailed,
-//	CompensateRequested, CancelRequested
-const totalTriggerVariants = 13
-
+// EXHAUSTIVENESS GUARD: the test collects the set of kind strings emitted by
+// MarshalTrigger for each table case and cross-checks it against pg.AllTriggerKinds.
+// This fails if:
+//   - A kind constant exists with no corresponding table row, or
+//   - A table row maps to a kind not in the canonical set.
+// When a new variant is added to the sealed set, add a table case and the
+// corresponding kind constant to trigger_codec.go; AllTriggerKinds will then
+// include it automatically.
 func TestTriggerCodecRoundTrip(t *testing.T) {
 	at := time.Unix(1700000000, 0).UTC()
 	actor := authz.Actor{ID: "u1", Roles: []string{"r"}, Attributes: map[string]any{"k": "v"}}
@@ -132,24 +126,46 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 		},
 	}
 
-	// Exhaustiveness guard: if this fails, a variant was added to the table above
-	// without updating totalTriggerVariants, or vice-versa.
-	require.Equal(t, totalTriggerVariants, len(tests),
-		"test table must cover exactly %d sealed Trigger variants", totalTriggerVariants)
-
+	// Collect the set of kinds emitted by MarshalTrigger for each table case.
+	// This exhaustiveness guard fails if:
+	//   - A kind from pg.AllTriggerKinds is not covered by the table, or
+	//   - A table case emits a kind not in pg.AllTriggerKinds.
+	var gotKinds []string
 	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			data, kind, err := pg.MarshalTrigger(tc.in)
-			require.NoError(t, err)
-			require.NotEmpty(t, kind)
+		data, kind, err := pg.MarshalTrigger(tc.in)
+		require.NoError(t, err, "MarshalTrigger failed for %q", name)
+		require.NotEmpty(t, kind, "MarshalTrigger returned empty kind for %q", name)
+		gotKinds = append(gotKinds, kind)
 
-			got, err := pg.UnmarshalTrigger(kind, data)
-			require.NoError(t, err)
-			require.True(t, tc.in.OccurredAt().Equal(got.OccurredAt()),
-				"OccurredAt mismatch: want %v got %v", tc.in.OccurredAt(), got.OccurredAt())
-			tc.assert(t, got)
-		})
+		got, err := pg.UnmarshalTrigger(kind, data)
+		require.NoError(t, err, "UnmarshalTrigger failed for %q", name)
+		require.True(t, tc.in.OccurredAt().Equal(got.OccurredAt()),
+			"OccurredAt mismatch: want %v got %v", tc.in.OccurredAt(), got.OccurredAt())
+		tc.assert(t, got)
 	}
+
+	// Exhaustiveness cross-check: every declared kind must be tested, and no
+	// table case may emit an unknown kind.
+	require.ElementsMatch(t, pg.AllTriggerKinds, gotKinds,
+		"test table kinds do not match pg.AllTriggerKinds: declared=%v, got=%v",
+		pg.AllTriggerKinds, gotKinds)
+}
+
+func TestActionFailedNotRetryable(t *testing.T) {
+	at := time.Unix(1700000000, 0).UTC()
+	in := engine.NewActionFailed(at, "cmd-fatal", "unrecoverable error", false)
+
+	data, kind, err := pg.MarshalTrigger(in)
+	require.NoError(t, err)
+	require.Equal(t, "action_failed", kind)
+
+	got, err := pg.UnmarshalTrigger(kind, data)
+	require.NoError(t, err)
+
+	af := got.(engine.ActionFailed)
+	require.Equal(t, "cmd-fatal", af.CommandID)
+	require.Equal(t, "unrecoverable error", af.Err)
+	require.False(t, af.Retryable, "Retryable must be false for non-retryable action failures")
 }
 
 func TestUnmarshalTriggerUnknownKind(t *testing.T) {
