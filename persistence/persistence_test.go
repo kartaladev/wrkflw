@@ -53,6 +53,10 @@ func (c *capturingPublisher) Publish(_ context.Context, ev runtime.OutboxEvent) 
 //  4. Drives a minimal start→end process through runtime.Runner.
 //  5. Asserts: terminal status is Completed, the snapshot round-trips, journal
 //     entries are recorded, and the wrkflw_outbox has an instance.completed row.
+//
+// This test owns coverage of OpenPostgres (options loop and store construction).
+// The Option type is unexported config, so external tests cannot construct real
+// options; the option loop is exercised here via the store's normal operation.
 func TestOpenPostgresEndToEnd(t *testing.T) {
 	t.Parallel()
 	pool := database.RunTestDatabase(t)
@@ -85,7 +89,7 @@ func TestOpenPostgresEndToEnd(t *testing.T) {
 	var n int
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`SELECT count(*) FROM wrkflw_outbox WHERE topic = 'instance.completed'`).Scan(&n))
-	assert.Equal(t, 1, n, "exactly one instance.completed outbox row expected")
+	require.Equal(t, 1, n, "exactly one instance.completed outbox row expected")
 }
 
 // TestMigrateIsIdempotent proves that calling Migrate twice does not error
@@ -113,24 +117,6 @@ func TestOpenPostgresNotFoundSentinel(t *testing.T) {
 		"ErrInstanceNotFound must be usable via the persistence façade package")
 }
 
-// TestOpenPostgresWithOption exercises the Option application path in OpenPostgres
-// (currently a no-op option for future extension; verifies the loop is exercised).
-func TestOpenPostgresWithOption(t *testing.T) {
-	t.Parallel()
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, persistence.Migrate(t.Context(), pool))
-
-	// noop is a valid Option — reserved for future extension.
-	noop := func(*struct{}) {}
-	_ = noop // silence staticcheck; we pass a real persistence.Option below.
-
-	store, err := persistence.OpenPostgres(t.Context(), pool,
-		// Pass a RelayOption-shaped lambda to exercise the opts iteration path.
-		// persistence.Option is func(*config), passing an empty one is enough.
-	)
-	require.NoError(t, err)
-	require.NotNil(t, store)
-}
 
 // TestNewDefinitionStoreAndCachingRegistry exercises the NewDefinitionStore and
 // NewCachingDefinitionRegistry constructor façades.
