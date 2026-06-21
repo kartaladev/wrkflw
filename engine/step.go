@@ -28,7 +28,14 @@ const (
 	Micro
 )
 
-type StepOptions struct{ Mode StepMode }
+// StepOptions controls optional behaviour of a [Step] call.
+type StepOptions struct {
+	// Mode selects the step granularity: [Macro] (default) or [Micro].
+	Mode StepMode
+	// DefaultRetryPolicy is the fallback retry policy applied when a node does
+	// not carry its own RetryPolicy. nil means retry is disabled by default.
+	DefaultRetryPolicy *model.RetryPolicy
+}
 
 // StepResult is the output of a single [Step] call. Commands is the ordered
 // list of side effects the runtime must perform. On a no-op step (e.g. a stale
@@ -2690,6 +2697,12 @@ func cloneState(st InstanceState) InstanceState {
 			}
 			s.Scopes[i] = cs
 		}
+	}
+	// Deep-copy Incidents: Incident is a flat value struct (all fields are plain
+	// scalars — no pointers or maps), so an append-copy of the slice is sufficient
+	// to ensure mutations to the clone's Incidents do not affect the original.
+	if len(st.Incidents) > 0 {
+		s.Incidents = append([]Incident(nil), st.Incidents...)
 	}
 	return s
 }

@@ -183,6 +183,35 @@ func TestScopeSeqCarriedByClone(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// cloneState: Incidents deep-copy + Token retry fields
+// ---------------------------------------------------------------------------
+
+// TestCloneStateDeepCopiesIncidents asserts that cloneState (via Clone) produces
+// an independently allocated Incidents slice, and that the new Token retry fields
+// (RetryAttempts, RetryStartedAt) are carried through without aliasing.
+func TestCloneStateDeepCopiesIncidents(t *testing.T) {
+	st := engine.InstanceState{
+		Incidents: []engine.Incident{
+			{ID: "p-in0", TokenID: "p-t1", NodeID: "task", Error: "boom", Attempts: 3},
+		},
+		Tokens: []engine.Token{
+			{ID: "p-t1", NodeID: "task", State: engine.TokenIncident, RetryAttempts: 3},
+		},
+	}
+
+	clone := st.Clone()
+
+	// Mutate the clone; the original must be unaffected.
+	clone.Incidents[0].Error = "mutated"
+	clone.Tokens[0].RetryAttempts = 99
+
+	assert.Equal(t, "boom", st.Incidents[0].Error,
+		"Incidents slice aliased — cloneState must deep-copy it")
+	assert.Equal(t, 3, st.Tokens[0].RetryAttempts,
+		"Token.RetryAttempts aliased — element copy must carry scalar fields")
+}
+
+// ---------------------------------------------------------------------------
 // Sub-instance command: StartSubInstance
 // ---------------------------------------------------------------------------
 
