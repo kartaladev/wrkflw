@@ -11,11 +11,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
-// NewHandler constructs a *http.ServeMux exposing the non-admin workflow routes.
+// NewHandler constructs a *http.ServeMux exposing the workflow routes.
 // All patterns are root-relative so the mux can be mounted under any prefix via
 // http.StripPrefix.
 //
-// Routes:
+// Non-admin routes:
 //
 //	POST   /instances                  — start a new process instance
 //	GET    /instances/{id}             — get an existing instance
@@ -24,6 +24,14 @@ import (
 //	POST   /tasks/{token}/claim        — claim a human task
 //	POST   /tasks/{token}/complete     — complete a human task
 //	POST   /tasks/{token}/reassign     — reassign a human task
+//
+// Admin routes (wrapped by the configured admin middleware):
+//
+//	GET    /admin/instances            — keyset-paginated instance monitoring
+//
+// Default-deny: admin routes return 403 Forbidden when no WithAdminMiddleware option
+// is supplied. Consumers must explicitly opt in by providing a middleware that
+// enforces their authentication and authorisation requirements.
 func NewHandler(svc service.Service, opts ...Option) http.Handler {
 	cfg := defaultConfig()
 	for _, o := range opts {
@@ -40,6 +48,13 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 	mux.HandleFunc("POST /tasks/{token}/claim", h.handleClaimTask)
 	mux.HandleFunc("POST /tasks/{token}/complete", h.handleCompleteTask)
 	mux.HandleFunc("POST /tasks/{token}/reassign", h.handleReassignTask)
+
+	// Admin routes are mounted under the consumer-supplied admin middleware.
+	// cfg.adminMiddleware defaults to denyAllMiddleware (set by defaultConfig) so
+	// that admin endpoints are never openly accessible without an explicit opt-in.
+	adminHandler := cfg.adminMiddleware(http.HandlerFunc(h.handleAdminListInstances))
+	mux.Handle("GET /admin/instances", adminHandler)
+
 	return mux
 }
 

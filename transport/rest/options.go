@@ -1,17 +1,32 @@
 package rest
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import (
+	"net/http"
+
+	"github.com/zakyalvan/krtlwrkflw/engine"
+)
 
 // config holds the resolved handler configuration.
 type config struct {
 	instanceMapper func(engine.InstanceState) any
+	// adminMiddleware wraps the admin routes. If nil, the built-in denyAllMiddleware
+	// is used so the admin endpoints are never openly accessible (default-deny).
+	adminMiddleware func(http.Handler) http.Handler
+}
+
+// denyAllMiddleware is the default admin middleware: it always returns 403 Forbidden
+// so that admin routes are inaccessible unless the consumer explicitly supplies a
+// middleware via WithAdminMiddleware.
+func denyAllMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"forbidden","message":"admin access requires WithAdminMiddleware"}`, http.StatusForbidden)
+	})
 }
 
 func defaultConfig() config {
 	return config{
-		instanceMapper: func(st engine.InstanceState) any {
-			return NewInstanceView(st)
-		},
+		instanceMapper:  func(st engine.InstanceState) any { return NewInstanceView(st) },
+		adminMiddleware: denyAllMiddleware,
 	}
 }
 
@@ -30,5 +45,23 @@ func WithInstanceMapper(fn func(engine.InstanceState) any) Option {
 	}
 	return func(c *config) {
 		c.instanceMapper = fn
+	}
+}
+
+// WithAdminMiddleware sets the middleware that wraps the admin routes
+// (e.g. GET /admin/instances). The middleware is responsible for enforcing
+// authentication and authorization before the request reaches the admin handler.
+//
+// Default-deny: if WithAdminMiddleware is NOT supplied, the admin routes return
+// 403 Forbidden for every request. This prevents accidental open exposure of
+// admin endpoints.
+//
+// Panics immediately if mw is nil.
+func WithAdminMiddleware(mw func(http.Handler) http.Handler) Option {
+	if mw == nil {
+		panic("rest: WithAdminMiddleware: mw must not be nil")
+	}
+	return func(c *config) {
+		c.adminMiddleware = mw
 	}
 }
