@@ -199,7 +199,7 @@ production code, clockwork not in `engine`/`runtime`/`model` production code.
 
 ---
 
-## Authorization (casbin) sub-project — ✅ IMPLEMENTED on `feat/authz-casbin` (pending review + merge)
+## Authorization (casbin) sub-project — ✅ COMPLETE, merged to `main`
 
 Built on branch `feat/authz-casbin` (HEAD `a7edee0`). Design: spec
 `docs/specs/2026-06-21-authz-casbin-design.md`, plan `docs/plans/2026-06-21-authz-casbin.md`,
@@ -243,7 +243,7 @@ The engine core depends on interfaces only. The next sub-projects implement them
 - **Persistence** — ✅ COMPLETE, merged to `main`. See section above.
 - **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
 - **Scheduling** — ✅ COMPLETE, merged to `main`. See "Scheduling (gocron) sub-project" section below.
-- **Authorization** — ✅ IMPLEMENTED on `feat/authz-casbin` (pending final whole-branch review + merge). See "Authorization (casbin) sub-project" section below.
+- **Authorization** — ✅ COMPLETE, merged to `main`. See "Authorization (casbin) sub-project" section below.
 - **Transports** — REST `http.Handler` factories + gRPC `ServiceRegistrar` registrations the consumer
   mounts (library-provided, never a shipped binary; ADR-0004 / CLAUDE.md).
 - **Admin monitoring** + **`ProcessInstance` response customization**.
