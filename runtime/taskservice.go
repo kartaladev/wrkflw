@@ -44,6 +44,12 @@ type TaskServiceOption func(*taskServiceConfig)
 // TaskService human-task lifecycle counter (default: the OTel global meter
 // provider). A nil value is ignored.
 //
+// TaskService accepts only a meter provider (not logger/tracer) because it
+// emits solely the [wrkflw_human_tasks_total] counter and has no spans or
+// structured-log calls of its own. The full three-option idiom
+// (WithLogger/WithTracerProvider/WithMeterProvider) applies to components that
+// own spans or log output; TaskService is intentionally meter-only.
+//
 // Use the same provider as the Runner to aggregate all lifecycle events
 // (created, claimed, reassigned, completed) into one metric stream under the
 // shared instrumentation scope "github.com/zakyalvan/krtlwrkflw/runtime".

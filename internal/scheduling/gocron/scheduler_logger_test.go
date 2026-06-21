@@ -1,6 +1,6 @@
-// Package gocron — white-box logger-injection tests.
+// Package gocron — white-box telemetry-injection tests.
 // These tests sit in package gocron (not gocron_test) so they can inspect the
-// unexported logger field directly, which lets us assert injection without
+// unexported tel field directly, which lets us assert injection without
 // needing to trigger a live error path.
 package gocron
 
@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestWithLogger_FieldInjection verifies that WithLogger sets the logger field
-// and that the default (no option) uses slog.Default().
+// TestWithLogger_FieldInjection verifies that WithLogger stages the logger
+// into the telemetry and that the default (no option) uses slog.Default().
 func TestWithLogger_FieldInjection(t *testing.T) {
 	// Sub-test 1: default (no option).
 	t.Run("default uses slog.Default()", func(t *testing.T) {
@@ -22,7 +22,7 @@ func TestWithLogger_FieldInjection(t *testing.T) {
 		s, err := NewGocronScheduler(clk)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = s.Close() })
-		assert.Same(t, slog.Default(), s.logger,
+		assert.Same(t, slog.Default(), s.tel.Logger,
 			"scheduler constructed with no logger option must use slog.Default()")
 	})
 
@@ -33,7 +33,7 @@ func TestWithLogger_FieldInjection(t *testing.T) {
 		s, err := NewGocronScheduler(clk, WithLogger(custom))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = s.Close() })
-		assert.Same(t, custom, s.logger,
+		assert.Same(t, custom, s.tel.Logger,
 			"scheduler must store the injected logger pointer")
 	})
 }
@@ -45,6 +45,6 @@ func TestWithLogger_NilIgnored(t *testing.T) {
 	s, err := NewGocronScheduler(clk, WithLogger(nil))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	assert.Equal(t, slog.Default(), s.logger,
+	assert.Equal(t, slog.Default(), s.tel.Logger,
 		"nil logger option must be ignored; default should remain slog.Default()")
 }

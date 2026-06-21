@@ -189,3 +189,7 @@ All `slog` log calls use consistent, lowercase snake_case attribute keys:
 10. **REST/relay `WithMeterProvider` parity** — `transport/rest` and `internal/persistence/postgres/relay`
     accept `WithMeterProvider` for future use but emit no metrics yet; adding route-level request
     counters/latency histograms and relay throughput counters is a follow-up.
+11. **Deferred span attributes (spec §5)** — the following span attributes named in spec §5 are
+    deferred to a follow-up track: `wrkflw.node_id` and `wrkflw.attempt` on step/action spans;
+    `http.status_code` and `http.route` on REST spans (requires a response-capturing
+    `ResponseWriter` wrapper and route-template extraction); `wrkflw.instance_id` on gRPC spans.

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -33,6 +35,8 @@ var (
 // config holds façade-level options.
 type config struct {
 	logger *slog.Logger
+	tp     trace.TracerProvider
+	mp     metric.MeterProvider
 }
 
 // Option configures a [Scheduler].
@@ -44,6 +48,30 @@ func WithLogger(l *slog.Logger) Option {
 	return func(c *config) {
 		if l != nil {
 			c.logger = l
+		}
+	}
+}
+
+// WithTracerProvider sets the OTel TracerProvider for the scheduler.
+// Default: the OTel global provider. The scheduler emits no spans in this
+// track (API parity only — consistent with relay/rest/grpc). A nil value is
+// ignored.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(c *config) {
+		if tp != nil {
+			c.tp = tp
+		}
+	}
+}
+
+// WithMeterProvider sets the OTel MeterProvider for the scheduler.
+// Default: the OTel global provider. The scheduler emits no metrics in this
+// track (API parity only — consistent with relay/rest/grpc). A nil value is
+// ignored.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(c *config) {
+		if mp != nil {
+			c.mp = mp
 		}
 	}
 }
@@ -60,6 +88,12 @@ func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
 	var internalOpts []gocronsched.Option
 	if cfg.logger != nil {
 		internalOpts = append(internalOpts, gocronsched.WithLogger(cfg.logger))
+	}
+	if cfg.tp != nil {
+		internalOpts = append(internalOpts, gocronsched.WithTracerProvider(cfg.tp))
+	}
+	if cfg.mp != nil {
+		internalOpts = append(internalOpts, gocronsched.WithMeterProvider(cfg.mp))
 	}
 
 	impl, err := gocronsched.NewGocronScheduler(clk, internalOpts...)

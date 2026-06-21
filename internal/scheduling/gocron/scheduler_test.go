@@ -11,6 +11,8 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
@@ -220,6 +222,68 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 			c.assert(t, s, clk)
+		})
+	}
+}
+
+// TestGocronScheduler_WithTracerAndMeterProvider verifies that
+// WithTracerProvider and WithMeterProvider are accepted by NewGocronScheduler
+// and that the scheduler constructs and operates correctly with those options.
+// The scheduler emits no spans or metrics in this track (parity-only); the test
+// confirms no panics and continued correct operation.
+func TestGocronScheduler_WithTracerAndMeterProvider(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T, clk *clockwork.FakeClock)
+	}
+
+	cases := []tc{
+		{
+			name: "WithTracerProvider constructs without panic",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				s, err := sched.NewGocronScheduler(clk, sched.WithTracerProvider(tp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+		{
+			name: "WithMeterProvider constructs without panic",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				s, err := sched.NewGocronScheduler(clk, sched.WithMeterProvider(mp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+		{
+			name: "all three options together construct without panic",
+			assert: func(t *testing.T, clk *clockwork.FakeClock) {
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				l := slog.New(slog.Default().Handler())
+				s, err := sched.NewGocronScheduler(clk,
+					sched.WithTracerProvider(tp),
+					sched.WithMeterProvider(mp),
+					sched.WithLogger(l),
+				)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				assert.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clk := clockwork.NewFakeClock()
+			c.assert(t, clk)
 		})
 	}
 }

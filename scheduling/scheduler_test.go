@@ -9,6 +9,8 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
@@ -95,6 +97,70 @@ func TestNewScheduler_WithLogger(t *testing.T) {
 			assert: func(t *testing.T) {
 				clk := clockwork.NewFakeClock()
 				s, err := scheduling.NewScheduler(clk)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.assert(t)
+		})
+	}
+}
+
+// TestNewScheduler_ObservabilityOptions verifies that WithTracerProvider and
+// WithMeterProvider are accepted by the façade and that the resulting scheduler
+// constructs without panicking. Per spec §4, the scheduler holds these options
+// for parity with other components (relay, runtime, transports); no spans or
+// metrics are emitted in this track.
+func TestNewScheduler_ObservabilityOptions(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []tc{
+		{
+			name: "WithTracerProvider constructs without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				s, err := scheduling.NewScheduler(clk, scheduling.WithTracerProvider(tp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "WithMeterProvider constructs without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				s, err := scheduling.NewScheduler(clk, scheduling.WithMeterProvider(mp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "all three options together construct without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				l := slog.New(slog.Default().Handler())
+				s, err := scheduling.NewScheduler(clk,
+					scheduling.WithTracerProvider(tp),
+					scheduling.WithMeterProvider(mp),
+					scheduling.WithLogger(l),
+				)
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				require.NotNil(t, s)
