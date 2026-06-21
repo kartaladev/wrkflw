@@ -64,6 +64,35 @@ func TestNewRelayReturnsInterface(t *testing.T) {
 	assert.NotNil(t, relay)
 }
 
+// TestNewDeduperReturnsInterface verifies that NewDeduper returns a
+// persistence.Deduper interface value (not a *postgres.Deduper) and that a Seen
+// call through the interface works end-to-end (ADR-0008, ADR-0018).
+func TestNewDeduperReturnsInterface(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, persistence.Migrate(t.Context(), pool))
+
+	d := persistence.NewDeduper(pool)
+
+	// The static type is persistence.Deduper — compile-time proof.
+	assert.NotNil(t, d)
+
+	// Functional smoke: first Seen returns true; duplicate returns false.
+	tx, err := pool.Begin(t.Context())
+	require.NoError(t, err)
+	defer tx.Rollback(t.Context()) //nolint:errcheck
+
+	first, err := d.Seen(t.Context(), tx, "facade-sub", "facade-msg-1")
+	require.NoError(t, err)
+	assert.True(t, first, "first Seen via facade must return true")
+
+	dup, err := d.Seen(t.Context(), tx, "facade-sub", "facade-msg-1")
+	require.NoError(t, err)
+	assert.False(t, dup, "duplicate Seen via facade must return false")
+
+	require.NoError(t, tx.Rollback(t.Context()))
+}
+
 // TestNewRelayDLQAdminViaFacade verifies that the DLQ admin methods
 // (ListDeadLettered, Redrive) are accessible through the persistence.Relay
 // interface returned by persistence.NewRelay (ADR-0008).
