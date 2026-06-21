@@ -112,6 +112,56 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 	assert.Equal(t, st.TimerID, tok.AwaitCommand)
 }
 
+// TestStepRetryTimerReinvokesAction verifies that when a retry timer fires, the
+// engine re-emits an InvokeAction for the same node, effectively re-invoking
+// the action as if it were the first attempt.
+func TestStepRetryTimerReinvokesAction(t *testing.T) {
+	def := retryDef(&model.RetryPolicy{
+		MaxAttempts:     3,
+		InitialInterval: time.Second,
+		BackoffCoef:     2.0,
+		MaxInterval:     time.Minute,
+	})
+
+	// Drive start → InvokeAction for "task".
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+		engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdID := findInvokeActionCmdID(t, r1.Commands)
+
+	// Deliver ActionFailed: retryable, jitter=0.5, at t=10s.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionFailedJittered(time.Unix(10, 0), cmdID, "boom", true, 0.5),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Grab the retry timer ID from r2.Commands.
+	var timerID string
+	for _, c := range r2.Commands {
+		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerRetry {
+			timerID = st.TimerID
+			break
+		}
+	}
+	require.NotEmpty(t, timerID, "expected a ScheduleTimer{Kind:TimerRetry} in r2 commands")
+
+	// Fire the retry timer.
+	r3, err := engine.Step(def, r2.State,
+		engine.NewTimerFired(time.Unix(11, 0), timerID),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Assert a fresh InvokeAction for node "task" is emitted.
+	var gotInvoke bool
+	for _, c := range r3.Commands {
+		if ia, ok := c.(engine.InvokeAction); ok && ia.Name == "a" {
+			gotInvoke = true
+			require.NotEmpty(t, ia.CommandID, "re-invocation must carry a new command ID")
+		}
+	}
+	assert.True(t, gotInvoke, "expected a fresh InvokeAction for node 'task' after retry timer fired")
+}
+
 // TestStepNoPolicyKeepsLegacyBehaviour verifies that without a retry policy
 // (no node policy, nil DefaultRetryPolicy) an ActionFailed falls through to
 // the existing propagateError path (FailInstance, no TimerRetry).

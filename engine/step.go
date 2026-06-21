@@ -281,11 +281,11 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			return StepResult{State: s, Commands: eaCmds}, nil
 		}
 
-		// 4) SLA/in-wait timer record.
-		// s.Timers holds only SLA (TimerSLA) and in-wait/reminder (TimerInWait)
-		// records. Intermediate timers (TimerIntermediate) are never appended to
-		// s.Timers; for those, the token parks on the TimerID as its AwaitCommand,
-		// so they route via the tokenAwaiting path below.
+		// 4) SLA/in-wait/retry timer record.
+		// s.Timers holds SLA (TimerSLA), in-wait/reminder (TimerInWait), and retry
+		// (TimerRetry) records. Intermediate timers (TimerIntermediate) are never
+		// appended to s.Timers; for those, the token parks on the TimerID as its
+		// AwaitCommand, so they route via the tokenAwaiting path below.
 		rec := s.timerByID(t.TimerID)
 		if rec != nil {
 			switch rec.Kind {
@@ -293,6 +293,8 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				return handleSLAFired(def, &s, *rec, t.OccurredAt(), opt.Mode)
 			case TimerInWait:
 				return handleReminderFired(def, &s, *rec, t.OccurredAt())
+			case TimerRetry:
+				return handleRetryFired(def, &s, *rec, t.OccurredAt(), opt.Mode)
 			}
 		}
 
@@ -2422,6 +2424,59 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	})
 
 	// The token does NOT move — the task is still pending.
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// handleRetryFired processes a TimerFired event for a TimerRetry timer. It is
+// called from the TimerFired handler in Step after Task 5 parks a token on a
+// retry timer following a retryable ActionFailed.
+//
+// Contract:
+//   - If the parked token is gone (stale/duplicate retry fire), clean no-op.
+//   - Otherwise: removes the consumed timer record, re-emits InvokeAction for
+//     the node (mirroring the service-task drive path), re-parks the token on
+//     the new command ID, and re-arms any boundary events (which Task 5 cancelled
+//     on failure) so SLA and reminder timers are active for the retry attempt.
+func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode) (StepResult, error) {
+	// Find the parked token. The token was parked with AwaitCommand == rec.TimerID
+	// by Task 5 (ActionFailed retry path). If absent, the timer fired after the
+	// instance advanced via another path (race / duplicate): clean no-op.
+	tok := s.tokenAwaiting(rec.TimerID)
+	if tok == nil {
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
+	// Consume the timer record so a duplicate fire is a no-op.
+	s.removeTimer(rec.TimerID)
+
+	// Resolve the effective definition for this token's scope (handles sub-process).
+	tdef, err := defForScope(def, s, tok.ScopeID)
+	if err != nil {
+		return StepResult{}, fmt.Errorf("engine: retry fired: %w", err)
+	}
+	node, ok := tdef.Node(tok.NodeID)
+	if !ok {
+		return StepResult{}, fmt.Errorf("engine: retry fired: node %q not found", tok.NodeID)
+	}
+
+	// Re-emit the InvokeAction — mirrors the KindServiceTask drive path exactly.
+	cmdID := s.nextCommandID()
+	cmds := []Command{InvokeAction{
+		CommandID: cmdID,
+		Name:      node.Action,
+		Input:     copyVars(s.Variables),
+	}}
+	tok.State = TokenWaitingCommand
+	tok.AwaitCommand = cmdID
+
+	// Re-arm boundary events (SLA timers, reminder timers) which Task 5 cancelled
+	// on the failure path, so they are active for this retry attempt.
+	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
+	if err != nil {
+		return StepResult{}, err
+	}
+	cmds = append(cmds, bndCmds...)
+
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
