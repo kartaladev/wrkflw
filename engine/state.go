@@ -699,6 +699,8 @@ func (s *InstanceState) hoistCompensations(childID, parentID string) {
 	if parentID == "" {
 		s.RootCompensations = append(s.RootCompensations, child.Compensations...)
 	} else if parent := s.scopeByID(parentID); parent != nil {
+		// The parent always exists here by construction: scopes close child-first,
+		// so a closing scope's parent is either root ("") or a still-open ancestor.
 		parent.Compensations = append(parent.Compensations, child.Compensations...)
 	}
 	child.Compensations = nil
