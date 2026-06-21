@@ -19,9 +19,12 @@ package persistence
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
@@ -184,6 +187,24 @@ func WithMaxDeliveryAttempts(n int) RelayOption {
 // Defaults: base 1s, max 1m.
 func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
 	return postgres.WithRelayBackoff(base, maxInterval)
+}
+
+// WithRelayLogger sets the structured logger used by the relay for drain logs.
+// Default: slog.Default().
+func WithRelayLogger(l *slog.Logger) RelayOption {
+	return postgres.WithRelayLogger(l)
+}
+
+// WithRelayTracerProvider sets the OTel TracerProvider for relay batch spans.
+// Default: the OTel global provider.
+func WithRelayTracerProvider(tp trace.TracerProvider) RelayOption {
+	return postgres.WithRelayTracerProvider(tp)
+}
+
+// WithRelayMeterProvider sets the OTel MeterProvider for relay metrics.
+// Default: the OTel global provider.
+func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
+	return postgres.WithRelayMeterProvider(mp)
 }
 
 // NewLister constructs the Postgres-backed runtime.InstanceLister for

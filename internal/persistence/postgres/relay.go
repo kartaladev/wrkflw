@@ -5,10 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -42,6 +49,14 @@ type Relay struct {
 	maxDelivery  int
 	backoffBase  time.Duration
 	backoffMax   time.Duration
+
+	// staged telemetry option values; assembled into tel after all RelayOptions
+	// have been applied in NewRelay.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	tel observability.Telemetry
 }
 
 // RelayOption configures a Relay.
@@ -85,6 +100,25 @@ func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
 	}
 }
 
+// WithRelayLogger sets the structured logger used by the relay for drain logs.
+// Default: slog.Default().
+func WithRelayLogger(l *slog.Logger) RelayOption {
+	return func(r *Relay) { r.logOpt = observability.WithLogger(l) }
+}
+
+// WithRelayTracerProvider sets the OTel TracerProvider for relay batch spans.
+// Default: the OTel global provider.
+func WithRelayTracerProvider(tp trace.TracerProvider) RelayOption {
+	return func(r *Relay) { r.tpOpt = observability.WithTracerProvider(tp) }
+}
+
+// WithRelayMeterProvider sets the OTel MeterProvider for relay metrics.
+// Default: the OTel global provider. The relay creates no metric instruments
+// in this track (API parity only; DLQ counters live in the resilience adapter).
+func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
+	return func(r *Relay) { r.mpOpt = observability.WithMeterProvider(mp) }
+}
+
 // NewRelay constructs a Relay that drains the outbox in pool and publishes each
 // event via pub.
 func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) *Relay {
@@ -101,7 +135,24 @@ func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) *R
 	for _, o := range opts {
 		o(r)
 	}
+	// Build the Telemetry value after all options have been applied so that any
+	// subset of logger/tracer/meter providers can be set independently.
+	r.tel = observability.New(
+		"github.com/zakyalvan/krtlwrkflw/persistence",
+		filterNilOpts(r.logOpt, r.tpOpt, r.mpOpt)...,
+	)
 	return r
+}
+
+// filterNilOpts returns only the non-nil observability.Option values from opts.
+func filterNilOpts(opts ...observability.Option) []observability.Option {
+	out := opts[:0]
+	for _, o := range opts {
+		if o != nil {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // Run drains the outbox on each poll interval tick until ctx is cancelled.
@@ -212,11 +263,19 @@ func (r *Relay) Redrive(ctx context.Context, ids ...int64) (int, error) {
 //
 // Returns the number of rows successfully published in this drain.
 func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
+	ctx, span := r.tel.Tracer.Start(ctx, "wrkflw.relay.batch")
+	defer span.End()
+
 	now := r.clk.Now()
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("postgres: relay: begin tx: %w", err)
+		infraErr := fmt.Errorf("postgres: relay: begin tx: %w", err)
+		span.RecordError(infraErr)
+		span.SetStatus(otelcodes.Error, infraErr.Error())
+		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay begin tx failed",
+			append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+		return 0, infraErr
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -230,7 +289,12 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		now, r.batch,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("postgres: relay: claim: %w", err)
+		infraErr := fmt.Errorf("postgres: relay: claim: %w", err)
+		span.RecordError(infraErr)
+		span.SetStatus(otelcodes.Error, infraErr.Error())
+		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay claim failed",
+			append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+		return 0, infraErr
 	}
 
 	type claim struct {
@@ -265,10 +329,16 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("postgres: relay: rows: %w", err)
+		infraErr := fmt.Errorf("postgres: relay: rows: %w", err)
+		span.RecordError(infraErr)
+		span.SetStatus(otelcodes.Error, infraErr.Error())
+		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay rows iteration failed",
+			append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+		return 0, infraErr
 	}
 
 	if len(claims) == 0 {
+		span.SetAttributes(attribute.Int("wrkflw.batch_size", 0))
 		return 0, nil
 	}
 
@@ -290,7 +360,12 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 				  WHERE id = $1`,
 				c.id, newRetry, status, nextAttempt, pubErr.Error(),
 			); err != nil {
-				return 0, fmt.Errorf("postgres: relay: quarantine id=%d: %w", c.id, err)
+				infraErr := fmt.Errorf("postgres: relay: quarantine id=%d: %w", c.id, err)
+				span.RecordError(infraErr)
+				span.SetStatus(otelcodes.Error, infraErr.Error())
+				r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay quarantine failed",
+					append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+				return 0, infraErr
 			}
 			continue
 		}
@@ -300,13 +375,27 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 			`UPDATE wrkflw_outbox SET status = 'published', published_at = $2 WHERE id = $1`,
 			c.id, now,
 		); err != nil {
-			return 0, fmt.Errorf("postgres: relay: mark published id=%d: %w", c.id, err)
+			infraErr := fmt.Errorf("postgres: relay: mark published id=%d: %w", c.id, err)
+			span.RecordError(infraErr)
+			span.SetStatus(otelcodes.Error, infraErr.Error())
+			r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay mark-published failed",
+				append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+			return 0, infraErr
 		}
 		published++
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("postgres: relay: commit: %w", err)
+		infraErr := fmt.Errorf("postgres: relay: commit: %w", err)
+		span.RecordError(infraErr)
+		span.SetStatus(otelcodes.Error, infraErr.Error())
+		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay commit failed",
+			append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+		return 0, infraErr
 	}
+
+	span.SetAttributes(attribute.Int("wrkflw.batch_size", published))
+	r.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "persistence: relay drained batch",
+		append(r.tel.LogAttrs(ctx), slog.Int("published", published))...)
 	return published, nil
 }
