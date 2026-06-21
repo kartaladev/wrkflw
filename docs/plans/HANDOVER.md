@@ -3,7 +3,47 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## Status: engine-core sub-project #1 is COMPLETE ✅
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-21
+
+**Where we are:** the engine core (Plans 1–8) plus **all 5 productionization sub-projects**
+(Persistence, Scheduling, Authorization, Transports, Eventing) are merged to `main`. After
+productionization the user opened a **deferred-backlog run**: work through the remaining
+deferred follow-ups **one track at a time**, each as its own
+`brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/) → plan (docs/plans/) → branch → SDD →
+opus whole-branch review → merge to main → push`, exactly like the sub-projects above.
+
+**Tracks (run in this order; the first is done):**
+
+1. **Correctness & tests** — ✅ COMPLETE, merged `314358c` (2026-06-21). See the
+   "Correctness & tests hardening sub-project" section below.
+2. **Resilience (retry/backoff/DLQ)** — ⏭️ **NEXT.** The named REQUIREMENTS feature ("A process
+   error must be able to be retried. Consider also other resilient aspect"). Composing deferred
+   items: engine-core follow-up #6 (retry/backoff/poison executor — `ActionFailed.Retryable` +
+   `InvokeAction.RetryPolicy` are *carried* but no executor exists), Persistence deferred #5
+   (relay retry/DLQ + head-of-line poison isolation), and idempotency/backoff design. Largest
+   track; needs new ADR(s). Start with `superpowers:brainstorming` (surface the real forks:
+   retry-executor placement runtime-vs-engine, backoff policy model, poison/DLQ table,
+   idempotency keys) and CLAUDE.md's mandated workflow-management research.
+3. **Observability** — metrics + traces + slog across engine/runtime/transports (REQUIREMENTS
+   line 17); only the eventing slice exists today.
+4. **Performance/caching** — owned-instance single-writer (leased) state cache for the hot
+   Run/Deliver read path (Persistence deferred #1), history/snapshot cap (#2), optional
+   LISTEN/NOTIFY relay trigger (#3).
+5. **Also outstanding** (fold in or schedule separately): DB casbin policy adapter (Authz
+   deferred #1), true async call activity (engine follow-up #3), and the pre-existing flaky
+   singleflight test `runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`.
+
+**How to execute a track:** follow "How to run the next sub-project" + "Binding conventions"
+sections below (subagent-driven development, visible RED→GREEN per task, opus final review). The
+per-track spec/plan live under `docs/specs/` and `docs/plans/` (never a path containing
+"superpowers"). The cross-session memory file `productionization-run` also tracks this run.
+
+**Gate after every track:** `go test -race ./...` green; ≥85% on touched packages;
+`golangci-lint run ./...` clean; engine/model purity intact (no transport/vendor imports).
+
+---
+
+## Status: engine-core sub-project #1 is COMPLETE ✅ (historical — see resume point above for current state)
 
 **All 8 engine-core plans are merged to `main`.** The pure engine core + reference runtime now
 covers the broad BPMN scope. Total line coverage **88.2%**; `go test -race ./...` green;
@@ -378,3 +418,41 @@ no grpc/protobuf/net-http in `engine`/`model`; `service` is transport-neutral.
    proto but non-optional in `InstanceSummary.EndedAt time.Time`; the gRPC mapping emits a zero-value
    timestamp for running instances. Make `EndedAt` a `*time.Time` in `InstanceSummary` or add a separate
    `has_ended` bool in the proto to avoid the zero-timestamp ambiguity.
+
+---
+
+## Correctness & tests hardening sub-project — ✅ COMPLETE, merged to `main`
+
+First track of the **deferred-backlog run** (see the resume point at the top). Built on branch
+`feat/correctness-hardening` (merge `314358c`, 2026-06-21). Design: spec
+`docs/specs/2026-06-21-correctness-hardening-design.md`, plan
+`docs/plans/2026-06-21-correctness-hardening.md`, ADRs 0013 (compensation hoist) and 0014
+(mixed-gateway validation). 7 SDD tasks + opus whole-branch review (Ready to merge: Yes).
+Gate: `go test -race ./...` green, touched pkgs all ≥85% (engine 85.4%, model 96.4%, service 86.6%,
+transport/grpc 86.1%, transport/rest 90.1%, internal/persistence/postgres 86.1%), lint 0,
+engine/model purity CLEAN.
+
+### What shipped
+
+| Work-stream | What | Notes |
+|---|---|---|
+| Nested-scope compensation **MUST-FIX** | `engine` hoists a closing sub-process scope's `Compensations` into its parent (root) in completion order *before* `closeScope` (`hoistCompensations` in `state.go`), so the existing root `CompensateRequested` walk rolls back completed-sub-process activities. No new `InstanceState` field; reverse-order saga semantics proven by ordering + two-level-nesting tests. | ADR-0013 |
+| Mixed split+join gateway validation | `model.Validate` rejects a gateway with both >1 incoming AND >1 outgoing (`ErrMixedGateway`), recursively into sub-processes. | ADR-0014 |
+| `service.ErrConflict` wrong-state sentinel | Closed-task / terminal-instance ops classified at the `service` seam → REST **422** (`"conflict_state"`), gRPC **`codes.FailedPrecondition`**. Engine/runtime taxonomy unchanged; not-found stays 404. | Tasks 3–4 |
+| Parked-async Postgres resume e2e | `internal/persistence/postgres/resume_test.go`: park → persist → reload via a **fresh `Store`** → resume to `StatusCompleted` (timer + boundary variants). Note: intermediate-timer ids live on `token.AwaitCommand`, not `InstanceState.Timers` (which holds boundary/SLA arms). | "Highest-value missing test" |
+| Inner-scope topology tests | Boundary / event-gateway / inclusive / SLA constructs nested inside a sub-process. **Surfaced + fixed a real bug:** `fireBoundaryArm` resolved the boundary's outgoing flow from the top-level def instead of the host token's scope def — fixed via `defForScope(def, s, hostTok.ScopeID)` (root-scope non-regression verified). | engine |
+
+### Deferred follow-ups (still open after this track)
+
+1. **Scope-targeted compensation** — the reserved `Compensate{ScopeID,FromNode}` command stays inert;
+   true per-scope targeting needs an archive-by-scope + a producer (a BPMN compensation boundary/throw
+   event). The hoist makes *root* rollback correct; per-scope targeting is future work.
+2. **Reachability / fork-join pairing validation** — the mixed-gateway rule is the focused first cut;
+   matching every converging join to a diverging fork (and condition-placement checks) is deferred.
+3. **Engine-level wrong-state sentinel** — `ErrConflict` is classified only at the `service` seam;
+   embedded consumers calling the engine/runtime directly still get untyped wrong-state errors.
+4. **Compensation-on-error / cancel paths** — only *normal* sub-process exit hoists; error/cancel
+   scope-close compensation semantics are a separate design.
+5. **Pre-existing flaky singleflight test** —
+   `runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call` can flake
+   under `-race`; tracked, not yet stabilized.
