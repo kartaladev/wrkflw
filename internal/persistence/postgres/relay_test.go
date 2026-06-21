@@ -342,13 +342,20 @@ func TestRelayRunAbsorbsPublishFailures(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- relay.Run(ctx) }()
 
-	// Let Run poll a few times; it must NOT have returned an error on its own.
-	time.Sleep(50 * time.Millisecond)
-	select {
-	case err := <-done:
-		t.Fatalf("Run terminated unexpectedly on a publish failure: %v", err)
-	default:
-	}
+	// Poll until the poison row has been retried at least once (up to 5s).
+	// This replaces a fixed sleep and makes the assertion stable on loaded machines.
+	require.Eventually(t, func() bool {
+		// Fail the test immediately if Run has already terminated — that is the
+		// behaviour we are guarding against.
+		select {
+		case err := <-done:
+			t.Errorf("Run terminated unexpectedly on a publish failure: %v", err)
+			return true // stop polling; the outer assertion will fail
+		default:
+		}
+		_, retry, _ := outboxRowState(t, pool)
+		return retry >= 1
+	}, 5*time.Second, 20*time.Millisecond, "relay should retry the poison row at least once without terminating Run")
 
 	// Cancellation is the only thing that stops Run.
 	cancel()
