@@ -15,7 +15,10 @@ package casbinauthz
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
 
 	casbinv2 "github.com/casbin/casbin/v2"
 	casbinmodel "github.com/casbin/casbin/v2/model"
@@ -107,4 +110,71 @@ func NewCasbinAuthorizerFromStrings(modelText, policyText string) (authz.Authori
 // before NewCasbinAuthorizerFromDB. Never auto-run on import.
 func MigrateCasbin(ctx context.Context, pool *pgxpool.Pool) error {
 	return internalcasbin.MigrateCasbin(ctx, pool)
+}
+
+// DBOption is a functional option for [NewCasbinAuthorizerFromDB].
+type DBOption func(*internalcasbin.DBConfig)
+
+// WithModel overrides the casbin model text. Defaults to [DefaultModel].
+func WithModel(text string) DBOption {
+	return func(c *internalcasbin.DBConfig) { c.ModelText = text }
+}
+
+// WithoutWatcher disables the LISTEN/NOTIFY policy-reload watcher. Use this for
+// single-node deployments where cross-node reload is unnecessary.
+func WithoutWatcher() DBOption {
+	return func(c *internalcasbin.DBConfig) { c.WatcherEnabled = false }
+}
+
+// WithWatcherChannel overrides the Postgres NOTIFY channel name. Defaults to
+// "wrkflw_casbin_policy". Only effective when the watcher is enabled.
+func WithWatcherChannel(name string) DBOption {
+	return func(c *internalcasbin.DBConfig) { c.WatcherChannel = name }
+}
+
+// WithNodeID overrides the node identifier used to suppress self-notifications.
+// Defaults to a random process-unique value. Only effective when the watcher is
+// enabled.
+func WithNodeID(id string) DBOption {
+	return func(c *internalcasbin.DBConfig) { c.NodeID = id }
+}
+
+// defaultNodeID returns a process-unique node identifier derived from crypto/rand.
+// This is appropriate for edge infrastructure where a random value is sufficient.
+func defaultNodeID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return "node-" + hex.EncodeToString(b[:])
+}
+
+// NewCasbinAuthorizerFromDB builds a hybrid casbin [authz.Authorizer] whose
+// policy is loaded from (and saved to) the casbin_rule table in pool, with an
+// optional LISTEN/NOTIFY watcher that reloads policy when another node changes it.
+//
+// Call [MigrateCasbin] before this function to ensure the schema exists.
+//
+// The returned [io.Closer] stops the watcher goroutine at shutdown. Always close
+// it, even when the watcher is disabled (the no-op closer is safe to call). On
+// error, any partially started watcher is closed before returning.
+//
+// Default configuration:
+//   - Model: [DefaultModel] (combined RBAC + resource-privilege)
+//   - Watcher: enabled on channel "wrkflw_casbin_policy"
+//   - NodeID: random process-unique value
+func NewCasbinAuthorizerFromDB(ctx context.Context, pool *pgxpool.Pool, opts ...DBOption) (authz.Authorizer, io.Closer, error) {
+	cfg := internalcasbin.DBConfig{
+		ModelText:      DefaultModel,
+		WatcherEnabled: true,
+		WatcherChannel: "wrkflw_casbin_policy",
+		NodeID:         defaultNodeID(),
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	enforcer, closer, err := internalcasbin.NewDBEnforcer(ctx, pool, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Reuse the existing single wrapping path: NewCasbinAuthorizer(enforcer).
+	return NewCasbinAuthorizer(enforcer), closer, nil
 }
