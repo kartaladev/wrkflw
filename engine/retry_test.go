@@ -191,3 +191,145 @@ func TestStepNoPolicyKeepsLegacyBehaviour(t *testing.T) {
 	}
 	assert.True(t, hasFail, "legacy path must emit FailInstance")
 }
+
+// recoveryFlowDef builds a service task with a RecoveryFlow "rf" → "recover"
+// service task, plus a terminal node policy. On terminal exhaustion the engine
+// should route the failing token down "rf" instead of raising an incident.
+func recoveryFlowDef(p *model.RetryPolicy) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "task", Kind: model.KindServiceTask, Action: "a", RecoveryFlow: "rf", RetryPolicy: p},
+			{ID: "recover", Kind: model.KindServiceTask, Action: "compensate"},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+			{ID: "rf", Source: "task", Target: "recover"},
+		},
+	}
+}
+
+// boundaryWithPolicyDef builds a service task carrying BOTH a terminal retry
+// policy AND a direct error boundary "bnd" → "recover". On terminal exhaustion
+// (no RecoveryFlow) the boundary must still catch the error — proving precedence
+// (2) survives the presence of a policy.
+func boundaryWithPolicyDef(p *model.RetryPolicy) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "task", Kind: model.KindServiceTask, Action: "a", RetryPolicy: p},
+			{ID: "bnd", Kind: model.KindBoundaryEvent, AttachedTo: "task"},
+			{ID: "recover", Kind: model.KindServiceTask, Action: "compensate"},
+			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end-recover", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+			{ID: "f-bnd", Source: "bnd", Target: "recover"},
+			{ID: "f-rec", Source: "recover", Target: "end-recover"},
+		},
+	}
+}
+
+// hasInvokeActionForName reports whether any InvokeAction command targets the
+// given action name.
+func hasInvokeActionForName(cmds []engine.Command, name string) bool {
+	for _, c := range cmds {
+		if ia, ok := c.(engine.InvokeAction); ok && ia.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// hasFailInstance reports whether any FailInstance command is present.
+func hasFailInstance(cmds []engine.Command) bool {
+	for _, c := range cmds {
+		if _, ok := c.(engine.FailInstance); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStepExhaustion exercises the terminal-exhaustion precedence:
+// (1) catch-flow (RecoveryFlow), (2) error boundary, (3) incident. All three
+// cases share the call shape: drive start → fail terminally → assert.
+func TestStepExhaustion(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, r engine.StepResult)
+	}
+
+	terminal := &model.RetryPolicy{MaxAttempts: 1} // first failure is terminal
+
+	cases := []testCase{
+		{
+			name: "incident when no catch-flow and no boundary",
+			def:  retryDef(terminal),
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.Equal(t, engine.StatusRunning, r.State.Status,
+					"instance must stay running on incident, not fail")
+				require.Len(t, r.State.Incidents, 1)
+				inc := r.State.Incidents[0]
+				assert.Equal(t, "task", inc.NodeID)
+				assert.Equal(t, "boom", inc.Error)
+				assert.Equal(t, 1, inc.Attempts)
+				assert.Equal(t, engine.TokenIncident,
+					findTokenByNodeID(t, r.State.Tokens, "task").State)
+				assert.False(t, hasFailInstance(r.Commands),
+					"incident must not emit FailInstance")
+			},
+		},
+		{
+			name: "recovery flow pre-empts incident and boundary",
+			def:  recoveryFlowDef(terminal),
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.Empty(t, r.State.Incidents, "recovery flow must pre-empt incident")
+				assert.True(t, hasInvokeActionForName(r.Commands, "compensate"),
+					"token must be routed down RecoveryFlow into the recover task")
+				assert.Equal(t, "boom", r.State.Variables["_errorMessage"])
+				assert.Equal(t, 1, r.State.Variables["_errorAttempts"])
+			},
+		},
+		{
+			name: "error boundary still catches with a policy present",
+			def:  boundaryWithPolicyDef(terminal),
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.Empty(t, r.State.Incidents, "boundary catch must pre-empt incident")
+				assert.NotEqual(t, engine.StatusFailed, r.State.Status,
+					"boundary catch must not fail the instance")
+				assert.True(t, hasInvokeActionForName(r.Commands, "compensate"),
+					"boundary must route to the recover task")
+				assert.False(t, hasFailInstance(r.Commands),
+					"boundary catch must not emit FailInstance")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			at0 := time.Unix(0, 0)
+			r1, err := engine.Step(tc.def, engine.InstanceState{InstanceID: "p"},
+				engine.NewStartInstance(at0, nil), engine.StepOptions{})
+			require.NoError(t, err)
+			cmdID := findInvokeActionCmdID(t, r1.Commands)
+
+			r2, err := engine.Step(tc.def, r1.State,
+				engine.NewActionFailed(time.Unix(1, 0), cmdID, "boom", true),
+				engine.StepOptions{})
+			require.NoError(t, err)
+			tc.assert(t, r2)
+		})
+	}
+}

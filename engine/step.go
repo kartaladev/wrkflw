@@ -211,8 +211,51 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 				tok.AwaitCommand = timerID
 				return StepResult{State: s, Commands: append(preCmds, retryCmds...)}, nil
 			}
-			// terminal → Task 7 will handle exhaustion/incident; for now fall through
-			// to the existing propagateError path unchanged.
+			// Terminal exhaustion: precedence is (1) catch-flow → (2) error
+			// boundary → (3) incident.
+			if node.RecoveryFlow != "" {
+				// (1) Catch-flow: inject error context onto instance variables and
+				// route the failing token down RecoveryFlow.
+				if s.Variables == nil {
+					s.Variables = map[string]any{}
+				}
+				s.Variables["_errorMessage"] = t.Err
+				// Total executions: initial attempt plus all retries.
+				s.Variables["_errorAttempts"] = tok.RetryAttempts + 1
+				if node.ErrorCode != "" {
+					s.Variables["_error"] = node.ErrorCode
+				}
+				// Resolve the RecoveryFlow target (mirror the SLAFlow routing in
+				// handleSLAFired: scan the scope def's flows for the flow ID).
+				var target string
+				for _, f := range tdef.Flows {
+					if f.ID == node.RecoveryFlow {
+						target = f.Target
+						break
+					}
+				}
+				if target == "" {
+					return StepResult{}, fmt.Errorf("engine: retry exhaustion: RecoveryFlow %q not found for node %q", node.RecoveryFlow, node.ID)
+				}
+				tok.RetryAttempts = 0
+				tok.RetryStartedAt = time.Time{}
+				tok.AwaitCommand = ""
+				tok.State = TokenActive
+				s.moveTokenToTarget(tok, target, t.OccurredAt())
+				driveCmds, err := drive(def, &s, t.OccurredAt(), opt.Mode)
+				if err != nil {
+					return StepResult{}, err
+				}
+				return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
+			}
+			// (2)+(3): no catch-flow → let propagateError catch the error via a
+			// boundary handler; if none is found, raise an incident (the
+			// raiseIncidentOnUnhandled=true flag) instead of failing the instance.
+			errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode, true)
+			if err != nil {
+				return StepResult{}, err
+			}
+			return StepResult{State: s, Commands: append(preCmds, errCmds...)}, nil
 		}
 		// Route through propagateError: if a boundary error handler is found in
 		// the scope chain (direct-attachment or enclosing-scope), the error is
@@ -222,7 +265,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// behavior for root-level service tasks with no handler.
 		// Pass tok.ID so the direct-attachment branch consumes THIS specific
 		// token, not the first token found at the same NodeID+ScopeID.
-		errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode)
+		errCmds, err := propagateError(def, &s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode, false)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -790,7 +833,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			// as failingTokenID (the error-end token is already consumed above).
 			currentScopeID := tok.ScopeID
 			s.consumeToken(tok, at)
-			errCmds, propErr := propagateError(def, s, currentScopeID, "", "", node.ErrorCode, at, mode)
+			errCmds, propErr := propagateError(def, s, currentScopeID, "", "", node.ErrorCode, at, mode, false)
 			if propErr != nil {
 				return cmds, propErr
 			}
@@ -1293,6 +1336,13 @@ func (s *InstanceState) nextTimerID() string {
 	return fmt.Sprintf("%s-tm%d", s.InstanceID, s.TimerSeq)
 }
 
+// nextIncidentID returns the next deterministic incident ID of the form
+// "<instanceID>-inc<IncidentSeq>", advancing the monotonic IncidentSeq counter.
+func (s *InstanceState) nextIncidentID() string {
+	s.IncidentSeq++
+	return fmt.Sprintf("%s-inc%d", s.InstanceID, s.IncidentSeq)
+}
+
 // setVisitActor sets the ActorID on the most recent open NodeVisit for the
 // given (tokenID, nodeID) pair. Used to record who completed a human task.
 //
@@ -1672,7 +1722,10 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 // ID ensures only the exact failing token is removed. For the KindErrorEndEvent path
 // (originatingNodeID == ""), the error-end token is already consumed by drive before
 // propagateError is called, so failingTokenID is unused.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode) ([]Command, error) {
+// raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
+// unhandled error parks the failing token as a [TokenIncident] and keeps the
+// instance running (admin-resumable) instead of setting StatusFailed.
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, raiseIncidentOnUnhandled bool) ([]Command, error) {
 	// ── Step 1: Direct-attachment check ──────────────────────────────────────
 	// Only when the caller provides an originating node (ActionFailed path).
 	// Inspect the failing token's OWN scope definition for a boundary error event
@@ -1873,6 +1926,33 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	}
 
 	// No handler found anywhere in the scope chain → unhandled error.
+	if raiseIncidentOnUnhandled {
+		// Do NOT fail the instance. Raise an incident on the failing token and
+		// keep the instance running (admin-resumable). Used by the retry-
+		// exhaustion path when an effective policy exists but neither a catch
+		// flow nor a boundary handled the terminal failure.
+		failingTok := s.tokenByID(failingTokenID)
+		attempts, cmdID := 1, ""
+		if failingTok != nil {
+			// Attempts is the total executions: the initial attempt plus all
+			// retries (RetryAttempts counts retries only).
+			attempts = failingTok.RetryAttempts + 1
+			cmdID = failingTok.AwaitCommand
+			failingTok.State = TokenIncident
+		}
+		s.Incidents = append(s.Incidents, Incident{
+			ID:        s.nextIncidentID(),
+			TokenID:   failingTokenID,
+			NodeID:    originatingNodeID,
+			ScopeID:   scopeID,
+			CommandID: cmdID,
+			Error:     errorCode,
+			Attempts:  attempts,
+			CreatedAt: at,
+		})
+		return nil, nil
+	}
+
 	// Set instance to failed and perform terminal cleanup.
 	s.Status = StatusFailed
 	ended := at
