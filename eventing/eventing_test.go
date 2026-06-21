@@ -50,7 +50,7 @@ func TestNewPublisherWithOptionsForwardsToInternal(t *testing.T) {
 
 	// At least one span should have been recorded with the custom tracer provider.
 	spans := sr.Ended()
-	require.NotEmpty(t, spans)
+	require.Len(t, spans, 1)
 	require.Equal(t, "eventing.publish", spans[0].Name())
 }
 

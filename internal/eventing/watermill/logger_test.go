@@ -37,7 +37,7 @@ func TestWatermillLoggerError(t *testing.T) {
 	out := buf.String()
 	require.Contains(t, out, "publish failed")
 	require.Contains(t, out, "broker connection refused")
-	require.Contains(t, out, "error")
+	require.Contains(t, out, "error=")
 }
 
 func TestWatermillLoggerDebug(t *testing.T) {
