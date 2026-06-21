@@ -96,6 +96,9 @@ func (a *Authorizer) effectiveRoles(actor authz.Actor) (map[string]struct{}, err
 // anyPrivilege reports whether any (subject, privilege) pair enforces true.
 func (a *Authorizer) anyPrivilege(actor authz.Actor, privileges []string) (bool, error) {
 	for _, priv := range privileges {
+		if priv == "" {
+			continue
+		}
 		obj, act := splitPrivilege(priv)
 		for _, sub := range subjects(actor) {
 			ok, err := a.enforcer.Enforce(sub, obj, act)
