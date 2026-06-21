@@ -3,7 +3,7 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-21
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-22
 
 **Where we are:** the engine core (Plans 1–8) plus **all 5 productionization sub-projects**
 (Persistence, Scheduling, Authorization, Transports, Eventing) are merged to `main`. After
@@ -20,12 +20,13 @@ opus whole-branch review → merge to main → push`, exactly like the sub-proje
    feature ("A process error must be able to be retried"). Engine-modeled retry executor,
    catch-flow→incident exhaustion, outbox relay poison isolation + DLQ, idempotency. ADRs
    0015–0018. See the "Resilience (retry/backoff/DLQ) sub-project" section below.
-3. **Observability** — ⏭️ **NEXT.** metrics + traces + slog across engine/runtime/transports
-   (REQUIREMENTS line 17); only the eventing slice exists today. Start with
-   `superpowers:brainstorming` + the standard track workflow below.
-4. **Performance/caching** — owned-instance single-writer (leased) state cache for the hot
-   Run/Deliver read path (Persistence deferred #1), history/snapshot cap (#2), optional
-   LISTEN/NOTIFY relay trigger (#3).
+3. **Observability** — ✅ COMPLETE, merged (2026-06-22). Metrics + traces + slog across
+   runtime/transports/scheduling/eventing/persistence-relay (REQUIREMENTS line 17). ADR-0019.
+   See the "Observability (metrics/traces/slog) sub-project" section below.
+4. **Performance/caching** — ⏭️ **NEXT.** Owned-instance single-writer (leased) state cache
+   for the hot Run/Deliver read path (Persistence deferred #1), history/snapshot cap (#2),
+   optional LISTEN/NOTIFY relay trigger (#3). Start with `superpowers:brainstorming` + the
+   standard track workflow below.
 5. **Also outstanding** (fold in or schedule separately): DB casbin policy adapter (Authz
    deferred #1), true async call activity (engine follow-up #3), and the pre-existing flaky
    singleflight test `runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`.
@@ -526,3 +527,69 @@ concurrency exhausts Docker and surfaces spurious testcontainers startup failure
    `t.Fatal` vs testify; `countUnpublished` counts dead rows as unpublished; `RelayBackoff` dead
    post-loop guard; godoc phrasings (`Backoff` "0=first retry", `RetryStartedAt` "wall-clock").
    The one timing-sensitive relay test was deflaked pre-merge (poll instead of `time.Sleep`).
+
+---
+
+## Observability (metrics/traces/slog) sub-project — ✅ COMPLETE, merged to `main`
+
+Third track of the **deferred-backlog run**. Built on branch `feat/observability`.
+Design: spec `docs/specs/2026-06-21-observability-design.md`, plan
+`docs/plans/2026-06-21-observability.md`, ADR-0019.
+Gate: `go test -race ./runtime/...` green, lint 0, engine/model purity CLEAN (confirmed by
+`TestCorePurityNoOTel` guard), OTel SDK packages confined to test files in production code.
+
+### Design forks (key decisions)
+
+- **OTel-API-direct** — `go.opentelemetry.io/otel`, `.../metric`, `.../trace` imported directly
+  from production code; no in-repo tracing/metrics port. The OTel API *is* the vendor-neutral
+  abstraction (unlike watermill/casbin/gocron). SDK packages appear in test files only.
+- **Manual transport spans** — `transport/rest` and `transport/grpc` open spans manually at
+  handler/interceptor entry; no `otelhttp`/`otelgrpc` contrib dependency.
+- **Full metric catalog** — 9 instruments covering the complete instance lifecycle, step timing,
+  action timing, retries, incidents, and human-task events.
+- **Runtime is the boundary** — engine core (`engine/`, `model/`) never sees a span, meter, or
+  logger; all instrumentation wraps around the pure `Step` call in `runtime.Runner`.
+
+### What shipped (by layer)
+
+| Layer | What |
+|---|---|
+| `internal/observability/` | Shared `Telemetry` struct + `New(scope, ...Option)` constructor; `WithLogger`/`WithTracerProvider`/`WithMeterProvider` options; `LogAttrs` helper injecting `trace_id`/`span_id` into slog records. Used by all instrumented components. |
+| `runtime/` — `Runner` | `WithLogger`/`WithTracerProvider`/`WithMeterProvider` functional options; `runnerObs` bundles all instruments; spans on `Run` (`wrkflw.runner.Run`), `Deliver` (`wrkflw.runner.Deliver`), each `engine.Step` (`wrkflw.step`), each `InvokeAction` (`wrkflw.action <name>`); 9 metric instruments: `wrkflw_instances_started_total`, `wrkflw_instances_completed_total`, `wrkflw_instances_active`, `wrkflw_step_duration_seconds`, `wrkflw_action_duration_seconds`, `wrkflw_action_retries_total`, `wrkflw_incidents_raised_total`, `wrkflw_incidents_resolved_total`, `wrkflw_human_tasks_total`; injected logger for timer-fire retry logging. |
+| `runtime/` — `TaskService` | `WithTaskServiceMeterProvider` option; increments `wrkflw_human_tasks_total{event=claimed/reassigned/completed}` on successful lifecycle transitions. |
+| `transport/rest/` | `WithLogger` option; manual `wrkflw.rest METHOD` span at handler entry; W3C `traceparent`/`tracestate` propagation; injected logger replaces any package-global `slog.*` calls. |
+| `transport/grpc/` | `WithLogger` option; per-RPC `wrkflw.grpc /<svc>/<method>` span at interceptor level; gRPC metadata propagation. |
+| `internal/scheduling/gocron/` | `WithLogger` option; injected logger for scheduler lifecycle events. |
+| `internal/persistence/postgres/relay.go` | `wrkflw.relay.batch` span wrapping each `DrainOnce` batch; structured logs for relay errors. |
+| `engine/` — purity guard | `TestCorePurityNoOTel` in `engine/purity_test.go`: asserts via `go list -f {{.Deps}}` subprocess that neither `engine` nor `model` transitively imports any `go.opentelemetry.io` package. Runs as part of `go test ./engine/...`. |
+| `runtime/` — testable example | `ExampleRunner_observability` in `runtime/observability_example_test.go`: documents the complete consumer wiring (SDK `TracerProvider` + `MeterProvider` + `*slog.Logger` → `With*` options → `r.Run`). |
+
+### Deferred follow-ups
+
+1. **Public `observability` root package** — a consumer-facing package exporting a ready-made
+   trace-correlating `slog.Handler` (injects `trace_id`/`span_id`) and a convenience `Setup` helper
+   configuring OTel globals + injecting into a runner. Currently `internal/observability` is unexported.
+2. **Migrate eventing adapter onto the shared helper** — `internal/eventing/watermill` has its own
+   With-option wiring; it should delegate to `internal/observability.New` for consistency.
+3. **Async DB-backed `instances_active` gauge** — current UpDownCounter resets to zero on restart;
+   a true gauge would query `wrkflw_instances` for the live count (periodic background query or
+   async observable gauge callback).
+4. **`instances_active` mid-run abort caveat** — hard errors aborting `deliverLoop` before terminal
+   state do NOT decrement `wrkflw_instances_active`; the instance is non-terminal in the store
+   (intentional semantic, documented).
+5. **Store-commit / `perform` error span coverage** — `wrkflw.step` span ends before `store.Commit`;
+   commit and command-execution errors surface on the parent `Run`/`Deliver` span only. Deeper span
+   hierarchy is a follow-up.
+6. **OTel contrib transport option** — `transport/rest` and `transport/grpc` could accept an
+   `otelhttp`/`otelgrpc`-based option for consumers preferring automatic propagation; manual is v1.
+7. **Persistence `Store` (Load/Commit) spans and metrics** — Postgres store operations are not
+   instrumented; a `wrkflw_store_duration_seconds` histogram is a follow-up for the
+   Performance/caching track.
+8. **REST route-template span naming** — span name is currently `wrkflw.rest METHOD`; the route
+   pattern is unavailable at middleware time (`r.Pattern` not accessible). High-cardinality path
+   parameters must not appear in span names; per-handler span creation is the follow-up.
+9. **Histogram exemplars** — exemplars linking data points to trace IDs are not yet configured;
+   `exemplar.AlwaysOnFilter` option is a follow-up.
+10. **REST/relay `WithMeterProvider` parity** — both accept the option for future use but emit no
+    metrics yet; route-level request counters/latency histograms and relay throughput counters are
+    a follow-up.
