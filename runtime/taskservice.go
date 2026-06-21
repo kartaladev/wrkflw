@@ -16,10 +16,11 @@ import (
 // Authorization happens here, in the runtime layer, so that the engine core
 // remains pure and free of I/O. TaskService never calls engine.Step itself.
 //
-// For authorization, vars are not carried in the TaskStore (the store holds only
-// the HumanTask record). TaskService therefore passes nil vars to the Authorizer.
-// A future attribute-predicate implementation can be extended here to fetch live
-// instance variables from the StateStore.
+// Process variables for attribute-based authorization are carried in
+// [humantask.HumanTask.Vars], snapshotted by the runtime's AwaitHuman perform
+// at task-creation time. TaskService passes task.Vars to the Authorizer so that
+// attribute predicates referencing data variables (e.g. vars["region"] == "EU")
+// are correctly evaluated.
 type TaskService struct {
 	store humantask.TaskStore
 	authz authz.Authorizer
@@ -35,16 +36,15 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, clk clock.Cl
 // Claim authorizes actor against the task's eligibility and, on success, returns
 // a HumanClaimed trigger for the caller to deliver to the engine via Runner.Deliver.
 //
-// Authorization note: process variables are not available at the TaskService level
-// (they live in the StateStore snapshot). We pass nil vars here; this suffices for
-// role-based and candidate-based checks. Attribute predicates that need live vars
-// should extend TaskService with a StateStore dependency.
+// task.Vars (snapshotted at task-creation by the runner's AwaitHuman perform) are
+// forwarded to the Authorizer so that attribute predicates referencing process
+// variables (e.g. vars["region"] == "EU") are correctly evaluated.
 func (s *TaskService) Claim(ctx context.Context, taskToken string, actor authz.Actor) (engine.Trigger, error) {
 	task, err := s.store.Get(ctx, taskToken)
 	if err != nil {
 		return nil, fmt.Errorf("runtime: taskservice: get task: %w", err)
 	}
-	if err := s.authz.Authorize(ctx, task.Eligibility, actor, nil); err != nil {
+	if err := s.authz.Authorize(ctx, task.Eligibility, actor, task.Vars); err != nil {
 		return nil, fmt.Errorf("runtime: taskservice: claim: %w", err)
 	}
 	return engine.NewHumanClaimed(s.clk.Now(), taskToken, actor), nil
@@ -66,7 +66,7 @@ func (s *TaskService) Reassign(ctx context.Context, taskToken string, from, to s
 	if from != task.ClaimedBy {
 		return nil, fmt.Errorf("runtime: reassign: from %q is not the current claimant %q", from, task.ClaimedBy)
 	}
-	if err := s.authz.Authorize(ctx, task.Eligibility, by, nil); err != nil {
+	if err := s.authz.Authorize(ctx, task.Eligibility, by, task.Vars); err != nil {
 		return nil, fmt.Errorf("runtime: taskservice: reassign: %w", err)
 	}
 	return engine.NewHumanReassigned(s.clk.Now(), taskToken, from, to, by), nil
@@ -79,7 +79,7 @@ func (s *TaskService) Complete(ctx context.Context, taskToken string, actor auth
 	if err != nil {
 		return nil, fmt.Errorf("runtime: taskservice: get task: %w", err)
 	}
-	if err := s.authz.Authorize(ctx, task.Eligibility, actor, nil); err != nil {
+	if err := s.authz.Authorize(ctx, task.Eligibility, actor, task.Vars); err != nil {
 		return nil, fmt.Errorf("runtime: taskservice: complete: %w", err)
 	}
 	return engine.NewHumanCompleted(s.clk.Now(), taskToken, output, actor), nil

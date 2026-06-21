@@ -221,3 +221,40 @@ func TestTaskServiceGetNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, humantask.ErrTaskNotFound)
 }
+
+// TestTaskService_Claim_AttributeOverVars verifies that attribute predicates
+// referencing process variables (vars["region"]) are correctly enforced at Claim
+// time. This test exercises the full vars-plumbing path: task.Vars must be
+// populated and passed to the Authorizer — otherwise the expr evaluates against
+// a nil map and the EU predicate errors/denies even for eligible actors.
+func TestTaskService_Claim_AttributeOverVars(t *testing.T) {
+	cases := map[string]struct {
+		vars   map[string]any
+		assert func(t *testing.T, err error)
+	}{
+		"matching region claims": {
+			vars:   map[string]any{"region": "EU"},
+			assert: func(t *testing.T, err error) { assert.NoError(t, err) },
+		},
+		"non-matching region denied": {
+			vars: map[string]any{"region": "US"},
+			assert: func(t *testing.T, err error) {
+				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := humantask.NewMemTaskStore()
+			require.NoError(t, store.Upsert(t.Context(), humantask.HumanTask{
+				TaskToken:   "tok-attr-1",
+				Eligibility: authz.AuthzSpec{Attribute: `vars["region"] == "EU"`},
+				Vars:        tc.vars,
+				State:       humantask.Unclaimed,
+			}))
+			svc := runtime.NewTaskService(store, authz.RoleAuthorizer{}, clock.System())
+			_, err := svc.Claim(t.Context(), "tok-attr-1", authz.Actor{ID: "alice"})
+			tc.assert(t, err)
+		})
+	}
+}

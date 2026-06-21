@@ -199,6 +199,43 @@ production code, clockwork not in `engine`/`runtime`/`model` production code.
 
 ---
 
+## Authorization (casbin) sub-project — ✅ COMPLETE, merged to `main`
+
+Built on branch `feat/authz-casbin` (HEAD `a7edee0`). Design: spec
+`docs/specs/2026-06-21-authz-casbin-design.md`, plan `docs/plans/2026-06-21-authz-casbin.md`,
+ADR-0010.
+Gate: `go test -race ./...` green, total coverage **87.5%** (`internal/authz/casbin` 92.0%,
+`casbinauthz` 85.7%, `authz` 100%, `runtime` 94.5%, `humantask` 100%), lint clean (0 issues),
+casbin not imported outside `internal/authz/casbin` + `casbinauthz`, pinned at `v2.135.0`.
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `internal/authz/casbin/` | `*Authorizer` wrapping `*casbin.SyncedEnforcer` — **hybrid evaluator**: (1) role check with hierarchy via `GetImplicitRolesForUser` (degrades to `RoleAuthorizer` any-match with no `g` policy); (2) resource-privilege via `Enforce(sub, obj, act)` per privilege (activates the previously-reserved `AuthzSpec.Privileges` field); (3) attribute predicate via `expreval` over `{actor, vars}` (preserves the `expr-lang` dialect — no govaluate fork). Empty spec → allow. Deny / failed check → `authz.ErrNotAuthorized` (fail-closed). Casbin engine error → plain wrapped error (distinguishable from "policy says no"). `SyncedEnforcer` makes concurrent authorizations race-safe. | ADR-0010; only casbin imports in the codebase |
+| `casbinauthz/` root façade | `NewCasbinAuthorizer(e *casbin.SyncedEnforcer) authz.Authorizer` (consumer-owned enforcer) + `NewCasbinAuthorizerFromStrings(modelText, policyText string) (authz.Authorizer, error)` (builds enforcer internally; `DefaultModel` used when `modelText` is empty). Both **return the `authz.Authorizer` interface** — no internal-concrete leak. `ReloadPolicy() error` available via type assertion for hot-reload. Compile-time `var _ authz.Authorizer` guard. | ADR-0008 template; ADR-0010 |
+| `humantask/` | Added `Vars map[string]any` field to `HumanTask` to carry a process-variable snapshot. | Prerequisite for attribute-based-over-data-variables |
+| `runtime/` | `perform engine.AwaitHuman` snapshots a **defensive copy** of `st.Variables` into the `HumanTask.Vars` at task creation time; `TaskService.Claim`/`Reassign`/`Complete` pass `task.Vars` (not `nil`) to `Authorize`. Makes attribute eligibility deterministic and auditable (evaluated against task-creation-time state). | ADR-0010 §Vars plumbing |
+| `authz/` | **Unchanged** — `AllowAll`/`RoleAuthorizer` retained as pure built-ins; casbin NOT added. | The pure `authz` package stays stdlib + expreval only |
+
+### Key design decision (ADR)
+
+- **ADR-0010** — hybrid casbin + expr evaluator behind the `authz.Authorizer` port, following
+  the ADR-0008 façade/internal template. Preserves the `expr-lang` dialect for attribute
+  predicates (avoiding a govaluate fork); adds role-hierarchy and resource-privilege on top.
+  `SyncedEnforcer` for race safety. Deny → fail-closed `ErrNotAuthorized`. `AllowAll`/`RoleAuthorizer`
+  retained as pure built-ins — casbin is an additional implementation, not a replacement.
+
+### Deferred follow-ups
+
+1. **DB policy adapter** — v1 accepts model+policy as strings or a consumer-built `SyncedEnforcer`. A **pgx/gorm/sqlx casbin adapter** loading policy from the `wrkflw` Postgres database (with a watcher for multi-node reload) is a follow-up. The façade is adapter-agnostic — landing this requires only a new `casbinauthz.NewCasbinAuthorizerFromDB(pool, ...)` constructor.
+2. **casbin ABAC-in-matchers** — the `Attribute` predicate today runs via `expreval` *outside* the casbin matcher (to keep the expr dialect). A casbin-native ABAC path (govaluate expression in the matcher, vars injected as subject attributes) is a viable alternative for consumers who prefer unified policy files; deferred because it forks the expression dialect.
+3. **Shallow snapshot caveat** — `HumanTask.Vars` is a top-level-keys defensive copy of `st.Variables`: top-level scalars/strings/bools are independent copies, but any nested `map[string]any` values remain aliased to the instance state. Only top-level scalars are safe from mutation; deeply nested vars may reflect later engine writes. Full deep-copy (e.g. `encoding/json` round-trip) is the follow-up if nested-map fidelity is required.
+4. **Richer resource modeling for Privileges** — `AuthzSpec.Privileges` today is a `[]string` carrying space-delimited `"obj act"` tokens; the `casbinauthz` façade splits on space into `(obj, act)` for `Enforce`. Richer modeling (domains/tenants, object hierarchies, wildcard policies) is a follow-up once the DB adapter provides a policy-management API.
+5. **Sensitive-variable persisting in task snapshot** — `HumanTask.Vars` snapshots ALL top-level process variables into the task record; once a Postgres-backed `TaskStore` lands (currently in-memory), this would persist potentially sensitive process data (PII/secrets) — consider a snapshot allowlist or redaction before persisting tasks.
+
+---
+
 ## What's next: productionization sub-projects (each its own brainstorm → spec → plan → SDD cycle)
 
 The engine core depends on interfaces only. The next sub-projects implement them (per CLAUDE.md):
@@ -206,7 +243,7 @@ The engine core depends on interfaces only. The next sub-projects implement them
 - **Persistence** — ✅ COMPLETE, merged to `main`. See section above.
 - **Eventing** — watermill `Publisher` implementing the `persistence.Publisher` interface (outbox relay is ready; this sub-project wires the broker side, behind the eventing abstraction; never import watermill from engine/workflow code).
 - **Scheduling** — ✅ COMPLETE, merged to `main`. See "Scheduling (gocron) sub-project" section below.
-- **Authorization** — casbin behind the `authz.Authorizer`.
+- **Authorization** — ✅ COMPLETE, merged to `main`. See "Authorization (casbin) sub-project" section below.
 - **Transports** — REST `http.Handler` factories + gRPC `ServiceRegistrar` registrations the consumer
   mounts (library-provided, never a shipped binary; ADR-0004 / CLAUDE.md).
 - **Admin monitoring** + **`ProcessInstance` response customization**.

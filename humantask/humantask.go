@@ -55,6 +55,14 @@ type HumanTask struct {
 	CreatedAt time.Time
 	// DueAt is the optional SLA deadline (Plan 5; nil in this implementation).
 	DueAt *time.Time
+	// Vars is a snapshot of the process Variables at task-creation time, used for
+	// attribute-based eligibility predicates that reference data variables
+	// (e.g. vars["region"] == "EU"). It is set by the runtime when an AwaitHuman
+	// command is performed and must not be aliased to the live process-variable map.
+	// Note: the snapshot is a shallow copy (maps.Clone) — top-level keys are copied
+	// defensively, but nested maps/slices remain shared with the instance variables;
+	// eligibility predicates should rely on top-level scalar variables only.
+	Vars map[string]any
 }
 
 // IsOpen reports whether the task is still in progress — that is, it has been

@@ -3,6 +3,7 @@ module github.com/zakyalvan/krtlwrkflw
 go 1.25.7
 
 require (
+	github.com/casbin/casbin/v2 v2.135.0
 	github.com/expr-lang/expr v1.17.8
 	github.com/go-co-op/gocron/v2 v2.21.2
 	github.com/google/uuid v1.6.0
@@ -19,6 +20,8 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
+	github.com/casbin/govaluate v1.3.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
