@@ -3,6 +3,7 @@ package observability_test
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"testing"
 
@@ -49,7 +50,7 @@ func TestNew_Defaults(t *testing.T) {
 func TestNew_WithLogger(t *testing.T) {
 	t.Parallel()
 
-	custom := slog.New(slog.NewTextHandler(nil, nil))
+	custom := slog.New(slog.NewTextHandler(io.Discard, nil))
 	tel := observability.New("test/scope", observability.WithLogger(custom))
 
 	assert.Same(t, custom, tel.Logger, "WithLogger must replace the default logger")
