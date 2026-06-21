@@ -70,10 +70,10 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 	}
 
 	if err := writeJournal(ctx, tx, step, version, now); err != nil {
-		return 0, err
+		return 0, mapConflict(err)
 	}
 	if err := writeOutbox(ctx, tx, step.State.InstanceID, version, step.Events, now); err != nil {
-		return 0, err
+		return 0, mapConflict(err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -116,7 +116,7 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, mapConflict(fmt.Errorf("postgres: commit: begin: %w", err))
+		return 0, fmt.Errorf("postgres: commit: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // DBTX is the minimal querier seam satisfied by *pgxpool.Pool, *pgx.Conn, and
@@ -16,3 +17,7 @@ type DBTX interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
+
+// Compile-time assertion: *pgxpool.Pool must satisfy DBTX so a future pgx
+// upgrade that drops a method is caught immediately at build time.
+var _ DBTX = (*pgxpool.Pool)(nil)

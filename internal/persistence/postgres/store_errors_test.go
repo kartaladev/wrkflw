@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/database"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
@@ -126,23 +127,35 @@ func TestStoreCreateDuplicateIDFails(t *testing.T) {
 	require.Error(t, err, "duplicate instance_id must return an error")
 }
 
-// TestStoreCommitThenCreateSameDedupKey verifies that the outbox dedup_key unique
-// constraint fires when an event with the same key is re-inserted, exercising the
-// outbox exec-error path indirectly through a conflicting Create.
-// Each outbox row's dedup_key is "<id>:<seq>:<eventIndex>" — unique per step — so
-// the only practical way to violate it is a duplicate Create (same id, seq=1, i=0).
-// This is already covered by TestStoreCreateDuplicateIDFails; this test documents
-// the semantic.
+// TestStoreOutboxDedupKeyIsUnique verifies that the wrkflw_outbox.dedup_key UNIQUE
+// constraint prevents duplicate outbox rows. After a successful Create (which writes
+// dedup_key "dedup3:1:0"), a direct INSERT reusing the same dedup_key must fail with
+// Postgres SQLSTATE 23505 (unique_violation). The test fails if the constraint were
+// removed.
 func TestStoreOutboxDedupKeyIsUnique(t *testing.T) {
 	t.Parallel()
-	s := newStore(t)
 
-	_, err := s.Create(t.Context(), appliedStep("dup2", "topic"))
-	require.NoError(t, err)
-
-	// Confirm the dedup_key is present.
+	// Provision a single DB + pool so we can both drive the store and issue a raw INSERT.
 	pool := database.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
-	// (Just check the first store's behaviour — no second pool needed here.)
-	// A Commit after advancing the token uses a different seq (2), so no conflict.
+	s := pg.NewStore(pool)
+
+	// Create inserts dedup_key "dedup3:1:0" for the single event.
+	_, err := s.Create(t.Context(), appliedStep("dedup3", "topic"))
+	require.NoError(t, err)
+
+	// Attempt to INSERT a second outbox row with the exact same dedup_key.
+	// This must fail with SQLSTATE 23505 (unique_violation).
+	_, insertErr := pool.Exec(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
+		 VALUES ($1, $2, $3::jsonb, $4, NOW())`,
+		"dedup3", "topic", `{"x":1}`, "dedup3:1:0",
+	)
+	require.Error(t, insertErr, "duplicate dedup_key must cause a unique-constraint violation")
+
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, insertErr, &pgErr,
+		"error must be a *pgconn.PgError, got: %T", insertErr)
+	require.Equal(t, "23505", pgErr.Code,
+		"SQLSTATE must be 23505 (unique_violation); got %s", pgErr.Code)
 }
