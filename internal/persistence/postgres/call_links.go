@@ -67,15 +67,15 @@ func (c *CallLinkStore) ClaimPending(ctx context.Context, limit int) ([]runtime.
 	var pending []runtime.PendingNotify
 	for rows.Next() {
 		var (
-			childID          string
-			parentID         string
-			commandID        string
-			defID            string
-			defVersion       int
-			depth            int
-			status           string
-			outputJSON       []byte
-			errText          *string
+			childID    string
+			parentID   string
+			commandID  string
+			defID      string
+			defVersion int
+			depth      int
+			status     string
+			outputJSON []byte
+			errText    *string
 		)
 		if err := rows.Scan(
 			&childID, &parentID, &commandID,

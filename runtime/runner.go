@@ -62,14 +62,14 @@ type msgKey struct {
 
 // Runner is the reference single-process driver loop.
 type Runner struct {
-	cat      action.Catalog
-	clk      clock.Clock
-	store    Store
-	resolver humantask.ActorResolver
-	tasks    humantask.TaskStore
-	authz    authz.Authorizer
-	sched    Scheduler
-	sigbus   *SignalBus
+	cat       action.Catalog
+	clk       clock.Clock
+	store     Store
+	resolver  humantask.ActorResolver
+	tasks     humantask.TaskStore
+	authz     authz.Authorizer
+	sched     Scheduler
+	sigbus    *SignalBus
 	defsReg   DefinitionRegistry
 	callLinks CallLinkStore
 	// jitter supplies the random fraction used to de-synchronize retry backoff.

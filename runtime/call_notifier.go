@@ -69,6 +69,12 @@ func WithCallNotifierPollInterval(d time.Duration) CallNotifierOption {
 //   - reg: resolves parent definition references (format "defID:version").
 //   - clk: time source for trigger timestamps (ADR-0003).
 //   - opts: optional configuration overrides.
+//
+// REQUIRED registration contract: every parent definition MUST be resolvable from
+// reg under the exact key "<defID>:<version>" (the format DrainOnce uses to look it
+// up). If a parent def cannot be resolved, DrainOnce SKIPS that link (it stays
+// claimable for a later drain) — so a registry missing the "id:version" key leaves
+// the parked parent unresumed until the registration is fixed.
 func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRegistry, clk clock.Clock, opts ...CallNotifierOption) *CallNotifier {
 	n := &CallNotifier{
 		cl:      cl,

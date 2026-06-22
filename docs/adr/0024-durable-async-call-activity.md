@@ -57,13 +57,19 @@ layers, leaving the engine untouched.
 - **`deliverLoop` child-terminal hook:** on a transition into a terminal status, the
   runtime records the child's outcome so the call-link flips to `completed`/`failed`
   with the child's output/error.
-- **`CallNotifier` driver** (relay-shaped): claims terminal-but-unnotified links
-  (`FOR UPDATE SKIP LOCKED`), resolves the parent def via the `DefinitionRegistry`,
-  delivers `SubInstanceCompleted{ParentCommandID,Output}` / `SubInstanceFailed{…}` to
-  the parent via a `DeliverFunc`, and marks `notified`. It reuses the relay's per-row
-  isolation + capped backoff (ADR-0017) and an optional LISTEN/NOTIFY wakeup
-  (ADR-0022). **Idempotent:** a duplicate delivery finds the parent token already
-  consumed (`ErrTokenNotFound`) and is treated as success.
+- **`CallNotifier` driver**: claims terminal-but-unnotified links, resolves the parent
+  def via the `DefinitionRegistry`, delivers `SubInstanceCompleted{ParentCommandID,Output}`
+  / `SubInstanceFailed{…}` to the parent via a `DeliverFunc`, and marks `notified`.
+  **Idempotent:** a duplicate delivery finds the parent token already consumed
+  (`ErrTokenNotFound`) and is treated as success. *Implementation note (as shipped):*
+  the durable driver is `runtime.CallNotifier` reused over the Postgres `CallLinkStore`
+  (one wrapping path, no logic duplication); its `ClaimPending` is a plain
+  `SELECT … ORDER BY child_instance_id` (NOT `FOR UPDATE SKIP LOCKED` — the port cannot
+  hold a tx across the deliver, so a lock would release before delivery). Idempotency
+  makes concurrent multi-replica notifiers safe (a duplicate delivery is absorbed),
+  at the cost of possible redundant delivery. A tx-holding claim with `FOR UPDATE SKIP
+  LOCKED`, plus the relay's per-row backoff and an optional LISTEN/NOTIFY wakeup
+  (ADR-0017/0022), are deferred follow-ups for strict exclusivity and lower latency.
 - **Opt-in:** `runtime.NewRunner(..., WithCallLinks(store))`. Absent it,
   `perform(StartSubInstance)` keeps the synchronous behavior (a parking child still
   errors) — existing consumers and tests are unaffected.
@@ -89,5 +95,5 @@ notification* durable, not the child's execution distributed across machines (a 
 concern). Cancellation propagation (parent cancel → child terminate; orphaned-child
 cleanup when the parent is already terminal) is out of scope; an orphaned child result
 is dropped (the parent `Deliver` no-ops on `ErrTokenNotFound`). `maxCallDepth` is a
-global guard in v1. `SKIP LOCKED` gives throughput, not strict per-parent ordering —
-immaterial here since each child resumes an independent parent token.
+global guard in v1. Notify ordering is immaterial — each child resumes an independent
+parent token — so the plain-SELECT claim (no per-parent ordering guarantee) is fine.

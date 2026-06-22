@@ -117,11 +117,11 @@ var (
 
 // Compile-time checks: internal concrete types must satisfy the public interfaces.
 var (
-	_ Store                   = (*postgres.Store)(nil)
-	_ DefinitionStore         = (*postgres.DefinitionStore)(nil)
-	_ Relay                   = (*postgres.Relay)(nil)
-	_ runtime.InstanceLister  = (*postgres.Lister)(nil)
-	_ runtime.CallLinkStore   = (*postgres.CallLinkStore)(nil)
+	_ Store                  = (*postgres.Store)(nil)
+	_ DefinitionStore        = (*postgres.DefinitionStore)(nil)
+	_ Relay                  = (*postgres.Relay)(nil)
+	_ runtime.InstanceLister = (*postgres.Lister)(nil)
+	_ runtime.CallLinkStore  = (*postgres.CallLinkStore)(nil)
 )
 
 // OpenPostgres constructs a Postgres-backed runtime.Store + JournalReader over pool.
@@ -304,6 +304,9 @@ func NewCallLinkStore(pool *pgxpool.Pool) runtime.CallLinkStore {
 //	    clock.System(),
 //	)
 //	go notifier.Run(ctx)
+//
+// reg MUST resolve every parent definition under the exact key "<defID>:<version>";
+// an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
 func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, clk clock.Clock, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
 	return runtime.NewCallNotifier(postgres.NewCallLinkStore(pool), deliver, reg, clk, opts...)
 }
