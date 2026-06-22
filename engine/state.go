@@ -231,8 +231,8 @@ type Token struct {
 	// It is evaluated from model.Node.CorrelationKey against the instance variables
 	// at park time. Empty means no key was configured — match on name alone.
 	AwaitMessageKey string
-	Payload   map[string]any
-	EnteredAt time.Time
+	Payload         map[string]any
+	EnteredAt       time.Time
 
 	// RetryAttempts is the number of execution attempts already made for this
 	// token's current node (0 = first attempt has not started yet, 1 = one
@@ -298,6 +298,13 @@ type NodeVisit struct {
 //     When ActionCompleted arrives with this CommandID and Status ==
 //     StatusCompensating, the engine advances the cursor to the next record
 //     rather than doing normal token routing.
+//   - FinalStatus: the Status applied by stepCompensationFinish on a full
+//     rollback (ToNode == ""). Zero ⇒ StatusTerminated (back-compat; admin path
+//     and pre-migration in-flight compensations). StatusFailed for unhandled
+//     errors; StatusTerminated for cancel.
+//   - FinalErr: when non-empty, stepCompensationFinish appends
+//     FailInstance{Err: FinalErr} on the full-rollback branch. The admin path
+//     leaves this empty.
 //
 // cloneState deep-copies this struct via value copy (all fields are plain
 // scalars — no pointers or maps). No additional deep-copy code is needed.
@@ -313,6 +320,21 @@ type compensationCursor struct {
 	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
 	// in flight. Cleared when the step completes.
 	ActiveCmdID string
+	// FinalStatus is the Status the instance must enter when the full-rollback
+	// branch of stepCompensationFinish fires (toNode == ""). The zero value
+	// (StatusRunning == 0) means UNSET: stepCompensationFinish maps it to
+	// StatusTerminated (back-compat; admin full-rollback path and pre-migration
+	// in-flight compensations deserialized from JSONB retain the prior
+	// Terminated behaviour). Error/cancel paths that trigger compensation set
+	// this explicitly: StatusFailed for unhandled errors, StatusTerminated for
+	// cancel. This is always a terminal value at finish time — no caller of
+	// beginCompensation ever wants a non-terminal final status here.
+	FinalStatus Status
+	// FinalErr is the error string passed to a FailInstance command when the
+	// full-rollback branch completes. When non-empty, stepCompensationFinish
+	// appends FailInstance{Err: FinalErr} to the result commands before clearing
+	// the cursor. The admin path leaves this empty (no FailInstance emitted).
+	FinalErr string
 }
 
 // InstanceState is the authoritative snapshot of a running instance.

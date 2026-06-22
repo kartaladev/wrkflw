@@ -7,6 +7,12 @@
 // No logic lives here — only delegation.
 package engine
 
+import (
+	"time"
+
+	"github.com/zakyalvan/krtlwrkflw/model"
+)
+
 // OpenScope exposes (*InstanceState).openScope for engine_test.
 func OpenScope(s *InstanceState, nodeID, parentScopeID string) string {
 	return s.openScope(nodeID, parentScopeID)
@@ -25,4 +31,11 @@ func CloseScope(s *InstanceState, scopeID string) {
 // ScopeByID exposes (*InstanceState).scopeByID for engine_test.
 func ScopeByID(s *InstanceState, id string) *Scope {
 	return s.scopeByID(id)
+}
+
+// BeginCompensation exposes beginCompensation for engine_test. Used to test
+// the non-zero FinalStatus/FinalErr outcome branch of stepCompensationFinish
+// without going through a full trigger-dispatch path.
+func BeginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
+	return beginCompensation(def, s, toNode, finalStatus, finalErr, at, mode)
 }

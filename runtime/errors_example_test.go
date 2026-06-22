@@ -66,13 +66,14 @@ func (e *sagaActionError) Error() string { return e.msg }
 //
 //	start → book (CompensationAction:"cancel-booking")
 //	       → pay  (CompensationAction:"refund")
-//	       → ship (may fail via ActionFailed)
+//	       → ship (may fail; caught by boundary error → end-fail)
 //	       → end
 //
-// The ship node has no compensation action — if it fails the engine propagates
-// to an error end event (no boundary handler), setting StatusFailed.  After the
-// failure an admin can trigger CompensateRequested to roll back book+pay in
-// reverse order (refund THEN cancel-booking).
+// ship failure is caught by a boundary error event that routes to end-fail
+// (StatusCompleted). This keeps RootCompensations intact so that an admin can
+// trigger CompensateRequested to roll back book+pay in reverse order
+// (refund THEN cancel-booking). Without the boundary, ADR-0034 auto-runs
+// compensation on the unhandled-error terminal path before StatusFailed.
 func sagaDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "saga", Version: 1,
@@ -83,13 +84,19 @@ func sagaDef() *model.ProcessDefinition {
 			{ID: "pay", Kind: model.KindServiceTask, Action: "pay",
 				CompensationAction: "refund"},
 			{ID: "ship", Kind: model.KindServiceTask, Action: "ship"},
+			// Boundary catches ship failure so the unhandled-error auto-compensation
+			// path (ADR-0034) is not triggered; RootCompensations stays intact for
+			// the admin-triggered CompensateRequested below.
+			{ID: "ship-err", Kind: model.KindBoundaryEvent, AttachedTo: "ship", ErrorCode: ""},
 			{ID: "end", Kind: model.KindEndEvent},
+			{ID: "end-fail", Kind: model.KindEndEvent},
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "book"},
 			{ID: "f2", Source: "book", Target: "pay"},
 			{ID: "f3", Source: "pay", Target: "ship"},
 			{ID: "f4", Source: "ship", Target: "end"},
+			{ID: "f5", Source: "ship-err", Target: "end-fail"},
 		},
 	}
 }
@@ -99,11 +106,16 @@ func sagaDef() *model.ProcessDefinition {
 // TestSagaCompensationRollback is the saga e2e test:
 //
 //  1. book and pay run to completion, recording their compensation actions.
-//  2. ship fails (ActionFailed, no boundary handler) → instance → StatusFailed.
+//  2. ship fails; a boundary error event catches it → instance routes to end-fail
+//     → StatusCompleted (boundary path; RootCompensations preserved for admin rollback).
 //  3. Admin delivers CompensateRequested{ToNode:""} via Runner.Deliver.
 //  4. The runner drives the compensation InvokeAction stream to completion:
 //     refund (for pay) runs BEFORE cancel-booking (for book) — reverse order.
 //  5. Final status is StatusTerminated (full rollback, ToNode=="").
+//
+// Note: sagaDef uses a boundary error on ship so that ship failure is not an
+// unhandled-error terminal event. Without the boundary, ADR-0034 auto-runs the
+// compensation walk before StatusFailed, consuming records before the admin trigger.
 func TestSagaCompensationRollback(t *testing.T) {
 	ctx := t.Context()
 
@@ -128,12 +140,14 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	def := sagaDef()
 
-	// --- Step 1: run the saga until ship fails.
+	// --- Step 1: run the saga until ship fails (caught by boundary → StatusCompleted).
 	st, err := runner.Run(ctx, def, "saga-i1", nil)
-	require.NoError(t, err, "runner.Run must not return a hard error; failure is a FailInstance command")
+	require.NoError(t, err, "runner.Run must not return a hard error; ship failure is caught by boundary")
 
-	// book and pay completed; ship failed → StatusFailed.
-	assert.Equal(t, engine.StatusFailed, st.Status, "instance must be StatusFailed after ship fails")
+	// ship failure is caught by the boundary → routes to end-fail → StatusCompleted.
+	// (A boundary-caught error does NOT trigger the unhandled-error auto-compensation
+	// path introduced in ADR-0034, so RootCompensations remain intact for admin rollback.)
+	assert.Equal(t, engine.StatusCompleted, st.Status, "instance must be StatusCompleted after ship fails via boundary")
 	require.NotNil(t, st.EndedAt)
 
 	// Compensation records must have been recorded for book and pay (in that order).
@@ -141,7 +155,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 	assert.Equal(t, "book", st.RootCompensations[0].NodeID, "first compensation record must be book")
 	assert.Equal(t, "pay", st.RootCompensations[1].NodeID, "second compensation record must be pay")
 
-	// Forward-execution order: book, pay, ship.
+	// Forward-execution order: book, pay, ship (boundary caught; no auto-compensation yet).
 	forwardOrder := rec.snapshot()
 	require.Equal(t, []string{"book", "pay", "ship"}, forwardOrder, "forward actions must run in order")
 

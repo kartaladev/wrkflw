@@ -20,7 +20,7 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0033 (0033 = ops-hardening trio, branch `feat/ops-hardening`).
+ADRs 0001–0034 (0034 = compensation on error/cancel, branch `feat/compensation-on-error-cancel`).
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -72,7 +72,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0034**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0035**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -90,8 +90,9 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
 - **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030;
-  `AdvisoryLockOwnership` use-after-close guard — ✅ DONE, ADR-0033)*
-  compensation-on-error/cancel paths; scope-targeted compensation (`Compensate` producer); casbin
+  `AdvisoryLockOwnership` use-after-close guard — ✅ DONE, ADR-0033; compensation-on-error/cancel —
+  ✅ DONE, ADR-0034)*
+  scope-targeted compensation (`Compensate` producer — ADR-0035 next); casbin
   adapter/watcher `context` propagation; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
 - **Production-hardening:** *(cancellation propagation parent→child — ✅ DONE ADR-0032; orphaned-child
@@ -261,6 +262,34 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Compensation on error/cancel sub-project — ✅ COMPLETE
+
+Top pick (Correctness) — first user-authorized ENGINE change of the autonomous run. Branch
+`feat/compensation-on-error-cancel`. Spec `docs/specs/2026-06-23-compensation-on-error-cancel-design.md`,
+plan `docs/plans/2026-06-23-compensation-on-error-cancel.md`, **ADR-0034**. 3 SDD tasks (each
+Approved; Task 1 had a sentinel-doc fix) + opus whole-branch review (**Ready: Yes-with-nits**) which
+**caught a real publicly-reachable idempotency bug** (re-delivered `CancelRequested` re-ran the
+compensation walk) — **fixed pre-merge** (commit `75a4b1a`). Gate: full `go test -race -p 1 ./...`
+green, lint 0, **model production diff ZERO**, `Step` pure/deterministic, `cloneState` extended.
+
+### What shipped
+On an **unhandled terminal error** and on **cancel**, the engine now runs the existing reverse-order
+compensation walk **before terminating** (when `RootCompensations` is non-empty). Mechanism:
+`compensationCursor` gained `FinalStatus`/`FinalErr`; `beginCompensation` extracted; `stepCompensationFinish`
+applies the outcome (error⇒`StatusFailed`+`FailInstance{errorCode}`; cancel⇒`StatusTerminated`+
+`FailInstance{cancelled}`; admin full-rollback⇒unchanged). `ActionFailed` during compensation routes
+to advance (best-effort skip). `InvokeCancelAction` (ADR-0028) still fires alongside. **Idempotency
+fix:** `RootCompensations` cleared on full-rollback finish so a re-delivered cancel is a clean no-op.
+Empty-records + admin-compensation + retry/boundary/incident paths are byte-for-behaviour unchanged.
+
+### Deferred follow-ups
+1. **Partial-rollback (`toNode != ""`) record non-clearing** — admin-only, no public trigger; records
+   after ToNode aren't cleared (pre-existing). Low priority.
+2. **Compensation-action retry/incident** on repeated failure (today best-effort skip).
+3. `FailInstance` now emitted at end of walk (after compensation), not before — documented semantic shift.
 
 ---
 
