@@ -379,6 +379,82 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err)
 			},
 		},
+		"unreachable orphan node": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
+					{ID: "orphan", Kind: model.KindServiceTask, Action: "o"},
+					{ID: "orphan-end", Kind: model.KindEndEvent},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "end"},
+					{ID: "f3", Source: "orphan", Target: "orphan-end"}, // orphan unreachable from start
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrUnreachableNode)
+			},
+		},
+		"node reachable via boundary on reachable host is valid": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
+					{ID: "bnd", Kind: model.KindBoundaryEvent, AttachedTo: "task", TimerDuration: "PT1M"},
+					{ID: "handler", Kind: model.KindServiceTask, Action: "h"},
+					{ID: "hend", Kind: model.KindEndEvent},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "end"},
+					{ID: "f3", Source: "bnd", Target: "handler"}, // reachable only via boundary
+					{ID: "f4", Source: "handler", Target: "hend"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"node reachable only via boundary on unreachable host is unreachable": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
+					{ID: "end", Kind: model.KindEndEvent},
+					{ID: "ghost", Kind: model.KindServiceTask, Action: "g"}, // unreachable host
+					{ID: "bnd", Kind: model.KindBoundaryEvent, AttachedTo: "ghost", TimerDuration: "PT1M"},
+					{ID: "handler", Kind: model.KindServiceTask, Action: "h"},
+					{ID: "hend", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "end"},
+					{ID: "f3", Source: "ghost", Target: "end"},
+					{ID: "f4", Source: "bnd", Target: "handler"},
+					{ID: "f5", Source: "handler", Target: "hend"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrUnreachableNode)
+			},
+		},
+		"zero start events does not run reachability": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{{ID: "end", Kind: model.KindEndEvent}},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrNoStartEvent)
+				require.NotErrorIs(t, err, model.ErrUnreachableNode)
+			},
+		},
 		"pure join gateway is valid": {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
