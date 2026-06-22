@@ -31,6 +31,21 @@ func listArmedDirect(t *testing.T, pool *pgxpool.Pool) []string {
 	return ids
 }
 
+// TestPgTimerStoreListArmedClosedPool covers the Query-error branch in
+// TimerStore.ListArmed by closing the pool before the call.
+func TestPgTimerStoreListArmedClosedPool(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+	ts := pg.NewTimerStore(pool)
+
+	pool.Close() // subsequent Query fails immediately
+
+	_, err := ts.ListArmed(t.Context())
+	require.Error(t, err, "ListArmed on a closed pool must return an error")
+	require.Contains(t, err.Error(), "list armed timers", "error must be wrapped with list context")
+}
+
 // TestStorePersistsTimerOpsAtomically verifies that Store.Create writes
 // TimerArms rows and Store.Commit removes TimerCancels rows, both atomically
 // with the instance state change (ADR-0027).
