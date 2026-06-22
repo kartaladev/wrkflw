@@ -560,6 +560,14 @@ func (r *Runner) ResolveIncident(ctx context.Context, def *model.ProcessDefiniti
 	return st, err
 }
 
+// CancelInstance terminates a running instance by delivering a CancelRequested
+// trigger. Any definition-level CancelActions run best-effort inside the same
+// deliverLoop (failures are logged, never fail the cancel). Returns the
+// terminated InstanceState. See ADR-0028.
+func (r *Runner) CancelInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string) (engine.InstanceState, error) {
+	return r.Deliver(ctx, def, instanceID, engine.NewCancelRequested(r.clk.Now()))
+}
+
 // perform executes one command and returns the resulting trigger, if any.
 // st is the current instance state, used for variable access when resolving
 // human-task candidates. def is the process definition, captured by timer
@@ -602,6 +610,27 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		}
 		outcome = "ok"
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
+
+	case engine.InvokeCancelAction:
+		// Best-effort, fire-and-forget: run the action for its side effect, log any
+		// failure, and NEVER feed a result back or return an error — the instance is
+		// already terminal and cancellation must report success regardless (ADR-0028).
+		if r.cat == nil {
+			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action skipped: no catalog",
+				slog.String("action", cmd.Name))
+			return nil, nil
+		}
+		a, ok := r.cat.Resolve(cmd.Name)
+		if !ok {
+			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action not found",
+				slog.String("action", cmd.Name))
+			return nil, nil
+		}
+		if _, err := a.Do(ctx, cmd.Input); err != nil {
+			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",
+				slog.String("action", cmd.Name), slog.Any("error", err))
+		}
+		return nil, nil
 
 	case engine.CompleteInstance:
 		// Outbox event ("instance.completed") is derived by outboxEventsFor and
