@@ -32,7 +32,7 @@ type MemStore struct {
 	journal   map[string][]engine.Trigger
 	events    []OutboxEvent
 	callLinks *MemCallLinkStore // optional; nil means no call-link tracking
-	timers    *MemTimerStore   // optional; nil means no timer tracking
+	timers    *MemTimerStore    // optional; nil means no timer tracking
 }
 
 // NewMemStore constructs an empty MemStore with no call-link tracking.
