@@ -147,6 +147,7 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 	st := engine.InstanceState{InstanceID: "ch-par-1"}
 	r0, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
+	require.Len(t, r0.State.Tokens, 2, "setup: both parallel service tasks must be parked before cancel")
 
 	// CancelRequested while both service tasks are parked.
 	r1, err := engine.Step(def, r0.State,
@@ -230,6 +231,7 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 		names[i] = ica.Name
 	}
 
+	require.Len(t, icas, 1, "exactly one node-cancel InvokeCancelAction (the inner active node) expected")
 	assert.Contains(t, names, "inner-cleanup",
 		"CancelHandler on node in sub-process scope must be emitted via defForScope")
 }

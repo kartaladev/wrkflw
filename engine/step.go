@@ -166,8 +166,10 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
 		}
 		s.Tokens = nil
-		// Ordering: [def.CancelActions…, per-node CancelHandlers…, FailInstance, timers, arms]
-		cmds := append(cancelActionCmds, nodeCancelCmds...)
+		// Ordering: [def.CancelActions…, per-node CancelHandlers…, FailInstance, timers, arms].
+		// Start from a fresh slice so we never alias cancelActionCmds' backing array
+		// (matches the compensation branch's append(append(...)) idiom).
+		cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
 		cmds = append(cmds, FailInstance{Err: "cancelled"})
 		cmds = append(cmds, s.cancelAllTimers()...)
 		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
