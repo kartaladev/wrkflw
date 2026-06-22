@@ -80,6 +80,11 @@ var (
 	// source — no parallel/inclusive split can deliver two concurrent tokens toward
 	// it — so it would deadlock at runtime waiting for branches that never arrive.
 	ErrUnpairedJoin = errors.New("workflow-model: unpaired parallel join")
+	// ErrCompensateRefNotFound is returned when a KindIntermediateThrowEvent node
+	// carries a non-empty CompensateRef that does not match any node ID in the
+	// enclosing process definition. The referenced node must exist so the engine
+	// can resolve the compensation target at execution time.
+	ErrCompensateRefNotFound = errors.New("workflow-model: compensation throw references unknown node")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -347,6 +352,19 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	for i, name := range d.CancelActions {
 		if name == "" {
 			errs = append(errs, fmt.Errorf("%w: CancelActions[%d]", ErrEmptyCancelAction, i))
+		}
+	}
+
+	// CompensateRef: a KindIntermediateThrowEvent with a non-empty CompensateRef
+	// must reference a node that exists in this definition. An empty CompensateRef
+	// means "scope-wide compensation" and is always valid. This rule recurses into
+	// sub-processes automatically (it lives inside validate).
+	for _, n := range d.Nodes {
+		if n.Kind != KindIntermediateThrowEvent || n.CompensateRef == "" {
+			continue
+		}
+		if _, ok := d.Node(n.CompensateRef); !ok {
+			errs = append(errs, fmt.Errorf("%w: throw %q -> %q", ErrCompensateRefNotFound, n.ID, n.CompensateRef))
 		}
 	}
 
