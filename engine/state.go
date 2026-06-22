@@ -298,6 +298,13 @@ type NodeVisit struct {
 //     When ActionCompleted arrives with this CommandID and Status ==
 //     StatusCompensating, the engine advances the cursor to the next record
 //     rather than doing normal token routing.
+//   - FinalStatus: the Status applied by stepCompensationFinish on a full
+//     rollback (ToNode == ""). Zero ⇒ StatusTerminated (back-compat; admin path
+//     and pre-migration in-flight compensations). StatusFailed for unhandled
+//     errors; StatusTerminated for cancel.
+//   - FinalErr: when non-empty, stepCompensationFinish appends
+//     FailInstance{Err: FinalErr} on the full-rollback branch. The admin path
+//     leaves this empty.
 //
 // cloneState deep-copies this struct via value copy (all fields are plain
 // scalars — no pointers or maps). No additional deep-copy code is needed.
@@ -313,6 +320,17 @@ type compensationCursor struct {
 	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
 	// in flight. Cleared when the step completes.
 	ActiveCmdID string
+	// FinalStatus is the Status the instance must enter when the full-rollback
+	// branch of stepCompensationFinish fires (toNode == ""). A zero value is
+	// treated as StatusTerminated for backwards-compatibility (admin path leaves
+	// this zero; existing in-flight compensations deserialized from JSONB will
+	// also have zero and thus retain the prior Terminated behaviour).
+	FinalStatus Status
+	// FinalErr is the error string passed to a FailInstance command when the
+	// full-rollback branch completes. When non-empty, stepCompensationFinish
+	// appends FailInstance{Err: FinalErr} to the result commands before clearing
+	// the cursor. The admin path leaves this empty (no FailInstance emitted).
+	FinalErr string
 }
 
 // InstanceState is the authoritative snapshot of a running instance.

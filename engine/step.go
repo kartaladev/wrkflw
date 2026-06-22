@@ -2629,16 +2629,42 @@ func compensationRecordsForScope(s *InstanceState, scopeID string) []Compensatio
 }
 
 // stepCompensateRequested handles a CompensateRequested trigger. It sets the
-// instance to StatusCompensating, cancels all in-flight tokens (interrupting
-// normal execution), builds the compensation cursor, and emits the first
-// InvokeAction for the most-recently completed compensable activity that is
-// AFTER t.ToNode in the completion order (reverse walk).
+// instance to StatusCompensating, then delegates to beginCompensation to cancel
+// in-flight tokens, look up compensation records, and emit the first
+// InvokeAction for the reverse-order walk (or finish immediately when there are
+// no eligible records).
 //
-// If there are no records to compensate (empty list, or ToNode is the last record),
-// the function finalises compensation immediately without emitting any command.
+// The admin path always calls beginCompensation with zero finalStatus and empty
+// finalErr, producing StatusTerminated with no FailInstance on a full rollback —
+// identical to the prior behaviour.
 func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode) (StepResult, error) {
 	s.Status = StatusCompensating
+	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode)
+}
 
+// beginCompensation is the shared initiator of a reverse-order compensation walk.
+// It is called by stepCompensateRequested (admin path, finalStatus=0, finalErr="")
+// and will be called by the error/cancel terminal paths (Task 2) with the
+// appropriate outcome.
+//
+// s.Status must already be set to StatusCompensating by the caller.
+//
+// beginCompensation:
+//  1. Cancels all in-flight tokens, timers, armed events, and boundaries (emitting
+//     CancelTimer commands for each).
+//  2. Looks up the root-scope (scopeID="") compensation records.
+//  3. Validates toNode: if non-empty and not found in records, returns an error; if
+//     toNode is the last (most-recently completed) record, calls stepCompensationFinish
+//     immediately with the cancel commands prepended (nothing to compensate above it).
+//  4. If there are no eligible records (empty records list), calls
+//     stepCompensationFinish immediately, applying finalStatus/finalErr via the cursor.
+//  5. Otherwise sets compensationCursor (stamping finalStatus and finalErr for the
+//     terminal outcome) and emits the first compensation InvokeAction for the
+//     most-recently completed record (reverse walk).
+//
+// The FinalStatus/FinalErr values are carried on the cursor across all advance steps
+// so that stepCompensationFinish applies them when the walk completes.
+func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -2663,7 +2689,7 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 		}
 		tokPtr := s.tokenByID(tok.ID)
 		if tokPtr != nil {
-			s.consumeToken(tokPtr, t.OccurredAt())
+			s.consumeToken(tokPtr, at)
 		}
 	}
 	// Cancel any remaining timers and event-subprocess arms.
@@ -2675,7 +2701,7 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 	const scopeID = ""
 	records := compensationRecordsForScope(s, scopeID)
 
-	// Determine the starting index: the last record whose NodeID != t.ToNode.
+	// Determine the starting index: the last record whose NodeID != toNode.
 	// We walk from the end of records backward; the first record (from the right)
 	// that is NOT the ToNode is the starting point.
 	//
@@ -2688,11 +2714,11 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 	// rollback TARGET — we do not compensate it). All records recorded AFTER ToNode
 	// (i.e. later in the slice) are eligible.
 	startIndex := len(records) - 1
-	if t.ToNode != "" {
-		// Find the index of ToNode in the records (it's recorded in completion order).
+	if toNode != "" {
+		// Find the index of toNode in the records (it's recorded in completion order).
 		toNodeIdx := -1
 		for i, r := range records {
-			if r.NodeID == t.ToNode {
+			if r.NodeID == toNode {
 				toNodeIdx = i
 			}
 		}
@@ -2700,8 +2726,13 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 			// Only records AFTER toNodeIdx (i.e. indices > toNodeIdx) are eligible.
 			// The first to emit is the last eligible record.
 			if toNodeIdx >= len(records)-1 {
-				// ToNode was the last completed node — nothing to compensate.
-				finishRes, finishErr := stepCompensationFinish(def, s, t.ToNode, t.OccurredAt(), mode)
+				// ToNode was the last completed node — nothing to compensate above it.
+				// Stamp the cursor so stepCompensationFinish applies the outcome; since
+				// toNode != "", stepCompensationFinish takes the partial-rollback branch
+				// (resume at toNode) regardless of FinalStatus/FinalErr — which is correct
+				// for the admin path (outcome fields are zero).
+				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
+				finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode)
 				if finishErr != nil {
 					return StepResult{}, finishErr
 				}
@@ -2711,16 +2742,18 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 			// startIndex = the last eligible record = len(records)-1
 			// (all records after toNodeIdx — no change needed; startIndex already set).
 		} else {
-			// ToNode was specified but not found in the compensation records.
+			// toNode was specified but not found in the compensation records.
 			// Return a descriptive error so that an admin typo is surfaced rather
 			// than silently rolling back everything.
-			return StepResult{}, fmt.Errorf("workflow-engine: compensation target node %q not found in scope records", t.ToNode)
+			return StepResult{}, fmt.Errorf("workflow-engine: compensation target node %q not found in scope records", toNode)
 		}
 	}
 
 	if startIndex < 0 {
-		// No records at all.
-		finishRes, finishErr := stepCompensationFinish(def, s, t.ToNode, t.OccurredAt(), mode)
+		// No records at all — apply the terminal outcome immediately.
+		// Stamp the cursor so stepCompensationFinish reads the outcome fields.
+		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
+		finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode)
 		if finishErr != nil {
 			return StepResult{}, finishErr
 		}
@@ -2733,9 +2766,11 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 	cmdID := s.nextCommandID()
 	s.Compensating = compensationCursor{
 		ScopeID:     scopeID,
-		ToNode:      t.ToNode,
+		ToNode:      toNode,
 		NextIndex:   startIndex,
 		ActiveCmdID: cmdID,
+		FinalStatus: finalStatus,
+		FinalErr:    finalErr,
 	}
 	cmd := InvokeAction{
 		CommandID: cmdID,
@@ -2783,6 +2818,8 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 		ToNode:      cur.ToNode,
 		NextIndex:   nextIdx,
 		ActiveCmdID: cmdID,
+		FinalStatus: cur.FinalStatus,
+		FinalErr:    cur.FinalErr,
 	}
 	cmd := InvokeAction{
 		CommandID: cmdID,
@@ -2798,15 +2835,29 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 //   - If toNode == "": all records have been compensated; set Status =
 //     StatusTerminated (full rollback — no resume point).
 func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode) (StepResult, error) {
+	// Save outcome fields before clearing the cursor.
+	finalStatus := s.Compensating.FinalStatus
+	finalErr := s.Compensating.FinalErr
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
 	if toNode == "" {
-		// Full rollback: no resume point → terminate.
-		s.Status = StatusTerminated
+		// Full rollback: no resume point → apply the cursor's terminal outcome.
+		// A zero FinalStatus means StatusTerminated (back-compat; admin path and
+		// pre-migration in-flight compensations deserialized from JSONB).
+		if finalStatus == 0 {
+			finalStatus = StatusTerminated
+		}
+		s.Status = finalStatus
 		ended := at
 		s.EndedAt = &ended
-		return StepResult{State: *s, Commands: nil}, nil
+		var cmds []Command
+		if finalErr != "" {
+			cmds = append(cmds, FailInstance{Err: finalErr})
+		}
+		cmds = append(cmds, s.cancelAllTimers()...)
+		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+		return StepResult{State: *s, Commands: cmds}, nil
 	}
 
 	// Partial rollback: resume at toNode.
