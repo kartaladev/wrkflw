@@ -3,27 +3,66 @@ package runtime
 import (
 	"context"
 	"sync"
+	"time"
+
+	"github.com/zakyalvan/krtlwrkflw/clock"
 )
 
 // memLink is the in-memory record for one call link + its terminal outcome.
 type memLink struct {
-	link     CallLink
-	terminal bool
-	outcome  CallOutcome
-	notified bool
+	link      CallLink
+	terminal  bool
+	outcome   CallOutcome
+	notified  bool
+	claimedAt time.Time // zero when unclaimed or lease disabled
+	claimedBy string    // owner string from WithMemCallLinkLease
+}
+
+// MemCallLinkOption is a functional option for MemCallLinkStore.
+type MemCallLinkOption func(*MemCallLinkStore)
+
+// WithMemCallLinkLease configures an opt-in claim lease on the store. When
+// ttl > 0, ClaimPending stamps each claimed link with claimedAt=now and
+// claimedBy=owner, hiding it from subsequent claims until the lease expires.
+// When ttl <= 0 (the default), ClaimPending behaves exactly as before.
+func WithMemCallLinkLease(owner string, ttl time.Duration) MemCallLinkOption {
+	return func(s *MemCallLinkStore) {
+		s.leaseOwner = owner
+		s.leaseTTL = ttl
+	}
+}
+
+// WithMemCallLinkClock overrides the clock used for lease timestamps. The
+// default is clock.System(). Inject a fake clock in tests.
+func WithMemCallLinkClock(clk clock.Clock) MemCallLinkOption {
+	return func(s *MemCallLinkStore) {
+		s.clk = clk
+	}
 }
 
 // MemCallLinkStore is the in-memory CallLinkStore for the pure-runtime/test path.
 type MemCallLinkStore struct {
-	mu    sync.Mutex
-	links map[string]*memLink // keyed by ChildInstanceID
+	mu         sync.Mutex
+	links      map[string]*memLink // keyed by ChildInstanceID
+	leaseOwner string
+	leaseTTL   time.Duration
+	clk        clock.Clock
 }
 
 var _ CallLinkStore = (*MemCallLinkStore)(nil)
 
-// NewMemCallLinkStore constructs an empty MemCallLinkStore.
-func NewMemCallLinkStore() *MemCallLinkStore {
-	return &MemCallLinkStore{links: make(map[string]*memLink)}
+// NewMemCallLinkStore constructs an empty MemCallLinkStore. Zero-argument call
+// sites continue to compile unchanged; pass MemCallLinkOption values to opt in
+// to lease-based multi-replica exclusivity.
+func NewMemCallLinkStore(opts ...MemCallLinkOption) *MemCallLinkStore {
+	s := &MemCallLinkStore{
+		links: make(map[string]*memLink),
+		clk:   clock.System(),
+	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // record inserts a new link (called by MemStore on Create with NewCallLink).
@@ -45,12 +84,47 @@ func (m *MemCallLinkStore) markTerminal(childID string, out CallOutcome) {
 }
 
 // ClaimPending returns up to limit terminal-but-unnotified links.
+//
+// When leaseTTL > 0 (lease mode), only links whose claimedAt is zero or has
+// expired (claimedAt <= now-leaseTTL) are eligible. Each returned link has its
+// claimedAt stamped to now and claimedBy set to the configured owner, hiding it
+// from subsequent claims until the lease expires.
+//
+// When leaseTTL <= 0 (default), behaviour is identical to the original
+// implementation: all terminal-but-unnotified links are returned with no
+// claim stamp.
 func (m *MemCallLinkStore) ClaimPending(_ context.Context, limit int) ([]PendingNotify, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	var out []PendingNotify
+
+	if m.leaseTTL <= 0 {
+		// Original behaviour: no lease, return all eligible links.
+		for _, l := range m.links {
+			if l.terminal && !l.notified {
+				out = append(out, PendingNotify{Link: l.link, Outcome: l.outcome})
+				if limit > 0 && len(out) >= limit {
+					break
+				}
+			}
+		}
+		return out, nil
+	}
+
+	// Lease mode: only claim links whose lease has expired or was never set.
+	now := m.clk.Now()
+	leaseExpiry := now.Add(-m.leaseTTL)
+
 	for _, l := range m.links {
-		if l.terminal && !l.notified {
+		if !l.terminal || l.notified {
+			continue
+		}
+		// A link is claimable if it has never been claimed, or its lease has
+		// expired (claimedAt is at or before the expiry threshold).
+		if l.claimedAt.IsZero() || !l.claimedAt.After(leaseExpiry) {
+			l.claimedAt = now
+			l.claimedBy = m.leaseOwner
 			out = append(out, PendingNotify{Link: l.link, Outcome: l.outcome})
 			if limit > 0 && len(out) >= limit {
 				break
