@@ -17,7 +17,8 @@ items** (flaky-singleflight fix, DB casbin adapter, true async call activity) ar
 plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0026) and the
 **timer rehydration on restart** track (ADR-0027) and the **CancelInstance + cancel actions** track
 (ADR-0028, branch `feat/cancel-instance`) and the **gRPC ResolveIncident + DLQ admin transport**
-track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`). ADRs 0001–0029.
+track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
+validation** track (ADR-0030, branch `feat/reachability-forkjoin-validation`). ADRs 0001–0030.
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -69,23 +70,23 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0030**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0031**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
-**Recommended priority (top picks):** *(top pick #1 — gRPC ResolveIncident + DLQ admin — ✅ DONE
-2026-06-22, ADR-0029; list re-numbered)*
-1. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
-   rule (ADR-0014) to match converging joins to diverging forks + condition-placement checks. *(Correctness)*
-2. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
+**Recommended priority (top picks):** *(gRPC ResolveIncident + DLQ admin — ✅ DONE 2026-06-22,
+ADR-0029; reachability/fork-join validation — ✅ DONE 2026-06-22, ADR-0030; list re-numbered)*
+1. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
    `RehydrateTimers` + the call-link notifier don't double-process across replicas (today: correct but
    redundant via idempotency). *(Production-hardening — follow-up to ADR-0027/0024)*
-3. **Cancellation propagation parent→child + per-active-node cancel handlers** — `CancelInstance` now
+2. **Cancellation propagation parent→child + per-active-node cancel handlers** — `CancelInstance` now
    terminates one instance and runs process-level `CancelActions`; propagating cancel to child call
    activities and per-node cancel handlers are the next steps. *(follow-up to ADR-0028)*
+3. **Compensation-on-error/cancel paths + scope-targeted compensation** (`Compensate` producer) —
+   extend rollback beyond the existing root walk. *(Correctness)*
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
-- **Correctness / robustness:** reachability/fork-join pairing validation;
+- **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030)*
   compensation-on-error/cancel paths; scope-targeted compensation (`Compensate` producer); casbin
   adapter/watcher `context` propagation; `AdvisoryLockOwnership` use-after-close guard; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
@@ -253,6 +254,42 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Reachability + conservative fork-join validation sub-project — ✅ COMPLETE
+
+Fifth track from the consolidated backlog (was top pick #1). Built on branch
+`feat/reachability-forkjoin-validation`. Design: spec
+`docs/specs/2026-06-22-reachability-forkjoin-validation-design.md`, plan
+`docs/plans/2026-06-22-reachability-forkjoin-validation.md`, **ADR-0030** (follow-up to ADR-0014,
+which deferred fork-join pairing over false-positive risk). 2 SDD tasks (visible RED→GREEN, inline) +
+opus whole-branch review (**Ready: Yes-with-nits**, zero blockers, **no false-positive risk found** —
+the soundness argument was confirmed). Gate: `go test -race ./...` green, `model` 96.6%, lint 0,
+**engine production diff ZERO** (pure `model/`).
+
+### What shipped (both in `model/validate.go`, recursing into sub-processes via the existing `validate()`)
+
+| Rule | What | Notes |
+|---|---|---|
+| `ErrUnreachableNode` | Every node must be reachable from the **single** start event (forward BFS), with boundary events seeded from their reachable host (to a fixpoint) and event-sub-processes treated as event-triggered roots. Runs only when exactly one start (else the start-count error already fires). | model-local `forwardReachable` helper (no engine import) |
+| `ErrUnpairedJoin` | **Parallel-join-only** conservative pairing: a `KindParallelGateway` join is flagged iff **no** parallel/inclusive split can deliver ≥2 concurrent tokens toward it (via `hasConcurrencySource`). Exclusive/event joins (first-arrival) and inclusive joins (engine self-adjusts via runtime reachability) are excluded — they don't deadlock. Skipped for unreachable joins and when start count is ill-defined. | ADR-0030 |
+
+**Key decisions (ADR-0030):** false-positive-averse by design (validation runs at load; bias to
+false-negatives). Engine semantics that shaped it: a **non-gateway node with multiple outgoing flows
+follows only its *first* flow** (`moveAlongSingleFlow` takes `out[0]`), so only parallel/inclusive
+gateway splits create concurrency. This finding exposed (and fixed) a latently-unsound existing test
+fixture (`start → a,b → parallel-join` would deadlock). **`model.Validate` has zero production
+callers** — blast radius is the `model` package's own fixtures only.
+
+### Deferred follow-ups
+1. **No-path-to-end / sink detection** — every non-end node can reach some end event (must account for
+   boundary/error escapes); higher false-positive risk, deferred.
+2. **Conditional-deadlock pairing** — an exclusive choice *inside* a parallel region that can starve a
+   join branch is not caught (the documented false-negative bias). Full structured-soundness / SESE
+   region analysis is the complete solution.
+3. **Inclusive/exclusive join pairing** — intentionally not checked (those joins don't deadlock);
+   revisit only if engine firing semantics change.
 
 ---
 
