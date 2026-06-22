@@ -20,7 +20,8 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0037 (0037 = observability handler + Store spans, branch `feat/observability-gaps`; 0036 =
+ADRs 0001–0038 (0038 = admin total-count + Lookup ctx, branch `feat/small-api-completeness`; 0037 =
+observability handler + Store spans, branch `feat/observability-gaps`; 0036 =
 casbin policy-admin, branch `feat/casbin-policy-admin`; 0035 = per-node cancel handlers, branch
 `feat/cancel-handlers`).
 **No named work remains in flight.** Future work = the consolidated backlog
@@ -74,7 +75,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0038**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0039**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -112,13 +113,15 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
   `WithStoreLogger` is parity-plumbing (no log sites yet); serialization-failure (40001) still marks
   the commit span Error (version-mismatch does not — minor inconsistency).
 - **API / feature completeness:** *(gRPC `ResolveIncident` + DLQ admin REST/gRPC — ✅ DONE, ADR-0029)*
-  *(casbin policy-admin REST/gRPC — ✅ DONE, ADR-0036)*; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
-  streaming/watch + OpenAPI/grpc-gateway + richer admin filters; admin total-count; `ended_at` optional
-  in proto; casbin ABAC-in-matchers; richer Privilege modeling; `DeliverMessage` self-resolving the def.
+  *(casbin policy-admin REST/gRPC — ✅ DONE, ADR-0036; admin total-count + `ended_at` optional — ✅
+  DONE, ADR-0038)*; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
+  streaming/watch + OpenAPI/grpc-gateway + richer admin filters;
+  casbin ABAC-in-matchers; richer Privilege modeling; `DeliverMessage` self-resolving the def.
 - **Performance / scale:** casbin `FilteredAdapter` + `WatcherEx`; per-definition history-cap + per-def
   `maxCallDepth`; cross-machine child execution; tunable watcher reconnect backoff.
-- **Test / doc / cosmetic:** `HumanTask.Vars` deep-copy + sensitive-var redaction; `DefinitionRegistry.Lookup`
-  ctx; *(`MarkNotified` clock injection — ✅ DONE ADR-0033)*; relay/listen establish-sleep→poll; residual hard-to-force infra
+- **Test / doc / cosmetic:** `HumanTask.Vars` deep-copy + sensitive-var redaction; *(`DefinitionRegistry.Lookup`
+  ctx — ✅ DONE ADR-0038)*; *(`MarkNotified` clock injection — ✅ DONE ADR-0033)*; postgres `lister.go` error
+  prefix is `postgres lister:` not `workflow-postgres:` (pre-existing); relay/listen establish-sleep→poll; residual hard-to-force infra
   branches; move bundled example-test unit tests to 1:1 files; misc godoc/test nits. NOTE: the repo has
   **pre-existing gofmt-unclean files** (golangci-lint v2 doesn't run gofmt) — a repo-wide `gofmt -w`
   sweep is an optional hygiene follow-up.
@@ -267,6 +270,33 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Small API completeness sub-project — ✅ COMPLETE
+
+Backlog (API completeness). Branch `feat/small-api-completeness`. Spec
+`docs/specs/2026-06-23-small-api-completeness-design.md`, plan `docs/plans/2026-06-23-small-api-completeness.md`,
+**ADR-0038**. 2 SDD tasks (both Approved) + whole-branch review (**Ready: Yes-with-nits**, no blockers).
+Gate: full `go test -race -p 1 ./...` green, lint 0, **engine/model diff ZERO**.
+
+### What shipped
+**(B)** `runtime.DefinitionRegistry.Lookup` gained `ctx` — threaded through the port + all 3 impls
+(Map ignores it, Caching passes it to the backing incl. the singleflight closure, Postgres
+`DefinitionStore` uses it instead of `context.Background()`) + all 8 call sites (runner ×3,
+call-notifier, service ×3). A breaking port change (external implementers add `ctx`). **(A)** Opt-in
+admin-list total-count: `InstanceFilter.IncludeTotal` + `InstancePage.TotalCount`; mem + Postgres
+listers run `count(*)` over the same status predicate (no cursor/limit) **only when requested**;
+surfaced as REST `GET /admin/instances?total=true`→`total_count` and gRPC
+`include_total`→`total_count` (proto field 4, additive). `IncludeTotal=false` = exact prior behaviour.
+The **`ended_at` optional** item was confirmed already-satisfied (handlers already conditional;
+nullable Timestamp / `*time.Time,omitempty`) — no change.
+
+### Deferred follow-ups
+1. Postgres `lister.go` uses the `postgres lister:` error prefix instead of `workflow-postgres:`
+   (pre-existing file-wide; the new count error is consistent with its file).
+2. Singleflight `Lookup` shares the first caller's ctx among coalesced callers (idiomatic; an
+   early-cancelling first caller's flight errors and the others retry).
 
 ---
 
