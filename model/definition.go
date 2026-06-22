@@ -79,6 +79,18 @@ type Node struct {
 	// in compensation. An empty value means the node is not compensable.
 	CompensationAction string
 
+	// CancelHandler is the optional name of a ServiceAction run fire-and-forget
+	// when THIS node is active (parked/in-flight) and the process instance is
+	// cancelled (CancelRequested trigger). The engine emits an InvokeCancelAction
+	// (ADR-0028) for each active token whose node carries a non-empty CancelHandler.
+	// Unlike CompensationAction, CancelHandler fires for the node that is
+	// interrupted (not yet completed), whereas CompensationAction fires for nodes
+	// that already completed and are being rolled back.
+	//
+	// Empty means no per-node cancel hook for this node; validation does not
+	// require a non-empty value (the field is fully optional).
+	CancelHandler string
+
 	// Event correlation fields (signal/message catch/throw and boundary events).
 
 	// SignalName is the signal reference for a signal catch/throw event or a
