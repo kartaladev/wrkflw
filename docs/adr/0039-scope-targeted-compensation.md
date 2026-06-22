@@ -62,3 +62,10 @@ once. Engine + model change (the user authorized it).
   single sub-process node id.
 - A compensation throw inside a still-running sibling scope (cross-scope targeting) — v1 targets
   archived (completed) sub-processes + root.
+- **Compensation throw concurrent with an open parallel fork (v1 limitation).** The throw walk runs
+  instance-wide (`StatusCompensating`); a sibling token in a parallel branch could complete during the
+  walk and is not paused. v1 scopes the compensation throw to the main flow (no concurrent parallel
+  branch). A follow-up should add a `Validate` rule rejecting a compensation throw reachable under an
+  open parallel fork, or pause sibling tokens during the walk. (A throw with no outgoing flow is
+  already guarded in `Step` — it auto-advances instead of terminating — and `Validate` forbids it via
+  `ErrDeadEnd`.)

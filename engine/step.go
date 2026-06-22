@@ -1288,19 +1288,23 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 				// (which cancels ALL tokens and is designed for full/partial rollbacks).
 				ref := node.CompensateRef
 				records := s.ArchivedCompensations[ref]
-				if len(records) == 0 {
-					// No archived records (either never ran, already compensated by a
-					// prior throw, or the sub-process never had compensable activities).
-					// Auto-advance — fire-and-forget, no InvokeAction emitted.
+				// Determine the resume node: the throw's single outgoing successor.
+				resumeNode := ""
+				if out := tdef.Outgoing(node.ID); len(out) > 0 {
+					resumeNode = out[0].Target
+				}
+				if len(records) == 0 || resumeNode == "" {
+					// No archived records (never ran, already compensated by a prior
+					// throw, or the sub-process had no compensable activities), OR the
+					// throw has no outgoing flow. A throw with no successor must NOT
+					// start a walk: stepCompensationFinish would see ResumeNode=="" and
+					// take the terminal branch, wrongly terminating the instance. Validate
+					// forbids a dead-end throw (ErrDeadEnd); this guards Step defensively
+					// regardless. Auto-advance — fire-and-forget, no InvokeAction emitted.
 					s.moveAlongSingleFlow(tdef, tok, at)
 					// stopped remains false: auto-advance.
 				} else {
-					// Start the throw compensation walk.
-					// Determine the resume node: the throw's single outgoing successor.
-					resumeNode := ""
-					if out := tdef.Outgoing(node.ID); len(out) > 0 {
-						resumeNode = out[0].Target
-					}
+					// Start the throw compensation walk (resumeNode is non-empty here).
 					// Remember the throw token's scope for correct placeTokenInScope on finish.
 					tokScope := tok.ScopeID
 					// Consume the throw token now (finish will place a fresh token at resumeNode).

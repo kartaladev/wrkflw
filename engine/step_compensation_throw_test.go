@@ -468,3 +468,71 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 	assert.True(t, cancelInnerFound,
 		"cancel walk must emit cancel-inner from consolidated archive")
 }
+
+// ── (e) Defensive guard: a compensation throw with NO outgoing flow must not
+// terminate the instance ──────────────────────────────────────────────────────
+
+// TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate verifies the producer's
+// defensive guard: a compensation throw whose resume node cannot be resolved
+// (no outgoing flow — which model.Validate forbids via ErrDeadEnd, but Step does
+// not call Validate) must NOT start the walk. Otherwise stepCompensationFinish
+// would see ResumeNode=="" and wrongly TERMINATE the instance. Instead the token
+// auto-advances (moveAlongSingleFlow), which parks defensively, leaving the
+// archive intact and the instance non-terminal.
+func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
+	at := time.Date(2026, 6, 23, 13, 0, 0, 0, time.UTC)
+	// Same shape as throwDefWithCompensableSubProcess but the compThrow node has
+	// NO outgoing flow (f3/f4 dropped).
+	nested := &model.ProcessDefinition{
+		ID: "throw-nested-noout", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
+			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
+		},
+	}
+	def := &model.ProcessDefinition{
+		ID: "throw-proc-noout", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
+			{ID: "compThrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "sub"},
+			{ID: "f2", Source: "sub", Target: "compThrow"},
+			// compThrow has NO outgoing flow (deliberately malformed for this guard test).
+		},
+	}
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "throw-noout-1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	ia, ok := r1.Commands[0].(engine.InvokeAction)
+	require.True(t, ok)
+
+	// Complete inner-svc → sub exits (archived under "sub") → compThrow reached.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), ia.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// The guard must prevent the walk: no compensation InvokeAction, instance NOT
+	// terminated, and the archive left intact (records not consumed).
+	for _, cmd := range r2.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok {
+			assert.NotEqual(t, "cancel-inner", ia.Name,
+				"a no-outgoing compensation throw must not start the walk")
+		}
+	}
+	assert.NotEqual(t, engine.StatusTerminated, r2.State.Status,
+		"a no-outgoing compensation throw must NOT terminate the instance")
+	assert.NotEqual(t, engine.StatusCompensating, r2.State.Status,
+		"a no-outgoing compensation throw must not enter the compensation walk")
+	require.Contains(t, r2.State.ArchivedCompensations, "sub",
+		"archive must be left intact (records not consumed) when the walk is guarded off")
+}
