@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,13 @@ type Deduper interface {
 	// the FIRST time the pair was seen. firstTime==false means the message is a
 	// duplicate and the caller should skip the side effect.
 	Seen(ctx context.Context, tx pgx.Tx, subscriber, messageID string) (firstTime bool, err error)
+
+	// Prune deletes all processed-message records with a processed_at strictly
+	// before before. Callers should supply a cutoff well past the relay
+	// max-delivery × backoff window (e.g. retention = relay window + large safety
+	// margin) so that in-flight messages are never evicted prematurely.
+	// Returns the number of rows deleted.
+	Prune(ctx context.Context, before time.Time) (int64, error)
 }
 
 // Compile-time check: internal concrete type must satisfy the public interface.
