@@ -124,6 +124,24 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			cancelActionCmds = append(cancelActionCmds, InvokeCancelAction{Name: name, Input: copyVars(s.Variables)})
 		}
 
+		// Per-node cancel handlers (ADR-0035): collect InvokeCancelAction for each
+		// active token whose node carries a non-empty CancelHandler.
+		// This MUST happen before the compensation/immediate branch because
+		// beginCompensation (and the immediate path) clear s.Tokens.
+		// Tokens are iterated in slice order for determinism.
+		var nodeCancelCmds []Command
+		for i := range s.Tokens {
+			tok := &s.Tokens[i]
+			tdef, derr := defForScope(def, &s, tok.ScopeID)
+			if derr != nil {
+				// Defensive: skip on scope resolution error; cancel must not fail.
+				continue
+			}
+			if node, ok := tdef.Node(tok.NodeID); ok && node.CancelHandler != "" {
+				nodeCancelCmds = append(nodeCancelCmds, InvokeCancelAction{Name: node.CancelHandler, Input: copyVars(s.Variables)})
+			}
+		}
+
 		if len(s.RootCompensations) > 0 {
 			// Compensation walk before termination (ADR-0034).
 			// beginCompensation clears tokens/timers/arms and emits the first compensation
@@ -134,7 +152,8 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			if err != nil {
 				return StepResult{}, err
 			}
-			res.Commands = append(cancelActionCmds, res.Commands...)
+			// Ordering: [def.CancelActions…, per-node CancelHandlers…, compensation walk…]
+			res.Commands = append(append(cancelActionCmds, nodeCancelCmds...), res.Commands...)
 			return res, nil
 		}
 
@@ -147,7 +166,8 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
 		}
 		s.Tokens = nil
-		cmds := cancelActionCmds
+		// Ordering: [def.CancelActions…, per-node CancelHandlers…, FailInstance, timers, arms]
+		cmds := append(cancelActionCmds, nodeCancelCmds...)
 		cmds = append(cmds, FailInstance{Err: "cancelled"})
 		cmds = append(cmds, s.cancelAllTimers()...)
 		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
