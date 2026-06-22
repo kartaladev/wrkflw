@@ -134,6 +134,10 @@ engine/model purity PURE.
    classification branches IF a future engine change makes signal/message delivery error on a
    no-match (today they broadcast/waiter no-op).
 3. **`gofmt` hygiene** — the optional repo-wide `gofmt -w` sweep (noted in the backlog) is still open.
+4. **Flaky `TestListenLoopExitsOnContextCancellation`** (`internal/persistence/postgres`) — pre-existing,
+   timing-sensitive LISTEN/NOTIFY context-cancellation test; flakes under full-suite Docker contention
+   but passes reliably in isolation (verified 3/3). Unrelated to this track (error-message-only changes).
+   Follow-up: harden the test's cancellation barrier (synchronize on the loop's actual exit, not a sleep).
 
 ---
 
