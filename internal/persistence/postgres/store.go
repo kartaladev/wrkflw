@@ -126,6 +126,10 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 		}
 	}
 
+	if err := applyTimerOps(ctx, tx, step); err != nil {
+		return 0, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("workflow-postgres: create: commit: %w", err)
 	}
@@ -211,6 +215,10 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		if err := flipCallLink(ctx, tx, step.State.InstanceID, *step.CallOutcome, now); err != nil {
 			return 0, mapConflict(err)
 		}
+	}
+
+	if err := applyTimerOps(ctx, tx, step); err != nil {
+		return 0, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -312,6 +320,48 @@ func insertCallLink(ctx context.Context, db DBTX, link runtime.CallLink, created
 		createdAt,
 	); err != nil {
 		return fmt.Errorf("workflow-postgres: create: call link: %w", err)
+	}
+	return nil
+}
+
+// upsertTimer writes (or updates) a wrkflw_timers row inside tx, atomic with the
+// state commit (ADR-0027). Re-arming the same (instance, timer) overwrites FireAt.
+func upsertTimer(ctx context.Context, db DBTX, t runtime.ArmedTimer) error {
+	_, err := db.Exec(ctx, `
+		INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (instance_id, timer_id)
+		DO UPDATE SET fire_at = EXCLUDED.fire_at, kind = EXCLUDED.kind,
+		              def_id = EXCLUDED.def_id, def_version = EXCLUDED.def_version`,
+		t.InstanceID, t.TimerID, t.FireAt, int16(t.Kind), t.DefID, t.DefVersion)
+	if err != nil {
+		return fmt.Errorf("workflow-postgres: upsert timer %q/%q: %w", t.InstanceID, t.TimerID, err)
+	}
+	return nil
+}
+
+// deleteTimer removes a wrkflw_timers row inside tx (fired or cancelled). A
+// zero-row delete is fine (idempotent / already gone).
+func deleteTimer(ctx context.Context, db DBTX, instanceID, timerID string) error {
+	_, err := db.Exec(ctx, `DELETE FROM wrkflw_timers WHERE instance_id = $1 AND timer_id = $2`,
+		instanceID, timerID)
+	if err != nil {
+		return fmt.Errorf("workflow-postgres: delete timer %q/%q: %w", instanceID, timerID, err)
+	}
+	return nil
+}
+
+// applyTimerOps applies a step's timer arms and cancels within tx.
+func applyTimerOps(ctx context.Context, db DBTX, step runtime.AppliedStep) error {
+	for _, a := range step.TimerArms {
+		if err := upsertTimer(ctx, db, a); err != nil {
+			return err
+		}
+	}
+	for _, id := range step.TimerCancels {
+		if err := deleteTimer(ctx, db, step.State.InstanceID, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
