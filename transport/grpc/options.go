@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
 // serverConfig holds the resolved gRPC server configuration for telemetry.
@@ -14,6 +15,9 @@ type serverConfig struct {
 	logOpt observability.Option
 	tpOpt  observability.Option
 	mpOpt  observability.Option
+
+	// deadLetters, when non-nil, enables the DLQ admin RPCs.
+	deadLetters service.DeadLetterAdmin
 }
 
 // Option is a functional option for [RegisterWorkflowServiceServer].
@@ -36,6 +40,24 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 // handlers. A nil value is ignored and the OTel global provider is used.
 func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(c *serverConfig) { c.mpOpt = observability.WithMeterProvider(mp) }
+}
+
+// WithDeadLetterAdmin enables the DLQ admin RPCs (ListDeadLetters,
+// RedriveDeadLetters) by supplying a [service.DeadLetterAdmin] (e.g. a
+// persistence.Relay). When this option is NOT supplied, those RPCs return
+// codes.Unimplemented.
+//
+// SECURITY: like ListInstances, the DLQ RPCs have no built-in per-method
+// authorization; the consumer MUST gate them with a grpc interceptor.
+//
+// Panics immediately if dla is nil.
+func WithDeadLetterAdmin(dla service.DeadLetterAdmin) Option {
+	if dla == nil {
+		panic("grpc: WithDeadLetterAdmin: dla must not be nil")
+	}
+	return func(c *serverConfig) {
+		c.deadLetters = dla
+	}
 }
 
 // nonNilOpts returns only the non-nil observability.Option values from opts.
