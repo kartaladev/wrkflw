@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -32,6 +39,15 @@ type Store struct {
 	pool       *pgxpool.Pool
 	historyCap int  // <= 0 means no cap (full inline history)
 	notify     bool // emit NOTIFY wrkflw_outbox on outbox insert when true
+
+	// staged telemetry option values; assembled into tel after all StoreOptions
+	// have been applied in NewStore.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	tel           observability.Telemetry
+	storeDuration metric.Float64Histogram
 }
 
 // StoreOption configures a Store.
@@ -48,6 +64,24 @@ func WithHistoryCap(n int) StoreOption { return func(s *Store) { s.historyCap = 
 // a listening relay (WithListenNotify) wakes immediately instead of waiting for
 // its next poll tick. Steps that produce no events emit no notification.
 func WithOutboxNotify() StoreOption { return func(s *Store) { s.notify = true } }
+
+// WithStoreLogger sets the structured logger used by the store for operation logs.
+// Default: slog.Default().
+func WithStoreLogger(l *slog.Logger) StoreOption {
+	return func(s *Store) { s.logOpt = observability.WithLogger(l) }
+}
+
+// WithStoreTracerProvider sets the OTel TracerProvider for store operation spans.
+// Default: the OTel global provider.
+func WithStoreTracerProvider(tp trace.TracerProvider) StoreOption {
+	return func(s *Store) { s.tpOpt = observability.WithTracerProvider(tp) }
+}
+
+// WithStoreMeterProvider sets the OTel MeterProvider for store metrics.
+// Default: the OTel global provider.
+func WithStoreMeterProvider(mp metric.MeterProvider) StoreOption {
+	return func(s *Store) { s.mpOpt = observability.WithMeterProvider(mp) }
+}
 
 // maybeNotify issues a transactional NOTIFY when notify is enabled and the step
 // produced outbox events. Errors propagate so the whole step rolls back.
@@ -69,6 +103,14 @@ func NewStore(pool *pgxpool.Pool, opts ...StoreOption) *Store {
 	for _, o := range opts {
 		o(s)
 	}
+	s.tel = observability.New(
+		"github.com/zakyalvan/krtlwrkflw/persistence",
+		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
+	)
+	s.storeDuration = s.tel.Float64Histogram(
+		"wrkflw_store_duration_seconds",
+		"Duration of persistence Store operations in seconds",
+	)
 	return s
 }
 
@@ -140,21 +182,37 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 // token for the given instance. Returns runtime.ErrInstanceNotFound when no
 // row exists for id.
 func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runtime.Token, error) {
+	ctx, span := s.tel.Tracer.Start(ctx, "wrkflw.store.load")
+	defer span.End()
+	start := time.Now()
+	defer func() {
+		s.storeDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("op", "load")))
+	}()
+
 	var snap []byte
 	var version int64
 	err := s.pool.QueryRow(ctx,
 		`SELECT snapshot, version FROM wrkflw_instances WHERE instance_id = $1`, id,
 	).Scan(&snap, &version)
 	if errors.Is(err, pgx.ErrNoRows) {
+		span.RecordError(runtime.ErrInstanceNotFound)
+		span.SetStatus(otelcodes.Error, runtime.ErrInstanceNotFound.Error())
 		return engine.InstanceState{}, 0, runtime.ErrInstanceNotFound
 	}
 	if err != nil {
-		return engine.InstanceState{}, 0, fmt.Errorf("workflow-postgres: load %q: %w", id, err)
+		wrapped := fmt.Errorf("workflow-postgres: load %q: %w", id, err)
+		span.RecordError(wrapped)
+		span.SetStatus(otelcodes.Error, wrapped.Error())
+		return engine.InstanceState{}, 0, wrapped
 	}
 
 	var st engine.InstanceState
 	if err := json.Unmarshal(snap, &st); err != nil {
-		return engine.InstanceState{}, 0, fmt.Errorf("workflow-postgres: load %q: unmarshal snapshot: %w", id, err)
+		wrapped := fmt.Errorf("workflow-postgres: load %q: unmarshal snapshot: %w", id, err)
+		span.RecordError(wrapped)
+		span.SetStatus(otelcodes.Error, wrapped.Error())
+		return engine.InstanceState{}, 0, wrapped
 	}
 	return st, runtime.Token(version), nil
 }
@@ -168,15 +226,34 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 // writer advanced the instance first) or when Postgres raises SQLSTATE 40001
 // (serialization failure).
 func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
+	ctx, span := s.tel.Tracer.Start(ctx, "wrkflw.store.commit")
+	defer span.End()
+	start := time.Now()
+	defer func() {
+		s.storeDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("op", "commit")))
+	}()
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("workflow-postgres: commit: begin: %w", err)
+		wrapped := fmt.Errorf("workflow-postgres: commit: begin: %w", err)
+		span.RecordError(wrapped)
+		span.SetStatus(otelcodes.Error, wrapped.Error())
+		return 0, wrapped
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// spanErr records err on span and sets Error status; used on early returns.
+	spanErr := func(err error) {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+	}
+
 	snap, err := json.Marshal(capHistory(step.State, s.historyCap))
 	if err != nil {
-		return 0, fmt.Errorf("workflow-postgres: commit: marshal snapshot: %w", err)
+		wrapped := fmt.Errorf("workflow-postgres: commit: marshal snapshot: %w", err)
+		spanErr(wrapped)
+		return 0, wrapped
 	}
 
 	now := time.Now().UTC()
@@ -192,37 +269,55 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		int64(expected),
 	)
 	if err != nil {
-		return 0, mapConflict(fmt.Errorf("workflow-postgres: commit: update: %w", err))
+		mapped := mapConflict(fmt.Errorf("workflow-postgres: commit: update: %w", err))
+		spanErr(mapped)
+		return 0, mapped
 	}
 	if tag.RowsAffected() == 0 {
-		// version mismatch: another writer advanced the token first.
+		// Version mismatch: another writer advanced the token first. This is
+		// expected optimistic-concurrency control flow (the runner retries on
+		// ErrConcurrentUpdate), NOT a failure — record it as a contention
+		// attribute rather than marking the span as an error, so normal retries
+		// don't pollute trace-derived error-rate dashboards.
+		span.SetAttributes(attribute.Bool("wrkflw.concurrent_update", true))
 		return 0, runtime.ErrConcurrentUpdate
 	}
 
 	next := int64(expected) + 1 // 1:1 with journal seq (journal seq == version after commit)
 
 	if err := writeJournal(ctx, tx, step, next, now); err != nil {
-		return 0, mapConflict(err)
+		mapped := mapConflict(err)
+		spanErr(mapped)
+		return 0, mapped
 	}
 	if err := writeOutbox(ctx, tx, step.State.InstanceID, next, step.Events, now); err != nil {
-		return 0, mapConflict(err)
+		mapped := mapConflict(err)
+		spanErr(mapped)
+		return 0, mapped
 	}
 	if err := s.maybeNotify(ctx, tx, step.Events); err != nil {
-		return 0, mapConflict(err)
+		mapped := mapConflict(err)
+		spanErr(mapped)
+		return 0, mapped
 	}
 
 	if step.CallOutcome != nil {
 		if err := flipCallLink(ctx, tx, step.State.InstanceID, *step.CallOutcome, now); err != nil {
-			return 0, mapConflict(err)
+			mapped := mapConflict(err)
+			spanErr(mapped)
+			return 0, mapped
 		}
 	}
 
 	if err := applyTimerOps(ctx, tx, step); err != nil {
+		spanErr(err)
 		return 0, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, mapConflict(fmt.Errorf("workflow-postgres: commit: %w", err))
+		mapped := mapConflict(fmt.Errorf("workflow-postgres: commit: %w", err))
+		spanErr(mapped)
+		return 0, mapped
 	}
 	return runtime.Token(next), nil
 }

@@ -97,6 +97,22 @@ func WithHistoryCap(n int) Option { return postgres.WithHistoryCap(n) }
 // drains with sub-poll-interval latency (ADR-0022). Opt-in; default off.
 func WithOutboxNotify() Option { return postgres.WithOutboxNotify() }
 
+// WithStoreLogger sets the structured logger used by the Store for operation logs.
+// Default: slog.Default().
+func WithStoreLogger(l *slog.Logger) Option { return postgres.WithStoreLogger(l) }
+
+// WithStoreTracerProvider sets the OTel TracerProvider for Store operation spans
+// (wrkflw.store.load, wrkflw.store.commit). Default: the OTel global provider.
+func WithStoreTracerProvider(tp trace.TracerProvider) Option {
+	return postgres.WithStoreTracerProvider(tp)
+}
+
+// WithStoreMeterProvider sets the OTel MeterProvider for Store metrics
+// (wrkflw_store_duration_seconds histogram). Default: the OTel global provider.
+func WithStoreMeterProvider(mp metric.MeterProvider) Option {
+	return postgres.WithStoreMeterProvider(mp)
+}
+
 // WithListenNotify makes the relay LISTEN on wrkflw_outbox and drain on each
 // NOTIFY (emitted by a Store configured with WithOutboxNotify), keeping the poll
 // interval as a fallback (ADR-0022). Opt-in; default off.
