@@ -174,7 +174,7 @@ func TestStoreCommitReturnsConcurrentUpdateOnSerializationFailure(t *testing.T) 
 	// Create a DBTX that fails with the 40001 error.
 	// We need a custom mock that fails Begin with the 40001 wrapped error.
 	// For simplicity, use the fact that MapConflict wraps fmt.Errorf calls.
-	wrappedErr := fmt.Errorf("postgres: commit: update: %w", injected)
+	wrappedErr := fmt.Errorf("workflow-postgres: commit: update: %w", injected)
 	mappedErr := pg.MapConflict(wrappedErr)
 	require.ErrorIs(t, mappedErr, runtime.ErrConcurrentUpdate,
 		"40001 wrapped in fmt.Errorf must map to ErrConcurrentUpdate")
@@ -188,7 +188,7 @@ func TestStoreWriteJournalMapsSQLStateError(t *testing.T) {
 
 	injected := pg.NewPgError("40001")
 	// MapConflict should translate the 40001 error to ErrConcurrentUpdate
-	err := pg.MapConflict(fmt.Errorf("postgres: write journal: %w", injected))
+	err := pg.MapConflict(fmt.Errorf("workflow-postgres: write journal: %w", injected))
 	require.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
 		"writeJournal 40001 errors must map to ErrConcurrentUpdate via mapConflict")
 }

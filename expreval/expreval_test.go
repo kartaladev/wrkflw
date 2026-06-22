@@ -214,7 +214,7 @@ func TestEvalDuration(t *testing.T) {
 			code: "true", env: nil,
 			assert: func(t *testing.T, got time.Duration, err error) {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "expreval:")
+				assert.Contains(t, err.Error(), "workflow-expreval:")
 				assert.Equal(t, time.Duration(0), got)
 			},
 		},
@@ -222,7 +222,7 @@ func TestEvalDuration(t *testing.T) {
 			code: `"xyz"`, env: nil,
 			assert: func(t *testing.T, got time.Duration, err error) {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "expreval:")
+				assert.Contains(t, err.Error(), "workflow-expreval:")
 				assert.Equal(t, time.Duration(0), got)
 			},
 		},
@@ -230,7 +230,7 @@ func TestEvalDuration(t *testing.T) {
 			code: "duration >", env: nil,
 			assert: func(t *testing.T, got time.Duration, err error) {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "expreval:")
+				assert.Contains(t, err.Error(), "workflow-expreval:")
 			},
 		},
 	}
@@ -289,7 +289,7 @@ func TestEvalString(t *testing.T) {
 			code: "orderId >", env: map[string]any{"orderId": "x"},
 			assert: func(t *testing.T, got string, err error) {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "expreval:")
+				assert.Contains(t, err.Error(), "workflow-expreval:")
 			},
 		},
 	}

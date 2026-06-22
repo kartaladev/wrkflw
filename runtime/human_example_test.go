@@ -149,7 +149,7 @@ func TestDeliverLoadError(t *testing.T) {
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
 	_, err := r.Deliver(ctx, approvalDef(), "non-existent", trg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "runtime: deliver: load:")
+	assert.Contains(t, err.Error(), "workflow-runtime: deliver: load:")
 }
 
 // TestRunnerSnapshotsVarsIntoHumanTask verifies that the runner, when it performs

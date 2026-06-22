@@ -289,7 +289,7 @@ func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.Dead
 		limit,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: relay: list dead-lettered: %w", err)
+		return nil, fmt.Errorf("workflow-postgres: relay: list dead-lettered: %w", err)
 	}
 	defer rows.Close()
 
@@ -297,12 +297,12 @@ func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.Dead
 	for rows.Next() {
 		var dl runtime.DeadLetter
 		if err := rows.Scan(&dl.ID, &dl.InstanceID, &dl.Topic, &dl.RetryCount, &dl.LastError, &dl.CreatedAt); err != nil {
-			return nil, fmt.Errorf("postgres: relay: list dead-lettered: scan: %w", err)
+			return nil, fmt.Errorf("workflow-postgres: relay: list dead-lettered: scan: %w", err)
 		}
 		out = append(out, dl)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres: relay: list dead-lettered: rows: %w", err)
+		return nil, fmt.Errorf("workflow-postgres: relay: list dead-lettered: rows: %w", err)
 	}
 	return out, nil
 }
@@ -329,7 +329,7 @@ func (r *Relay) Redrive(ctx context.Context, ids ...int64) (int, error) {
 		now, ids,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("postgres: relay: redrive: %w", err)
+		return 0, fmt.Errorf("workflow-postgres: relay: redrive: %w", err)
 	}
 	return int(tag.RowsAffected()), nil
 }
@@ -357,7 +357,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		infraErr := fmt.Errorf("postgres: relay: begin tx: %w", err)
+		infraErr := fmt.Errorf("workflow-postgres: relay: begin tx: %w", err)
 		span.RecordError(infraErr)
 		span.SetStatus(otelcodes.Error, infraErr.Error())
 		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay begin tx failed",
@@ -376,7 +376,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		now, r.batch,
 	)
 	if err != nil {
-		infraErr := fmt.Errorf("postgres: relay: claim: %w", err)
+		infraErr := fmt.Errorf("workflow-postgres: relay: claim: %w", err)
 		span.RecordError(infraErr)
 		span.SetStatus(otelcodes.Error, infraErr.Error())
 		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay claim failed",
@@ -400,12 +400,12 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		// scan order matches the SELECT projection.
 		if err := rows.Scan(&id, &topic, &rawPayload, &instanceID, &dedupKey, &retryCount); err != nil {
 			rows.Close()
-			return 0, fmt.Errorf("postgres: relay: scan: %w", err)
+			return 0, fmt.Errorf("workflow-postgres: relay: scan: %w", err)
 		}
 		var payload map[string]any
 		if err := json.Unmarshal(rawPayload, &payload); err != nil {
 			rows.Close()
-			return 0, fmt.Errorf("postgres: relay: unmarshal payload id=%d: %w", id, err)
+			return 0, fmt.Errorf("workflow-postgres: relay: unmarshal payload id=%d: %w", id, err)
 		}
 		claims = append(claims, claim{id: id, retryCount: retryCount, event: runtime.OutboxEvent{
 			Topic:      topic,
@@ -416,7 +416,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		infraErr := fmt.Errorf("postgres: relay: rows: %w", err)
+		infraErr := fmt.Errorf("workflow-postgres: relay: rows: %w", err)
 		span.RecordError(infraErr)
 		span.SetStatus(otelcodes.Error, infraErr.Error())
 		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay rows iteration failed",
@@ -447,7 +447,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 				  WHERE id = $1`,
 				c.id, newRetry, status, nextAttempt, pubErr.Error(),
 			); err != nil {
-				infraErr := fmt.Errorf("postgres: relay: quarantine id=%d: %w", c.id, err)
+				infraErr := fmt.Errorf("workflow-postgres: relay: quarantine id=%d: %w", c.id, err)
 				span.RecordError(infraErr)
 				span.SetStatus(otelcodes.Error, infraErr.Error())
 				r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay quarantine failed",
@@ -462,7 +462,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 			`UPDATE wrkflw_outbox SET status = 'published', published_at = $2 WHERE id = $1`,
 			c.id, now,
 		); err != nil {
-			infraErr := fmt.Errorf("postgres: relay: mark published id=%d: %w", c.id, err)
+			infraErr := fmt.Errorf("workflow-postgres: relay: mark published id=%d: %w", c.id, err)
 			span.RecordError(infraErr)
 			span.SetStatus(otelcodes.Error, infraErr.Error())
 			r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay mark-published failed",
@@ -473,7 +473,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		infraErr := fmt.Errorf("postgres: relay: commit: %w", err)
+		infraErr := fmt.Errorf("workflow-postgres: relay: commit: %w", err)
 		span.RecordError(infraErr)
 		span.SetStatus(otelcodes.Error, infraErr.Error())
 		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay commit failed",

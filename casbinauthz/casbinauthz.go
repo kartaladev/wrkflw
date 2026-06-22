@@ -72,7 +72,7 @@ func (a *Authorizer) Authorize(ctx context.Context, spec authz.AuthzSpec, actor 
 // when the policy CSV is stored externally (file, DB) and has been updated.
 func (a *Authorizer) ReloadPolicy() error {
 	if err := a.enforcer.LoadPolicy(); err != nil {
-		return fmt.Errorf("casbinauthz: reload policy: %w", err)
+		return fmt.Errorf("workflow-casbinauthz: reload policy: %w", err)
 	}
 	return nil
 }
@@ -96,11 +96,11 @@ func NewCasbinAuthorizerFromStrings(modelText, policyText string) (authz.Authori
 	}
 	m, err := casbinmodel.NewModelFromString(modelText)
 	if err != nil {
-		return nil, fmt.Errorf("casbinauthz: parse model: %w", err)
+		return nil, fmt.Errorf("workflow-casbinauthz: parse model: %w", err)
 	}
 	e, err := casbinv2.NewSyncedEnforcer(m, stringadapter.NewAdapter(policyText))
 	if err != nil {
-		return nil, fmt.Errorf("casbinauthz: build enforcer: %w", err)
+		return nil, fmt.Errorf("workflow-casbinauthz: build enforcer: %w", err)
 	}
 	return NewCasbinAuthorizer(e), nil
 }

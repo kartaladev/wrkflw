@@ -33,7 +33,7 @@ func (e *Evaluator) compile(code string) (*vm.Program, error) {
 	}
 	p, err := expr.Compile(code, expr.AllowUndefinedVariables())
 	if err != nil {
-		return nil, fmt.Errorf("expreval: compile %q: %w", code, err)
+		return nil, fmt.Errorf("workflow-expreval: compile %q: %w", code, err)
 	}
 	e.cache[code] = p
 	return p, nil
@@ -58,11 +58,11 @@ func (e *Evaluator) EvalBool(code string, env map[string]any) (bool, error) {
 		if isNilOperandError(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("expreval: run %q: %w", code, err)
+		return false, fmt.Errorf("workflow-expreval: run %q: %w", code, err)
 	}
 	b, ok := out.(bool)
 	if !ok {
-		return false, fmt.Errorf("expreval: %q did not evaluate to bool (got %T)", code, out)
+		return false, fmt.Errorf("workflow-expreval: %q did not evaluate to bool (got %T)", code, out)
 	}
 	return b, nil
 }
@@ -90,7 +90,7 @@ func (e *Evaluator) EvalDuration(code string, env map[string]any) (time.Duration
 	}
 	out, err := expr.Run(p, env)
 	if err != nil {
-		return 0, fmt.Errorf("expreval: run %q: %w", code, err)
+		return 0, fmt.Errorf("workflow-expreval: run %q: %w", code, err)
 	}
 	switch v := out.(type) {
 	case time.Duration:
@@ -120,11 +120,11 @@ func (e *Evaluator) EvalDuration(code string, env map[string]any) (time.Duration
 	case string:
 		d, parseErr := time.ParseDuration(v)
 		if parseErr != nil {
-			return 0, fmt.Errorf("expreval: %q yielded string %q not parseable as duration: %w", code, v, parseErr)
+			return 0, fmt.Errorf("workflow-expreval: %q yielded string %q not parseable as duration: %w", code, v, parseErr)
 		}
 		return d, nil
 	default:
-		return 0, fmt.Errorf("expreval: %q did not evaluate to a duration-compatible type (got %T)", code, out)
+		return 0, fmt.Errorf("workflow-expreval: %q did not evaluate to a duration-compatible type (got %T)", code, out)
 	}
 }
 
@@ -145,7 +145,7 @@ func (e *Evaluator) EvalString(code string, env map[string]any) (string, error) 
 	}
 	out, err := expr.Run(p, env)
 	if err != nil {
-		return "", fmt.Errorf("expreval: run %q: %w", code, err)
+		return "", fmt.Errorf("workflow-expreval: run %q: %w", code, err)
 	}
 	if s, ok := out.(string); ok {
 		return s, nil

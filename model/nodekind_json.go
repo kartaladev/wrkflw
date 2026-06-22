@@ -48,7 +48,7 @@ func init() {
 func (k NodeKind) MarshalJSON() ([]byte, error) {
 	name, ok := nodeKindNames[k]
 	if !ok {
-		return nil, fmt.Errorf("model: unknown NodeKind value %d", int(k))
+		return nil, fmt.Errorf("workflow-model: unknown NodeKind value %d", int(k))
 	}
 	return json.Marshal(name)
 }
@@ -59,11 +59,11 @@ func (k NodeKind) MarshalJSON() ([]byte, error) {
 func (k *NodeKind) UnmarshalJSON(data []byte) error {
 	var name string
 	if err := json.Unmarshal(data, &name); err != nil {
-		return fmt.Errorf("model: NodeKind must be a JSON string: %w", err)
+		return fmt.Errorf("workflow-model: NodeKind must be a JSON string: %w", err)
 	}
 	v, ok := nodeKindByName[name]
 	if !ok {
-		return fmt.Errorf("model: unknown NodeKind name %q", name)
+		return fmt.Errorf("workflow-model: unknown NodeKind name %q", name)
 	}
 	*k = v
 	return nil

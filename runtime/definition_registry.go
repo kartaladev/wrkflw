@@ -9,7 +9,7 @@ import (
 
 // ErrDefinitionNotFound is returned by DefinitionRegistry.Lookup when no
 // definition is registered for the given DefRef.
-var ErrDefinitionNotFound = errors.New("runtime: definition not found in registry")
+var ErrDefinitionNotFound = errors.New("workflow-runtime: definition not found in registry")
 
 // DefinitionRegistry resolves a DefRef string (as stored on a KindCallActivity
 // node) to a *model.ProcessDefinition. Implementations must be safe for

@@ -22,7 +22,7 @@ var attrEval = expreval.New()
 
 // ErrNotAuthorized is returned by an [Authorizer] when the actor does not
 // satisfy the given [AuthzSpec].
-var ErrNotAuthorized = errors.New("authz: not authorized")
+var ErrNotAuthorized = errors.New("workflow-authz: not authorized")
 
 // Actor is a principal that can act on human tasks.
 type Actor struct {

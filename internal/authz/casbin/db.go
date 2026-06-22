@@ -62,14 +62,14 @@ func (c watcherCloser) Close() error { c.w.Close(); return nil }
 func NewDBEnforcer(ctx context.Context, pool *pgxpool.Pool, cfg DBConfig) (*casbinv2.SyncedEnforcer, io.Closer, error) {
 	m, err := model.NewModelFromString(cfg.ModelText)
 	if err != nil {
-		return nil, nil, fmt.Errorf("casbin: db enforcer: model: %w", err)
+		return nil, nil, fmt.Errorf("workflow-casbin: db enforcer: model: %w", err)
 	}
 
 	adapter := newPGAdapter(pool)
 
 	enforcer, err := casbinv2.NewSyncedEnforcer(m, adapter)
 	if err != nil {
-		return nil, nil, fmt.Errorf("casbin: db enforcer: create enforcer: %w", err)
+		return nil, nil, fmt.Errorf("workflow-casbin: db enforcer: create enforcer: %w", err)
 	}
 
 	if !cfg.WatcherEnabled {
@@ -86,11 +86,11 @@ func NewDBEnforcer(ctx context.Context, pool *pgxpool.Pool, cfg DBConfig) (*casb
 	// correctly acquires the lock.
 	if err := enforcer.SetWatcher(w); err != nil {
 		w.Close()
-		return nil, nil, fmt.Errorf("casbin: db enforcer: set watcher: %w", err)
+		return nil, nil, fmt.Errorf("workflow-casbin: db enforcer: set watcher: %w", err)
 	}
 	if err := w.SetUpdateCallback(func(string) { _ = enforcer.LoadPolicy() }); err != nil {
 		w.Close()
-		return nil, nil, fmt.Errorf("casbin: db enforcer: set watcher callback: %w", err)
+		return nil, nil, fmt.Errorf("workflow-casbin: db enforcer: set watcher callback: %w", err)
 	}
 
 	return enforcer, watcherCloser{w: w}, nil

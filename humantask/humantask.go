@@ -16,7 +16,7 @@ import (
 
 // ErrTaskNotFound is returned by [TaskStore.Get] when no task with the given
 // token exists in the store.
-var ErrTaskNotFound = errors.New("humantask: task not found")
+var ErrTaskNotFound = errors.New("workflow-humantask: task not found")
 
 // TaskState is the lifecycle state of a [HumanTask].
 type TaskState int

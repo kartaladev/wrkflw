@@ -84,7 +84,7 @@ func (a *Authorizer) effectiveRoles(actor authz.Actor) (map[string]struct{}, err
 		eff[seed] = struct{}{}
 		implicit, err := a.enforcer.GetImplicitRolesForUser(seed)
 		if err != nil {
-			return nil, fmt.Errorf("casbin: implicit roles for %q: %w", seed, err)
+			return nil, fmt.Errorf("workflow-casbin: implicit roles for %q: %w", seed, err)
 		}
 		for _, r := range implicit {
 			eff[r] = struct{}{}
@@ -103,7 +103,7 @@ func (a *Authorizer) anyPrivilege(actor authz.Actor, privileges []string) (bool,
 		for _, sub := range subjects(actor) {
 			ok, err := a.enforcer.Enforce(sub, obj, act)
 			if err != nil {
-				return false, fmt.Errorf("casbin: enforce %q/%q/%q: %w", sub, obj, act, err)
+				return false, fmt.Errorf("workflow-casbin: enforce %q/%q/%q: %w", sub, obj, act, err)
 			}
 			if ok {
 				return true, nil

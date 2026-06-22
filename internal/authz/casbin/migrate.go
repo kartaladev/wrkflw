@@ -29,15 +29,15 @@ func MigrateCasbin(ctx context.Context, pool *pgxpool.Pool) error {
 
 	sub, err := fs.Sub(migrationsFS, "migrations")
 	if err != nil {
-		return fmt.Errorf("casbin: migrate: sub fs: %w", err)
+		return fmt.Errorf("workflow-casbin: migrate: sub fs: %w", err)
 	}
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, sub,
 		goose.WithTableName(casbinVersionTable))
 	if err != nil {
-		return fmt.Errorf("casbin: migrate: new provider: %w", err)
+		return fmt.Errorf("workflow-casbin: migrate: new provider: %w", err)
 	}
 	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("casbin: migrate: up: %w", err)
+		return fmt.Errorf("workflow-casbin: migrate: up: %w", err)
 	}
 	return nil
 }

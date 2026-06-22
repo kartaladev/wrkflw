@@ -123,11 +123,11 @@ var _ Service = (*Engine)(nil)
 func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (engine.InstanceState, error) {
 	def, err := e.reg.Lookup(req.DefRef)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: start instance: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: start instance: %w", err)
 	}
 	st, err := e.runner.Run(ctx, def, req.InstanceID, req.Vars)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: start instance: run: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: start instance: run: %w", err)
 	}
 	return st, nil
 }
@@ -136,7 +136,7 @@ func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (e
 func (e *Engine) GetInstance(ctx context.Context, instanceID string) (engine.InstanceState, error) {
 	st, _, err := e.store.Load(ctx, instanceID)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: get instance: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: get instance: %w", err)
 	}
 	return st, nil
 }
@@ -147,7 +147,7 @@ func (e *Engine) GetInstance(ctx context.Context, instanceID string) (engine.Ins
 func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (engine.InstanceState, error) {
 	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: deliver signal: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: deliver signal: %w", err)
 	}
 	if isTerminal(st.Status) {
 		return engine.InstanceState{}, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, req.InstanceID)
@@ -169,7 +169,7 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (e
 func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
 	def, err := e.reg.Lookup(req.DefRef)
 	if err != nil {
-		return fmt.Errorf("service: deliver message: %w", err)
+		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
 	if err := e.runner.DeliverMessage(ctx, def, req.Name, req.CorrelationKey, req.Payload); err != nil {
 		// No ErrInvalidTransition classification here: DeliverMessage routes via
@@ -184,7 +184,7 @@ func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) 
 func (e *Engine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (engine.InstanceState, error) {
 	trg, err := e.tasks.Claim(ctx, req.TaskToken, req.Actor)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: claim task: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: claim task: %w", err)
 	}
 	return e.deliverTaskTrigger(ctx, req.TaskToken, trg)
 }
@@ -193,7 +193,7 @@ func (e *Engine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (engine.In
 func (e *Engine) CompleteTask(ctx context.Context, req CompleteTaskRequest) (engine.InstanceState, error) {
 	trg, err := e.tasks.Complete(ctx, req.TaskToken, req.Actor, req.Output)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: complete task: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: complete task: %w", err)
 	}
 	return e.deliverTaskTrigger(ctx, req.TaskToken, trg)
 }
@@ -202,7 +202,7 @@ func (e *Engine) CompleteTask(ctx context.Context, req CompleteTaskRequest) (eng
 func (e *Engine) ReassignTask(ctx context.Context, req ReassignTaskRequest) (engine.InstanceState, error) {
 	trg, err := e.tasks.Reassign(ctx, req.TaskToken, req.From, req.To, req.By)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: reassign task: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: reassign task: %w", err)
 	}
 	return e.deliverTaskTrigger(ctx, req.TaskToken, trg)
 }
@@ -211,7 +211,7 @@ func (e *Engine) ReassignTask(ctx context.Context, req ReassignTaskRequest) (eng
 func (e *Engine) ListInstances(ctx context.Context, filter runtime.InstanceFilter) (runtime.InstancePage, error) {
 	page, err := e.lister.List(ctx, filter)
 	if err != nil {
-		return runtime.InstancePage{}, fmt.Errorf("service: list instances: %w", err)
+		return runtime.InstancePage{}, fmt.Errorf("workflow-service: list instances: %w", err)
 	}
 	return page, nil
 }
@@ -222,7 +222,7 @@ func (e *Engine) ListInstances(ctx context.Context, filter runtime.InstanceFilte
 func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (engine.InstanceState, error) {
 	def, _, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: resolve incident: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: resolve incident: %w", err)
 	}
 	addAttempts := req.AddAttempts
 	if addAttempts <= 0 {
@@ -230,7 +230,7 @@ func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest
 	}
 	st, err := e.runner.ResolveIncident(ctx, def, req.InstanceID, req.IncidentID, addAttempts)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: resolve incident: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: resolve incident: %w", err)
 	}
 	return st, nil
 }
@@ -261,14 +261,14 @@ func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*mod
 func (e *Engine) deliverTaskTrigger(ctx context.Context, taskToken string, trg engine.Trigger) (engine.InstanceState, error) {
 	task, err := e.taskStore.Get(ctx, taskToken)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: deliver task trigger: get task: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: deliver task trigger: get task: %w", err)
 	}
 	if !task.IsOpen() {
 		return engine.InstanceState{}, fmt.Errorf("%w: task %q is not open", ErrConflict, taskToken)
 	}
 	def, st, err := e.resolveDefinition(ctx, task.InstanceID)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: deliver task trigger: resolve definition: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: deliver task trigger: resolve definition: %w", err)
 	}
 	if isTerminal(st.Status) {
 		return engine.InstanceState{}, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, task.InstanceID)
