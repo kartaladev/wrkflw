@@ -16,7 +16,8 @@ and pick up the next work. Read it top to bottom before starting.
 items** (flaky-singleflight fix, DB casbin adapter, true async call activity) are merged to `main`,
 plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0026) and the
 **timer rehydration on restart** track (ADR-0027) and the **CancelInstance + cancel actions** track
-(ADR-0028, branch `feat/cancel-instance`). ADRs 0001–0028.
+(ADR-0028, branch `feat/cancel-instance`) and the **gRPC ResolveIncident + DLQ admin transport**
+track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`). ADRs 0001–0029.
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -68,19 +69,18 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0029**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0030**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
-**Recommended priority (top picks):**
-1. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
-   runtime/persistence APIs already exist; only the transport surface is unbuilt. *(Resilience)*
-2. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
+**Recommended priority (top picks):** *(top pick #1 — gRPC ResolveIncident + DLQ admin — ✅ DONE
+2026-06-22, ADR-0029; list re-numbered)*
+1. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
    rule (ADR-0014) to match converging joins to diverging forks + condition-placement checks. *(Correctness)*
-3. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
+2. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
    `RehydrateTimers` + the call-link notifier don't double-process across replicas (today: correct but
    redundant via idempotency). *(Production-hardening — follow-up to ADR-0027/0024)*
-4. **Cancellation propagation parent→child + per-active-node cancel handlers** — `CancelInstance` now
+3. **Cancellation propagation parent→child + per-active-node cancel handlers** — `CancelInstance` now
    terminates one instance and runs process-level `CancelActions`; propagating cancel to child call
    activities and per-node cancel handlers are the next steps. *(follow-up to ADR-0028)*
 
@@ -97,8 +97,8 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
   Load/Commit spans + `wrkflw_store_duration_seconds`; CallNotifier `wrkflw.callnotifier.batch` span;
   async DB-backed `instances_active` gauge; REST/relay meters actually emitting; route-template span
   naming; exemplars; OTel-contrib option; migrate eventing onto the shared helper.
-- **API / feature completeness:** gRPC `ResolveIncident` + DLQ admin REST; casbin
-  policy-admin REST/gRPC; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
+- **API / feature completeness:** *(gRPC `ResolveIncident` + DLQ admin REST/gRPC — ✅ DONE, ADR-0029)*
+  casbin policy-admin REST/gRPC; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
   streaming/watch + OpenAPI/grpc-gateway + richer admin filters; admin total-count; `ended_at` optional
   in proto; casbin ABAC-in-matchers; richer Privilege modeling; `DeliverMessage` self-resolving the def.
 - **Performance / scale:** casbin `FilteredAdapter` + `WatcherEx`; per-definition history-cap + per-def
@@ -213,6 +213,46 @@ new command + the `CancelActions` field) — the only track to do so since the e
 6. **`//go:generate` PATH-with-spaces quirk** — the directive in `transport/grpc/errors.go` fails when
    `$PATH` contains directories with spaces (run protoc directly as a workaround); fix = quote the path
    assignment or a Makefile target.
+
+---
+
+## gRPC ResolveIncident + DLQ admin transport sub-project — ✅ COMPLETE
+
+Fourth track from the consolidated backlog (was top pick #1). Built on branch
+`feat/grpc-resolveincident-dlq-admin`. Design: spec
+`docs/specs/2026-06-22-grpc-resolveincident-dlq-admin-design.md`, plan
+`docs/plans/2026-06-22-grpc-resolveincident-dlq-admin.md`, **ADR-0029**. 5 SDD tasks
+(visible RED→GREEN per symbol) + opus whole-branch review (**Ready to merge: Yes-with-nits**, no
+blockers). Gate: `go test -race -p 1 ./...` green, touched pkgs ≥85% (service 87.5%, persistence
+88.0%, transport/grpc 87.2%, transport/rest 90.0%), lint 0, **engine/model production diff ZERO**,
+proto regen reproducible (byte-identical re-run).
+
+Closes the Resilience deferred follow-up #1 (transport surface for incident-resolve + DLQ) on
+**both** transports.
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `service/` | New optional `service.DeadLetterAdmin` interface (`ListDeadLettered`/`Redrive`) — method set identical to `persistence.Relay`'s, so the relay satisfies it with no adapter. Compile-time guard in a black-box `persistence_test`. `Service` interface + `New(...)` UNCHANGED. | ADR-0029 |
+| `transport/grpc` | Proto: `ResolveIncident`, `ListDeadLetters`, `RedriveDeadLetters` RPCs + `DeadLetter`/request/response messages (regen via `go generate`). `WithDeadLetterAdmin(service.DeadLetterAdmin)` option (nil-panics). `ResolveIncident` handler mirrors `CancelInstance`; DLQ handlers return `codes.Unimplemented` when unwired, else delegate (`NormalizeLimit`, `deadLetterToProto`). SECURITY doc extended (DLQ RPCs rely on consumer interceptor, like `ListInstances`). | |
+| `transport/rest` | `WithDeadLetterAdmin` option (nil-panics). `GET /admin/dead-letters` + `POST /admin/dead-letters/redrive` — **registered only when wired** (else 404), behind the default-deny admin middleware. `deadLetterView` JSON DTO; `{"items":[...]}` / `{"redriven":N}` envelopes. | |
+
+**Key decision (ADR-0029):** DLQ exposed via a *separate optional seam*, not folded into
+`service.Service` (DLQ is an outbox-relay concern; MemStore-only consumers have no relay). Per-
+transport not-configured behaviour: REST route absent → 404; gRPC → `Unimplemented` (fixed service
+contract). Authz stays the consumer's transport-gate responsibility.
+
+### Deferred follow-ups
+1. **REST redrive/resolve empty-body fidelity** — a genuinely empty body (Content-Length 0) hits
+   `decodeBody`'s `io.EOF`→400; `{}`/`{"ids":[]}` work. Inherited from the resilience deferred list
+   (#3); accept EOF as defaults or require a `{}` body. (Not re-fixed here.)
+2. **DLQ list pagination** — uses a simple `limit` (no keyset cursor like `ListInstances`); add a
+   cursor if dead-letter volume warrants.
+3. **casbin-gated DLQ/incident authz** — admin middleware / consumer interceptor remains the v1
+   boundary (shared with the resilience deferred #5).
+4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
+   admin gate (shared with the CancelInstance deferred #5).
 
 ---
 
@@ -691,8 +731,10 @@ concurrency exhausts Docker and surfaces spurious testcontainers startup failure
 
 ### Deferred follow-ups (recorded by the opus whole-branch review)
 
-1. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
-   runtime/persistence APIs exist; only the gRPC proto regen + REST DLQ endpoints are unbuilt (spec §8/§11).
+1. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — ✅ **DONE**
+   (2026-06-22, ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`). Shipped on REST **and** gRPC
+   via the optional `service.DeadLetterAdmin` seam + `WithDeadLetterAdmin`. See the "gRPC
+   ResolveIncident + DLQ admin transport sub-project" section below.
 2. **`wrkflw_processed_message` retention/pruning job** — the dedup table grows unbounded; a TTL prune
    (well past `maxDelivery × max backoff`) is an operator task.
 3. **REST resolve-incident empty-body fidelity** — a genuinely empty body (Content-Length 0) hits
