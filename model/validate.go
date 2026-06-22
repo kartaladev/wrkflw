@@ -72,6 +72,14 @@ var (
 	// ErrEmptyCancelAction is returned when a process definition's CancelActions
 	// slice contains an empty string. All action names must be non-empty.
 	ErrEmptyCancelAction = errors.New("workflow-model: empty cancel action name")
+	// ErrUnreachableNode is returned when a node cannot be reached from the start
+	// event — directly via sequence flows, or via a reachable boundary event or an
+	// event-sub-process (an event-triggered root). It signals dead/orphan structure.
+	ErrUnreachableNode = errors.New("workflow-model: unreachable node")
+	// ErrUnpairedJoin is returned when a parallel join gateway has no concurrency
+	// source — no parallel/inclusive split can deliver two concurrent tokens toward
+	// it — so it would deadlock at runtime waiting for branches that never arrive.
+	ErrUnpairedJoin = errors.New("workflow-model: unpaired parallel join")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -183,6 +191,75 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		}
 	}
 
+	// Reachability (ErrUnreachableNode). Runs only with exactly one start event;
+	// with 0 or >1 starts the start-count error already fires and reachability is
+	// ill-defined, so we skip to avoid cascade noise. Boundary events have no
+	// incoming flow (reachable iff their host is reachable, to a fixpoint, since a
+	// boundary branch may host another activity-with-boundary) and event-sub-processes
+	// are event-triggered roots.
+	var reached map[string]bool
+	if starts := d.StartNodes(); len(starts) == 1 {
+		reached = forwardReachable(d, starts[0].ID)
+		for _, n := range d.Nodes {
+			if n.Kind == KindEventSubProcess {
+				for id := range forwardReachable(d, n.ID) {
+					reached[id] = true
+				}
+			}
+		}
+		for {
+			grew := false
+			for _, n := range d.Nodes {
+				if n.Kind != KindBoundaryEvent || reached[n.ID] || !reached[n.AttachedTo] {
+					continue
+				}
+				for id := range forwardReachable(d, n.ID) {
+					if !reached[id] {
+						reached[id] = true
+						grew = true
+					}
+				}
+			}
+			if !grew {
+				break
+			}
+		}
+		for _, n := range d.Nodes {
+			if !reached[n.ID] {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnreachableNode, n.ID))
+			}
+		}
+	}
+
+	// Parallel-join pairing (ErrUnpairedJoin). Only KindParallelGateway joins can
+	// deadlock: they wait for a token on every incoming flow unconditionally.
+	// Exclusive/event-based joins fire on first arrival, and inclusive joins
+	// self-adjust via runtime reachability — none deadlock, so they are excluded.
+	// A parallel join is flagged iff no parallel/inclusive split can deliver two
+	// concurrent tokens toward it (a provable deadlock). Conservative: any plausible
+	// concurrency source clears the join (favouring no false positives). Unreachable
+	// joins are skipped — ErrUnreachableNode already reports them.
+	//
+	// reached == nil means 0 or >1 start events: reachability is ill-defined and the
+	// start-count error already fires, so we skip pairing entirely to avoid noise on
+	// an already-invalid definition (it is re-checked once the start count is fixed).
+	if reached != nil {
+		for _, n := range d.Nodes {
+			if n.Kind != KindParallelGateway {
+				continue
+			}
+			if len(d.Incoming(n.ID)) <= 1 || len(d.Outgoing(n.ID)) != 1 {
+				continue // not a pure parallel join (mixed already rejected; split is fine)
+			}
+			if !reached[n.ID] {
+				continue // unreachable join — ErrUnreachableNode already reports it
+			}
+			if !hasConcurrencySource(d, n.ID) {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnpairedJoin, n.ID))
+			}
+		}
+	}
+
 	// errorBoundaryHostKinds is the subset of activityKinds that can throw a
 	// BPMN error and therefore may host a boundary error event.
 	errorBoundaryHostKinds := map[NodeKind]bool{
@@ -274,4 +351,52 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// forwardReachable returns the set of node IDs reachable from seed by following
+// outgoing sequence flows (BFS, cycle-safe via the visited set). seed is included.
+func forwardReachable(d *ProcessDefinition, seed string) map[string]bool {
+	reached := map[string]bool{seed: true}
+	queue := []string{seed}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, f := range d.Outgoing(n) {
+			if !reached[f.Target] {
+				reached[f.Target] = true
+				queue = append(queue, f.Target)
+			}
+		}
+	}
+	return reached
+}
+
+// hasConcurrencySource reports whether some parallel or inclusive split (a
+// gateway with >1 outgoing flow) has at least two distinct outgoing branches
+// whose targets can each forward-reach joinID. Only parallel/inclusive splits
+// create concurrency; exclusive and event-based splits take a single branch, so
+// they are not concurrency sources.
+func hasConcurrencySource(d *ProcessDefinition, joinID string) bool {
+	for _, f := range d.Nodes {
+		if f.ID == joinID {
+			continue
+		}
+		if f.Kind != KindParallelGateway && f.Kind != KindInclusiveGateway {
+			continue
+		}
+		out := d.Outgoing(f.ID)
+		if len(out) <= 1 {
+			continue // a join or pass-through, not a split
+		}
+		count := 0
+		for _, b := range out {
+			if forwardReachable(d, b.Target)[joinID] {
+				count++
+				if count >= 2 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
