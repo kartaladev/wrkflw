@@ -8,14 +8,15 @@ and pick up the next work. Read it top to bottom before starting.
 > **Fresh session: jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
 > below (just after the gate note).** It is the single prioritized entry point for new work. The
 > rest of this doc is the per-track detail behind it. Nothing *named* is in flight — `main` is
-> green and all work through ADR-0026 is merged (or in final merge for the engine wrong-state track).
+> green and all work through ADR-0027 is merged (or in final merge for the timer-rehydration track).
 
 **Where we are:** the engine core (Plans 1–8), **all 5 productionization sub-projects**
 (Persistence, Scheduling, Authorization, Transports, Eventing), **all 4 deferred-backlog tracks**
 (Correctness → Resilience → Observability → Performance/caching), and **all 3 "also-outstanding"
 items** (flaky-singleflight fix, DB casbin adapter, true async call activity) are merged to `main`,
-plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0026, branch
-`feat/engine-wrong-state-sentinel`). ADRs 0001–0026. **No named work remains in flight.** Future work = the consolidated backlog
+plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0026) and the
+**timer rehydration on restart** track (ADR-0027, branch `feat/timer-rehydration`). ADRs 0001–0027.
+**No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
 SDD → opus whole-branch review → merge to main → push`. Confirm scope with the user first.
@@ -59,34 +60,35 @@ per-track spec/plan live under `docs/specs/` and `docs/plans/` (never a path con
 
 ## 🧭 START HERE (fresh session) — consolidated backlog
 
-**Current state:** everything through **ADR-0026** is on `main`/in-merge (productionization ×5 +
-deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state sentinel** track).
-No *named* work remains. `main` is green (`go test -race ./...`, `golangci-lint`, engine/model
-untouched). **Convention note:** all production error messages now carry a **`workflow-`** prefix
-(e.g. `workflow-engine:`); assert on sentinels with `errors.Is`, never string-matching — see the
-`error-sentinel-prefix` memory and ADR-0026. Pick the next piece of work from the prioritized
-backlog below — each item is a self-contained track: **brainstorm → spec (`docs/specs/`) → ADR
-(`docs/adr/`, next number **0027**) → plan (`docs/plans/`) → branch → SDD → opus whole-branch
-review → merge + push**. Confirm scope with the user before starting. The full per-item detail lives
-in the per-track "Deferred follow-ups" sections further down; this is the index.
+**Current state:** everything through **ADR-0027** is on `main`/in-merge (productionization ×5 +
+deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state sentinel** and
+**timer rehydration** tracks). No *named* work remains. `main` is green (`go test -race ./...`,
+`golangci-lint`, engine/model untouched). **Convention note:** all production error messages carry a
+**`workflow-`** prefix (e.g. `workflow-engine:`); assert on sentinels with `errors.Is`, never
+string-matching — see the `error-sentinel-prefix` memory and ADR-0026. Pick the next piece of work
+from the prioritized backlog below — each item is a self-contained track: **brainstorm → spec
+(`docs/specs/`) → ADR (`docs/adr/`, next number **0028**) → plan (`docs/plans/`) → branch → SDD →
+opus whole-branch review → merge + push**. Confirm scope with the user before starting. The full
+per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
 **Recommended priority (top picks):**
-1. **Timer rehydration on restart** — re-arm pending timers from persistence on startup (needs a
-   "list pending timers" query); today a restart loses in-memory gocron jobs. Real operational gap. *(Scheduling)*
-2. **`CancelInstance`** end-to-end (engine/runtime → `service` → REST + gRPC). Most-requested missing
+1. **`CancelInstance`** end-to-end (engine/runtime → `service` → REST + gRPC). Most-requested missing
    operation. *(Transports)*
-3. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
+2. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
    runtime/persistence APIs already exist; only the transport surface is unbuilt. *(Resilience)*
-4. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
+3. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
    rule (ADR-0014) to match converging joins to diverging forks + condition-placement checks. *(Correctness)*
+4. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
+   `RehydrateTimers` + the call-link notifier don't double-process across replicas (today: correct but
+   redundant via idempotency). *(Production-hardening — follow-up to ADR-0027/0024)*
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
 - **Correctness / robustness:** reachability/fork-join pairing validation;
   compensation-on-error/cancel paths; scope-targeted compensation (`Compensate` producer); casbin
   adapter/watcher `context` propagation; `AdvisoryLockOwnership` use-after-close guard; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
-- **Production-hardening:** timer rehydration; cancellation propagation parent→child + orphaned-child
-  cleanup; multi-replica call-link `FOR UPDATE SKIP LOCKED`; lease-column ownership; per-worker NOTIFY
+- **Production-hardening:** cancellation propagation parent→child + orphaned-child
+  cleanup; multi-replica `FOR UPDATE SKIP LOCKED` exclusivity (timers + call-links); lease-column ownership; per-worker NOTIFY
   fairness; `wrkflw_processed_message` pruning job; per-aggregate relay ordering; TOAST/fillfactor
   tuning; `RetryPolicy.Backoff` overflow guard; richer `SubInstanceFailed`→parent error (create an Incident).
 - **Observability:** public `observability` root pkg (trace-correlating `slog.Handler` + `Setup`); Store
@@ -138,6 +140,42 @@ engine/model purity PURE.
    timing-sensitive LISTEN/NOTIFY context-cancellation test; flakes under full-suite Docker contention
    but passes reliably in isolation (verified 3/3). Unrelated to this track (error-message-only changes).
    Follow-up: harden the test's cancellation barrier (synchronize on the loop's actual exit, not a sleep).
+
+---
+
+## Timer rehydration on restart sub-project — ✅ COMPLETE
+
+Second track from the consolidated backlog (was top pick #1). Built on branch
+`feat/timer-rehydration`. Design: spec `docs/specs/2026-06-22-timer-rehydration-design.md`, plan
+`docs/plans/2026-06-22-timer-rehydration.md`, **ADR-0027**. 7 SDD tasks + opus whole-branch review.
+Gate: `go test -race -p 1 ./...` green (incl. Postgres), touched pkgs ≥85% (runtime 90.2%,
+`internal/persistence/postgres` 86.3%, persistence 88.0%), lint 0, **engine/model production diff
+ZERO** (the load-bearing invariant — same as async call activity).
+
+**The load-bearing finding:** `FireAt` is not persisted anywhere in `InstanceState` (`timerRecord`
+and `Token` carry no fire time; several `ScheduleTimer` sites don't even write a `timerRecord`), so
+rehydration required persisting it in a new location — solved with a runtime-owned side table written
+in the commit tx, engine untouched (the ADR-0024/0025 call-link pattern).
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `runtime/` | `runtime.TimerStore` read port + `ArmedTimer{InstanceID,DefID,DefVersion,TimerID,FireAt,Kind}` + `MemTimerStore`; `AppliedStep.TimerArms/TimerCancels`; pure kind-agnostic `timerOpsFor` (ScheduleTimer→arm, CancelTimer/TimerFired→cancel) wired into deliverLoop (gated `r.timerStore != nil`); `MemStore`/`NewMemStoreWithTimers` record arms/cancels in Create+Commit. | ADR-0027 |
+| `runtime/` | Fire-callback extracted into `r.armTimer(def,instanceID,timerID,fireAt)` (behavior-preserving — byte-for-byte) shared by `perform(ScheduleTimer)` and rehydration; **`Runner.RehydrateTimers(ctx)`** one-shot re-arm (lists armed timers, resolves def via registry, re-arms; skips+counts unresolved defs; requires `WithScheduler`+`WithTimerStore`+`WithDefinitions`). Opt-in via `WithTimerStore`. | |
+| `internal/persistence/postgres/` | Migration `0005_timers.sql` (`wrkflw_timers` PK(instance_id,timer_id) + `fire_at` index); `upsertTimer`/`deleteTimer`/`applyTimerOps` applied in `Store.Create`+`Commit` **inside the tx before commit** (atomic with state/journal/outbox); `postgres.TimerStore.ListArmed` (ordered by fire_at). | |
+| `persistence/` | `persistence.NewTimerStore(pool) runtime.TimerStore` façade + compile-time assertion. | |
+| tests | Mem rehydration e2e (discard runner+scheduler → fresh → `RehydrateTimers` → advance → resume) and Postgres crash-safety e2e (fresh `Store`+`TimerStore`+`Runner` → `RehydrateTimers` + `Tick` → resume, **no manual `TimerFired` deliver**). | |
+
+### Deferred follow-ups
+1. **Multi-replica rehydration exclusivity** — two replicas both `RehydrateTimers` → double-arm →
+   correct-but-redundant (idempotent re-fire). `FOR UPDATE SKIP LOCKED` / ownership claim is the
+   follow-up (shared with the call-link notifier; now top pick #4).
+2. **Orphan-row pruning** — defense-in-depth sweep for `wrkflw_timers` rows of instances that reached
+   terminal without a clean cancel (the in-tx delete on fire/cancel should keep it clean).
+3. **Rehydration observability** — count re-armed / span (align with the observability track).
+4. **`Commit` `applyTimerOps` error not wrapped via `mapConflict`** — defensive consistency nit
+   (the version CAS returns `ErrConcurrentUpdate` before timer ops run, so not a live bug).
 
 ---
 
