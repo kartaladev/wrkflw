@@ -385,7 +385,13 @@ func (r *Runner) deliverLoop(
 			}
 		}
 
-		appliedStep := AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome}
+		var timerArms []ArmedTimer
+		var timerCancels []string
+		if r.timerStore != nil {
+			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID)
+		}
+
+		appliedStep := AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome, TimerArms: timerArms, TimerCancels: timerCancels}
 
 		if create {
 			// Attach the firstCallLink to the Create step (child async path only).

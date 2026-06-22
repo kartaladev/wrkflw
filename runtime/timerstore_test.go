@@ -4,9 +4,11 @@ import (
 	"testing"
 	"time"
 
+	clockwork "github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -100,4 +102,31 @@ func TestMemStoreRecordsTimerOps(t *testing.T) {
 	armed, err = mts.ListArmed(t.Context())
 	require.NoError(t, err)
 	assert.Empty(t, armed)
+}
+
+func TestRunnerPersistsAndClearsTimer(t *testing.T) {
+	startAt := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	fc := clockwork.NewFakeClockAt(startAt)
+	mts := runtime.NewMemTimerStore()
+	store := runtime.NewMemStoreWithTimers(mts)
+	sched := runtime.NewMemScheduler(fc)
+	r := runtime.NewRunner(action.NewMapCatalog(nil), fc, store,
+		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
+
+	def := timerIntermediateDef() // reuse the helper in runtime/timer_example_test.go (1h intermediate timer)
+	_, err := r.Run(t.Context(), def, "tr-1", nil)
+	require.NoError(t, err)
+
+	// Armed after Run parks on the timer.
+	armed, err := mts.ListArmed(t.Context())
+	require.NoError(t, err)
+	require.Len(t, armed, 1, "the pending timer must be persisted")
+	assert.Equal(t, "tr-1", armed[0].InstanceID)
+
+	// Fire it; the armed row clears (consumed via TimerFired).
+	fc.Advance(time.Hour + time.Second)
+	require.NoError(t, sched.Tick(t.Context()))
+	armed, err = mts.ListArmed(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, armed, "a fired timer must leave the armed set")
 }
