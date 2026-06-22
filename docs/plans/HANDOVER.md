@@ -20,7 +20,8 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0034 (0034 = compensation on error/cancel, branch `feat/compensation-on-error-cancel`).
+ADRs 0001–0035 (0034 = compensation on error/cancel; 0035 = per-node cancel handlers, branch
+`feat/cancel-handlers`).
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -72,7 +73,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0035**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0036**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -82,11 +83,10 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
    The timer half remains: correct exclusive timers need a claim-renew-**failover** loop replacing
    per-replica gocron arming (a distributed scheduler); double-fire is already correct via the engine
    CAS, so this is an optimization. *(Production-hardening — follow-up to ADR-0027/0031)*
-2. **Per-active-node cancel handlers** — `CancelInstance` runs process-level `CancelActions` and now
-   propagates to child call activities (ADR-0032); a `Node`-scoped cancel handler is the next step.
-   **Engine/model change** (confirm scope first). *(follow-up to ADR-0028/0032)*
-3. **Compensation-on-error/cancel paths + scope-targeted compensation** (`Compensate` producer) —
-   extend rollback beyond the existing root walk. **Large engine/model change** (confirm scope first). *(Correctness)*
+2. **Scope-targeted compensation** (`Compensate{ScopeID,FromNode}` producer + compensation
+   boundary/throw node kind + archive-by-scope) — the LARGEST remaining engine/model change; reverses
+   the ADR-0013 hoist. **(Correctness; will be ADR-0036.)** *(compensation-on-error/cancel ✅ ADR-0034;
+   per-node cancel handlers ✅ ADR-0035.)*
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
 - **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030;
@@ -97,7 +97,7 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
 - **Production-hardening:** *(cancellation propagation parent→child — ✅ DONE ADR-0032; orphaned-child
   cleanup handled by ErrTokenNotFound path; `wrkflw_processed_message` pruning — ✅ DONE ADR-0033)*;
-  per-active-node cancel handlers (engine);
+  *(per-active-node cancel handlers — ✅ DONE ADR-0035)*;
   multi-replica exclusivity — **call-links DONE (ADR-0031, lease)**,
   **timers** still open (failover loop); per-worker NOTIFY
   fairness; per-aggregate relay ordering; TOAST/fillfactor
@@ -262,6 +262,33 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Per-node cancel handlers sub-project — ✅ COMPLETE
+
+Backlog top pick #2 (follow-up to ADR-0028/0032). Branch `feat/cancel-handlers`. Spec
+`docs/specs/2026-06-23-cancel-handlers-design.md`, plan `docs/plans/2026-06-23-cancel-handlers.md`,
+**ADR-0035**. 2 SDD tasks (Task 1 Approved + 3 controller-applied Minors; Task 2 test-only) +
+whole-branch review (**Ready: Yes-with-nits**, no blockers). Gate: full `go test -race -p 1 ./...`
+green, lint 0, **model diff = ONE additive field**, `Step` pure/deterministic, no runtime change.
+
+### What shipped
+`model.Node.CancelHandler string` — an optional per-node cleanup action run **fire-and-forget** for
+each **active/in-flight** node when the instance is cancelled, emitted via the existing ADR-0028
+`InvokeCancelAction` path (no runtime change, no new command, no migration). Collected from the live
+tokens (scope-aware via `defForScope`) *before* the compensation/immediate branch clears them, and
+ordered `[def.CancelActions…, per-node CancelHandlers…, (compensation walk | FailInstance)…]`. The
+**definition-scoped cancel handler is the existing `def.CancelActions`** (ADR-0028) — documented, not
+rebuilt. Three distinct activity-lifecycle hooks kept separate: error (failed→route), cancel
+(active→cleanup, this), compensation (completed→undo, ADR-0034). Back-compat: no `CancelHandler` set
+⇒ byte-for-behaviour identical.
+
+### Deferred follow-ups
+1. A distinct definition-scoped *handler* shape (vs the `CancelActions` action-name list) if a future
+   need arises — `CancelActions` is the def-scoped handler for now (flagged for spec review).
+2. Cosmetic test nits (ordering-assertion coverage for def.CancelActions-before-per-node; redundant
+   clockwork import alias).
 
 ---
 
