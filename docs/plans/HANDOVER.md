@@ -18,7 +18,8 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 **timer rehydration on restart** track (ADR-0027) and the **CancelInstance + cancel actions** track
 (ADR-0028, branch `feat/cancel-instance`) and the **gRPC ResolveIncident + DLQ admin transport**
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
-validation** track (ADR-0030, branch `feat/reachability-forkjoin-validation`). ADRs 0001–0030.
+validation** track (ADR-0030) and the **call-link lease exclusivity** track (ADR-0031, branch
+`feat/calllink-lease-exclusivity`). ADRs 0001–0031 (0032 cancellation-propagation in flight).
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -70,20 +71,22 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0031**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0033**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
-**Recommended priority (top picks):** *(gRPC ResolveIncident + DLQ admin — ✅ DONE 2026-06-22,
-ADR-0029; reachability/fork-join validation — ✅ DONE 2026-06-22, ADR-0030; list re-numbered)*
-1. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
-   `RehydrateTimers` + the call-link notifier don't double-process across replicas (today: correct but
-   redundant via idempotency). *(Production-hardening — follow-up to ADR-0027/0024)*
+**Recommended priority (top picks):** *(gRPC ResolveIncident + DLQ admin — ✅ DONE ADR-0029;
+reachability/fork-join validation — ✅ DONE ADR-0030; **call-link** lease exclusivity — ✅ DONE
+2026-06-22, ADR-0031; list re-numbered)*
+1. **Multi-replica TIMER exclusivity** — the call-link notifier half is DONE (ADR-0031, opt-in lease).
+   The timer half remains: correct exclusive timers need a claim-renew-**failover** loop replacing
+   per-replica gocron arming (a distributed scheduler); double-fire is already correct via the engine
+   CAS, so this is an optimization. *(Production-hardening — follow-up to ADR-0027/0031)*
 2. **Cancellation propagation parent→child + per-active-node cancel handlers** — `CancelInstance` now
    terminates one instance and runs process-level `CancelActions`; propagating cancel to child call
-   activities and per-node cancel handlers are the next steps. *(follow-up to ADR-0028)*
+   activities and per-node cancel handlers are the next steps. *(follow-up to ADR-0028; ADR-0032 in flight)*
 3. **Compensation-on-error/cancel paths + scope-targeted compensation** (`Compensate` producer) —
-   extend rollback beyond the existing root walk. *(Correctness)*
+   extend rollback beyond the existing root walk. **Large engine/model change** (confirm scope first). *(Correctness)*
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
 - **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030)*
@@ -91,7 +94,8 @@ ADR-0029; reachability/fork-join validation — ✅ DONE 2026-06-22, ADR-0030; l
   adapter/watcher `context` propagation; `AdvisoryLockOwnership` use-after-close guard; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
 - **Production-hardening:** cancellation propagation parent→child + orphaned-child
-  cleanup; multi-replica `FOR UPDATE SKIP LOCKED` exclusivity (timers + call-links); lease-column ownership; per-worker NOTIFY
+  cleanup *(ADR-0032 in flight)*; multi-replica exclusivity — **call-links DONE (ADR-0031, lease)**,
+  **timers** still open (failover loop); per-worker NOTIFY
   fairness; `wrkflw_processed_message` pruning job; per-aggregate relay ordering; TOAST/fillfactor
   tuning; `RetryPolicy.Backoff` overflow guard; richer `SubInstanceFailed`→parent error (create an Incident).
 - **Observability:** public `observability` root pkg (trace-correlating `slog.Handler` + `Setup`); Store
@@ -254,6 +258,39 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Call-link notifier lease exclusivity sub-project — ✅ COMPLETE
+
+Top pick (Production-hardening, call-link half of "multi-replica exclusivity"). Branch
+`feat/calllink-lease-exclusivity`. Spec `docs/specs/2026-06-22-calllink-lease-exclusivity-design.md`,
+plan `docs/plans/2026-06-22-calllink-lease-exclusivity.md`, **ADR-0031**. 3 SDD tasks (implementer +
+reviewer per task, all Approved 0 Crit/Imp) + opus whole-branch review (**Ready: Yes**, no blockers,
+cross-layer lease semantics confirmed consistent, at-least-once preserved). Gate: `go test -race -p 1
+./...` green, persistence 92.6% / runtime / internal-postgres ≥85%, lint 0, **engine/model diff ZERO**.
+
+### What shipped
+Opt-in **lease**-based multi-replica exclusivity for the async call-link notifier. The notifier's
+`deliver` runs outside the claim tx, so `FOR UPDATE SKIP LOCKED` alone can't gate it; instead a
+`claimed_at`/`claimed_by` lease (migration `0006`) reserves a row for a TTL so other replicas skip it
+across the claim→deliver→`MarkNotified` window. Store-level config (`WithCallLinkLease(owner, ttl)` +
+`WithCallLinkClock`) on **both** `runtime.MemCallLinkStore` and the Postgres `CallLinkStore`; the
+`runtime.CallLinkStore` port and `CallNotifier` are UNCHANGED. Postgres claim is
+`UPDATE…FROM(SELECT…WHERE notified_at IS NULL AND (claimed_at IS NULL OR claimed_at<=now-ttl) ORDER BY
+child_instance_id FOR UPDATE SKIP LOCKED [LIMIT])…RETURNING`. `ttl=0` (default) = exact prior
+behaviour (backward-compatible). Façade re-exports the options on `persistence.NewCallLinkStore`;
+leased-notifier wiring composes via `NewCallLinkStore(pool, WithCallLinkLease(...))` → `runtime.NewCallNotifier`.
+
+### Deferred follow-ups
+1. **Multi-replica TIMER exclusivity** — the harder half (see top pick #1): needs a claim-renew-failover
+   loop replacing per-replica gocron arming. Double-fire already correct via engine CAS; optimization only.
+2. **`persistence.NewCallNotifier` lease ergonomics** — can't take a second variadic (Go); leased
+   notifier composes via `NewCallLinkStore` (documented). A non-variadic config alternative is optional polish.
+3. **`MarkNotified` clock injection** — uses `time.Now().UTC()` not the injected clock (pre-existing;
+   `notified_at` isn't in the lease predicate so determinism is unaffected). Shared with the
+   `MarkNotified` clock-injection backlog item.
+4. **transient-failure retry latency** under lease = `ttl` (vs poll interval at ttl=0) — documented trade-off.
 
 ---
 
