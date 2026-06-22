@@ -71,7 +71,8 @@ type Runner struct {
 	sched     Scheduler
 	sigbus    *SignalBus
 	defsReg   DefinitionRegistry
-	callLinks CallLinkStore
+	callLinks  CallLinkStore
+	timerStore TimerStore
 	// jitter supplies the random fraction used to de-synchronize retry backoff.
 	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
 	// trigger so that engine replay remains deterministic.
@@ -162,6 +163,14 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 // in-process) is preserved verbatim.
 func WithCallLinks(store CallLinkStore) Option {
 	return func(r *Runner) { r.callLinks = store }
+}
+
+// WithTimerStore wires a [TimerStore] into the Runner. When set, the runtime
+// records each armed/cancelled timer into the AppliedStep so the Store persists
+// them atomically with state, and [Runner.RehydrateTimers] can re-arm them on
+// restart. Absent this option, timers are in-memory only and lost on restart.
+func WithTimerStore(store TimerStore) Option {
+	return func(r *Runner) { r.timerStore = store }
 }
 
 // WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).

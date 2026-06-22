@@ -32,6 +32,7 @@ type MemStore struct {
 	journal   map[string][]engine.Trigger
 	events    []OutboxEvent
 	callLinks *MemCallLinkStore // optional; nil means no call-link tracking
+	timers    *MemTimerStore   // optional; nil means no timer tracking
 }
 
 // NewMemStore constructs an empty MemStore with no call-link tracking.
@@ -52,6 +53,15 @@ func NewMemStoreWithCallLinks(cl *MemCallLinkStore) *MemStore {
 	}
 }
 
+// NewMemStoreWithTimers constructs a MemStore that records armed-timer
+// side-effects (AppliedStep.TimerArms / TimerCancels) into mts atomically with
+// each Create/Commit.
+func NewMemStoreWithTimers(mts *MemTimerStore) *MemStore {
+	m := NewMemStore()
+	m.timers = mts
+	return m
+}
+
 // Create inserts a brand-new instance from its first applied step and returns
 // its initial token.
 func (m *MemStore) Create(_ context.Context, step AppliedStep) (Token, error) {
@@ -63,6 +73,14 @@ func (m *MemStore) Create(_ context.Context, step AppliedStep) (Token, error) {
 	m.events = append(m.events, step.Events...)
 	if m.callLinks != nil && step.NewCallLink != nil {
 		m.callLinks.record(*step.NewCallLink)
+	}
+	if m.timers != nil {
+		for _, a := range step.TimerArms {
+			m.timers.Arm(a)
+		}
+		for _, id := range step.TimerCancels {
+			m.timers.Cancel(step.State.InstanceID, id)
+		}
 	}
 	return initial, nil
 }
@@ -98,6 +116,14 @@ func (m *MemStore) Commit(_ context.Context, expected Token, step AppliedStep) (
 	m.events = append(m.events, step.Events...)
 	if m.callLinks != nil && step.CallOutcome != nil {
 		m.callLinks.markTerminal(step.State.InstanceID, *step.CallOutcome)
+	}
+	if m.timers != nil {
+		for _, a := range step.TimerArms {
+			m.timers.Arm(a)
+		}
+		for _, id := range step.TimerCancels {
+			m.timers.Cancel(step.State.InstanceID, id)
+		}
 	}
 	return next, nil
 }
