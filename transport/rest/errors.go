@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -40,7 +41,8 @@ func classifyError(err error) (int, string) {
 	case errors.Is(err, runtime.ErrBadCursor),
 		errors.Is(err, ErrBadInput):
 		return http.StatusBadRequest, "bad_request"
-	case errors.Is(err, service.ErrConflict):
+	case errors.Is(err, service.ErrConflict),
+		errors.Is(err, engine.ErrInvalidTransition):
 		return http.StatusUnprocessableEntity, "conflict_state"
 	default:
 		return http.StatusInternalServerError, "internal_error"

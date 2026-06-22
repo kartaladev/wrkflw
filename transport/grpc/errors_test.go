@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -38,6 +39,7 @@ func TestMapToGRPCStatus(t *testing.T) {
 		{"unknown error", errors.New("boom"), codes.Internal},
 		{"wrapped not found", fmt.Errorf("wrap: %w", runtime.ErrInstanceNotFound), codes.NotFound},
 		{"conflict state", fmt.Errorf("x: %w", service.ErrConflict), codes.FailedPrecondition},
+		{"engine invalid transition (bare runner)", fmt.Errorf("wrap: %w", engine.ErrInvalidTransition), codes.FailedPrecondition},
 	}
 
 	for _, tc := range tests {
