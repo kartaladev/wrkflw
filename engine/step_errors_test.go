@@ -828,6 +828,8 @@ func TestCancelRequestedTerminates(t *testing.T) {
 			engine.NewActionCompleted(cancelAt.Add(time.Second), invokeCmd.CommandID, nil), engine.StepOptions{})
 		require.Error(t, lateErr, "a late ActionCompleted after cancel must return an error")
 		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound, "late trigger must return ErrTokenNotFound")
+		assert.ErrorIs(t, lateErr, engine.ErrInvalidTransition,
+			"a late/wrong-state trigger is classifiable as an invalid transition")
 	})
 
 	t.Run("user-task-parked", func(t *testing.T) {

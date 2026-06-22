@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,12 +8,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
-)
-
-var (
-	ErrUnknownTrigger = errors.New("engine: unknown trigger")
-	ErrTokenNotFound  = errors.New("engine: no token awaiting command")
-	ErrNoMatchingFlow = errors.New("engine: no matching outgoing flow")
 )
 
 // StepMode selects how far one Step advances.
