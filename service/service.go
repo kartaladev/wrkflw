@@ -155,9 +155,10 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (e
 	trg := engine.NewSignalReceived(e.clk.Now(), req.Signal, req.Payload)
 	newSt, err := e.runner.Deliver(ctx, def, st.InstanceID, trg)
 	if err != nil {
-		if errors.Is(err, engine.ErrInvalidTransition) {
-			return engine.InstanceState{}, fmt.Errorf("%w: %w", ErrConflict, err)
-		}
+		// No ErrInvalidTransition classification here: SignalReceived uses
+		// broadcast semantics in the engine — a signal matching no awaiting
+		// token is a clean no-op, never a wrong-state error. There is nothing
+		// to reclassify on this path (see ADR-0026).
 		return engine.InstanceState{}, fmt.Errorf("workflow-service: deliver signal: %w", err)
 	}
 	return newSt, nil
@@ -171,9 +172,9 @@ func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) 
 		return fmt.Errorf("service: deliver message: %w", err)
 	}
 	if err := e.runner.DeliverMessage(ctx, def, req.Name, req.CorrelationKey, req.Payload); err != nil {
-		if errors.Is(err, engine.ErrInvalidTransition) {
-			return fmt.Errorf("%w: %w", ErrConflict, err)
-		}
+		// No ErrInvalidTransition classification here: DeliverMessage routes via
+		// the runner's waiter table and no-ops when no instance is waiting, so a
+		// wrong-state error is not produced on this path (see ADR-0026).
 		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
 	return nil

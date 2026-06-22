@@ -102,22 +102,38 @@ move (existing tests must still pass). `engine/errors_test.go` asserts the wrapp
 
 ### 3. Service classification (closes the race gap)
 
-In `service/service.go`, on the paths that call the runner (`DeliverSignal`, `DeliverMessage`,
-`deliverTaskTrigger`), classify a leaked engine wrong-state error into the existing `ErrConflict`,
-**after** the runner returns:
+In `service/service.go`, classify a leaked engine wrong-state error into the existing
+`ErrConflict`, **after** the runner returns:
 
 ```go
 if err != nil {
     if errors.Is(err, engine.ErrInvalidTransition) {
-        return zero, fmt.Errorf("%w: %v", ErrConflict, err)
+        return zero, fmt.Errorf("%w: %w", ErrConflict, err)
     }
-    return zero, err
+    return zero, fmt.Errorf("workflow-service: <op>: %w", err)
 }
 ```
 
-This complements — does not replace — the pre-flight `isTerminal`/`IsOpen` guards, covering the
-concurrent-race path that escapes them. `ErrConflict` already wraps its cause, so
-`errors.Is(err, service.ErrConflict)` continues to hold and the cause stays inspectable.
+Note the **double `%w`** (Go 1.20+ multi-wrap): wrapping `ErrConflict` *and* the cause keeps both
+`errors.Is(err, service.ErrConflict)` and `errors.Is(err, engine.ErrInvalidTransition)` true (the
+single-`%w`/`%v` form would lose the cause). This complements — does not replace — the pre-flight
+`isTerminal`/`IsOpen` guards, covering the concurrent-race path that escapes them.
+
+**Scope: the task-trigger path only.** This classification is applied in `deliverTaskTrigger`
+(shared by `ClaimTask`/`CompleteTask`/`ReassignTask`), where the wrong-state race is real: a task
+that is `Open` at pre-flight can be completed concurrently, so the second op escapes the guard and
+the engine returns `ErrTokenNotFound` (which wraps `ErrInvalidTransition`).
+
+It is **deliberately not** applied in `DeliverSignal` or `DeliverMessage`, because the engine
+produces no wrong-state error on those paths:
+
+- `SignalReceived` uses **broadcast semantics** — a signal matching no awaiting token is a clean
+  no-op (`engine/step.go` SignalReceived handler), never an error.
+- `DeliverMessage` routes through the runner's **waiter table** and returns `nil` when no instance
+  is waiting (`runtime/runner.go` `DeliverMessage`).
+
+A classification branch on those paths would be unreachable dead code. If a future engine change
+makes signal/message delivery error on a no-match, re-add the classification then (YAGNI).
 
 ### 4. Transport fallback
 
