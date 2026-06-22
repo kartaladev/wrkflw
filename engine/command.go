@@ -124,6 +124,15 @@ type StartSubInstance struct {
 	Input map[string]any
 }
 
+// InvokeCancelAction asks the runtime to run a named ServiceAction as a
+// best-effort side effect during cancellation. Unlike InvokeAction it carries no
+// CommandID and its result is never fed back into the engine (the instance is
+// already terminal). The runtime logs a failure; it never fails the cancel.
+type InvokeCancelAction struct {
+	Name  string
+	Input map[string]any
+}
+
 // Compensate is RESERVED for future scope-targeted compensation. It is part of
 // the sealed Command set so that the command space is extended atomically, but it
 // is NOT YET EMITTED or wired into any Step path.
@@ -159,16 +168,18 @@ type Compensate struct {
 	FromNode string
 }
 
-func (InvokeAction) isCommand()      {}
-func (CompleteInstance) isCommand()  {}
-func (FailInstance) isCommand()      {}
-func (AwaitHuman) isCommand()        {}
-func (UpdateTask) isCommand()        {}
-func (ScheduleTimer) isCommand()     {}
-func (CancelTimer) isCommand()       {}
-func (ThrowSignal) isCommand()       {}
-func (StartSubInstance) isCommand()  {}
-func (Compensate) isCommand()        {}
+func (InvokeAction) isCommand()        {}
+func (InvokeCancelAction) isCommand()  {}
+func (CompleteInstance) isCommand()    {}
+func (FailInstance) isCommand()        {}
+func (AwaitHuman) isCommand()          {}
+func (UpdateTask) isCommand()          {}
+func (ScheduleTimer) isCommand()       {}
+func (CancelTimer) isCommand()         {}
+func (ThrowSignal) isCommand()         {}
+func (StartSubInstance) isCommand()    {}
+func (Compensate) isCommand()          {}
 
-// Compile-time assertions: Compensate must satisfy Command.
+// Compile-time assertions: each command must satisfy Command.
+var _ Command = InvokeCancelAction{}
 var _ Command = Compensate{}
