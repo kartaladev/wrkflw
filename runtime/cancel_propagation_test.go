@@ -3,7 +3,8 @@ package runtime_test
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,6 +54,32 @@ func cancelPropChildDef(id string) *model.ProcessDefinition {
 			{ID: "cf2", Source: "c-human", Target: "c-end"},
 		},
 	}
+}
+
+// countingCallLinkStore wraps a MemCallLinkStore and counts ListRunningChildren calls
+// per parentInstanceID. Used in TestCancelPropagationDiamond to verify the shared
+// visited map prevents double-processing of shared subtree nodes.
+type countingCallLinkStore struct {
+	runtime.CallLinkStore
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newCountingCallLinkStore(inner runtime.CallLinkStore) *countingCallLinkStore {
+	return &countingCallLinkStore{CallLinkStore: inner, counts: make(map[string]int)}
+}
+
+func (c *countingCallLinkStore) ListRunningChildren(ctx context.Context, parentID string) ([]runtime.CallLink, error) {
+	c.mu.Lock()
+	c.counts[parentID]++
+	c.mu.Unlock()
+	return c.CallLinkStore.ListRunningChildren(ctx, parentID)
+}
+
+func (c *countingCallLinkStore) listCount(parentID string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.counts[parentID]
 }
 
 // cancelPropRunner builds a Runner with CallLinks + Definitions + HumanTasks wired.
@@ -311,7 +338,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	for i, c := range children {
 		sorted[i] = c.ChildInstanceID
 	}
-	assert.True(t, sort.StringsAreSorted(sorted), "results must be sorted by ChildInstanceID")
+	assert.True(t, slices.IsSorted(sorted), "results must be sorted by ChildInstanceID")
 
 	// Terminal children must be excluded: cancel one child and verify it disappears.
 	childIDtoTerminate := "list-parent-ab-i2-sub-c1"
@@ -394,4 +421,192 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 	cancelSt, err := runner.CancelInstance(markedCtx, parentDef, parentID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status)
+}
+
+// TestCancelPropagationNoDefsReg verifies that CancelInstance returns no error and
+// does NOT propagate when WithCallLinks is set but WithDefinitions is not (M1).
+// Symmetric to TestCancelPropagationNoCallLinks.
+func TestCancelPropagationNoDefsReg(t *testing.T) {
+	ctx := t.Context()
+
+	cl := runtime.NewMemCallLinkStore()
+	store := runtime.NewMemStoreWithCallLinks(cl)
+
+	childDef := cancelPropChildDef("no-reg-child")
+	parentDef := cancelPropParentDef("no-reg-parent", "no-reg-child")
+
+	// Use a full runner to start parent+child so the child is running.
+	fullRunner := cancelPropRunner(store, cl, map[string]*model.ProcessDefinition{
+		"no-reg-child":  childDef,
+		"no-reg-parent": parentDef,
+	})
+
+	const parentID = "no-reg-parent-i1"
+	st, err := fullRunner.Run(ctx, parentDef, parentID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, st.Status, "parent must park")
+
+	childID := parentID + "-sub-c1"
+	childSt, _, loadErr := store.Load(ctx, childID)
+	require.NoError(t, loadErr)
+	assert.Equal(t, engine.StatusRunning, childSt.Status, "child must be running")
+
+	// Build a runner with CallLinks but WITHOUT WithDefinitions — propagation gate must
+	// be skipped entirely (r.defsReg == nil).
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
+	tasks := humantask.NewMemTaskStore()
+	noRegRunner := runtime.NewRunner(nil, clock.System(), store,
+		runtime.WithCallLinks(cl),
+		runtime.WithHumanTasks(resolver, tasks, nil),
+		// intentionally NO WithDefinitions
+	)
+
+	cancelSt, err := noRegRunner.CancelInstance(ctx, parentDef, parentID)
+	require.NoError(t, err, "CancelInstance must not return an error when defsReg is nil")
+	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "parent must be Terminated")
+
+	// Child must remain running — propagation was gated out.
+	childAfter, _, loadErr2 := store.Load(ctx, childID)
+	require.NoError(t, loadErr2)
+	assert.Equal(t, engine.StatusRunning, childAfter.Status,
+		"child must still be Running when defsReg gate suppresses propagation")
+}
+
+// TestCancelPropagationDiamond verifies that a diamond call graph (parent→B, parent→C,
+// B→D, C→D, where D is the SAME running instance) cancels D exactly once (I1).
+//
+// Without the shared-visited-map fix, propagateCancel re-enters CancelInstance for
+// each child, allocating a fresh visited map each time. In this diamond topology:
+//   1. parent→B: propagateCancel(B, {parent,B}) calls CancelInstance(D).
+//   2. CancelInstance(D) allocates visited={D}, succeeds, then calls propagateCancel(D, {D}).
+//   3. Back in the parent's branch: propagateCancel(C, {parent,B,C}) calls CancelInstance(D)
+//      again — D is already Terminated, so Deliver returns ErrWrongState which is
+//      logged and swallowed (best-effort), but D is attempted twice.
+//
+// With the fix (propagateCancel recurses into propagateCancel with the SAME visited
+// map, bypassing CancelInstance), D is marked visited before the first recursive
+// descent so the C→D branch skips it entirely.
+//
+// We construct this topology using SeedCallLink (an export-test helper) and runner.Run
+// to seed running instances directly, avoiding the need for a definition with multiple
+// call activities.
+func TestCancelPropagationDiamond(t *testing.T) {
+	ctx := t.Context()
+
+	cl := runtime.NewMemCallLinkStore()
+	store := runtime.NewMemStoreWithCallLinks(cl)
+
+	// D: leaf grandchild that parks at a human task.
+	dDef := cancelPropChildDef("dmnd-d")
+	// B: intermediate child that calls D (parks after starting D).
+	bDef := cancelPropParentDef("dmnd-b", "dmnd-d")
+	// C: intermediate child with a human task (parks independently, no call activity).
+	cDef := cancelPropChildDef("dmnd-c")
+	// Parent: calls B (parks waiting for B to complete).
+	parentDef := cancelPropParentDef("dmnd-parent", "dmnd-b")
+
+	// Use a counting wrapper around cl so we can observe ListRunningChildren(D) calls.
+	// Under old code (re-enters CancelInstance per child): ListRunningChildren(D) is
+	// called twice — once from B→D branch's CancelInstance(D) propagation, once from
+	// C→D branch's CancelInstance(D) propagation.
+	// Under new code (shared visited map): D is marked visited before the C→D branch
+	// processes it, so ListRunningChildren(D) is called exactly once.
+	countingCL := newCountingCallLinkStore(cl)
+
+	defs := map[string]*model.ProcessDefinition{
+		"dmnd-d":      dDef,
+		"dmnd-b":      bDef,
+		"dmnd-c":      cDef,
+		"dmnd-parent": parentDef,
+	}
+	reg := cancelPropRegistry(defs)
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
+	tasks := humantask.NewMemTaskStore()
+
+	// The runner used for initial Run must use cl (not countingCL) so that call links
+	// are recorded in cl's internal store. The cancel runner uses countingCL.
+	setupRunner := runtime.NewRunner(nil, clock.System(), store,
+		runtime.WithCallLinks(cl),
+		runtime.WithDefinitions(reg),
+		runtime.WithHumanTasks(resolver, tasks, nil),
+	)
+
+	// Start the parent → it launches B → B launches D; all three park.
+	const parentID = "dmnd-parent-i1"
+	st, err := setupRunner.Run(ctx, parentDef, parentID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running")
+
+	bID := parentID + "-sub-c1" // child of parent
+	dID := bID + "-sub-c1"      // child of B (grandchild of parent)
+
+	bSt, _, err := store.Load(ctx, bID)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, bSt.Status, "B must be running")
+
+	dSt, _, err := store.Load(ctx, dID)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, dSt.Status, "D must be running")
+
+	// Start C as a standalone instance (human-task child) and inject call links to
+	// form the diamond: parent→C and C→D (D is a shared grandchild).
+	cID := "dmnd-c-i1"
+	_, err = setupRunner.Run(ctx, cDef, cID, nil)
+	require.NoError(t, err)
+
+	// Seed call links to wire the diamond topology into cl:
+	//   parent → C  (C is a second running child of parent)
+	//   C → D       (D is also a child of C → shared grandchild)
+	runtime.SeedCallLink(cl, runtime.CallLink{
+		ChildInstanceID:  cID,
+		ParentInstanceID: parentID,
+		ParentCommandID:  parentID + "-c2",
+		ParentDefID:      parentDef.ID,
+		ParentDefVersion: parentDef.Version,
+		Depth:            1,
+	})
+	runtime.SeedCallLink(cl, runtime.CallLink{
+		ChildInstanceID:  dID,
+		ParentInstanceID: cID,
+		ParentCommandID:  cID + "-c1",
+		ParentDefID:      cDef.ID,
+		ParentDefVersion: cDef.Version,
+		Depth:            2,
+	})
+
+	// Build the cancel runner with the counting wrapper so we observe the guard.
+	cancelRunner := runtime.NewRunner(nil, clock.System(), store,
+		runtime.WithCallLinks(countingCL),
+		runtime.WithDefinitions(reg),
+		runtime.WithHumanTasks(resolver, tasks, nil),
+	)
+
+	// Cancel parent — must propagate: parent→B→D (via B), parent→C (via C), parent→C→D
+	// (but D is already visited from the B branch, so the C→D branch must be skipped).
+	cancelSt, err := cancelRunner.CancelInstance(ctx, parentDef, parentID)
+	require.NoError(t, err, "CancelInstance must not return error for diamond topology")
+	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "parent must be Terminated")
+
+	bAfter, _, err := store.Load(ctx, bID)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusTerminated, bAfter.Status, "B must be Terminated")
+
+	cAfter, _, err := store.Load(ctx, cID)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusTerminated, cAfter.Status, "C must be Terminated")
+
+	dAfter, _, err := store.Load(ctx, dID)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusTerminated, dAfter.Status, "D must be Terminated")
+
+	// Assert the shared-visited-map invariant: ListRunningChildren(D) must be called
+	// exactly once. Under the old buggy code it would be called twice (once per branch
+	// that reaches D), confirming the double-visit. Under the new code it is called once
+	// (the C→D branch is skipped because visited[D]==true before C is processed).
+	//
+	// Note: D has no children so ListRunningChildren(D) returns empty — it is still called
+	// once (new) vs twice (old) because propagateCancel always lists children of each node
+	// it visits before recursing.
+	assert.Equal(t, 1, countingCL.listCount(dID),
+		"ListRunningChildren(D) must be called exactly once (shared visited map guard)")
 }

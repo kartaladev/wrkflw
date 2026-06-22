@@ -582,7 +582,9 @@ func (r *Runner) CancelInstance(ctx context.Context, def *model.ProcessDefinitio
 
 // propagateCancel recursively cancels all running async child instances of
 // parentID. Every error is logged and swallowed — this is best-effort only
-// (ADR-0032). visited guards against cycles.
+// (ADR-0032). visited is shared across the entire cancel tree so that a node
+// reachable via multiple paths (diamond topology) is delivered CancelRequested
+// exactly once and never double-cancelled.
 func (r *Runner) propagateCancel(ctx context.Context, parentID string, visited map[string]bool) {
 	children, err := r.callLinks.ListRunningChildren(ctx, parentID)
 	if err != nil {
@@ -621,13 +623,19 @@ func (r *Runner) propagateCancel(ctx context.Context, parentID string, visited m
 			continue
 		}
 
-		if _, cancelErr := r.CancelInstance(ctx, childDef, child.ChildInstanceID); cancelErr != nil {
+		// Deliver CancelRequested directly (parent-first) then recurse into
+		// propagateCancel with the SAME shared visited map. Re-entering CancelInstance
+		// would allocate a fresh visited map per child, breaking the diamond guard.
+		if _, cancelErr := r.Deliver(ctx, childDef, child.ChildInstanceID, engine.NewCancelRequested(r.clk.Now())); cancelErr != nil {
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
 				"runtime: propagateCancel: cancel child instance failed",
 				slog.String("child_id", child.ChildInstanceID),
 				slog.String("error", cancelErr.Error()),
 			)
+			continue
 		}
+		// Recurse into the child's own subtree with the shared visited map.
+		r.propagateCancel(ctx, child.ChildInstanceID, visited)
 	}
 }
 
