@@ -5,12 +5,19 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-22
 
-**Where we are:** the engine core (Plans 1–8) plus **all 5 productionization sub-projects**
-(Persistence, Scheduling, Authorization, Transports, Eventing) are merged to `main`. After
-productionization the user opened a **deferred-backlog run**: work through the remaining
-deferred follow-ups **one track at a time**, each as its own
-`brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/) → plan (docs/plans/) → branch → SDD →
-opus whole-branch review → merge to main → push`, exactly like the sub-projects above.
+> **Fresh session: jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
+> below (just after the gate note).** It is the single prioritized entry point for new work. The
+> rest of this doc is the per-track detail behind it. Nothing *named* is in flight — `main` is
+> green and all work through ADR-0025 is merged.
+
+**Where we are:** the engine core (Plans 1–8), **all 5 productionization sub-projects**
+(Persistence, Scheduling, Authorization, Transports, Eventing), **all 4 deferred-backlog tracks**
+(Correctness → Resilience → Observability → Performance/caching), and **all 3 "also-outstanding"
+items** (flaky-singleflight fix, DB casbin adapter, true async call activity) are merged to `main`.
+ADRs 0001–0025. **No named work remains in flight.** Future work = the consolidated backlog
+(below). Each item is its own track:
+`brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
+SDD → opus whole-branch review → merge to main → push`. Confirm scope with the user first.
 
 **Tracks (run in this order; the first is done):**
 
@@ -46,6 +53,54 @@ per-track spec/plan live under `docs/specs/` and `docs/plans/` (never a path con
 
 **Gate after every track:** `go test -race ./...` green; ≥85% on touched packages;
 `golangci-lint run ./...` clean; engine/model purity intact (no transport/vendor imports).
+
+---
+
+## 🧭 START HERE (fresh session) — consolidated backlog
+
+**Current state:** everything through **ADR-0025** is merged to `main` (productionization ×5 +
+deferred-backlog ×4 + the 3 "also-outstanding" items). No *named* work remains. `main` is green
+(`go test -race ./...`, `golangci-lint`, engine/model untouched). Pick the next piece of work from
+the prioritized backlog below — each item is a self-contained track: **brainstorm → spec
+(`docs/specs/`) → ADR (`docs/adr/`, next number **0026**) → plan (`docs/plans/`) → branch → SDD →
+opus whole-branch review → merge + push**. Confirm scope with the user before starting. The full
+per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
+
+**Recommended priority (top picks):**
+1. **Engine-level wrong-state sentinel** — classify wrong-state transitions in the engine/runtime
+   (today only the `service` seam wraps them as `ErrConflict`; direct engine consumers get untyped
+   errors). Small, closes a real API gap. *(Correctness)*
+2. **Timer rehydration on restart** — re-arm pending timers from persistence on startup (needs a
+   "list pending timers" query); today a restart loses in-memory gocron jobs. Real operational gap. *(Scheduling)*
+3. **`CancelInstance`** end-to-end (engine/runtime → `service` → REST + gRPC). Most-requested missing
+   operation. *(Transports)*
+4. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
+   runtime/persistence APIs already exist; only the transport surface is unbuilt. *(Resilience)*
+
+**Backlog by theme** (✅-done items already removed; cite track for full detail below):
+- **Correctness / robustness:** engine wrong-state sentinel; reachability/fork-join pairing validation;
+  compensation-on-error/cancel paths; scope-targeted compensation (`Compensate` producer); casbin
+  adapter/watcher `context` propagation; `AdvisoryLockOwnership` use-after-close guard; JSONB
+  numeric/enum fidelity.
+- **Production-hardening:** timer rehydration; cancellation propagation parent→child + orphaned-child
+  cleanup; multi-replica call-link `FOR UPDATE SKIP LOCKED`; lease-column ownership; per-worker NOTIFY
+  fairness; `wrkflw_processed_message` pruning job; per-aggregate relay ordering; TOAST/fillfactor
+  tuning; `RetryPolicy.Backoff` overflow guard; richer `SubInstanceFailed`→parent error (create an Incident).
+- **Observability:** public `observability` root pkg (trace-correlating `slog.Handler` + `Setup`); Store
+  Load/Commit spans + `wrkflw_store_duration_seconds`; CallNotifier `wrkflw.callnotifier.batch` span;
+  async DB-backed `instances_active` gauge; REST/relay meters actually emitting; route-template span
+  naming; exemplars; OTel-contrib option; migrate eventing onto the shared helper.
+- **API / feature completeness:** `CancelInstance`; gRPC `ResolveIncident` + DLQ admin REST; casbin
+  policy-admin REST/gRPC; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
+  streaming/watch + OpenAPI/grpc-gateway + richer admin filters; admin total-count; `ended_at` optional
+  in proto; casbin ABAC-in-matchers; richer Privilege modeling; `DeliverMessage` self-resolving the def.
+- **Performance / scale:** casbin `FilteredAdapter` + `WatcherEx`; per-definition history-cap + per-def
+  `maxCallDepth`; cross-machine child execution; tunable watcher reconnect backoff.
+- **Test / doc / cosmetic:** `HumanTask.Vars` deep-copy + sensitive-var redaction; `DefinitionRegistry.Lookup`
+  ctx; `MarkNotified` clock injection; relay/listen establish-sleep→poll; residual hard-to-force infra
+  branches; move bundled example-test unit tests to 1:1 files; misc godoc/test nits. NOTE: the repo has
+  **pre-existing gofmt-unclean files** (golangci-lint v2 doesn't run gofmt) — a repo-wide `gofmt -w`
+  sweep is an optional hygiene follow-up.
 
 ---
 
