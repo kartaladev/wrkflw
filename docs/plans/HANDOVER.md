@@ -8,14 +8,15 @@ and pick up the next work. Read it top to bottom before starting.
 > **Fresh session: jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
 > below (just after the gate note).** It is the single prioritized entry point for new work. The
 > rest of this doc is the per-track detail behind it. Nothing *named* is in flight — `main` is
-> green and all work through ADR-0027 is merged (or in final merge for the timer-rehydration track).
+> green and all work through ADR-0028 is merged (or in final merge for the CancelInstance track).
 
 **Where we are:** the engine core (Plans 1–8), **all 5 productionization sub-projects**
 (Persistence, Scheduling, Authorization, Transports, Eventing), **all 4 deferred-backlog tracks**
 (Correctness → Resilience → Observability → Performance/caching), and **all 3 "also-outstanding"
 items** (flaky-singleflight fix, DB casbin adapter, true async call activity) are merged to `main`,
 plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0026) and the
-**timer rehydration on restart** track (ADR-0027, branch `feat/timer-rehydration`). ADRs 0001–0027.
+**timer rehydration on restart** track (ADR-0027) and the **CancelInstance + cancel actions** track
+(ADR-0028, branch `feat/cancel-instance`). ADRs 0001–0028.
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -60,27 +61,28 @@ per-track spec/plan live under `docs/specs/` and `docs/plans/` (never a path con
 
 ## 🧭 START HERE (fresh session) — consolidated backlog
 
-**Current state:** everything through **ADR-0027** is on `main`/in-merge (productionization ×5 +
-deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state sentinel** and
-**timer rehydration** tracks). No *named* work remains. `main` is green (`go test -race ./...`,
-`golangci-lint`, engine/model untouched). **Convention note:** all production error messages carry a
-**`workflow-`** prefix (e.g. `workflow-engine:`); assert on sentinels with `errors.Is`, never
-string-matching — see the `error-sentinel-prefix` memory and ADR-0026. Pick the next piece of work
-from the prioritized backlog below — each item is a self-contained track: **brainstorm → spec
-(`docs/specs/`) → ADR (`docs/adr/`, next number **0028**) → plan (`docs/plans/`) → branch → SDD →
-opus whole-branch review → merge + push**. Confirm scope with the user before starting. The full
-per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
+**Current state:** everything through **ADR-0028** is on `main`/in-merge (productionization ×5 +
+deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state sentinel**,
+**timer rehydration**, and **CancelInstance + cancel actions** tracks). No *named* work remains.
+`main` is green (`go test -race ./...`, `golangci-lint`; engine/model import-pure). **Convention note:**
+all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
+sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
+Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0029**) → plan (`docs/plans/`) →
+branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
+The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
 **Recommended priority (top picks):**
-1. **`CancelInstance`** end-to-end (engine/runtime → `service` → REST + gRPC). Most-requested missing
-   operation. *(Transports)*
-2. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
+1. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
    runtime/persistence APIs already exist; only the transport surface is unbuilt. *(Resilience)*
-3. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
+2. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
    rule (ADR-0014) to match converging joins to diverging forks + condition-placement checks. *(Correctness)*
-4. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
+3. **Multi-replica timer/call-link exclusivity** — `FOR UPDATE SKIP LOCKED` / ownership claim so
    `RehydrateTimers` + the call-link notifier don't double-process across replicas (today: correct but
    redundant via idempotency). *(Production-hardening — follow-up to ADR-0027/0024)*
+4. **Cancellation propagation parent→child + per-active-node cancel handlers** — `CancelInstance` now
+   terminates one instance and runs process-level `CancelActions`; propagating cancel to child call
+   activities and per-node cancel handlers are the next steps. *(follow-up to ADR-0028)*
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
 - **Correctness / robustness:** reachability/fork-join pairing validation;
@@ -95,7 +97,7 @@ per-item detail lives in the per-track "Deferred follow-ups" sections further do
   Load/Commit spans + `wrkflw_store_duration_seconds`; CallNotifier `wrkflw.callnotifier.batch` span;
   async DB-backed `instances_active` gauge; REST/relay meters actually emitting; route-template span
   naming; exemplars; OTel-contrib option; migrate eventing onto the shared helper.
-- **API / feature completeness:** `CancelInstance`; gRPC `ResolveIncident` + DLQ admin REST; casbin
+- **API / feature completeness:** gRPC `ResolveIncident` + DLQ admin REST; casbin
   policy-admin REST/gRPC; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
   streaming/watch + OpenAPI/grpc-gateway + richer admin filters; admin total-count; `ended_at` optional
   in proto; casbin ABAC-in-matchers; richer Privilege modeling; `DeliverMessage` self-resolving the def.
@@ -176,6 +178,41 @@ in the commit tx, engine untouched (the ADR-0024/0025 call-link pattern).
 3. **Rehydration observability** — count re-armed / span (align with the observability track).
 4. **`Commit` `applyTimerOps` error not wrapped via `mapConflict`** — defensive consistency nit
    (the version CAS returns `ErrConcurrentUpdate` before timer ops run, so not a live bug).
+
+---
+
+## CancelInstance + definition-level cancel actions sub-project — ✅ COMPLETE
+
+Third track from the consolidated backlog (was top pick #1). Built on branch `feat/cancel-instance`.
+Design: spec `docs/specs/2026-06-22-cancel-instance-design.md`, plan
+`docs/plans/2026-06-22-cancel-instance.md`, **ADR-0028**. 7 SDD tasks + opus whole-branch review.
+Gate: `go test -race -p 1 ./...` green, touched pkgs ≥85% (model 95.9%, engine 85.6%, runtime 90.0%,
+service 87.5%, transport/rest 91.4%, transport/grpc 87.8%), lint 0, engine/model **import-pure**
+(determinism + `Step` purity preserved). NOTE: this track **intentionally modifies engine/model** (the
+new command + the `CancelActions` field) — the only track to do so since the engine-core plans.
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `model/` | `ProcessDefinition.CancelActions []string` (optional, ordered, opt-in); `Validate` rejects empty entries (`ErrEmptyCancelAction`). `cloneState` untouched (field is on the def, not state). | |
+| `engine/` | New fire-and-forget command `InvokeCancelAction{Name, Input}` (NO CommandID; sealed `Command` set). `CancelRequested` emits one per `def.CancelActions` in definition order **before** `FailInstance`; `Step` stays deterministic + pure; empty list ⇒ unchanged. | ADR-0028 |
+| `runtime/` | `perform(InvokeCancelAction)` runs the action **best-effort** — logs missing-catalog / unresolved / `Do`-error via slog and ALWAYS returns `(nil, nil)` (no result fed back, never fails the cancel — this is what prevents an `ErrInvalidTransition` re-delivery against the terminal instance). `Runner.CancelInstance` = `Deliver(NewCancelRequested(...))`. | |
+| `service/` | `CancelInstanceRequest{InstanceID}`; `Engine.CancelInstance` — `resolveDefinition` → `isTerminal`→`ErrConflict` → `runner.CancelInstance`. Added to the `Service` interface. | |
+| `transport/rest` | Admin-gated `POST /admin/instances/{id}/cancel` (default-deny), mirroring resolve-incident; 200 + mapped instance / `WriteHTTPError` (422 `conflict_state` / 404). | |
+| `transport/grpc` | `rpc CancelInstance(CancelInstanceRequest) returns (InstanceResponse)`; regenerated `workflowpb`; `server.CancelInstance` mirrors `StartInstance`. Exposed RPC secured by consumer interceptors (no admin-middleware seam — REST/gRPC auth asymmetry). | |
+
+### Deferred follow-ups
+1. **Per-active-node cancel handlers** — `CancelActions` is process-level; per-active-node cancel
+   handlers (BPMN-native) are future work.
+2. **Cancellation propagation parent→child** — `CancelInstance` terminates one instance; propagating
+   cancel to child call activities + orphaned-child cleanup is a follow-up (shared with the call-link track).
+3. **Cancel reason / audit** — `CancelRequested`/`CancelInstanceRequest` carry no reason.
+4. **Cancel-action observability** — span/counter per cancel action (today slog-only).
+5. **gRPC admin-interceptor sample** — document/ship an interceptor mirroring the REST admin gate.
+6. **`//go:generate` PATH-with-spaces quirk** — the directive in `transport/grpc/errors.go` fails when
+   `$PATH` contains directories with spaces (run protoc directly as a workaround); fix = quote the path
+   assignment or a Makefile target.
 
 ---
 
