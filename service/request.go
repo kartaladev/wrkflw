@@ -77,6 +77,12 @@ type ReassignTaskRequest struct {
 	By authz.Actor
 }
 
+// CancelInstanceRequest carries the parameters for cancelling a process instance.
+type CancelInstanceRequest struct {
+	// InstanceID identifies the process instance to cancel.
+	InstanceID string
+}
+
 // ResolveIncidentRequest carries the parameters for resolving an open incident
 // on a process instance that has exhausted its automatic retry budget.
 type ResolveIncidentRequest struct {

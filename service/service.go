@@ -60,6 +60,11 @@ type Service interface {
 	// Returns the resulting InstanceState (parked or completed) on success.
 	// Propagates runtime.ErrInstanceNotFound when no instance exists for the ID.
 	ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (engine.InstanceState, error)
+
+	// CancelInstance terminates a running process instance, running any
+	// definition-level cancel actions best-effort. Returns ErrConflict when the
+	// instance has already reached a terminal state.
+	CancelInstance(ctx context.Context, req CancelInstanceRequest) (engine.InstanceState, error)
 }
 
 // Engine is the concrete implementation of Service. It wires together the
@@ -231,6 +236,23 @@ func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest
 	st, err := e.runner.ResolveIncident(ctx, def, req.InstanceID, req.IncidentID, addAttempts)
 	if err != nil {
 		return engine.InstanceState{}, fmt.Errorf("workflow-service: resolve incident: %w", err)
+	}
+	return st, nil
+}
+
+// CancelInstance resolves the instance's definition, rejects an already-terminal
+// instance with ErrConflict, and delegates to Runner.CancelInstance.
+func (e *Engine) CancelInstance(ctx context.Context, req CancelInstanceRequest) (engine.InstanceState, error) {
+	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
+	if err != nil {
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: cancel instance: %w", err)
+	}
+	if isTerminal(st.Status) {
+		return engine.InstanceState{}, fmt.Errorf("%w: instance %q is already terminal", ErrConflict, req.InstanceID)
+	}
+	st, err = e.runner.CancelInstance(ctx, def, req.InstanceID)
+	if err != nil {
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: cancel instance: %w", err)
 	}
 	return st, nil
 }
