@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
@@ -154,7 +155,10 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (e
 	trg := engine.NewSignalReceived(e.clk.Now(), req.Signal, req.Payload)
 	newSt, err := e.runner.Deliver(ctx, def, st.InstanceID, trg)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: deliver signal: %w", err)
+		if errors.Is(err, engine.ErrInvalidTransition) {
+			return engine.InstanceState{}, fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: deliver signal: %w", err)
 	}
 	return newSt, nil
 }
@@ -167,7 +171,10 @@ func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) 
 		return fmt.Errorf("service: deliver message: %w", err)
 	}
 	if err := e.runner.DeliverMessage(ctx, def, req.Name, req.CorrelationKey, req.Payload); err != nil {
-		return fmt.Errorf("service: deliver message: %w", err)
+		if errors.Is(err, engine.ErrInvalidTransition) {
+			return fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
 	return nil
 }
@@ -267,7 +274,10 @@ func (e *Engine) deliverTaskTrigger(ctx context.Context, taskToken string, trg e
 	}
 	newSt, err := e.runner.Deliver(ctx, def, task.InstanceID, trg)
 	if err != nil {
-		return engine.InstanceState{}, fmt.Errorf("service: deliver task trigger: deliver: %w", err)
+		if errors.Is(err, engine.ErrInvalidTransition) {
+			return engine.InstanceState{}, fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+		return engine.InstanceState{}, fmt.Errorf("workflow-service: deliver task trigger: deliver: %w", err)
 	}
 	return newSt, nil
 }

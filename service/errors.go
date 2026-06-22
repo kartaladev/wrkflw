@@ -11,7 +11,7 @@ import (
 // completed task, delivering a signal to a finished instance). Transports map it
 // to HTTP 422 / gRPC FailedPrecondition. The cause is wrapped, so
 // errors.Is(err, ErrConflict) holds while the cause stays inspectable.
-var ErrConflict = errors.New("service: conflicting state")
+var ErrConflict = errors.New("workflow-service: conflicting state")
 
 // isTerminal reports whether an instance status rejects further triggers.
 func isTerminal(s engine.Status) bool {
