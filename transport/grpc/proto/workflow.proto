@@ -220,6 +220,9 @@ message ListInstancesRequest {
   int32 limit = 2;
   // cursor is the opaque keyset pagination token from the previous response.
   string cursor = 3;
+  // include_total, when true, requests total_count in the response.
+  // When false (default), no count query is issued and total_count is 0.
+  bool include_total = 4;
 }
 
 // ---- Response messages ----
@@ -258,4 +261,7 @@ message ListInstancesResponse {
   repeated InstanceSummary items = 1;
   string next_cursor = 2;
   bool has_more = 3;
+  // total_count is set only when ListInstancesRequest.include_total was true;
+  // 0 otherwise.
+  int64 total_count = 4;
 }

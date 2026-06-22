@@ -97,11 +97,8 @@ func (d *DefinitionStore) GetDefinition(ctx context.Context, defID string, versi
 //   - "defID"         — the definition with the highest version for defID.
 //
 // Returns ([runtime.ErrDefinitionNotFound]) when no matching row exists.
-// Note: Lookup cannot carry a [context.Context] because the interface is
-// defined without one; it uses [context.Background] for the SQL call.
-func (d *DefinitionStore) Lookup(defRef string) (*model.ProcessDefinition, error) {
-	ctx := context.Background()
-
+// ctx is passed to the SQL query, enabling cancellation propagation.
+func (d *DefinitionStore) Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error) {
 	if id, ver, ok := strings.Cut(defRef, ":"); ok {
 		n, err := strconv.Atoi(ver)
 		if err != nil {

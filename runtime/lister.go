@@ -62,6 +62,10 @@ func NormalizeLimit(n int) int {
 // Limit is the maximum number of items to return (default 50, max 200).
 // Cursor is the opaque pagination token returned in the previous InstancePage;
 // empty means start from the beginning.
+// IncludeTotal, when true, requests that InstancePage.TotalCount be populated
+// with the total number of instances matching the status filter (ignoring
+// Limit and Cursor). When false (the default), no count query is issued and
+// TotalCount is 0.
 type InstanceFilter struct {
 	// Status restricts results to instances with this lifecycle state.
 	// nil means all statuses.
@@ -71,6 +75,10 @@ type InstanceFilter struct {
 	// Cursor is the opaque keyset pagination token from the previous page.
 	// Empty string means start from the first page.
 	Cursor string
+	// IncludeTotal, when true, requests a total count of all matching instances
+	// independent of Limit and Cursor. Set only when explicitly requested to
+	// avoid the extra query on every list call.
+	IncludeTotal bool
 }
 
 // InstanceSummary is a lightweight projection of engine.InstanceState for
@@ -106,6 +114,10 @@ type InstancePage struct {
 	NextCursor string
 	// HasMore is true when there are additional items beyond this page.
 	HasMore bool
+	// TotalCount is the total number of instances matching the filter's Status
+	// (ignoring Limit and Cursor). Set only when the filter requested IncludeTotal;
+	// 0 otherwise.
+	TotalCount int
 }
 
 // InstanceLister is the read-side port for enumerating process instances.

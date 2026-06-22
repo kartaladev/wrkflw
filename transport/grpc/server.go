@@ -458,8 +458,9 @@ func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstance
 	defer span.End()
 
 	filter := runtime.InstanceFilter{
-		Limit:  int(req.GetLimit()),
-		Cursor: req.GetCursor(),
+		Limit:        int(req.GetLimit()),
+		Cursor:       req.GetCursor(),
+		IncludeTotal: req.GetIncludeTotal(),
 	}
 	if st := req.GetStatus(); st != "" {
 		parsed, err := parseStatus(st)
@@ -486,6 +487,7 @@ func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstance
 		Items:      items,
 		NextCursor: page.NextCursor,
 		HasMore:    page.HasMore,
+		TotalCount: int64(page.TotalCount),
 	}, nil
 }
 

@@ -50,7 +50,7 @@ func TestMapDefinitionRegistryLookup(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := runtime.NewMapDefinitionRegistry(tc.defs)
-			got, err := reg.Lookup(tc.lookupKey)
+			got, err := reg.Lookup(t.Context(), tc.lookupKey)
 			if tc.wantErr != nil {
 				require.Error(t, err)
 				assert.True(t, errors.Is(err, tc.wantErr), "expected %v, got %v", tc.wantErr, err)
@@ -73,10 +73,10 @@ func TestMapDefinitionRegistryIsolatedFromMutation(t *testing.T) {
 	input["other"] = &model.ProcessDefinition{ID: "other"}
 
 	// Registry must be unaffected by post-construction mutation.
-	got, err := reg.Lookup("key")
+	got, err := reg.Lookup(t.Context(), "key")
 	require.NoError(t, err)
 	assert.Equal(t, def, got)
 
-	_, err = reg.Lookup("other")
+	_, err = reg.Lookup(t.Context(), "other")
 	assert.True(t, errors.Is(err, runtime.ErrDefinitionNotFound))
 }

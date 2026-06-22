@@ -28,6 +28,7 @@ type adminListResponse struct {
 	Items      []instanceSummaryView `json:"items"`
 	NextCursor string                `json:"next_cursor"`
 	HasMore    bool                  `json:"has_more"`
+	TotalCount int                   `json:"total_count"`
 }
 
 // handleAdminListInstances handles GET /admin/instances.
@@ -37,6 +38,8 @@ type adminListResponse struct {
 //	status  (optional) — filter by lifecycle status; unknown values → 400.
 //	limit   (optional) — page size; clamped by runtime.NormalizeLimit.
 //	cursor  (optional) — opaque keyset cursor; malformed → 400.
+//	total   (optional) — "true" or "1" to compute and include total_count (the
+//	                     count of all status-matching instances) in the response.
 func (h *handler) handleAdminListInstances(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -62,10 +65,14 @@ func (h *handler) handleAdminListInstances(w http.ResponseWriter, r *http.Reques
 		limit = n
 	}
 
+	totalParam := q.Get("total")
+	includeTotal := totalParam == "true" || totalParam == "1"
+
 	filter := runtime.InstanceFilter{
-		Status: statusFilter,
-		Limit:  runtime.NormalizeLimit(limit),
-		Cursor: q.Get("cursor"),
+		Status:       statusFilter,
+		Limit:        runtime.NormalizeLimit(limit),
+		Cursor:       q.Get("cursor"),
+		IncludeTotal: includeTotal,
 	}
 
 	page, err := h.svc.ListInstances(r.Context(), filter)
@@ -78,6 +85,7 @@ func (h *handler) handleAdminListInstances(w http.ResponseWriter, r *http.Reques
 		Items:      make([]instanceSummaryView, len(page.Items)),
 		NextCursor: page.NextCursor,
 		HasMore:    page.HasMore,
+		TotalCount: page.TotalCount,
 	}
 	for i, s := range page.Items {
 		resp.Items[i] = instanceSummaryView{

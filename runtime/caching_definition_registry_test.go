@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -22,7 +23,7 @@ type countingRegistry struct {
 	block chan struct{}
 }
 
-func (c *countingRegistry) Lookup(string) (*model.ProcessDefinition, error) {
+func (c *countingRegistry) Lookup(_ context.Context, _ string) (*model.ProcessDefinition, error) {
 	if c.block != nil {
 		<-c.block
 	}
@@ -62,11 +63,11 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 	}{
 		"second lookup served from cache": {
 			assert: func(t *testing.T, backing *countingRegistry, _ *fakeClock, c *runtime.CachingDefinitionRegistry) {
-				got1, err := c.Lookup("d:1")
+				got1, err := c.Lookup(t.Context(), "d:1")
 				require.NoError(t, err)
 				require.Equal(t, "d", got1.ID)
 
-				got2, err := c.Lookup("d:1")
+				got2, err := c.Lookup(t.Context(), "d:1")
 				require.NoError(t, err)
 				require.Equal(t, "d", got2.ID)
 
@@ -75,14 +76,14 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 		},
 		"ttl expiry triggers a fresh backing call": {
 			assert: func(t *testing.T, backing *countingRegistry, clk *fakeClock, c *runtime.CachingDefinitionRegistry) {
-				_, err := c.Lookup("d:1")
+				_, err := c.Lookup(t.Context(), "d:1")
 				require.NoError(t, err)
 				require.Equal(t, int64(1), backing.calls.Load())
 
 				// Advance past TTL.
 				clk.Advance(ttl + time.Second)
 
-				_, err = c.Lookup("d:1")
+				_, err = c.Lookup(t.Context(), "d:1")
 				require.NoError(t, err)
 				require.Equal(t, int64(2), backing.calls.Load(), "backing must be called again after TTL expires")
 			},
@@ -105,7 +106,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 					go func() {
 						defer wg.Done()
 						arrived.Done() // Signal that this caller is about to call Lookup
-						_, _ = c.Lookup("d:1")
+						_, _ = c.Lookup(t.Context(), "d:1")
 					}()
 				}
 				// Wait for all N caller goroutines to signal readiness before unblocking the backing stub.
@@ -121,24 +122,24 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 				backing.def = nil
 				backing.err = runtime.ErrDefinitionNotFound
 
-				_, err := c.Lookup("missing:1")
+				_, err := c.Lookup(t.Context(), "missing:1")
 				require.ErrorIs(t, err, runtime.ErrDefinitionNotFound)
 
 				// Second call: negative results must NOT be cached, so backing is called again.
-				_, err = c.Lookup("missing:1")
+				_, err = c.Lookup(t.Context(), "missing:1")
 				require.ErrorIs(t, err, runtime.ErrDefinitionNotFound)
 				require.Equal(t, int64(2), backing.calls.Load(), "errors must not be cached")
 			},
 		},
 		"different defRefs cached independently": {
 			assert: func(t *testing.T, backing *countingRegistry, _ *fakeClock, c *runtime.CachingDefinitionRegistry) {
-				_, err := c.Lookup("d:1")
+				_, err := c.Lookup(t.Context(), "d:1")
 				require.NoError(t, err)
 
 				// Change the def the backing returns for a second key.
 				backing.def = &model.ProcessDefinition{ID: "e", Version: 2}
 
-				got, err := c.Lookup("e:2")
+				got, err := c.Lookup(t.Context(), "e:2")
 				require.NoError(t, err)
 				require.Equal(t, "e", got.ID)
 
@@ -166,7 +167,7 @@ func TestCachingDefinitionRegistry_SystemClock(t *testing.T) {
 	c := runtime.NewCachingDefinitionRegistry(backing, time.Minute, clock.System())
 	require.NotNil(t, c)
 
-	got, err := c.Lookup("d:1")
+	got, err := c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
 	require.Equal(t, "d", got.ID)
 }
@@ -185,10 +186,10 @@ func TestCachingDefinitionRegistry_NonErrNotCached(t *testing.T) {
 	backing := &countingRegistry{err: sentinel}
 	c := runtime.NewCachingDefinitionRegistry(backing, time.Minute, clock.System())
 
-	_, err := c.Lookup("d:1")
+	_, err := c.Lookup(t.Context(), "d:1")
 	require.ErrorIs(t, err, sentinel)
 
-	_, err = c.Lookup("d:1")
+	_, err = c.Lookup(t.Context(), "d:1")
 	require.ErrorIs(t, err, sentinel)
 	require.Equal(t, int64(2), backing.calls.Load(), "transient errors must not be cached")
 }

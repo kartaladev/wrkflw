@@ -271,3 +271,87 @@ func TestWithAdminMiddlewareNilPanics(t *testing.T) {
 	}()
 	rest.WithAdminMiddleware(nil)
 }
+
+// --- Total count tests ---
+
+// TestAdminListTotalCountTrue asserts that ?total=true returns total_count in the response body.
+func TestAdminListTotalCountTrue(t *testing.T) {
+	def := linearProcess()
+	_, svc := newTestHarness(t, def)
+	_ = seedInstances(t, svc, 3)
+
+	h := rest.NewHandler(svc, rest.WithAdminMiddleware(allowAdmin))
+
+	body, code := doJSON(t, h, http.MethodGet, "/admin/instances?limit=1&total=true")
+	if code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+	// total_count should be present and equal 3 (all instances)
+	rawCount, ok := body["total_count"]
+	if !ok {
+		t.Fatalf("want total_count in response body, got keys: %v", body)
+	}
+	// JSON numbers decode as float64
+	count, ok := rawCount.(float64)
+	if !ok {
+		t.Fatalf("want total_count as number, got %T: %v", rawCount, rawCount)
+	}
+	if int(count) != 3 {
+		t.Fatalf("want total_count=3, got %v", count)
+	}
+	// items are limited to 1
+	items, ok := body["items"].([]any)
+	if !ok {
+		t.Fatalf("items not a list: %v", body["items"])
+	}
+	if len(items) != 1 {
+		t.Fatalf("want 1 item (limit=1), got %d", len(items))
+	}
+}
+
+// TestAdminListTotalCountFalse asserts that without ?total=true, total_count is 0.
+func TestAdminListTotalCountFalse(t *testing.T) {
+	def := linearProcess()
+	_, svc := newTestHarness(t, def)
+	_ = seedInstances(t, svc, 2)
+
+	h := rest.NewHandler(svc, rest.WithAdminMiddleware(allowAdmin))
+
+	body, code := doJSON(t, h, http.MethodGet, "/admin/instances")
+	if code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+	rawCount, ok := body["total_count"]
+	if !ok {
+		t.Fatalf("want total_count field always present, got keys: %v", body)
+	}
+	count, ok := rawCount.(float64)
+	if !ok {
+		t.Fatalf("want total_count as number, got %T", rawCount)
+	}
+	if int(count) != 0 {
+		t.Fatalf("want total_count=0 when not requested, got %v", count)
+	}
+}
+
+// TestAdminListTotalCountOne asserts that ?total=1 also enables the count (alternate form).
+func TestAdminListTotalCountOne(t *testing.T) {
+	def := linearProcess()
+	_, svc := newTestHarness(t, def)
+	_ = seedInstances(t, svc, 2)
+
+	h := rest.NewHandler(svc, rest.WithAdminMiddleware(allowAdmin))
+
+	body, code := doJSON(t, h, http.MethodGet, "/admin/instances?total=1")
+	if code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+	rawCount, ok := body["total_count"]
+	if !ok {
+		t.Fatalf("want total_count in response body")
+	}
+	count, _ := rawCount.(float64)
+	if int(count) != 2 {
+		t.Fatalf("want total_count=2, got %v", count)
+	}
+}

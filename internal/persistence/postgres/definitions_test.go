@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -120,13 +121,32 @@ func richDefinition() *model.ProcessDefinition {
 	}
 }
 
+// TestDefinitionStoreLookupCancelledContext verifies that Lookup propagates ctx to
+// the SQL query: a pre-cancelled context causes the query to fail immediately.
+func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+	ds := pg.NewDefinitionStore(pool)
+
+	// Seed a real definition so the query would otherwise succeed.
+	require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "cancel-ctx", Version: 1}))
+
+	// Pre-cancel the context before calling Lookup.
+	cctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := ds.Lookup(cctx, "cancel-ctx:1")
+	require.Error(t, err, "Lookup with a cancelled context must return an error")
+}
+
 func TestDefinitionStoreLookupBadVersion(t *testing.T) {
 	t.Parallel()
 	pool := database.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	ds := pg.NewDefinitionStore(pool)
 
-	_, err := ds.Lookup("d:notanumber")
+	_, err := ds.Lookup(t.Context(), "d:notanumber")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bad version segment")
 }
@@ -153,7 +173,7 @@ func TestDefinitionStore(t *testing.T) {
 		def := &model.ProcessDefinition{ID: "d-ref", Version: 1}
 		require.NoError(t, ds.PutDefinition(t.Context(), def))
 
-		viaRef, err := ds.Lookup("d-ref:1")
+		viaRef, err := ds.Lookup(t.Context(), "d-ref:1")
 		require.NoError(t, err)
 		require.Equal(t, 1, viaRef.Version)
 		require.Equal(t, "d-ref", viaRef.ID)
@@ -164,7 +184,7 @@ func TestDefinitionStore(t *testing.T) {
 		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "latest-test", Version: 1}))
 		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "latest-test", Version: 2}))
 
-		got, err := ds.Lookup("latest-test")
+		got, err := ds.Lookup(t.Context(), "latest-test")
 		require.NoError(t, err)
 		require.Equal(t, 2, got.Version, "latest version must be returned")
 	})
@@ -177,7 +197,7 @@ func TestDefinitionStore(t *testing.T) {
 
 	t.Run("lookup missing defRef returns ErrDefinitionNotFound", func(t *testing.T) {
 		t.Parallel()
-		_, err := ds.Lookup("no-such:99")
+		_, err := ds.Lookup(t.Context(), "no-such:99")
 		require.ErrorIs(t, err, runtime.ErrDefinitionNotFound)
 	})
 

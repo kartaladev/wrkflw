@@ -70,7 +70,7 @@ func TestDefinitionStoreGetScanError(t *testing.T) {
 func TestDefinitionStoreLookupLatestScanError(t *testing.T) {
 	injected := errors.New("injected lookup scan error")
 	ds := newDefinitionStoreFromDB(errQueryRowDBTX{err: injected})
-	_, err := ds.Lookup("d") // no colon → latest-version path
+	_, err := ds.Lookup(t.Context(), "d") // no colon → latest-version path
 	require.ErrorContains(t, err, "injected lookup scan error")
 }
 

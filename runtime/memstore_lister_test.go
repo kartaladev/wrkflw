@@ -153,6 +153,70 @@ func TestMemStoreList(t *testing.T) {
 	}
 }
 
+// TestMemStoreListIncludeTotal verifies opt-in total-count behaviour:
+//   - IncludeTotal=true returns TotalCount == full match count, independent of Limit.
+//   - IncludeTotal=false returns TotalCount==0 (no extra query).
+func TestMemStoreListIncludeTotal(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 6, 23, 9, 0, 0, 0, time.UTC)
+	completed := engine.StatusCompleted
+
+	ms := seedMemStore(t,
+		newInstanceState("r1", engine.StatusRunning, base),
+		newInstanceState("r2", engine.StatusRunning, base.Add(time.Minute)),
+		newInstanceState("c1", engine.StatusCompleted, base.Add(2*time.Minute)),
+		newInstanceState("c2", engine.StatusCompleted, base.Add(3*time.Minute)),
+		newInstanceState("c3", engine.StatusCompleted, base.Add(4*time.Minute)),
+	)
+
+	t.Run("IncludeTotal=true returns full matching count independent of Limit", func(t *testing.T) {
+		t.Parallel()
+		page, err := ms.List(t.Context(), runtime.InstanceFilter{
+			Status:       &completed,
+			Limit:        1,
+			IncludeTotal: true,
+		})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(page.Items) != 1 {
+			t.Fatalf("want 1 item (limit=1), got %d", len(page.Items))
+		}
+		if page.TotalCount != 3 {
+			t.Fatalf("want TotalCount=3, got %d", page.TotalCount)
+		}
+	})
+
+	t.Run("IncludeTotal=false returns TotalCount=0", func(t *testing.T) {
+		t.Parallel()
+		page, err := ms.List(t.Context(), runtime.InstanceFilter{
+			Status:       &completed,
+			Limit:        10,
+			IncludeTotal: false,
+		})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if page.TotalCount != 0 {
+			t.Fatalf("want TotalCount=0 when IncludeTotal=false, got %d", page.TotalCount)
+		}
+	})
+
+	t.Run("IncludeTotal=true with nil status counts all", func(t *testing.T) {
+		t.Parallel()
+		page, err := ms.List(t.Context(), runtime.InstanceFilter{
+			Limit:        1,
+			IncludeTotal: true,
+		})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if page.TotalCount != 5 {
+			t.Fatalf("want TotalCount=5 for all instances, got %d", page.TotalCount)
+		}
+	})
+}
+
 // TestMemStoreListTwoPageWalk asserts that two page fetches with a cursor
 // correctly walk all items without duplicates or gaps.
 func TestMemStoreListTwoPageWalk(t *testing.T) {

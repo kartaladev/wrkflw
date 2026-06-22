@@ -190,3 +190,53 @@ func TestPgListerIncidentCount(t *testing.T) {
 	assert.Equal(t, 1, byID["with-incident"].IncidentCount, "with-incident: want IncidentCount==1")
 	assert.Equal(t, 0, byID["no-incident"].IncidentCount, "no-incident: want IncidentCount==0")
 }
+
+// TestPgListerIncludeTotal verifies opt-in total-count via Postgres COUNT(*):
+//   - IncludeTotal=true + status filter → TotalCount == matching count, independent of Limit.
+//   - IncludeTotal=false → TotalCount==0.
+//   - IncludeTotal=true without status filter → TotalCount == total row count.
+func TestPgListerIncludeTotal(t *testing.T) {
+	t.Parallel()
+	s, lister := newPgStoreWithLister(t)
+	base := time.Date(2026, 6, 23, 8, 0, 0, 0, time.UTC)
+	completed := engine.StatusCompleted
+
+	insertInstance(t, s, "r1", engine.StatusRunning, base)
+	insertInstance(t, s, "r2", engine.StatusRunning, base.Add(time.Minute))
+	insertInstance(t, s, "c1", engine.StatusCompleted, base.Add(2*time.Minute))
+	insertInstance(t, s, "c2", engine.StatusCompleted, base.Add(3*time.Minute))
+	insertInstance(t, s, "c3", engine.StatusCompleted, base.Add(4*time.Minute))
+
+	t.Run("IncludeTotal=true status filter independent of Limit", func(t *testing.T) {
+		t.Parallel()
+		page, err := lister.List(t.Context(), runtime.InstanceFilter{
+			Status:       &completed,
+			Limit:        1,
+			IncludeTotal: true,
+		})
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1, "want 1 item (limit=1)")
+		require.Equal(t, 3, page.TotalCount, "want TotalCount=3 for completed")
+	})
+
+	t.Run("IncludeTotal=false returns TotalCount=0", func(t *testing.T) {
+		t.Parallel()
+		page, err := lister.List(t.Context(), runtime.InstanceFilter{
+			Status:       &completed,
+			Limit:        10,
+			IncludeTotal: false,
+		})
+		require.NoError(t, err)
+		require.Equal(t, 0, page.TotalCount, "want TotalCount=0 when not requested")
+	})
+
+	t.Run("IncludeTotal=true no status filter counts all", func(t *testing.T) {
+		t.Parallel()
+		page, err := lister.List(t.Context(), runtime.InstanceFilter{
+			Limit:        1,
+			IncludeTotal: true,
+		})
+		require.NoError(t, err)
+		require.Equal(t, 5, page.TotalCount, "want TotalCount=5 for all instances")
+	})
+}
