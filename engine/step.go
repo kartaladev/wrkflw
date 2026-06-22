@@ -2852,9 +2852,10 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 //   - If toNode == "": all records have been compensated; set Status =
 //     StatusTerminated (full rollback — no resume point).
 func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode) (StepResult, error) {
-	// Save outcome fields before clearing the cursor.
+	// Save outcome fields AND scope BEFORE clearing the cursor.
 	finalStatus := s.Compensating.FinalStatus
 	finalErr := s.Compensating.FinalErr
+	scopeID := s.Compensating.ScopeID
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
@@ -2871,6 +2872,20 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		s.Status = finalStatus
 		ended := at
 		s.EndedAt = &ended
+
+		// Clear the compensation records for the walk's scope so that a re-delivered
+		// CancelRequested (or any other terminal trigger) on an already-terminal instance
+		// cannot re-enter the walk and double-compensate money-moving actions.
+		// beginCompensation today always uses scopeID="" (root scope); future scope-targeted
+		// walks (ADR-0035) will set a non-empty scopeID, which the else branch handles.
+		if scopeID == "" {
+			s.RootCompensations = nil
+		} else {
+			if sc := s.scopeByID(scopeID); sc != nil {
+				sc.Compensations = nil
+			}
+		}
+
 		var cmds []Command
 		if finalErr != "" {
 			cmds = append(cmds, FailInstance{Err: finalErr})

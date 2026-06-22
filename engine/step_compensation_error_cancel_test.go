@@ -367,3 +367,75 @@ func TestBestEffortCompActionFailure(t *testing.T) {
 	require.True(t, hasFail, "FailInstance{Err:\"cancelled\"} must be emitted after walk")
 	assert.Equal(t, "cancelled", fi.Err)
 }
+
+// TestRedeliveredCancelIdempotent verifies that a second CancelRequested delivered
+// to an already-terminal (StatusTerminated) instance — which has completed a
+// compensation walk — does NOT re-run compensation.
+//
+// The bug: RootCompensations was never cleared after the walk, so the
+// CancelRequested guard (len(s.RootCompensations) > 0) stayed true and the engine
+// would re-emit every compensation InvokeAction, double-compensating money-moving
+// actions (e.g. issuing a double refund).
+//
+// Flow:
+//  1. Start → compensable svc completes ("refund") → user task parked
+//  2. CancelRequested → StatusCompensating, "refund" InvokeAction emitted
+//  3. ActionCompleted for comp action → StatusTerminated (walk done, RootCompensations cleared)
+//  4. Second CancelRequested on terminal state → no new InvokeAction, status stays terminal
+func TestRedeliveredCancelIdempotent(t *testing.T) {
+	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
+	def := cancelWithCompDef()
+
+	// Step 1: start instance — drives to svc (InvokeAction emitted).
+	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "re-cancel-1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	ia0, ok := r0.Commands[0].(engine.InvokeAction)
+	require.True(t, ok, "first command must be InvokeAction for svc")
+	require.Equal(t, "charge", ia0.Name)
+
+	// Step 2: svc completes → user task parked (compensation record added).
+	r1, err := engine.Step(def, r0.State,
+		engine.NewActionCompleted(at.Add(1*time.Second), ia0.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.RootCompensations, 1, "svc completion must record a compensation entry")
+
+	// Step 3: CancelRequested → StatusCompensating, "refund" InvokeAction emitted.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompensating, r2.State.Status)
+	ia, found := findInvokeAction(r2.Commands, "refund")
+	require.True(t, found, "CancelRequested must emit InvokeAction{Name:\"refund\"}")
+
+	// Step 4: deliver ActionCompleted for the compensation action → StatusTerminated.
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(3*time.Second), ia.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusTerminated, r3.State.Status,
+		"after compensation walk, cancel must yield StatusTerminated")
+	fi, hasFail := findFailInstance(r3.Commands)
+	require.True(t, hasFail, "FailInstance{Err:\"cancelled\"} must be emitted after the walk")
+	require.Equal(t, "cancelled", fi.Err)
+
+	// Assert: RootCompensations cleared after full-rollback — no records remain.
+	assert.Empty(t, r3.State.RootCompensations,
+		"RootCompensations must be cleared after a full-rollback compensation walk completes")
+
+	// Step 5 (THE IDEMPOTENCY CHECK): deliver a SECOND CancelRequested on the
+	// already-terminal state.
+	r4, err := engine.Step(def, r3.State,
+		engine.NewCancelRequested(at.Add(4*time.Second)), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Assert: no new compensation InvokeAction (no double-compensation).
+	for _, cmd := range r4.Commands {
+		_, isInvoke := cmd.(engine.InvokeAction)
+		assert.False(t, isInvoke,
+			"second CancelRequested on terminal state must NOT emit any InvokeAction (double-compensation bug)")
+	}
+
+	// Assert: instance stays terminal (no regression to StatusCompensating or re-run).
+	assert.Equal(t, engine.StatusTerminated, r4.State.Status,
+		"second CancelRequested on terminal instance must keep StatusTerminated")
+}

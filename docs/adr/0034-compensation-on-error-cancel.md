@@ -57,3 +57,28 @@ when `RootCompensations` is non-empty, with an engine-only change (no model type
 - Scope-targeted compensation / `Compensate` producer (ADR-0035).
 - Per-node & definition cancel handlers (ADR-0036).
 - Compensation-action retry/incident on repeated failure.
+
+## Post-acceptance fix (2026-06-23): idempotent re-cancel
+
+**Found by whole-branch review:** `RootCompensations` was never cleared after the walk completed.
+The `CancelRequested` guard (`len(s.RootCompensations) > 0`) stays true on a terminal instance, and
+`deliverLoop` has no terminal-state guard, so a second `Runner.CancelInstance` call on an
+already-terminated compensable instance re-entered the entire compensation walk — re-emitting every
+`InvokeAction` (double-compensation of money-moving actions such as `"refund"`).
+
+**Fix:** In `stepCompensationFinish`, on the full-rollback (`toNode == ""`) branch, after applying the
+terminal outcome (`Status`/`EndedAt`), the compensation records for the cursor's scope are cleared:
+
+- If `scopeID == ""` (root scope, the only walk today): `s.RootCompensations = nil`
+- Else: find the scope by ID and set `sc.Compensations = nil` (future scope-targeted walks, ADR-0035)
+
+This makes a re-delivered `CancelRequested` on a terminal instance a clean no-op: the guard
+`len(s.RootCompensations) > 0` is now false, so the immediate-termination path runs, which detects the
+already-set `Status`/`EndedAt` and produces no new `InvokeAction`.
+
+**Scope:** `engine/step.go` (`stepCompensationFinish`) only. The partial-rollback (`toNode != ""`)
+branch is admin-only with no public trigger — records are not cleared on that path (deferred).
+
+**Coverage:** `TestRedeliveredCancelIdempotent` in `engine/step_compensation_error_cancel_test.go` asserts
+that a second `CancelRequested` on a terminal instance emits no new `InvokeAction` and that
+`RootCompensations` is nil after the walk. All existing compensation tests stay green.
