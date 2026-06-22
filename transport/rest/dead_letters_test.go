@@ -2,6 +2,7 @@ package rest_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,6 +89,16 @@ func TestRESTListDeadLetters(t *testing.T) {
 		rec := doReq(t, h, http.MethodGet, "/admin/dead-letters?limit=abc", "")
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
 	})
+
+	t.Run("admin error -> 500", func(t *testing.T) {
+		t.Parallel()
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
+			return nil, errors.New("workflow-postgres: relay: list dead-lettered: boom")
+		}}
+		h := rest.NewHandler(&dlqStubService{}, rest.WithAdminMiddleware(allowAdmin), rest.WithDeadLetterAdmin(dla))
+		rec := doReq(t, h, http.MethodGet, "/admin/dead-letters", "")
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	})
 }
 
 func TestRESTRedriveDeadLetters(t *testing.T) {
@@ -117,6 +128,16 @@ func TestRESTRedriveDeadLetters(t *testing.T) {
 		h := rest.NewHandler(&dlqStubService{}, rest.WithAdminMiddleware(allowAdmin))
 		rec := doReq(t, h, http.MethodPost, "/admin/dead-letters/redrive", `{"ids":[1]}`)
 		assert.Equal(t, http.StatusNotFound, rec.Code)
+	})
+
+	t.Run("admin error -> 500", func(t *testing.T) {
+		t.Parallel()
+		dla := &dlaStub{redriveFn: func(_ context.Context, _ ...int64) (int, error) {
+			return 0, errors.New("workflow-postgres: relay: redrive: boom")
+		}}
+		h := rest.NewHandler(&dlqStubService{}, rest.WithAdminMiddleware(allowAdmin), rest.WithDeadLetterAdmin(dla))
+		rec := doReq(t, h, http.MethodPost, "/admin/dead-letters/redrive", `{"ids":[1]}`)
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	})
 }
 

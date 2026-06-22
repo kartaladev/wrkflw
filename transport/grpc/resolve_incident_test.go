@@ -56,6 +56,15 @@ func TestServerResolveIncident(t *testing.T) {
 				assert.Equal(t, codes.NotFound, status.Code(err))
 			},
 		},
+		{
+			name: "conflict maps to FailedPrecondition",
+			fn: func(_ context.Context, _ service.ResolveIncidentRequest) (engine.InstanceState, error) {
+				return engine.InstanceState{}, fmt.Errorf("workflow-service: %w", service.ErrConflict)
+			},
+			assert: func(t *testing.T, _ *workflowpb.InstanceResponse, err error) {
+				assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

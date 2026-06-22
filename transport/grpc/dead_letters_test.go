@@ -2,6 +2,7 @@ package grpctransport_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -79,6 +80,16 @@ func TestServerListDeadLetters(t *testing.T) {
 		_, err := client.ListDeadLetters(t.Context(), &workflowpb.ListDeadLettersRequest{Limit: 10})
 		assert.Equal(t, codes.Unimplemented, status.Code(err))
 	})
+
+	t.Run("admin error maps to Internal", func(t *testing.T) {
+		t.Parallel()
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
+			return nil, errors.New("workflow-postgres: relay: list dead-lettered: boom")
+		}}
+		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithDeadLetterAdmin(dla))
+		_, err := client.ListDeadLetters(t.Context(), &workflowpb.ListDeadLettersRequest{Limit: 10})
+		assert.Equal(t, codes.Internal, status.Code(err))
+	})
 }
 
 func TestServerRedriveDeadLetters(t *testing.T) {
@@ -99,6 +110,16 @@ func TestServerRedriveDeadLetters(t *testing.T) {
 		client := newStubHarnessWithOpts(t, &resolveStub{})
 		_, err := client.RedriveDeadLetters(t.Context(), &workflowpb.RedriveDeadLettersRequest{Ids: []int64{1}})
 		assert.Equal(t, codes.Unimplemented, status.Code(err))
+	})
+
+	t.Run("admin error maps to Internal", func(t *testing.T) {
+		t.Parallel()
+		dla := &dlaStub{redriveFn: func(_ context.Context, _ ...int64) (int, error) {
+			return 0, errors.New("workflow-postgres: relay: redrive: boom")
+		}}
+		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithDeadLetterAdmin(dla))
+		_, err := client.RedriveDeadLetters(t.Context(), &workflowpb.RedriveDeadLettersRequest{Ids: []int64{1}})
+		assert.Equal(t, codes.Internal, status.Code(err))
 	})
 }
 
