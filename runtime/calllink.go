@@ -45,4 +45,7 @@ type CallLinkStore interface {
 	// LookupChild returns the link for a child instance; ok=false (ErrNoCallLink)
 	// when the instance is a root (no parent).
 	LookupChild(ctx context.Context, childInstanceID string) (CallLink, bool, error)
+	// ListRunningChildren returns all non-terminal child links whose
+	// ParentInstanceID equals parentInstanceID, ordered by ChildInstanceID.
+	ListRunningChildren(ctx context.Context, parentInstanceID string) ([]CallLink, error)
 }

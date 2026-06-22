@@ -18,8 +18,9 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 **timer rehydration on restart** track (ADR-0027) and the **CancelInstance + cancel actions** track
 (ADR-0028, branch `feat/cancel-instance`) and the **gRPC ResolveIncident + DLQ admin transport**
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
-validation** track (ADR-0030) and the **call-link lease exclusivity** track (ADR-0031, branch
-`feat/calllink-lease-exclusivity`). ADRs 0001–0031 (0032 cancellation-propagation in flight).
+validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
+**cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
+ADRs 0001–0032.
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -75,16 +76,15 @@ Pick the next piece of work from the prioritized backlog below — each item is 
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
-**Recommended priority (top picks):** *(gRPC ResolveIncident + DLQ admin — ✅ DONE ADR-0029;
-reachability/fork-join validation — ✅ DONE ADR-0030; **call-link** lease exclusivity — ✅ DONE
-2026-06-22, ADR-0031; list re-numbered)*
+**Recommended priority (top picks):** *(ADR-0029 gRPC/DLQ, 0030 reachability, 0031 call-link lease,
+0032 cancellation propagation parent→child — all ✅ DONE 2026-06-22; list re-numbered)*
 1. **Multi-replica TIMER exclusivity** — the call-link notifier half is DONE (ADR-0031, opt-in lease).
    The timer half remains: correct exclusive timers need a claim-renew-**failover** loop replacing
    per-replica gocron arming (a distributed scheduler); double-fire is already correct via the engine
    CAS, so this is an optimization. *(Production-hardening — follow-up to ADR-0027/0031)*
-2. **Cancellation propagation parent→child + per-active-node cancel handlers** — `CancelInstance` now
-   terminates one instance and runs process-level `CancelActions`; propagating cancel to child call
-   activities and per-node cancel handlers are the next steps. *(follow-up to ADR-0028; ADR-0032 in flight)*
+2. **Per-active-node cancel handlers** — `CancelInstance` runs process-level `CancelActions` and now
+   propagates to child call activities (ADR-0032); a `Node`-scoped cancel handler is the next step.
+   **Engine/model change** (confirm scope first). *(follow-up to ADR-0028/0032)*
 3. **Compensation-on-error/cancel paths + scope-targeted compensation** (`Compensate` producer) —
    extend rollback beyond the existing root walk. **Large engine/model change** (confirm scope first). *(Correctness)*
 
@@ -93,8 +93,9 @@ reachability/fork-join validation — ✅ DONE ADR-0030; **call-link** lease exc
   compensation-on-error/cancel paths; scope-targeted compensation (`Compensate` producer); casbin
   adapter/watcher `context` propagation; `AdvisoryLockOwnership` use-after-close guard; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
-- **Production-hardening:** cancellation propagation parent→child + orphaned-child
-  cleanup *(ADR-0032 in flight)*; multi-replica exclusivity — **call-links DONE (ADR-0031, lease)**,
+- **Production-hardening:** *(cancellation propagation parent→child — ✅ DONE ADR-0032; orphaned-child
+  cleanup handled by ErrTokenNotFound path)*; per-active-node cancel handlers (engine);
+  multi-replica exclusivity — **call-links DONE (ADR-0031, lease)**,
   **timers** still open (failover loop); per-worker NOTIFY
   fairness; `wrkflw_processed_message` pruning job; per-aggregate relay ordering; TOAST/fillfactor
   tuning; `RetryPolicy.Backoff` overflow guard; richer `SubInstanceFailed`→parent error (create an Incident).
@@ -258,6 +259,37 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Cancellation propagation parent→child sub-project — ✅ COMPLETE
+
+Top pick (Production-hardening). Branch `feat/cancellation-propagation`. Spec
+`docs/specs/2026-06-22-cancellation-propagation-design.md`, plan
+`docs/plans/2026-06-22-cancellation-propagation.md`, **ADR-0032**. 2 SDD tasks (Task 1 Approved after
+an I1 fix; Task 2 Approved) + opus whole-branch review (**Ready: Yes-with-nits**, no blockers, all 6
+merge-gate criteria pass). Gate: `go test -race -p 1 ./...` green, touched pkgs ≥85%, lint 0,
+**engine/model production diff ZERO** (pure runtime).
+
+### What shipped
+`runner.CancelInstance` now propagates cancellation down the **async call tree**: it terminates the
+instance (as before), then — when `WithCallLinks`+`WithDefinitions` are wired — recursively cancels
+each still-running child call-activity instance, **best-effort** (every list/load/lookup/child-deliver
+error logged + swallowed; the parent cancel never fails). New port read method
+`CallLinkStore.ListRunningChildren(parentID)` (Mem + Postgres) + partial index migration `0007`
+(`(parent_instance_id) WHERE status='running'`). A single **shared `visited` set** threads the whole
+recursion (`propagateCancel` recurses into itself, not back through `CancelInstance`) → no infinite
+recursion on cyclic data and no diamond double-cancel (guarded by `TestCancelPropagationDiamond`).
+**Parent-first ordering** avoids a notifier resume race; a cancelled child reaches `StatusTerminated`
+→ its call link flips terminal (so it isn't re-listed and the notifier resolves the terminated parent
+via `ErrTokenNotFound`). Gated: `callLinks==nil` or `defsReg==nil` ⇒ exact prior behaviour.
+
+### Deferred follow-ups
+1. **Per-active-node cancel handlers** — a `Node`-scoped cancel action (vs process-level
+   `CancelActions`); a model+engine change (top pick #2). Confirm scope first.
+2. **Sync call activities** need no propagation (a sync child completes inside `perform`).
+3. Cosmetic: unused `pool` param in a postgres test helper (mirrors a pre-existing pattern);
+   `sort.Slice`→`slices.SortFunc` in mem_calllink; test-comment cruft.
 
 ---
 

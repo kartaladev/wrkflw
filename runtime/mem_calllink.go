@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -153,4 +154,21 @@ func (m *MemCallLinkStore) LookupChild(_ context.Context, childID string) (CallL
 		return l.link, true, nil
 	}
 	return CallLink{}, false, nil
+}
+
+// ListRunningChildren returns all non-terminal child links whose ParentInstanceID
+// equals parentInstanceID, ordered by ChildInstanceID for determinism.
+func (m *MemCallLinkStore) ListRunningChildren(_ context.Context, parentInstanceID string) ([]CallLink, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []CallLink
+	for _, l := range m.links {
+		if !l.terminal && l.link.ParentInstanceID == parentInstanceID {
+			out = append(out, l.link)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ChildInstanceID < out[j].ChildInstanceID
+	})
+	return out, nil
 }
