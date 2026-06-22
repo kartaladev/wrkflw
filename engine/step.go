@@ -2471,8 +2471,8 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 //   - If the task is still open:
 //     (1) emits InvokeAction(node.ReminderAction) if non-empty (fire-and-forget),
 //     (2) removes the fired reminder record and schedules the next reminder at
-//         firedAt + every (new timer id from the counter), recording the new
-//         timerRecord; the token does NOT move.
+//     firedAt + every (new timer id from the counter), recording the new
+//     timerRecord; the token does NOT move.
 func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, firedAt time.Time) (StepResult, error) {
 	// If the parked token is gone (task completed/cancelled and advanced), the
 	// reminder fired late → clean no-op, remove the stale record.
@@ -2843,8 +2843,11 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 
 	if toNode == "" {
 		// Full rollback: no resume point → apply the cursor's terminal outcome.
-		// A zero FinalStatus means StatusTerminated (back-compat; admin path and
-		// pre-migration in-flight compensations deserialized from JSONB).
+		// Zero FinalStatus (== StatusRunning, the iota-0 constant) means UNSET;
+		// map it to StatusTerminated. Safe: full-rollback finish is always
+		// terminal, so no caller of beginCompensation ever wants a non-terminal
+		// outcome here. The admin path (CompensateRequested) leaves FinalStatus
+		// zero; error/cancel paths set it explicitly (StatusFailed / StatusTerminated).
 		if finalStatus == 0 {
 			finalStatus = StatusTerminated
 		}

@@ -20,12 +20,12 @@ func TestCloneStateCarriesCompensatingOutcomeFields(t *testing.T) {
 	st := InstanceState{
 		InstanceID: "cs-outcome-1",
 		Compensating: compensationCursor{
-			ScopeID:      "",
-			ToNode:       "",
-			NextIndex:    2,
-			ActiveCmdID:  "cmd-1",
-			FinalStatus:  StatusFailed,
-			FinalErr:     "x",
+			ScopeID:     "",
+			ToNode:      "",
+			NextIndex:   2,
+			ActiveCmdID: "cmd-1",
+			FinalStatus: StatusFailed,
+			FinalErr:    "x",
 		},
 	}
 
