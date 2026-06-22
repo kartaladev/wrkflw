@@ -20,7 +20,8 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0036 (0036 = casbin policy-admin, branch `feat/casbin-policy-admin`; 0035 = per-node cancel handlers, branch
+ADRs 0001–0037 (0037 = observability handler + Store spans, branch `feat/observability-gaps`; 0036 =
+casbin policy-admin, branch `feat/casbin-policy-admin`; 0035 = per-node cancel handlers, branch
 `feat/cancel-handlers`).
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
@@ -73,7 +74,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0037**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0038**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -103,10 +104,13 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
   **timers** still open (failover loop); per-worker NOTIFY
   fairness; per-aggregate relay ordering; TOAST/fillfactor
   tuning; `RetryPolicy.Backoff` overflow guard; richer `SubInstanceFailed`→parent error (create an Incident).
-- **Observability:** public `observability` root pkg (trace-correlating `slog.Handler` + `Setup`); Store
-  Load/Commit spans + `wrkflw_store_duration_seconds`; CallNotifier `wrkflw.callnotifier.batch` span;
-  async DB-backed `instances_active` gauge; REST/relay meters actually emitting; route-template span
-  naming; exemplars; OTel-contrib option; migrate eventing onto the shared helper.
+- **Observability:** *(public `observability` root pkg trace-correlating `slog.Handler` — ✅ DONE
+  ADR-0037; Store Load/Commit spans + `wrkflw_store_duration_seconds` — ✅ DONE ADR-0037)*; `Setup`
+  that grabs OTel globals (deferred — consumer owns SDK setup); CallNotifier `wrkflw.callnotifier.batch`
+  span; async DB-backed `instances_active` gauge; REST/relay meters actually emitting; route-template
+  span naming; exemplars; OTel-contrib option; migrate eventing onto the shared helper; Store
+  `WithStoreLogger` is parity-plumbing (no log sites yet); serialization-failure (40001) still marks
+  the commit span Error (version-mismatch does not — minor inconsistency).
 - **API / feature completeness:** *(gRPC `ResolveIncident` + DLQ admin REST/gRPC — ✅ DONE, ADR-0029)*
   *(casbin policy-admin REST/gRPC — ✅ DONE, ADR-0036)*; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
   streaming/watch + OpenAPI/grpc-gateway + richer admin filters; admin total-count; `ended_at` optional
@@ -263,6 +267,35 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Observability gaps sub-project — ✅ COMPLETE
+
+Backlog (Observability). Branch `feat/observability-gaps`. Spec
+`docs/specs/2026-06-23-observability-gaps-design.md`, plan `docs/plans/2026-06-23-observability-gaps.md`,
+**ADR-0037**. 2 SDD tasks (both Approved; Task 2's impl was completed by a subagent that hit a session
+limit before committing — controller verified build/test/lint green + committed + applied a review fix)
++ whole-branch review (**Ready: Yes-with-nits**, no blockers). Gate: full `go test -race -p 1 ./...`
+green, lint 0, **engine/model diff ZERO**, defaults to noop.
+
+### What shipped
+**(A)** A new **public `observability` root package** with a trace-correlating `slog.Handler`
+(`NewHandler`/`NewLogger`): mounting it on the logger you pass to the `WithLogger` options gives
+trace-correlated logs (auto `trace_id`/`span_id` from the record's span) library-wide, no per-call-site
+changes. Depends only on stdlib + `otel/trace`. **(B)** Postgres `Store` instrumentation:
+`WithStore{Logger,TracerProvider,MeterProvider}` options (mirroring the relay); `Load`/`Commit` emit
+`wrkflw.store.load`/`wrkflw.store.commit` spans + a `wrkflw_store_duration_seconds{op}` histogram;
+façade re-exports the options. A `ErrConcurrentUpdate` CAS conflict records a `wrkflw.concurrent_update`
+attribute (NOT a span error — it's expected retryable control flow). Defaults to noop.
+
+### Deferred follow-ups
+1. `Setup`-that-grabs-OTel-globals (consumer owns SDK setup).
+2. `WithStoreLogger` is parity-plumbing today (no store log sites yet).
+3. Serialization-failure (SQLSTATE 40001 → `ErrConcurrentUpdate`) still marks the commit span Error
+   while a plain version-mismatch does not — minor span-status inconsistency on a rare path.
+4. Migrate internal call sites off manual `LogAttrs` onto the public handler; remaining ADR-0019
+   observability deferrals (CallNotifier span, instances_active gauge, exemplars, etc.).
 
 ---
 
