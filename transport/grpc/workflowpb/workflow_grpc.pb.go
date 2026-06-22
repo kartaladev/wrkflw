@@ -27,6 +27,7 @@ const (
 	WorkflowService_CompleteTask_FullMethodName   = "/wrkflw.v1.WorkflowService/CompleteTask"
 	WorkflowService_ReassignTask_FullMethodName   = "/wrkflw.v1.WorkflowService/ReassignTask"
 	WorkflowService_ListInstances_FullMethodName  = "/wrkflw.v1.WorkflowService/ListInstances"
+	WorkflowService_CancelInstance_FullMethodName = "/wrkflw.v1.WorkflowService/CancelInstance"
 )
 
 // WorkflowServiceClient is the client API for WorkflowService service.
@@ -53,6 +54,8 @@ type WorkflowServiceClient interface {
 	ReassignTask(ctx context.Context, in *ReassignTaskRequest, opts ...grpc.CallOption) (*InstanceResponse, error)
 	// ListInstances returns a paginated list of instance summaries.
 	ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error)
+	// CancelInstance terminates a running instance (running cancel actions best-effort).
+	CancelInstance(ctx context.Context, in *CancelInstanceRequest, opts ...grpc.CallOption) (*InstanceResponse, error)
 }
 
 type workflowServiceClient struct {
@@ -143,6 +146,16 @@ func (c *workflowServiceClient) ListInstances(ctx context.Context, in *ListInsta
 	return out, nil
 }
 
+func (c *workflowServiceClient) CancelInstance(ctx context.Context, in *CancelInstanceRequest, opts ...grpc.CallOption) (*InstanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstanceResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_CancelInstance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkflowServiceServer is the server API for WorkflowService service.
 // All implementations must embed UnimplementedWorkflowServiceServer
 // for forward compatibility.
@@ -167,6 +180,8 @@ type WorkflowServiceServer interface {
 	ReassignTask(context.Context, *ReassignTaskRequest) (*InstanceResponse, error)
 	// ListInstances returns a paginated list of instance summaries.
 	ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error)
+	// CancelInstance terminates a running instance (running cancel actions best-effort).
+	CancelInstance(context.Context, *CancelInstanceRequest) (*InstanceResponse, error)
 	mustEmbedUnimplementedWorkflowServiceServer()
 }
 
@@ -200,6 +215,9 @@ func (UnimplementedWorkflowServiceServer) ReassignTask(context.Context, *Reassig
 }
 func (UnimplementedWorkflowServiceServer) ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListInstances not implemented")
+}
+func (UnimplementedWorkflowServiceServer) CancelInstance(context.Context, *CancelInstanceRequest) (*InstanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelInstance not implemented")
 }
 func (UnimplementedWorkflowServiceServer) mustEmbedUnimplementedWorkflowServiceServer() {}
 func (UnimplementedWorkflowServiceServer) testEmbeddedByValue()                         {}
@@ -366,6 +384,24 @@ func _WorkflowService_ListInstances_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowService_CancelInstance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelInstanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).CancelInstance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_CancelInstance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).CancelInstance(ctx, req.(*CancelInstanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkflowService_ServiceDesc is the grpc.ServiceDesc for WorkflowService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -404,6 +440,10 @@ var WorkflowService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListInstances",
 			Handler:    _WorkflowService_ListInstances_Handler,
+		},
+		{
+			MethodName: "CancelInstance",
+			Handler:    _WorkflowService_CancelInstance_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

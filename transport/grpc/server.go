@@ -208,6 +208,24 @@ func (s *server) ReassignTask(ctx context.Context, req *workflowpb.ReassignTaskR
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
+// CancelInstance terminates a running process instance.
+func (s *server) CancelInstance(ctx context.Context, req *workflowpb.CancelInstanceRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "CancelInstance")
+	defer span.End()
+
+	st, err := s.svc.CancelInstance(ctx, service.CancelInstanceRequest{InstanceID: req.GetInstanceId()})
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	proto, err := instanceToProto(st)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
+}
+
 // ListInstances returns a paginated list of instance summaries.
 func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstancesRequest) (*workflowpb.ListInstancesResponse, error) {
 	ctx, span := s.startSpan(ctx, "ListInstances")

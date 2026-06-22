@@ -704,3 +704,43 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 		_ = model.Validate(defA)
 	}, "Validate must not panic on cyclic subprocess graph")
 }
+
+func TestValidateCancelActions(t *testing.T) {
+	base := func(cancel []string) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "d", Version: 1,
+			Nodes: []model.Node{
+				{ID: "start", Kind: model.KindStartEvent},
+				{ID: "end", Kind: model.KindEndEvent},
+			},
+			Flows:         []model.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+			CancelActions: cancel,
+		}
+	}
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "nil cancel actions is valid",
+			def:  base(nil),
+			assert: func(t *testing.T, err error) { require.NoError(t, err) },
+		},
+		{
+			name: "non-empty cancel action names are valid",
+			def:  base([]string{"notify", "refund"}),
+			assert: func(t *testing.T, err error) { require.NoError(t, err) },
+		},
+		{
+			name: "empty cancel action name is rejected",
+			def:  base([]string{"notify", ""}),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrEmptyCancelAction)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) { tc.assert(t, model.Validate(tc.def)) })
+	}
+}

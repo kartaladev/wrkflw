@@ -948,3 +948,67 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "nonexistent-node",
 		"error message must identify the unknown ToNode")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 2 (CancelActions): CancelRequested emits InvokeCancelAction per definition
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestCancelRequestedEmitsCancelActions(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "d", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "svc", Kind: model.KindServiceTask, Action: "work"},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "svc"},
+			{ID: "f2", Source: "svc", Target: "end"},
+		},
+		CancelActions: []string{"notify", "refund"},
+	}
+	// A running instance with a live token and some variables.
+	st := engine.InstanceState{
+		InstanceID: "i1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning,
+		Variables: map[string]any{"amount": 10},
+		Tokens:    []engine.Token{{ID: "i1-t1", NodeID: "svc", State: engine.TokenActive}},
+	}
+	res, err := engine.Step(def, st, engine.NewCancelRequested(time.Unix(100, 0).UTC()), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusTerminated, res.State.Status)
+	assert.Empty(t, res.State.Tokens)
+
+	// The first two commands are the cancel actions, in definition order, before FailInstance.
+	var cancelNames []string
+	var sawFail bool
+	for _, c := range res.Commands {
+		switch cmd := c.(type) {
+		case engine.InvokeCancelAction:
+			cancelNames = append(cancelNames, cmd.Name)
+			assert.Equal(t, 10, cmd.Input["amount"], "cancel action receives a variables snapshot")
+			assert.False(t, sawFail, "cancel actions must be emitted before FailInstance")
+		case engine.FailInstance:
+			sawFail = true
+		}
+	}
+	assert.Equal(t, []string{"notify", "refund"}, cancelNames)
+	assert.True(t, sawFail, "FailInstance must still be emitted")
+}
+
+func TestCancelRequestedNoCancelActionsUnchanged(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "d", Version: 1,
+		Nodes: []model.Node{{ID: "start", Kind: model.KindStartEvent}, {ID: "end", Kind: model.KindEndEvent}},
+		Flows: []model.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+	}
+	st := engine.InstanceState{
+		InstanceID: "i1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning,
+		Tokens: []engine.Token{{ID: "i1-t1", NodeID: "start", State: engine.TokenActive}},
+	}
+	res, err := engine.Step(def, st, engine.NewCancelRequested(time.Unix(100, 0).UTC()), engine.StepOptions{})
+	require.NoError(t, err)
+	for _, c := range res.Commands {
+		_, isCancel := c.(engine.InvokeCancelAction)
+		assert.False(t, isCancel, "no InvokeCancelAction when CancelActions is empty")
+	}
+}

@@ -34,6 +34,9 @@ service WorkflowService {
 
   // ListInstances returns a paginated list of instance summaries.
   rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+
+  // CancelInstance terminates a running instance (running cancel actions best-effort).
+  rpc CancelInstance(CancelInstanceRequest) returns (InstanceResponse);
 }
 
 // ---- Request messages ----
@@ -48,6 +51,10 @@ message StartInstanceRequest {
 }
 
 message GetInstanceRequest {
+  string instance_id = 1;
+}
+
+message CancelInstanceRequest {
   string instance_id = 1;
 }
 

@@ -34,6 +34,7 @@ import (
 //
 //	GET    /admin/instances                                    — keyset-paginated instance monitoring
 //	POST   /admin/instances/{id}/incidents/{incidentID}/resolve — resolve an open incident and resume execution
+//	POST   /admin/instances/{id}/cancel                        — cancel a running instance (runs cancel actions)
 //
 // Default-deny: admin routes return 403 Forbidden when no WithAdminMiddleware option
 // is supplied. Consumers must explicitly opt in by providing a middleware that
@@ -67,6 +68,8 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 	mux.Handle("GET /admin/instances", cfg.adminMiddleware(http.HandlerFunc(h.handleAdminListInstances)))
 	mux.Handle("POST /admin/instances/{id}/incidents/{incidentID}/resolve",
 		cfg.adminMiddleware(http.HandlerFunc(h.handleResolveIncident)))
+	mux.Handle("POST /admin/instances/{id}/cancel",
+		cfg.adminMiddleware(http.HandlerFunc(h.handleCancelInstance)))
 
 	return h.traceMiddleware(mux)
 }

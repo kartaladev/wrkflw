@@ -130,6 +130,50 @@ func (x *GetInstanceRequest) GetInstanceId() string {
 	return ""
 }
 
+type CancelInstanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelInstanceRequest) Reset() {
+	*x = CancelInstanceRequest{}
+	mi := &file_workflow_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelInstanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelInstanceRequest) ProtoMessage() {}
+
+func (x *CancelInstanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelInstanceRequest.ProtoReflect.Descriptor instead.
+func (*CancelInstanceRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CancelInstanceRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
 type DeliverSignalRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
@@ -143,7 +187,7 @@ type DeliverSignalRequest struct {
 
 func (x *DeliverSignalRequest) Reset() {
 	*x = DeliverSignalRequest{}
-	mi := &file_workflow_proto_msgTypes[2]
+	mi := &file_workflow_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -155,7 +199,7 @@ func (x *DeliverSignalRequest) String() string {
 func (*DeliverSignalRequest) ProtoMessage() {}
 
 func (x *DeliverSignalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[2]
+	mi := &file_workflow_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -168,7 +212,7 @@ func (x *DeliverSignalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverSignalRequest.ProtoReflect.Descriptor instead.
 func (*DeliverSignalRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{2}
+	return file_workflow_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DeliverSignalRequest) GetInstanceId() string {
@@ -204,7 +248,7 @@ type DeliverMessageRequest struct {
 
 func (x *DeliverMessageRequest) Reset() {
 	*x = DeliverMessageRequest{}
-	mi := &file_workflow_proto_msgTypes[3]
+	mi := &file_workflow_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -216,7 +260,7 @@ func (x *DeliverMessageRequest) String() string {
 func (*DeliverMessageRequest) ProtoMessage() {}
 
 func (x *DeliverMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[3]
+	mi := &file_workflow_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -229,7 +273,7 @@ func (x *DeliverMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverMessageRequest.ProtoReflect.Descriptor instead.
 func (*DeliverMessageRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{3}
+	return file_workflow_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *DeliverMessageRequest) GetDefRef() string {
@@ -271,7 +315,7 @@ type Actor struct {
 
 func (x *Actor) Reset() {
 	*x = Actor{}
-	mi := &file_workflow_proto_msgTypes[4]
+	mi := &file_workflow_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -283,7 +327,7 @@ func (x *Actor) String() string {
 func (*Actor) ProtoMessage() {}
 
 func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[4]
+	mi := &file_workflow_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -296,7 +340,7 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{4}
+	return file_workflow_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Actor) GetId() string {
@@ -330,7 +374,7 @@ type ClaimTaskRequest struct {
 
 func (x *ClaimTaskRequest) Reset() {
 	*x = ClaimTaskRequest{}
-	mi := &file_workflow_proto_msgTypes[5]
+	mi := &file_workflow_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -342,7 +386,7 @@ func (x *ClaimTaskRequest) String() string {
 func (*ClaimTaskRequest) ProtoMessage() {}
 
 func (x *ClaimTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[5]
+	mi := &file_workflow_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -355,7 +399,7 @@ func (x *ClaimTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimTaskRequest.ProtoReflect.Descriptor instead.
 func (*ClaimTaskRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{5}
+	return file_workflow_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ClaimTaskRequest) GetTaskToken() string {
@@ -383,7 +427,7 @@ type CompleteTaskRequest struct {
 
 func (x *CompleteTaskRequest) Reset() {
 	*x = CompleteTaskRequest{}
-	mi := &file_workflow_proto_msgTypes[6]
+	mi := &file_workflow_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +439,7 @@ func (x *CompleteTaskRequest) String() string {
 func (*CompleteTaskRequest) ProtoMessage() {}
 
 func (x *CompleteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[6]
+	mi := &file_workflow_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +452,7 @@ func (x *CompleteTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteTaskRequest.ProtoReflect.Descriptor instead.
 func (*CompleteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{6}
+	return file_workflow_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CompleteTaskRequest) GetTaskToken() string {
@@ -444,7 +488,7 @@ type ReassignTaskRequest struct {
 
 func (x *ReassignTaskRequest) Reset() {
 	*x = ReassignTaskRequest{}
-	mi := &file_workflow_proto_msgTypes[7]
+	mi := &file_workflow_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -456,7 +500,7 @@ func (x *ReassignTaskRequest) String() string {
 func (*ReassignTaskRequest) ProtoMessage() {}
 
 func (x *ReassignTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[7]
+	mi := &file_workflow_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -469,7 +513,7 @@ func (x *ReassignTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReassignTaskRequest.ProtoReflect.Descriptor instead.
 func (*ReassignTaskRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{7}
+	return file_workflow_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReassignTaskRequest) GetTaskToken() string {
@@ -514,7 +558,7 @@ type ListInstancesRequest struct {
 
 func (x *ListInstancesRequest) Reset() {
 	*x = ListInstancesRequest{}
-	mi := &file_workflow_proto_msgTypes[8]
+	mi := &file_workflow_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -526,7 +570,7 @@ func (x *ListInstancesRequest) String() string {
 func (*ListInstancesRequest) ProtoMessage() {}
 
 func (x *ListInstancesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[8]
+	mi := &file_workflow_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +583,7 @@ func (x *ListInstancesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInstancesRequest.ProtoReflect.Descriptor instead.
 func (*ListInstancesRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{8}
+	return file_workflow_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListInstancesRequest) GetStatus() string {
@@ -579,7 +623,7 @@ type Instance struct {
 
 func (x *Instance) Reset() {
 	*x = Instance{}
-	mi := &file_workflow_proto_msgTypes[9]
+	mi := &file_workflow_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +635,7 @@ func (x *Instance) String() string {
 func (*Instance) ProtoMessage() {}
 
 func (x *Instance) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[9]
+	mi := &file_workflow_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +648,7 @@ func (x *Instance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Instance.ProtoReflect.Descriptor instead.
 func (*Instance) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{9}
+	return file_workflow_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Instance) GetInstanceId() string {
@@ -666,7 +710,7 @@ type InstanceResponse struct {
 
 func (x *InstanceResponse) Reset() {
 	*x = InstanceResponse{}
-	mi := &file_workflow_proto_msgTypes[10]
+	mi := &file_workflow_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +722,7 @@ func (x *InstanceResponse) String() string {
 func (*InstanceResponse) ProtoMessage() {}
 
 func (x *InstanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[10]
+	mi := &file_workflow_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +735,7 @@ func (x *InstanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstanceResponse.ProtoReflect.Descriptor instead.
 func (*InstanceResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{10}
+	return file_workflow_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *InstanceResponse) GetInstance() *Instance {
@@ -710,7 +754,7 @@ type DeliverMessageResponse struct {
 
 func (x *DeliverMessageResponse) Reset() {
 	*x = DeliverMessageResponse{}
-	mi := &file_workflow_proto_msgTypes[11]
+	mi := &file_workflow_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -722,7 +766,7 @@ func (x *DeliverMessageResponse) String() string {
 func (*DeliverMessageResponse) ProtoMessage() {}
 
 func (x *DeliverMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[11]
+	mi := &file_workflow_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -735,7 +779,7 @@ func (x *DeliverMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverMessageResponse.ProtoReflect.Descriptor instead.
 func (*DeliverMessageResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{11}
+	return file_workflow_proto_rawDescGZIP(), []int{12}
 }
 
 // InstanceSummary is a lightweight projection for list results.
@@ -753,7 +797,7 @@ type InstanceSummary struct {
 
 func (x *InstanceSummary) Reset() {
 	*x = InstanceSummary{}
-	mi := &file_workflow_proto_msgTypes[12]
+	mi := &file_workflow_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +809,7 @@ func (x *InstanceSummary) String() string {
 func (*InstanceSummary) ProtoMessage() {}
 
 func (x *InstanceSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[12]
+	mi := &file_workflow_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +822,7 @@ func (x *InstanceSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstanceSummary.ProtoReflect.Descriptor instead.
 func (*InstanceSummary) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{12}
+	return file_workflow_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *InstanceSummary) GetInstanceId() string {
@@ -835,7 +879,7 @@ type ListInstancesResponse struct {
 
 func (x *ListInstancesResponse) Reset() {
 	*x = ListInstancesResponse{}
-	mi := &file_workflow_proto_msgTypes[13]
+	mi := &file_workflow_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -847,7 +891,7 @@ func (x *ListInstancesResponse) String() string {
 func (*ListInstancesResponse) ProtoMessage() {}
 
 func (x *ListInstancesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[13]
+	mi := &file_workflow_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -860,7 +904,7 @@ func (x *ListInstancesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInstancesResponse.ProtoReflect.Descriptor instead.
 func (*ListInstancesResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{13}
+	return file_workflow_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListInstancesResponse) GetItems() []*InstanceSummary {
@@ -895,6 +939,9 @@ const file_workflow_proto_rawDesc = "" +
 	"instanceId\x12+\n" +
 	"\x04vars\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04vars\"5\n" +
 	"\x12GetInstanceRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\"8\n" +
+	"\x15CancelInstanceRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\"\x82\x01\n" +
 	"\x14DeliverSignalRequest\x12\x1f\n" +
@@ -960,7 +1007,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x05items\x18\x01 \x03(\v2\x1a.wrkflw.v1.InstanceSummaryR\x05items\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore2\x86\x05\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore2\xd7\x05\n" +
 	"\x0fWorkflowService\x12M\n" +
 	"\rStartInstance\x12\x1f.wrkflw.v1.StartInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12I\n" +
 	"\vGetInstance\x12\x1d.wrkflw.v1.GetInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12M\n" +
@@ -969,7 +1016,8 @@ const file_workflow_proto_rawDesc = "" +
 	"\tClaimTask\x12\x1b.wrkflw.v1.ClaimTaskRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12K\n" +
 	"\fCompleteTask\x12\x1e.wrkflw.v1.CompleteTaskRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12K\n" +
 	"\fReassignTask\x12\x1e.wrkflw.v1.ReassignTaskRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12R\n" +
-	"\rListInstances\x12\x1f.wrkflw.v1.ListInstancesRequest\x1a .wrkflw.v1.ListInstancesResponseBFZDgithub.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb;workflowpbb\x06proto3"
+	"\rListInstances\x12\x1f.wrkflw.v1.ListInstancesRequest\x1a .wrkflw.v1.ListInstancesResponse\x12O\n" +
+	"\x0eCancelInstance\x12 .wrkflw.v1.CancelInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponseBFZDgithub.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb;workflowpbb\x06proto3"
 
 var (
 	file_workflow_proto_rawDescOnce sync.Once
@@ -983,59 +1031,62 @@ func file_workflow_proto_rawDescGZIP() []byte {
 	return file_workflow_proto_rawDescData
 }
 
-var file_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_workflow_proto_goTypes = []any{
 	(*StartInstanceRequest)(nil),   // 0: wrkflw.v1.StartInstanceRequest
 	(*GetInstanceRequest)(nil),     // 1: wrkflw.v1.GetInstanceRequest
-	(*DeliverSignalRequest)(nil),   // 2: wrkflw.v1.DeliverSignalRequest
-	(*DeliverMessageRequest)(nil),  // 3: wrkflw.v1.DeliverMessageRequest
-	(*Actor)(nil),                  // 4: wrkflw.v1.Actor
-	(*ClaimTaskRequest)(nil),       // 5: wrkflw.v1.ClaimTaskRequest
-	(*CompleteTaskRequest)(nil),    // 6: wrkflw.v1.CompleteTaskRequest
-	(*ReassignTaskRequest)(nil),    // 7: wrkflw.v1.ReassignTaskRequest
-	(*ListInstancesRequest)(nil),   // 8: wrkflw.v1.ListInstancesRequest
-	(*Instance)(nil),               // 9: wrkflw.v1.Instance
-	(*InstanceResponse)(nil),       // 10: wrkflw.v1.InstanceResponse
-	(*DeliverMessageResponse)(nil), // 11: wrkflw.v1.DeliverMessageResponse
-	(*InstanceSummary)(nil),        // 12: wrkflw.v1.InstanceSummary
-	(*ListInstancesResponse)(nil),  // 13: wrkflw.v1.ListInstancesResponse
-	(*structpb.Struct)(nil),        // 14: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),  // 15: google.protobuf.Timestamp
+	(*CancelInstanceRequest)(nil),  // 2: wrkflw.v1.CancelInstanceRequest
+	(*DeliverSignalRequest)(nil),   // 3: wrkflw.v1.DeliverSignalRequest
+	(*DeliverMessageRequest)(nil),  // 4: wrkflw.v1.DeliverMessageRequest
+	(*Actor)(nil),                  // 5: wrkflw.v1.Actor
+	(*ClaimTaskRequest)(nil),       // 6: wrkflw.v1.ClaimTaskRequest
+	(*CompleteTaskRequest)(nil),    // 7: wrkflw.v1.CompleteTaskRequest
+	(*ReassignTaskRequest)(nil),    // 8: wrkflw.v1.ReassignTaskRequest
+	(*ListInstancesRequest)(nil),   // 9: wrkflw.v1.ListInstancesRequest
+	(*Instance)(nil),               // 10: wrkflw.v1.Instance
+	(*InstanceResponse)(nil),       // 11: wrkflw.v1.InstanceResponse
+	(*DeliverMessageResponse)(nil), // 12: wrkflw.v1.DeliverMessageResponse
+	(*InstanceSummary)(nil),        // 13: wrkflw.v1.InstanceSummary
+	(*ListInstancesResponse)(nil),  // 14: wrkflw.v1.ListInstancesResponse
+	(*structpb.Struct)(nil),        // 15: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),  // 16: google.protobuf.Timestamp
 }
 var file_workflow_proto_depIdxs = []int32{
-	14, // 0: wrkflw.v1.StartInstanceRequest.vars:type_name -> google.protobuf.Struct
-	14, // 1: wrkflw.v1.DeliverSignalRequest.payload:type_name -> google.protobuf.Struct
-	14, // 2: wrkflw.v1.DeliverMessageRequest.payload:type_name -> google.protobuf.Struct
-	14, // 3: wrkflw.v1.Actor.attributes:type_name -> google.protobuf.Struct
-	4,  // 4: wrkflw.v1.ClaimTaskRequest.actor:type_name -> wrkflw.v1.Actor
-	4,  // 5: wrkflw.v1.CompleteTaskRequest.actor:type_name -> wrkflw.v1.Actor
-	14, // 6: wrkflw.v1.CompleteTaskRequest.output:type_name -> google.protobuf.Struct
-	4,  // 7: wrkflw.v1.ReassignTaskRequest.by:type_name -> wrkflw.v1.Actor
-	15, // 8: wrkflw.v1.Instance.started_at:type_name -> google.protobuf.Timestamp
-	15, // 9: wrkflw.v1.Instance.ended_at:type_name -> google.protobuf.Timestamp
-	14, // 10: wrkflw.v1.Instance.variables:type_name -> google.protobuf.Struct
-	9,  // 11: wrkflw.v1.InstanceResponse.instance:type_name -> wrkflw.v1.Instance
-	15, // 12: wrkflw.v1.InstanceSummary.started_at:type_name -> google.protobuf.Timestamp
-	15, // 13: wrkflw.v1.InstanceSummary.ended_at:type_name -> google.protobuf.Timestamp
-	12, // 14: wrkflw.v1.ListInstancesResponse.items:type_name -> wrkflw.v1.InstanceSummary
+	15, // 0: wrkflw.v1.StartInstanceRequest.vars:type_name -> google.protobuf.Struct
+	15, // 1: wrkflw.v1.DeliverSignalRequest.payload:type_name -> google.protobuf.Struct
+	15, // 2: wrkflw.v1.DeliverMessageRequest.payload:type_name -> google.protobuf.Struct
+	15, // 3: wrkflw.v1.Actor.attributes:type_name -> google.protobuf.Struct
+	5,  // 4: wrkflw.v1.ClaimTaskRequest.actor:type_name -> wrkflw.v1.Actor
+	5,  // 5: wrkflw.v1.CompleteTaskRequest.actor:type_name -> wrkflw.v1.Actor
+	15, // 6: wrkflw.v1.CompleteTaskRequest.output:type_name -> google.protobuf.Struct
+	5,  // 7: wrkflw.v1.ReassignTaskRequest.by:type_name -> wrkflw.v1.Actor
+	16, // 8: wrkflw.v1.Instance.started_at:type_name -> google.protobuf.Timestamp
+	16, // 9: wrkflw.v1.Instance.ended_at:type_name -> google.protobuf.Timestamp
+	15, // 10: wrkflw.v1.Instance.variables:type_name -> google.protobuf.Struct
+	10, // 11: wrkflw.v1.InstanceResponse.instance:type_name -> wrkflw.v1.Instance
+	16, // 12: wrkflw.v1.InstanceSummary.started_at:type_name -> google.protobuf.Timestamp
+	16, // 13: wrkflw.v1.InstanceSummary.ended_at:type_name -> google.protobuf.Timestamp
+	13, // 14: wrkflw.v1.ListInstancesResponse.items:type_name -> wrkflw.v1.InstanceSummary
 	0,  // 15: wrkflw.v1.WorkflowService.StartInstance:input_type -> wrkflw.v1.StartInstanceRequest
 	1,  // 16: wrkflw.v1.WorkflowService.GetInstance:input_type -> wrkflw.v1.GetInstanceRequest
-	2,  // 17: wrkflw.v1.WorkflowService.DeliverSignal:input_type -> wrkflw.v1.DeliverSignalRequest
-	3,  // 18: wrkflw.v1.WorkflowService.DeliverMessage:input_type -> wrkflw.v1.DeliverMessageRequest
-	5,  // 19: wrkflw.v1.WorkflowService.ClaimTask:input_type -> wrkflw.v1.ClaimTaskRequest
-	6,  // 20: wrkflw.v1.WorkflowService.CompleteTask:input_type -> wrkflw.v1.CompleteTaskRequest
-	7,  // 21: wrkflw.v1.WorkflowService.ReassignTask:input_type -> wrkflw.v1.ReassignTaskRequest
-	8,  // 22: wrkflw.v1.WorkflowService.ListInstances:input_type -> wrkflw.v1.ListInstancesRequest
-	10, // 23: wrkflw.v1.WorkflowService.StartInstance:output_type -> wrkflw.v1.InstanceResponse
-	10, // 24: wrkflw.v1.WorkflowService.GetInstance:output_type -> wrkflw.v1.InstanceResponse
-	10, // 25: wrkflw.v1.WorkflowService.DeliverSignal:output_type -> wrkflw.v1.InstanceResponse
-	11, // 26: wrkflw.v1.WorkflowService.DeliverMessage:output_type -> wrkflw.v1.DeliverMessageResponse
-	10, // 27: wrkflw.v1.WorkflowService.ClaimTask:output_type -> wrkflw.v1.InstanceResponse
-	10, // 28: wrkflw.v1.WorkflowService.CompleteTask:output_type -> wrkflw.v1.InstanceResponse
-	10, // 29: wrkflw.v1.WorkflowService.ReassignTask:output_type -> wrkflw.v1.InstanceResponse
-	13, // 30: wrkflw.v1.WorkflowService.ListInstances:output_type -> wrkflw.v1.ListInstancesResponse
-	23, // [23:31] is the sub-list for method output_type
-	15, // [15:23] is the sub-list for method input_type
+	3,  // 17: wrkflw.v1.WorkflowService.DeliverSignal:input_type -> wrkflw.v1.DeliverSignalRequest
+	4,  // 18: wrkflw.v1.WorkflowService.DeliverMessage:input_type -> wrkflw.v1.DeliverMessageRequest
+	6,  // 19: wrkflw.v1.WorkflowService.ClaimTask:input_type -> wrkflw.v1.ClaimTaskRequest
+	7,  // 20: wrkflw.v1.WorkflowService.CompleteTask:input_type -> wrkflw.v1.CompleteTaskRequest
+	8,  // 21: wrkflw.v1.WorkflowService.ReassignTask:input_type -> wrkflw.v1.ReassignTaskRequest
+	9,  // 22: wrkflw.v1.WorkflowService.ListInstances:input_type -> wrkflw.v1.ListInstancesRequest
+	2,  // 23: wrkflw.v1.WorkflowService.CancelInstance:input_type -> wrkflw.v1.CancelInstanceRequest
+	11, // 24: wrkflw.v1.WorkflowService.StartInstance:output_type -> wrkflw.v1.InstanceResponse
+	11, // 25: wrkflw.v1.WorkflowService.GetInstance:output_type -> wrkflw.v1.InstanceResponse
+	11, // 26: wrkflw.v1.WorkflowService.DeliverSignal:output_type -> wrkflw.v1.InstanceResponse
+	12, // 27: wrkflw.v1.WorkflowService.DeliverMessage:output_type -> wrkflw.v1.DeliverMessageResponse
+	11, // 28: wrkflw.v1.WorkflowService.ClaimTask:output_type -> wrkflw.v1.InstanceResponse
+	11, // 29: wrkflw.v1.WorkflowService.CompleteTask:output_type -> wrkflw.v1.InstanceResponse
+	11, // 30: wrkflw.v1.WorkflowService.ReassignTask:output_type -> wrkflw.v1.InstanceResponse
+	14, // 31: wrkflw.v1.WorkflowService.ListInstances:output_type -> wrkflw.v1.ListInstancesResponse
+	11, // 32: wrkflw.v1.WorkflowService.CancelInstance:output_type -> wrkflw.v1.InstanceResponse
+	24, // [24:33] is the sub-list for method output_type
+	15, // [15:24] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
@@ -1052,7 +1103,7 @@ func file_workflow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workflow_proto_rawDesc), len(file_workflow_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

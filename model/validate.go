@@ -69,6 +69,9 @@ var (
 	// Source is not the node itself. A recovery flow must be a real outgoing
 	// flow of the node that carries it.
 	ErrInvalidRecoveryFlow = errors.New("workflow-model: invalid recovery flow")
+	// ErrEmptyCancelAction is returned when a process definition's CancelActions
+	// slice contains an empty string. All action names must be non-empty.
+	ErrEmptyCancelAction = errors.New("workflow-model: empty cancel action name")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -260,6 +263,13 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 			if !found {
 				errs = append(errs, fmt.Errorf("%w: node %q flow %q", ErrInvalidRecoveryFlow, n.ID, n.RecoveryFlow))
 			}
+		}
+	}
+
+	// CancelActions: reject empty action names.
+	for i, name := range d.CancelActions {
+		if name == "" {
+			errs = append(errs, fmt.Errorf("%w: CancelActions[%d]", ErrEmptyCancelAction, i))
 		}
 	}
 

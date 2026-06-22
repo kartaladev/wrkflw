@@ -126,6 +126,19 @@ func (h *handler) handleResolveIncident(w http.ResponseWriter, r *http.Request) 
 	h.renderInstance(w, r, http.StatusOK, st)
 }
 
+// handleCancelInstance handles POST /admin/instances/{id}/cancel. It cancels the
+// instance (running any definition-level cancel actions best-effort) and renders
+// the resulting terminated instance. No request body.
+func (h *handler) handleCancelInstance(w http.ResponseWriter, r *http.Request) {
+	instanceID := r.PathValue("id")
+	st, err := h.svc.CancelInstance(r.Context(), service.CancelInstanceRequest{InstanceID: instanceID})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.renderInstance(w, r, http.StatusOK, st)
+}
+
 // parseStatus converts a status string (as emitted by statusString) back to an engine.Status.
 // Returns a wrapped ErrBadInput for unknown values so classifyError maps it to 400.
 func parseStatus(s string) (engine.Status, error) {
