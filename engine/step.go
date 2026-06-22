@@ -142,11 +142,13 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			}
 		}
 
-		if len(s.RootCompensations) > 0 {
+		if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 			// Compensation walk before termination (ADR-0034).
-			// beginCompensation clears tokens/timers/arms and emits the first compensation
-			// InvokeAction, setting the cursor with FinalStatus=Terminated and FinalErr="cancelled".
-			// stepCompensationFinish will emit FailInstance{"cancelled"} at walk end.
+			// beginCompensation consolidates ArchivedCompensations into RootCompensations
+			// first (ADR-0039), then clears tokens/timers/arms and emits the first
+			// compensation InvokeAction, setting the cursor with FinalStatus=Terminated
+			// and FinalErr="cancelled". stepCompensationFinish will emit
+			// FailInstance{"cancelled"} at walk end.
 			s.Status = StatusCompensating
 			res, err := beginCompensation(def, &s, "", StatusTerminated, "cancelled", t.OccurredAt(), opt.Mode)
 			if err != nil {
@@ -1103,7 +1105,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 						for _, timerID := range s.removeEventSubprocessArmsForScope(currentScopeID) {
 							cmds = append(cmds, CancelTimer{TimerID: timerID})
 						}
-						s.hoistCompensations(currentScopeID, parentScopeID)
+						s.archiveCompensations(currentScopeID)
 						s.closeScope(currentScopeID)
 
 						// Resolve the parent definition and find the sub-process activity's
@@ -2022,7 +2024,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	}
 
 	// Terminal unhandled error: run compensation walk before terminating (ADR-0034).
-	if len(s.RootCompensations) > 0 {
+	// Check both RootCompensations and ArchivedCompensations (ADR-0039) — consolidation
+	// happens inside beginCompensation.
+	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
 		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode)
 		if err != nil {
@@ -2735,8 +2739,12 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	preCmds = append(preCmds, s.cancelAllTimers()...)
 	preCmds = append(preCmds, s.cancelAllArmsAndBoundaries()...)
 
-	// For now we compensate the root scope (top-level admin path).
-	// Task 4 will extend this to scope-targeted compensation.
+	// Merge any archived sub-process compensation records into RootCompensations before
+	// walking. consolidateArchiveIntoRoot is a no-op when ArchivedCompensations is nil.
+	s.consolidateArchiveIntoRoot()
+
+	// Compensate the root scope (top-level walk: root + all previously-archived records
+	// are now in RootCompensations after consolidation above).
 	const scopeID = ""
 	records := compensationRecordsForScope(s, scopeID)
 
@@ -3071,6 +3079,26 @@ func cloneState(st InstanceState) InstanceState {
 				}
 			}
 			s.Scopes[i] = cs
+		}
+	}
+	// Deep-copy ArchivedCompensations: each entry in the map holds a
+	// []CompensationRecord whose Input fields are map[string]any (reference types)
+	// and must be independently allocated so mutations to the clone do not affect
+	// the original. nil map in source → nil in clone.
+	if st.ArchivedCompensations != nil {
+		s.ArchivedCompensations = make(map[string][]CompensationRecord, len(st.ArchivedCompensations))
+		for k, recs := range st.ArchivedCompensations {
+			if recs == nil {
+				s.ArchivedCompensations[k] = nil
+			} else {
+				cloned := make([]CompensationRecord, len(recs))
+				for i, cr := range recs {
+					ccr := cr
+					ccr.Input = copyVars(cr.Input)
+					cloned[i] = ccr
+				}
+				s.ArchivedCompensations[k] = cloned
+			}
 		}
 	}
 	// Deep-copy Incidents: Incident is a flat value struct (all fields are plain

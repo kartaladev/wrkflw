@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -390,6 +391,13 @@ type InstanceState struct {
 	// back top-level compensable activities.
 	RootCompensations []CompensationRecord
 
+	// ArchivedCompensations holds completed sub-process compensation records keyed
+	// by the sub-process node id. On normal scope exit, scope.Compensations are moved
+	// here (instead of being hoisted to the parent) so scope identity survives for
+	// scope-targeted compensation (ADR-0039). A root/instance walk consolidates these
+	// into RootCompensations before traversal via consolidateArchiveIntoRoot.
+	ArchivedCompensations map[string][]CompensationRecord
+
 	// EventSubprocesses holds the set of pending arms for in-flight event
 	// sub-processes. One entry per KindEventSubProcess node while its enclosing
 	// scope is active. Entries are appended in definition-scan order (deterministic).
@@ -756,23 +764,54 @@ func (s *InstanceState) tokensInScope(scopeID string) int {
 	return count
 }
 
-// hoistCompensations moves childID's accumulated compensation records into its
-// parent (parentID), appended in completion order, so they remain rollback-able
-// after the child scope closes. parentID "" targets RootCompensations. The
-// child's own slice is cleared. No-op if the child has no records or is not found.
-func (s *InstanceState) hoistCompensations(childID, parentID string) {
-	child := s.scopeByID(childID)
-	if child == nil || len(child.Compensations) == 0 {
+// archiveCompensations moves the Compensations of the scope identified by scopeID
+// into ArchivedCompensations keyed by that scope's NodeID (the sub-process node
+// that opened the scope). This replaces hoistCompensations on normal sub-process
+// exit (ADR-0039): scope identity is preserved for scope-targeted compensation,
+// and records are still reachable by the root/instance walk via
+// consolidateArchiveIntoRoot. A sub-process entered more than once accumulates
+// records in the same archive slot. No-op if the scope has no records or is not
+// found.
+func (s *InstanceState) archiveCompensations(scopeID string) {
+	scope := s.scopeByID(scopeID)
+	if scope == nil || len(scope.Compensations) == 0 {
 		return
 	}
-	if parentID == "" {
-		s.RootCompensations = append(s.RootCompensations, child.Compensations...)
-	} else if parent := s.scopeByID(parentID); parent != nil {
-		// The parent always exists here by construction: scopes close child-first,
-		// so a closing scope's parent is either root ("") or a still-open ancestor.
-		parent.Compensations = append(parent.Compensations, child.Compensations...)
+	if s.ArchivedCompensations == nil {
+		s.ArchivedCompensations = make(map[string][]CompensationRecord)
 	}
-	child.Compensations = nil
+	s.ArchivedCompensations[scope.NodeID] = append(s.ArchivedCompensations[scope.NodeID], scope.Compensations...)
+	scope.Compensations = nil
+}
+
+// consolidateArchiveIntoRoot moves all ArchivedCompensations into RootCompensations,
+// then stable-sorts the combined slice by (CompletedAt ascending, NodeID ascending
+// tiebreak) for determinism, then sets ArchivedCompensations to nil. This is called
+// by beginCompensation before the root/instance walk so the walk sees root + all
+// archived sub-process records as one reverse-ordered sequence. Records are MOVED
+// (single ownership: once consolidated, the archive is empty; stepCompensationFinish
+// clears RootCompensations on walk finish, covering everything).
+func (s *InstanceState) consolidateArchiveIntoRoot() {
+	if len(s.ArchivedCompensations) == 0 {
+		return
+	}
+	// Deterministic iteration: sort archive keys.
+	keys := make([]string, 0, len(s.ArchivedCompensations))
+	for k := range s.ArchivedCompensations {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		s.RootCompensations = append(s.RootCompensations, s.ArchivedCompensations[k]...)
+	}
+	s.ArchivedCompensations = nil
+	// Stable-sort combined slice by CompletedAt asc, NodeID asc tiebreak.
+	sort.SliceStable(s.RootCompensations, func(i, j int) bool {
+		if s.RootCompensations[i].CompletedAt.Equal(s.RootCompensations[j].CompletedAt) {
+			return s.RootCompensations[i].NodeID < s.RootCompensations[j].NodeID
+		}
+		return s.RootCompensations[i].CompletedAt.Before(s.RootCompensations[j].CompletedAt)
+	})
 }
 
 // closeScope removes the Scope with the given scopeID from s.Scopes. It is a
