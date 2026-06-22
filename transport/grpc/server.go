@@ -23,8 +23,9 @@ import (
 // service.Service facade and converts between proto and service types.
 type server struct {
 	workflowpb.UnimplementedWorkflowServiceServer
-	svc service.Service
-	tel observability.Telemetry
+	svc         service.Service
+	tel         observability.Telemetry
+	deadLetters service.DeadLetterAdmin
 }
 
 // RegisterWorkflowServiceServer constructs a WorkflowService gRPC implementation
@@ -43,6 +44,11 @@ type server struct {
 // reaches the handler. Registering without such an interceptor exposes
 // unauthenticated enumeration of all process instances.
 //
+// The same caveat applies to the DLQ admin RPCs (ListDeadLetters,
+// RedriveDeadLetters) once enabled via WithDeadLetterAdmin: they are admin-scoped
+// with no built-in per-method gate and must be protected by the consumer's
+// interceptor. Without WithDeadLetterAdmin they return codes.Unimplemented.
+//
 // Per-method authorization built into this package is a tracked follow-up.
 func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Service, opts ...Option) {
 	cfg := &serverConfig{}
@@ -53,7 +59,7 @@ func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Servic
 		"github.com/zakyalvan/krtlwrkflw/transport/grpc",
 		nonNilOpts(cfg.logOpt, cfg.tpOpt, cfg.mpOpt)...,
 	)
-	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc, tel: tel})
+	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc, tel: tel, deadLetters: cfg.deadLetters})
 }
 
 // ---- RPC implementations ----
@@ -224,6 +230,79 @@ func (s *server) CancelInstance(ctx context.Context, req *workflowpb.CancelInsta
 		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
 	}
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
+}
+
+// ResolveIncident clears an open incident on an instance, grants additional
+// attempts, and resumes execution.
+func (s *server) ResolveIncident(ctx context.Context, req *workflowpb.ResolveIncidentRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "ResolveIncident")
+	defer span.End()
+
+	st, err := s.svc.ResolveIncident(ctx, service.ResolveIncidentRequest{
+		InstanceID:  req.GetInstanceId(),
+		IncidentID:  req.GetIncidentId(),
+		AddAttempts: int(req.GetAddAttempts()),
+	})
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	proto, err := instanceToProto(st)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
+}
+
+// ListDeadLetters returns dead-lettered outbox rows. It requires the server to be
+// registered with WithDeadLetterAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) ListDeadLetters(ctx context.Context, req *workflowpb.ListDeadLettersRequest) (*workflowpb.ListDeadLettersResponse, error) {
+	ctx, span := s.startSpan(ctx, "ListDeadLetters")
+	defer span.End()
+
+	if s.deadLetters == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: dead-letter admin not configured")
+	}
+	rows, err := s.deadLetters.ListDeadLettered(ctx, runtime.NormalizeLimit(int(req.GetLimit())))
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	items := make([]*workflowpb.DeadLetter, len(rows))
+	for i, dl := range rows {
+		items[i] = deadLetterToProto(dl)
+	}
+	return &workflowpb.ListDeadLettersResponse{Items: items}, nil
+}
+
+// RedriveDeadLetters re-queues dead outbox rows by id. It requires the server to
+// be registered with WithDeadLetterAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) RedriveDeadLetters(ctx context.Context, req *workflowpb.RedriveDeadLettersRequest) (*workflowpb.RedriveDeadLettersResponse, error) {
+	ctx, span := s.startSpan(ctx, "RedriveDeadLetters")
+	defer span.End()
+
+	if s.deadLetters == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: dead-letter admin not configured")
+	}
+	n, err := s.deadLetters.Redrive(ctx, req.GetIds()...)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	return &workflowpb.RedriveDeadLettersResponse{RedrivenCount: int32(n)}, nil //nolint:gosec // bounded outbox row count
+}
+
+// deadLetterToProto projects a runtime.DeadLetter onto its gRPC message.
+func deadLetterToProto(dl runtime.DeadLetter) *workflowpb.DeadLetter {
+	return &workflowpb.DeadLetter{
+		Id:         dl.ID,
+		InstanceId: dl.InstanceID,
+		Topic:      dl.Topic,
+		RetryCount: int32(dl.RetryCount), //nolint:gosec // bounded retry count
+		LastError:  dl.LastError,
+		CreatedAt:  timestamppb.New(dl.CreatedAt),
+	}
 }
 
 // ListInstances returns a paginated list of instance summaries.

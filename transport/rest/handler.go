@@ -36,6 +36,11 @@ import (
 //	POST   /admin/instances/{id}/incidents/{incidentID}/resolve — resolve an open incident and resume execution
 //	POST   /admin/instances/{id}/cancel                        — cancel a running instance (runs cancel actions)
 //
+// DLQ admin routes (registered only when WithDeadLetterAdmin is supplied):
+//
+//	GET    /admin/dead-letters                                 — list dead-lettered outbox rows
+//	POST   /admin/dead-letters/redrive                         — re-queue dead rows by id
+//
 // Default-deny: admin routes return 403 Forbidden when no WithAdminMiddleware option
 // is supplied. Consumers must explicitly opt in by providing a middleware that
 // enforces their authentication and authorisation requirements.
@@ -70,6 +75,17 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 		cfg.adminMiddleware(http.HandlerFunc(h.handleResolveIncident)))
 	mux.Handle("POST /admin/instances/{id}/cancel",
 		cfg.adminMiddleware(http.HandlerFunc(h.handleCancelInstance)))
+
+	// DLQ admin routes are registered only when a DeadLetterAdmin is wired via
+	// WithDeadLetterAdmin. Absent it (e.g. MemStore-only consumers), the routes do
+	// not exist (404) rather than returning a misleading error. Like the other
+	// admin routes they sit behind cfg.adminMiddleware (default-deny).
+	if cfg.deadLetters != nil {
+		mux.Handle("GET /admin/dead-letters",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleListDeadLetters)))
+		mux.Handle("POST /admin/dead-letters/redrive",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleRedriveDeadLetters)))
+	}
 
 	return h.traceMiddleware(mux)
 }

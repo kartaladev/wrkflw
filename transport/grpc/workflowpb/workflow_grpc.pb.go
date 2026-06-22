@@ -19,15 +19,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WorkflowService_StartInstance_FullMethodName  = "/wrkflw.v1.WorkflowService/StartInstance"
-	WorkflowService_GetInstance_FullMethodName    = "/wrkflw.v1.WorkflowService/GetInstance"
-	WorkflowService_DeliverSignal_FullMethodName  = "/wrkflw.v1.WorkflowService/DeliverSignal"
-	WorkflowService_DeliverMessage_FullMethodName = "/wrkflw.v1.WorkflowService/DeliverMessage"
-	WorkflowService_ClaimTask_FullMethodName      = "/wrkflw.v1.WorkflowService/ClaimTask"
-	WorkflowService_CompleteTask_FullMethodName   = "/wrkflw.v1.WorkflowService/CompleteTask"
-	WorkflowService_ReassignTask_FullMethodName   = "/wrkflw.v1.WorkflowService/ReassignTask"
-	WorkflowService_ListInstances_FullMethodName  = "/wrkflw.v1.WorkflowService/ListInstances"
-	WorkflowService_CancelInstance_FullMethodName = "/wrkflw.v1.WorkflowService/CancelInstance"
+	WorkflowService_StartInstance_FullMethodName      = "/wrkflw.v1.WorkflowService/StartInstance"
+	WorkflowService_GetInstance_FullMethodName        = "/wrkflw.v1.WorkflowService/GetInstance"
+	WorkflowService_DeliverSignal_FullMethodName      = "/wrkflw.v1.WorkflowService/DeliverSignal"
+	WorkflowService_DeliverMessage_FullMethodName     = "/wrkflw.v1.WorkflowService/DeliverMessage"
+	WorkflowService_ClaimTask_FullMethodName          = "/wrkflw.v1.WorkflowService/ClaimTask"
+	WorkflowService_CompleteTask_FullMethodName       = "/wrkflw.v1.WorkflowService/CompleteTask"
+	WorkflowService_ReassignTask_FullMethodName       = "/wrkflw.v1.WorkflowService/ReassignTask"
+	WorkflowService_ListInstances_FullMethodName      = "/wrkflw.v1.WorkflowService/ListInstances"
+	WorkflowService_CancelInstance_FullMethodName     = "/wrkflw.v1.WorkflowService/CancelInstance"
+	WorkflowService_ResolveIncident_FullMethodName    = "/wrkflw.v1.WorkflowService/ResolveIncident"
+	WorkflowService_ListDeadLetters_FullMethodName    = "/wrkflw.v1.WorkflowService/ListDeadLetters"
+	WorkflowService_RedriveDeadLetters_FullMethodName = "/wrkflw.v1.WorkflowService/RedriveDeadLetters"
 )
 
 // WorkflowServiceClient is the client API for WorkflowService service.
@@ -56,6 +59,14 @@ type WorkflowServiceClient interface {
 	ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error)
 	// CancelInstance terminates a running instance (running cancel actions best-effort).
 	CancelInstance(ctx context.Context, in *CancelInstanceRequest, opts ...grpc.CallOption) (*InstanceResponse, error)
+	// ResolveIncident clears an open incident, grants additional attempts, and resumes execution.
+	ResolveIncident(ctx context.Context, in *ResolveIncidentRequest, opts ...grpc.CallOption) (*InstanceResponse, error)
+	// ListDeadLetters returns dead-lettered outbox rows. Admin-scoped; requires the
+	// server to be registered with WithDeadLetterAdmin, else returns Unimplemented.
+	ListDeadLetters(ctx context.Context, in *ListDeadLettersRequest, opts ...grpc.CallOption) (*ListDeadLettersResponse, error)
+	// RedriveDeadLetters re-queues dead outbox rows by id. Admin-scoped; requires
+	// WithDeadLetterAdmin, else returns Unimplemented.
+	RedriveDeadLetters(ctx context.Context, in *RedriveDeadLettersRequest, opts ...grpc.CallOption) (*RedriveDeadLettersResponse, error)
 }
 
 type workflowServiceClient struct {
@@ -156,6 +167,36 @@ func (c *workflowServiceClient) CancelInstance(ctx context.Context, in *CancelIn
 	return out, nil
 }
 
+func (c *workflowServiceClient) ResolveIncident(ctx context.Context, in *ResolveIncidentRequest, opts ...grpc.CallOption) (*InstanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstanceResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_ResolveIncident_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListDeadLetters(ctx context.Context, in *ListDeadLettersRequest, opts ...grpc.CallOption) (*ListDeadLettersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDeadLettersResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_ListDeadLetters_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RedriveDeadLetters(ctx context.Context, in *RedriveDeadLettersRequest, opts ...grpc.CallOption) (*RedriveDeadLettersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RedriveDeadLettersResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_RedriveDeadLetters_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkflowServiceServer is the server API for WorkflowService service.
 // All implementations must embed UnimplementedWorkflowServiceServer
 // for forward compatibility.
@@ -182,6 +223,14 @@ type WorkflowServiceServer interface {
 	ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error)
 	// CancelInstance terminates a running instance (running cancel actions best-effort).
 	CancelInstance(context.Context, *CancelInstanceRequest) (*InstanceResponse, error)
+	// ResolveIncident clears an open incident, grants additional attempts, and resumes execution.
+	ResolveIncident(context.Context, *ResolveIncidentRequest) (*InstanceResponse, error)
+	// ListDeadLetters returns dead-lettered outbox rows. Admin-scoped; requires the
+	// server to be registered with WithDeadLetterAdmin, else returns Unimplemented.
+	ListDeadLetters(context.Context, *ListDeadLettersRequest) (*ListDeadLettersResponse, error)
+	// RedriveDeadLetters re-queues dead outbox rows by id. Admin-scoped; requires
+	// WithDeadLetterAdmin, else returns Unimplemented.
+	RedriveDeadLetters(context.Context, *RedriveDeadLettersRequest) (*RedriveDeadLettersResponse, error)
 	mustEmbedUnimplementedWorkflowServiceServer()
 }
 
@@ -218,6 +267,15 @@ func (UnimplementedWorkflowServiceServer) ListInstances(context.Context, *ListIn
 }
 func (UnimplementedWorkflowServiceServer) CancelInstance(context.Context, *CancelInstanceRequest) (*InstanceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelInstance not implemented")
+}
+func (UnimplementedWorkflowServiceServer) ResolveIncident(context.Context, *ResolveIncidentRequest) (*InstanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveIncident not implemented")
+}
+func (UnimplementedWorkflowServiceServer) ListDeadLetters(context.Context, *ListDeadLettersRequest) (*ListDeadLettersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDeadLetters not implemented")
+}
+func (UnimplementedWorkflowServiceServer) RedriveDeadLetters(context.Context, *RedriveDeadLettersRequest) (*RedriveDeadLettersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RedriveDeadLetters not implemented")
 }
 func (UnimplementedWorkflowServiceServer) mustEmbedUnimplementedWorkflowServiceServer() {}
 func (UnimplementedWorkflowServiceServer) testEmbeddedByValue()                         {}
@@ -402,6 +460,60 @@ func _WorkflowService_CancelInstance_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowService_ResolveIncident_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveIncidentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ResolveIncident(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_ResolveIncident_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ResolveIncident(ctx, req.(*ResolveIncidentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListDeadLetters_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDeadLettersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListDeadLetters(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_ListDeadLetters_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListDeadLetters(ctx, req.(*ListDeadLettersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RedriveDeadLetters_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RedriveDeadLettersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RedriveDeadLetters(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_RedriveDeadLetters_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RedriveDeadLetters(ctx, req.(*RedriveDeadLettersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkflowService_ServiceDesc is the grpc.ServiceDesc for WorkflowService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -444,6 +556,18 @@ var WorkflowService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelInstance",
 			Handler:    _WorkflowService_CancelInstance_Handler,
+		},
+		{
+			MethodName: "ResolveIncident",
+			Handler:    _WorkflowService_ResolveIncident_Handler,
+		},
+		{
+			MethodName: "ListDeadLetters",
+			Handler:    _WorkflowService_ListDeadLetters_Handler,
+		},
+		{
+			MethodName: "RedriveDeadLetters",
+			Handler:    _WorkflowService_RedriveDeadLetters_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
