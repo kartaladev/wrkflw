@@ -700,7 +700,37 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.NotErrorIs(t, err, model.ErrCompensateRefNotFound)
+				require.NoError(t, err, "a normal throw with no CompensateRef must validate clean")
+			},
+		},
+		"dangling CompensateRef inside a sub-process is rejected (recursion)": {
+			// The CompensateRef rule lives in the recursive validate(), so a dangling
+			// ref inside a nested sub-process definition must also be caught.
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+						ID: "inner", Version: 1,
+						Nodes: []model.Node{
+							{ID: "ns", Kind: model.KindStartEvent},
+							{ID: "nthrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "no-such"},
+							{ID: "ne", Kind: model.KindEndEvent},
+						},
+						Flows: []model.SequenceFlow{
+							{ID: "nf1", Source: "ns", Target: "nthrow"},
+							{ID: "nf2", Source: "nthrow", Target: "ne"},
+						},
+					}},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
 			},
 		},
 	}
