@@ -38,6 +38,8 @@ type adminListResponse struct {
 //	status  (optional) — filter by lifecycle status; unknown values → 400.
 //	limit   (optional) — page size; clamped by runtime.NormalizeLimit.
 //	cursor  (optional) — opaque keyset cursor; malformed → 400.
+//	total   (optional) — "true" or "1" to compute and include total_count (the
+//	                     count of all status-matching instances) in the response.
 func (h *handler) handleAdminListInstances(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
