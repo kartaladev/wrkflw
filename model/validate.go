@@ -231,6 +231,29 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		}
 	}
 
+	// Parallel-join pairing (ErrUnpairedJoin). Only KindParallelGateway joins can
+	// deadlock: they wait for a token on every incoming flow unconditionally.
+	// Exclusive/event-based joins fire on first arrival, and inclusive joins
+	// self-adjust via runtime reachability — none deadlock, so they are excluded.
+	// A parallel join is flagged iff no parallel/inclusive split can deliver two
+	// concurrent tokens toward it (a provable deadlock). Conservative: any plausible
+	// concurrency source clears the join (favouring no false positives). Unreachable
+	// joins are skipped — ErrUnreachableNode already reports them.
+	for _, n := range d.Nodes {
+		if n.Kind != KindParallelGateway {
+			continue
+		}
+		if len(d.Incoming(n.ID)) <= 1 || len(d.Outgoing(n.ID)) != 1 {
+			continue // not a pure parallel join (mixed already rejected; split is fine)
+		}
+		if reached != nil && !reached[n.ID] {
+			continue
+		}
+		if !hasConcurrencySource(d, n.ID) {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrUnpairedJoin, n.ID))
+		}
+	}
+
 	// errorBoundaryHostKinds is the subset of activityKinds that can throw a
 	// BPMN error and therefore may host a boundary error event.
 	errorBoundaryHostKinds := map[NodeKind]bool{
@@ -340,4 +363,34 @@ func forwardReachable(d *ProcessDefinition, seed string) map[string]bool {
 		}
 	}
 	return reached
+}
+
+// hasConcurrencySource reports whether some parallel or inclusive split (a
+// gateway with >1 outgoing flow) has at least two distinct outgoing branches
+// whose targets can each forward-reach joinID. Only parallel/inclusive splits
+// create concurrency; exclusive and event-based splits take a single branch, so
+// they are not concurrency sources.
+func hasConcurrencySource(d *ProcessDefinition, joinID string) bool {
+	for _, f := range d.Nodes {
+		if f.ID == joinID {
+			continue
+		}
+		if f.Kind != KindParallelGateway && f.Kind != KindInclusiveGateway {
+			continue
+		}
+		out := d.Outgoing(f.ID)
+		if len(out) <= 1 {
+			continue // a join or pass-through, not a split
+		}
+		count := 0
+		for _, b := range out {
+			if forwardReachable(d, b.Target)[joinID] {
+				count++
+				if count >= 2 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

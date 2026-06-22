@@ -456,18 +456,23 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"pure join gateway is valid": {
+			// A parallel join needs a real parallel fork upstream: a start event
+			// follows only its first outgoing flow (moveAlongSingleFlow), so
+			// "start -> a, b" would never activate b and the join would deadlock.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "fork", Kind: model.KindParallelGateway},
 					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
 					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
 					{ID: "j", Kind: model.KindParallelGateway},
 					{ID: "end", Kind: model.KindEndEvent},
 				},
 				Flows: []model.SequenceFlow{
-					{ID: "f1", Source: "start", Target: "a"},
-					{ID: "f2", Source: "start", Target: "b"},
+					{ID: "f0", Source: "start", Target: "fork"},
+					{ID: "f1", Source: "fork", Target: "a"},
+					{ID: "f2", Source: "fork", Target: "b"},
 					{ID: "f3", Source: "a", Target: "j"},
 					{ID: "f4", Source: "b", Target: "j"},
 					{ID: "f5", Source: "j", Target: "end"},
@@ -475,6 +480,78 @@ func TestValidate(t *testing.T) {
 			},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
+			},
+		},
+		"parallel join fed by exclusive split is unpaired": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "split", Kind: model.KindExclusiveGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "j", Kind: model.KindParallelGateway},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f0", Source: "start", Target: "split"},
+					{ID: "f1", Source: "split", Target: "a"},
+					{ID: "f2", Source: "split", Target: "b"},
+					{ID: "f3", Source: "a", Target: "j"},
+					{ID: "f4", Source: "b", Target: "j"},
+					{ID: "f5", Source: "j", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrUnpairedJoin)
+			},
+		},
+		"parallel join fed by inclusive split is paired": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "split", Kind: model.KindInclusiveGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "j", Kind: model.KindParallelGateway},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f0", Source: "start", Target: "split"},
+					{ID: "f1", Source: "split", Target: "a"},
+					{ID: "f2", Source: "split", Target: "b"},
+					{ID: "f3", Source: "a", Target: "j"},
+					{ID: "f4", Source: "b", Target: "j"},
+					{ID: "f5", Source: "j", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"inclusive join fed by exclusive split is not flagged (rule is parallel-only)": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "split", Kind: model.KindExclusiveGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "j", Kind: model.KindInclusiveGateway},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f0", Source: "start", Target: "split"},
+					{ID: "f1", Source: "split", Target: "a"},
+					{ID: "f2", Source: "split", Target: "b"},
+					{ID: "f3", Source: "a", Target: "j"},
+					{ID: "f4", Source: "b", Target: "j"},
+					{ID: "f5", Source: "j", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
 	}
