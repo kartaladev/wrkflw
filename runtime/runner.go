@@ -29,17 +29,16 @@ import (
 // accidentally; the helpers callDepth / withCallDepth are the only access points.
 type callDepthKey struct{}
 
-// maxCallActivityDepth is the maximum nesting depth allowed for synchronous
-// call-activity invocations. Exceeding this limit returns a descriptive
-// SubInstanceFailed error instead of allowing unbounded recursion that would
-// eventually cause a stack overflow or exhaust memory.
+// maxCallDepth is the maximum nesting depth allowed for call-activity invocations.
+// For the synchronous path (no CallLinkStore) it guards against stack overflow via
+// the ctx-threaded depth counter. For the async path (CallLinkStore present) it is
+// computed from stored link depths and blocks runaway call chains before they start.
 //
 // Child instance IDs use a SHORT suffix scheme (see StartSubInstance handling):
 // "<parentInstanceID>-sub-c<N>" where c<N> is only the command-sequence suffix,
 // not the full parent ID. This gives O(depth) growth rather than O(2^depth), so
-// depth 64 is safely bounded. True async call activities (a future enhancement)
-// do not use this counter at all.
-const maxCallActivityDepth = 64
+// depth 64 is safely bounded.
+const maxCallDepth = 64
 
 // callDepth returns the current call-activity nesting depth stored in ctx.
 // Returns 0 if no depth has been set (i.e. the outermost call).
@@ -63,15 +62,16 @@ type msgKey struct {
 
 // Runner is the reference single-process driver loop.
 type Runner struct {
-	cat      action.Catalog
-	clk      clock.Clock
-	store    Store
-	resolver humantask.ActorResolver
-	tasks    humantask.TaskStore
-	authz    authz.Authorizer
-	sched    Scheduler
-	sigbus   *SignalBus
-	defsReg  DefinitionRegistry
+	cat       action.Catalog
+	clk       clock.Clock
+	store     Store
+	resolver  humantask.ActorResolver
+	tasks     humantask.TaskStore
+	authz     authz.Authorizer
+	sched     Scheduler
+	sigbus    *SignalBus
+	defsReg   DefinitionRegistry
+	callLinks CallLinkStore
 	// jitter supplies the random fraction used to de-synchronize retry backoff.
 	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
 	// trigger so that engine replay remains deterministic.
@@ -153,6 +153,17 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 	return func(r *Runner) { r.defsReg = reg }
 }
 
+// WithCallLinks wires a [CallLinkStore] into the Runner, enabling the
+// non-blocking (async) path for [engine.StartSubInstance] commands (call
+// activities). When this option is set, [perform] records the parent↔child link
+// and starts the child's first burst without waiting for the child to complete —
+// the parent parks at the call node until a notifier delivers the outcome. When
+// this option is NOT set, the synchronous behavior (run child to completion
+// in-process) is preserved verbatim.
+func WithCallLinks(store CallLinkStore) Option {
+	return func(r *Runner) { r.callLinks = store }
+}
+
 // WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).
 // Inject a deterministic source in tests to produce predictable fire-at times.
 func WithJitterSource(src JitterSource) Option { return func(r *Runner) { r.jitter = src } }
@@ -232,7 +243,7 @@ func (r *Runner) Run(ctx context.Context, def *model.ProcessDefinition, instance
 	))
 	defer span.End()
 	st := engine.InstanceState{InstanceID: instanceID}
-	out, err := r.deliverLoop(ctx, def, st, 0, true, engine.NewStartInstance(r.clk.Now(), vars))
+	out, err := r.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(r.clk.Now(), vars))
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -268,7 +279,7 @@ func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, inst
 		span.SetStatus(codes.Error, err.Error())
 		return engine.InstanceState{}, fmt.Errorf("runtime: deliver: load: %w", err)
 	}
-	out, err := r.deliverLoop(ctx, def, st, token, false, trg)
+	out, err := r.deliverLoop(ctx, def, st, token, false, nil, trg)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -284,6 +295,11 @@ func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, inst
 // token is the current optimistic-concurrency token; create=true on the very
 // first step (Run path, no row yet) and false on all subsequent steps.
 //
+// firstCallLink, when non-nil, is attached to the FIRST applied step's
+// AppliedStep.NewCallLink (the create step) and then cleared. All existing
+// callers (Run, Deliver) pass nil — no behavior change for them. The internal
+// runChild helper passes the link so the child's Create records it atomically.
+//
 // After each committed save, if a SignalBus or message waiters are configured,
 // the loop reconciles them so that a future [SignalBus.Publish] reaches this
 // instance.
@@ -293,6 +309,7 @@ func (r *Runner) deliverLoop(
 	st engine.InstanceState,
 	token Token,
 	create bool,
+	firstCallLink *CallLink,
 	trg engine.Trigger,
 ) (engine.InstanceState, error) {
 	queue := []engine.Trigger{trg}
@@ -342,9 +359,30 @@ func (r *Runner) deliverLoop(
 		}
 
 		events := outboxEventsFor(res.Commands)
-		appliedStep := AppliedStep{State: st, Trigger: t, Events: events}
+
+		// Compute a CallOutcome when this step transitions the instance into a
+		// terminal status AND a CallLinkStore is configured. The Store's Commit
+		// implementation uses this to flip the call link to terminal atomically
+		// (one transaction / one MemStore lock). For root instances the Store
+		// treats a missing link as a no-op, so setting CallOutcome unconditionally
+		// on terminal is safe even without special-casing here.
+		var outcome *CallOutcome
+		if r.callLinks != nil && isTerminal(st.Status) && !isTerminal(prevStatus) {
+			switch st.Status {
+			case engine.StatusCompleted:
+				outcome = &CallOutcome{Completed: true, Output: copyVarsForOutcome(st.Variables)}
+			default: // StatusFailed, StatusTerminated, or any other terminal
+				outcome = &CallOutcome{Completed: false, Err: terminalErr(st)}
+			}
+		}
+
+		appliedStep := AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome}
 
 		if create {
+			// Attach the firstCallLink to the Create step (child async path only).
+			// After the first iteration this is nil for all callers.
+			appliedStep.NewCallLink = firstCallLink
+			firstCallLink = nil // consumed; cleared so subsequent steps don't carry it
 			token, err = r.store.Create(ctx, appliedStep)
 			create = false
 		} else {
@@ -368,6 +406,54 @@ func (r *Runner) deliverLoop(
 		}
 	}
 	return st, nil
+}
+
+// runChild starts a child instance — driving its first burst SYNCHRONOUSLY on the
+// caller's goroutine — with the call link threaded into the child's first Create.
+// It is "non-blocking" only in the engine sense: the PARENT does not wait for the
+// child's eventual terminal state (a notifier resumes the parent later). Do NOT
+// wrap this in a goroutine — it shares the Store, and concurrent child starts would
+// break the store's write ordering. It is called by the async StartSubInstance path
+// when r.callLinks != nil.
+//
+// It drives the child's first burst (StartInstance trigger) through deliverLoop
+// with create=true, passing link so the child's first AppliedStep.NewCallLink
+// is set atomically. The parent stays parked; the child may park too (e.g. at a
+// human task) — that is the expected outcome for the async path.
+func (r *Runner) runChild(ctx context.Context, def *model.ProcessDefinition, childInstanceID string, vars map[string]any, link *CallLink) error {
+	st := engine.InstanceState{InstanceID: childInstanceID}
+	_, err := r.deliverLoop(ctx, def, st, 0, true, link, engine.NewStartInstance(r.clk.Now(), vars))
+	return err
+}
+
+// terminalErr derives a short, human-readable error message from a terminal
+// instance state. It prefers the first recorded incident's error text (the most
+// concrete description of what went wrong); if no incidents are present it
+// falls back to a status-keyed generic message.
+func terminalErr(st engine.InstanceState) string {
+	if len(st.Incidents) > 0 {
+		return st.Incidents[0].Error
+	}
+	switch st.Status {
+	case engine.StatusTerminated:
+		return "instance terminated"
+	default:
+		return "instance failed"
+	}
+}
+
+// copyVarsForOutcome returns a shallow copy of vars to avoid aliasing the
+// live InstanceState.Variables map via the CallOutcome.Output reference.
+// Returns nil when vars is nil (preserving the zero value).
+func copyVarsForOutcome(vars map[string]any) map[string]any {
+	if vars == nil {
+		return nil
+	}
+	out := make(map[string]any, len(vars))
+	for k, v := range vars {
+		out[k] = v
+	}
+	return out
 }
 
 // syncWaiters reconciles both the SignalBus subscriptions and the internal
@@ -639,26 +725,6 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			return nil, fmt.Errorf("runtime: perform StartSubInstance %q: registry lookup: %w", cmd.DefRef, err)
 		}
 
-		// Fix 2: Recursion / cycle depth guard.
-		//
-		// A definition whose call activity references itself (direct: A→A, or via a
-		// cycle: A→B→A) causes unbounded synchronous recursion through perform →
-		// r.Run → deliverLoop → perform, which ultimately stack-overflows. We thread
-		// the depth counter through ctx so every nested call increments it; when the
-		// limit is reached we return a descriptive SubInstanceFailed instead of
-		// crashing. The synchronous runner only supports children that run to
-		// completion in one pass; async call activities (a future enhancement) would
-		// not use this counter.
-		depth := callDepth(ctx)
-		if depth >= maxCallActivityDepth {
-			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
-					"the synchronous runner does not support cyclic or deeply nested call activities",
-					maxCallActivityDepth, cmd.DefRef),
-			), nil
-		}
-		childCtx := withCallDepth(ctx, depth+1)
-
 		// Derive a deterministic child instance ID from the parent and command ID.
 		// Scheme: "<parentInstanceID>-sub-<suffix>" where <suffix> is only the
 		// trailing segment of cmd.CommandID after the last "-" (e.g. "c1", "c2").
@@ -671,6 +737,75 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			suffix = cmd.CommandID[idx+1:]
 		}
 		childInstanceID := st.InstanceID + "-sub-" + suffix
+
+		// Async path: when a CallLinkStore is configured, the child is started
+		// non-blocking. The parent parks at the call node; a notifier delivers
+		// the outcome (SubInstanceCompleted / SubInstanceFailed) later.
+		if r.callLinks != nil {
+			// Compute depth: look up THIS instance's own link (is it itself a child?).
+			// Found ⇒ depth = parentLink.Depth + 1; not found ⇒ depth = 1.
+			// A store error must NOT be swallowed as "not found": that would
+			// miscompute depth and start a child that the guard should have
+			// rejected. Propagate it so the caller can retry.
+			depth := 1
+			parentLink, ok, lerr := r.callLinks.LookupChild(ctx, st.InstanceID)
+			if lerr != nil {
+				return nil, fmt.Errorf("runtime: call activity: depth lookup for %q: %w", st.InstanceID, lerr)
+			}
+			if ok {
+				depth = parentLink.Depth + 1
+			}
+			if depth > maxCallDepth {
+				return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+					fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+						"async call activity chain is too deep",
+						maxCallDepth, cmd.DefRef),
+				), nil
+			}
+
+			link := CallLink{
+				ChildInstanceID:  childInstanceID,
+				ParentInstanceID: st.InstanceID,
+				ParentCommandID:  cmd.CommandID,
+				ParentDefID:      def.ID,
+				ParentDefVersion: def.Version,
+				Depth:            depth,
+			}
+
+			// Start the child's first burst non-blocking: drive it until it parks or
+			// completes. The link is threaded into the child's first Create atomically.
+			if err := r.runChild(ctx, childDef, childInstanceID, cmd.Input, &link); err != nil {
+				return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID, err.Error()), nil
+			}
+
+			// Return nil, nil — no synchronous resume trigger. The parent stays parked
+			// at the call node; the engine already handled parking when it emitted
+			// StartSubInstance. The notifier will deliver SubInstanceCompleted/Failed later.
+			return nil, nil
+		}
+
+		// Synchronous path (opt-out: r.callLinks == nil): run the child to completion
+		// in-process. This is the VERBATIM original behavior.
+
+		// Fix 2: Recursion / cycle depth guard.
+		//
+		// A definition whose call activity references itself (direct: A→A, or via a
+		// cycle: A→B→A) causes unbounded synchronous recursion through perform →
+		// r.Run → deliverLoop → perform, which ultimately stack-overflows. We thread
+		// the depth counter through ctx so every nested call increments it; when the
+		// limit is reached we return a descriptive SubInstanceFailed instead of
+		// crashing. The synchronous runner only supports children that run to
+		// completion in one pass; async call activities (a future enhancement) would
+		// not use this counter.
+		depth := callDepth(ctx)
+		if depth >= maxCallDepth {
+			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+				fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+					"the synchronous runner does not support cyclic or deeply nested call activities",
+					maxCallDepth, cmd.DefRef),
+			), nil
+		}
+		childCtx := withCallDepth(ctx, depth+1)
 
 		// Run the child to completion (synchronous within perform). The child uses
 		// the same Runner so it shares the store, journal, outbox, catalog, and

@@ -31,13 +31,24 @@ type MemStore struct {
 	instances map[string]*memInstance
 	journal   map[string][]engine.Trigger
 	events    []OutboxEvent
+	callLinks *MemCallLinkStore // optional; nil means no call-link tracking
 }
 
-// NewMemStore constructs an empty MemStore.
+// NewMemStore constructs an empty MemStore with no call-link tracking.
 func NewMemStore() *MemStore {
 	return &MemStore{
 		instances: map[string]*memInstance{},
 		journal:   map[string][]engine.Trigger{},
+	}
+}
+
+// NewMemStoreWithCallLinks constructs a MemStore that records call-link
+// correlation into cl atomically with Create/Commit (ADR-0025).
+func NewMemStoreWithCallLinks(cl *MemCallLinkStore) *MemStore {
+	return &MemStore{
+		instances: map[string]*memInstance{},
+		journal:   map[string][]engine.Trigger{},
+		callLinks: cl,
 	}
 }
 
@@ -50,6 +61,9 @@ func (m *MemStore) Create(_ context.Context, step AppliedStep) (Token, error) {
 	m.instances[step.State.InstanceID] = &memInstance{state: step.State.Clone(), version: initial}
 	m.journal[step.State.InstanceID] = append(m.journal[step.State.InstanceID], step.Trigger)
 	m.events = append(m.events, step.Events...)
+	if m.callLinks != nil && step.NewCallLink != nil {
+		m.callLinks.record(*step.NewCallLink)
+	}
 	return initial, nil
 }
 
@@ -82,6 +96,9 @@ func (m *MemStore) Commit(_ context.Context, expected Token, step AppliedStep) (
 	inst.version = next
 	m.journal[step.State.InstanceID] = append(m.journal[step.State.InstanceID], step.Trigger)
 	m.events = append(m.events, step.Events...)
+	if m.callLinks != nil && step.CallOutcome != nil {
+		m.callLinks.markTerminal(step.State.InstanceID, *step.CallOutcome)
+	}
 	return next, nil
 }
 

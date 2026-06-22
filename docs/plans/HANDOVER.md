@@ -28,14 +28,16 @@ opus whole-branch review → merge to main → push`, exactly like the sub-proje
    LISTEN/NOTIFY relay wakeup (`WithOutboxNotify` + `WithListenNotify`), advisory-lock
    multi-process ownership (`NewAdvisoryLockOwnership`). ADRs 0020–0022.
    See the "Performance/caching sub-project" section below.
-5. **Next focus** (previously "Also outstanding"):
-   - **DB casbin policy adapter (Authz deferred #1)** — ✅ DONE, branch `feat/casbin-db-adapter`
-     (2026-06-22). See "DB casbin policy adapter" section below. ADR-0023.
-   - **True async call activity (engine follow-up #3)** — still outstanding (no branch yet).
-   ✅ The pre-existing flaky singleflight test (`runtime/TestCachingDefinitionRegistry/concurrent_misses_collapse_to_one_backing_call`)
-   was FIXED 2026-06-22 (root cause was a TOCTOU in `CachingDefinitionRegistry.Lookup`, not a test
-   barrier — see tracked-follow-up #8 below). The Performance/caching coverage gaps were also closed
-   in that track (persistence 100%, internal/persistence/postgres 85.3%).
+5. **"Also outstanding" — ✅ ALL DONE (2026-06-22):**
+   - **DB casbin policy adapter (Authz deferred #1)** — ✅ DONE, branch `feat/casbin-db-adapter`.
+     See "DB casbin policy adapter" section below. ADR-0023.
+   - **True async call activity (engine follow-up #3)** — ✅ DONE, branch `feat/async-call-activity`.
+     See "True async call activity" section below. ADRs 0024–0025. Engine/model UNTOUCHED.
+   - **Pre-existing flaky singleflight test** — ✅ FIXED (a real TOCTOU in `CachingDefinitionRegistry.Lookup`,
+     not a test barrier — see tracked-follow-up #8 below).
+   The productionization run (5 sub-projects) and the deferred-backlog run (Correctness → Resilience →
+   Observability → Performance/caching) plus these three "also outstanding" items are ALL complete.
+   Future work is the per-section deferred follow-ups recorded in each track's section below.
 
 **How to execute a track:** follow "How to run the next sub-project" + "Binding conventions"
 sections below (subagent-driven development, visible RED→GREEN per task, opus final review). The
@@ -759,3 +761,65 @@ unreachable in black-box because the production watcher never returns an error.
 5. **`context.Background()` in adapter/watcher methods** — casbin's `persist.Adapter`/`Watcher`
    method signatures take no `context`, so the pgx calls inside them cannot propagate a caller
    deadline/cancellation. A context-aware adapter wrapper (storing a base context) is a follow-up.
+
+---
+
+## True async call activity — ✅ COMPLETE
+
+Final "also outstanding" item (engine follow-up #3). Built on branch `feat/async-call-activity`
+(2026-06-22; merge-base `4b8137e`). 9 SDD tasks + opus whole-branch review. Design: spec
+`docs/specs/2026-06-22-async-call-activity-design.md`, plan `docs/plans/2026-06-22-async-call-activity.md`,
+ADRs 0024 (durable async call activity) + 0025 (atomic call-link Store side-effects).
+
+**The headline:** a call-activity child that PARKS (its own human task, timer, signal, or nested
+call activity) now works. Previously `perform(StartSubInstance)` ran the child synchronously and
+errored on a parking child ("the synchronous runner does not support parked children"). Now the
+parent parks; the child runs independently across later `Deliver`s; when the child reaches terminal
+status, the parent is resumed by `SubInstanceCompleted`/`SubInstanceFailed` delivered **durably and
+crash-safely**, idempotently.
+
+**Engine/model UNTOUCHED** (the load-bearing property): `git diff 4b8137e..HEAD -- engine model`
+shows **zero** production-line changes. The `SubInstanceCompleted`/`SubInstanceFailed` triggers, the
+`StartSubInstance` command, the parent token park (`AwaitCommand`), and the resume logic
+(`engine/step.go:514–539`) already existed and are used as-is. This is a runtime + persistence change.
+
+### What shipped (by layer)
+
+| Layer | What |
+|---|---|
+| `runtime/` | `CallLink`/`CallOutcome`/`PendingNotify` value types; `CallLinkStore` port (`ClaimPending`/`MarkNotified`/`LookupChild`) + `MemCallLinkStore`; additive `AppliedStep.NewCallLink`/`CallOutcome` (nil for all existing callers; `MemStore` honors them via `NewMemStoreWithCallLinks`). Non-blocking `perform(StartSubInstance)` + `WithCallLinks` option (opt-in; absent it the synchronous behavior is preserved verbatim); `maxCallActivityDepth`→`maxCallDepth`; the `deliverLoop` child-terminal hook (sets `CallOutcome` on the terminal commit). `CallNotifier` (`DrainOnce`/`Run`) — claims terminal links, resolves the parent def, delivers `SubInstanceCompleted`/`SubInstanceFailed`, **idempotent** (`engine.ErrTokenNotFound` ⇒ treated as success); `CallDeliverFunc`. |
+| `internal/persistence/postgres/` | `0004_call_links.sql` (`wrkflw_call_links` + partial pending index); `Store.Create`/`Commit` honor `NewCallLink`/`CallOutcome` IN-TX (the crash-safety seam — link created with the child's Create, flipped with its terminal Commit, atomically); Postgres `CallLinkStore`; crash-safety e2e (a FRESH notifier over a NEW pool resumes a parked parent purely from durable DB state). |
+| `persistence/` (façade) | `NewCallLinkStore(pool) runtime.CallLinkStore`; `NewCallNotifier(pool, deliver, reg, clk, ...opts)` reusing `runtime.CallNotifier` over the Postgres store (one wrapping path, no logic duplication). |
+| `engine/`, `model/` | **Nothing.** Zero production diff (proven). |
+
+### Key design decisions (ADRs)
+- **ADR-0024** — durable async call activity via a `wrkflw_call_links` correlation table + a relay-shaped
+  notifier; correlation lives in persistence (NOT on the pure `InstanceState`); opt-in; idempotent
+  parent resume; crash-safe.
+- **ADR-0025** — atomic call-link side-effects on the transactional `Store` (additive `AppliedStep`
+  fields), so the link's existence is tied to the child's existence and the link's terminal flip is
+  tied to the child's terminal commit, each in one transaction.
+
+### Gate (final, controller-verified)
+`go test -race ./...` green (Postgres `-p 1`); coverage **runtime 91.0% / persistence 91.7% /
+internal/persistence/postgres 86.2%** (all ≥85%); `golangci-lint run ./...` **0 issues**;
+**engine/model production code unchanged** (zero-line diff over the branch).
+
+### Deferred follow-ups
+1. **`FOR UPDATE SKIP LOCKED` claim for strict multi-replica exclusivity** — `ClaimPending` is a plain
+   SELECT; idempotency (`ErrTokenNotFound`) makes concurrent multi-replica notifiers SAFE but allows a
+   duplicate delivery (wasted work). A tx-holding `DrainOnce` with `FOR UPDATE SKIP LOCKED` would make
+   the claim exclusive.
+2. **CallNotifier relay-shaping** — telemetry span (`wrkflw.callnotifier.batch`), per-row backoff, and
+   an optional `LISTEN`/`NOTIFY` wakeup on `wrkflw_call_links` (the relay has these; the notifier reuse
+   inherits per-row isolation + retry-via-poll but not these). Latency/observability, not correctness.
+3. **Richer `SubInstanceFailed`→parent error text** — `SubInstanceFailed` does not create an `Incident`,
+   so `terminalErr` falls back to a generic message (e.g. the depth-limit cause is lost in a deep
+   runaway cascade). Populating an `Incident` would surface the cause.
+4. **Cancellation propagation** parent→child (parent cancel → child terminate) and orphaned-child
+   cleanup (when the parent is already terminal, the child result is dropped — the parent `Deliver`
+   no-ops on `ErrTokenNotFound`).
+5. **Cross-machine child execution** — this design makes the parent *notification* durable, not the
+   child's execution distributed; the child is driven by whichever runtime delivers its triggers.
+6. **Per-definition `maxCallDepth`** (global guard in v1); `MarkNotified` clock injection (uses
+   `time.Now()` today).
