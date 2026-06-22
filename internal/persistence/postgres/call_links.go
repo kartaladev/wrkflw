@@ -301,7 +301,7 @@ func (c *CallLinkStore) MarkNotified(ctx context.Context, childInstanceID string
 		    SET status = 'notified', notified_at = $2
 		  WHERE child_instance_id = $1`,
 		childInstanceID,
-		time.Now().UTC(),
+		c.clk.Now().UTC(),
 	)
 	if err != nil {
 		return fmt.Errorf("workflow-postgres: call links: mark notified: %w", err)

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,4 +37,18 @@ func (d *Deduper) Seen(ctx context.Context, tx pgx.Tx, subscriber, messageID str
 		return false, fmt.Errorf("workflow-postgres: deduper: seen: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// Prune deletes all processed-message records with a processed_at strictly
+// before before. Callers should supply a cutoff well past the relay
+// max-delivery × backoff window so in-flight messages are never evicted.
+// Returns the number of rows deleted.
+func (d *Deduper) Prune(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := d.pool.Exec(ctx,
+		`DELETE FROM wrkflw_processed_message WHERE processed_at < $1`,
+		before)
+	if err != nil {
+		return 0, fmt.Errorf("workflow-postgres: deduper: prune: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
