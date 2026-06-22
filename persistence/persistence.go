@@ -273,10 +273,34 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.
 	return o, o, nil
 }
 
+// CallLinkOption configures a CallLinkStore returned by NewCallLinkStore
+// (thin wrapper delegating to postgres.CallLinkOption).
+type CallLinkOption = postgres.CallLinkOption
+
+// WithCallLinkLease configures opt-in lease-based multi-replica exclusivity on
+// the CallLinkStore (ADR-0031). When ttl > 0, ClaimPending stamps claimed_at /
+// claimed_by on each row, hiding it from concurrent replicas until the lease
+// expires. When ttl <= 0 (the default), the original plain SELECT is used
+// unchanged (backward-compatible).
+func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
+	return postgres.WithCallLinkLease(owner, ttl)
+}
+
+// WithCallLinkClock sets the clock the CallLinkStore uses for lease timestamps.
+// Default: clock.System(). Inject a fake clock in tests for deterministic
+// behaviour (ADR-0003, ADR-0031).
+func WithCallLinkClock(clk clock.Clock) CallLinkOption {
+	return postgres.WithCallLinkClock(clk)
+}
+
 // NewCallLinkStore constructs the Postgres-backed runtime.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, and LookupChild over the
 // wrkflw_call_links table. The write side is fused into Store.Create /
 // Store.Commit (ADR-0025); use OpenPostgres for that.
+//
+// Pass [WithCallLinkLease] and [WithCallLinkClock] to opt in to lease-based
+// multi-replica exclusivity (ADR-0031). Existing zero-option call sites compile
+// unchanged.
 //
 // Migrate must have been applied before the first call to any method.
 //
@@ -284,10 +308,12 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
-//	cls := persistence.NewCallLinkStore(pool)
+//	cls := persistence.NewCallLinkStore(pool,
+//	    persistence.WithCallLinkLease("replica-1", 30*time.Second),
+//	)
 //	pending, err := cls.ClaimPending(ctx, 100)
-func NewCallLinkStore(pool *pgxpool.Pool) runtime.CallLinkStore {
-	return postgres.NewCallLinkStore(pool)
+func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) runtime.CallLinkStore {
+	return postgres.NewCallLinkStore(pool, opts...)
 }
 
 // NewTimerStore returns a runtime.TimerStore backed by Postgres, for
@@ -306,6 +332,15 @@ func NewTimerStore(pool *pgxpool.Pool) runtime.TimerStore {
 // NewCallNotifier builds a durable call-activity notifier over pool: it claims
 // terminal call links and resumes parked parents (SubInstanceCompleted/Failed)
 // idempotently. Run it in a goroutine (notifier.Run) or drain manually (DrainOnce).
+//
+// For lease-based multi-replica exclusivity (ADR-0031), build the CallLinkStore
+// explicitly via [NewCallLinkStore] with [WithCallLinkLease] and pass it to
+// [runtime.NewCallNotifier] directly:
+//
+//	cls := persistence.NewCallLinkStore(pool,
+//	    persistence.WithCallLinkLease("replica-1", 30*time.Second),
+//	)
+//	notifier := runtime.NewCallNotifier(cls, deliver, reg, clk)
 //
 // Typical wiring (simulating a process restart over the same DB pool):
 //
