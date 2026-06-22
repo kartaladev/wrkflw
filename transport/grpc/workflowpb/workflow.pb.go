@@ -1370,7 +1370,10 @@ type ListInstancesRequest struct {
 	// limit is the page size (default 50, max 200).
 	Limit int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	// cursor is the opaque keyset pagination token from the previous response.
-	Cursor        string `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Cursor string `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	// include_total, when true, requests total_count in the response.
+	// When false (default), no count query is issued and total_count is 0.
+	IncludeTotal  bool `protobuf:"varint,4,opt,name=include_total,json=includeTotal,proto3" json:"include_total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1424,6 +1427,13 @@ func (x *ListInstancesRequest) GetCursor() string {
 		return x.Cursor
 	}
 	return ""
+}
+
+func (x *ListInstancesRequest) GetIncludeTotal() bool {
+	if x != nil {
+		return x.IncludeTotal
+	}
+	return false
 }
 
 // Instance is the stable gRPC projection of engine.InstanceState.
@@ -1688,10 +1698,13 @@ func (x *InstanceSummary) GetEndedAt() *timestamppb.Timestamp {
 
 // ListInstancesResponse is a page of instance summaries.
 type ListInstancesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         []*InstanceSummary     `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
-	HasMore       bool                   `protobuf:"varint,3,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Items      []*InstanceSummary     `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	NextCursor string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	HasMore    bool                   `protobuf:"varint,3,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	// total_count is set only when ListInstancesRequest.include_total was true;
+	// 0 otherwise.
+	TotalCount    int64 `protobuf:"varint,4,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1745,6 +1758,13 @@ func (x *ListInstancesResponse) GetHasMore() bool {
 		return x.HasMore
 	}
 	return false
+}
+
+func (x *ListInstancesResponse) GetTotalCount() int64 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
 }
 
 var File_workflow_proto protoreflect.FileDescriptor
@@ -1843,11 +1863,12 @@ const file_workflow_proto_rawDesc = "" +
 	"task_token\x18\x01 \x01(\tR\ttaskToken\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x03 \x01(\tR\x02to\x12 \n" +
-	"\x02by\x18\x04 \x01(\v2\x10.wrkflw.v1.ActorR\x02by\"\\\n" +
+	"\x02by\x18\x04 \x01(\v2\x10.wrkflw.v1.ActorR\x02by\"\x81\x01\n" +
 	"\x14ListInstancesRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"\xa4\x02\n" +
+	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x12#\n" +
+	"\rinclude_total\x18\x04 \x01(\bR\fincludeTotal\"\xa4\x02\n" +
 	"\bInstance\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12\x15\n" +
@@ -1871,12 +1892,14 @@ const file_workflow_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x129\n" +
 	"\n" +
 	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\x85\x01\n" +
+	"\bended_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xa6\x01\n" +
 	"\x15ListInstancesResponse\x120\n" +
 	"\x05items\x18\x01 \x03(\v2\x1a.wrkflw.v1.InstanceSummaryR\x05items\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore2\x84\v\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore\x12\x1f\n" +
+	"\vtotal_count\x18\x04 \x01(\x03R\n" +
+	"totalCount2\x84\v\n" +
 	"\x0fWorkflowService\x12M\n" +
 	"\rStartInstance\x12\x1f.wrkflw.v1.StartInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12I\n" +
 	"\vGetInstance\x12\x1d.wrkflw.v1.GetInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12M\n" +

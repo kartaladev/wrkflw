@@ -678,6 +678,47 @@ func TestListInstancesEmptyStatusReturnsAll(t *testing.T) {
 	assert.NotEmpty(t, listResp.Items)
 }
 
+// TestListInstancesTotalCount verifies the opt-in include_total flag:
+//   - include_total=true returns TotalCount equal to the full matching count.
+//   - include_total=false (default) returns TotalCount==0.
+func TestListInstancesTotalCount(t *testing.T) {
+	t.Parallel()
+	h := newGRPCHarness(t, serverLinearDef())
+	ctx := t.Context()
+
+	// Seed 3 instances (linear def completes immediately → all "completed").
+	for i := range 3 {
+		_, err := h.client.StartInstance(ctx, &workflowpb.StartInstanceRequest{
+			DefRef:     "greeting",
+			InstanceId: fmt.Sprintf("total-count-inst-%d", i+1),
+			Vars:       mustStruct(map[string]any{"name": fmt.Sprintf("u%d", i)}),
+		})
+		require.NoError(t, err)
+	}
+
+	t.Run("include_total=true returns TotalCount", func(t *testing.T) {
+		t.Parallel()
+		resp, err := h.client.ListInstances(ctx, &workflowpb.ListInstancesRequest{
+			Limit:        1,
+			Status:       "completed",
+			IncludeTotal: true,
+		})
+		require.NoError(t, err)
+		require.Len(t, resp.Items, 1, "want 1 item (limit=1)")
+		require.Equal(t, int64(3), resp.TotalCount, "want TotalCount=3")
+	})
+
+	t.Run("include_total=false returns TotalCount=0", func(t *testing.T) {
+		t.Parallel()
+		resp, err := h.client.ListInstances(ctx, &workflowpb.ListInstancesRequest{
+			Limit:        10,
+			IncludeTotal: false,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(0), resp.TotalCount, "want TotalCount=0 when not requested")
+	})
+}
+
 // TestListInstancesCompletedStatusFiltersCorrectly verifies that status:"completed"
 // correctly returns only completed instances.
 func TestListInstancesCompletedStatusFiltersCorrectly(t *testing.T) {

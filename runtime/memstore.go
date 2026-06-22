@@ -219,9 +219,19 @@ func (m *MemStore) List(_ context.Context, filter InstanceFilter) (InstancePage,
 		nextCursor = EncodeCursor(last.StartedAt, last.InstanceID)
 	}
 
-	return InstancePage{
+	page := InstancePage{
 		Items:      all,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-	}, nil
+	}
+	if filter.IncludeTotal {
+		count := 0
+		for _, inst := range m.instances {
+			if filter.Status == nil || inst.state.Status == *filter.Status {
+				count++
+			}
+		}
+		page.TotalCount = count
+	}
+	return page, nil
 }

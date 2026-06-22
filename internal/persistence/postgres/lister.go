@@ -159,9 +159,30 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 		nextCursor = runtime.EncodeCursor(last.StartedAt, last.InstanceID)
 	}
 
-	return runtime.InstancePage{
+	page := runtime.InstancePage{
 		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-	}, nil
+	}
+
+	if filter.IncludeTotal {
+		var totalCount int
+		var countErr error
+		if filter.Status != nil {
+			countErr = l.pool.QueryRow(ctx,
+				`SELECT count(*) FROM wrkflw_instances WHERE status = $1`,
+				int16(*filter.Status),
+			).Scan(&totalCount)
+		} else {
+			countErr = l.pool.QueryRow(ctx,
+				`SELECT count(*) FROM wrkflw_instances`,
+			).Scan(&totalCount)
+		}
+		if countErr != nil {
+			return runtime.InstancePage{}, fmt.Errorf("postgres lister: count: %w", countErr)
+		}
+		page.TotalCount = totalCount
+	}
+
+	return page, nil
 }
