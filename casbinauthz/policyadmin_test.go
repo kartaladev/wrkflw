@@ -87,6 +87,11 @@ func TestPolicyAdmin_AddListRemoveRole(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, added)
 
+	// Duplicate AddRole → false (already present), mirroring the policy side.
+	added, err = pa.AddRole(ctx, binding)
+	require.NoError(t, err)
+	assert.False(t, added, "duplicate AddRole must report added=false")
+
 	// ListRoles contains the binding.
 	roles, err := pa.ListRoles(ctx)
 	require.NoError(t, err)
