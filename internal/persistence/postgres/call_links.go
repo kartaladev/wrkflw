@@ -243,6 +243,56 @@ func scanPendingRows(rows interface {
 	return pending, nil
 }
 
+// ListRunningChildren returns all non-terminal child links whose
+// parent_instance_id matches parentInstanceID and whose status is 'running',
+// ordered by child_instance_id for deterministic results.
+func (c *CallLinkStore) ListRunningChildren(ctx context.Context, parentInstanceID string) ([]runtime.CallLink, error) {
+	rows, err := c.pool.Query(ctx,
+		`SELECT child_instance_id, parent_instance_id, parent_command_id,
+		        parent_def_id, parent_def_version, depth
+		   FROM wrkflw_call_links
+		  WHERE parent_instance_id = $1
+		    AND status = 'running'
+		  ORDER BY child_instance_id`,
+		parentInstanceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-postgres: call links: list running children: query: %w", err)
+	}
+	defer rows.Close()
+
+	var links []runtime.CallLink
+	for rows.Next() {
+		var (
+			childID    string
+			parentID   string
+			commandID  string
+			defID      string
+			defVersion int
+			depth      int
+		)
+		if err := rows.Scan(&childID, &parentID, &commandID, &defID, &defVersion, &depth); err != nil {
+			return nil, fmt.Errorf("workflow-postgres: call links: list running children: scan: %w", err)
+		}
+		links = append(links, runtime.CallLink{
+			ChildInstanceID:  childID,
+			ParentInstanceID: parentID,
+			ParentCommandID:  commandID,
+			ParentDefID:      defID,
+			ParentDefVersion: defVersion,
+			Depth:            depth,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("workflow-postgres: call links: list running children: rows: %w", err)
+	}
+
+	if links == nil {
+		links = []runtime.CallLink{}
+	}
+	return links, nil
+}
+
 // MarkNotified records that the parent for childInstanceID has been resumed by
 // setting status='notified' and stamping notified_at with the current UTC time.
 func (c *CallLinkStore) MarkNotified(ctx context.Context, childInstanceID string) error {
