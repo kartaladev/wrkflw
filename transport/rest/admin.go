@@ -270,7 +270,7 @@ func (h *handler) handleRemovePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := removed
-	h.writeJSON(w, r, http.StatusOK, roleBindingMutateResponse{Removed: &v})
+	h.writeJSON(w, r, http.StatusOK, policyMutateResponse{Removed: &v})
 }
 
 // handleListRoleBindings handles GET /admin/role-bindings.

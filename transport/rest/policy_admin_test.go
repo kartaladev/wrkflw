@@ -172,6 +172,14 @@ func TestRESTRemovePolicy(t *testing.T) {
 		rec := doReq(t, h, http.MethodDelete, "/admin/policies", `not-json`)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
 	})
+
+	t.Run("default-deny without admin middleware -> 403", func(t *testing.T) {
+		t.Parallel()
+		pa := &paStub{removePolicyFn: func(_ context.Context, r service.PolicyRule) (bool, error) { return true, nil }}
+		h := rest.NewHandler(&dlqStubService{}, rest.WithPolicyAdmin(pa))
+		rec := doReq(t, h, http.MethodDelete, "/admin/policies", `{"subject":"alice","object":"/orders","action":"read"}`)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
+	})
 }
 
 // ---------- GET /admin/role-bindings ----------
@@ -289,6 +297,14 @@ func TestRESTRemoveRoleBinding(t *testing.T) {
 		h := paHandler(pa)
 		rec := doReq(t, h, http.MethodDelete, "/admin/role-bindings", `not-json`)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("default-deny without admin middleware -> 403", func(t *testing.T) {
+		t.Parallel()
+		pa := &paStub{removeRoleFn: func(_ context.Context, b service.RoleBinding) (bool, error) { return true, nil }}
+		h := rest.NewHandler(&dlqStubService{}, rest.WithPolicyAdmin(pa))
+		rec := doReq(t, h, http.MethodDelete, "/admin/role-bindings", `{"user":"alice","role":"admin"}`)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
 	})
 }
 
