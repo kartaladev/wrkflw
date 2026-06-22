@@ -274,8 +274,12 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		return 0, mapped
 	}
 	if tag.RowsAffected() == 0 {
-		// version mismatch: another writer advanced the token first.
-		spanErr(runtime.ErrConcurrentUpdate)
+		// Version mismatch: another writer advanced the token first. This is
+		// expected optimistic-concurrency control flow (the runner retries on
+		// ErrConcurrentUpdate), NOT a failure — record it as a contention
+		// attribute rather than marking the span as an error, so normal retries
+		// don't pollute trace-derived error-rate dashboards.
+		span.SetAttributes(attribute.Bool("wrkflw.concurrent_update", true))
 		return 0, runtime.ErrConcurrentUpdate
 	}
 

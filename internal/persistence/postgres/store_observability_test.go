@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"testing"
 
+	otelcodes "go.opentelemetry.io/otel/codes"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/database"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 // TestStoreLoadCommitSpans verifies that Load and Commit emit the expected
@@ -86,6 +88,66 @@ func TestStoreLoadCommitSpans(t *testing.T) {
 		}
 	}
 	require.True(t, found, "wrkflw_store_duration_seconds metric must be present")
+}
+
+// TestStoreLoadErrorSpan verifies that a Load of a missing instance records the
+// error on the wrkflw.store.load span and sets the span status to Error.
+func TestStoreLoadErrorSpan(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	store := pg.NewStore(pool, pg.WithStoreTracerProvider(tp))
+
+	_, _, err := store.Load(t.Context(), "no-such-instance")
+	require.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+
+	var loadSpan sdktrace.ReadOnlySpan
+	for _, s := range sr.Ended() {
+		if s.Name() == "wrkflw.store.load" {
+			loadSpan = s
+		}
+	}
+	require.NotNil(t, loadSpan, "expected a wrkflw.store.load span")
+	assert.Equal(t, otelcodes.Error, loadSpan.Status().Code,
+		"a missing-instance Load must mark the span as Error")
+}
+
+// TestStoreCommitConcurrentUpdateNotSpanError verifies that an optimistic-CAS
+// conflict on Commit is recorded as a contention attribute and does NOT mark the
+// span as Error (it is expected, retryable control flow).
+func TestStoreCommitConcurrentUpdateNotSpanError(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	store := pg.NewStore(pool, pg.WithStoreTracerProvider(tp))
+
+	_, err := store.Create(t.Context(), appliedStep("obs-cas-1", "cas.topic"))
+	require.NoError(t, err)
+
+	// Commit with a stale (wrong) expected token → version mismatch.
+	_, err = store.Commit(t.Context(), 999, appliedStep("obs-cas-1", "cas.topic2"))
+	require.ErrorIs(t, err, runtime.ErrConcurrentUpdate)
+
+	var commitSpan sdktrace.ReadOnlySpan
+	for _, s := range sr.Ended() {
+		if s.Name() == "wrkflw.store.commit" {
+			commitSpan = s
+		}
+	}
+	require.NotNil(t, commitSpan)
+	assert.NotEqual(t, otelcodes.Error, commitSpan.Status().Code,
+		"a concurrent-update conflict must NOT mark the span as Error")
+	var sawContention bool
+	for _, attr := range commitSpan.Attributes() {
+		if string(attr.Key) == "wrkflw.concurrent_update" && attr.Value.AsBool() {
+			sawContention = true
+		}
+	}
+	assert.True(t, sawContention, "expected wrkflw.concurrent_update=true attribute on the span")
 }
 
 // TestStoreNoOptionsNoPanic verifies that a Store built with no options (noop
