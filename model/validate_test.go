@@ -530,6 +530,95 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err)
 			},
 		},
+		"multiple starts skips pairing (reachability ill-defined)": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "s1", Kind: model.KindStartEvent},
+					{ID: "s2", Kind: model.KindStartEvent},
+					{ID: "split", Kind: model.KindExclusiveGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "j", Kind: model.KindParallelGateway},
+					{ID: "end", Kind: model.KindEndEvent},
+					{ID: "end2", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f0", Source: "s1", Target: "split"},
+					{ID: "f0b", Source: "s2", Target: "end2"},
+					{ID: "f1", Source: "split", Target: "a"},
+					{ID: "f2", Source: "split", Target: "b"},
+					{ID: "f3", Source: "a", Target: "j"},
+					{ID: "f4", Source: "b", Target: "j"},
+					{ID: "f5", Source: "j", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrMultipleStartEvents)
+				// Pairing is skipped when the start count is ill-defined, so the
+				// otherwise-unpaired join is not reported on an already-invalid def.
+				require.NotErrorIs(t, err, model.ErrUnpairedJoin)
+			},
+		},
+		"loop containing a properly forked parallel join is valid": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "merge", Kind: model.KindExclusiveGateway}, // loop-back merge (pure join)
+					{ID: "fork", Kind: model.KindParallelGateway},
+					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
+					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
+					{ID: "j", Kind: model.KindParallelGateway},
+					{ID: "loop", Kind: model.KindExclusiveGateway}, // loop-back decision (pure split)
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f0", Source: "start", Target: "merge"},
+					{ID: "f0b", Source: "merge", Target: "fork"},
+					{ID: "f1", Source: "fork", Target: "a"},
+					{ID: "f2", Source: "fork", Target: "b"},
+					{ID: "f3", Source: "a", Target: "j"},
+					{ID: "f4", Source: "b", Target: "j"},
+					{ID: "f5", Source: "j", Target: "loop"},
+					{ID: "f6", Source: "loop", Target: "merge", Condition: "again"}, // loop back to merge
+					{ID: "f7", Source: "loop", Target: "end", IsDefault: true},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"unreachable parallel join reports only unreachable, not unpaired": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
+					{ID: "end", Kind: model.KindEndEvent},
+					// Disconnected component: an exclusive split feeding a parallel join
+					// (would be ErrUnpairedJoin if reachable) — but it is unreachable.
+					{ID: "osplit", Kind: model.KindExclusiveGateway},
+					{ID: "ox", Kind: model.KindServiceTask, Action: "x"},
+					{ID: "oy", Kind: model.KindServiceTask, Action: "y"},
+					{ID: "oj", Kind: model.KindParallelGateway},
+					{ID: "oend", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "end"},
+					{ID: "f3", Source: "osplit", Target: "ox"},
+					{ID: "f4", Source: "osplit", Target: "oy"},
+					{ID: "f5", Source: "ox", Target: "oj"},
+					{ID: "f6", Source: "oy", Target: "oj"},
+					{ID: "f7", Source: "oj", Target: "oend"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrUnreachableNode)
+				require.NotErrorIs(t, err, model.ErrUnpairedJoin) // unreachable join is skipped
+			},
+		},
 		"inclusive join fed by exclusive split is not flagged (rule is parallel-only)": {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -767,6 +856,42 @@ func TestValidateSubProcess(t *testing.T) {
 			},
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrMixedGateway)
+			},
+		},
+		"unpaired parallel join nested inside subprocess propagates ErrUnpairedJoin": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+						ID:      "inner-unpaired",
+						Version: 1,
+						Nodes: []model.Node{
+							{ID: "ns-start", Kind: model.KindStartEvent},
+							{ID: "nsplit", Kind: model.KindExclusiveGateway},
+							{ID: "na", Kind: model.KindServiceTask, Action: "na"},
+							{ID: "nb", Kind: model.KindServiceTask, Action: "nb"},
+							{ID: "nj", Kind: model.KindParallelGateway}, // parallel join fed by exclusive split
+							{ID: "ns-end", Kind: model.KindEndEvent},
+						},
+						Flows: []model.SequenceFlow{
+							{ID: "nf0", Source: "ns-start", Target: "nsplit"},
+							{ID: "nf1", Source: "nsplit", Target: "na"},
+							{ID: "nf2", Source: "nsplit", Target: "nb"},
+							{ID: "nf3", Source: "na", Target: "nj"},
+							{ID: "nf4", Source: "nb", Target: "nj"},
+							{ID: "nf5", Source: "nj", Target: "ns-end"},
+						},
+					}},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
 	}

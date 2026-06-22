@@ -239,18 +239,24 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// concurrent tokens toward it (a provable deadlock). Conservative: any plausible
 	// concurrency source clears the join (favouring no false positives). Unreachable
 	// joins are skipped — ErrUnreachableNode already reports them.
-	for _, n := range d.Nodes {
-		if n.Kind != KindParallelGateway {
-			continue
-		}
-		if len(d.Incoming(n.ID)) <= 1 || len(d.Outgoing(n.ID)) != 1 {
-			continue // not a pure parallel join (mixed already rejected; split is fine)
-		}
-		if reached != nil && !reached[n.ID] {
-			continue
-		}
-		if !hasConcurrencySource(d, n.ID) {
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrUnpairedJoin, n.ID))
+	//
+	// reached == nil means 0 or >1 start events: reachability is ill-defined and the
+	// start-count error already fires, so we skip pairing entirely to avoid noise on
+	// an already-invalid definition (it is re-checked once the start count is fixed).
+	if reached != nil {
+		for _, n := range d.Nodes {
+			if n.Kind != KindParallelGateway {
+				continue
+			}
+			if len(d.Incoming(n.ID)) <= 1 || len(d.Outgoing(n.ID)) != 1 {
+				continue // not a pure parallel join (mixed already rejected; split is fine)
+			}
+			if !reached[n.ID] {
+				continue // unreachable join — ErrUnreachableNode already reports it
+			}
+			if !hasConcurrencySource(d, n.ID) {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnpairedJoin, n.ID))
+			}
 		}
 	}
 
