@@ -31,6 +31,12 @@ const (
 	WorkflowService_ResolveIncident_FullMethodName    = "/wrkflw.v1.WorkflowService/ResolveIncident"
 	WorkflowService_ListDeadLetters_FullMethodName    = "/wrkflw.v1.WorkflowService/ListDeadLetters"
 	WorkflowService_RedriveDeadLetters_FullMethodName = "/wrkflw.v1.WorkflowService/RedriveDeadLetters"
+	WorkflowService_AddPolicy_FullMethodName          = "/wrkflw.v1.WorkflowService/AddPolicy"
+	WorkflowService_RemovePolicy_FullMethodName       = "/wrkflw.v1.WorkflowService/RemovePolicy"
+	WorkflowService_ListPolicies_FullMethodName       = "/wrkflw.v1.WorkflowService/ListPolicies"
+	WorkflowService_AddRole_FullMethodName            = "/wrkflw.v1.WorkflowService/AddRole"
+	WorkflowService_RemoveRole_FullMethodName         = "/wrkflw.v1.WorkflowService/RemoveRole"
+	WorkflowService_ListRoles_FullMethodName          = "/wrkflw.v1.WorkflowService/ListRoles"
 )
 
 // WorkflowServiceClient is the client API for WorkflowService service.
@@ -67,6 +73,24 @@ type WorkflowServiceClient interface {
 	// RedriveDeadLetters re-queues dead outbox rows by id. Admin-scoped; requires
 	// WithDeadLetterAdmin, else returns Unimplemented.
 	RedriveDeadLetters(ctx context.Context, in *RedriveDeadLettersRequest, opts ...grpc.CallOption) (*RedriveDeadLettersResponse, error)
+	// AddPolicy adds a casbin permission rule. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	AddPolicy(ctx context.Context, in *AddPolicyRequest, opts ...grpc.CallOption) (*MutateAck, error)
+	// RemovePolicy removes a casbin permission rule. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	RemovePolicy(ctx context.Context, in *RemovePolicyRequest, opts ...grpc.CallOption) (*MutateAck, error)
+	// ListPolicies returns all permission rules. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	ListPolicies(ctx context.Context, in *ListPoliciesRequest, opts ...grpc.CallOption) (*ListPoliciesResponse, error)
+	// AddRole adds a casbin role assignment. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	AddRole(ctx context.Context, in *AddRoleRequest, opts ...grpc.CallOption) (*MutateAck, error)
+	// RemoveRole removes a casbin role assignment. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	RemoveRole(ctx context.Context, in *RemoveRoleRequest, opts ...grpc.CallOption) (*MutateAck, error)
+	// ListRoles returns all role assignments. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error)
 }
 
 type workflowServiceClient struct {
@@ -197,6 +221,66 @@ func (c *workflowServiceClient) RedriveDeadLetters(ctx context.Context, in *Redr
 	return out, nil
 }
 
+func (c *workflowServiceClient) AddPolicy(ctx context.Context, in *AddPolicyRequest, opts ...grpc.CallOption) (*MutateAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MutateAck)
+	err := c.cc.Invoke(ctx, WorkflowService_AddPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RemovePolicy(ctx context.Context, in *RemovePolicyRequest, opts ...grpc.CallOption) (*MutateAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MutateAck)
+	err := c.cc.Invoke(ctx, WorkflowService_RemovePolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListPolicies(ctx context.Context, in *ListPoliciesRequest, opts ...grpc.CallOption) (*ListPoliciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPoliciesResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_ListPolicies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) AddRole(ctx context.Context, in *AddRoleRequest, opts ...grpc.CallOption) (*MutateAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MutateAck)
+	err := c.cc.Invoke(ctx, WorkflowService_AddRole_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RemoveRole(ctx context.Context, in *RemoveRoleRequest, opts ...grpc.CallOption) (*MutateAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MutateAck)
+	err := c.cc.Invoke(ctx, WorkflowService_RemoveRole_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRolesResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_ListRoles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkflowServiceServer is the server API for WorkflowService service.
 // All implementations must embed UnimplementedWorkflowServiceServer
 // for forward compatibility.
@@ -231,6 +315,24 @@ type WorkflowServiceServer interface {
 	// RedriveDeadLetters re-queues dead outbox rows by id. Admin-scoped; requires
 	// WithDeadLetterAdmin, else returns Unimplemented.
 	RedriveDeadLetters(context.Context, *RedriveDeadLettersRequest) (*RedriveDeadLettersResponse, error)
+	// AddPolicy adds a casbin permission rule. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	AddPolicy(context.Context, *AddPolicyRequest) (*MutateAck, error)
+	// RemovePolicy removes a casbin permission rule. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	RemovePolicy(context.Context, *RemovePolicyRequest) (*MutateAck, error)
+	// ListPolicies returns all permission rules. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	ListPolicies(context.Context, *ListPoliciesRequest) (*ListPoliciesResponse, error)
+	// AddRole adds a casbin role assignment. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	AddRole(context.Context, *AddRoleRequest) (*MutateAck, error)
+	// RemoveRole removes a casbin role assignment. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	RemoveRole(context.Context, *RemoveRoleRequest) (*MutateAck, error)
+	// ListRoles returns all role assignments. Admin-scoped; requires
+	// WithPolicyAdmin, else returns Unimplemented.
+	ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error)
 	mustEmbedUnimplementedWorkflowServiceServer()
 }
 
@@ -276,6 +378,24 @@ func (UnimplementedWorkflowServiceServer) ListDeadLetters(context.Context, *List
 }
 func (UnimplementedWorkflowServiceServer) RedriveDeadLetters(context.Context, *RedriveDeadLettersRequest) (*RedriveDeadLettersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RedriveDeadLetters not implemented")
+}
+func (UnimplementedWorkflowServiceServer) AddPolicy(context.Context, *AddPolicyRequest) (*MutateAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddPolicy not implemented")
+}
+func (UnimplementedWorkflowServiceServer) RemovePolicy(context.Context, *RemovePolicyRequest) (*MutateAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemovePolicy not implemented")
+}
+func (UnimplementedWorkflowServiceServer) ListPolicies(context.Context, *ListPoliciesRequest) (*ListPoliciesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPolicies not implemented")
+}
+func (UnimplementedWorkflowServiceServer) AddRole(context.Context, *AddRoleRequest) (*MutateAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddRole not implemented")
+}
+func (UnimplementedWorkflowServiceServer) RemoveRole(context.Context, *RemoveRoleRequest) (*MutateAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveRole not implemented")
+}
+func (UnimplementedWorkflowServiceServer) ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRoles not implemented")
 }
 func (UnimplementedWorkflowServiceServer) mustEmbedUnimplementedWorkflowServiceServer() {}
 func (UnimplementedWorkflowServiceServer) testEmbeddedByValue()                         {}
@@ -514,6 +634,114 @@ func _WorkflowService_RedriveDeadLetters_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowService_AddPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).AddPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_AddPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).AddPolicy(ctx, req.(*AddPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RemovePolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemovePolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RemovePolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_RemovePolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RemovePolicy(ctx, req.(*RemovePolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListPolicies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPoliciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListPolicies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_ListPolicies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListPolicies(ctx, req.(*ListPoliciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_AddRole_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddRoleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).AddRole(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_AddRole_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).AddRole(ctx, req.(*AddRoleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RemoveRole_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveRoleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RemoveRole(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_RemoveRole_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RemoveRole(ctx, req.(*RemoveRoleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListRoles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRolesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListRoles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_ListRoles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListRoles(ctx, req.(*ListRolesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkflowService_ServiceDesc is the grpc.ServiceDesc for WorkflowService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -568,6 +796,30 @@ var WorkflowService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RedriveDeadLetters",
 			Handler:    _WorkflowService_RedriveDeadLetters_Handler,
+		},
+		{
+			MethodName: "AddPolicy",
+			Handler:    _WorkflowService_AddPolicy_Handler,
+		},
+		{
+			MethodName: "RemovePolicy",
+			Handler:    _WorkflowService_RemovePolicy_Handler,
+		},
+		{
+			MethodName: "ListPolicies",
+			Handler:    _WorkflowService_ListPolicies_Handler,
+		},
+		{
+			MethodName: "AddRole",
+			Handler:    _WorkflowService_AddRole_Handler,
+		},
+		{
+			MethodName: "RemoveRole",
+			Handler:    _WorkflowService_RemoveRole_Handler,
+		},
+		{
+			MethodName: "ListRoles",
+			Handler:    _WorkflowService_ListRoles_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -18,6 +18,9 @@ type serverConfig struct {
 
 	// deadLetters, when non-nil, enables the DLQ admin RPCs.
 	deadLetters service.DeadLetterAdmin
+
+	// policyAdmin, when non-nil, enables the policy-admin RPCs.
+	policyAdmin service.PolicyAdmin
 }
 
 // Option is a functional option for [RegisterWorkflowServiceServer].
@@ -57,6 +60,25 @@ func WithDeadLetterAdmin(dla service.DeadLetterAdmin) Option {
 	}
 	return func(c *serverConfig) {
 		c.deadLetters = dla
+	}
+}
+
+// WithPolicyAdmin enables the policy-admin RPCs (AddPolicy, RemovePolicy,
+// ListPolicies, AddRole, RemoveRole, ListRoles) by supplying a
+// [service.PolicyAdmin] (e.g. a casbinauthz.PolicyAdminFor adapter). When
+// this option is NOT supplied, those RPCs return codes.Unimplemented.
+//
+// SECURITY: like ListInstances and the DLQ RPCs, the policy-admin RPCs have
+// no built-in per-method authorization; the consumer MUST gate them with a
+// grpc interceptor.
+//
+// Panics immediately if pa is nil.
+func WithPolicyAdmin(pa service.PolicyAdmin) Option {
+	if pa == nil {
+		panic("grpc: WithPolicyAdmin: pa must not be nil")
+	}
+	return func(c *serverConfig) {
+		c.policyAdmin = pa
 	}
 }
 

@@ -26,6 +26,7 @@ type server struct {
 	svc         service.Service
 	tel         observability.Telemetry
 	deadLetters service.DeadLetterAdmin
+	policyAdmin service.PolicyAdmin
 }
 
 // RegisterWorkflowServiceServer constructs a WorkflowService gRPC implementation
@@ -49,6 +50,12 @@ type server struct {
 // with no built-in per-method gate and must be protected by the consumer's
 // interceptor. Without WithDeadLetterAdmin they return codes.Unimplemented.
 //
+// The same caveat applies to the policy-admin RPCs (AddPolicy, RemovePolicy,
+// ListPolicies, AddRole, RemoveRole, ListRoles) once enabled via
+// WithPolicyAdmin: admin-scoped, no built-in per-method gate, must be protected
+// by the consumer's interceptor. Without WithPolicyAdmin they return
+// codes.Unimplemented.
+//
 // Per-method authorization built into this package is a tracked follow-up.
 func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Service, opts ...Option) {
 	cfg := &serverConfig{}
@@ -59,7 +66,7 @@ func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Servic
 		"github.com/zakyalvan/krtlwrkflw/transport/grpc",
 		nonNilOpts(cfg.logOpt, cfg.tpOpt, cfg.mpOpt)...,
 	)
-	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc, tel: tel, deadLetters: cfg.deadLetters})
+	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc, tel: tel, deadLetters: cfg.deadLetters, policyAdmin: cfg.policyAdmin})
 }
 
 // ---- RPC implementations ----
@@ -291,6 +298,146 @@ func (s *server) RedriveDeadLetters(ctx context.Context, req *workflowpb.Redrive
 		return nil, mapToGRPCStatus(err)
 	}
 	return &workflowpb.RedriveDeadLettersResponse{RedrivenCount: int32(n)}, nil //nolint:gosec // bounded outbox row count
+}
+
+// AddPolicy adds a casbin permission rule. It requires the server to be
+// registered with WithPolicyAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) AddPolicy(ctx context.Context, req *workflowpb.AddPolicyRequest) (*workflowpb.MutateAck, error) {
+	ctx, span := s.startSpan(ctx, "AddPolicy")
+	defer span.End()
+
+	if s.policyAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	rule := protoToPolicyRule(req.GetRule())
+	added, err := s.policyAdmin.AddPolicy(ctx, rule)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	return &workflowpb.MutateAck{Ok: added}, nil
+}
+
+// RemovePolicy removes a casbin permission rule. It requires the server to be
+// registered with WithPolicyAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) RemovePolicy(ctx context.Context, req *workflowpb.RemovePolicyRequest) (*workflowpb.MutateAck, error) {
+	ctx, span := s.startSpan(ctx, "RemovePolicy")
+	defer span.End()
+
+	if s.policyAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	rule := protoToPolicyRule(req.GetRule())
+	removed, err := s.policyAdmin.RemovePolicy(ctx, rule)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	return &workflowpb.MutateAck{Ok: removed}, nil
+}
+
+// ListPolicies returns all casbin permission rules. It requires the server to
+// be registered with WithPolicyAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) ListPolicies(ctx context.Context, _ *workflowpb.ListPoliciesRequest) (*workflowpb.ListPoliciesResponse, error) {
+	ctx, span := s.startSpan(ctx, "ListPolicies")
+	defer span.End()
+
+	if s.policyAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	rules, err := s.policyAdmin.ListPolicies(ctx)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	items := make([]*workflowpb.PolicyRule, len(rules))
+	for i, r := range rules {
+		items[i] = policyRuleToProto(r)
+	}
+	return &workflowpb.ListPoliciesResponse{Policies: items}, nil
+}
+
+// AddRole adds a casbin role assignment. It requires the server to be
+// registered with WithPolicyAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) AddRole(ctx context.Context, req *workflowpb.AddRoleRequest) (*workflowpb.MutateAck, error) {
+	ctx, span := s.startSpan(ctx, "AddRole")
+	defer span.End()
+
+	if s.policyAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	binding := protoToRoleBinding(req.GetBinding())
+	added, err := s.policyAdmin.AddRole(ctx, binding)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	return &workflowpb.MutateAck{Ok: added}, nil
+}
+
+// RemoveRole removes a casbin role assignment. It requires the server to be
+// registered with WithPolicyAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) RemoveRole(ctx context.Context, req *workflowpb.RemoveRoleRequest) (*workflowpb.MutateAck, error) {
+	ctx, span := s.startSpan(ctx, "RemoveRole")
+	defer span.End()
+
+	if s.policyAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	binding := protoToRoleBinding(req.GetBinding())
+	removed, err := s.policyAdmin.RemoveRole(ctx, binding)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	return &workflowpb.MutateAck{Ok: removed}, nil
+}
+
+// ListRoles returns all casbin role assignments. It requires the server to be
+// registered with WithPolicyAdmin; otherwise it returns codes.Unimplemented.
+func (s *server) ListRoles(ctx context.Context, _ *workflowpb.ListRolesRequest) (*workflowpb.ListRolesResponse, error) {
+	ctx, span := s.startSpan(ctx, "ListRoles")
+	defer span.End()
+
+	if s.policyAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	bindings, err := s.policyAdmin.ListRoles(ctx)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	items := make([]*workflowpb.RoleBinding, len(bindings))
+	for i, b := range bindings {
+		items[i] = roleBindingToProto(b)
+	}
+	return &workflowpb.ListRolesResponse{RoleBindings: items}, nil
+}
+
+// policyRuleToProto converts a service.PolicyRule to its proto representation.
+func policyRuleToProto(r service.PolicyRule) *workflowpb.PolicyRule {
+	return &workflowpb.PolicyRule{Subject: r.Subject, Object: r.Object, Action: r.Action}
+}
+
+// protoToPolicyRule converts a *workflowpb.PolicyRule to service.PolicyRule.
+func protoToPolicyRule(p *workflowpb.PolicyRule) service.PolicyRule {
+	if p == nil {
+		return service.PolicyRule{}
+	}
+	return service.PolicyRule{Subject: p.GetSubject(), Object: p.GetObject(), Action: p.GetAction()}
+}
+
+// roleBindingToProto converts a service.RoleBinding to its proto representation.
+func roleBindingToProto(b service.RoleBinding) *workflowpb.RoleBinding {
+	return &workflowpb.RoleBinding{User: b.User, Role: b.Role}
+}
+
+// protoToRoleBinding converts a *workflowpb.RoleBinding to service.RoleBinding.
+func protoToRoleBinding(p *workflowpb.RoleBinding) service.RoleBinding {
+	if p == nil {
+		return service.RoleBinding{}
+	}
+	return service.RoleBinding{User: p.GetUser(), Role: p.GetRole()}
 }
 
 // deadLetterToProto projects a runtime.DeadLetter onto its gRPC message.
