@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -19,7 +20,7 @@ var ErrDefinitionNotFound = errors.New("workflow-runtime: definition not found i
 // registered. Any other error indicates a transient or structural problem and
 // the caller should propagate it.
 type DefinitionRegistry interface {
-	Lookup(defRef string) (*model.ProcessDefinition, error)
+	Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error)
 }
 
 // MapDefinitionRegistry is an immutable-after-construction, in-memory
@@ -47,8 +48,8 @@ func NewMapDefinitionRegistry(defs map[string]*model.ProcessDefinition) *MapDefi
 }
 
 // Lookup returns the ProcessDefinition registered under defRef, or
-// ErrDefinitionNotFound if none is registered.
-func (r *MapDefinitionRegistry) Lookup(defRef string) (*model.ProcessDefinition, error) {
+// ErrDefinitionNotFound if none is registered. ctx is ignored — in-memory lookup.
+func (r *MapDefinitionRegistry) Lookup(_ context.Context, defRef string) (*model.ProcessDefinition, error) {
 	def, ok := r.m[defRef]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrDefinitionNotFound, defRef)

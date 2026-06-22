@@ -126,7 +126,7 @@ var _ Service = (*Engine)(nil)
 // StartInstance resolves the process definition by req.DefRef, starts a new
 // instance, and returns the resulting state.
 func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (engine.InstanceState, error) {
-	def, err := e.reg.Lookup(req.DefRef)
+	def, err := e.reg.Lookup(ctx, req.DefRef)
 	if err != nil {
 		return engine.InstanceState{}, fmt.Errorf("workflow-service: start instance: %w", err)
 	}
@@ -172,7 +172,7 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (e
 // DeliverMessage routes a message to the waiting instance via the runner's
 // message-waiter table. No-op when no instance is waiting.
 func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
-	def, err := e.reg.Lookup(req.DefRef)
+	def, err := e.reg.Lookup(ctx, req.DefRef)
 	if err != nil {
 		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
@@ -269,7 +269,7 @@ func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*mod
 		return nil, engine.InstanceState{}, err
 	}
 	defRef := fmt.Sprintf("%s:%d", st.DefID, st.DefVersion)
-	def, err := e.reg.Lookup(defRef)
+	def, err := e.reg.Lookup(ctx, defRef)
 	if err != nil {
 		return nil, engine.InstanceState{}, err
 	}

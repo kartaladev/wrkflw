@@ -50,7 +50,8 @@ type DefinitionStore interface {
 	PutDefinition(ctx context.Context, def *model.ProcessDefinition) error
 	// Lookup resolves a DefRef string ("defID:version" or "defID") to a definition.
 	// Returns runtime.ErrDefinitionNotFound when no matching row exists.
-	Lookup(defRef string) (*model.ProcessDefinition, error)
+	// ctx is propagated to the underlying SQL query for cancellation support.
+	Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error)
 }
 
 // Relay is the stable public interface for the transactional outbox drain.

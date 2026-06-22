@@ -140,7 +140,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	}
 	require.NoError(t, ds.PutDefinition(t.Context(), def))
 
-	got, err := ds.Lookup("d1")
+	got, err := ds.Lookup(t.Context(), "d1")
 	require.NoError(t, err)
 	assert.Equal(t, "d1", got.ID)
 
@@ -149,7 +149,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	require.NotNil(t, cached)
 
 	// Lookup through the cache.
-	cachedDef, err := cached.Lookup("d1")
+	cachedDef, err := cached.Lookup(t.Context(), "d1")
 	require.NoError(t, err)
 	assert.Equal(t, "d1", cachedDef.ID)
 }

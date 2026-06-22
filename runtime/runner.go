@@ -612,7 +612,7 @@ func (r *Runner) propagateCancel(ctx context.Context, parentID string, visited m
 		}
 
 		ref := fmt.Sprintf("%s:%d", childSt.DefID, childSt.DefVersion)
-		childDef, lookupErr := r.defsReg.Lookup(ref)
+		childDef, lookupErr := r.defsReg.Lookup(ctx, ref)
 		if lookupErr != nil {
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
 				"runtime: propagateCancel: child def not found",
@@ -802,7 +802,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		if r.defsReg == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured (use WithDefinitions)", cmd.DefRef)
 		}
-		childDef, err := r.defsReg.Lookup(cmd.DefRef)
+		childDef, err := r.defsReg.Lookup(ctx, cmd.DefRef)
 		if err != nil {
 			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: registry lookup: %w", cmd.DefRef, err)
 		}
@@ -993,7 +993,7 @@ func (r *Runner) RehydrateTimers(ctx context.Context) error {
 	var unresolved int
 	for _, a := range armed {
 		ref := fmt.Sprintf("%s:%d", a.DefID, a.DefVersion)
-		def, err := r.defsReg.Lookup(ref)
+		def, err := r.defsReg.Lookup(ctx, ref)
 		if err != nil {
 			unresolved++
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: rehydrate: definition not found, skipping timer",

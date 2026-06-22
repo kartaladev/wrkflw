@@ -111,7 +111,7 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 		// Resolve the parent definition. Failure is a skip: a transient lookup
 		// failure must not permanently block delivery; a later drain retries.
 		defRef := fmt.Sprintf("%s:%d", p.Link.ParentDefID, p.Link.ParentDefVersion)
-		parentDef, lookupErr := n.reg.Lookup(defRef)
+		parentDef, lookupErr := n.reg.Lookup(ctx, defRef)
 		if lookupErr != nil {
 			continue
 		}
