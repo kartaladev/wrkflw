@@ -757,7 +757,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			}
 			if depth > maxCallDepth {
 				return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-					fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+					fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
 						"async call activity chain is too deep",
 						maxCallDepth, cmd.DefRef),
 				), nil
@@ -800,7 +800,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		depth := callDepth(ctx)
 		if depth >= maxCallDepth {
 			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+				fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
 					"the synchronous runner does not support cyclic or deeply nested call activities",
 					maxCallDepth, cmd.DefRef),
 			), nil
@@ -838,7 +838,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			// Return a clear, diagnosable error message so the consumer understands
 			// the limitation rather than receiving a generic "did not complete" message.
 			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("runtime: call activity child %q parked (status running): "+
+				fmt.Sprintf("workflow-runtime: call activity child %q parked (status running): "+
 					"the synchronous runner does not support children that wait on human tasks, "+
 					"timers, or events; async call activity is a future enhancement",
 					childInstanceID),
@@ -848,7 +848,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			// StatusFailed or any other non-completed, non-running terminal state.
 			// Include the numeric status in the message so failures are diagnosable.
 			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
+				fmt.Sprintf("workflow-runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
 			), nil
 		}
 
