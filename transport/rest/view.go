@@ -22,6 +22,16 @@ type InstanceView struct {
 	Variables  map[string]any `json:"variables,omitempty"`
 }
 
+// deadLetterView is the JSON projection of a runtime.DeadLetter for the DLQ admin API.
+type deadLetterView struct {
+	ID         int64     `json:"id"`
+	InstanceID string    `json:"instance_id"`
+	Topic      string    `json:"topic"`
+	RetryCount int       `json:"retry_count"`
+	LastError  string    `json:"last_error"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 // NewInstanceView converts an engine.InstanceState into the stable InstanceView DTO.
 func NewInstanceView(st engine.InstanceState) InstanceView {
 	return InstanceView{

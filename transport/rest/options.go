@@ -10,6 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
 // config holds the resolved handler configuration.
@@ -18,6 +19,9 @@ type config struct {
 	// adminMiddleware wraps the admin routes. If nil, the built-in denyAllMiddleware
 	// is used so the admin endpoints are never openly accessible (default-deny).
 	adminMiddleware func(http.Handler) http.Handler
+
+	// deadLetters, when non-nil, enables the DLQ admin routes.
+	deadLetters service.DeadLetterAdmin
 
 	// observability options — nil entries are filtered out before calling observability.New.
 	logOpt observability.Option
@@ -82,6 +86,22 @@ func WithAdminMiddleware(mw func(http.Handler) http.Handler) Option {
 	}
 	return func(c *config) {
 		c.adminMiddleware = mw
+	}
+}
+
+// WithDeadLetterAdmin enables the DLQ admin routes (GET /admin/dead-letters and
+// POST /admin/dead-letters/redrive) by supplying a [service.DeadLetterAdmin]
+// (e.g. a persistence.Relay). When this option is NOT supplied, those routes are
+// not registered (a request returns 404). The routes sit behind the configured
+// admin middleware (default-deny), like the other admin routes.
+//
+// Panics immediately if dla is nil.
+func WithDeadLetterAdmin(dla service.DeadLetterAdmin) Option {
+	if dla == nil {
+		panic("rest: WithDeadLetterAdmin: dla must not be nil")
+	}
+	return func(c *config) {
+		c.deadLetters = dla
 	}
 }
 

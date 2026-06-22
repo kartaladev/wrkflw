@@ -139,6 +139,78 @@ func (h *handler) handleCancelInstance(w http.ResponseWriter, r *http.Request) {
 	h.renderInstance(w, r, http.StatusOK, st)
 }
 
+// dlqListResponse is the JSON envelope returned by GET /admin/dead-letters.
+type dlqListResponse struct {
+	Items []deadLetterView `json:"items"`
+}
+
+// dlqRedriveResponse is the JSON envelope returned by POST /admin/dead-letters/redrive.
+type dlqRedriveResponse struct {
+	Redriven int `json:"redriven"`
+}
+
+// handleListDeadLetters handles GET /admin/dead-letters.
+//
+// Query parameters:
+//
+//	limit (optional) — page size; clamped by runtime.NormalizeLimit (default 50, max 200).
+//
+// It is registered only when a DeadLetterAdmin is wired via WithDeadLetterAdmin,
+// so h.cfg.deadLetters is guaranteed non-nil here.
+func (h *handler) handleListDeadLetters(w http.ResponseWriter, r *http.Request) {
+	var limit int
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			WriteHTTPError(w, fmt.Errorf("%w: invalid limit %q", ErrBadInput, raw))
+			return
+		}
+		limit = n
+	}
+
+	rows, err := h.cfg.deadLetters.ListDeadLettered(r.Context(), runtime.NormalizeLimit(limit))
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+
+	resp := dlqListResponse{Items: make([]deadLetterView, len(rows))}
+	for i, dl := range rows {
+		resp.Items[i] = deadLetterView{
+			ID:         dl.ID,
+			InstanceID: dl.InstanceID,
+			Topic:      dl.Topic,
+			RetryCount: dl.RetryCount,
+			LastError:  dl.LastError,
+			CreatedAt:  dl.CreatedAt,
+		}
+	}
+	h.writeJSON(w, r, http.StatusOK, resp)
+}
+
+// handleRedriveDeadLetters handles POST /admin/dead-letters/redrive.
+//
+// Body: {"ids":[int64,...]}. Empty or absent ids is a no-op (returns {"redriven":0}).
+//
+// It is registered only when a DeadLetterAdmin is wired via WithDeadLetterAdmin,
+// so h.cfg.deadLetters is guaranteed non-nil here.
+func (h *handler) handleRedriveDeadLetters(w http.ResponseWriter, r *http.Request) {
+	type reqBody struct {
+		IDs []int64 `json:"ids"`
+	}
+	var body reqBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	n, err := h.cfg.deadLetters.Redrive(r.Context(), body.IDs...)
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.writeJSON(w, r, http.StatusOK, dlqRedriveResponse{Redriven: n})
+}
+
 // parseStatus converts a status string (as emitted by statusString) back to an engine.Status.
 // Returns a wrapped ErrBadInput for unknown values so classifyError maps it to 400.
 func parseStatus(s string) (engine.Status, error) {
