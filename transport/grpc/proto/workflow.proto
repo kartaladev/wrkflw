@@ -48,6 +48,30 @@ service WorkflowService {
   // RedriveDeadLetters re-queues dead outbox rows by id. Admin-scoped; requires
   // WithDeadLetterAdmin, else returns Unimplemented.
   rpc RedriveDeadLetters(RedriveDeadLettersRequest) returns (RedriveDeadLettersResponse);
+
+  // AddPolicy adds a casbin permission rule. Admin-scoped; requires
+  // WithPolicyAdmin, else returns Unimplemented.
+  rpc AddPolicy(AddPolicyRequest) returns (MutateAck);
+
+  // RemovePolicy removes a casbin permission rule. Admin-scoped; requires
+  // WithPolicyAdmin, else returns Unimplemented.
+  rpc RemovePolicy(RemovePolicyRequest) returns (MutateAck);
+
+  // ListPolicies returns all permission rules. Admin-scoped; requires
+  // WithPolicyAdmin, else returns Unimplemented.
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+
+  // AddRole adds a casbin role assignment. Admin-scoped; requires
+  // WithPolicyAdmin, else returns Unimplemented.
+  rpc AddRole(AddRoleRequest) returns (MutateAck);
+
+  // RemoveRole removes a casbin role assignment. Admin-scoped; requires
+  // WithPolicyAdmin, else returns Unimplemented.
+  rpc RemoveRole(RemoveRoleRequest) returns (MutateAck);
+
+  // ListRoles returns all role assignments. Admin-scoped; requires
+  // WithPolicyAdmin, else returns Unimplemented.
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
 }
 
 // ---- Request messages ----
@@ -101,6 +125,53 @@ message RedriveDeadLettersRequest {
 
 message RedriveDeadLettersResponse {
   int32 redriven_count = 1;
+}
+
+// PolicyRule is a casbin RBAC policy line: subject may perform action on object.
+message PolicyRule {
+  string subject = 1;
+  string object = 2;
+  string action = 3;
+}
+
+// RoleBinding is a casbin grouping line: user has role.
+message RoleBinding {
+  string user = 1;
+  string role = 2;
+}
+
+message AddPolicyRequest {
+  PolicyRule rule = 1;
+}
+
+message RemovePolicyRequest {
+  PolicyRule rule = 1;
+}
+
+message ListPoliciesRequest {}
+
+message ListPoliciesResponse {
+  repeated PolicyRule policies = 1;
+}
+
+message AddRoleRequest {
+  RoleBinding binding = 1;
+}
+
+message RemoveRoleRequest {
+  RoleBinding binding = 1;
+}
+
+message ListRolesRequest {}
+
+message ListRolesResponse {
+  repeated RoleBinding role_bindings = 1;
+}
+
+// MutateAck is the result of an add/remove mutation. ok reflects casbin's
+// "was the rule actually added/removed" boolean (false = already present/absent).
+message MutateAck {
+  bool ok = 1;
 }
 
 message DeliverSignalRequest {

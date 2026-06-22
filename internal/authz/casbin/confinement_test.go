@@ -17,11 +17,17 @@ func TestCasbinConfinement(t *testing.T) {
 	t.Parallel()
 
 	// Packages whose transitive deps must NOT include casbin or any ORM.
+	// The public service facade + the mountable transports must stay casbin-free:
+	// they depend only on the authz.Authorizer / service.PolicyAdmin interfaces, so
+	// casbin remains confined to casbinauthz/ and internal/authz/casbin/ (ADR-0023/0036).
 	targets := []string{
 		"./engine/...",
 		"./model/...",
 		"./runtime/...",
 		"./internal/persistence/...",
+		"./service/...",
+		"./transport/rest/...",
+		"./transport/grpc/...",
 	}
 
 	var deps []string

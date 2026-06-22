@@ -497,6 +497,502 @@ func (x *RedriveDeadLettersResponse) GetRedrivenCount() int32 {
 	return 0
 }
 
+// PolicyRule is a casbin RBAC policy line: subject may perform action on object.
+type PolicyRule struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subject       string                 `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	Object        string                 `protobuf:"bytes,2,opt,name=object,proto3" json:"object,omitempty"`
+	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PolicyRule) Reset() {
+	*x = PolicyRule{}
+	mi := &file_workflow_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PolicyRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PolicyRule) ProtoMessage() {}
+
+func (x *PolicyRule) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PolicyRule.ProtoReflect.Descriptor instead.
+func (*PolicyRule) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *PolicyRule) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetObject() string {
+	if x != nil {
+		return x.Object
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+// RoleBinding is a casbin grouping line: user has role.
+type RoleBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          string                 `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	Role          string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoleBinding) Reset() {
+	*x = RoleBinding{}
+	mi := &file_workflow_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoleBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoleBinding) ProtoMessage() {}
+
+func (x *RoleBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoleBinding.ProtoReflect.Descriptor instead.
+func (*RoleBinding) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RoleBinding) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *RoleBinding) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+type AddPolicyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rule          *PolicyRule            `protobuf:"bytes,1,opt,name=rule,proto3" json:"rule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddPolicyRequest) Reset() {
+	*x = AddPolicyRequest{}
+	mi := &file_workflow_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddPolicyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddPolicyRequest) ProtoMessage() {}
+
+func (x *AddPolicyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddPolicyRequest.ProtoReflect.Descriptor instead.
+func (*AddPolicyRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AddPolicyRequest) GetRule() *PolicyRule {
+	if x != nil {
+		return x.Rule
+	}
+	return nil
+}
+
+type RemovePolicyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rule          *PolicyRule            `protobuf:"bytes,1,opt,name=rule,proto3" json:"rule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemovePolicyRequest) Reset() {
+	*x = RemovePolicyRequest{}
+	mi := &file_workflow_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemovePolicyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemovePolicyRequest) ProtoMessage() {}
+
+func (x *RemovePolicyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemovePolicyRequest.ProtoReflect.Descriptor instead.
+func (*RemovePolicyRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RemovePolicyRequest) GetRule() *PolicyRule {
+	if x != nil {
+		return x.Rule
+	}
+	return nil
+}
+
+type ListPoliciesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesRequest) Reset() {
+	*x = ListPoliciesRequest{}
+	mi := &file_workflow_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesRequest) ProtoMessage() {}
+
+func (x *ListPoliciesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesRequest.ProtoReflect.Descriptor instead.
+func (*ListPoliciesRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{13}
+}
+
+type ListPoliciesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Policies      []*PolicyRule          `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesResponse) Reset() {
+	*x = ListPoliciesResponse{}
+	mi := &file_workflow_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesResponse) ProtoMessage() {}
+
+func (x *ListPoliciesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesResponse.ProtoReflect.Descriptor instead.
+func (*ListPoliciesResponse) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListPoliciesResponse) GetPolicies() []*PolicyRule {
+	if x != nil {
+		return x.Policies
+	}
+	return nil
+}
+
+type AddRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Binding       *RoleBinding           `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddRoleRequest) Reset() {
+	*x = AddRoleRequest{}
+	mi := &file_workflow_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddRoleRequest) ProtoMessage() {}
+
+func (x *AddRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddRoleRequest.ProtoReflect.Descriptor instead.
+func (*AddRoleRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AddRoleRequest) GetBinding() *RoleBinding {
+	if x != nil {
+		return x.Binding
+	}
+	return nil
+}
+
+type RemoveRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Binding       *RoleBinding           `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveRoleRequest) Reset() {
+	*x = RemoveRoleRequest{}
+	mi := &file_workflow_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveRoleRequest) ProtoMessage() {}
+
+func (x *RemoveRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveRoleRequest.ProtoReflect.Descriptor instead.
+func (*RemoveRoleRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RemoveRoleRequest) GetBinding() *RoleBinding {
+	if x != nil {
+		return x.Binding
+	}
+	return nil
+}
+
+type ListRolesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRolesRequest) Reset() {
+	*x = ListRolesRequest{}
+	mi := &file_workflow_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRolesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRolesRequest) ProtoMessage() {}
+
+func (x *ListRolesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRolesRequest.ProtoReflect.Descriptor instead.
+func (*ListRolesRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{17}
+}
+
+type ListRolesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoleBindings  []*RoleBinding         `protobuf:"bytes,1,rep,name=role_bindings,json=roleBindings,proto3" json:"role_bindings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRolesResponse) Reset() {
+	*x = ListRolesResponse{}
+	mi := &file_workflow_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRolesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRolesResponse) ProtoMessage() {}
+
+func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRolesResponse.ProtoReflect.Descriptor instead.
+func (*ListRolesResponse) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListRolesResponse) GetRoleBindings() []*RoleBinding {
+	if x != nil {
+		return x.RoleBindings
+	}
+	return nil
+}
+
+// MutateAck is the result of an add/remove mutation. ok reflects casbin's
+// "was the rule actually added/removed" boolean (false = already present/absent).
+type MutateAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MutateAck) Reset() {
+	*x = MutateAck{}
+	mi := &file_workflow_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MutateAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MutateAck) ProtoMessage() {}
+
+func (x *MutateAck) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MutateAck.ProtoReflect.Descriptor instead.
+func (*MutateAck) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *MutateAck) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 type DeliverSignalRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
@@ -510,7 +1006,7 @@ type DeliverSignalRequest struct {
 
 func (x *DeliverSignalRequest) Reset() {
 	*x = DeliverSignalRequest{}
-	mi := &file_workflow_proto_msgTypes[9]
+	mi := &file_workflow_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -522,7 +1018,7 @@ func (x *DeliverSignalRequest) String() string {
 func (*DeliverSignalRequest) ProtoMessage() {}
 
 func (x *DeliverSignalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[9]
+	mi := &file_workflow_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -535,7 +1031,7 @@ func (x *DeliverSignalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverSignalRequest.ProtoReflect.Descriptor instead.
 func (*DeliverSignalRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{9}
+	return file_workflow_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DeliverSignalRequest) GetInstanceId() string {
@@ -571,7 +1067,7 @@ type DeliverMessageRequest struct {
 
 func (x *DeliverMessageRequest) Reset() {
 	*x = DeliverMessageRequest{}
-	mi := &file_workflow_proto_msgTypes[10]
+	mi := &file_workflow_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -583,7 +1079,7 @@ func (x *DeliverMessageRequest) String() string {
 func (*DeliverMessageRequest) ProtoMessage() {}
 
 func (x *DeliverMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[10]
+	mi := &file_workflow_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -596,7 +1092,7 @@ func (x *DeliverMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverMessageRequest.ProtoReflect.Descriptor instead.
 func (*DeliverMessageRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{10}
+	return file_workflow_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeliverMessageRequest) GetDefRef() string {
@@ -638,7 +1134,7 @@ type Actor struct {
 
 func (x *Actor) Reset() {
 	*x = Actor{}
-	mi := &file_workflow_proto_msgTypes[11]
+	mi := &file_workflow_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -650,7 +1146,7 @@ func (x *Actor) String() string {
 func (*Actor) ProtoMessage() {}
 
 func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[11]
+	mi := &file_workflow_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -663,7 +1159,7 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{11}
+	return file_workflow_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Actor) GetId() string {
@@ -697,7 +1193,7 @@ type ClaimTaskRequest struct {
 
 func (x *ClaimTaskRequest) Reset() {
 	*x = ClaimTaskRequest{}
-	mi := &file_workflow_proto_msgTypes[12]
+	mi := &file_workflow_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +1205,7 @@ func (x *ClaimTaskRequest) String() string {
 func (*ClaimTaskRequest) ProtoMessage() {}
 
 func (x *ClaimTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[12]
+	mi := &file_workflow_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,7 +1218,7 @@ func (x *ClaimTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimTaskRequest.ProtoReflect.Descriptor instead.
 func (*ClaimTaskRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{12}
+	return file_workflow_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ClaimTaskRequest) GetTaskToken() string {
@@ -750,7 +1246,7 @@ type CompleteTaskRequest struct {
 
 func (x *CompleteTaskRequest) Reset() {
 	*x = CompleteTaskRequest{}
-	mi := &file_workflow_proto_msgTypes[13]
+	mi := &file_workflow_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -762,7 +1258,7 @@ func (x *CompleteTaskRequest) String() string {
 func (*CompleteTaskRequest) ProtoMessage() {}
 
 func (x *CompleteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[13]
+	mi := &file_workflow_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -775,7 +1271,7 @@ func (x *CompleteTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteTaskRequest.ProtoReflect.Descriptor instead.
 func (*CompleteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{13}
+	return file_workflow_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CompleteTaskRequest) GetTaskToken() string {
@@ -811,7 +1307,7 @@ type ReassignTaskRequest struct {
 
 func (x *ReassignTaskRequest) Reset() {
 	*x = ReassignTaskRequest{}
-	mi := &file_workflow_proto_msgTypes[14]
+	mi := &file_workflow_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -823,7 +1319,7 @@ func (x *ReassignTaskRequest) String() string {
 func (*ReassignTaskRequest) ProtoMessage() {}
 
 func (x *ReassignTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[14]
+	mi := &file_workflow_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -836,7 +1332,7 @@ func (x *ReassignTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReassignTaskRequest.ProtoReflect.Descriptor instead.
 func (*ReassignTaskRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{14}
+	return file_workflow_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ReassignTaskRequest) GetTaskToken() string {
@@ -881,7 +1377,7 @@ type ListInstancesRequest struct {
 
 func (x *ListInstancesRequest) Reset() {
 	*x = ListInstancesRequest{}
-	mi := &file_workflow_proto_msgTypes[15]
+	mi := &file_workflow_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +1389,7 @@ func (x *ListInstancesRequest) String() string {
 func (*ListInstancesRequest) ProtoMessage() {}
 
 func (x *ListInstancesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[15]
+	mi := &file_workflow_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +1402,7 @@ func (x *ListInstancesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInstancesRequest.ProtoReflect.Descriptor instead.
 func (*ListInstancesRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{15}
+	return file_workflow_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListInstancesRequest) GetStatus() string {
@@ -946,7 +1442,7 @@ type Instance struct {
 
 func (x *Instance) Reset() {
 	*x = Instance{}
-	mi := &file_workflow_proto_msgTypes[16]
+	mi := &file_workflow_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -958,7 +1454,7 @@ func (x *Instance) String() string {
 func (*Instance) ProtoMessage() {}
 
 func (x *Instance) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[16]
+	mi := &file_workflow_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -971,7 +1467,7 @@ func (x *Instance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Instance.ProtoReflect.Descriptor instead.
 func (*Instance) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{16}
+	return file_workflow_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Instance) GetInstanceId() string {
@@ -1033,7 +1529,7 @@ type InstanceResponse struct {
 
 func (x *InstanceResponse) Reset() {
 	*x = InstanceResponse{}
-	mi := &file_workflow_proto_msgTypes[17]
+	mi := &file_workflow_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1045,7 +1541,7 @@ func (x *InstanceResponse) String() string {
 func (*InstanceResponse) ProtoMessage() {}
 
 func (x *InstanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[17]
+	mi := &file_workflow_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1058,7 +1554,7 @@ func (x *InstanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstanceResponse.ProtoReflect.Descriptor instead.
 func (*InstanceResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{17}
+	return file_workflow_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *InstanceResponse) GetInstance() *Instance {
@@ -1077,7 +1573,7 @@ type DeliverMessageResponse struct {
 
 func (x *DeliverMessageResponse) Reset() {
 	*x = DeliverMessageResponse{}
-	mi := &file_workflow_proto_msgTypes[18]
+	mi := &file_workflow_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1089,7 +1585,7 @@ func (x *DeliverMessageResponse) String() string {
 func (*DeliverMessageResponse) ProtoMessage() {}
 
 func (x *DeliverMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[18]
+	mi := &file_workflow_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1102,7 +1598,7 @@ func (x *DeliverMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverMessageResponse.ProtoReflect.Descriptor instead.
 func (*DeliverMessageResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{18}
+	return file_workflow_proto_rawDescGZIP(), []int{29}
 }
 
 // InstanceSummary is a lightweight projection for list results.
@@ -1120,7 +1616,7 @@ type InstanceSummary struct {
 
 func (x *InstanceSummary) Reset() {
 	*x = InstanceSummary{}
-	mi := &file_workflow_proto_msgTypes[19]
+	mi := &file_workflow_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1132,7 +1628,7 @@ func (x *InstanceSummary) String() string {
 func (*InstanceSummary) ProtoMessage() {}
 
 func (x *InstanceSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[19]
+	mi := &file_workflow_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1145,7 +1641,7 @@ func (x *InstanceSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstanceSummary.ProtoReflect.Descriptor instead.
 func (*InstanceSummary) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{19}
+	return file_workflow_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *InstanceSummary) GetInstanceId() string {
@@ -1202,7 +1698,7 @@ type ListInstancesResponse struct {
 
 func (x *ListInstancesResponse) Reset() {
 	*x = ListInstancesResponse{}
-	mi := &file_workflow_proto_msgTypes[20]
+	mi := &file_workflow_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1214,7 +1710,7 @@ func (x *ListInstancesResponse) String() string {
 func (*ListInstancesResponse) ProtoMessage() {}
 
 func (x *ListInstancesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_proto_msgTypes[20]
+	mi := &file_workflow_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1227,7 +1723,7 @@ func (x *ListInstancesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInstancesResponse.ProtoReflect.Descriptor instead.
 func (*ListInstancesResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_proto_rawDescGZIP(), []int{20}
+	return file_workflow_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListInstancesResponse) GetItems() []*InstanceSummary {
@@ -1292,7 +1788,31 @@ const file_workflow_proto_rawDesc = "" +
 	"\x19RedriveDeadLettersRequest\x12\x10\n" +
 	"\x03ids\x18\x01 \x03(\x03R\x03ids\"C\n" +
 	"\x1aRedriveDeadLettersResponse\x12%\n" +
-	"\x0eredriven_count\x18\x01 \x01(\x05R\rredrivenCount\"\x82\x01\n" +
+	"\x0eredriven_count\x18\x01 \x01(\x05R\rredrivenCount\"V\n" +
+	"\n" +
+	"PolicyRule\x12\x18\n" +
+	"\asubject\x18\x01 \x01(\tR\asubject\x12\x16\n" +
+	"\x06object\x18\x02 \x01(\tR\x06object\x12\x16\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\"5\n" +
+	"\vRoleBinding\x12\x12\n" +
+	"\x04user\x18\x01 \x01(\tR\x04user\x12\x12\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\"=\n" +
+	"\x10AddPolicyRequest\x12)\n" +
+	"\x04rule\x18\x01 \x01(\v2\x15.wrkflw.v1.PolicyRuleR\x04rule\"@\n" +
+	"\x13RemovePolicyRequest\x12)\n" +
+	"\x04rule\x18\x01 \x01(\v2\x15.wrkflw.v1.PolicyRuleR\x04rule\"\x15\n" +
+	"\x13ListPoliciesRequest\"I\n" +
+	"\x14ListPoliciesResponse\x121\n" +
+	"\bpolicies\x18\x01 \x03(\v2\x15.wrkflw.v1.PolicyRuleR\bpolicies\"B\n" +
+	"\x0eAddRoleRequest\x120\n" +
+	"\abinding\x18\x01 \x01(\v2\x16.wrkflw.v1.RoleBindingR\abinding\"E\n" +
+	"\x11RemoveRoleRequest\x120\n" +
+	"\abinding\x18\x01 \x01(\v2\x16.wrkflw.v1.RoleBindingR\abinding\"\x12\n" +
+	"\x10ListRolesRequest\"P\n" +
+	"\x11ListRolesResponse\x12;\n" +
+	"\rrole_bindings\x18\x01 \x03(\v2\x16.wrkflw.v1.RoleBindingR\froleBindings\"\x1b\n" +
+	"\tMutateAck\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x82\x01\n" +
 	"\x14DeliverSignalRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12\x16\n" +
@@ -1356,7 +1876,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x05items\x18\x01 \x03(\v2\x1a.wrkflw.v1.InstanceSummaryR\x05items\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore2\xe7\a\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore2\x84\v\n" +
 	"\x0fWorkflowService\x12M\n" +
 	"\rStartInstance\x12\x1f.wrkflw.v1.StartInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12I\n" +
 	"\vGetInstance\x12\x1d.wrkflw.v1.GetInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12M\n" +
@@ -1369,7 +1889,14 @@ const file_workflow_proto_rawDesc = "" +
 	"\x0eCancelInstance\x12 .wrkflw.v1.CancelInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12Q\n" +
 	"\x0fResolveIncident\x12!.wrkflw.v1.ResolveIncidentRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12X\n" +
 	"\x0fListDeadLetters\x12!.wrkflw.v1.ListDeadLettersRequest\x1a\".wrkflw.v1.ListDeadLettersResponse\x12a\n" +
-	"\x12RedriveDeadLetters\x12$.wrkflw.v1.RedriveDeadLettersRequest\x1a%.wrkflw.v1.RedriveDeadLettersResponseBFZDgithub.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb;workflowpbb\x06proto3"
+	"\x12RedriveDeadLetters\x12$.wrkflw.v1.RedriveDeadLettersRequest\x1a%.wrkflw.v1.RedriveDeadLettersResponse\x12>\n" +
+	"\tAddPolicy\x12\x1b.wrkflw.v1.AddPolicyRequest\x1a\x14.wrkflw.v1.MutateAck\x12D\n" +
+	"\fRemovePolicy\x12\x1e.wrkflw.v1.RemovePolicyRequest\x1a\x14.wrkflw.v1.MutateAck\x12O\n" +
+	"\fListPolicies\x12\x1e.wrkflw.v1.ListPoliciesRequest\x1a\x1f.wrkflw.v1.ListPoliciesResponse\x12:\n" +
+	"\aAddRole\x12\x19.wrkflw.v1.AddRoleRequest\x1a\x14.wrkflw.v1.MutateAck\x12@\n" +
+	"\n" +
+	"RemoveRole\x12\x1c.wrkflw.v1.RemoveRoleRequest\x1a\x14.wrkflw.v1.MutateAck\x12F\n" +
+	"\tListRoles\x12\x1b.wrkflw.v1.ListRolesRequest\x1a\x1c.wrkflw.v1.ListRolesResponseBFZDgithub.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb;workflowpbb\x06proto3"
 
 var (
 	file_workflow_proto_rawDescOnce sync.Once
@@ -1383,7 +1910,7 @@ func file_workflow_proto_rawDescGZIP() []byte {
 	return file_workflow_proto_rawDescData
 }
 
-var file_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_workflow_proto_goTypes = []any{
 	(*StartInstanceRequest)(nil),       // 0: wrkflw.v1.StartInstanceRequest
 	(*GetInstanceRequest)(nil),         // 1: wrkflw.v1.GetInstanceRequest
@@ -1394,68 +1921,97 @@ var file_workflow_proto_goTypes = []any{
 	(*ListDeadLettersResponse)(nil),    // 6: wrkflw.v1.ListDeadLettersResponse
 	(*RedriveDeadLettersRequest)(nil),  // 7: wrkflw.v1.RedriveDeadLettersRequest
 	(*RedriveDeadLettersResponse)(nil), // 8: wrkflw.v1.RedriveDeadLettersResponse
-	(*DeliverSignalRequest)(nil),       // 9: wrkflw.v1.DeliverSignalRequest
-	(*DeliverMessageRequest)(nil),      // 10: wrkflw.v1.DeliverMessageRequest
-	(*Actor)(nil),                      // 11: wrkflw.v1.Actor
-	(*ClaimTaskRequest)(nil),           // 12: wrkflw.v1.ClaimTaskRequest
-	(*CompleteTaskRequest)(nil),        // 13: wrkflw.v1.CompleteTaskRequest
-	(*ReassignTaskRequest)(nil),        // 14: wrkflw.v1.ReassignTaskRequest
-	(*ListInstancesRequest)(nil),       // 15: wrkflw.v1.ListInstancesRequest
-	(*Instance)(nil),                   // 16: wrkflw.v1.Instance
-	(*InstanceResponse)(nil),           // 17: wrkflw.v1.InstanceResponse
-	(*DeliverMessageResponse)(nil),     // 18: wrkflw.v1.DeliverMessageResponse
-	(*InstanceSummary)(nil),            // 19: wrkflw.v1.InstanceSummary
-	(*ListInstancesResponse)(nil),      // 20: wrkflw.v1.ListInstancesResponse
-	(*structpb.Struct)(nil),            // 21: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),      // 22: google.protobuf.Timestamp
+	(*PolicyRule)(nil),                 // 9: wrkflw.v1.PolicyRule
+	(*RoleBinding)(nil),                // 10: wrkflw.v1.RoleBinding
+	(*AddPolicyRequest)(nil),           // 11: wrkflw.v1.AddPolicyRequest
+	(*RemovePolicyRequest)(nil),        // 12: wrkflw.v1.RemovePolicyRequest
+	(*ListPoliciesRequest)(nil),        // 13: wrkflw.v1.ListPoliciesRequest
+	(*ListPoliciesResponse)(nil),       // 14: wrkflw.v1.ListPoliciesResponse
+	(*AddRoleRequest)(nil),             // 15: wrkflw.v1.AddRoleRequest
+	(*RemoveRoleRequest)(nil),          // 16: wrkflw.v1.RemoveRoleRequest
+	(*ListRolesRequest)(nil),           // 17: wrkflw.v1.ListRolesRequest
+	(*ListRolesResponse)(nil),          // 18: wrkflw.v1.ListRolesResponse
+	(*MutateAck)(nil),                  // 19: wrkflw.v1.MutateAck
+	(*DeliverSignalRequest)(nil),       // 20: wrkflw.v1.DeliverSignalRequest
+	(*DeliverMessageRequest)(nil),      // 21: wrkflw.v1.DeliverMessageRequest
+	(*Actor)(nil),                      // 22: wrkflw.v1.Actor
+	(*ClaimTaskRequest)(nil),           // 23: wrkflw.v1.ClaimTaskRequest
+	(*CompleteTaskRequest)(nil),        // 24: wrkflw.v1.CompleteTaskRequest
+	(*ReassignTaskRequest)(nil),        // 25: wrkflw.v1.ReassignTaskRequest
+	(*ListInstancesRequest)(nil),       // 26: wrkflw.v1.ListInstancesRequest
+	(*Instance)(nil),                   // 27: wrkflw.v1.Instance
+	(*InstanceResponse)(nil),           // 28: wrkflw.v1.InstanceResponse
+	(*DeliverMessageResponse)(nil),     // 29: wrkflw.v1.DeliverMessageResponse
+	(*InstanceSummary)(nil),            // 30: wrkflw.v1.InstanceSummary
+	(*ListInstancesResponse)(nil),      // 31: wrkflw.v1.ListInstancesResponse
+	(*structpb.Struct)(nil),            // 32: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),      // 33: google.protobuf.Timestamp
 }
 var file_workflow_proto_depIdxs = []int32{
-	21, // 0: wrkflw.v1.StartInstanceRequest.vars:type_name -> google.protobuf.Struct
-	22, // 1: wrkflw.v1.DeadLetter.created_at:type_name -> google.protobuf.Timestamp
+	32, // 0: wrkflw.v1.StartInstanceRequest.vars:type_name -> google.protobuf.Struct
+	33, // 1: wrkflw.v1.DeadLetter.created_at:type_name -> google.protobuf.Timestamp
 	4,  // 2: wrkflw.v1.ListDeadLettersResponse.items:type_name -> wrkflw.v1.DeadLetter
-	21, // 3: wrkflw.v1.DeliverSignalRequest.payload:type_name -> google.protobuf.Struct
-	21, // 4: wrkflw.v1.DeliverMessageRequest.payload:type_name -> google.protobuf.Struct
-	21, // 5: wrkflw.v1.Actor.attributes:type_name -> google.protobuf.Struct
-	11, // 6: wrkflw.v1.ClaimTaskRequest.actor:type_name -> wrkflw.v1.Actor
-	11, // 7: wrkflw.v1.CompleteTaskRequest.actor:type_name -> wrkflw.v1.Actor
-	21, // 8: wrkflw.v1.CompleteTaskRequest.output:type_name -> google.protobuf.Struct
-	11, // 9: wrkflw.v1.ReassignTaskRequest.by:type_name -> wrkflw.v1.Actor
-	22, // 10: wrkflw.v1.Instance.started_at:type_name -> google.protobuf.Timestamp
-	22, // 11: wrkflw.v1.Instance.ended_at:type_name -> google.protobuf.Timestamp
-	21, // 12: wrkflw.v1.Instance.variables:type_name -> google.protobuf.Struct
-	16, // 13: wrkflw.v1.InstanceResponse.instance:type_name -> wrkflw.v1.Instance
-	22, // 14: wrkflw.v1.InstanceSummary.started_at:type_name -> google.protobuf.Timestamp
-	22, // 15: wrkflw.v1.InstanceSummary.ended_at:type_name -> google.protobuf.Timestamp
-	19, // 16: wrkflw.v1.ListInstancesResponse.items:type_name -> wrkflw.v1.InstanceSummary
-	0,  // 17: wrkflw.v1.WorkflowService.StartInstance:input_type -> wrkflw.v1.StartInstanceRequest
-	1,  // 18: wrkflw.v1.WorkflowService.GetInstance:input_type -> wrkflw.v1.GetInstanceRequest
-	9,  // 19: wrkflw.v1.WorkflowService.DeliverSignal:input_type -> wrkflw.v1.DeliverSignalRequest
-	10, // 20: wrkflw.v1.WorkflowService.DeliverMessage:input_type -> wrkflw.v1.DeliverMessageRequest
-	12, // 21: wrkflw.v1.WorkflowService.ClaimTask:input_type -> wrkflw.v1.ClaimTaskRequest
-	13, // 22: wrkflw.v1.WorkflowService.CompleteTask:input_type -> wrkflw.v1.CompleteTaskRequest
-	14, // 23: wrkflw.v1.WorkflowService.ReassignTask:input_type -> wrkflw.v1.ReassignTaskRequest
-	15, // 24: wrkflw.v1.WorkflowService.ListInstances:input_type -> wrkflw.v1.ListInstancesRequest
-	2,  // 25: wrkflw.v1.WorkflowService.CancelInstance:input_type -> wrkflw.v1.CancelInstanceRequest
-	3,  // 26: wrkflw.v1.WorkflowService.ResolveIncident:input_type -> wrkflw.v1.ResolveIncidentRequest
-	5,  // 27: wrkflw.v1.WorkflowService.ListDeadLetters:input_type -> wrkflw.v1.ListDeadLettersRequest
-	7,  // 28: wrkflw.v1.WorkflowService.RedriveDeadLetters:input_type -> wrkflw.v1.RedriveDeadLettersRequest
-	17, // 29: wrkflw.v1.WorkflowService.StartInstance:output_type -> wrkflw.v1.InstanceResponse
-	17, // 30: wrkflw.v1.WorkflowService.GetInstance:output_type -> wrkflw.v1.InstanceResponse
-	17, // 31: wrkflw.v1.WorkflowService.DeliverSignal:output_type -> wrkflw.v1.InstanceResponse
-	18, // 32: wrkflw.v1.WorkflowService.DeliverMessage:output_type -> wrkflw.v1.DeliverMessageResponse
-	17, // 33: wrkflw.v1.WorkflowService.ClaimTask:output_type -> wrkflw.v1.InstanceResponse
-	17, // 34: wrkflw.v1.WorkflowService.CompleteTask:output_type -> wrkflw.v1.InstanceResponse
-	17, // 35: wrkflw.v1.WorkflowService.ReassignTask:output_type -> wrkflw.v1.InstanceResponse
-	20, // 36: wrkflw.v1.WorkflowService.ListInstances:output_type -> wrkflw.v1.ListInstancesResponse
-	17, // 37: wrkflw.v1.WorkflowService.CancelInstance:output_type -> wrkflw.v1.InstanceResponse
-	17, // 38: wrkflw.v1.WorkflowService.ResolveIncident:output_type -> wrkflw.v1.InstanceResponse
-	6,  // 39: wrkflw.v1.WorkflowService.ListDeadLetters:output_type -> wrkflw.v1.ListDeadLettersResponse
-	8,  // 40: wrkflw.v1.WorkflowService.RedriveDeadLetters:output_type -> wrkflw.v1.RedriveDeadLettersResponse
-	29, // [29:41] is the sub-list for method output_type
-	17, // [17:29] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	9,  // 3: wrkflw.v1.AddPolicyRequest.rule:type_name -> wrkflw.v1.PolicyRule
+	9,  // 4: wrkflw.v1.RemovePolicyRequest.rule:type_name -> wrkflw.v1.PolicyRule
+	9,  // 5: wrkflw.v1.ListPoliciesResponse.policies:type_name -> wrkflw.v1.PolicyRule
+	10, // 6: wrkflw.v1.AddRoleRequest.binding:type_name -> wrkflw.v1.RoleBinding
+	10, // 7: wrkflw.v1.RemoveRoleRequest.binding:type_name -> wrkflw.v1.RoleBinding
+	10, // 8: wrkflw.v1.ListRolesResponse.role_bindings:type_name -> wrkflw.v1.RoleBinding
+	32, // 9: wrkflw.v1.DeliverSignalRequest.payload:type_name -> google.protobuf.Struct
+	32, // 10: wrkflw.v1.DeliverMessageRequest.payload:type_name -> google.protobuf.Struct
+	32, // 11: wrkflw.v1.Actor.attributes:type_name -> google.protobuf.Struct
+	22, // 12: wrkflw.v1.ClaimTaskRequest.actor:type_name -> wrkflw.v1.Actor
+	22, // 13: wrkflw.v1.CompleteTaskRequest.actor:type_name -> wrkflw.v1.Actor
+	32, // 14: wrkflw.v1.CompleteTaskRequest.output:type_name -> google.protobuf.Struct
+	22, // 15: wrkflw.v1.ReassignTaskRequest.by:type_name -> wrkflw.v1.Actor
+	33, // 16: wrkflw.v1.Instance.started_at:type_name -> google.protobuf.Timestamp
+	33, // 17: wrkflw.v1.Instance.ended_at:type_name -> google.protobuf.Timestamp
+	32, // 18: wrkflw.v1.Instance.variables:type_name -> google.protobuf.Struct
+	27, // 19: wrkflw.v1.InstanceResponse.instance:type_name -> wrkflw.v1.Instance
+	33, // 20: wrkflw.v1.InstanceSummary.started_at:type_name -> google.protobuf.Timestamp
+	33, // 21: wrkflw.v1.InstanceSummary.ended_at:type_name -> google.protobuf.Timestamp
+	30, // 22: wrkflw.v1.ListInstancesResponse.items:type_name -> wrkflw.v1.InstanceSummary
+	0,  // 23: wrkflw.v1.WorkflowService.StartInstance:input_type -> wrkflw.v1.StartInstanceRequest
+	1,  // 24: wrkflw.v1.WorkflowService.GetInstance:input_type -> wrkflw.v1.GetInstanceRequest
+	20, // 25: wrkflw.v1.WorkflowService.DeliverSignal:input_type -> wrkflw.v1.DeliverSignalRequest
+	21, // 26: wrkflw.v1.WorkflowService.DeliverMessage:input_type -> wrkflw.v1.DeliverMessageRequest
+	23, // 27: wrkflw.v1.WorkflowService.ClaimTask:input_type -> wrkflw.v1.ClaimTaskRequest
+	24, // 28: wrkflw.v1.WorkflowService.CompleteTask:input_type -> wrkflw.v1.CompleteTaskRequest
+	25, // 29: wrkflw.v1.WorkflowService.ReassignTask:input_type -> wrkflw.v1.ReassignTaskRequest
+	26, // 30: wrkflw.v1.WorkflowService.ListInstances:input_type -> wrkflw.v1.ListInstancesRequest
+	2,  // 31: wrkflw.v1.WorkflowService.CancelInstance:input_type -> wrkflw.v1.CancelInstanceRequest
+	3,  // 32: wrkflw.v1.WorkflowService.ResolveIncident:input_type -> wrkflw.v1.ResolveIncidentRequest
+	5,  // 33: wrkflw.v1.WorkflowService.ListDeadLetters:input_type -> wrkflw.v1.ListDeadLettersRequest
+	7,  // 34: wrkflw.v1.WorkflowService.RedriveDeadLetters:input_type -> wrkflw.v1.RedriveDeadLettersRequest
+	11, // 35: wrkflw.v1.WorkflowService.AddPolicy:input_type -> wrkflw.v1.AddPolicyRequest
+	12, // 36: wrkflw.v1.WorkflowService.RemovePolicy:input_type -> wrkflw.v1.RemovePolicyRequest
+	13, // 37: wrkflw.v1.WorkflowService.ListPolicies:input_type -> wrkflw.v1.ListPoliciesRequest
+	15, // 38: wrkflw.v1.WorkflowService.AddRole:input_type -> wrkflw.v1.AddRoleRequest
+	16, // 39: wrkflw.v1.WorkflowService.RemoveRole:input_type -> wrkflw.v1.RemoveRoleRequest
+	17, // 40: wrkflw.v1.WorkflowService.ListRoles:input_type -> wrkflw.v1.ListRolesRequest
+	28, // 41: wrkflw.v1.WorkflowService.StartInstance:output_type -> wrkflw.v1.InstanceResponse
+	28, // 42: wrkflw.v1.WorkflowService.GetInstance:output_type -> wrkflw.v1.InstanceResponse
+	28, // 43: wrkflw.v1.WorkflowService.DeliverSignal:output_type -> wrkflw.v1.InstanceResponse
+	29, // 44: wrkflw.v1.WorkflowService.DeliverMessage:output_type -> wrkflw.v1.DeliverMessageResponse
+	28, // 45: wrkflw.v1.WorkflowService.ClaimTask:output_type -> wrkflw.v1.InstanceResponse
+	28, // 46: wrkflw.v1.WorkflowService.CompleteTask:output_type -> wrkflw.v1.InstanceResponse
+	28, // 47: wrkflw.v1.WorkflowService.ReassignTask:output_type -> wrkflw.v1.InstanceResponse
+	31, // 48: wrkflw.v1.WorkflowService.ListInstances:output_type -> wrkflw.v1.ListInstancesResponse
+	28, // 49: wrkflw.v1.WorkflowService.CancelInstance:output_type -> wrkflw.v1.InstanceResponse
+	28, // 50: wrkflw.v1.WorkflowService.ResolveIncident:output_type -> wrkflw.v1.InstanceResponse
+	6,  // 51: wrkflw.v1.WorkflowService.ListDeadLetters:output_type -> wrkflw.v1.ListDeadLettersResponse
+	8,  // 52: wrkflw.v1.WorkflowService.RedriveDeadLetters:output_type -> wrkflw.v1.RedriveDeadLettersResponse
+	19, // 53: wrkflw.v1.WorkflowService.AddPolicy:output_type -> wrkflw.v1.MutateAck
+	19, // 54: wrkflw.v1.WorkflowService.RemovePolicy:output_type -> wrkflw.v1.MutateAck
+	14, // 55: wrkflw.v1.WorkflowService.ListPolicies:output_type -> wrkflw.v1.ListPoliciesResponse
+	19, // 56: wrkflw.v1.WorkflowService.AddRole:output_type -> wrkflw.v1.MutateAck
+	19, // 57: wrkflw.v1.WorkflowService.RemoveRole:output_type -> wrkflw.v1.MutateAck
+	18, // 58: wrkflw.v1.WorkflowService.ListRoles:output_type -> wrkflw.v1.ListRolesResponse
+	41, // [41:59] is the sub-list for method output_type
+	23, // [23:41] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_workflow_proto_init() }
@@ -1469,7 +2025,7 @@ func file_workflow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workflow_proto_rawDesc), len(file_workflow_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

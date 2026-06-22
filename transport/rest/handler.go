@@ -41,6 +41,15 @@ import (
 //	GET    /admin/dead-letters                                 — list dead-lettered outbox rows
 //	POST   /admin/dead-letters/redrive                         — re-queue dead rows by id
 //
+// Policy-admin routes (registered only when WithPolicyAdmin is supplied):
+//
+//	GET    /admin/policies                                     — list casbin policy rules
+//	POST   /admin/policies                                     — add a casbin policy rule
+//	DELETE /admin/policies                                     — remove a casbin policy rule
+//	GET    /admin/role-bindings                                — list casbin role-binding rules
+//	POST   /admin/role-bindings                                — add a casbin role binding
+//	DELETE /admin/role-bindings                                — remove a casbin role binding
+//
 // Default-deny: admin routes return 403 Forbidden when no WithAdminMiddleware option
 // is supplied. Consumers must explicitly opt in by providing a middleware that
 // enforces their authentication and authorisation requirements.
@@ -85,6 +94,24 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 			cfg.adminMiddleware(http.HandlerFunc(h.handleListDeadLetters)))
 		mux.Handle("POST /admin/dead-letters/redrive",
 			cfg.adminMiddleware(http.HandlerFunc(h.handleRedriveDeadLetters)))
+	}
+
+	// Policy-admin routes are registered only when a PolicyAdmin is wired via
+	// WithPolicyAdmin. Absent it, the routes do not exist (404). Like the other
+	// admin routes they sit behind cfg.adminMiddleware (default-deny).
+	if cfg.policyAdmin != nil {
+		mux.Handle("GET /admin/policies",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleListPolicies)))
+		mux.Handle("POST /admin/policies",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleAddPolicy)))
+		mux.Handle("DELETE /admin/policies",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleRemovePolicy)))
+		mux.Handle("GET /admin/role-bindings",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleListRoleBindings)))
+		mux.Handle("POST /admin/role-bindings",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleAddRoleBinding)))
+		mux.Handle("DELETE /admin/role-bindings",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleRemoveRoleBinding)))
 	}
 
 	return h.traceMiddleware(mux)

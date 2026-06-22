@@ -20,7 +20,7 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0035 (0034 = compensation on error/cancel; 0035 = per-node cancel handlers, branch
+ADRs 0001–0036 (0036 = casbin policy-admin, branch `feat/casbin-policy-admin`; 0035 = per-node cancel handlers, branch
 `feat/cancel-handlers`).
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
@@ -73,7 +73,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0036**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0037**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -92,8 +92,9 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
 - **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030;
   `AdvisoryLockOwnership` use-after-close guard — ✅ DONE, ADR-0033; compensation-on-error/cancel —
   ✅ DONE, ADR-0034)*
-  scope-targeted compensation (`Compensate` producer — ADR-0035 next); casbin
-  adapter/watcher `context` propagation; JSONB
+  scope-targeted compensation (`Compensate` producer — ADR-0037, next/largest); *(casbin
+  adapter/watcher `context` propagation — CLOSED as a non-issue, ADR-0036 §0: upstream casbin
+  persist.Adapter has no ctx; watcher already threads its lifecycle ctx)*; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
 - **Production-hardening:** *(cancellation propagation parent→child — ✅ DONE ADR-0032; orphaned-child
   cleanup handled by ErrTokenNotFound path; `wrkflw_processed_message` pruning — ✅ DONE ADR-0033)*;
@@ -107,7 +108,7 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
   async DB-backed `instances_active` gauge; REST/relay meters actually emitting; route-template span
   naming; exemplars; OTel-contrib option; migrate eventing onto the shared helper.
 - **API / feature completeness:** *(gRPC `ResolveIncident` + DLQ admin REST/gRPC — ✅ DONE, ADR-0029)*
-  casbin policy-admin REST/gRPC; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
+  *(casbin policy-admin REST/gRPC — ✅ DONE, ADR-0036)*; broker-specific eventing constructors (Kafka/NATS/SNS) + richer envelope;
   streaming/watch + OpenAPI/grpc-gateway + richer admin filters; admin total-count; `ended_at` optional
   in proto; casbin ABAC-in-matchers; richer Privilege modeling; `DeliverMessage` self-resolving the def.
 - **Performance / scale:** casbin `FilteredAdapter` + `WatcherEx`; per-definition history-cap + per-def
@@ -262,6 +263,36 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## casbin policy-admin sub-project — ✅ COMPLETE
+
+Backlog (API completeness). Branch `feat/casbin-policy-admin`. Spec
+`docs/specs/2026-06-23-casbin-policy-admin-design.md`, plan `docs/plans/2026-06-23-casbin-policy-admin.md`,
+**ADR-0036**. 3 SDD tasks (Task 1 Approved; Task 2 Needs-fixes→fixed = wrong response type + missing
+DELETE 403 tests; Task 3 Approved) + opus whole-branch review (**Ready: Yes-with-nits**, no blockers).
+Gate: full `go test -race -p 1 ./...` green, lint 0, **engine/model diff ZERO**, casbin confinement
+extended + enforced.
+
+### What shipped
+A casbin **policy-admin** through an optional `service.PolicyAdmin` seam (`AddPolicy`/`RemovePolicy`/
+`ListPolicies` over `p` rules + `AddRole`/`RemoveRole`/`ListRoles` over `g` role-bindings;
+`PolicyRule`/`RoleBinding` value types, stdlib-only). `casbinauthz.PolicyAdminFor(authz.Authorizer)
+(service.PolicyAdmin, bool)` non-breakingly type-asserts the concrete `*Authorizer` and adapts its
+**shared** `*SyncedEnforcer` (mutations immediately authoritative + persist + propagate via the DB
+adapter/watcher). REST: `WithPolicyAdmin` + `/admin/policies` & `/admin/role-bindings` (GET/POST/DELETE),
+registered only when wired (else 404), behind the default-deny admin middleware. gRPC: `WithPolicyAdmin`
++ 6 RPCs (proto regen) returning `codes.Unimplemented` when unwired. Mirrors the DLQ-admin optional-seam
+pattern (ADR-0029). The confinement guard now covers `service/`+transports (casbin-free enforced).
+
+**Closed as non-issue:** casbin adapter/watcher ctx-propagation (ADR-0036 §0 — upstream `persist.Adapter`
+has no ctx; watcher already threads its lifecycle ctx).
+
+### Deferred follow-ups
+1. gRPC request validation (empty `rule`/`binding` accepted → empty-string policy; consistent with the
+   rest of the transport which does no request validation).
+2. Richer Privilege modeling / casbin ABAC-in-matchers / `FilteredAdapter`+`WatcherEx` (separate backlog).
 
 ---
 
