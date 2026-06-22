@@ -122,6 +122,7 @@ var (
 	_ Relay                  = (*postgres.Relay)(nil)
 	_ runtime.InstanceLister = (*postgres.Lister)(nil)
 	_ runtime.CallLinkStore  = (*postgres.CallLinkStore)(nil)
+	_ runtime.TimerStore     = (*postgres.TimerStore)(nil)
 )
 
 // OpenPostgres constructs a Postgres-backed runtime.Store + JournalReader over pool.
@@ -287,6 +288,19 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.
 //	pending, err := cls.ClaimPending(ctx, 100)
 func NewCallLinkStore(pool *pgxpool.Pool) runtime.CallLinkStore {
 	return postgres.NewCallLinkStore(pool)
+}
+
+// NewTimerStore returns a runtime.TimerStore backed by Postgres, for
+// Runner.RehydrateTimers. The pool must already have migrations applied.
+//
+// Example:
+//
+//	pool, _ := pgxpool.New(ctx, dsn)
+//	persistence.Migrate(ctx, pool)
+//	ts := persistence.NewTimerStore(pool)
+//	armed, err := ts.ListArmed(ctx)
+func NewTimerStore(pool *pgxpool.Pool) runtime.TimerStore {
+	return postgres.NewTimerStore(pool)
 }
 
 // NewCallNotifier builds a durable call-activity notifier over pool: it claims

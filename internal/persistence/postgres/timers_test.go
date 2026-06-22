@@ -81,3 +81,31 @@ func TestStorePersistsTimerOpsAtomically(t *testing.T) {
 	armed = listArmedDirect(t, pool)
 	assert.Empty(t, armed, "fired timer row must be deleted in the commit tx")
 }
+
+func TestPgTimerStoreListArmedOrdered(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+	store := pg.NewStore(pool)
+	ts := pg.NewTimerStore(pool)
+
+	base := time.Date(2026, 6, 22, 15, 0, 0, 0, time.UTC)
+	st := engine.InstanceState{InstanceID: "ord-1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning, StartedAt: base}
+	_, err := store.Create(t.Context(), runtime.AppliedStep{
+		State:   st,
+		Trigger: engine.NewStartInstance(base, nil),
+		TimerArms: []runtime.ArmedTimer{
+			{InstanceID: "ord-1", DefID: "d", DefVersion: 1, TimerID: "later", FireAt: base.Add(2 * time.Hour), Kind: engine.TimerIntermediate},
+			{InstanceID: "ord-1", DefID: "d", DefVersion: 1, TimerID: "sooner", FireAt: base.Add(time.Hour), Kind: engine.TimerIntermediate},
+		},
+	})
+	require.NoError(t, err)
+
+	armed, err := ts.ListArmed(t.Context())
+	require.NoError(t, err)
+	require.Len(t, armed, 2)
+	assert.Equal(t, "sooner", armed[0].TimerID, "ordered by FireAt ascending")
+	assert.Equal(t, "later", armed[1].TimerID)
+	assert.Equal(t, "d", armed[0].DefID)
+	assert.Equal(t, 1, armed[0].DefVersion)
+}
