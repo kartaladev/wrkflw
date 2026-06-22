@@ -116,38 +116,38 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return StepResult{State: s, Commands: append(preCmds, driveCmds...)}, nil
 
 	case CancelRequested:
-		// Admin trigger: terminate the instance immediately.
-		// 1. Consume ALL tokens (clear s.Tokens).
-		// 2. Set Status = StatusTerminated; set EndedAt from the trigger's OccurredAt.
-		// 3. Emit InvokeCancelAction (fire-and-forget) for each entry in
-		//    def.CancelActions, in definition order, carrying a snapshot of the
-		//    current instance variables. The runtime executes these best-effort;
-		//    failures are logged but never fail the cancel.
-		// 4. Emit FailInstance{Err:"cancelled"} as the terminal command (reusing the
-		//    existing FailInstance command type; "cancelled" distinguishes it from
-		//    error-propagation failures).
-		// 5. Cancel any outstanding timers, gateway arms, and boundary arms via the
-		//    existing cancelAllTimers() + cancelAllArmsAndBoundaries() helpers.
-		//
-		// Behavior on an already-terminal instance: the logic is idempotent — there
-		// are no tokens or timers to cancel, and Status is overwritten to Terminated.
-		// No error is returned; the caller is responsible for not sending CancelRequested
-		// to an already-terminal instance in production.
+		// Admin trigger: terminate the instance, optionally running compensation first.
+		// Emit InvokeCancelAction (fire-and-forget) for each entry in def.CancelActions
+		// regardless of whether compensation records exist (ADR-0028 unchanged).
+		var cancelActionCmds []Command
+		for _, name := range def.CancelActions {
+			cancelActionCmds = append(cancelActionCmds, InvokeCancelAction{Name: name, Input: copyVars(s.Variables)})
+		}
+
+		if len(s.RootCompensations) > 0 {
+			// Compensation walk before termination (ADR-0034).
+			// beginCompensation clears tokens/timers/arms and emits the first compensation
+			// InvokeAction, setting the cursor with FinalStatus=Terminated and FinalErr="cancelled".
+			// stepCompensationFinish will emit FailInstance{"cancelled"} at walk end.
+			s.Status = StatusCompensating
+			res, err := beginCompensation(def, &s, "", StatusTerminated, "cancelled", t.OccurredAt(), opt.Mode)
+			if err != nil {
+				return StepResult{}, err
+			}
+			res.Commands = append(cancelActionCmds, res.Commands...)
+			return res, nil
+		}
+
+		// No compensation records: immediate termination (unchanged behaviour).
 		ended := t.OccurredAt()
 		s.Status = StatusTerminated
 		s.EndedAt = &ended
-		// Consume all tokens (clear visit records as well).
 		for i := range s.Tokens {
 			tok := &s.Tokens[i]
 			s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
 		}
 		s.Tokens = nil
-		// Emit best-effort cancel actions (fire-and-forget) in definition order,
-		// then the terminal command and scheduler-resource cancellations.
-		var cmds []Command
-		for _, name := range def.CancelActions {
-			cmds = append(cmds, InvokeCancelAction{Name: name, Input: copyVars(s.Variables)})
-		}
+		cmds := cancelActionCmds
 		cmds = append(cmds, FailInstance{Err: "cancelled"})
 		cmds = append(cmds, s.cancelAllTimers()...)
 		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
@@ -162,6 +162,13 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		return stepCompensateRequested(def, &s, t, opt.Mode)
 
 	case ActionFailed:
+		// Best-effort compensation: if the engine is compensating and the failed
+		// command is the active compensation action, skip that record and advance
+		// the walk rather than re-entering propagateError/retry (ADR-0034 §2.5).
+		if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
+			return stepCompensationAdvance(def, &s, t.OccurredAt(), opt.Mode)
+		}
+
 		tok := s.tokenAwaiting(t.CommandID)
 		if tok == nil {
 			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
@@ -1992,7 +1999,17 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 		return nil, nil
 	}
 
-	// Set instance to failed and perform terminal cleanup.
+	// Terminal unhandled error: run compensation walk before terminating (ADR-0034).
+	if len(s.RootCompensations) > 0 {
+		s.Status = StatusCompensating
+		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode)
+		if err != nil {
+			return nil, err
+		}
+		return res.Commands, nil
+	}
+
+	// No compensation records: immediate failure (unchanged behaviour).
 	s.Status = StatusFailed
 	ended := at
 	s.EndedAt = &ended
