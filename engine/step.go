@@ -2925,7 +2925,11 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		return StepResult{State: *s, Commands: cmds}, nil
 	}
 
-	// Partial rollback: resume at toNode.
+	// Partial rollback: resume at toNode. Records are intentionally RETAINED here
+	// (not cleared): the instance keeps running and a later full walk must still see
+	// them. There is no double-compensation risk — consolidateArchiveIntoRoot already
+	// drained the archive into RootCompensations (single ownership: the records now
+	// live only in root, with ArchivedCompensations nil).
 	s.Status = StatusRunning
 	// Place a new token at toNode and drive forward.
 	s.placeToken(toNode, at)
