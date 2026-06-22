@@ -211,6 +211,124 @@ func (h *handler) handleRedriveDeadLetters(w http.ResponseWriter, r *http.Reques
 	h.writeJSON(w, r, http.StatusOK, dlqRedriveResponse{Redriven: n})
 }
 
+// handleListPolicies handles GET /admin/policies.
+//
+// It is registered only when a PolicyAdmin is wired via WithPolicyAdmin.
+func (h *handler) handleListPolicies(w http.ResponseWriter, r *http.Request) {
+	rules, err := h.cfg.policyAdmin.ListPolicies(r.Context())
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	resp := policyListResponse{Policies: make([]policyView, len(rules))}
+	for i, rule := range rules {
+		resp.Policies[i] = policyView{Subject: rule.Subject, Object: rule.Object, Action: rule.Action}
+	}
+	h.writeJSON(w, r, http.StatusOK, resp)
+}
+
+// handleAddPolicy handles POST /admin/policies.
+//
+// Body: {"subject":..,"object":..,"action":..}. Returns {"added":bool}.
+func (h *handler) handleAddPolicy(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Subject string `json:"subject"`
+		Object  string `json:"object"`
+		Action  string `json:"action"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	added, err := h.cfg.policyAdmin.AddPolicy(r.Context(), service.PolicyRule{
+		Subject: body.Subject, Object: body.Object, Action: body.Action,
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	v := added
+	h.writeJSON(w, r, http.StatusOK, policyMutateResponse{Added: &v})
+}
+
+// handleRemovePolicy handles DELETE /admin/policies.
+//
+// Body: {"subject":..,"object":..,"action":..}. Returns {"removed":bool}.
+func (h *handler) handleRemovePolicy(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Subject string `json:"subject"`
+		Object  string `json:"object"`
+		Action  string `json:"action"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	removed, err := h.cfg.policyAdmin.RemovePolicy(r.Context(), service.PolicyRule{
+		Subject: body.Subject, Object: body.Object, Action: body.Action,
+	})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	v := removed
+	h.writeJSON(w, r, http.StatusOK, roleBindingMutateResponse{Removed: &v})
+}
+
+// handleListRoleBindings handles GET /admin/role-bindings.
+//
+// It is registered only when a PolicyAdmin is wired via WithPolicyAdmin.
+func (h *handler) handleListRoleBindings(w http.ResponseWriter, r *http.Request) {
+	bindings, err := h.cfg.policyAdmin.ListRoles(r.Context())
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	resp := roleBindingListResponse{RoleBindings: make([]roleBindingView, len(bindings))}
+	for i, b := range bindings {
+		resp.RoleBindings[i] = roleBindingView{User: b.User, Role: b.Role}
+	}
+	h.writeJSON(w, r, http.StatusOK, resp)
+}
+
+// handleAddRoleBinding handles POST /admin/role-bindings.
+//
+// Body: {"user":..,"role":..}. Returns {"added":bool}.
+func (h *handler) handleAddRoleBinding(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		User string `json:"user"`
+		Role string `json:"role"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	added, err := h.cfg.policyAdmin.AddRole(r.Context(), service.RoleBinding{User: body.User, Role: body.Role})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	v := added
+	h.writeJSON(w, r, http.StatusOK, roleBindingMutateResponse{Added: &v})
+}
+
+// handleRemoveRoleBinding handles DELETE /admin/role-bindings.
+//
+// Body: {"user":..,"role":..}. Returns {"removed":bool}.
+func (h *handler) handleRemoveRoleBinding(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		User string `json:"user"`
+		Role string `json:"role"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	removed, err := h.cfg.policyAdmin.RemoveRole(r.Context(), service.RoleBinding{User: body.User, Role: body.Role})
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	v := removed
+	h.writeJSON(w, r, http.StatusOK, roleBindingMutateResponse{Removed: &v})
+}
+
 // parseStatus converts a status string (as emitted by statusString) back to an engine.Status.
 // Returns a wrapped ErrBadInput for unknown values so classifyError maps it to 400.
 func parseStatus(s string) (engine.Status, error) {

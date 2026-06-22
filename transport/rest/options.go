@@ -23,6 +23,9 @@ type config struct {
 	// deadLetters, when non-nil, enables the DLQ admin routes.
 	deadLetters service.DeadLetterAdmin
 
+	// policyAdmin, when non-nil, enables the policy-admin routes.
+	policyAdmin service.PolicyAdmin
+
 	// observability options — nil entries are filtered out before calling observability.New.
 	logOpt observability.Option
 	tpOpt  observability.Option
@@ -102,6 +105,22 @@ func WithDeadLetterAdmin(dla service.DeadLetterAdmin) Option {
 	}
 	return func(c *config) {
 		c.deadLetters = dla
+	}
+}
+
+// WithPolicyAdmin enables the policy-admin routes (GET/POST/DELETE /admin/policies and
+// GET/POST/DELETE /admin/role-bindings) by supplying a [service.PolicyAdmin]. When this
+// option is NOT supplied, those routes are not registered (a request returns 404). The
+// routes sit behind the configured admin middleware (default-deny), like the other admin
+// routes.
+//
+// Panics immediately if pa is nil.
+func WithPolicyAdmin(pa service.PolicyAdmin) Option {
+	if pa == nil {
+		panic("rest: WithPolicyAdmin: pa must not be nil")
+	}
+	return func(c *config) {
+		c.policyAdmin = pa
 	}
 }
 

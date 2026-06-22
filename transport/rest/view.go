@@ -32,6 +32,41 @@ type deadLetterView struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// policyView is the JSON projection of a service.PolicyRule for the policy-admin API.
+type policyView struct {
+	Subject string `json:"subject"`
+	Object  string `json:"object"`
+	Action  string `json:"action"`
+}
+
+// roleBindingView is the JSON projection of a service.RoleBinding for the policy-admin API.
+type roleBindingView struct {
+	User string `json:"user"`
+	Role string `json:"role"`
+}
+
+// policyListResponse is the JSON envelope returned by GET /admin/policies.
+type policyListResponse struct {
+	Policies []policyView `json:"policies"`
+}
+
+// policyMutateResponse is the JSON envelope returned by POST/DELETE /admin/policies.
+type policyMutateResponse struct {
+	Added   *bool `json:"added,omitempty"`
+	Removed *bool `json:"removed,omitempty"`
+}
+
+// roleBindingListResponse is the JSON envelope returned by GET /admin/role-bindings.
+type roleBindingListResponse struct {
+	RoleBindings []roleBindingView `json:"role_bindings"`
+}
+
+// roleBindingMutateResponse is the JSON envelope returned by POST/DELETE /admin/role-bindings.
+type roleBindingMutateResponse struct {
+	Added   *bool `json:"added,omitempty"`
+	Removed *bool `json:"removed,omitempty"`
+}
+
 // NewInstanceView converts an engine.InstanceState into the stable InstanceView DTO.
 func NewInstanceView(st engine.InstanceState) InstanceView {
 	return InstanceView{
