@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -12,6 +13,9 @@ import (
 
 // Compile-time assertion: AdvisoryLockOwnership must satisfy runtime.Ownership.
 var _ runtime.Ownership = (*AdvisoryLockOwnership)(nil)
+
+// ErrOwnershipClosed is returned by Acquire and Release when called after Close.
+var ErrOwnershipClosed = errors.New("workflow-postgres: ownership: closed")
 
 // AdvisoryLockOwnership implements [runtime.Ownership] for multi-process
 // deployments using Postgres session-level advisory locks (ADR-0020). It holds
@@ -27,8 +31,9 @@ var _ runtime.Ownership = (*AdvisoryLockOwnership)(nil)
 type AdvisoryLockOwnership struct {
 	conn *pgxpool.Conn
 
-	mu   sync.Mutex
-	held map[string]bool
+	mu     sync.Mutex
+	held   map[string]bool
+	closed bool
 }
 
 // NewAdvisoryLockOwnership acquires a dedicated session connection from pool
@@ -53,6 +58,10 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (*Advisor
 func (o *AdvisoryLockOwnership) Acquire(ctx context.Context, instanceID string) (bool, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+
+	if o.closed {
+		return false, ErrOwnershipClosed
+	}
 
 	if o.held[instanceID] {
 		// Sticky fast-path: no DB round-trip.
@@ -79,6 +88,10 @@ func (o *AdvisoryLockOwnership) Release(ctx context.Context, instanceID string) 
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
+	if o.closed {
+		return ErrOwnershipClosed
+	}
+
 	if !o.held[instanceID] {
 		return nil
 	}
@@ -93,11 +106,16 @@ func (o *AdvisoryLockOwnership) Release(ctx context.Context, instanceID string) 
 }
 
 // Close releases every held advisory lock and returns the dedicated session
-// connection to the pool. After Close, further Acquire/Release calls result in
-// undefined behaviour; create a new AdvisoryLockOwnership if needed.
+// connection to the pool. Close is idempotent: a second call returns nil without
+// any action. After Close, Acquire and Release return [ErrOwnershipClosed];
+// create a new AdvisoryLockOwnership if continued ownership is needed.
 func (o *AdvisoryLockOwnership) Close() error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+
+	if o.closed {
+		return nil
+	}
 
 	for id := range o.held {
 		// Best-effort: ignore unlock errors on shutdown.
@@ -106,5 +124,6 @@ func (o *AdvisoryLockOwnership) Close() error {
 		delete(o.held, id)
 	}
 	o.conn.Release()
+	o.closed = true
 	return nil
 }
