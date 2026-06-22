@@ -94,10 +94,10 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, clk clock.Cl
 func (s *TaskService) Claim(ctx context.Context, taskToken string, actor authz.Actor) (engine.Trigger, error) {
 	task, err := s.store.Get(ctx, taskToken)
 	if err != nil {
-		return nil, fmt.Errorf("runtime: taskservice: get task: %w", err)
+		return nil, fmt.Errorf("workflow-runtime: taskservice: get task: %w", err)
 	}
 	if err := s.authz.Authorize(ctx, task.Eligibility, actor, task.Vars); err != nil {
-		return nil, fmt.Errorf("runtime: taskservice: claim: %w", err)
+		return nil, fmt.Errorf("workflow-runtime: taskservice: claim: %w", err)
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "claimed")))
 	return engine.NewHumanClaimed(s.clk.Now(), taskToken, actor), nil
@@ -114,13 +114,13 @@ func (s *TaskService) Claim(ctx context.Context, taskToken string, actor authz.A
 func (s *TaskService) Reassign(ctx context.Context, taskToken string, from, to string, by authz.Actor) (engine.Trigger, error) {
 	task, err := s.store.Get(ctx, taskToken)
 	if err != nil {
-		return nil, fmt.Errorf("runtime: taskservice: get task: %w", err)
+		return nil, fmt.Errorf("workflow-runtime: taskservice: get task: %w", err)
 	}
 	if from != task.ClaimedBy {
-		return nil, fmt.Errorf("runtime: reassign: from %q is not the current claimant %q", from, task.ClaimedBy)
+		return nil, fmt.Errorf("workflow-runtime: reassign: from %q is not the current claimant %q", from, task.ClaimedBy)
 	}
 	if err := s.authz.Authorize(ctx, task.Eligibility, by, task.Vars); err != nil {
-		return nil, fmt.Errorf("runtime: taskservice: reassign: %w", err)
+		return nil, fmt.Errorf("workflow-runtime: taskservice: reassign: %w", err)
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "reassigned")))
 	return engine.NewHumanReassigned(s.clk.Now(), taskToken, from, to, by), nil
@@ -131,10 +131,10 @@ func (s *TaskService) Reassign(ctx context.Context, taskToken string, from, to s
 func (s *TaskService) Complete(ctx context.Context, taskToken string, actor authz.Actor, output map[string]any) (engine.Trigger, error) {
 	task, err := s.store.Get(ctx, taskToken)
 	if err != nil {
-		return nil, fmt.Errorf("runtime: taskservice: get task: %w", err)
+		return nil, fmt.Errorf("workflow-runtime: taskservice: get task: %w", err)
 	}
 	if err := s.authz.Authorize(ctx, task.Eligibility, actor, task.Vars); err != nil {
-		return nil, fmt.Errorf("runtime: taskservice: complete: %w", err)
+		return nil, fmt.Errorf("workflow-runtime: taskservice: complete: %w", err)
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "completed")))
 	return engine.NewHumanCompleted(s.clk.Now(), taskToken, output, actor), nil

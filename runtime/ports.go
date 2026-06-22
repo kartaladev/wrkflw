@@ -11,7 +11,7 @@ import (
 )
 
 // ErrInstanceNotFound is returned by Store.Load when no instance exists for the id.
-var ErrInstanceNotFound = errors.New("runtime: instance not found")
+var ErrInstanceNotFound = errors.New("workflow-runtime: instance not found")
 
 // JournalReader exposes the recorded trigger history for replay/audit.
 type JournalReader interface {
@@ -50,7 +50,7 @@ type AppliedStep struct {
 
 // ErrConcurrentUpdate is returned by Store.Commit when the expected token is
 // stale (a concurrent writer advanced the instance first).
-var ErrConcurrentUpdate = errors.New("runtime: concurrent update")
+var ErrConcurrentUpdate = errors.New("workflow-runtime: concurrent update")
 
 // Store is the transactional persistence port the Runner depends on. Commit
 // persists snapshot + journal + outbox atomically per applied trigger.

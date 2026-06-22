@@ -113,11 +113,11 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 	case engine.ResolveIncident:
 		kind, env.IncidentID, env.AddAttempts = kindResolveIncident, v.IncidentID, v.AddAttempts
 	default:
-		return nil, "", fmt.Errorf("postgres: marshal trigger: unhandled variant %T", t)
+		return nil, "", fmt.Errorf("workflow-postgres: marshal trigger: unhandled variant %T", t)
 	}
 	data, err := json.Marshal(env)
 	if err != nil {
-		return nil, "", fmt.Errorf("postgres: marshal trigger: %w", err)
+		return nil, "", fmt.Errorf("workflow-postgres: marshal trigger: %w", err)
 	}
 	return data, kind, nil
 }
@@ -128,7 +128,7 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 	var env triggerEnvelope
 	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("postgres: unmarshal trigger %q: %w", kind, err)
+		return nil, fmt.Errorf("workflow-postgres: unmarshal trigger %q: %w", kind, err)
 	}
 	switch kind {
 	case kindStartInstance:
@@ -160,6 +160,6 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 	case kindResolveIncident:
 		return engine.NewResolveIncident(env.At, env.IncidentID, env.AddAttempts), nil
 	default:
-		return nil, fmt.Errorf("postgres: unmarshal trigger: unknown kind %q", kind)
+		return nil, fmt.Errorf("workflow-postgres: unmarshal trigger: unknown kind %q", kind)
 	}
 }

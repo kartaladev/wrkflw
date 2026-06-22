@@ -93,7 +93,7 @@ func (p *Publisher) publish(ctx context.Context, ev runtime.OutboxEvent) error {
 	if err != nil {
 		p.logger.ErrorContext(ctx, "eventing: marshal payload failed",
 			slog.String("topic", ev.Topic), slog.Any("error", err))
-		return fmt.Errorf("eventing: marshal payload: %w", err)
+		return fmt.Errorf("workflow-eventing: marshal payload: %w", err)
 	}
 
 	id := ev.DedupKey
@@ -109,7 +109,7 @@ func (p *Publisher) publish(ctx context.Context, ev runtime.OutboxEvent) error {
 		p.logger.ErrorContext(ctx, "eventing: publish failed",
 			slog.String("topic", ev.Topic), slog.String("instance_id", ev.InstanceID),
 			slog.Any("error", err))
-		return fmt.Errorf("eventing: publish topic=%q: %w", ev.Topic, err)
+		return fmt.Errorf("workflow-eventing: publish topic=%q: %w", ev.Topic, err)
 	}
 
 	p.logger.DebugContext(ctx, "eventing: published",

@@ -86,7 +86,7 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "runtime: commit:")
+	assert.Contains(t, err.Error(), "workflow-runtime: commit:")
 }
 
 // TestRunnerStoreCommitErrorPropagates verifies that a Commit failure is surfaced
@@ -105,7 +105,7 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Commit must be surfaced via errors.Is")
-	assert.Contains(t, err.Error(), "runtime: commit:")
+	assert.Contains(t, err.Error(), "workflow-runtime: commit:")
 }
 
 // userTaskOnlyDef returns a process with a single user-task node: start → userTask → end.

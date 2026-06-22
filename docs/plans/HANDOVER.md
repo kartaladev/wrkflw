@@ -8,13 +8,14 @@ and pick up the next work. Read it top to bottom before starting.
 > **Fresh session: jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
 > below (just after the gate note).** It is the single prioritized entry point for new work. The
 > rest of this doc is the per-track detail behind it. Nothing *named* is in flight — `main` is
-> green and all work through ADR-0025 is merged.
+> green and all work through ADR-0026 is merged (or in final merge for the engine wrong-state track).
 
 **Where we are:** the engine core (Plans 1–8), **all 5 productionization sub-projects**
 (Persistence, Scheduling, Authorization, Transports, Eventing), **all 4 deferred-backlog tracks**
 (Correctness → Resilience → Observability → Performance/caching), and **all 3 "also-outstanding"
-items** (flaky-singleflight fix, DB casbin adapter, true async call activity) are merged to `main`.
-ADRs 0001–0025. **No named work remains in flight.** Future work = the consolidated backlog
+items** (flaky-singleflight fix, DB casbin adapter, true async call activity) are merged to `main`,
+plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0026, branch
+`feat/engine-wrong-state-sentinel`). ADRs 0001–0026. **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
 SDD → opus whole-branch review → merge to main → push`. Confirm scope with the user first.
@@ -58,30 +59,32 @@ per-track spec/plan live under `docs/specs/` and `docs/plans/` (never a path con
 
 ## 🧭 START HERE (fresh session) — consolidated backlog
 
-**Current state:** everything through **ADR-0025** is merged to `main` (productionization ×5 +
-deferred-backlog ×4 + the 3 "also-outstanding" items). No *named* work remains. `main` is green
-(`go test -race ./...`, `golangci-lint`, engine/model untouched). Pick the next piece of work from
-the prioritized backlog below — each item is a self-contained track: **brainstorm → spec
-(`docs/specs/`) → ADR (`docs/adr/`, next number **0026**) → plan (`docs/plans/`) → branch → SDD →
-opus whole-branch review → merge + push**. Confirm scope with the user before starting. The full
-per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
+**Current state:** everything through **ADR-0026** is on `main`/in-merge (productionization ×5 +
+deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state sentinel** track).
+No *named* work remains. `main` is green (`go test -race ./...`, `golangci-lint`, engine/model
+untouched). **Convention note:** all production error messages now carry a **`workflow-`** prefix
+(e.g. `workflow-engine:`); assert on sentinels with `errors.Is`, never string-matching — see the
+`error-sentinel-prefix` memory and ADR-0026. Pick the next piece of work from the prioritized
+backlog below — each item is a self-contained track: **brainstorm → spec (`docs/specs/`) → ADR
+(`docs/adr/`, next number **0027**) → plan (`docs/plans/`) → branch → SDD → opus whole-branch
+review → merge + push**. Confirm scope with the user before starting. The full per-item detail lives
+in the per-track "Deferred follow-ups" sections further down; this is the index.
 
 **Recommended priority (top picks):**
-1. **Engine-level wrong-state sentinel** — classify wrong-state transitions in the engine/runtime
-   (today only the `service` seam wraps them as `ErrConflict`; direct engine consumers get untyped
-   errors). Small, closes a real API gap. *(Correctness)*
-2. **Timer rehydration on restart** — re-arm pending timers from persistence on startup (needs a
+1. **Timer rehydration on restart** — re-arm pending timers from persistence on startup (needs a
    "list pending timers" query); today a restart loses in-memory gocron jobs. Real operational gap. *(Scheduling)*
-3. **`CancelInstance`** end-to-end (engine/runtime → `service` → REST + gRPC). Most-requested missing
+2. **`CancelInstance`** end-to-end (engine/runtime → `service` → REST + gRPC). Most-requested missing
    operation. *(Transports)*
-4. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
+3. **gRPC `ResolveIncident` RPC + DLQ admin REST** (`GET /admin/dead-letters`, redrive) — the
    runtime/persistence APIs already exist; only the transport surface is unbuilt. *(Resilience)*
+4. **Reachability / fork-join pairing validation** — extend `model.Validate` beyond the mixed-gateway
+   rule (ADR-0014) to match converging joins to diverging forks + condition-placement checks. *(Correctness)*
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
-- **Correctness / robustness:** engine wrong-state sentinel; reachability/fork-join pairing validation;
+- **Correctness / robustness:** reachability/fork-join pairing validation;
   compensation-on-error/cancel paths; scope-targeted compensation (`Compensate` producer); casbin
   adapter/watcher `context` propagation; `AdvisoryLockOwnership` use-after-close guard; JSONB
-  numeric/enum fidelity.
+  numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
 - **Production-hardening:** timer rehydration; cancellation propagation parent→child + orphaned-child
   cleanup; multi-replica call-link `FOR UPDATE SKIP LOCKED`; lease-column ownership; per-worker NOTIFY
   fairness; `wrkflw_processed_message` pruning job; per-aggregate relay ordering; TOAST/fillfactor
@@ -101,6 +104,36 @@ per-item detail lives in the per-track "Deferred follow-ups" sections further do
   branches; move bundled example-test unit tests to 1:1 files; misc godoc/test nits. NOTE: the repo has
   **pre-existing gofmt-unclean files** (golangci-lint v2 doesn't run gofmt) — a repo-wide `gofmt -w`
   sweep is an optional hygiene follow-up.
+
+---
+
+## Engine wrong-state sentinel + `workflow-` prefix sweep sub-project — ✅ COMPLETE
+
+First track picked from the consolidated backlog (top pick #1). Built on branch
+`feat/engine-wrong-state-sentinel`. Design: spec
+`docs/specs/2026-06-22-engine-wrong-state-sentinel-design.md`, plan
+`docs/plans/2026-06-22-engine-wrong-state-sentinel.md`, **ADR-0026**. 6 SDD tasks + opus
+whole-branch review. Gate: `go test -race -p 1 ./...` green (incl. Postgres), touched pkgs ≥85%
+(engine 85.6%, service 87.3%, transport/rest 91.1%, transport/grpc 87.6%, runtime 91.0%), lint 0,
+engine/model purity PURE.
+
+### What shipped
+
+| Layer | What | Notes |
+|---|---|---|
+| `engine/` | New `engine.ErrInvalidTransition` parent sentinel; `ErrTokenNotFound` **wraps** it (`errors.Is(ErrTokenNotFound, ErrInvalidTransition)` holds) so all seven wrong-state handlers are reclassifiable with **zero change to `Step`'s `(state, commands)` output** — pure error-chain enrichment. Sentinels relocated to `engine/errors.go` (+ `engine/errors_test.go` asserting the wrapping graph). `ErrNoMatchingFlow`/`ErrUnknownTrigger` deliberately do NOT wrap it (definition/infra errors → stay 500). | ADR-0026 |
+| `service/` | `deliverTaskTrigger` (Claim/Complete/Reassign) classifies a leaked `engine.ErrInvalidTransition` into `service.ErrConflict` via **double-`%w` multi-wrap** (both sentinels stay inspectable), closing the race-to-500 gap. **NOT** applied to `DeliverSignal` (broadcast no-op) / `DeliverMessage` (waiter no-op) — those paths produce no wrong-state error (documented; YAGNI). | controller-adjudicated scope |
+| `transport/rest` + `transport/grpc` | `engine.ErrInvalidTransition` added as a direct fallback in `classifyError` (→ 422 `conflict_state`) and `mapToGRPCStatus` (→ `codes.FailedPrecondition`), for consumers mounting a transport over a bare runner without the `service` facade. | |
+| repo-wide | **`workflow-` error-prefix sweep:** every production `errors.New`/`fmt.Errorf` package-segment now prefixed `workflow-` (~187 sites across ~28 files + the 4 call-activity `fmt.Sprintf` `SubInstanceFailed` payloads); ~4 string-matching tests updated. Assert via `errors.Is`. New project convention (see `error-sentinel-prefix` memory). | |
+
+### Deferred follow-ups
+1. **Engine terminal-instance guard** — intentionally NOT added; `Step` already returns
+   `ErrTokenNotFound` (→ `ErrInvalidTransition`) transitively for triggers to a finished instance.
+   An explicit guard would change engine behavior; out of scope.
+2. **Signal/message wrong-state classification** — re-add the `DeliverSignal`/`DeliverMessage`
+   classification branches IF a future engine change makes signal/message delivery error on a
+   no-match (today they broadcast/waiter no-op).
+3. **`gofmt` hygiene** — the optional repo-wide `gofmt -w` sweep (noted in the backlog) is still open.
 
 ---
 

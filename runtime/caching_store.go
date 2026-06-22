@@ -243,7 +243,7 @@ func (c *CachingStore) Release(ctx context.Context, id string) error {
 func (c *CachingStore) Entries(ctx context.Context, id string) ([]engine.Trigger, error) {
 	jr, ok := c.backing.(JournalReader)
 	if !ok {
-		return nil, errors.New("runtime: backing store is not a JournalReader")
+		return nil, errors.New("workflow-runtime: backing store is not a JournalReader")
 	}
 	return jr.Entries(ctx, id)
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -59,6 +60,12 @@ func TestMapToHTTPError(t *testing.T) {
 		{
 			name:          "conflict state",
 			err:           fmt.Errorf("wrap: %w", service.ErrConflict),
+			wantStatus:    http.StatusUnprocessableEntity,
+			wantErrorCode: "conflict_state",
+		},
+		{
+			name:          "engine invalid transition (bare runner)",
+			err:           fmt.Errorf("wrap: %w", engine.ErrInvalidTransition),
 			wantStatus:    http.StatusUnprocessableEntity,
 			wantErrorCode: "conflict_state",
 		},

@@ -60,7 +60,7 @@ func (c *CallLinkStore) ClaimPending(ctx context.Context, limit int) ([]runtime.
 		rows, queryErr = c.pool.Query(ctx, baseQuery)
 	}
 	if queryErr != nil {
-		return nil, fmt.Errorf("postgres: call links: claim: query: %w", queryErr)
+		return nil, fmt.Errorf("workflow-postgres: call links: claim: query: %w", queryErr)
 	}
 	defer rows.Close()
 
@@ -82,13 +82,13 @@ func (c *CallLinkStore) ClaimPending(ctx context.Context, limit int) ([]runtime.
 			&defID, &defVersion, &depth,
 			&status, &outputJSON, &errText,
 		); err != nil {
-			return nil, fmt.Errorf("postgres: call links: claim: scan: %w", err)
+			return nil, fmt.Errorf("workflow-postgres: call links: claim: scan: %w", err)
 		}
 
 		var output map[string]any
 		if len(outputJSON) > 0 {
 			if err := json.Unmarshal(outputJSON, &output); err != nil {
-				return nil, fmt.Errorf("postgres: call links: claim: unmarshal output: %w", err)
+				return nil, fmt.Errorf("workflow-postgres: call links: claim: unmarshal output: %w", err)
 			}
 		}
 
@@ -114,7 +114,7 @@ func (c *CallLinkStore) ClaimPending(ctx context.Context, limit int) ([]runtime.
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres: call links: claim: rows: %w", err)
+		return nil, fmt.Errorf("workflow-postgres: call links: claim: rows: %w", err)
 	}
 
 	return pending, nil
@@ -131,7 +131,7 @@ func (c *CallLinkStore) MarkNotified(ctx context.Context, childInstanceID string
 		time.Now().UTC(),
 	)
 	if err != nil {
-		return fmt.Errorf("postgres: call links: mark notified: %w", err)
+		return fmt.Errorf("workflow-postgres: call links: mark notified: %w", err)
 	}
 	return nil
 }
@@ -159,7 +159,7 @@ func (c *CallLinkStore) LookupChild(ctx context.Context, childInstanceID string)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return runtime.CallLink{}, false, nil
 		}
-		return runtime.CallLink{}, false, fmt.Errorf("postgres: call links: lookup: %w", err)
+		return runtime.CallLink{}, false, fmt.Errorf("workflow-postgres: call links: lookup: %w", err)
 	}
 
 	return runtime.CallLink{

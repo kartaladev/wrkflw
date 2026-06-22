@@ -39,7 +39,7 @@ type AdvisoryLockOwnership struct {
 func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (*AdvisoryLockOwnership, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: ownership: acquire session conn: %w", err)
+		return nil, fmt.Errorf("workflow-postgres: ownership: acquire session conn: %w", err)
 	}
 	return &AdvisoryLockOwnership{
 		conn: conn,
@@ -63,7 +63,7 @@ func (o *AdvisoryLockOwnership) Acquire(ctx context.Context, instanceID string) 
 	if err := o.conn.QueryRow(ctx,
 		`SELECT pg_try_advisory_lock(hashtextextended($1, 0))`, instanceID,
 	).Scan(&ok); err != nil {
-		return false, fmt.Errorf("postgres: ownership: try lock %q: %w", instanceID, err)
+		return false, fmt.Errorf("workflow-postgres: ownership: try lock %q: %w", instanceID, err)
 	}
 
 	// Only add to the held set when the lock was actually granted.
@@ -86,7 +86,7 @@ func (o *AdvisoryLockOwnership) Release(ctx context.Context, instanceID string) 
 	if _, err := o.conn.Exec(ctx,
 		`SELECT pg_advisory_unlock(hashtextextended($1, 0))`, instanceID,
 	); err != nil {
-		return fmt.Errorf("postgres: ownership: unlock %q: %w", instanceID, err)
+		return fmt.Errorf("workflow-postgres: ownership: unlock %q: %w", instanceID, err)
 	}
 	delete(o.held, instanceID)
 	return nil

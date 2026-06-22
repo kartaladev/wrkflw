@@ -39,15 +39,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	// directly (as required by goose.NewProvider).
 	sub, err := fs.Sub(migrationsFS, "migrations")
 	if err != nil {
-		return fmt.Errorf("postgres: migrate: sub fs: %w", err)
+		return fmt.Errorf("workflow-postgres: migrate: sub fs: %w", err)
 	}
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, sub)
 	if err != nil {
-		return fmt.Errorf("postgres: migrate: new provider: %w", err)
+		return fmt.Errorf("workflow-postgres: migrate: new provider: %w", err)
 	}
 
 	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("postgres: migrate: up: %w", err)
+		return fmt.Errorf("workflow-postgres: migrate: up: %w", err)
 	}
 
 	return nil

@@ -7,7 +7,7 @@ import (
 
 // ErrNoCallLink is returned by CallLinkStore.LookupChild when the instance has no
 // parent (it is a root instance, not a child of any call activity).
-var ErrNoCallLink = errors.New("runtime: no call link for instance")
+var ErrNoCallLink = errors.New("workflow-runtime: no call link for instance")
 
 // CallLink is the durable parent↔child correlation for one async call activity
 // (ADR-0024). It is recorded atomically with the child's Create (ADR-0025).

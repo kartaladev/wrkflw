@@ -55,7 +55,7 @@ func newDefinitionStoreFromDB(db DBTX) *DefinitionStore {
 func (d *DefinitionStore) PutDefinition(ctx context.Context, def *model.ProcessDefinition) error {
 	data, err := json.Marshal(def)
 	if err != nil {
-		return fmt.Errorf("postgres: put definition %s:%d: marshal: %w", def.ID, def.Version, err)
+		return fmt.Errorf("workflow-postgres: put definition %s:%d: marshal: %w", def.ID, def.Version, err)
 	}
 
 	_, err = d.db.Exec(ctx,
@@ -65,7 +65,7 @@ func (d *DefinitionStore) PutDefinition(ctx context.Context, def *model.ProcessD
 		def.ID, def.Version, data, time.Now().UTC(),
 	)
 	if err != nil {
-		return fmt.Errorf("postgres: put definition %s:%d: %w", def.ID, def.Version, err)
+		return fmt.Errorf("workflow-postgres: put definition %s:%d: %w", def.ID, def.Version, err)
 	}
 	return nil
 }
@@ -82,12 +82,12 @@ func (d *DefinitionStore) GetDefinition(ctx context.Context, defID string, versi
 		return nil, fmt.Errorf("%w: %s:%d", runtime.ErrDefinitionNotFound, defID, version)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("postgres: get definition %s:%d: %w", defID, version, err)
+		return nil, fmt.Errorf("workflow-postgres: get definition %s:%d: %w", defID, version, err)
 	}
 
 	var def model.ProcessDefinition
 	if err := json.Unmarshal(data, &def); err != nil {
-		return nil, fmt.Errorf("postgres: get definition %s:%d: unmarshal: %w", defID, version, err)
+		return nil, fmt.Errorf("workflow-postgres: get definition %s:%d: unmarshal: %w", defID, version, err)
 	}
 	return &def, nil
 }
@@ -105,7 +105,7 @@ func (d *DefinitionStore) Lookup(defRef string) (*model.ProcessDefinition, error
 	if id, ver, ok := strings.Cut(defRef, ":"); ok {
 		n, err := strconv.Atoi(ver)
 		if err != nil {
-			return nil, fmt.Errorf("postgres: lookup %q: bad version segment: %w", defRef, err)
+			return nil, fmt.Errorf("workflow-postgres: lookup %q: bad version segment: %w", defRef, err)
 		}
 		return d.GetDefinition(ctx, id, n)
 	}
@@ -123,12 +123,12 @@ func (d *DefinitionStore) Lookup(defRef string) (*model.ProcessDefinition, error
 		return nil, fmt.Errorf("%w: %s", runtime.ErrDefinitionNotFound, defRef)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("postgres: lookup %q: %w", defRef, err)
+		return nil, fmt.Errorf("workflow-postgres: lookup %q: %w", defRef, err)
 	}
 
 	var def model.ProcessDefinition
 	if err := json.Unmarshal(data, &def); err != nil {
-		return nil, fmt.Errorf("postgres: lookup %q: unmarshal: %w", defRef, err)
+		return nil, fmt.Errorf("workflow-postgres: lookup %q: unmarshal: %w", defRef, err)
 	}
 	return &def, nil
 }

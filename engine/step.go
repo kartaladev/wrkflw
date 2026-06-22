@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,12 +8,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
-)
-
-var (
-	ErrUnknownTrigger = errors.New("engine: unknown trigger")
-	ErrTokenNotFound  = errors.New("engine: no token awaiting command")
-	ErrNoMatchingFlow = errors.New("engine: no matching outgoing flow")
 )
 
 // StepMode selects how far one Step advances.
@@ -65,7 +58,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		mergeVars(&s, t.Vars)
 		starts := def.StartNodes()
 		if len(starts) != 1 {
-			return StepResult{}, fmt.Errorf("engine: expected exactly one start, got %d", len(starts))
+			return StepResult{}, fmt.Errorf("workflow-engine: expected exactly one start, got %d", len(starts))
 		}
 		s.placeToken(starts[0].ID, t.OccurredAt())
 		// Arm any top-level event sub-processes (root scope, enclosingScopeID == "").
@@ -235,7 +228,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 					}
 				}
 				if target == "" {
-					return StepResult{}, fmt.Errorf("engine: retry exhaustion: RecoveryFlow %q not found for node %q", node.RecoveryFlow, node.ID)
+					return StepResult{}, fmt.Errorf("workflow-engine: retry exhaustion: RecoveryFlow %q not found for node %q", node.RecoveryFlow, node.ID)
 				}
 				tok.RetryAttempts = 0
 				tok.RetryStartedAt = time.Time{}
@@ -375,7 +368,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 		// UpdateTask, so we reject the trigger with a descriptive error.
 		task := s.TaskByToken(t.TaskToken)
 		if task == nil {
-			return StepResult{}, fmt.Errorf("engine: human-completed for token %q has no task record: %w", t.TaskToken, humantask.ErrTaskNotFound)
+			return StepResult{}, fmt.Errorf("workflow-engine: human-completed for token %q has no task record: %w", t.TaskToken, humantask.ErrTaskNotFound)
 		}
 		mergeVars(&s, t.Output)
 		s.setVisitActor(tok.ID, tok.NodeID, t.Actor.ID)
@@ -670,7 +663,7 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 	}
 	scope := s.scopeByID(scopeID)
 	if scope == nil {
-		return nil, fmt.Errorf("engine: defForScope: unknown scope %q", scopeID)
+		return nil, fmt.Errorf("workflow-engine: defForScope: unknown scope %q", scopeID)
 	}
 	parentDef, err := defForScope(top, s, scope.ParentID)
 	if err != nil {
@@ -678,10 +671,10 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 	}
 	node, ok := parentDef.Node(scope.NodeID)
 	if !ok {
-		return nil, fmt.Errorf("engine: defForScope: sub-process node %q not found in parent definition", scope.NodeID)
+		return nil, fmt.Errorf("workflow-engine: defForScope: sub-process node %q not found in parent definition", scope.NodeID)
 	}
 	if node.Subprocess == nil {
-		return nil, fmt.Errorf("engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
+		return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
 	}
 	return node.Subprocess, nil
 }
@@ -767,7 +760,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			if node.SLADuration != "" {
 				dur, err := conditions.EvalDuration(node.SLADuration, s.Variables)
 				if err != nil {
-					return cmds, fmt.Errorf("engine: SLA node %q: %w", node.ID, err)
+					return cmds, fmt.Errorf("workflow-engine: SLA node %q: %w", node.ID, err)
 				}
 				fireAt := at.Add(dur)
 				slaTimerID := s.nextTimerID()
@@ -793,7 +786,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			if node.ReminderEvery != "" {
 				dur, err := conditions.EvalDuration(node.ReminderEvery, s.Variables)
 				if err != nil {
-					return cmds, fmt.Errorf("engine: reminder node %q: %w", node.ID, err)
+					return cmds, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID, err)
 				}
 				reminderTimerID := s.nextTimerID()
 				cmds = append(cmds, ScheduleTimer{
@@ -827,7 +820,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			if node.TimerDuration != "" {
 				dur, err := conditions.EvalDuration(node.TimerDuration, s.Variables)
 				if err != nil {
-					return cmds, fmt.Errorf("engine: timer node %q: %w", node.ID, err)
+					return cmds, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID, err)
 				}
 				timerID := s.nextTimerID()
 				cmds = append(cmds, ScheduleTimer{
@@ -849,7 +842,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 				// for determinism; store the resolved key on the token.
 				resolvedKey, err := conditions.EvalString(node.CorrelationKey, s.Variables)
 				if err != nil {
-					return cmds, fmt.Errorf("engine: message node %q correlation key: %w", node.ID, err)
+					return cmds, fmt.Errorf("workflow-engine: message node %q correlation key: %w", node.ID, err)
 				}
 				tok.State = TokenWaitingCommand
 				tok.AwaitMessage = node.MessageName
@@ -908,7 +901,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 				if s.tokensInScope(currentScopeID) == 0 {
 					scope := s.scopeByID(currentScopeID)
 					if scope == nil {
-						return cmds, fmt.Errorf("engine: sub-process end: scope %q not found", currentScopeID)
+						return cmds, fmt.Errorf("workflow-engine: sub-process end: scope %q not found", currentScopeID)
 					}
 					subNodeID := scope.NodeID
 					parentScopeID := scope.ParentID
@@ -1026,7 +1019,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 						// activity's outgoing flow in the grandparent scope.
 						grandparentDef, gpErr := defForScope(def, s, grandparentScopeID)
 						if gpErr != nil {
-							return cmds, fmt.Errorf("engine: event sub-process exit: %w", gpErr)
+							return cmds, fmt.Errorf("workflow-engine: event sub-process exit: %w", gpErr)
 						}
 						if grandparentScopeID == "" {
 							// Grandparent is the root scope.
@@ -1046,7 +1039,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 						} else {
 							outs := grandparentDef.Outgoing(enclosingNodeID)
 							if len(outs) == 0 {
-								return cmds, fmt.Errorf("engine: event sub-process exit: enclosing node %q has no outgoing flows in grandparent definition", enclosingNodeID)
+								return cmds, fmt.Errorf("workflow-engine: event sub-process exit: enclosing node %q has no outgoing flows in grandparent definition", enclosingNodeID)
 							}
 							s.placeTokenInScope(outs[0].Target, grandparentScopeID, at)
 						}
@@ -1079,7 +1072,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 						// outgoing flow in the parent scope.
 						parentDef, err := defForScope(def, s, parentScopeID)
 						if err != nil {
-							return cmds, fmt.Errorf("engine: sub-process exit: %w", err)
+							return cmds, fmt.Errorf("workflow-engine: sub-process exit: %w", err)
 						}
 
 						// If the sub-process node itself carries a CompensationAction, record
@@ -1091,7 +1084,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 
 						outs := parentDef.Outgoing(subNodeID)
 						if len(outs) == 0 {
-							return cmds, fmt.Errorf("engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
+							return cmds, fmt.Errorf("workflow-engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
 						}
 						// Place a token on the first outgoing flow's target in the parent scope.
 						s.placeTokenInScope(outs[0].Target, parentScopeID, at)
@@ -1115,7 +1108,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			}
 			innerStarts := node.Subprocess.StartNodes()
 			if len(innerStarts) == 0 {
-				return cmds, fmt.Errorf("engine: sub-process %q: nested definition has no start node", node.ID)
+				return cmds, fmt.Errorf("workflow-engine: sub-process %q: nested definition has no start node", node.ID)
 			}
 			// Open a scope parented to the current token's scope.
 			scopeID := s.openScope(node.ID, tok.ScopeID)
@@ -1202,7 +1195,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 				if catchNode.TimerDuration != "" {
 					dur, err := conditions.EvalDuration(catchNode.TimerDuration, s.Variables)
 					if err != nil {
-						return cmds, fmt.Errorf("engine: event-gateway %q timer arm %q: %w", node.ID, catchNode.ID, err)
+						return cmds, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID, catchNode.ID, err)
 					}
 					timerID := s.nextTimerID()
 					cmds = append(cmds, ScheduleTimer{
@@ -1217,7 +1210,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 				} else if catchNode.MessageName != "" {
 					resolvedKey, err := conditions.EvalString(catchNode.CorrelationKey, s.Variables)
 					if err != nil {
-						return cmds, fmt.Errorf("engine: event-gateway %q message arm %q correlation key: %w", node.ID, catchNode.ID, err)
+						return cmds, fmt.Errorf("workflow-engine: event-gateway %q message arm %q correlation key: %w", node.ID, catchNode.ID, err)
 					}
 					ae.Message = catchNode.MessageName
 					ae.MessageKey = resolvedKey
@@ -1476,7 +1469,7 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 		}
 		ok, err := conditions.EvalBool(f.Condition, s.Variables)
 		if err != nil {
-			return fmt.Errorf("engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+			return fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID, f.ID, err)
 		}
 		if ok {
 			taken = append(taken, f)
@@ -1616,7 +1609,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 		}
 		ok, err := conditions.EvalBool(f.Condition, s.Variables)
 		if err != nil {
-			return "", fmt.Errorf("engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+			return "", fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID, f.ID, err)
 		}
 		if ok {
 			return f.Target, nil
@@ -1771,7 +1764,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	if originatingNodeID != "" {
 		ownDef, err := defForScope(top, s, scopeID)
 		if err != nil {
-			return nil, fmt.Errorf("engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
+			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
 		}
 
 		var directHandler *model.Node
@@ -1827,7 +1820,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// Find the boundary's outgoing flow target in the own scope definition.
 			outs := ownDef.Outgoing(directHandler.ID)
 			if len(outs) == 0 {
-				return cmds, fmt.Errorf("engine: propagateError: direct boundary %q has no outgoing flow", directHandler.ID)
+				return cmds, fmt.Errorf("workflow-engine: propagateError: direct boundary %q has no outgoing flow", directHandler.ID)
 			}
 			flowTarget := outs[0].Target
 
@@ -1864,7 +1857,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 		// Resolve the parent definition.
 		parentDef, err := defForScope(top, s, parentScopeID)
 		if err != nil {
-			return nil, fmt.Errorf("engine: propagateError: resolving parent def for scope %q: %w", currentScopeID, err)
+			return nil, fmt.Errorf("workflow-engine: propagateError: resolving parent def for scope %q: %w", currentScopeID, err)
 		}
 
 		// Scan the parent def for a boundary error event attached to activityNodeID
@@ -1942,7 +1935,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// 3. Find the boundary's outgoing flow target in the parent definition.
 			outs := parentDef.Outgoing(handler.ID)
 			if len(outs) == 0 {
-				return cmds, fmt.Errorf("engine: propagateError: boundary error %q has no outgoing flow", handler.ID)
+				return cmds, fmt.Errorf("workflow-engine: propagateError: boundary error %q has no outgoing flow", handler.ID)
 			}
 			flowTarget := outs[0].Target
 
@@ -2035,7 +2028,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		if n.TimerDuration != "" {
 			dur, err := conditions.EvalDuration(n.TimerDuration, s.Variables)
 			if err != nil {
-				return nil, fmt.Errorf("engine: boundary %q on %q: %w", n.ID, hostNode, err)
+				return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID, hostNode, err)
 			}
 			timerID := s.nextTimerID()
 			arm.TimerID = timerID
@@ -2100,7 +2093,7 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 	}
 	if flowTarget == "" {
 		// No target: unreachable if model.Validate passes (boundary must have outgoing flow).
-		return nil, fmt.Errorf("engine: boundary %q: outgoing flow %q not found", ba.BoundaryNode, ba.Flow)
+		return nil, fmt.Errorf("workflow-engine: boundary %q: outgoing flow %q not found", ba.BoundaryNode, ba.Flow)
 	}
 
 	hostScopeID := hostTok.ScopeID
@@ -2190,7 +2183,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 		} else if startNode.TimerDuration != "" {
 			dur, err := conditions.EvalDuration(startNode.TimerDuration, s.Variables)
 			if err != nil {
-				return nil, fmt.Errorf("engine: event sub-process %q timer: %w", n.ID, err)
+				return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID, err)
 			}
 			timerID := s.nextTimerID()
 			arm.TimerID = timerID
@@ -2203,7 +2196,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 		} else if startNode.MessageName != "" {
 			resolvedKey, err := conditions.EvalString(startNode.CorrelationKey, s.Variables)
 			if err != nil {
-				return nil, fmt.Errorf("engine: event sub-process %q message correlation key: %w", n.ID, err)
+				return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", n.ID, err)
 			}
 			arm.Message = startNode.MessageName
 			arm.MessageKey = resolvedKey
@@ -2272,7 +2265,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 	}
 	innerStarts := espNode.Subprocess.StartNodes()
 	if len(innerStarts) == 0 {
-		return nil, fmt.Errorf("engine: event sub-process %q: nested definition has no start node", ea.EventSubprocessNode)
+		return nil, fmt.Errorf("workflow-engine: event sub-process %q: nested definition has no start node", ea.EventSubprocessNode)
 	}
 
 	var cmds []Command
@@ -2397,10 +2390,10 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 	// Resolve the SLA alternative-path flow.
 	node, ok := tdefSLA.Node(rec.NodeID)
 	if !ok {
-		return StepResult{}, fmt.Errorf("engine: SLA breach: node %q not found in definition", rec.NodeID)
+		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: node %q not found in definition", rec.NodeID)
 	}
 	if node.SLAFlow == "" {
-		return StepResult{}, fmt.Errorf("engine: SLA breach: node %q has no SLAFlow defined", rec.NodeID)
+		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: node %q has no SLAFlow defined", rec.NodeID)
 	}
 	// Find the sequence flow with ID == node.SLAFlow.
 	var slaTarget string
@@ -2411,7 +2404,7 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 		}
 	}
 	if slaTarget == "" {
-		return StepResult{}, fmt.Errorf("engine: SLA breach: SLAFlow %q not found in definition flows for node %q", node.SLAFlow, rec.NodeID)
+		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: SLAFlow %q not found in definition flows for node %q", node.SLAFlow, rec.NodeID)
 	}
 
 	var cmds []Command
@@ -2499,7 +2492,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	// Resolve the node to get ReminderEvery and ReminderAction.
 	node, ok := tdefReminder.Node(rec.NodeID)
 	if !ok {
-		return StepResult{}, fmt.Errorf("engine: reminder fired: node %q not found in definition", rec.NodeID)
+		return StepResult{}, fmt.Errorf("workflow-engine: reminder fired: node %q not found in definition", rec.NodeID)
 	}
 
 	var cmds []Command
@@ -2522,7 +2515,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	// but correctness requires the same expression path as initial scheduling).
 	dur, err := conditions.EvalDuration(node.ReminderEvery, s.Variables)
 	if err != nil {
-		return StepResult{}, fmt.Errorf("engine: reminder node %q re-schedule: %w", node.ID, err)
+		return StepResult{}, fmt.Errorf("workflow-engine: reminder node %q re-schedule: %w", node.ID, err)
 	}
 	newTimerID := s.nextTimerID()
 	cmds = append(cmds, ScheduleTimer{
@@ -2554,11 +2547,11 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time) ([]Command, error) {
 	tdef, err := defForScope(def, s, tok.ScopeID)
 	if err != nil {
-		return nil, fmt.Errorf("engine: reinvoke: %w", err)
+		return nil, fmt.Errorf("workflow-engine: reinvoke: %w", err)
 	}
 	node, ok := tdef.Node(tok.NodeID)
 	if !ok {
-		return nil, fmt.Errorf("engine: reinvoke: node %q not found", tok.NodeID)
+		return nil, fmt.Errorf("workflow-engine: reinvoke: node %q not found", tok.NodeID)
 	}
 
 	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly,
@@ -2606,7 +2599,7 @@ func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerR
 	// Re-invoke the service action via the shared helper.
 	cmds, err := reinvokeServiceAction(def, s, tok, at)
 	if err != nil {
-		return StepResult{}, fmt.Errorf("engine: retry fired: %w", err)
+		return StepResult{}, fmt.Errorf("workflow-engine: retry fired: %w", err)
 	}
 	return StepResult{State: *s, Commands: cmds}, nil
 }
@@ -2712,7 +2705,7 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 			// ToNode was specified but not found in the compensation records.
 			// Return a descriptive error so that an admin typo is surfaced rather
 			// than silently rolling back everything.
-			return StepResult{}, fmt.Errorf("engine: compensation target node %q not found in scope records", t.ToNode)
+			return StepResult{}, fmt.Errorf("workflow-engine: compensation target node %q not found in scope records", t.ToNode)
 		}
 	}
 

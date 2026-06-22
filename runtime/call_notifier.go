@@ -103,7 +103,7 @@ func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRe
 func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 	pending, err := n.cl.ClaimPending(ctx, n.batch)
 	if err != nil {
-		return 0, fmt.Errorf("runtime: call notifier: claim: %w", err)
+		return 0, fmt.Errorf("workflow-runtime: call notifier: claim: %w", err)
 	}
 
 	notified := 0
@@ -132,7 +132,7 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 		}
 		// Success OR duplicate (ErrTokenNotFound = parent already resumed): mark notified.
 		if merr := n.cl.MarkNotified(ctx, p.Link.ChildInstanceID); merr != nil {
-			return notified, fmt.Errorf("runtime: call notifier: mark notified: %w", merr)
+			return notified, fmt.Errorf("workflow-runtime: call notifier: mark notified: %w", merr)
 		}
 		notified++
 	}

@@ -12,7 +12,7 @@ import (
 )
 
 // ErrBadCursor is returned by DecodeCursor when the cursor is malformed.
-var ErrBadCursor = errors.New("runtime: malformed instance cursor")
+var ErrBadCursor = errors.New("workflow-runtime: malformed instance cursor")
 
 // cursorPayload is the JSON envelope embedded inside the opaque cursor string.
 type cursorPayload struct {

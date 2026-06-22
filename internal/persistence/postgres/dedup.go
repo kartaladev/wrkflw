@@ -33,7 +33,7 @@ func (d *Deduper) Seen(ctx context.Context, tx pgx.Tx, subscriber, messageID str
 		 VALUES ($1, $2) ON CONFLICT DO NOTHING`,
 		subscriber, messageID)
 	if err != nil {
-		return false, fmt.Errorf("postgres: deduper: seen: %w", err)
+		return false, fmt.Errorf("workflow-postgres: deduper: seen: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
 }

@@ -57,7 +57,7 @@ func (s *Store) maybeNotify(ctx context.Context, db DBTX, events []runtime.Outbo
 	}
 	// Channel name cannot be parameterized; it is a fixed constant.
 	if _, err := db.Exec(ctx, "NOTIFY "+outboxNotifyChannel); err != nil {
-		return fmt.Errorf("postgres: notify outbox: %w", err)
+		return fmt.Errorf("workflow-postgres: notify outbox: %w", err)
 	}
 	return nil
 }
@@ -83,13 +83,13 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("postgres: create: begin: %w", err)
+		return 0, fmt.Errorf("workflow-postgres: create: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	snap, err := json.Marshal(capHistory(step.State, s.historyCap))
 	if err != nil {
-		return 0, fmt.Errorf("postgres: create: marshal snapshot: %w", err)
+		return 0, fmt.Errorf("workflow-postgres: create: marshal snapshot: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -107,7 +107,7 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 		endedAt(step.State),
 		now,
 	); err != nil {
-		return 0, fmt.Errorf("postgres: create: insert instance: %w", err)
+		return 0, fmt.Errorf("workflow-postgres: create: insert instance: %w", err)
 	}
 
 	if err := writeJournal(ctx, tx, step, version, now); err != nil {
@@ -127,7 +127,7 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("postgres: create: commit: %w", err)
+		return 0, fmt.Errorf("workflow-postgres: create: commit: %w", err)
 	}
 	return runtime.Token(version), nil
 }
@@ -145,12 +145,12 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 		return engine.InstanceState{}, 0, runtime.ErrInstanceNotFound
 	}
 	if err != nil {
-		return engine.InstanceState{}, 0, fmt.Errorf("postgres: load %q: %w", id, err)
+		return engine.InstanceState{}, 0, fmt.Errorf("workflow-postgres: load %q: %w", id, err)
 	}
 
 	var st engine.InstanceState
 	if err := json.Unmarshal(snap, &st); err != nil {
-		return engine.InstanceState{}, 0, fmt.Errorf("postgres: load %q: unmarshal snapshot: %w", id, err)
+		return engine.InstanceState{}, 0, fmt.Errorf("workflow-postgres: load %q: unmarshal snapshot: %w", id, err)
 	}
 	return st, runtime.Token(version), nil
 }
@@ -166,13 +166,13 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("postgres: commit: begin: %w", err)
+		return 0, fmt.Errorf("workflow-postgres: commit: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	snap, err := json.Marshal(capHistory(step.State, s.historyCap))
 	if err != nil {
-		return 0, fmt.Errorf("postgres: commit: marshal snapshot: %w", err)
+		return 0, fmt.Errorf("workflow-postgres: commit: marshal snapshot: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -188,7 +188,7 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		int64(expected),
 	)
 	if err != nil {
-		return 0, mapConflict(fmt.Errorf("postgres: commit: update: %w", err))
+		return 0, mapConflict(fmt.Errorf("workflow-postgres: commit: update: %w", err))
 	}
 	if tag.RowsAffected() == 0 {
 		// version mismatch: another writer advanced the token first.
@@ -214,7 +214,7 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, mapConflict(fmt.Errorf("postgres: commit: %w", err))
+		return 0, mapConflict(fmt.Errorf("workflow-postgres: commit: %w", err))
 	}
 	return runtime.Token(next), nil
 }
@@ -225,7 +225,7 @@ func (s *Store) Entries(ctx context.Context, id string) ([]engine.Trigger, error
 	rows, err := s.pool.Query(ctx,
 		`SELECT kind, trigger FROM wrkflw_journal WHERE instance_id = $1 ORDER BY seq`, id)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: entries %q: %w", id, err)
+		return nil, fmt.Errorf("workflow-postgres: entries %q: %w", id, err)
 	}
 	defer rows.Close()
 
@@ -234,7 +234,7 @@ func (s *Store) Entries(ctx context.Context, id string) ([]engine.Trigger, error
 		var kind string
 		var data []byte
 		if err := rows.Scan(&kind, &data); err != nil {
-			return nil, fmt.Errorf("postgres: entries %q: scan: %w", id, err)
+			return nil, fmt.Errorf("workflow-postgres: entries %q: scan: %w", id, err)
 		}
 		trg, err := UnmarshalTrigger(kind, data)
 		if err != nil {
@@ -257,7 +257,7 @@ func writeJournal(ctx context.Context, db DBTX, step runtime.AppliedStep, seq in
 		 VALUES ($1,$2,$3,$4,$5,$6)`,
 		step.State.InstanceID, seq, kind, data, step.Trigger.OccurredAt(), appliedAt,
 	); err != nil {
-		return fmt.Errorf("postgres: write journal: %w", err)
+		return fmt.Errorf("workflow-postgres: write journal: %w", err)
 	}
 	return nil
 }
@@ -269,7 +269,7 @@ func writeOutbox(ctx context.Context, db DBTX, instanceID string, seq int64, eve
 	for i, ev := range events {
 		payload, err := json.Marshal(ev.Payload)
 		if err != nil {
-			return fmt.Errorf("postgres: write outbox: marshal payload: %w", err)
+			return fmt.Errorf("workflow-postgres: write outbox: marshal payload: %w", err)
 		}
 		dedup := fmt.Sprintf("%s:%d:%d", instanceID, seq, i)
 		if _, err := db.Exec(ctx,
@@ -277,7 +277,7 @@ func writeOutbox(ctx context.Context, db DBTX, instanceID string, seq int64, eve
 			 VALUES ($1,$2,$3,$4,$5)`,
 			instanceID, ev.Topic, payload, dedup, createdAt,
 		); err != nil {
-			return fmt.Errorf("postgres: write outbox: %w", err)
+			return fmt.Errorf("workflow-postgres: write outbox: %w", err)
 		}
 	}
 	return nil
@@ -311,7 +311,7 @@ func insertCallLink(ctx context.Context, db DBTX, link runtime.CallLink, created
 		link.Depth,
 		createdAt,
 	); err != nil {
-		return fmt.Errorf("postgres: create: call link: %w", err)
+		return fmt.Errorf("workflow-postgres: create: call link: %w", err)
 	}
 	return nil
 }
@@ -333,7 +333,7 @@ func flipCallLink(ctx context.Context, db DBTX, childInstanceID string, outcome 
 	if outcome.Completed && len(outcome.Output) > 0 {
 		b, err := json.Marshal(outcome.Output)
 		if err != nil {
-			return fmt.Errorf("postgres: commit: call link: marshal output: %w", err)
+			return fmt.Errorf("workflow-postgres: commit: call link: marshal output: %w", err)
 		}
 		outputJSON = b
 	}
@@ -352,7 +352,7 @@ func flipCallLink(ctx context.Context, db DBTX, childInstanceID string, outcome 
 		outputJSON,
 		errText,
 	); err != nil {
-		return fmt.Errorf("postgres: commit: call link: %w", err)
+		return fmt.Errorf("workflow-postgres: commit: call link: %w", err)
 	}
 	// Zero rows affected = root instance (no link row) — clean no-op, not an error.
 	return nil

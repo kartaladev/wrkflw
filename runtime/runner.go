@@ -277,7 +277,7 @@ func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, inst
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return engine.InstanceState{}, fmt.Errorf("runtime: deliver: load: %w", err)
+		return engine.InstanceState{}, fmt.Errorf("workflow-runtime: deliver: load: %w", err)
 	}
 	out, err := r.deliverLoop(ctx, def, st, token, false, nil, trg)
 	if err != nil {
@@ -334,7 +334,7 @@ func (r *Runner) deliverLoop(
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			span.End()
-			return st, fmt.Errorf("runtime: step: %w", err)
+			return st, fmt.Errorf("workflow-runtime: step: %w", err)
 		}
 		st = res.State
 		span.SetAttributes(
@@ -389,7 +389,7 @@ func (r *Runner) deliverLoop(
 			token, err = r.store.Commit(ctx, token, appliedStep)
 		}
 		if err != nil {
-			return st, fmt.Errorf("runtime: commit: %w", err)
+			return st, fmt.Errorf("workflow-runtime: commit: %w", err)
 		}
 
 		// Reconcile signal-bus and message waiters after each committed save.
@@ -599,15 +599,15 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 
 	case engine.AwaitHuman:
 		if r.resolver == nil {
-			return nil, fmt.Errorf("runtime: perform AwaitHuman: no ActorResolver configured")
+			return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no ActorResolver configured")
 		}
 		if r.tasks == nil {
-			return nil, fmt.Errorf("runtime: perform AwaitHuman: no TaskStore configured")
+			return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no TaskStore configured")
 		}
 		// Resolve candidates from the eligibility spec and process variables.
 		actors, err := r.resolver.Candidates(ctx, cmd.Eligibility, st.Variables)
 		if err != nil {
-			return nil, fmt.Errorf("runtime: resolve candidates: %w", err)
+			return nil, fmt.Errorf("workflow-runtime: resolve candidates: %w", err)
 		}
 		candidateIDs := make([]string, len(actors))
 		for i, a := range actors {
@@ -639,7 +639,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			task.CreatedAt = t.CreatedAt // preserve engine-stamped time
 		}
 		if err := r.tasks.Upsert(ctx, task); err != nil {
-			return nil, fmt.Errorf("runtime: upsert task: %w", err)
+			return nil, fmt.Errorf("workflow-runtime: upsert task: %w", err)
 		}
 		r.obs.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "created")))
 		// No follow-up trigger: the instance parks here.
@@ -647,16 +647,16 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 
 	case engine.UpdateTask:
 		if r.tasks == nil {
-			return nil, fmt.Errorf("runtime: perform UpdateTask: no TaskStore configured")
+			return nil, fmt.Errorf("workflow-runtime: perform UpdateTask: no TaskStore configured")
 		}
 		if err := r.tasks.Upsert(ctx, cmd.Task); err != nil {
-			return nil, fmt.Errorf("runtime: update task: %w", err)
+			return nil, fmt.Errorf("workflow-runtime: update task: %w", err)
 		}
 		return nil, nil
 
 	case engine.ScheduleTimer:
 		if r.sched == nil {
-			return nil, fmt.Errorf("runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
+			return nil, fmt.Errorf("workflow-runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
 		}
 		if cmd.Kind == engine.TimerRetry {
 			r.obs.actionRetries.Add(ctx, 1)
@@ -700,17 +700,17 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 
 	case engine.CancelTimer:
 		if r.sched == nil {
-			return nil, fmt.Errorf("runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
+			return nil, fmt.Errorf("workflow-runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
 		}
 		r.sched.Cancel(cmd.TimerID)
 		return nil, nil
 
 	case engine.ThrowSignal:
 		if r.sigbus == nil {
-			return nil, fmt.Errorf("runtime: perform ThrowSignal %q: no SignalBus configured", cmd.Name)
+			return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: no SignalBus configured", cmd.Name)
 		}
 		if err := r.sigbus.Publish(ctx, cmd.Name, cmd.Payload); err != nil {
-			return nil, fmt.Errorf("runtime: perform ThrowSignal %q: %w", cmd.Name, err)
+			return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: %w", cmd.Name, err)
 		}
 		return nil, nil
 
@@ -718,11 +718,11 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		// Nil-registry guard: a missing registry is a configuration error, not a
 		// retryable runtime failure, so we fail fast with a descriptive message.
 		if r.defsReg == nil {
-			return nil, fmt.Errorf("runtime: perform StartSubInstance %q: no definition registry configured (use WithDefinitions)", cmd.DefRef)
+			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured (use WithDefinitions)", cmd.DefRef)
 		}
 		childDef, err := r.defsReg.Lookup(cmd.DefRef)
 		if err != nil {
-			return nil, fmt.Errorf("runtime: perform StartSubInstance %q: registry lookup: %w", cmd.DefRef, err)
+			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: registry lookup: %w", cmd.DefRef, err)
 		}
 
 		// Derive a deterministic child instance ID from the parent and command ID.
@@ -750,14 +750,14 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			depth := 1
 			parentLink, ok, lerr := r.callLinks.LookupChild(ctx, st.InstanceID)
 			if lerr != nil {
-				return nil, fmt.Errorf("runtime: call activity: depth lookup for %q: %w", st.InstanceID, lerr)
+				return nil, fmt.Errorf("workflow-runtime: call activity: depth lookup for %q: %w", st.InstanceID, lerr)
 			}
 			if ok {
 				depth = parentLink.Depth + 1
 			}
 			if depth > maxCallDepth {
 				return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-					fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+					fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
 						"async call activity chain is too deep",
 						maxCallDepth, cmd.DefRef),
 				), nil
@@ -800,7 +800,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		depth := callDepth(ctx)
 		if depth >= maxCallDepth {
 			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+				fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
 					"the synchronous runner does not support cyclic or deeply nested call activities",
 					maxCallDepth, cmd.DefRef),
 			), nil
@@ -838,7 +838,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			// Return a clear, diagnosable error message so the consumer understands
 			// the limitation rather than receiving a generic "did not complete" message.
 			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("runtime: call activity child %q parked (status running): "+
+				fmt.Sprintf("workflow-runtime: call activity child %q parked (status running): "+
 					"the synchronous runner does not support children that wait on human tasks, "+
 					"timers, or events; async call activity is a future enhancement",
 					childInstanceID),
@@ -848,11 +848,11 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			// StatusFailed or any other non-completed, non-running terminal state.
 			// Include the numeric status in the message so failures are diagnosable.
 			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
+				fmt.Sprintf("workflow-runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
 			), nil
 		}
 
 	default:
-		return nil, fmt.Errorf("runtime: unsupported command %T", c)
+		return nil, fmt.Errorf("workflow-runtime: unsupported command %T", c)
 	}
 }
