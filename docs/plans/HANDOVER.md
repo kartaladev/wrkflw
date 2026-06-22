@@ -20,7 +20,7 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0032.
+ADRs 0001–0033 (0033 = ops-hardening trio, branch `feat/ops-hardening`).
 **No named work remains in flight.** Future work = the consolidated backlog
 (below). Each item is its own track:
 `brainstorm → spec (docs/specs/) → ADR(s) (docs/adr/, next #0026) → plan (docs/plans/) → branch →
@@ -72,7 +72,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0033**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0034**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -89,15 +89,17 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
    extend rollback beyond the existing root walk. **Large engine/model change** (confirm scope first). *(Correctness)*
 
 **Backlog by theme** (✅-done items already removed; cite track for full detail below):
-- **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030)*
+- **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030;
+  `AdvisoryLockOwnership` use-after-close guard — ✅ DONE, ADR-0033)*
   compensation-on-error/cancel paths; scope-targeted compensation (`Compensate` producer); casbin
-  adapter/watcher `context` propagation; `AdvisoryLockOwnership` use-after-close guard; JSONB
+  adapter/watcher `context` propagation; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
 - **Production-hardening:** *(cancellation propagation parent→child — ✅ DONE ADR-0032; orphaned-child
-  cleanup handled by ErrTokenNotFound path)*; per-active-node cancel handlers (engine);
+  cleanup handled by ErrTokenNotFound path; `wrkflw_processed_message` pruning — ✅ DONE ADR-0033)*;
+  per-active-node cancel handlers (engine);
   multi-replica exclusivity — **call-links DONE (ADR-0031, lease)**,
   **timers** still open (failover loop); per-worker NOTIFY
-  fairness; `wrkflw_processed_message` pruning job; per-aggregate relay ordering; TOAST/fillfactor
+  fairness; per-aggregate relay ordering; TOAST/fillfactor
   tuning; `RetryPolicy.Backoff` overflow guard; richer `SubInstanceFailed`→parent error (create an Incident).
 - **Observability:** public `observability` root pkg (trace-correlating `slog.Handler` + `Setup`); Store
   Load/Commit spans + `wrkflw_store_duration_seconds`; CallNotifier `wrkflw.callnotifier.batch` span;
@@ -110,7 +112,7 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
 - **Performance / scale:** casbin `FilteredAdapter` + `WatcherEx`; per-definition history-cap + per-def
   `maxCallDepth`; cross-machine child execution; tunable watcher reconnect backoff.
 - **Test / doc / cosmetic:** `HumanTask.Vars` deep-copy + sensitive-var redaction; `DefinitionRegistry.Lookup`
-  ctx; `MarkNotified` clock injection; relay/listen establish-sleep→poll; residual hard-to-force infra
+  ctx; *(`MarkNotified` clock injection — ✅ DONE ADR-0033)*; relay/listen establish-sleep→poll; residual hard-to-force infra
   branches; move bundled example-test unit tests to 1:1 files; misc godoc/test nits. NOTE: the repo has
   **pre-existing gofmt-unclean files** (golangci-lint v2 doesn't run gofmt) — a repo-wide `gofmt -w`
   sweep is an optional hygiene follow-up.
@@ -259,6 +261,31 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Ops-hardening trio sub-project — ✅ COMPLETE
+
+Non-engine bundle (Production-hardening + Test/doc). Branch `feat/ops-hardening`. Spec
+`docs/specs/2026-06-23-ops-hardening-design.md`, plan `docs/plans/2026-06-23-ops-hardening.md`,
+**ADR-0033**. 2 SDD tasks (both Approved, only cosmetic Minors) + whole-branch review (**Ready:
+Yes-with-nits**, no blockers). Gate green, ≥85% touched pkgs, lint 0, **engine/model diff ZERO**.
+
+### What shipped
+1. **`Deduper.Prune(ctx, before time.Time) (int64, error)`** (internal + `persistence.Deduper`
+   interface) — `DELETE FROM wrkflw_processed_message WHERE processed_at < $1`; caller supplies an
+   absolute cutoff (no clock dep, no migration); operator-scheduled retention for the dedup table.
+2. **`MarkNotified` clock injection** — uses the store's injected `c.clk.Now().UTC()` (default
+   `clock.System()`) instead of wall-clock; now deterministic under a fake clock.
+3. **`AdvisoryLockOwnership` close guard** — new `ErrOwnershipClosed` sentinel + a `closed bool`
+   guard so post-`Close` `Acquire`/`Release` return the sentinel (not "undefined behaviour"); `Close`
+   is idempotent.
+
+### Deferred follow-ups (cosmetic, from reviews)
+- `Prune` impl godoc terser than the interface godoc; add a façade-level `Prune` test (currently
+  direct + compile-time assertion); ownership guard test could acquire-then-close for defence-in-depth.
+- `ErrOwnershipClosed` lives in `internal/persistence/postgres` — consumers using the façade
+  `runtime.Ownership`+`io.Closer` can't `errors.Is` it directly (intentional; re-export if needed).
 
 ---
 
