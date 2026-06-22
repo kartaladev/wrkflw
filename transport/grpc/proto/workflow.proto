@@ -37,6 +37,17 @@ service WorkflowService {
 
   // CancelInstance terminates a running instance (running cancel actions best-effort).
   rpc CancelInstance(CancelInstanceRequest) returns (InstanceResponse);
+
+  // ResolveIncident clears an open incident, grants additional attempts, and resumes execution.
+  rpc ResolveIncident(ResolveIncidentRequest) returns (InstanceResponse);
+
+  // ListDeadLetters returns dead-lettered outbox rows. Admin-scoped; requires the
+  // server to be registered with WithDeadLetterAdmin, else returns Unimplemented.
+  rpc ListDeadLetters(ListDeadLettersRequest) returns (ListDeadLettersResponse);
+
+  // RedriveDeadLetters re-queues dead outbox rows by id. Admin-scoped; requires
+  // WithDeadLetterAdmin, else returns Unimplemented.
+  rpc RedriveDeadLetters(RedriveDeadLettersRequest) returns (RedriveDeadLettersResponse);
 }
 
 // ---- Request messages ----
@@ -56,6 +67,40 @@ message GetInstanceRequest {
 
 message CancelInstanceRequest {
   string instance_id = 1;
+}
+
+message ResolveIncidentRequest {
+  string instance_id = 1;
+  string incident_id = 2;
+  // add_attempts grants additional execution attempts; ≤ 0 defaults to 1 in the service.
+  int32 add_attempts = 3;
+}
+
+// DeadLetter is the gRPC projection of runtime.DeadLetter.
+message DeadLetter {
+  int64 id = 1;
+  string instance_id = 2;
+  string topic = 3;
+  int32 retry_count = 4;
+  string last_error = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ListDeadLettersRequest {
+  // limit is the page size (default 50, max 200 after normalization).
+  int32 limit = 1;
+}
+
+message ListDeadLettersResponse {
+  repeated DeadLetter items = 1;
+}
+
+message RedriveDeadLettersRequest {
+  repeated int64 ids = 1;
+}
+
+message RedriveDeadLettersResponse {
+  int32 redriven_count = 1;
 }
 
 message DeliverSignalRequest {

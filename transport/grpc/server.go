@@ -226,6 +226,29 @@ func (s *server) CancelInstance(ctx context.Context, req *workflowpb.CancelInsta
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
+// ResolveIncident clears an open incident on an instance, grants additional
+// attempts, and resumes execution.
+func (s *server) ResolveIncident(ctx context.Context, req *workflowpb.ResolveIncidentRequest) (*workflowpb.InstanceResponse, error) {
+	ctx, span := s.startSpan(ctx, "ResolveIncident")
+	defer span.End()
+
+	st, err := s.svc.ResolveIncident(ctx, service.ResolveIncidentRequest{
+		InstanceID:  req.GetInstanceId(),
+		IncidentID:  req.GetIncidentId(),
+		AddAttempts: int(req.GetAddAttempts()),
+	})
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	proto, err := instanceToProto(st)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceResponse{Instance: proto}, nil
+}
+
 // ListInstances returns a paginated list of instance summaries.
 func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstancesRequest) (*workflowpb.ListInstancesResponse, error) {
 	ctx, span := s.startSpan(ctx, "ListInstances")
