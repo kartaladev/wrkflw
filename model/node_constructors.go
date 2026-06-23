@@ -30,13 +30,14 @@ func withActivity(fn func(*activityFields)) activityOption {
 	return activityOnlyOption{fn}
 }
 
-// nameOpt sets the name on a baseNode; implements activityOption, catchOption, and boundaryOption.
+// nameOpt sets the name on a baseNode; implements activityOption, catchOption, boundaryOption, and startEventOption.
 type nameOpt struct{ name string }
 
 func (o nameOpt) applyActivity(_ *activityFields)       {}
 func (o nameOpt) applyName(b *baseNode)                 { b.name = o.name }
 func (o nameOpt) applyCatch(n *IntermediateCatchEvent)  { n.name = o.name }
 func (o nameOpt) applyBoundary(n *BoundaryEvent)        { n.name = o.name }
+func (o nameOpt) applyStart(n *StartEvent)              { n.name = o.name }
 
 // WithName returns an option that sets the Name field on any node that accepts it.
 // It implements activityOption, catchOption, and boundaryOption.
@@ -105,36 +106,38 @@ func applyActivityOpts(b *baseNode, a *activityFields, opts []activityOption) {
 
 // --- event constructors ---
 
-// startEventOption is a functional option for StartEvent.
-type startEventOption func(*StartEvent)
+// startEventOption is the typed functional-options interface for StartEvent,
+// consistent with activityOption, catchOption, and boundaryOption.
+type startEventOption interface {
+	applyStart(n *StartEvent)
+}
+
+// startEventFuncOpt wraps a function that mutates a StartEvent only.
+type startEventFuncOpt struct{ fn func(*StartEvent) }
+
+func (o startEventFuncOpt) applyStart(n *StartEvent) { o.fn(n) }
 
 // WithStartSignal sets SignalName on a StartEvent (for EventSubProcess triggers).
 func WithStartSignal(name string) startEventOption {
-	return func(n *StartEvent) { n.SignalName = name }
+	return startEventFuncOpt{func(n *StartEvent) { n.SignalName = name }}
 }
 
 // WithStartMessage sets MessageName and CorrelationKey on a StartEvent (for EventSubProcess triggers).
 func WithStartMessage(msg, key string) startEventOption {
-	return func(n *StartEvent) { n.MessageName, n.CorrelationKey = msg, key }
+	return startEventFuncOpt{func(n *StartEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
 // WithStartTimer sets TimerDuration on a StartEvent (for EventSubProcess triggers).
 func WithStartTimer(dur string) startEventOption {
-	return func(n *StartEvent) { n.TimerDuration = dur }
+	return startEventFuncOpt{func(n *StartEvent) { n.TimerDuration = dur }}
 }
 
-// NewStartEvent constructs a StartEvent. An optional name may be provided as a
-// trailing variadic argument. For EventSubProcess trigger start events, use
-// WithStartSignal, WithStartMessage, or WithStartTimer options.
-func NewStartEvent(id string, nameOrOpts ...interface{}) Node {
+// NewStartEvent constructs a StartEvent. Use WithName to set the display name and
+// WithStartSignal, WithStartMessage, or WithStartTimer to configure EventSubProcess triggers.
+func NewStartEvent(id string, opts ...startEventOption) Node {
 	n := StartEvent{baseNode: baseNode{id: id}}
-	for _, arg := range nameOrOpts {
-		switch v := arg.(type) {
-		case string:
-			n.name = v
-		case startEventOption:
-			v(&n)
-		}
+	for _, o := range opts {
+		o.applyStart(&n)
 	}
 	return n
 }

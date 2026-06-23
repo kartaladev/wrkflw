@@ -75,7 +75,7 @@ func TestNodeKindJSONInNode(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID:      "p",
 		Version: 1,
-		Nodes:   []model.Node{model.NewStartEvent("start", "Order Received")},
+		Nodes:   []model.Node{model.NewStartEvent("start", model.WithName("Order Received"))},
 		Flows:   []model.SequenceFlow{},
 	}
 

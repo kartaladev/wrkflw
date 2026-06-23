@@ -134,7 +134,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 		ID:      "order",
 		Version: 2,
 		Nodes: []model.Node{
-			model.NewStartEvent("start", "Start"),
+			model.NewStartEvent("start", model.WithName("Start")),
 			model.NewServiceTask("charge", "charge-card",
 				model.WithCompensation("refund-card"),
 				model.WithRecoveryFlow("f-error"),

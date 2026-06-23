@@ -40,7 +40,7 @@ func TestStartEventConstructor(t *testing.T) {
 }
 
 func TestStartEventConstructorWithName(t *testing.T) {
-	n := model.NewStartEvent("s", "Start Process")
+	n := model.NewStartEvent("s", model.WithName("Start Process"))
 	if n.Name() != "Start Process" {
 		t.Fatalf("Name() = %q, want 'Start Process'", n.Name())
 	}
