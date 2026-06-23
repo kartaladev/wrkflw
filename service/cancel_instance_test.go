@@ -19,9 +19,9 @@ func cancelDef() *model.ProcessDefinition {
 		ID:      "cancel-test",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "approve", Kind: model.KindUserTask, CandidateRoles: []string{"manager"}},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("approve", []string{"manager"}),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},

@@ -21,14 +21,9 @@ func userTaskDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-ht", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:              "approve",
-				Kind:            model.KindUserTask,
-				CandidateRoles:  []string{"manager"},
-				EligibilityExpr: `actor.ID != ""`,
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("approve", []string{"manager"}, model.WithEligibilityExpr(`actor.ID != ""`)),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
@@ -100,10 +95,10 @@ func TestUserTaskTaskSeqIncrements(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "p-ht2", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task1", Kind: model.KindUserTask, CandidateRoles: []string{"a"}},
-			{ID: "task2", Kind: model.KindUserTask, CandidateRoles: []string{"b"}},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("task1", []string{"a"}),
+			model.NewUserTask("task2", []string{"b"}),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task1"},

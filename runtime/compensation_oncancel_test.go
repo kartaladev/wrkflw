@@ -36,10 +36,10 @@ func compensationOnCancelDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "comp-cancel-def", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "charge", Kind: model.KindServiceTask, Action: "charge", CompensationAction: "refund"},
-			{ID: "approve", Kind: model.KindUserTask, CandidateRoles: []string{"reviewer"}},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("charge", "charge", model.WithCompensation("refund")),
+			model.NewUserTask("approve", []string{"reviewer"}),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},

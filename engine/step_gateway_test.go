@@ -16,11 +16,11 @@ func exclusiveDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "xor", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "xor", Kind: model.KindExclusiveGateway},
-			{ID: "big", Kind: model.KindServiceTask, Action: "big"},
-			{ID: "small", Kind: model.KindServiceTask, Action: "small"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewExclusiveGateway("xor"),
+			model.NewServiceTask("big", "big"),
+			model.NewServiceTask("small", "small"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
@@ -62,12 +62,12 @@ func parallelForkDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "par", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
-			{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-			{ID: "enda", Kind: model.KindEndEvent},
-			{ID: "endb", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewServiceTask("a", "a"),
+			model.NewServiceTask("b", "b"),
+			model.NewEndEvent("enda"),
+			model.NewEndEvent("endb"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -107,12 +107,12 @@ func diamondDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "diamond", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
-			{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-			{ID: "join", Kind: model.KindParallelGateway},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewServiceTask("a", "a"),
+			model.NewServiceTask("b", "b"),
+			model.NewParallelGateway("join"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -170,12 +170,12 @@ func dualSubProcessParallelDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "dual-inner", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "ifork", Kind: model.KindParallelGateway},
-			{ID: "inner-a", Kind: model.KindServiceTask, Action: "action-a"},
-			{ID: "inner-b", Kind: model.KindServiceTask, Action: "action-b"},
-			{ID: "ijoin", Kind: model.KindParallelGateway},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewParallelGateway("ifork"),
+			model.NewServiceTask("inner-a", "action-a"),
+			model.NewServiceTask("inner-b", "action-b"),
+			model.NewParallelGateway("ijoin"),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "di1", Source: "inner-start", Target: "ifork"},
@@ -190,12 +190,12 @@ func dualSubProcessParallelDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "dual-sub-par", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "pfork", Kind: model.KindParallelGateway},
-			{ID: "subA", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "subB", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "pouter-join", Kind: model.KindParallelGateway},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewParallelGateway("pfork"),
+			model.NewSubProcess("subA", inner),
+			model.NewSubProcess("subB", inner),
+			model.NewParallelGateway("pouter-join"),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "pfork"},
@@ -337,10 +337,10 @@ func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "xor", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "xor", Kind: model.KindExclusiveGateway},
-			{ID: "big", Kind: model.KindServiceTask, Action: "big"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewExclusiveGateway("xor"),
+			model.NewServiceTask("big", "big"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},

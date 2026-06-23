@@ -20,10 +20,10 @@ func timerDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-timer", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait1h", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "notify", Kind: model.KindServiceTask, Action: "send-notification"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
+			model.NewServiceTask("notify", "send-notification"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
@@ -157,17 +157,10 @@ func slaDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-sla", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:             "userTask",
-				Kind:           model.KindUserTask,
-				CandidateRoles: []string{"manager"},
-				SLADuration:    `"3h"`,
-				SLAFlow:        "escalate",
-				SLAAction:      "notify",
-			},
-			{ID: "normalEnd", Kind: model.KindEndEvent},
-			{ID: "escalateNode", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("userTask", []string{"manager"}, model.WithSLA(`"3h"`, "escalate", "notify")),
+			model.NewEndEvent("normalEnd"),
+			model.NewEndEvent("escalateNode"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -352,19 +345,10 @@ func reminderDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-reminder", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:             "userTask",
-				Kind:           model.KindUserTask,
-				CandidateRoles: []string{"manager"},
-				SLADuration:    `"3h"`,
-				SLAFlow:        "escalate",
-				SLAAction:      "notify",
-				ReminderEvery:  `"1h"`,
-				ReminderAction: "remind",
-			},
-			{ID: "normalEnd", Kind: model.KindEndEvent},
-			{ID: "escalateNode", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("userTask", []string{"manager"}, model.WithSLA(`"3h"`, "escalate", "notify"), model.WithReminder(`"1h"`, "remind")),
+			model.NewEndEvent("normalEnd"),
+			model.NewEndEvent("escalateNode"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -572,15 +556,9 @@ func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
 		ID:      "p-reminder-noaction",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:            "userTask",
-				Kind:          model.KindUserTask,
-				CandidateRoles: []string{"manager"},
-				ReminderEvery: `"1h"`,
-				// ReminderAction intentionally empty
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("userTask", []string{"manager"}, model.WithReminder(`"1h"`, "")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -715,19 +693,12 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 		ID:      "p-parallel-sla",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
-			{
-				ID:             "userTask",
-				Kind:           model.KindUserTask,
-				CandidateRoles: []string{"manager"},
-				SLADuration:    `"3h"`,
-				SLAFlow:        "esc",
-				SLAAction:      "notify",
-			},
-			{ID: "svcTask", Kind: model.KindServiceTask, Action: "work"},
-			{ID: "endA", Kind: model.KindEndEvent},
-			{ID: "endB", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewUserTask("userTask", []string{"manager"}, model.WithSLA(`"3h"`, "esc", "notify")),
+			model.NewServiceTask("svcTask", "work"),
+			model.NewEndEvent("endA"),
+			model.NewEndEvent("endB"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},

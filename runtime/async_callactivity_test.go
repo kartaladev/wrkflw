@@ -26,9 +26,9 @@ func asyncChildDef() *model.ProcessDefinition {
 		ID:      "async-child",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-human", Kind: model.KindUserTask},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewUserTask("child-human", nil),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "acf1", Source: "child-start", Target: "child-human"},
@@ -45,9 +45,9 @@ func asyncParentDef() *model.ProcessDefinition {
 		ID:      "async-parent",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "async-child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "async-child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "apf1", Source: "parent-start", Target: "call"},
@@ -133,9 +133,9 @@ func asyncImmediateChildDef() *model.ProcessDefinition {
 		ID:      "async-imm-child",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-work", Kind: model.KindServiceTask, Action: "complete-action"},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewServiceTask("child-work", "complete-action"),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "icf1", Source: "child-start", Target: "child-work"},
@@ -150,9 +150,9 @@ func asyncImmediateParentDef() *model.ProcessDefinition {
 		ID:      "async-imm-parent",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "async-imm-child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "async-imm-child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "ipf1", Source: "parent-start", Target: "call"},
@@ -170,9 +170,9 @@ func asyncFailingChildDef() *model.ProcessDefinition {
 		ID:      "async-fail-child",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-work", Kind: model.KindServiceTask, Action: "fail-action"},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewServiceTask("child-work", "fail-action"),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "fcf1", Source: "child-start", Target: "child-work"},
@@ -187,9 +187,9 @@ func asyncFailingParentDef() *model.ProcessDefinition {
 		ID:      "async-fail-parent",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "async-fail-child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "async-fail-child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "fpf1", Source: "parent-start", Target: "call"},

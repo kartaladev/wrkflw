@@ -36,9 +36,9 @@ func linearDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "greeting", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "greet", Kind: model.KindServiceTask, Action: "greet"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("greet", "greet"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
@@ -53,9 +53,9 @@ func approvalDef() *model.ProcessDefinition {
 		ID:      "approval",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "approve", Kind: model.KindUserTask, CandidateRoles: []string{"manager"}},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("approve", []string{"manager"}),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
@@ -70,9 +70,9 @@ func signalCatchDef(signalName string) *model.ProcessDefinition {
 		ID:      "signal-catch-" + signalName,
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait-signal", Kind: model.KindIntermediateCatchEvent, SignalName: signalName},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait-signal", model.WithSignalName(signalName)),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-signal"},
@@ -87,9 +87,9 @@ func messageCatchDef(msgName string) *model.ProcessDefinition {
 		ID:      "message-catch-" + msgName,
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait-msg", Kind: model.KindIntermediateCatchEvent, MessageName: msgName, CorrelationKey: "orderId"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait-msg", model.WithMessageNameAndKey(msgName, "orderId")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-msg"},

@@ -28,9 +28,9 @@ func compensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "comp-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "charge", CompensationAction: "refund"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "charge", model.WithCompensation("refund")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -44,9 +44,9 @@ func nonCompensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "plain-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "charge"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "charge"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -62,9 +62,9 @@ func compensableSubProcessDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "nested", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book", CompensationAction: "cancel-booking"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book", model.WithCompensation("cancel-booking")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -74,9 +74,9 @@ func compensableSubProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -255,9 +255,9 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "nested-hoist", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -267,10 +267,10 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-hoist", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "rootUserTask", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
+			model.NewUserTask("rootUserTask", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -351,10 +351,10 @@ func openSubProcessWithParkDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "nested-park", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "book", CompensationAction: "x"},
-			{ID: "userTask", Kind: model.KindUserTask},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("svc", "book", model.WithCompensation("x")),
+			model.NewUserTask("userTask", nil),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "svc"},
@@ -365,9 +365,9 @@ func openSubProcessWithParkDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-park", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -440,12 +440,12 @@ func threeCompensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "three-comp", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "step1", Kind: model.KindServiceTask, Action: "a1", CompensationAction: "c1"},
-			{ID: "step2", Kind: model.KindServiceTask, Action: "a2", CompensationAction: "c2"},
-			{ID: "step3", Kind: model.KindServiceTask, Action: "a3", CompensationAction: "c3"},
-			{ID: "userTask", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("step1", "a1", model.WithCompensation("c1")),
+			model.NewServiceTask("step2", "a2", model.WithCompensation("c2")),
+			model.NewServiceTask("step3", "a3", model.WithCompensation("c3")),
+			model.NewUserTask("userTask", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "step1"},
@@ -631,9 +631,9 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "nested-order", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-book", CompensationAction: "inner-comp"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "inner-book", model.WithCompensation("inner-comp")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -643,11 +643,11 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "order-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "rootSvc", Kind: model.KindServiceTask, Action: "root-book", CompensationAction: "root-comp"},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "rootUserTask", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("rootSvc", "root-book", model.WithCompensation("root-comp")),
+			model.NewSubProcess("sub", nested),
+			model.NewUserTask("rootUserTask", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "rootSvc"},
@@ -757,9 +757,9 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 	grandchild := &model.ProcessDefinition{
 		ID: "grandchild", Version: 1,
 		Nodes: []model.Node{
-			{ID: "g-start", Kind: model.KindStartEvent},
-			{ID: "grandchildSvc", Kind: model.KindServiceTask, Action: "gc-book", CompensationAction: "gc-comp"},
-			{ID: "g-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("g-start"),
+			model.NewServiceTask("grandchildSvc", "gc-book", model.WithCompensation("gc-comp")),
+			model.NewEndEvent("g-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "gf1", Source: "g-start", Target: "grandchildSvc"},
@@ -769,9 +769,9 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 	outerNested := &model.ProcessDefinition{
 		ID: "outer-nested", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "innerSub", Kind: model.KindSubProcess, Subprocess: grandchild},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewSubProcess("innerSub", grandchild),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "inner-start", Target: "innerSub"},
@@ -781,10 +781,10 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "two-level", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "outerSub", Kind: model.KindSubProcess, Subprocess: outerNested},
-			{ID: "rootUserTask", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("outerSub", outerNested),
+			model.NewUserTask("rootUserTask", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "outerSub"},

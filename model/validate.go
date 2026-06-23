@@ -123,37 +123,37 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	}
 
 	for _, n := range d.Nodes {
-		isEnd := n.Kind == KindEndEvent || n.Kind == KindTerminateEndEvent || n.Kind == KindErrorEndEvent
-		out := d.Outgoing(n.ID)
-		in := d.Incoming(n.ID)
+		isEnd := n.Kind() == KindEndEvent || n.Kind() == KindTerminateEndEvent || n.Kind() == KindErrorEndEvent
+		out := d.Outgoing(n.ID())
+		in := d.Incoming(n.ID())
 
 		if !isEnd && len(out) == 0 {
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadEnd, n.ID))
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadEnd, n.ID()))
 		}
-		if n.Kind == KindStartEvent && len(in) > 0 {
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrStartHasIncoming, n.ID))
+		if n.Kind() == KindStartEvent && len(in) > 0 {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrStartHasIncoming, n.ID()))
 		}
 		if isEnd && len(out) > 0 {
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrEndHasOutgoing, n.ID))
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrEndHasOutgoing, n.ID()))
 		}
 	}
 
 	for _, n := range d.Nodes {
-		conditional := n.Kind == KindExclusiveGateway || n.Kind == KindInclusiveGateway
+		conditional := n.Kind() == KindExclusiveGateway || n.Kind() == KindInclusiveGateway
 		defaults := 0
-		for _, f := range d.Outgoing(n.ID) {
+		for _, f := range d.Outgoing(n.ID()) {
 			if f.Condition != "" && !conditional {
-				errs = append(errs, fmt.Errorf("%w: flow %q from node %q", ErrConditionNotAllowed, f.ID, n.ID))
+				errs = append(errs, fmt.Errorf("%w: flow %q from node %q", ErrConditionNotAllowed, f.ID, n.ID()))
 			}
 			if f.IsDefault {
 				if !conditional {
-					errs = append(errs, fmt.Errorf("%w: flow %q from node %q", ErrDefaultNotAllowed, f.ID, n.ID))
+					errs = append(errs, fmt.Errorf("%w: flow %q from node %q", ErrDefaultNotAllowed, f.ID, n.ID()))
 				}
 				defaults++
 			}
 		}
 		if defaults > 1 {
-			errs = append(errs, fmt.Errorf("%w: node %q has %d", ErrMultipleDefaults, n.ID, defaults))
+			errs = append(errs, fmt.Errorf("%w: node %q has %d", ErrMultipleDefaults, n.ID(), defaults))
 		}
 	}
 
@@ -162,17 +162,17 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// node kind capable of catching triggers (timer, signal, message) in this
 	// model. Boundary events are attached nodes, not valid EBG targets.
 	for _, n := range d.Nodes {
-		if n.Kind != KindEventBasedGateway {
+		if n.Kind() != KindEventBasedGateway {
 			continue
 		}
-		for _, f := range d.Outgoing(n.ID) {
+		for _, f := range d.Outgoing(n.ID()) {
 			target, ok := d.Node(f.Target)
 			if !ok {
 				// Dangling flows are already reported; skip here to avoid duplicate noise.
 				continue
 			}
-			if target.Kind != KindIntermediateCatchEvent {
-				errs = append(errs, fmt.Errorf("%w: flow %q from event-based gateway %q targets %q (kind %d)", ErrEventGatewayTarget, f.ID, n.ID, f.Target, target.Kind))
+			if target.Kind() != KindIntermediateCatchEvent {
+				errs = append(errs, fmt.Errorf("%w: flow %q from event-based gateway %q targets %q (kind %d)", ErrEventGatewayTarget, f.ID, n.ID(), f.Target, target.Kind()))
 			}
 		}
 	}
@@ -188,11 +188,11 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		KindEventBasedGateway: true,
 	}
 	for _, n := range d.Nodes {
-		if !gatewayKinds[n.Kind] {
+		if !gatewayKinds[n.Kind()] {
 			continue
 		}
-		if len(d.Incoming(n.ID)) > 1 && len(d.Outgoing(n.ID)) > 1 {
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrMixedGateway, n.ID))
+		if len(d.Incoming(n.ID())) > 1 && len(d.Outgoing(n.ID())) > 1 {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrMixedGateway, n.ID()))
 		}
 	}
 
@@ -204,10 +204,10 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// are event-triggered roots.
 	var reached map[string]bool
 	if starts := d.StartNodes(); len(starts) == 1 {
-		reached = forwardReachable(d, starts[0].ID)
+		reached = forwardReachable(d, starts[0].ID())
 		for _, n := range d.Nodes {
-			if n.Kind == KindEventSubProcess {
-				for id := range forwardReachable(d, n.ID) {
+			if n.Kind() == KindEventSubProcess {
+				for id := range forwardReachable(d, n.ID()) {
 					reached[id] = true
 				}
 			}
@@ -215,10 +215,11 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		for {
 			grew := false
 			for _, n := range d.Nodes {
-				if n.Kind != KindBoundaryEvent || reached[n.ID] || !reached[n.AttachedTo] {
+				be, ok := n.(BoundaryEvent)
+				if !ok || reached[be.ID()] || !reached[be.AttachedTo] {
 					continue
 				}
-				for id := range forwardReachable(d, n.ID) {
+				for id := range forwardReachable(d, be.ID()) {
 					if !reached[id] {
 						reached[id] = true
 						grew = true
@@ -230,8 +231,8 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 			}
 		}
 		for _, n := range d.Nodes {
-			if !reached[n.ID] {
-				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnreachableNode, n.ID))
+			if !reached[n.ID()] {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnreachableNode, n.ID()))
 			}
 		}
 	}
@@ -250,17 +251,17 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// an already-invalid definition (it is re-checked once the start count is fixed).
 	if reached != nil {
 		for _, n := range d.Nodes {
-			if n.Kind != KindParallelGateway {
+			if n.Kind() != KindParallelGateway {
 				continue
 			}
-			if len(d.Incoming(n.ID)) <= 1 || len(d.Outgoing(n.ID)) != 1 {
+			if len(d.Incoming(n.ID())) <= 1 || len(d.Outgoing(n.ID())) != 1 {
 				continue // not a pure parallel join (mixed already rejected; split is fine)
 			}
-			if !reached[n.ID] {
+			if !reached[n.ID()] {
 				continue // unreachable join — ErrUnreachableNode already reports it
 			}
-			if !hasConcurrencySource(d, n.ID) {
-				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnpairedJoin, n.ID))
+			if !hasConcurrencySource(d, n.ID()) {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnpairedJoin, n.ID()))
 			}
 		}
 	}
@@ -282,19 +283,20 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// may only attach to activities that can throw a BPMN error: ServiceTask,
 	// SubProcess, or CallActivity.
 	for _, n := range d.Nodes {
-		if n.Kind != KindBoundaryEvent {
+		be, ok := n.(BoundaryEvent)
+		if !ok {
 			continue
 		}
-		host, ok := d.Node(n.AttachedTo)
-		if !ok || !activityKinds[host.Kind] {
-			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q", ErrBoundaryAttachment, n.ID, n.AttachedTo))
+		host, hok := d.Node(be.AttachedTo)
+		if !hok || !activityKinds[host.Kind()] {
+			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q", ErrBoundaryAttachment, be.ID(), be.AttachedTo))
 			continue // skip further checks — attachment itself is invalid
 		}
 		// If this is a boundary error event (no timer/signal/message trigger),
 		// the host must be an error-throwing activity.
-		isErrorBoundary := n.TimerDuration == "" && n.SignalName == "" && n.MessageName == ""
-		if isErrorBoundary && !errorBoundaryHostKinds[host.Kind] {
-			errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, n.ID, n.AttachedTo, host.Kind))
+		isErrorBoundary := be.TimerDuration == "" && be.SignalName == "" && be.MessageName == ""
+		if isErrorBoundary && !errorBoundaryHostKinds[host.Kind()] {
+			errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, be.ID(), be.AttachedTo, host.Kind()))
 		}
 	}
 
@@ -303,47 +305,56 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// definition are wrapped with the host node id so callers can trace which
 	// sub-process contains the violation.
 	for _, n := range d.Nodes {
-		if n.Kind != KindSubProcess && n.Kind != KindEventSubProcess {
-			continue
-		}
-		if n.Subprocess == nil {
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, n.ID))
-			continue
-		}
-		if nestedErr := validate(n.Subprocess, seen); nestedErr != nil {
-			errs = append(errs, fmt.Errorf("subprocess %q: %w", n.ID, nestedErr))
+		switch v := n.(type) {
+		case SubProcess:
+			if v.Subprocess == nil {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, v.ID()))
+				continue
+			}
+			if nestedErr := validate(v.Subprocess, seen); nestedErr != nil {
+				errs = append(errs, fmt.Errorf("subprocess %q: %w", v.ID(), nestedErr))
+			}
+		case EventSubProcess:
+			if v.Subprocess == nil {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, v.ID()))
+				continue
+			}
+			if nestedErr := validate(v.Subprocess, seen); nestedErr != nil {
+				errs = append(errs, fmt.Errorf("subprocess %q: %w", v.ID(), nestedErr))
+			}
 		}
 	}
 
 	// Call-activity: DefRef must be non-empty.
 	for _, n := range d.Nodes {
-		if n.Kind != KindCallActivity {
-			continue
-		}
-		if n.DefRef == "" {
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingDefRef, n.ID))
+		if ca, ok := n.(CallActivity); ok {
+			if ca.DefRef == "" {
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingDefRef, ca.ID()))
+			}
 		}
 	}
 
-	// RetryPolicy and RecoveryFlow field-level constraints (all node kinds).
+	// RetryPolicy and RecoveryFlow field-level constraints (activity nodes only).
 	for _, n := range d.Nodes {
-		if n.RetryPolicy != nil {
-			p := *n.RetryPolicy
+		rp := RetryPolicyOf(n)
+		if rp != nil {
+			p := *rp
 			if p.MaxAttempts < 0 || p.InitialInterval < 0 || p.MaxInterval < 0 ||
 				(p.InitialInterval > 0 && p.BackoffCoef < 1.0) {
-				errs = append(errs, fmt.Errorf("%w: node %q", ErrInvalidRetryPolicy, n.ID))
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrInvalidRetryPolicy, n.ID()))
 			}
 		}
-		if n.RecoveryFlow != "" {
+		rf := recoveryFlowOf(n)
+		if rf != "" {
 			found := false
 			for _, f := range d.Flows {
-				if f.ID == n.RecoveryFlow && f.Source == n.ID {
+				if f.ID == rf && f.Source == n.ID() {
 					found = true
 					break
 				}
 			}
 			if !found {
-				errs = append(errs, fmt.Errorf("%w: node %q flow %q", ErrInvalidRecoveryFlow, n.ID, n.RecoveryFlow))
+				errs = append(errs, fmt.Errorf("%w: node %q flow %q", ErrInvalidRecoveryFlow, n.ID(), rf))
 			}
 		}
 	}
@@ -360,11 +371,12 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// means "scope-wide compensation" and is always valid. This rule recurses into
 	// sub-processes automatically (it lives inside validate).
 	for _, n := range d.Nodes {
-		if n.Kind != KindIntermediateThrowEvent || n.CompensateRef == "" {
+		ite, ok := n.(IntermediateThrowEvent)
+		if !ok || ite.CompensateRef == "" {
 			continue
 		}
-		if _, ok := d.Node(n.CompensateRef); !ok {
-			errs = append(errs, fmt.Errorf("%w: throw %q -> %q", ErrCompensateRefNotFound, n.ID, n.CompensateRef))
+		if _, ok := d.Node(ite.CompensateRef); !ok {
+			errs = append(errs, fmt.Errorf("%w: throw %q -> %q", ErrCompensateRefNotFound, ite.ID(), ite.CompensateRef))
 		}
 	}
 
@@ -396,13 +408,13 @@ func forwardReachable(d *ProcessDefinition, seed string) map[string]bool {
 // they are not concurrency sources.
 func hasConcurrencySource(d *ProcessDefinition, joinID string) bool {
 	for _, f := range d.Nodes {
-		if f.ID == joinID {
+		if f.ID() == joinID {
 			continue
 		}
-		if f.Kind != KindParallelGateway && f.Kind != KindInclusiveGateway {
+		if f.Kind() != KindParallelGateway && f.Kind() != KindInclusiveGateway {
 			continue
 		}
-		out := d.Outgoing(f.ID)
+		out := d.Outgoing(f.ID())
 		if len(out) <= 1 {
 			continue // a join or pass-through, not a split
 		}
@@ -417,4 +429,27 @@ func hasConcurrencySource(d *ProcessDefinition, joinID string) bool {
 		}
 	}
 	return false
+}
+
+// recoveryFlowOf returns the RecoveryFlow field of an activity node, or "" if
+// the node does not carry one.
+func recoveryFlowOf(n Node) string {
+	switch v := n.(type) {
+	case ServiceTask:
+		return v.RecoveryFlow
+	case UserTask:
+		return v.RecoveryFlow
+	case ReceiveTask:
+		return v.RecoveryFlow
+	case SendTask:
+		return v.RecoveryFlow
+	case BusinessRuleTask:
+		return v.RecoveryFlow
+	case SubProcess:
+		return v.RecoveryFlow
+	case CallActivity:
+		return v.RecoveryFlow
+	default:
+		return ""
+	}
 }

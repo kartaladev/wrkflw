@@ -1,0 +1,334 @@
+package model_test
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/zakyalvan/krtlwrkflw/model"
+)
+
+func TestRetryPolicyOf(t *testing.T) {
+	p := &model.RetryPolicy{MaxAttempts: 5}
+	n := model.NewServiceTask("a", "act", model.WithRetryPolicy(p))
+	if model.RetryPolicyOf(n) != p {
+		t.Fatal("RetryPolicyOf did not return the activity's policy")
+	}
+	if model.RetryPolicyOf(model.NewStartEvent("s")) != nil {
+		t.Fatal("non-activity must return nil")
+	}
+	// Test all activity kinds
+	cases := []model.Node{
+		model.NewUserTask("ut", nil, model.WithRetryPolicy(p)),
+		model.NewReceiveTask("rt", "msg", model.WithRetryPolicy(p)),
+		model.NewSendTask("st", "msg", model.WithRetryPolicy(p)),
+		model.NewBusinessRuleTask("brt", "act", model.WithRetryPolicy(p)),
+		model.NewSubProcess("sp", nil, model.WithRetryPolicy(p)),
+		model.NewCallActivity("ca", "ref", model.WithRetryPolicy(p)),
+	}
+	for _, c := range cases {
+		require.Equal(t, p, model.RetryPolicyOf(c), "kind %v should return policy", c.Kind())
+	}
+	// Non-activity kinds should return nil
+	nonActivities := []model.Node{
+		model.NewStartEvent("s"),
+		model.NewEndEvent("e"),
+		model.NewTerminateEndEvent("te"),
+		model.NewErrorEndEvent("ee", "ERR"),
+		model.NewExclusiveGateway("xor"),
+		model.NewParallelGateway("par"),
+		model.NewInclusiveGateway("inc"),
+		model.NewEventBasedGateway("ebg"),
+		model.NewBoundaryEvent("be", "host"),
+		model.NewIntermediateCatchEvent("ice"),
+		model.NewIntermediateThrowEvent("ite"),
+		model.NewEventSubProcess("esp", nil),
+	}
+	for _, c := range nonActivities {
+		require.Nil(t, model.RetryPolicyOf(c), "kind %v should return nil", c.Kind())
+	}
+}
+
+func TestSLAOf(t *testing.T) {
+	cases := []struct {
+		name           string
+		node           model.Node
+		wantDur, wantFlow, wantAct string
+	}{
+		{
+			name:     "service task with SLA",
+			node:     model.NewServiceTask("st", "act", model.WithSLA("P1D", "sla-flow", "sla-act")),
+			wantDur:  "P1D",
+			wantFlow: "sla-flow",
+			wantAct:  "sla-act",
+		},
+		{
+			name:     "user task with SLA",
+			node:     model.NewUserTask("ut", nil, model.WithSLA("PT2H", "ut-flow", "ut-act")),
+			wantDur:  "PT2H",
+			wantFlow: "ut-flow",
+			wantAct:  "ut-act",
+		},
+		{
+			name:     "intermediate catch event with SLA",
+			node:     model.NewIntermediateCatchEvent("ice", model.WithICESLA("P2D", "ice-flow", "ice-act")),
+			wantDur:  "P2D",
+			wantFlow: "ice-flow",
+			wantAct:  "ice-act",
+		},
+		{
+			name:     "start event returns empty",
+			node:     model.NewStartEvent("s"),
+			wantDur:  "",
+			wantFlow: "",
+			wantAct:  "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dur, flow, act := model.SLAOf(tc.node)
+			assert.Equal(t, tc.wantDur, dur)
+			assert.Equal(t, tc.wantFlow, flow)
+			assert.Equal(t, tc.wantAct, act)
+		})
+	}
+}
+
+func TestReminderOf(t *testing.T) {
+	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
+	n := model.NewUserTask("ut", nil,
+		model.WithRetryPolicy(p),
+		model.WithReminder("PT4H", "send-reminder"),
+	)
+	every, act := model.ReminderOf(n)
+	assert.Equal(t, "PT4H", every)
+	assert.Equal(t, "send-reminder", act)
+
+	// Non-activity returns empty
+	every, act = model.ReminderOf(model.NewStartEvent("s"))
+	assert.Equal(t, "", every)
+	assert.Equal(t, "", act)
+
+	// IntermediateCatchEvent with ICE reminder
+	ice := model.NewIntermediateCatchEvent("ice", model.WithICEReminder("PT2H", "ice-remind"))
+	every, act = model.ReminderOf(ice)
+	assert.Equal(t, "PT2H", every)
+	assert.Equal(t, "ice-remind", act)
+}
+
+func TestActionOf(t *testing.T) {
+	assert.Equal(t, "charge-card", model.ActionOf(model.NewServiceTask("st", "charge-card")))
+	assert.Equal(t, "apply-discount", model.ActionOf(model.NewBusinessRuleTask("brt", "apply-discount")))
+	assert.Equal(t, "", model.ActionOf(model.NewUserTask("ut", nil)))
+	assert.Equal(t, "", model.ActionOf(model.NewStartEvent("s")))
+}
+
+// TestProcessDefinitionJSONRoundTrip verifies that Marshal(def) then Unmarshal
+// produces a definition equal to the original.
+func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
+	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
+	original := &model.ProcessDefinition{
+		ID:      "order",
+		Version: 2,
+		Nodes: []model.Node{
+			model.NewStartEvent("start", model.WithName("Start")),
+			model.NewServiceTask("charge", "charge-card",
+				model.WithCompensation("refund-card"),
+				model.WithRecoveryFlow("f-error"),
+				model.WithRetryPolicy(p),
+				model.WithSLA("P1D", "sla-flow", "sla-act"),
+				model.WithReminder("PT4H", "remind-act"),
+				model.WithCancelHandler("cancel-charge"),
+			),
+			model.NewUserTask("approve", []string{"manager", "admin"},
+				model.WithEligibilityExpr("amount > 1000"),
+				model.WithName("Approve"),
+			),
+			model.NewIntermediateCatchEvent("wait",
+				model.WithTimerDuration("PT30M"),
+				model.WithName("Wait"),
+			),
+			model.NewIntermediateThrowEvent("signal-done", model.WithThrowSignal("order.done")),
+			model.NewBoundaryEvent("error-bnd", "charge",
+				model.WithBoundaryErrorCode("ERR_PAYMENT"),
+			),
+			model.NewExclusiveGateway("xor", "Decision"),
+			model.NewEndEvent("end", "End"),
+			model.NewErrorEndEvent("err-end", "ERR_FATAL"),
+			model.NewTerminateEndEvent("term-end"),
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "charge"},
+			{ID: "f2", Source: "charge", Target: "approve"},
+			{ID: "f3", Source: "approve", Target: "xor"},
+			{ID: "f4", Source: "xor", Target: "end", IsDefault: true},
+			{ID: "f5", Source: "xor", Target: "wait", Condition: "retry"},
+			{ID: "f6", Source: "wait", Target: "charge"},
+			{ID: "f7", Source: "signal-done", Target: "end"},
+			{ID: "f-error", Source: "charge", Target: "err-end"},
+			{ID: "f8", Source: "error-bnd", Target: "term-end"},
+		},
+		CancelActions: []string{"notify-cancel"},
+	}
+
+	data, err := json.Marshal(original)
+	require.NoError(t, err, "marshal should not fail")
+
+	var restored model.ProcessDefinition
+	require.NoError(t, json.Unmarshal(data, &restored), "unmarshal should not fail")
+
+	// Verify key structural properties
+	assert.Equal(t, original.ID, restored.ID)
+	assert.Equal(t, original.Version, restored.Version)
+	assert.Len(t, restored.Nodes, len(original.Nodes))
+	assert.Len(t, restored.Flows, len(original.Flows))
+	assert.Equal(t, original.CancelActions, restored.CancelActions)
+
+	// Verify kind discrimination
+	for i, orig := range original.Nodes {
+		got := restored.Nodes[i]
+		assert.Equal(t, orig.Kind(), got.Kind(), "node[%d] kind mismatch", i)
+		assert.Equal(t, orig.ID(), got.ID(), "node[%d] ID mismatch", i)
+		assert.Equal(t, orig.Name(), got.Name(), "node[%d] Name mismatch", i)
+	}
+
+	// Verify ServiceTask fields survived round-trip
+	charge, ok := restored.Nodes[1].(model.ServiceTask)
+	require.True(t, ok)
+	assert.Equal(t, "charge-card", charge.Action)
+	assert.Equal(t, "refund-card", charge.CompensationAction)
+	assert.Equal(t, "f-error", charge.RecoveryFlow)
+	assert.Equal(t, "cancel-charge", charge.CancelHandler)
+	assert.Equal(t, "P1D", charge.SLADuration)
+	assert.Equal(t, "PT4H", charge.ReminderEvery)
+	require.NotNil(t, charge.RetryPolicy)
+	assert.Equal(t, 3, charge.RetryPolicy.MaxAttempts)
+
+	// Verify UserTask fields
+	approve, ok := restored.Nodes[2].(model.UserTask)
+	require.True(t, ok)
+	assert.Equal(t, []string{"manager", "admin"}, approve.CandidateRoles)
+	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
+}
+
+// TestProcessDefinitionJSONBackwardCompat verifies that legacy flat-shaped JSON
+// (the pre-interface Node struct layout) still decodes into correct concrete types.
+func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
+	// Hand-written flat JSON matching the pre-interface Node struct layout.
+	legacyJSON := `{
+		"id": "legacy",
+		"version": 1,
+		"nodes": [
+			{"id": "start", "kind": "startEvent", "name": "Start"},
+			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensationAction": "refund-card", "cancelHandler": "cancel-charge"},
+			{"id": "approve", "kind": "userTask", "candidateRoles": ["manager"], "eligibilityExpr": "amount > 1000"},
+			{"id": "wait", "kind": "intermediateCatchEvent", "timerDuration": "PT1H"},
+			{"id": "throw", "kind": "intermediateThrowEvent", "signalName": "done"},
+			{"id": "bnd", "kind": "boundaryEvent", "attachedTo": "charge", "errorCode": "ERR", "nonInterrupting": false},
+			{"id": "sp", "kind": "subProcess", "subprocess": {"id": "inner", "version": 1, "nodes": [{"id": "ns", "kind": "startEvent"}, {"id": "ne", "kind": "endEvent"}], "flows": [{"id": "nf1", "source": "ns", "target": "ne"}]}},
+			{"id": "ca", "kind": "callActivity", "defRef": "ext-process"},
+			{"id": "xor", "kind": "exclusiveGateway"},
+			{"id": "par", "kind": "parallelGateway"},
+			{"id": "inc", "kind": "inclusiveGateway"},
+			{"id": "ebg", "kind": "eventBasedGateway"},
+			{"id": "end", "kind": "endEvent"},
+			{"id": "terend", "kind": "terminateEndEvent"},
+			{"id": "errend", "kind": "errorEndEvent", "errorCode": "FATAL"},
+			{"id": "send", "kind": "sendTask", "messageName": "msg.send"},
+			{"id": "recv", "kind": "receiveTask", "messageName": "msg.recv", "correlationKey": "order.id"},
+			{"id": "brt", "kind": "businessRuleTask", "action": "apply-discount"},
+			{"id": "esp", "kind": "eventSubProcess", "subprocess": {"id": "esp-inner", "version": 1, "nodes": [{"id": "es", "kind": "startEvent"}, {"id": "ee", "kind": "endEvent"}], "flows": [{"id": "ef1", "source": "es", "target": "ee"}]}},
+			{"id": "comp-throw", "kind": "intermediateThrowEvent", "compensateRef": "charge"}
+		],
+		"flows": []
+	}`
+
+	var def model.ProcessDefinition
+	require.NoError(t, json.Unmarshal([]byte(legacyJSON), &def))
+
+	assert.Equal(t, "legacy", def.ID)
+	require.Len(t, def.Nodes, 20)
+
+	// Spot-check types
+	_, ok := def.Nodes[0].(model.StartEvent)
+	require.True(t, ok, "nodes[0] should be StartEvent")
+
+	st, ok := def.Nodes[1].(model.ServiceTask)
+	require.True(t, ok, "nodes[1] should be ServiceTask")
+	assert.Equal(t, "charge-card", st.Action)
+	assert.Equal(t, "refund-card", st.CompensationAction)
+	assert.Equal(t, "cancel-charge", st.CancelHandler)
+
+	ut, ok := def.Nodes[2].(model.UserTask)
+	require.True(t, ok, "nodes[2] should be UserTask")
+	assert.Equal(t, []string{"manager"}, ut.CandidateRoles)
+	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
+
+	ice, ok := def.Nodes[3].(model.IntermediateCatchEvent)
+	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")
+	assert.Equal(t, "PT1H", ice.TimerDuration)
+
+	ite, ok := def.Nodes[4].(model.IntermediateThrowEvent)
+	require.True(t, ok, "nodes[4] should be IntermediateThrowEvent")
+	assert.Equal(t, "done", ite.SignalName)
+
+	be, ok := def.Nodes[5].(model.BoundaryEvent)
+	require.True(t, ok, "nodes[5] should be BoundaryEvent")
+	assert.Equal(t, "charge", be.AttachedTo)
+	assert.Equal(t, "ERR", be.ErrorCode)
+
+	sp, ok := def.Nodes[6].(model.SubProcess)
+	require.True(t, ok, "nodes[6] should be SubProcess")
+	require.NotNil(t, sp.Subprocess)
+	assert.Equal(t, "inner", sp.Subprocess.ID)
+
+	ca, ok := def.Nodes[7].(model.CallActivity)
+	require.True(t, ok, "nodes[7] should be CallActivity")
+	assert.Equal(t, "ext-process", ca.DefRef)
+
+	_, ok = def.Nodes[8].(model.ExclusiveGateway)
+	require.True(t, ok, "nodes[8] should be ExclusiveGateway")
+
+	_, ok = def.Nodes[9].(model.ParallelGateway)
+	require.True(t, ok, "nodes[9] should be ParallelGateway")
+
+	_, ok = def.Nodes[10].(model.InclusiveGateway)
+	require.True(t, ok, "nodes[10] should be InclusiveGateway")
+
+	_, ok = def.Nodes[11].(model.EventBasedGateway)
+	require.True(t, ok, "nodes[11] should be EventBasedGateway")
+
+	_, ok = def.Nodes[12].(model.EndEvent)
+	require.True(t, ok, "nodes[12] should be EndEvent")
+
+	_, ok = def.Nodes[13].(model.TerminateEndEvent)
+	require.True(t, ok, "nodes[13] should be TerminateEndEvent")
+
+	ee, ok := def.Nodes[14].(model.ErrorEndEvent)
+	require.True(t, ok, "nodes[14] should be ErrorEndEvent")
+	assert.Equal(t, "FATAL", ee.ErrorCode)
+
+	send, ok := def.Nodes[15].(model.SendTask)
+	require.True(t, ok, "nodes[15] should be SendTask")
+	assert.Equal(t, "msg.send", send.MessageName)
+
+	recv, ok := def.Nodes[16].(model.ReceiveTask)
+	require.True(t, ok, "nodes[16] should be ReceiveTask")
+	assert.Equal(t, "msg.recv", recv.MessageName)
+	assert.Equal(t, "order.id", recv.CorrelationKey)
+
+	brt, ok := def.Nodes[17].(model.BusinessRuleTask)
+	require.True(t, ok, "nodes[17] should be BusinessRuleTask")
+	assert.Equal(t, "apply-discount", brt.Action)
+
+	esp, ok := def.Nodes[18].(model.EventSubProcess)
+	require.True(t, ok, "nodes[18] should be EventSubProcess")
+	require.NotNil(t, esp.Subprocess)
+
+	compThrow, ok := def.Nodes[19].(model.IntermediateThrowEvent)
+	require.True(t, ok, "nodes[19] should be IntermediateThrowEvent")
+	assert.Equal(t, "charge", compThrow.CompensateRef)
+}

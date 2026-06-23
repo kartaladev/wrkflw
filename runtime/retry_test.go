@@ -27,14 +27,10 @@ func noRetryServiceTaskDef() *model.ProcessDefinition {
 		ID:      "no-node-retry",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:     "task",
-				Kind:   model.KindServiceTask,
-				Action: "a",
-				// RetryPolicy intentionally omitted — no node-level policy.
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			// RetryPolicy intentionally omitted — no node-level policy.
+			model.NewServiceTask("task", "a"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -129,16 +125,12 @@ func incidentTaskDef() *model.ProcessDefinition {
 		ID:      "incident-test",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:     "task",
-				Kind:   model.KindServiceTask,
-				Action: "a",
-				// RetryPolicy intentionally omitted — default policy of MaxAttempts=1
-				// causes the first failure to exhaust the budget immediately, parking
-				// the instance as an incident rather than scheduling a retry.
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			// RetryPolicy intentionally omitted — default policy of MaxAttempts=1
+			// causes the first failure to exhaust the budget immediately, parking
+			// the instance as an incident rather than scheduling a retry.
+			model.NewServiceTask("task", "a"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},

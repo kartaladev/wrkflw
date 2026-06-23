@@ -40,9 +40,9 @@ func e2eGrandchildDef() *model.ProcessDefinition {
 		ID:      "e2e-grandchild",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "gc-start", Kind: model.KindStartEvent},
-			{ID: "gc-task", Kind: model.KindUserTask, CandidateRoles: []string{"worker"}},
-			{ID: "gc-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("gc-start"),
+			model.NewUserTask("gc-task", []string{"worker"}),
+			model.NewEndEvent("gc-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "gcf1", Source: "gc-start", Target: "gc-task"},
@@ -59,9 +59,9 @@ func e2eChildDef() *model.ProcessDefinition {
 		ID:      "e2e-child",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "c-start", Kind: model.KindStartEvent},
-			{ID: "c-call", Kind: model.KindCallActivity, DefRef: "e2e-grandchild"},
-			{ID: "c-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("c-start"),
+			model.NewCallActivity("c-call", "e2e-grandchild"),
+			model.NewEndEvent("c-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "cf1", Source: "c-start", Target: "c-call"},
@@ -78,9 +78,9 @@ func e2eParentDef() *model.ProcessDefinition {
 		ID:      "e2e-parent",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "p-start", Kind: model.KindStartEvent},
-			{ID: "p-call", Kind: model.KindCallActivity, DefRef: "e2e-child"},
-			{ID: "p-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("p-start"),
+			model.NewCallActivity("p-call", "e2e-child"),
+			model.NewEndEvent("p-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "pf1", Source: "p-start", Target: "p-call"},
@@ -296,9 +296,9 @@ func selfCallDef() *model.ProcessDefinition {
 		ID:      "self-call",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "self-start", Kind: model.KindStartEvent},
-			{ID: "self-call", Kind: model.KindCallActivity, DefRef: "self-call"},
-			{ID: "self-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("self-start"),
+			model.NewCallActivity("self-call", "self-call"),
+			model.NewEndEvent("self-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "sf1", Source: "self-start", Target: "self-call"},

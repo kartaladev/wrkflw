@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
@@ -23,9 +23,9 @@ func callNotifierChildDef() *model.ProcessDefinition {
 		ID:      "cncn-child",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-task", Kind: model.KindUserTask, CandidateRoles: []string{"worker"}},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewUserTask("child-task", []string{"worker"}),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-task"},
@@ -40,9 +40,9 @@ func callNotifierParentDef() *model.ProcessDefinition {
 		ID:      "cncn-parent",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "cncn-child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "cncn-child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},

@@ -23,9 +23,9 @@ func subProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-action"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -35,9 +35,9 @@ func subProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -158,12 +158,12 @@ func parallelSubProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-parallel", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "pfork", Kind: model.KindParallelGateway},
-			{ID: "inner-a", Kind: model.KindServiceTask, Action: "action-a"},
-			{ID: "inner-b", Kind: model.KindServiceTask, Action: "action-b"},
-			{ID: "pjoin", Kind: model.KindParallelGateway},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewParallelGateway("pfork"),
+			model.NewServiceTask("inner-a", "action-a"),
+			model.NewServiceTask("inner-b", "action-b"),
+			model.NewParallelGateway("pjoin"),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "pfork"},
@@ -177,9 +177,9 @@ func parallelSubProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-parallel", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -204,9 +204,9 @@ func eventSubProcessDef(nonInterrupting bool) *model.ProcessDefinition {
 	evtsubInner := &model.ProcessDefinition{
 		ID: "evtsub-inner", Version: 1,
 		Nodes: []model.Node{
-			{ID: "evtsub-start", Kind: model.KindStartEvent, SignalName: "cancel"},
-			{ID: "evtsub-svc", Kind: model.KindServiceTask, Action: "cancel-action"},
-			{ID: "evtsub-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("evtsub-start", model.WithStartSignal("cancel")),
+			model.NewServiceTask("evtsub-svc", "cancel-action"),
+			model.NewEndEvent("evtsub-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
@@ -214,13 +214,18 @@ func eventSubProcessDef(nonInterrupting bool) *model.ProcessDefinition {
 		},
 	}
 
+	evtsubNode := model.NewEventSubProcess("evtsub", evtsubInner)
+	if nonInterrupting {
+		evtsubNode = model.NewEventSubProcess("evtsub", evtsubInner, model.WithESPNonInterrupting())
+	}
+
 	inner := &model.ProcessDefinition{
 		ID: "inner-evtsub", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-user", Kind: model.KindUserTask},
-			{ID: "inner-end", Kind: model.KindEndEvent},
-			{ID: "evtsub", Kind: model.KindEventSubProcess, NonInterrupting: nonInterrupting, Subprocess: evtsubInner},
+			model.NewStartEvent("inner-start"),
+			model.NewUserTask("inner-user", nil),
+			model.NewEndEvent("inner-end"),
+			evtsubNode,
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-user"},
@@ -231,9 +236,9 @@ func eventSubProcessDef(nonInterrupting bool) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-evtsub", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -499,9 +504,9 @@ func timerEventSubProcessDef() *model.ProcessDefinition {
 	evtsubInner := &model.ProcessDefinition{
 		ID: "evtsub-timer-inner", Version: 1,
 		Nodes: []model.Node{
-			{ID: "evtsub-start", Kind: model.KindStartEvent, TimerDuration: `"1h"`},
-			{ID: "evtsub-svc", Kind: model.KindServiceTask, Action: "timeout-action"},
-			{ID: "evtsub-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("evtsub-start", model.WithStartTimer(`"1h"`)),
+			model.NewServiceTask("evtsub-svc", "timeout-action"),
+			model.NewEndEvent("evtsub-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
@@ -511,10 +516,10 @@ func timerEventSubProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-timer-evtsub", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-action"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
-			{ID: "evtsub", Kind: model.KindEventSubProcess, NonInterrupting: false, Subprocess: evtsubInner},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewEndEvent("inner-end"),
+			model.NewEventSubProcess("evtsub", evtsubInner),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -524,9 +529,9 @@ func timerEventSubProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-timer-evtsub", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -629,9 +634,9 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 	evtsubInner := &model.ProcessDefinition{
 		ID: "esp-gw-evtsub-inner", Version: 1,
 		Nodes: []model.Node{
-			{ID: "evtsub-start", Kind: model.KindStartEvent, SignalName: "cancel"},
-			{ID: "evtsub-svc", Kind: model.KindServiceTask, Action: "cancel-action"},
-			{ID: "evtsub-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("evtsub-start", model.WithStartSignal("cancel")),
+			model.NewServiceTask("evtsub-svc", "cancel-action"),
+			model.NewEndEvent("evtsub-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
@@ -642,12 +647,12 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-esp-gw", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "evtgw", Kind: model.KindEventBasedGateway},
-			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"2h"`},
-			{ID: "signal-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "done"},
-			{ID: "normal-end", Kind: model.KindEndEvent},
-			{ID: "evtsub", Kind: model.KindEventSubProcess, NonInterrupting: false, Subprocess: evtsubInner},
+			model.NewStartEvent("inner-start"),
+			model.NewEventBasedGateway("evtgw"),
+			model.NewIntermediateCatchEvent("timer-catch", model.WithTimerDuration(`"2h"`)),
+			model.NewIntermediateCatchEvent("signal-catch", model.WithSignalName("done")),
+			model.NewEndEvent("normal-end"),
+			model.NewEventSubProcess("evtsub", evtsubInner),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "evtgw"},
@@ -661,9 +666,9 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-esp-gw", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -766,9 +771,9 @@ func rootLevelESPDef() *model.ProcessDefinition {
 	espInner := &model.ProcessDefinition{
 		ID: "root-esp-inner", Version: 1,
 		Nodes: []model.Node{
-			{ID: "esp-start", Kind: model.KindStartEvent, SignalName: "cancel"},
-			{ID: "esp-svc", Kind: model.KindServiceTask, Action: "esp-action"},
-			{ID: "esp-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("esp-start", model.WithStartSignal("cancel")),
+			model.NewServiceTask("esp-svc", "esp-action"),
+			model.NewEndEvent("esp-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "re1", Source: "esp-start", Target: "esp-svc"},
@@ -779,10 +784,10 @@ func rootLevelESPDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "root-esp-def", Version: 1,
 		Nodes: []model.Node{
-			{ID: "root-start", Kind: model.KindStartEvent},
-			{ID: "root-svc", Kind: model.KindServiceTask, Action: "normal-action"},
-			{ID: "root-end", Kind: model.KindEndEvent},
-			{ID: "root-esp", Kind: model.KindEventSubProcess, NonInterrupting: false, Subprocess: espInner},
+			model.NewStartEvent("root-start"),
+			model.NewServiceTask("root-svc", "normal-action"),
+			model.NewEndEvent("root-end"),
+			model.NewEventSubProcess("root-esp", espInner),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "rf1", Source: "root-start", Target: "root-svc"},
@@ -887,9 +892,9 @@ func callActivityDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "parent", Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -1017,12 +1022,12 @@ func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "ca-sla-parent", Version: 1,
 		Nodes: []model.Node{
-			{ID: "p-start", Kind: model.KindStartEvent},
-			{ID: "p-fork", Kind: model.KindParallelGateway},
-			{ID: "p-user", Kind: model.KindUserTask, SLADuration: `"1h"`},
-			{ID: "p-call", Kind: model.KindCallActivity, DefRef: "child"},
-			{ID: "p-join", Kind: model.KindParallelGateway},
-			{ID: "p-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("p-start"),
+			model.NewParallelGateway("p-fork"),
+			model.NewUserTask("p-user", nil, model.WithSLA(`"1h"`, "", "")),
+			model.NewCallActivity("p-call", "child"),
+			model.NewParallelGateway("p-join"),
+			model.NewEndEvent("p-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "p-start", Target: "p-fork"},
@@ -1193,13 +1198,12 @@ func boundaryTimerInsideSubProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-bnd-timer", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-action"},
-			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "inner-svc",
-				TimerDuration: `"2h"`, NonInterrupting: false},
-			{ID: "bnd-target", Kind: model.KindServiceTask, Action: "escalate-action"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
-			{ID: "bnd-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewBoundaryEvent("bnd-timer", "inner-svc", model.WithBoundaryTimer(`"2h"`)),
+			model.NewServiceTask("bnd-target", "escalate-action"),
+			model.NewEndEvent("inner-end"),
+			model.NewEndEvent("bnd-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -1211,9 +1215,9 @@ func boundaryTimerInsideSubProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-bnd-timer", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -1334,14 +1338,14 @@ func eventBasedGatewayInsideSubProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-evtgw", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "evtgw", Kind: model.KindEventBasedGateway},
-			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "signal-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "approved"},
-			{ID: "svc-timer", Kind: model.KindServiceTask, Action: "timer-action"},
-			{ID: "svc-signal", Kind: model.KindServiceTask, Action: "signal-action"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
-			{ID: "inner-end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewEventBasedGateway("evtgw"),
+			model.NewIntermediateCatchEvent("timer-catch", model.WithTimerDuration(`"1h"`)),
+			model.NewIntermediateCatchEvent("signal-catch", model.WithSignalName("approved")),
+			model.NewServiceTask("svc-timer", "timer-action"),
+			model.NewServiceTask("svc-signal", "signal-action"),
+			model.NewEndEvent("inner-end"),
+			model.NewEndEvent("inner-end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "evtgw"},
@@ -1356,9 +1360,9 @@ func eventBasedGatewayInsideSubProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-evtgw", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -1473,13 +1477,13 @@ func inclusiveGatewayInsideSubProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-or", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "orsplit", Kind: model.KindInclusiveGateway},
-			{ID: "ta", Kind: model.KindServiceTask, Action: "action-a"},
-			{ID: "tb", Kind: model.KindServiceTask, Action: "action-b"},
-			{ID: "orjoin", Kind: model.KindInclusiveGateway},
-			{ID: "post", Kind: model.KindServiceTask, Action: "post-action"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewInclusiveGateway("orsplit"),
+			model.NewServiceTask("ta", "action-a"),
+			model.NewServiceTask("tb", "action-b"),
+			model.NewInclusiveGateway("orjoin"),
+			model.NewServiceTask("post", "post-action"),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "orsplit"},
@@ -1494,9 +1498,9 @@ func inclusiveGatewayInsideSubProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-or", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -1606,17 +1610,11 @@ func slaUserTaskInsideSubProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-sla", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{
-				ID:             "inner-user",
-				Kind:           model.KindUserTask,
-				CandidateRoles: []string{"reviewer"},
-				SLADuration:    `"30m"`,
-				SLAFlow:        "inner-escalate",
-				SLAAction:      "notify-action",
-			},
-			{ID: "inner-end", Kind: model.KindEndEvent},
-			{ID: "escalate-node", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewUserTask("inner-user", []string{"reviewer"},
+				model.WithSLA(`"30m"`, "inner-escalate", "notify-action")),
+			model.NewEndEvent("inner-end"),
+			model.NewEndEvent("escalate-node"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-user"},
@@ -1627,9 +1625,9 @@ func slaUserTaskInsideSubProcessDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "outer-sla", Version: 1,
 		Nodes: []model.Node{
-			{ID: "outer-start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-			{ID: "outer-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("outer-start"),
+			model.NewSubProcess("sub", inner),
+			model.NewEndEvent("outer-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},

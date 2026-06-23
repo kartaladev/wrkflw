@@ -1,0 +1,14 @@
+id: order
+version: 1
+nodes:
+  - id: s
+    kind: startEvent
+  - id: charge
+    kind: serviceTask
+    action: charge-card
+    compensationAction: refund-card
+  - id: e
+    kind: endEvent
+flows:
+  - { id: f1, source: s, target: charge }
+  - { id: f2, source: charge, target: e }

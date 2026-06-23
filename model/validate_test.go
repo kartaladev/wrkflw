@@ -23,7 +23,7 @@ func TestValidate(t *testing.T) {
 		"no start event": {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []model.Node{{ID: "end", Kind: model.KindEndEvent}},
+				Nodes: []model.Node{model.NewEndEvent("end")},
 			},
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrNoStartEvent)
@@ -33,9 +33,9 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "s1", Kind: model.KindStartEvent},
-					{ID: "s2", Kind: model.KindStartEvent},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("s1"),
+					model.NewStartEvent("s2"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "s1", Target: "end"},
@@ -50,8 +50,8 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ghost"},
@@ -65,9 +65,9 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "x"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "x"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -82,9 +82,9 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "x"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "x"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -100,9 +100,9 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "end", Kind: model.KindEndEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "x"},
+					model.NewStartEvent("start"),
+					model.NewEndEvent("end"),
+					model.NewServiceTask("task", "x"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -118,8 +118,8 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "ghost", Target: "end"}, // source node missing
@@ -134,11 +134,11 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "fork", Kind: model.KindParallelGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewParallelGateway("fork"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "fork"},
@@ -156,11 +156,11 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "fork", Kind: model.KindParallelGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewParallelGateway("fork"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "fork"},
@@ -178,11 +178,11 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "xor", Kind: model.KindExclusiveGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewExclusiveGateway("xor"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -201,11 +201,11 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "ebg", Kind: model.KindEventBasedGateway},
-					{ID: "sig-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "sig.a"},
-					{ID: "msg-catch", Kind: model.KindIntermediateCatchEvent, MessageName: "msg.b"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewEventBasedGateway("ebg"),
+					model.NewIntermediateCatchEvent("sig-catch", model.WithSignalName("sig.a")),
+					model.NewIntermediateCatchEvent("msg-catch", model.WithMessageNameAndKey("msg.b", "")),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ebg"},
@@ -223,11 +223,11 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "ebg", Kind: model.KindEventBasedGateway},
-					{ID: "sig-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "sig.a"},
-					{ID: "task", Kind: model.KindServiceTask, Action: "do-work"}, // non-catch
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewEventBasedGateway("ebg"),
+					model.NewIntermediateCatchEvent("sig-catch", model.WithSignalName("sig.a")),
+					model.NewServiceTask("task", "do-work"), // non-catch
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ebg"},
@@ -246,12 +246,12 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "do-work"},
-					// NonInterrupting omitted (false) = interrupting, the BPMN default.
-					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "task"},
-					{ID: "end", Kind: model.KindEndEvent},
-					{ID: "cancel-end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "do-work"),
+					// NonInterrupting omitted (false) = interrupting, the default.
+					model.NewBoundaryEvent("boundary", "task", model.WithBoundarySignal("cancel")),
+					model.NewEndEvent("end"),
+					model.NewEndEvent("cancel-end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -267,9 +267,9 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "end", Kind: model.KindEndEvent},
-					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "ghost"},
+					model.NewStartEvent("start"),
+					model.NewEndEvent("end"),
+					model.NewBoundaryEvent("boundary", "ghost", model.WithBoundarySignal("cancel")),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -284,13 +284,13 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "xor", Kind: model.KindExclusiveGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewExclusiveGateway("xor"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewEndEvent("end"),
 					// boundary attached to a gateway — not an activity
-					{ID: "boundary", Kind: model.KindBoundaryEvent, SignalName: "cancel", AttachedTo: "xor"},
+					model.NewBoundaryEvent("boundary", "xor", model.WithBoundarySignal("cancel")),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -309,11 +309,11 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "xor", Kind: model.KindExclusiveGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewExclusiveGateway("xor"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -332,13 +332,13 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "gw", Kind: model.KindExclusiveGateway},
-					{ID: "c", Kind: model.KindServiceTask, Action: "c"},
-					{ID: "d", Kind: model.KindServiceTask, Action: "d"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewExclusiveGateway("gw"),
+					model.NewServiceTask("c", "c"),
+					model.NewServiceTask("d", "d"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "a"},
@@ -359,12 +359,12 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "gw", Kind: model.KindParallelGateway},
-					{ID: "c", Kind: model.KindServiceTask, Action: "c"},
-					{ID: "d", Kind: model.KindServiceTask, Action: "d"},
-					{ID: "j", Kind: model.KindParallelGateway},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewParallelGateway("gw"),
+					model.NewServiceTask("c", "c"),
+					model.NewServiceTask("d", "d"),
+					model.NewParallelGateway("j"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "gw"},
@@ -383,11 +383,11 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
-					{ID: "orphan", Kind: model.KindServiceTask, Action: "o"},
-					{ID: "orphan-end", Kind: model.KindEndEvent},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "t"),
+					model.NewServiceTask("orphan", "o"),
+					model.NewEndEvent("orphan-end"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -403,12 +403,12 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
-					{ID: "bnd", Kind: model.KindBoundaryEvent, AttachedTo: "task", TimerDuration: "PT1M"},
-					{ID: "handler", Kind: model.KindServiceTask, Action: "h"},
-					{ID: "hend", Kind: model.KindEndEvent},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "t"),
+					model.NewBoundaryEvent("bnd", "task", model.WithBoundaryTimer("PT1M")),
+					model.NewServiceTask("handler", "h"),
+					model.NewEndEvent("hend"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -425,13 +425,13 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
-					{ID: "end", Kind: model.KindEndEvent},
-					{ID: "ghost", Kind: model.KindServiceTask, Action: "g"}, // unreachable host
-					{ID: "bnd", Kind: model.KindBoundaryEvent, AttachedTo: "ghost", TimerDuration: "PT1M"},
-					{ID: "handler", Kind: model.KindServiceTask, Action: "h"},
-					{ID: "hend", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "t"),
+					model.NewEndEvent("end"),
+					model.NewServiceTask("ghost", "g"), // unreachable host
+					model.NewBoundaryEvent("bnd", "ghost", model.WithBoundaryTimer("PT1M")),
+					model.NewServiceTask("handler", "h"),
+					model.NewEndEvent("hend"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -448,7 +448,7 @@ func TestValidate(t *testing.T) {
 		"zero start events does not run reachability": {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []model.Node{{ID: "end", Kind: model.KindEndEvent}},
+				Nodes: []model.Node{model.NewEndEvent("end")},
 			},
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrNoStartEvent)
@@ -462,12 +462,12 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "fork", Kind: model.KindParallelGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "j", Kind: model.KindParallelGateway},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewParallelGateway("fork"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewParallelGateway("j"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "fork"},
@@ -486,12 +486,12 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "split", Kind: model.KindExclusiveGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "j", Kind: model.KindParallelGateway},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewExclusiveGateway("split"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewParallelGateway("j"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
@@ -510,12 +510,12 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "split", Kind: model.KindInclusiveGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "j", Kind: model.KindParallelGateway},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewInclusiveGateway("split"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewParallelGateway("j"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
@@ -534,14 +534,14 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "s1", Kind: model.KindStartEvent},
-					{ID: "s2", Kind: model.KindStartEvent},
-					{ID: "split", Kind: model.KindExclusiveGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "j", Kind: model.KindParallelGateway},
-					{ID: "end", Kind: model.KindEndEvent},
-					{ID: "end2", Kind: model.KindEndEvent},
+					model.NewStartEvent("s1"),
+					model.NewStartEvent("s2"),
+					model.NewExclusiveGateway("split"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewParallelGateway("j"),
+					model.NewEndEvent("end"),
+					model.NewEndEvent("end2"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f0", Source: "s1", Target: "split"},
@@ -564,14 +564,14 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "merge", Kind: model.KindExclusiveGateway}, // loop-back merge (pure join)
-					{ID: "fork", Kind: model.KindParallelGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "j", Kind: model.KindParallelGateway},
-					{ID: "loop", Kind: model.KindExclusiveGateway}, // loop-back decision (pure split)
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewExclusiveGateway("merge"), // loop-back merge (pure join)
+					model.NewParallelGateway("fork"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewParallelGateway("j"),
+					model.NewExclusiveGateway("loop"), // loop-back decision (pure split)
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "merge"},
@@ -593,16 +593,16 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "t"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "t"),
+					model.NewEndEvent("end"),
 					// Disconnected component: an exclusive split feeding a parallel join
 					// (would be ErrUnpairedJoin if reachable) — but it is unreachable.
-					{ID: "osplit", Kind: model.KindExclusiveGateway},
-					{ID: "ox", Kind: model.KindServiceTask, Action: "x"},
-					{ID: "oy", Kind: model.KindServiceTask, Action: "y"},
-					{ID: "oj", Kind: model.KindParallelGateway},
-					{ID: "oend", Kind: model.KindEndEvent},
+					model.NewExclusiveGateway("osplit"),
+					model.NewServiceTask("ox", "x"),
+					model.NewServiceTask("oy", "y"),
+					model.NewParallelGateway("oj"),
+					model.NewEndEvent("oend"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -623,12 +623,12 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "split", Kind: model.KindExclusiveGateway},
-					{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-					{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-					{ID: "j", Kind: model.KindInclusiveGateway},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewExclusiveGateway("split"),
+					model.NewServiceTask("a", "a"),
+					model.NewServiceTask("b", "b"),
+					model.NewInclusiveGateway("j"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
@@ -649,10 +649,10 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "do-work"},
-					{ID: "comp-throw", Kind: model.KindIntermediateThrowEvent, CompensateRef: "missing-node"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "do-work"),
+					model.NewIntermediateThrowEvent("comp-throw", model.WithCompensateRef("missing-node")),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -669,10 +669,10 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "task", Kind: model.KindServiceTask, Action: "do-work", CompensationAction: "undo-work"},
-					{ID: "comp-throw", Kind: model.KindIntermediateThrowEvent, CompensateRef: "task"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewServiceTask("task", "do-work", model.WithCompensation("undo-work")),
+					model.NewIntermediateThrowEvent("comp-throw", model.WithCompensateRef("task")),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -690,9 +690,9 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "throw", Kind: model.KindIntermediateThrowEvent, SignalName: "sig.done"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewIntermediateThrowEvent("throw", model.WithThrowSignal("sig.done")),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "throw"},
@@ -709,20 +709,20 @@ func TestValidate(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+					model.NewStartEvent("start"),
+					model.NewSubProcess("sp", &model.ProcessDefinition{
 						ID: "inner", Version: 1,
 						Nodes: []model.Node{
-							{ID: "ns", Kind: model.KindStartEvent},
-							{ID: "nthrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "no-such"},
-							{ID: "ne", Kind: model.KindEndEvent},
+							model.NewStartEvent("ns"),
+							model.NewIntermediateThrowEvent("nthrow", model.WithCompensateRef("no-such")),
+							model.NewEndEvent("ne"),
 						},
 						Flows: []model.SequenceFlow{
 							{ID: "nf1", Source: "ns", Target: "nthrow"},
 							{ID: "nf2", Source: "nthrow", Target: "ne"},
 						},
-					}},
-					{ID: "end", Kind: model.KindEndEvent},
+					}),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -749,9 +749,9 @@ func validSubprocessDef(id string) *model.ProcessDefinition {
 		ID:      id,
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "ns-start", Kind: model.KindStartEvent},
-			{ID: "ns-task", Kind: model.KindServiceTask, Action: "inner"},
-			{ID: "ns-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("ns-start"),
+			model.NewServiceTask("ns-task", "inner"),
+			model.NewEndEvent("ns-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "nf1", Source: "ns-start", Target: "ns-task"},
@@ -769,9 +769,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "sp", Kind: model.KindSubProcess, Subprocess: validSubprocessDef("inner")},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewSubProcess("sp", validSubprocessDef("inner")),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -786,9 +786,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "sp", Kind: model.KindSubProcess, Subprocess: nil},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewSubProcess("sp", nil),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -803,9 +803,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "esp", Kind: model.KindEventSubProcess, Subprocess: nil},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewEventSubProcess("esp", nil),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "esp"},
@@ -820,14 +820,14 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+					model.NewStartEvent("start"),
+					model.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "bad-inner",
 						Version: 1,
 						Nodes: []model.Node{
-							{ID: "ns-start", Kind: model.KindStartEvent},
-							{ID: "ns-task", Kind: model.KindServiceTask, Action: "inner"},
-							{ID: "ns-end", Kind: model.KindEndEvent},
+							model.NewStartEvent("ns-start"),
+							model.NewServiceTask("ns-task", "inner"),
+							model.NewEndEvent("ns-end"),
 						},
 						Flows: []model.SequenceFlow{
 							{ID: "nf1", Source: "ns-start", Target: "ns-task"},
@@ -835,8 +835,8 @@ func TestValidateSubProcess(t *testing.T) {
 							// illegal: flow into the start event
 							{ID: "nf3", Source: "ns-task", Target: "ns-start"},
 						},
-					}},
-					{ID: "end", Kind: model.KindEndEvent},
+					}),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -852,19 +852,19 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+					model.NewStartEvent("start"),
+					model.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "bad-inner-2",
 						Version: 1,
 						Nodes: []model.Node{
-							{ID: "ns-start", Kind: model.KindStartEvent},
-							{ID: "ns-end", Kind: model.KindEndEvent},
+							model.NewStartEvent("ns-start"),
+							model.NewEndEvent("ns-end"),
 						},
 						Flows: []model.SequenceFlow{
 							{ID: "nf1", Source: "ns-start", Target: "ghost-node"}, // dangling
 						},
-					}},
-					{ID: "end", Kind: model.KindEndEvent},
+					}),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -879,9 +879,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "ca", Kind: model.KindCallActivity, DefRef: "some-external-process"},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewCallActivity("ca", "some-external-process"),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ca"},
@@ -896,9 +896,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "ca", Kind: model.KindCallActivity, DefRef: ""},
-					{ID: "end", Kind: model.KindEndEvent},
+					model.NewStartEvent("start"),
+					model.NewCallActivity("ca", ""),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ca"},
@@ -913,18 +913,18 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+					model.NewStartEvent("start"),
+					model.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "inner-mixed",
 						Version: 1,
 						Nodes: []model.Node{
-							{ID: "ns-start", Kind: model.KindStartEvent},
-							{ID: "na", Kind: model.KindServiceTask, Action: "na"},
-							{ID: "nb", Kind: model.KindServiceTask, Action: "nb"},
-							{ID: "ngw", Kind: model.KindParallelGateway},
-							{ID: "nc", Kind: model.KindServiceTask, Action: "nc"},
-							{ID: "nd", Kind: model.KindServiceTask, Action: "nd"},
-							{ID: "ns-end", Kind: model.KindEndEvent},
+							model.NewStartEvent("ns-start"),
+							model.NewServiceTask("na", "na"),
+							model.NewServiceTask("nb", "nb"),
+							model.NewParallelGateway("ngw"),
+							model.NewServiceTask("nc", "nc"),
+							model.NewServiceTask("nd", "nd"),
+							model.NewEndEvent("ns-end"),
 						},
 						Flows: []model.SequenceFlow{
 							{ID: "nf0", Source: "ns-start", Target: "na"},
@@ -936,8 +936,8 @@ func TestValidateSubProcess(t *testing.T) {
 							{ID: "nf5", Source: "nc", Target: "ns-end"},
 							{ID: "nf6", Source: "nd", Target: "ns-end"},
 						},
-					}},
-					{ID: "end", Kind: model.KindEndEvent},
+					}),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -952,17 +952,17 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
-					{ID: "start", Kind: model.KindStartEvent},
-					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+					model.NewStartEvent("start"),
+					model.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "inner-unpaired",
 						Version: 1,
 						Nodes: []model.Node{
-							{ID: "ns-start", Kind: model.KindStartEvent},
-							{ID: "nsplit", Kind: model.KindExclusiveGateway},
-							{ID: "na", Kind: model.KindServiceTask, Action: "na"},
-							{ID: "nb", Kind: model.KindServiceTask, Action: "nb"},
-							{ID: "nj", Kind: model.KindParallelGateway}, // parallel join fed by exclusive split
-							{ID: "ns-end", Kind: model.KindEndEvent},
+							model.NewStartEvent("ns-start"),
+							model.NewExclusiveGateway("nsplit"),
+							model.NewServiceTask("na", "na"),
+							model.NewServiceTask("nb", "nb"),
+							model.NewParallelGateway("nj"), // parallel join fed by exclusive split
+							model.NewEndEvent("ns-end"),
 						},
 						Flows: []model.SequenceFlow{
 							{ID: "nf0", Source: "ns-start", Target: "nsplit"},
@@ -972,8 +972,8 @@ func TestValidateSubProcess(t *testing.T) {
 							{ID: "nf4", Source: "nb", Target: "nj"},
 							{ID: "nf5", Source: "nj", Target: "ns-end"},
 						},
-					}},
-					{ID: "end", Kind: model.KindEndEvent},
+					}),
+					model.NewEndEvent("end"),
 				},
 				Flows: []model.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -1002,10 +1002,11 @@ func TestValidateRejectsBadRetryPolicy(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task", Kind: model.KindServiceTask, Action: "a",
-				RetryPolicy: &model.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a",
+				model.WithRetryPolicy(&model.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}),
+			),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -1023,9 +1024,9 @@ func TestValidateRejectsRecoveryFlowNotFromNode(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task", Kind: model.KindServiceTask, Action: "a", RecoveryFlow: "nope"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a", model.WithRecoveryFlow("nope")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -1042,9 +1043,9 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 	defA := &model.ProcessDefinition{
 		ID: "cyclic-a", Version: 1,
 		Nodes: []model.Node{
-			{ID: "a-start", Kind: model.KindStartEvent},
-			{ID: "a-sub", Kind: model.KindSubProcess},
-			{ID: "a-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("a-start"),
+			model.NewSubProcess("a-sub", nil), // nil will be replaced below
+			model.NewEndEvent("a-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "af1", Source: "a-start", Target: "a-sub"},
@@ -1054,9 +1055,9 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 	defB := &model.ProcessDefinition{
 		ID: "cyclic-b", Version: 1,
 		Nodes: []model.Node{
-			{ID: "b-start", Kind: model.KindStartEvent},
-			{ID: "b-sub", Kind: model.KindSubProcess},
-			{ID: "b-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("b-start"),
+			model.NewSubProcess("b-sub", nil), // nil will be replaced below
+			model.NewEndEvent("b-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "bf1", Source: "b-start", Target: "b-sub"},
@@ -1064,8 +1065,9 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 		},
 	}
 	// Wire the cycle: A's sub-process points to B, B's sub-process points back to A.
-	defA.Nodes[1].Subprocess = defB
-	defB.Nodes[1].Subprocess = defA
+	// We must replace the nodes since they are value types.
+	defA.Nodes[1] = model.NewSubProcess("a-sub", defB)
+	defB.Nodes[1] = model.NewSubProcess("b-sub", defA)
 
 	// Must not panic or stack-overflow.
 	require.NotPanics(t, func() {
@@ -1078,8 +1080,8 @@ func TestValidateCancelActions(t *testing.T) {
 		return &model.ProcessDefinition{
 			ID: "d", Version: 1,
 			Nodes: []model.Node{
-				{ID: "start", Kind: model.KindStartEvent},
-				{ID: "end", Kind: model.KindEndEvent},
+				model.NewStartEvent("start"),
+				model.NewEndEvent("end"),
 			},
 			Flows:         []model.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 			CancelActions: cancel,

@@ -22,13 +22,15 @@ import (
 //
 // Non-admin routes:
 //
-//	POST   /instances                  — start a new process instance
-//	GET    /instances/{id}             — get an existing instance
-//	POST   /instances/{id}/signals     — deliver a signal to an instance
-//	POST   /messages                   — deliver a message
-//	POST   /tasks/{token}/claim        — claim a human task
-//	POST   /tasks/{token}/complete     — complete a human task
-//	POST   /tasks/{token}/reassign     — reassign a human task
+//	POST   /instances                      — start a new process instance
+//	GET    /instances/{id}                 — get an existing instance
+//	GET    /instances/{id}/snapshot        — full InstanceSnapshot DTO (no engine bookkeeping)
+//	GET    /instances/{id}/actionable      — curated ActionableView with open tasks + allowed next actions
+//	POST   /instances/{id}/signals         — deliver a signal to an instance
+//	POST   /messages                       — deliver a message
+//	POST   /tasks/{token}/claim            — claim a human task
+//	POST   /tasks/{token}/complete         — complete a human task
+//	POST   /tasks/{token}/reassign         — reassign a human task
 //
 // Admin routes (wrapped by the configured admin middleware):
 //
@@ -70,6 +72,8 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /instances", h.handleStartInstance)
 	mux.HandleFunc("GET /instances/{id}", h.handleGetInstance)
+	mux.HandleFunc("GET /instances/{id}/snapshot", h.handleGetInstanceSnapshot)
+	mux.HandleFunc("GET /instances/{id}/actionable", h.handleGetActionableView)
 	mux.HandleFunc("POST /instances/{id}/signals", h.handleDeliverSignal)
 	mux.HandleFunc("POST /messages", h.handleDeliverMessage)
 	mux.HandleFunc("POST /tasks/{token}/claim", h.handleClaimTask)

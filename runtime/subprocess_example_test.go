@@ -25,9 +25,9 @@ func childDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "child", Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-svc", Kind: model.KindServiceTask, Action: "set-output"},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewServiceTask("child-svc", "set-output"),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-svc"},
@@ -43,9 +43,9 @@ func parentCallDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "parent", Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -147,9 +147,9 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	failingChild := &model.ProcessDefinition{
 		ID: "failing-child", Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-svc", Kind: model.KindServiceTask, Action: "failing-action"},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewServiceTask("child-svc", "failing-action"),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-svc"},
@@ -161,9 +161,9 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	failingParent := &model.ProcessDefinition{
 		ID: "parent-fail", Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "failing-child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "failing-child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -195,9 +195,9 @@ func parkingChildDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "parking-child", Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-user", Kind: model.KindUserTask},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewUserTask("child-user", nil),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-user"},
@@ -211,9 +211,9 @@ func parkingParentDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "parking-parent", Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "parking-child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "parking-child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -306,9 +306,9 @@ func selfRefDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "self-ref", Version: 1,
 		Nodes: []model.Node{
-			{ID: "sr-start", Kind: model.KindStartEvent},
-			{ID: "sr-call", Kind: model.KindCallActivity, DefRef: "self-ref"},
-			{ID: "sr-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("sr-start"),
+			model.NewCallActivity("sr-call", "self-ref"),
+			model.NewEndEvent("sr-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "sf1", Source: "sr-start", Target: "sr-call"},

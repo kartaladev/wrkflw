@@ -20,9 +20,9 @@ func retryDef(p *model.RetryPolicy) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task", Kind: model.KindServiceTask, Action: "a", RetryPolicy: p},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a", model.WithRetryPolicy(p)),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -199,10 +199,10 @@ func recoveryFlowDef(p *model.RetryPolicy) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task", Kind: model.KindServiceTask, Action: "a", RecoveryFlow: "rf", RetryPolicy: p},
-			{ID: "recover", Kind: model.KindServiceTask, Action: "compensate"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a", model.WithRecoveryFlow("rf"), model.WithRetryPolicy(p)),
+			model.NewServiceTask("recover", "compensate"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -220,12 +220,12 @@ func boundaryWithPolicyDef(p *model.RetryPolicy) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task", Kind: model.KindServiceTask, Action: "a", RetryPolicy: p},
-			{ID: "bnd", Kind: model.KindBoundaryEvent, AttachedTo: "task"},
-			{ID: "recover", Kind: model.KindServiceTask, Action: "compensate"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end-recover", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a", model.WithRetryPolicy(p)),
+			model.NewBoundaryEvent("bnd", "task"),
+			model.NewServiceTask("recover", "compensate"),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end-recover"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -255,7 +255,7 @@ func hasInvokeActionForNode(t *testing.T, r engine.StepResult, def *model.Proces
 	if !ok {
 		t.Fatalf("hasInvokeActionForNode: node %q not found in definition", nodeID)
 	}
-	return hasInvokeActionForName(r.Commands, node.Action)
+	return hasInvokeActionForName(r.Commands, node.(model.ServiceTask).Action)
 }
 
 // TestStepResolveIncidentReinvokes verifies that delivering a ResolveIncident

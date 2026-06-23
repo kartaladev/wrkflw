@@ -27,10 +27,10 @@ func cancelWithCompDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "cancel-comp-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "charge", CompensationAction: "refund"},
-			{ID: "user", Kind: model.KindUserTask, Action: "review"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "charge", model.WithCompensation("refund")),
+			model.NewUserTask("user", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -47,10 +47,10 @@ func errorWithCompDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "error-comp-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc1", Kind: model.KindServiceTask, Action: "charge", CompensationAction: "refund"},
-			{ID: "svc2", Kind: model.KindServiceTask, Action: "notify"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc1", "charge", model.WithCompensation("refund")),
+			model.NewServiceTask("svc2", "notify"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc1"},
@@ -67,11 +67,11 @@ func twoCompNodesDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "two-comp-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc1", Kind: model.KindServiceTask, Action: "step1", CompensationAction: "undo1"},
-			{ID: "svc2", Kind: model.KindServiceTask, Action: "step2", CompensationAction: "undo2"},
-			{ID: "user", Kind: model.KindUserTask, Action: "review"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc1", "step1", model.WithCompensation("undo1")),
+			model.NewServiceTask("svc2", "step2", model.WithCompensation("undo2")),
+			model.NewUserTask("user", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc1"},
@@ -231,10 +231,10 @@ func TestEmptyRecordsCancelImmediate(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "no-comp-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "charge"},
-			{ID: "user", Kind: model.KindUserTask, Action: "review"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "charge"),
+			model.NewUserTask("user", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -271,9 +271,9 @@ func TestEmptyRecordsErrorImmediate(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "no-comp-err-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "charge"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "charge"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -459,9 +459,9 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 		inner := &model.ProcessDefinition{
 			ID: "no-double-nested", Version: 1,
 			Nodes: []model.Node{
-				{ID: "inner-start", Kind: model.KindStartEvent},
-				{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
-				{ID: "inner-end", Kind: model.KindEndEvent},
+				model.NewStartEvent("inner-start"),
+				model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+				model.NewEndEvent("inner-end"),
 			},
 			Flows: []model.SequenceFlow{
 				{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -471,10 +471,10 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 		return &model.ProcessDefinition{
 			ID: "no-double-outer", Version: 1,
 			Nodes: []model.Node{
-				{ID: "start", Kind: model.KindStartEvent},
-				{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
-				{ID: "rootUserTask", Kind: model.KindUserTask},
-				{ID: "end", Kind: model.KindEndEvent},
+				model.NewStartEvent("start"),
+				model.NewSubProcess("sub", inner),
+				model.NewUserTask("rootUserTask", nil),
+				model.NewEndEvent("end"),
 			},
 			Flows: []model.SequenceFlow{
 				{ID: "f1", Source: "start", Target: "sub"},
