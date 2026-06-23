@@ -9,7 +9,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
-	"github.com/zakyalvan/krtlwrkflw/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 )
 
 // authorizeOK is a helper that calls authB.Authorize with a privilege-based AuthzSpec

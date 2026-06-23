@@ -11,7 +11,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
