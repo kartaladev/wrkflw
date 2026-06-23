@@ -71,17 +71,22 @@ var nodeStrategies = map[model.NodeKind]nodeStrategy{
 type serviceTaskStrategy struct{}
 
 func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	st, ok := node.(model.ServiceTask)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
 	var cmds []Command
 	cmdID := c.s.nextCommandID()
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
-		Name:      node.Action,
+		Name:      st.Action,
 		Input:     serviceActionInput(c.s, node),
 	})
 	tok.State = TokenWaitingCommand
 	tok.AwaitCommand = cmdID
 	// Arm any boundary events attached to this host activity.
-	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID, c.at)
+	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at)
 	if err != nil {
 		return cmds, false, err
 	}
@@ -157,8 +162,8 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			isEventSubProcess := false
 			parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
 			if pErr == nil {
-				if espNode, ok2 := parentDef.Node(subNodeID); ok2 && espNode.Kind == model.KindEventSubProcess {
-					isEventSubProcess = true
+				if espNode, ok2 := parentDef.Node(subNodeID); ok2 {
+					_, isEventSubProcess = espNode.(model.EventSubProcess)
 				}
 			}
 
@@ -319,8 +324,10 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 				// If the sub-process node itself carries a CompensationAction, record
 				// it in the parent scope. The snapshot is taken after the scope is
 				// closed (consistent: the sub-process completed at this point).
-				if spNode, spOK := parentDef.Node(subNodeID); spOK && spNode.CompensationAction != "" {
-					c.s.recordCompensation(parentScopeID, subNodeID, spNode.CompensationAction, c.at, copyVars(c.s.Variables))
+				if spNode, spOK := parentDef.Node(subNodeID); spOK {
+					if sp, spIsSubProc := spNode.(model.SubProcess); spIsSubProc && sp.CompensationAction != "" {
+						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensationAction, c.at, copyVars(c.s.Variables))
+					}
 				}
 
 				outs := parentDef.Outgoing(subNodeID)
@@ -345,28 +352,33 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 type subProcessStrategy struct{}
 
 func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	sp, ok := node.(model.SubProcess)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
 	var cmds []Command
 	// Embedded sub-process entry: open a scope, place a token on the nested
 	// start node, and consume the sub-process activity token (it is "inside" now).
-	if node.Subprocess == nil {
+	if sp.Subprocess == nil {
 		// Defensive: a KindSubProcess without a Subprocess definition cannot
 		// execute; park to avoid infinite drive loop. model.Validate prevents this.
 		tok.State = TokenWaitingCommand
 		return cmds, false, nil
 	}
-	innerStarts := node.Subprocess.StartNodes()
+	innerStarts := sp.Subprocess.StartNodes()
 	if len(innerStarts) == 0 {
-		return cmds, false, fmt.Errorf("workflow-engine: sub-process %q: nested definition has no start node", node.ID)
+		return cmds, false, fmt.Errorf("workflow-engine: sub-process %q: nested definition has no start node", node.ID())
 	}
 	// Open a scope parented to the current token's scope.
-	scopeID := c.s.openScope(node.ID, tok.ScopeID)
+	scopeID := c.s.openScope(node.ID(), tok.ScopeID)
 	// Place the inner start-event token in the new scope.
-	c.s.placeTokenInScope(innerStarts[0].ID, scopeID, c.at)
+	c.s.placeTokenInScope(innerStarts[0].ID(), scopeID, c.at)
 	// Consume the sub-process activity token (execution is now "inside").
 	c.s.consumeToken(tok, c.at)
 	// Arm any KindEventSubProcess nodes defined inside this sub-process's
 	// nested definition. They are scoped to the newly opened scope.
-	espCmdsScope, espErrScope := armEventSubprocesses(node.Subprocess, c.s, scopeID, c.at)
+	espCmdsScope, espErrScope := armEventSubprocesses(sp.Subprocess, c.s, scopeID, c.at)
 	if espErrScope != nil {
 		return cmds, false, espErrScope
 	}
@@ -380,26 +392,31 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 type userTaskStrategy struct{}
 
 func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	ut, ok := node.(model.UserTask)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
 	var cmds []Command
 	taskToken := c.s.nextTaskToken()
 	spec := authz.AuthzSpec{
-		Roles:     node.CandidateRoles,
-		Attribute: node.EligibilityExpr,
+		Roles:     ut.CandidateRoles,
+		Attribute: ut.EligibilityExpr,
 	}
 	ht := humantask.HumanTask{
 		TaskToken:   taskToken,
 		InstanceID:  c.s.InstanceID,
-		NodeID:      node.ID,
+		NodeID:      node.ID(),
 		Eligibility: spec,
 		State:       humantask.Unclaimed,
 		CreatedAt:   c.at,
 	}
 	// If the node carries an SLA, schedule the SLA timer and record the
 	// deadline on the HumanTask so callers can surface the due date.
-	if node.SLADuration != "" {
-		dur, err := conditions.EvalDuration(node.SLADuration, c.s.Variables)
+	if ut.SLADuration != "" {
+		dur, err := conditions.EvalDuration(ut.SLADuration, c.s.Variables)
 		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: SLA node %q: %w", node.ID, err)
+			return cmds, false, fmt.Errorf("workflow-engine: SLA node %q: %w", node.ID(), err)
 		}
 		fireAt := c.at.Add(dur)
 		slaTimerID := c.s.nextTimerID()
@@ -414,7 +431,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			Kind:      TimerSLA,
 			Token:     tok.ID,
 			TaskToken: taskToken,
-			NodeID:    node.ID,
+			NodeID:    node.ID(),
 			ScopeID:   tok.ScopeID,
 		})
 		ht.DueAt = &fireAt
@@ -422,10 +439,10 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	// If the node carries a reminder interval, schedule the first in-wait
 	// timer. Subsequent reminders are re-scheduled each time the timer fires
 	// (see handleReminderFired), so a single ScheduleTimer is enough here.
-	if node.ReminderEvery != "" {
-		dur, err := conditions.EvalDuration(node.ReminderEvery, c.s.Variables)
+	if ut.ReminderEvery != "" {
+		dur, err := conditions.EvalDuration(ut.ReminderEvery, c.s.Variables)
 		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID, err)
+			return cmds, false, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
 		}
 		reminderTimerID := c.s.nextTimerID()
 		cmds = append(cmds, ScheduleTimer{
@@ -439,7 +456,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			Kind:      TimerInWait,
 			Token:     tok.ID,
 			TaskToken: taskToken,
-			NodeID:    node.ID,
+			NodeID:    node.ID(),
 			ScopeID:   tok.ScopeID,
 		})
 	}
@@ -448,7 +465,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	tok.State = TokenWaitingCommand
 	tok.AwaitCommand = taskToken
 	// Arm any boundary events attached to this host activity.
-	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID, c.at)
+	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at)
 	if err != nil {
 		return cmds, false, err
 	}
@@ -461,11 +478,16 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 type intermediateCatchEventStrategy struct{}
 
 func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	ice, ok := node.(model.IntermediateCatchEvent)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
 	var cmds []Command
-	if node.TimerDuration != "" {
-		dur, err := conditions.EvalDuration(node.TimerDuration, c.s.Variables)
+	if ice.TimerDuration != "" {
+		dur, err := conditions.EvalDuration(ice.TimerDuration, c.s.Variables)
 		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID, err)
+			return cmds, false, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID(), err)
 		}
 		timerID := c.s.nextTimerID()
 		cmds = append(cmds, ScheduleTimer{
@@ -476,21 +498,21 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		})
 		tok.State = TokenWaitingCommand
 		tok.AwaitCommand = timerID
-	} else if node.SignalName != "" {
+	} else if ice.SignalName != "" {
 		// Signal intermediate catch event: park the token awaiting the signal.
 		// The SignalReceived trigger (broadcast) will resume it later.
 		tok.State = TokenWaitingCommand
-		tok.AwaitSignal = node.SignalName
-	} else if node.MessageName != "" {
+		tok.AwaitSignal = ice.SignalName
+	} else if ice.MessageName != "" {
 		// Message intermediate catch event: park the token awaiting the message.
 		// Evaluate the correlation key (if set) now against instance variables
 		// for determinism; store the resolved key on the token.
-		resolvedKey, err := conditions.EvalString(node.CorrelationKey, c.s.Variables)
+		resolvedKey, err := conditions.EvalString(ice.CorrelationKey, c.s.Variables)
 		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: message node %q correlation key: %w", node.ID, err)
+			return cmds, false, fmt.Errorf("workflow-engine: message node %q correlation key: %w", node.ID(), err)
 		}
 		tok.State = TokenWaitingCommand
-		tok.AwaitMessage = node.MessageName
+		tok.AwaitMessage = ice.MessageName
 		tok.AwaitMessageKey = resolvedKey
 	} else {
 		// Non-timer, non-signal, non-message intermediate catch event: park.
@@ -505,8 +527,13 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 type errorEndEventStrategy struct{}
 
 func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	eee, ok := node.(model.ErrorEndEvent)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
 	var cmds []Command
-	// Error end event: throw an error with node.ErrorCode from the token's
+	// Error end event: throw an error with eee.ErrorCode from the token's
 	// current scope. propagateError walks the scope chain outward looking for
 	// a matching boundary error handler on the enclosing sub-process. An error
 	// end event is not an activity node that carries a direct boundary, so we
@@ -514,7 +541,7 @@ func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]C
 	// as failingTokenID (the error-end token is already consumed above).
 	currentScopeID := tok.ScopeID
 	c.s.consumeToken(tok, c.at)
-	errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", node.ErrorCode, c.at, c.mode, false)
+	errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", eee.ErrorCode, c.at, c.mode, false)
 	if propErr != nil {
 		// Real error from propagateError: surface it; drive() returns it as-is.
 		return cmds, false, propErr
@@ -549,7 +576,7 @@ func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 type parallelGatewayStrategy struct{}
 
 func (parallelGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	if len(c.tdef.Incoming(node.ID)) > 1 {
+	if len(c.tdef.Incoming(node.ID())) > 1 {
 		c.s.tryParallelJoin(c.tdef, tok, node, tok.ScopeID, c.at)
 		// tryParallelJoin always sets tok.State = TokenAtJoin first, then
 		// conditionally removes all join-side tokens if the join fires.
@@ -578,7 +605,7 @@ func (parallelGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([
 type inclusiveGatewayStrategy struct{}
 
 func (inclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	if len(c.tdef.Incoming(node.ID)) > 1 {
+	if len(c.tdef.Incoming(node.ID())) > 1 {
 		c.s.tryInclusiveJoin(c.tdef, tok, node, tok.ScopeID, c.at)
 		// tryInclusiveJoin always sets tok.State = TokenAtJoin first, then
 		// conditionally removes all join-side tokens if the join fires.
@@ -625,20 +652,24 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 	sentinel := "evtgw:" + tok.ID
 	tok.State = TokenWaitingCommand
 	tok.AwaitCommand = sentinel
-	for _, f := range c.tdef.Outgoing(node.ID) {
-		catchNode, ok := c.tdef.Node(f.Target)
+	for _, f := range c.tdef.Outgoing(node.ID()) {
+		catchNodeRaw, ok := c.tdef.Node(f.Target)
+		if !ok {
+			continue
+		}
+		ce, ok := catchNodeRaw.(model.IntermediateCatchEvent)
 		if !ok {
 			continue
 		}
 		ae := armedEvent{
 			GatewayToken: tok.ID,
-			CatchNode:    catchNode.ID,
+			CatchNode:    catchNodeRaw.ID(),
 			Flow:         f.ID,
 		}
-		if catchNode.TimerDuration != "" {
-			dur, err := conditions.EvalDuration(catchNode.TimerDuration, c.s.Variables)
+		if ce.TimerDuration != "" {
+			dur, err := conditions.EvalDuration(ce.TimerDuration, c.s.Variables)
 			if err != nil {
-				return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID, catchNode.ID, err)
+				return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID(), catchNodeRaw.ID(), err)
 			}
 			timerID := c.s.nextTimerID()
 			cmds = append(cmds, ScheduleTimer{
@@ -648,14 +679,14 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 				Kind:    TimerIntermediate,
 			})
 			ae.TimerID = timerID
-		} else if catchNode.SignalName != "" {
-			ae.Signal = catchNode.SignalName
-		} else if catchNode.MessageName != "" {
-			resolvedKey, err := conditions.EvalString(catchNode.CorrelationKey, c.s.Variables)
+		} else if ce.SignalName != "" {
+			ae.Signal = ce.SignalName
+		} else if ce.MessageName != "" {
+			resolvedKey, err := conditions.EvalString(ce.CorrelationKey, c.s.Variables)
 			if err != nil {
-				return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q message arm %q correlation key: %w", node.ID, catchNode.ID, err)
+				return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q message arm %q correlation key: %w", node.ID(), catchNodeRaw.ID(), err)
 			}
-			ae.Message = catchNode.MessageName
+			ae.Message = ce.MessageName
 			ae.MessageKey = resolvedKey
 		}
 		c.s.ArmedEvents = append(c.s.ArmedEvents, ae)
@@ -668,6 +699,11 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 type callActivityStrategy struct{}
 
 func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	ca, ok := node.(model.CallActivity)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
 	var cmds []Command
 	// Call activity: emit StartSubInstance and park the token. The runtime
 	// resolves DefRef via a DefinitionRegistry, runs the child to completion,
@@ -681,7 +717,7 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 	cmdID := c.s.nextCommandID()
 	cmds = append(cmds, StartSubInstance{
 		CommandID: cmdID,
-		DefRef:    node.DefRef,
+		DefRef:    ca.DefRef,
 		Input:     copyVars(c.s.Variables),
 	})
 	tok.State = TokenWaitingCommand
@@ -694,18 +730,23 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 type intermediateThrowEventStrategy struct{}
 
 func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	ite, ok := node.(model.IntermediateThrowEvent)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
 	var cmds []Command
-	if node.CompensateRef != "" {
+	if ite.CompensateRef != "" {
 		// Compensation throw intermediate event (ADR-0039, Phase 3).
 		// Runs the archived compensation records for the referenced sub-process
 		// node in reverse order, then resumes execution past the throw node.
 		// This is a localized walk — it does NOT call beginCompensation
 		// (which cancels ALL tokens and is designed for full/partial rollbacks).
-		ref := node.CompensateRef
+		ref := ite.CompensateRef
 		records := c.s.ArchivedCompensations[ref]
 		// Determine the resume node: the throw's single outgoing successor.
 		resumeNode := ""
-		if out := c.tdef.Outgoing(node.ID); len(out) > 0 {
+		if out := c.tdef.Outgoing(node.ID()); len(out) > 0 {
 			resumeNode = out[0].Target
 		}
 		if len(records) == 0 || resumeNode == "" {
@@ -742,12 +783,12 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			// walk started; stopped=true: set tok.State to signal stop.
 			tok.State = TokenWaitingCommand
 		}
-	} else if node.SignalName != "" {
+	} else if ite.SignalName != "" {
 		// Signal intermediate throw: emit ThrowSignal and continue along the
 		// single outgoing flow. The runtime broadcasts the signal; the engine
 		// does not wait for delivery (fire-and-forget from the engine's view).
 		cmds = append(cmds, ThrowSignal{
-			Name:    node.SignalName,
+			Name:    ite.SignalName,
 			Payload: nil, // no per-instance payload from throw nodes in this plan
 		})
 		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)

@@ -24,8 +24,9 @@ import (
 // Definition-scan order is deterministic; arms are appended in that order.
 func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time) ([]Command, error) {
 	var cmds []Command
-	for _, n := range def.Nodes {
-		if n.Kind != model.KindEventSubProcess {
+	for _, raw := range def.Nodes {
+		n, ok := raw.(model.EventSubProcess)
+		if !ok {
 			continue
 		}
 		if n.Subprocess == nil {
@@ -39,32 +40,38 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 
 		arm := eventSubprocessArm{
 			EnclosingScopeID:    enclosingScopeID,
-			EventSubprocessNode: n.ID,
-			NonInterrupting:     n.NonInterrupting,
+			EventSubprocessNode: n.ID(),
+			// NonInterrupting is not carried by model.EventSubProcess in the new
+			// interface model; defaults to false (interrupting). See BEHAVIOR_CONCERN
+			// in sp3-t2-report.md.
+			NonInterrupting: false,
 		}
 
-		if startNode.SignalName != "" {
-			arm.Signal = startNode.SignalName
-		} else if startNode.TimerDuration != "" {
-			dur, err := conditions.EvalDuration(startNode.TimerDuration, s.Variables)
-			if err != nil {
-				return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID, err)
+		// startNode is a model.Node; assert to StartEvent to read trigger fields.
+		if se, isSE := startNode.(model.StartEvent); isSE {
+			if se.SignalName != "" {
+				arm.Signal = se.SignalName
+			} else if se.TimerDuration != "" {
+				dur, err := conditions.EvalDuration(se.TimerDuration, s.Variables)
+				if err != nil {
+					return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
+				}
+				timerID := s.nextTimerID()
+				arm.TimerID = timerID
+				cmds = append(cmds, ScheduleTimer{
+					TimerID: timerID,
+					Token:   "", // no host token; keyed by enclosing scope
+					FireAt:  at.Add(dur),
+					Kind:    TimerIntermediate,
+				})
+			} else if se.MessageName != "" {
+				resolvedKey, err := conditions.EvalString(se.CorrelationKey, s.Variables)
+				if err != nil {
+					return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", n.ID(), err)
+				}
+				arm.Message = se.MessageName
+				arm.MessageKey = resolvedKey
 			}
-			timerID := s.nextTimerID()
-			arm.TimerID = timerID
-			cmds = append(cmds, ScheduleTimer{
-				TimerID: timerID,
-				Token:   "", // no host token; keyed by enclosing scope
-				FireAt:  at.Add(dur),
-				Kind:    TimerIntermediate,
-			})
-		} else if startNode.MessageName != "" {
-			resolvedKey, err := conditions.EvalString(startNode.CorrelationKey, s.Variables)
-			if err != nil {
-				return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", n.ID, err)
-			}
-			arm.Message = startNode.MessageName
-			arm.MessageKey = resolvedKey
 		}
 
 		s.EventSubprocesses = append(s.EventSubprocesses, arm)
@@ -123,9 +130,14 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 	}
 
 	// Resolve the event sub-process node in the enclosing definition.
-	espNode, ok := enclosingDef.Node(ea.EventSubprocessNode)
-	if !ok || espNode.Subprocess == nil {
-		// Node missing or has no nested def: defensive no-op.
+	espRaw, ok := enclosingDef.Node(ea.EventSubprocessNode)
+	if !ok {
+		// Node missing: defensive no-op.
+		return nil, nil
+	}
+	espNode, isESP := espRaw.(model.EventSubProcess)
+	if !isESP || espNode.Subprocess == nil {
+		// Not an EventSubProcess or has no nested def: defensive no-op.
 		return nil, nil
 	}
 	innerStarts := espNode.Subprocess.StartNodes()
@@ -189,7 +201,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// when this child scope drains with no tokens left in the enclosing scope,
 		// it closes the enclosing scope and resumes in the grandparent.
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
-		s.placeTokenInScope(innerStarts[0].ID, childScopeID, at)
+		s.placeTokenInScope(innerStarts[0].ID(), childScopeID, at)
 	} else {
 		// Non-interrupting: leave enclosing scope running, spawn alongside.
 
@@ -201,7 +213,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// This child scope runs alongside; when it drains, it is closed without affecting
 		// the enclosing scope (tokensInScope for the enclosing scope is unaffected).
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
-		s.placeTokenInScope(innerStarts[0].ID, childScopeID, at)
+		s.placeTokenInScope(innerStarts[0].ID(), childScopeID, at)
 	}
 
 	// Drive forward.

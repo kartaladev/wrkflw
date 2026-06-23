@@ -19,12 +19,13 @@ import (
 // silently no-arming the boundary.
 func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time) ([]Command, error) {
 	var cmds []Command
-	for _, n := range def.Nodes {
-		if n.Kind != model.KindBoundaryEvent || n.AttachedTo != hostNode {
+	for _, raw := range def.Nodes {
+		n, ok := raw.(model.BoundaryEvent)
+		if !ok || n.AttachedTo != hostNode {
 			continue
 		}
 		// Find the boundary's single outgoing flow.
-		outs := def.Outgoing(n.ID)
+		outs := def.Outgoing(n.ID())
 		if len(outs) == 0 {
 			continue // unreachable if model.Validate passes
 		}
@@ -33,7 +34,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		arm := boundaryArm{
 			HostToken:       hostTokenID,
 			HostNode:        hostNode,
-			BoundaryNode:    n.ID,
+			BoundaryNode:    n.ID(),
 			Flow:            flowID,
 			NonInterrupting: n.NonInterrupting,
 		}
@@ -41,7 +42,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		if n.TimerDuration != "" {
 			dur, err := conditions.EvalDuration(n.TimerDuration, s.Variables)
 			if err != nil {
-				return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID, hostNode, err)
+				return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
 			}
 			timerID := s.nextTimerID()
 			arm.TimerID = timerID

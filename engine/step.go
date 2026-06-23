@@ -131,7 +131,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 
 		// Dispatch through the nodeStrategy registry for migrated kinds.
 		// Kinds not yet in the registry fall through to the switch below.
-		if strat, ok := nodeStrategies[node.Kind]; ok {
+		if strat, ok := nodeStrategies[node.Kind()]; ok {
 			c := &stepCtx{def: def, tdef: tdef, s: s, at: at, mode: mode}
 			produced, halt, stratErr := strat.enter(c, tok, node)
 			if stratErr != nil {

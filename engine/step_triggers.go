@@ -21,7 +21,7 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	if len(starts) != 1 {
 		return StepResult{}, fmt.Errorf("workflow-engine: expected exactly one start, got %d", len(starts))
 	}
-	s.placeToken(starts[0].ID, t.OccurredAt())
+	s.placeToken(starts[0].ID(), t.OccurredAt())
 	// Arm any top-level event sub-processes (root scope, enclosingScopeID == "").
 	espCmds, espErr := armEventSubprocesses(def, s, "", t.OccurredAt())
 	if espErr != nil {
@@ -64,8 +64,10 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 	}
 	// Record compensation BEFORE merging the output: the snapshot captures the
 	// instance variables as they existed when the activity was invoked.
-	if node, ok := tdef.Node(tok.NodeID); ok && node.CompensationAction != "" {
-		s.recordCompensation(tok.ScopeID, node.ID, node.CompensationAction, t.OccurredAt(), copyVars(s.Variables))
+	if node, ok := tdef.Node(tok.NodeID); ok {
+		if compAction := compensationActionOf(node); compAction != "" {
+			s.recordCompensation(tok.ScopeID, node.ID(), compAction, t.OccurredAt(), copyVars(s.Variables))
+		}
 	}
 	mergeVars(s, t.Output)
 	tok.State = TokenActive
@@ -105,8 +107,10 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 			// Defensive: skip on scope resolution error; cancel must not fail.
 			continue
 		}
-		if node, ok := tdef.Node(tok.NodeID); ok && node.CancelHandler != "" {
-			nodeCancelCmds = append(nodeCancelCmds, InvokeCancelAction{Name: node.CancelHandler, Input: copyVars(s.Variables)})
+		if node, ok := tdef.Node(tok.NodeID); ok {
+			if ch := cancelHandlerOf(node); ch != "" {
+				nodeCancelCmds = append(nodeCancelCmds, InvokeCancelAction{Name: ch, Input: copyVars(s.Variables)})
+			}
 		}
 	}
 
@@ -249,7 +253,7 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 		}
 		// Terminal exhaustion: precedence is (1) catch-flow → (2) error
 		// boundary → (3) incident.
-		if node.RecoveryFlow != "" {
+		if rf := recoveryFlowOf(node); rf != "" {
 			// (1) Catch-flow: inject error context onto instance variables and
 			// route the failing token down RecoveryFlow.
 			if s.Variables == nil {
@@ -258,20 +262,19 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 			s.Variables["_errorMessage"] = t.Err
 			// Total executions: initial attempt plus all retries.
 			s.Variables["_errorAttempts"] = tok.RetryAttempts + 1
-			if node.ErrorCode != "" {
-				s.Variables["_error"] = node.ErrorCode
-			}
+			// ErrorCode on activity nodes is not part of the new model; the
+			// _error variable injection is skipped (no ErrorCode field on activities).
 			// Resolve the RecoveryFlow target (mirror the SLAFlow routing in
 			// handleSLAFired: scan the scope def's flows for the flow ID).
 			var target string
 			for _, f := range tdef.Flows {
-				if f.ID == node.RecoveryFlow {
+				if f.ID == rf {
 					target = f.Target
 					break
 				}
 			}
 			if target == "" {
-				return StepResult{}, fmt.Errorf("workflow-engine: retry exhaustion: RecoveryFlow %q not found for node %q", node.RecoveryFlow, node.ID)
+				return StepResult{}, fmt.Errorf("workflow-engine: retry exhaustion: RecoveryFlow %q not found for node %q", rf, node.ID())
 			}
 			tok.RetryAttempts = 0
 			tok.RetryStartedAt = time.Time{}

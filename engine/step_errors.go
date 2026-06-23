@@ -68,10 +68,10 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
 		}
 
-		var directHandler *model.Node
-		for i := range ownDef.Nodes {
-			n := &ownDef.Nodes[i]
-			if n.Kind != model.KindBoundaryEvent {
+		var directHandler *model.BoundaryEvent
+		for _, raw := range ownDef.Nodes {
+			n, isBnd := raw.(model.BoundaryEvent)
+			if !isBnd {
 				continue
 			}
 			if n.AttachedTo != originatingNodeID {
@@ -83,8 +83,8 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			}
 			// Match: catch-all or specific code.
 			if n.ErrorCode == "" || n.ErrorCode == errorCode {
-				nn := *n
-				directHandler = &nn
+				bnd := n
+				directHandler = &bnd
 				break
 			}
 		}
@@ -119,9 +119,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			}
 
 			// Find the boundary's outgoing flow target in the own scope definition.
-			outs := ownDef.Outgoing(directHandler.ID)
+			outs := ownDef.Outgoing(directHandler.ID())
 			if len(outs) == 0 {
-				return cmds, fmt.Errorf("workflow-engine: propagateError: direct boundary %q has no outgoing flow", directHandler.ID)
+				return cmds, fmt.Errorf("workflow-engine: propagateError: direct boundary %q has no outgoing flow", directHandler.ID())
 			}
 			flowTarget := outs[0].Target
 
@@ -163,10 +163,10 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 
 		// Scan the parent def for a boundary error event attached to activityNodeID
 		// that matches errorCode (specific or catch-all).
-		var handler *model.Node
-		for i := range parentDef.Nodes {
-			n := &parentDef.Nodes[i]
-			if n.Kind != model.KindBoundaryEvent {
+		var handler *model.BoundaryEvent
+		for _, raw := range parentDef.Nodes {
+			n, isBnd := raw.(model.BoundaryEvent)
+			if !isBnd {
 				continue
 			}
 			if n.AttachedTo != activityNodeID {
@@ -186,8 +186,8 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			}
 			// Match: catch-all (n.ErrorCode=="") or specific code match.
 			if n.ErrorCode == "" || n.ErrorCode == errorCode {
-				nn := *n
-				handler = &nn
+				bnd := n
+				handler = &bnd
 				break
 			}
 		}
@@ -234,9 +234,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			s.closeScope(currentScopeID)
 
 			// 3. Find the boundary's outgoing flow target in the parent definition.
-			outs := parentDef.Outgoing(handler.ID)
+			outs := parentDef.Outgoing(handler.ID())
 			if len(outs) == 0 {
-				return cmds, fmt.Errorf("workflow-engine: propagateError: boundary error %q has no outgoing flow", handler.ID)
+				return cmds, fmt.Errorf("workflow-engine: propagateError: boundary error %q has no outgoing flow", handler.ID())
 			}
 			flowTarget := outs[0].Target
 

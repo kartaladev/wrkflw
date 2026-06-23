@@ -24,10 +24,20 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 	if !ok {
 		return nil, fmt.Errorf("workflow-engine: defForScope: sub-process node %q not found in parent definition", scope.NodeID)
 	}
-	if node.Subprocess == nil {
+	switch n := node.(type) {
+	case model.SubProcess:
+		if n.Subprocess == nil {
+			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
+		}
+		return n.Subprocess, nil
+	case model.EventSubProcess:
+		if n.Subprocess == nil {
+			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
+		}
+		return n.Subprocess, nil
+	default:
 		return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
 	}
-	return node.Subprocess, nil
 }
 
 func (s *InstanceState) placeToken(nodeID string, at time.Time) {
@@ -197,9 +207,10 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 // Precedence: node-level policy > StepOptions.DefaultRetryPolicy > none.
 // The returned policy has been normalized via [model.RetryPolicy.Normalize].
 func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, bool) {
+	rp := model.RetryPolicyOf(node)
 	switch {
-	case node.RetryPolicy != nil:
-		return node.RetryPolicy.Normalize(), true
+	case rp != nil:
+		return rp.Normalize(), true
 	case opt.DefaultRetryPolicy != nil:
 		return opt.DefaultRetryPolicy.Normalize(), true
 	default:
@@ -245,7 +256,7 @@ func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
 	if in == nil {
 		in = map[string]any{}
 	}
-	in["_idempotencyKey"] = s.InstanceID + ":" + node.ID
+	in["_idempotencyKey"] = s.InstanceID + ":" + node.ID()
 	return in
 }
 

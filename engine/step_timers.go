@@ -52,29 +52,30 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 	if !ok {
 		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: node %q not found in definition", rec.NodeID)
 	}
-	if node.SLAFlow == "" {
+	_, slaFlow, slaAction := model.SLAOf(node)
+	if slaFlow == "" {
 		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: node %q has no SLAFlow defined", rec.NodeID)
 	}
-	// Find the sequence flow with ID == node.SLAFlow.
+	// Find the sequence flow with ID == slaFlow.
 	var slaTarget string
 	for _, f := range tdefSLA.Flows {
-		if f.ID == node.SLAFlow {
+		if f.ID == slaFlow {
 			slaTarget = f.Target
 			break
 		}
 	}
 	if slaTarget == "" {
-		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: SLAFlow %q not found in definition flows for node %q", node.SLAFlow, rec.NodeID)
+		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: SLAFlow %q not found in definition flows for node %q", slaFlow, rec.NodeID)
 	}
 
 	var cmds []Command
 
 	// (a) Emit the SLA alternative action, if configured.
-	if node.SLAAction != "" {
+	if slaAction != "" {
 		cmdID := s.nextCommandID()
 		cmds = append(cmds, InvokeAction{
 			CommandID: cmdID,
-			Name:      node.SLAAction,
+			Name:      slaAction,
 			Input:     copyVars(s.Variables),
 		})
 	}
@@ -155,14 +156,16 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		return StepResult{}, fmt.Errorf("workflow-engine: reminder fired: node %q not found in definition", rec.NodeID)
 	}
 
+	reminderEvery, reminderAction := model.ReminderOf(node)
+
 	var cmds []Command
 
 	// (1) Fire-and-forget reminder action, if configured.
-	if node.ReminderAction != "" {
+	if reminderAction != "" {
 		cmdID := s.nextCommandID()
 		cmds = append(cmds, InvokeAction{
 			CommandID: cmdID,
-			Name:      node.ReminderAction,
+			Name:      reminderAction,
 			Input:     copyVars(s.Variables),
 		})
 	}
@@ -173,9 +176,9 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 
 	// Re-evaluate the duration from the expression (node variables may differ,
 	// but correctness requires the same expression path as initial scheduling).
-	dur, err := conditions.EvalDuration(node.ReminderEvery, s.Variables)
+	dur, err := conditions.EvalDuration(reminderEvery, s.Variables)
 	if err != nil {
-		return StepResult{}, fmt.Errorf("workflow-engine: reminder node %q re-schedule: %w", node.ID, err)
+		return StepResult{}, fmt.Errorf("workflow-engine: reminder node %q re-schedule: %w", node.ID(), err)
 	}
 	newTimerID := s.nextTimerID()
 	cmds = append(cmds, ScheduleTimer{
@@ -219,7 +222,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 	cmdID := s.nextCommandID()
 	cmds := []Command{InvokeAction{
 		CommandID: cmdID,
-		Name:      node.Action,
+		Name:      model.ActionOf(node),
 		Input:     serviceActionInput(s, node),
 	}}
 	tok.State = TokenWaitingCommand
@@ -227,7 +230,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 
 	// Re-arm boundary events (SLA timers, reminder timers) so they are active
 	// for this invocation attempt.
-	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
+	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID(), at)
 	if err != nil {
 		return cmds, err
 	}

@@ -11,7 +11,7 @@ import (
 // outgoing flow target (definition order). Used for a diverging parallel gateway.
 // scopeID is the gateway token's scope; forked tokens inherit it.
 func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
-	outs := def.Outgoing(node.ID)
+	outs := def.Outgoing(node.ID())
 	s.consumeToken(tok, at)
 	for _, f := range outs {
 		s.placeTokenInScope(f.Target, scopeID, at)
@@ -26,7 +26,7 @@ func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, n
 func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) error {
 	var taken []model.SequenceFlow
 	var dflt *model.SequenceFlow
-	for _, f := range def.Outgoing(node.ID) {
+	for _, f := range def.Outgoing(node.ID()) {
 		if f.IsDefault {
 			ff := f
 			dflt = &ff
@@ -38,7 +38,7 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 		}
 		ok, err := conditions.EvalBool(f.Condition, s.Variables)
 		if err != nil {
-			return fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+			return fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.ID, err)
 		}
 		if ok {
 			taken = append(taken, f)
@@ -46,7 +46,7 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 	}
 	if len(taken) == 0 {
 		if dflt == nil {
-			return fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
+			return fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID())
 		}
 		taken = append(taken, *dflt)
 	}
@@ -73,11 +73,11 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 
 	arrived := 0
 	for i := range s.Tokens {
-		if s.Tokens[i].NodeID == node.ID && s.Tokens[i].State == TokenAtJoin && s.Tokens[i].ScopeID == scopeID {
+		if s.Tokens[i].NodeID == node.ID() && s.Tokens[i].State == TokenAtJoin && s.Tokens[i].ScopeID == scopeID {
 			arrived++
 		}
 	}
-	if arrived < len(def.Incoming(node.ID)) {
+	if arrived < len(def.Incoming(node.ID())) {
 		return // still waiting on other branches in this scope
 	}
 
@@ -85,14 +85,14 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 	// then create one Active token per outgoing flow.
 	kept := make([]Token, 0, len(s.Tokens))
 	for _, t := range s.Tokens {
-		if t.NodeID == node.ID && t.State == TokenAtJoin && t.ScopeID == scopeID {
+		if t.NodeID == node.ID() && t.State == TokenAtJoin && t.ScopeID == scopeID {
 			s.closeVisit(t.ID, t.NodeID, at)
 			continue
 		}
 		kept = append(kept, t)
 	}
 	s.Tokens = kept
-	for _, f := range def.Outgoing(node.ID) {
+	for _, f := range def.Outgoing(node.ID()) {
 		s.placeTokenInScope(f.Target, scopeID, at)
 	}
 }
@@ -110,10 +110,10 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
 	tok.State = TokenAtJoin
 
-	canReach := nodesThatCanReach(def, node.ID)
+	canReach := nodesThatCanReach(def, node.ID())
 	for i := range s.Tokens {
 		t := &s.Tokens[i]
-		if t.NodeID == node.ID && t.State == TokenAtJoin && t.ScopeID == scopeID {
+		if t.NodeID == node.ID() && t.State == TokenAtJoin && t.ScopeID == scopeID {
 			continue // already arrived at the join in this scope
 		}
 		if t.ScopeID == scopeID && canReach[t.NodeID] {
@@ -124,14 +124,14 @@ func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Toke
 	// Fire: consume all tokens parked at this join IN THIS SCOPE, then fork to outgoing flows.
 	kept := make([]Token, 0, len(s.Tokens))
 	for _, t := range s.Tokens {
-		if t.NodeID == node.ID && t.State == TokenAtJoin && t.ScopeID == scopeID {
+		if t.NodeID == node.ID() && t.State == TokenAtJoin && t.ScopeID == scopeID {
 			s.closeVisit(t.ID, t.NodeID, at)
 			continue
 		}
 		kept = append(kept, t)
 	}
 	s.Tokens = kept
-	for _, f := range def.Outgoing(node.ID) {
+	for _, f := range def.Outgoing(node.ID()) {
 		s.placeTokenInScope(f.Target, scopeID, at)
 	}
 }
@@ -167,7 +167,7 @@ func nodesThatCanReach(def *model.ProcessDefinition, target string) map[string]b
 // default flow, else ErrNoMatchingFlow.
 func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node) (string, error) {
 	var defaultFlow *model.SequenceFlow
-	for _, f := range def.Outgoing(node.ID) {
+	for _, f := range def.Outgoing(node.ID()) {
 		if f.IsDefault {
 			ff := f
 			defaultFlow = &ff
@@ -178,7 +178,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 		}
 		ok, err := conditions.EvalBool(f.Condition, s.Variables)
 		if err != nil {
-			return "", fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID, f.ID, err)
+			return "", fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.ID, err)
 		}
 		if ok {
 			return f.Target, nil
@@ -187,7 +187,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 	if defaultFlow != nil {
 		return defaultFlow.Target, nil
 	}
-	return "", fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID)
+	return "", fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID())
 }
 
 // resolveGatewayWin routes an event-based gateway when one of its armed events
