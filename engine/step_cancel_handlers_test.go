@@ -75,12 +75,9 @@ func TestCancelHandler_SingleActiveNode(t *testing.T) {
 		ID: "ch-single", Version: 1,
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID: "user", Kind: model.KindUserTask,
-				CancelHandler: "release-hold",
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("user", nil, model.WithCancelHandler("release-hold")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "user"},
@@ -123,15 +120,12 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "ch-parallel", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
-			{
-				ID: "svc-a", Kind: model.KindServiceTask, Action: "do-a",
-				CancelHandler: "cleanup-a",
-			},
-			{ID: "svc-b", Kind: model.KindServiceTask, Action: "do-b"},
-			{ID: "join", Kind: model.KindParallelGateway},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewServiceTask("svc-a", "do-a", model.WithCancelHandler("cleanup-a")),
+			model.NewServiceTask("svc-b", "do-b"),
+			model.NewParallelGateway("join"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},
@@ -173,12 +167,9 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 	innerDef := &model.ProcessDefinition{
 		ID: "inner", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{
-				ID: "inner-svc", Kind: model.KindServiceTask, Action: "inner-action",
-				CancelHandler: "inner-cleanup",
-			},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "inner-action", model.WithCancelHandler("inner-cleanup")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -190,13 +181,9 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "ch-sub", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:         "sub",
-				Kind:       model.KindSubProcess,
-				Subprocess: innerDef,
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", innerDef),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -251,13 +238,10 @@ func TestCancelHandler_WithCompensation(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "ch-comp", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "charge", CompensationAction: "refund"},
-			{
-				ID: "user", Kind: model.KindUserTask,
-				CancelHandler: "release-hold",
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "charge", model.WithCompensation("refund")),
+			model.NewUserTask("user", nil, model.WithCancelHandler("release-hold")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -314,9 +298,9 @@ func TestCancelHandler_NoneSet(t *testing.T) {
 		ID: "ch-none", Version: 1,
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "user", Kind: model.KindUserTask}, // no CancelHandler
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("user", nil), // no CancelHandler
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "user"},
@@ -350,12 +334,9 @@ func TestCancelHandler_Determinism(t *testing.T) {
 		ID: "ch-det", Version: 1,
 		CancelActions: []string{"def-action"},
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID: "svc", Kind: model.KindServiceTask, Action: "work",
-				CancelHandler: "node-cleanup",
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "work", model.WithCancelHandler("node-cleanup")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},

@@ -15,9 +15,9 @@ func linearDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p1", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "greet", Kind: model.KindServiceTask, Action: "greet"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("greet", "greet"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},

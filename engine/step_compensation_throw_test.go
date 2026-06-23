@@ -38,9 +38,9 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "throw-nested", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -50,14 +50,14 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "throw-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
 			// Compensation throw: when reached, runs ArchivedCompensations["sub"].
-			{ID: "compThrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
+			model.NewIntermediateThrowEvent("compThrow", model.WithCompensateRef("sub")),
 			// After the throw resumes, we park here (UserTask) so the test can observe
 			// that the token arrived at afterThrow and then drove to end.
-			{ID: "afterThrow", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewUserTask("afterThrow", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -196,9 +196,9 @@ func secondThrowDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "second-throw-nested", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-2", CompensationAction: "cancel-2"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book-2", model.WithCompensation("cancel-2")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -208,11 +208,11 @@ func secondThrowDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "second-throw-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "compThrow1", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
-			{ID: "compThrow2", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
+			model.NewIntermediateThrowEvent("compThrow1", model.WithCompensateRef("sub")),
+			model.NewIntermediateThrowEvent("compThrow2", model.WithCompensateRef("sub")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -294,9 +294,9 @@ func throwThenCancelDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "ttc-nested", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-ttc", CompensationAction: "cancel-ttc"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book-ttc", model.WithCompensation("cancel-ttc")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -306,11 +306,11 @@ func throwThenCancelDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "ttc-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "compThrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
-			{ID: "userTask", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
+			model.NewIntermediateThrowEvent("compThrow", model.WithCompensateRef("sub")),
+			model.NewUserTask("userTask", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -490,9 +490,9 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "cmtw-nested", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -502,12 +502,12 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "cmtw-proc", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "rootSvc", Kind: model.KindServiceTask, Action: "book-root", CompensationAction: "cancel-root"},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "compThrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
-			{ID: "afterThrow", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("rootSvc", "book-root", model.WithCompensation("cancel-root")),
+			model.NewSubProcess("sub", nested),
+			model.NewIntermediateThrowEvent("compThrow", model.WithCompensateRef("sub")),
+			model.NewUserTask("afterThrow", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "rootSvc"},
@@ -678,9 +678,9 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 	nested := &model.ProcessDefinition{
 		ID: "throw-nested-noout", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -690,9 +690,9 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "throw-proc-noout", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
-			{ID: "compThrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
+			model.NewIntermediateThrowEvent("compThrow", model.WithCompensateRef("sub")),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},

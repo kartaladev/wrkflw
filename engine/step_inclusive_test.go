@@ -16,14 +16,14 @@ func inclusiveForkDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "or", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "or", Kind: model.KindInclusiveGateway},
-			{ID: "ta", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "tb", Kind: model.KindServiceTask, Action: "b"},
-			{ID: "tc", Kind: model.KindServiceTask, Action: "c"},
-			{ID: "ea", Kind: model.KindEndEvent},
-			{ID: "eb", Kind: model.KindEndEvent},
-			{ID: "ec", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewInclusiveGateway("or"),
+			model.NewServiceTask("ta", "a"),
+			model.NewServiceTask("tb", "b"),
+			model.NewServiceTask("tc", "c"),
+			model.NewEndEvent("ea"),
+			model.NewEndEvent("eb"),
+			model.NewEndEvent("ec"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},
@@ -82,12 +82,12 @@ func TestInclusiveForkUnconditionalFlowSuppressesDefault(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "or2", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "or", Kind: model.KindInclusiveGateway},
-			{ID: "ta", Kind: model.KindServiceTask, Action: "a"}, // unconditional (empty condition)
-			{ID: "tb", Kind: model.KindServiceTask, Action: "b"}, // default
-			{ID: "ea", Kind: model.KindEndEvent},
-			{ID: "eb", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewInclusiveGateway("or"),
+			model.NewServiceTask("ta", "a"), // unconditional (empty condition)
+			model.NewServiceTask("tb", "b"), // default
+			model.NewEndEvent("ea"),
+			model.NewEndEvent("eb"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},
@@ -114,14 +114,14 @@ func orDiamondDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "ord", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "orsplit", Kind: model.KindInclusiveGateway},
-			{ID: "ta", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "tb", Kind: model.KindServiceTask, Action: "b"},
-			{ID: "tc", Kind: model.KindServiceTask, Action: "c"},
-			{ID: "orjoin", Kind: model.KindInclusiveGateway},
-			{ID: "post", Kind: model.KindServiceTask, Action: "post"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewInclusiveGateway("orsplit"),
+			model.NewServiceTask("ta", "a"),
+			model.NewServiceTask("tb", "b"),
+			model.NewServiceTask("tc", "c"),
+			model.NewInclusiveGateway("orjoin"),
+			model.NewServiceTask("post", "post"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},
@@ -207,10 +207,10 @@ func TestInclusiveForkNoMatchNoDefaultErrors(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "or", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "or", Kind: model.KindInclusiveGateway},
-			{ID: "ta", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "ea", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewInclusiveGateway("or"),
+			model.NewServiceTask("ta", "a"),
+			model.NewEndEvent("ea"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},

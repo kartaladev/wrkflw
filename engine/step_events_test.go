@@ -19,10 +19,10 @@ func signalCatchDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-signal", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "catch-approved", Kind: model.KindIntermediateCatchEvent, SignalName: "approved"},
-			{ID: "complete", Kind: model.KindServiceTask, Action: "complete-action"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("catch-approved", model.WithSignalName("approved")),
+			model.NewServiceTask("complete", "complete-action"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-approved"},
@@ -39,10 +39,10 @@ func messageCatchDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-message", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "catch-order", Kind: model.KindIntermediateCatchEvent, MessageName: "order", CorrelationKey: `orderId`},
-			{ID: "process", Kind: model.KindServiceTask, Action: "process-order"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("catch-order", model.WithMessageNameAndKey("order", `orderId`)),
+			model.NewServiceTask("process", "process-order"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-order"},
@@ -59,11 +59,11 @@ func signalThrowDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-throw", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "setup", Kind: model.KindServiceTask, Action: "setup-action"},
-			{ID: "throw-done", Kind: model.KindIntermediateThrowEvent, SignalName: "done"},
-			{ID: "after", Kind: model.KindServiceTask, Action: "after-action"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("setup", "setup-action"),
+			model.NewIntermediateThrowEvent("throw-done", model.WithThrowSignal("done")),
+			model.NewServiceTask("after", "after-action"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "setup"},
@@ -82,12 +82,12 @@ func twoSignalTokensDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-2-signal", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
-			{ID: "catch1", Kind: model.KindIntermediateCatchEvent, SignalName: "wake"},
-			{ID: "catch2", Kind: model.KindIntermediateCatchEvent, SignalName: "wake"},
-			{ID: "end1", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewIntermediateCatchEvent("catch1", model.WithSignalName("wake")),
+			model.NewIntermediateCatchEvent("catch2", model.WithSignalName("wake")),
+			model.NewEndEvent("end1"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -192,11 +192,11 @@ func TestMessageCatchNoCorrelationKeyMatchesOnNameOnly(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "p-msg-nokey", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
+			model.NewStartEvent("start"),
 			// No CorrelationKey: match on name only
-			{ID: "catch-msg", Kind: model.KindIntermediateCatchEvent, MessageName: "ping"},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "pong"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewIntermediateCatchEvent("catch-msg", model.WithMessageNameAndKey("ping", "")),
+			model.NewServiceTask("svc", "pong"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-msg"},
@@ -341,14 +341,14 @@ func eventGatewayDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-evtgw", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "evtgw", Kind: model.KindEventBasedGateway},
-			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "signal-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "approved"},
-			{ID: "timer-branch", Kind: model.KindServiceTask, Action: "timer-action"},
-			{ID: "signal-branch", Kind: model.KindServiceTask, Action: "signal-action"},
-			{ID: "end1", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewEventBasedGateway("evtgw"),
+			model.NewIntermediateCatchEvent("timer-catch", model.WithTimerDuration(`"1h"`)),
+			model.NewIntermediateCatchEvent("signal-catch", model.WithSignalName("approved")),
+			model.NewServiceTask("timer-branch", "timer-action"),
+			model.NewServiceTask("signal-branch", "signal-action"),
+			model.NewEndEvent("end1"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "evtgw"},
@@ -510,14 +510,14 @@ func eventGatewayMessageDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-evtgw-msg", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "evtgw", Kind: model.KindEventBasedGateway},
-			{ID: "timer-catch", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "msg-catch", Kind: model.KindIntermediateCatchEvent, MessageName: "order"},
-			{ID: "timer-branch", Kind: model.KindServiceTask, Action: "timer-action"},
-			{ID: "msg-branch", Kind: model.KindServiceTask, Action: "msg-action"},
-			{ID: "end1", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewEventBasedGateway("evtgw"),
+			model.NewIntermediateCatchEvent("timer-catch", model.WithTimerDuration(`"1h"`)),
+			model.NewIntermediateCatchEvent("msg-catch", model.WithMessageNameAndKey("order", "")),
+			model.NewServiceTask("timer-branch", "timer-action"),
+			model.NewServiceTask("msg-branch", "msg-action"),
+			model.NewEndEvent("end1"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "evtgw"},
@@ -602,13 +602,12 @@ func interruptingBoundaryTimerDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-bnd-timer", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "approve", Kind: model.KindUserTask},
-			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "approve",
-				TimerDuration: `"3h"`, NonInterrupting: false},
-			{ID: "escalate", Kind: model.KindServiceTask, Action: "escalate-action"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("approve", nil),
+			model.NewBoundaryEvent("bnd-timer", "approve", model.WithBoundaryTimer(`"3h"`)),
+			model.NewServiceTask("escalate", "escalate-action"),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "approve"},
@@ -697,13 +696,12 @@ func nonInterruptingBoundaryDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-bnd-nonint", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "work", Kind: model.KindUserTask},
-			{ID: "bnd-signal", Kind: model.KindBoundaryEvent, AttachedTo: "work",
-				SignalName: "notify", NonInterrupting: true},
-			{ID: "notify-svc", Kind: model.KindServiceTask, Action: "notify-action"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("work", nil),
+			model.NewBoundaryEvent("bnd-signal", "work", model.WithBoundarySignal("notify"), model.BoundaryNonInterrupting()),
+			model.NewServiceTask("notify-svc", "notify-action"),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -798,13 +796,12 @@ func hostCompletionCancelsBoundaryDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-bnd-hostfirst", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "work", Kind: model.KindServiceTask, Action: "work-action"},
-			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "work",
-				TimerDuration: `"1h"`, NonInterrupting: false},
-			{ID: "alert", Kind: model.KindServiceTask, Action: "alert-action"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("work", "work-action"),
+			model.NewBoundaryEvent("bnd-timer", "work", model.WithBoundaryTimer(`"1h"`)),
+			model.NewServiceTask("alert", "alert-action"),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -880,13 +877,12 @@ func badBoundaryDurationDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-bad-bnd-dur", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "work", Kind: model.KindServiceTask, Action: "work-action"},
-			{ID: "bnd-bad", Kind: model.KindBoundaryEvent, AttachedTo: "work",
-				TimerDuration: `"not a duration"`, NonInterrupting: false},
-			{ID: "alert", Kind: model.KindServiceTask, Action: "alert-action"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("work", "work-action"),
+			model.NewBoundaryEvent("bnd-bad", "work", model.WithBoundaryTimer(`"not a duration"`)),
+			model.NewServiceTask("alert", "alert-action"),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -924,13 +920,12 @@ func actionFailedCancelsArmsAndBoundariesDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-af-cancel", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "work", Kind: model.KindServiceTask, Action: "work-action"},
-			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "work",
-				TimerDuration: `"2h"`, NonInterrupting: false},
-			{ID: "alert", Kind: model.KindServiceTask, Action: "alert-action"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("work", "work-action"),
+			model.NewBoundaryEvent("bnd-timer", "work", model.WithBoundaryTimer(`"2h"`)),
+			model.NewServiceTask("alert", "alert-action"),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -1019,14 +1014,13 @@ func nonInterruptingBoundarySignalSelfCascadeDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-nonint-selfcascade", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "work", Kind: model.KindUserTask},
-			{ID: "bnd-pulse", Kind: model.KindBoundaryEvent, AttachedTo: "work",
-				SignalName: "pulse", NonInterrupting: true},
+			model.NewStartEvent("start"),
+			model.NewUserTask("work", nil),
+			model.NewBoundaryEvent("bnd-pulse", "work", model.WithBoundarySignal("pulse"), model.BoundaryNonInterrupting()),
 			// The boundary's outgoing path leads to a signal catch for the same signal.
-			{ID: "inner-catch", Kind: model.KindIntermediateCatchEvent, SignalName: "pulse"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end2", Kind: model.KindEndEvent},
+			model.NewIntermediateCatchEvent("inner-catch", model.WithSignalName("pulse")),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end2"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},

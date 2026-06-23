@@ -55,11 +55,11 @@ func parallelErrorEndFirstNoHandlerDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-par-errend-first", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
 			// err-end FIRST so forkParallel places its token before svc-a.
-			{ID: "err-end", Kind: model.KindErrorEndEvent, ErrorCode: "FATAL"},
-			{ID: "svc-a", Kind: model.KindServiceTask, Action: "svc-a"},
+			model.NewErrorEndEvent("err-end", "FATAL"),
+			model.NewServiceTask("svc-a", "svc-a"),
 			// NO boundary error handler anywhere.
 		},
 		Flows: []model.SequenceFlow{

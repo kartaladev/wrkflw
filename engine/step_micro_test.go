@@ -24,10 +24,10 @@ func microForkDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "mfork", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
-			{ID: "svc-a", Kind: model.KindServiceTask, Action: "do-a"},
-			{ID: "svc-b", Kind: model.KindServiceTask, Action: "do-b"},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewServiceTask("svc-a", "do-a"),
+			model.NewServiceTask("svc-b", "do-b"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -43,9 +43,9 @@ func linearEndDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "lend", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "svc", Kind: model.KindServiceTask, Action: "work"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("svc", "work"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
