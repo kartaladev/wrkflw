@@ -23,10 +23,10 @@ func timerIntermediateE2EDef() *model.ProcessDefinition {
 		ID:      "timer-intermediate",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait1h", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "greet", Kind: model.KindServiceTask, Action: "greet"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
+			model.NewServiceTask("greet", "greet"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
