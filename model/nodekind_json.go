@@ -42,6 +42,15 @@ func init() {
 	}
 }
 
+// String returns the stable lowerCamelCase name of the NodeKind (e.g. "startEvent").
+// It implements fmt.Stringer so NodeKind values format correctly with %s and %v.
+func (k NodeKind) String() string {
+	if name, ok := nodeKindNames[k]; ok {
+		return name
+	}
+	return fmt.Sprintf("NodeKind(%d)", int(k))
+}
+
 // MarshalJSON encodes NodeKind as its stable name string (e.g. "startEvent").
 // Encoding by name rather than by iota ordinal ensures that reordering or
 // inserting new constants in the iota block never corrupts persisted definitions.
