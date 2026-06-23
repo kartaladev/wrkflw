@@ -18,9 +18,9 @@ func linearDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "greeting", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "greet", Kind: model.KindServiceTask, Action: "greet"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("greet", "greet"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
@@ -33,12 +33,12 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "diamond", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "fork", Kind: model.KindParallelGateway},
-			{ID: "a", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "b", Kind: model.KindServiceTask, Action: "b"},
-			{ID: "join", Kind: model.KindParallelGateway},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewServiceTask("a", "a"),
+			model.NewServiceTask("b", "b"),
+			model.NewParallelGateway("join"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -77,13 +77,13 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "ord", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "orsplit", Kind: model.KindInclusiveGateway},
-			{ID: "ta", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "tb", Kind: model.KindServiceTask, Action: "b"},
-			{ID: "tc", Kind: model.KindServiceTask, Action: "c"},
-			{ID: "orjoin", Kind: model.KindInclusiveGateway},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewInclusiveGateway("orsplit"),
+			model.NewServiceTask("ta", "a"),
+			model.NewServiceTask("tb", "b"),
+			model.NewServiceTask("tc", "c"),
+			model.NewInclusiveGateway("orjoin"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},

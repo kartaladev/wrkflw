@@ -26,9 +26,9 @@ func cancelPropParentDef(id, childDefRef string) *model.ProcessDefinition {
 		ID:      id,
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "p-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: childDefRef},
-			{ID: "p-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("p-start"),
+			model.NewCallActivity("call", childDefRef),
+			model.NewEndEvent("p-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "pf1", Source: "p-start", Target: "call"},
@@ -45,9 +45,9 @@ func cancelPropChildDef(id string) *model.ProcessDefinition {
 		ID:      id,
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "c-start", Kind: model.KindStartEvent},
-			{ID: "c-human", Kind: model.KindUserTask},
-			{ID: "c-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("c-start"),
+			model.NewUserTask("c-human", nil),
+			model.NewEndEvent("c-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "cf1", Source: "c-start", Target: "c-human"},
@@ -368,9 +368,9 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 		ID:      "no-cl-parent",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "human", Kind: model.KindUserTask},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("human", nil),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "human"},

@@ -25,19 +25,14 @@ func retryE2EDef() *model.ProcessDefinition {
 		ID:      "retry-e2e",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:     "task",
-				Kind:   model.KindServiceTask,
-				Action: "a",
-				RetryPolicy: &model.RetryPolicy{
-					MaxAttempts:     5,
-					InitialInterval: time.Second,
-					BackoffCoef:     2.0,
-					MaxInterval:     time.Minute,
-				},
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a", model.WithRetryPolicy(&model.RetryPolicy{
+				MaxAttempts:     5,
+				InitialInterval: time.Second,
+				BackoffCoef:     2.0,
+				MaxInterval:     time.Minute,
+			})),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},

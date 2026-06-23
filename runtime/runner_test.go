@@ -114,9 +114,9 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 		ID:      "user-task-only",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task1", Kind: model.KindUserTask, CandidateRoles: []string{"manager"}},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("task1", []string{"manager"}),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task1"},
@@ -149,9 +149,9 @@ func timerOnlyDef() *model.ProcessDefinition {
 		ID:      "timer-only",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait", model.WithTimerDuration(`"1h"`)),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},
@@ -263,9 +263,9 @@ func conflictTimerDef() *model.ProcessDefinition {
 		ID:      "conflict-timer",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait10s", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"10s"`},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait10s", model.WithTimerDuration(`"10s"`)),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait10s"},

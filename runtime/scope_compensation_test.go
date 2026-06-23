@@ -39,9 +39,9 @@ func scopeCompensationDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "scope-comp-nested", Version: 1,
 		Nodes: []model.Node{
-			{ID: "inner-start", Kind: model.KindStartEvent},
-			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book", CompensationAction: "cancel-book"},
-			{ID: "inner-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("inner-start"),
+			model.NewServiceTask("inner-svc", "book", model.WithCompensation("cancel-book")),
+			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -51,11 +51,11 @@ func scopeCompensationDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "scope-comp-def", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
+			model.NewStartEvent("start"),
+			model.NewSubProcess("sub", nested),
 			// Compensation throw: runs ArchivedCompensations["sub"] then resumes.
-			{ID: "compThrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewIntermediateThrowEvent("compThrow", model.WithCompensateRef("sub")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},

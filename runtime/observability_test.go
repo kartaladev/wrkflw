@@ -214,9 +214,9 @@ func paymentDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "payment", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "charge", Kind: model.KindServiceTask, Action: "charge"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("charge", "charge"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
@@ -336,9 +336,9 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "incident-obs", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task", Kind: model.KindServiceTask, Action: "a"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -517,9 +517,9 @@ func TestDeliverSpan(t *testing.T) {
 	msgDef := &model.ProcessDefinition{
 		ID: "msg-deliver-obs", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "catch", Kind: model.KindIntermediateCatchEvent, MessageName: "pay.confirmed", CorrelationKey: `"ord-42"`},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("catch", model.WithMessageNameAndKey("pay.confirmed", `"ord-42"`)),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch"},

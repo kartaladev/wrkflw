@@ -36,14 +36,9 @@ func cancelHandlerDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "cancel-handler-def", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:             "approve",
-				Kind:           model.KindUserTask,
-				CandidateRoles: []string{"reviewer"},
-				CancelHandler:  "cleanup",
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("approve", []string{"reviewer"}, model.WithCancelHandler("cleanup")),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},

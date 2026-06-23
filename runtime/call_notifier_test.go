@@ -24,9 +24,9 @@ func notifierChildDef() *model.ProcessDefinition {
 		ID:      "notifier-child",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "child-start", Kind: model.KindStartEvent},
-			{ID: "child-task", Kind: model.KindUserTask, CandidateRoles: []string{"worker"}},
-			{ID: "child-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("child-start"),
+			model.NewUserTask("child-task", []string{"worker"}),
+			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "ncf1", Source: "child-start", Target: "child-task"},
@@ -43,9 +43,9 @@ func notifierParentDef() *model.ProcessDefinition {
 		ID:      "notifier-parent",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "parent-start", Kind: model.KindStartEvent},
-			{ID: "call", Kind: model.KindCallActivity, DefRef: "notifier-child"},
-			{ID: "parent-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("parent-start"),
+			model.NewCallActivity("call", "notifier-child"),
+			model.NewEndEvent("parent-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "npf1", Source: "parent-start", Target: "call"},

@@ -78,18 +78,16 @@ func sagaDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "saga", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "book", Kind: model.KindServiceTask, Action: "book",
-				CompensationAction: "cancel-booking"},
-			{ID: "pay", Kind: model.KindServiceTask, Action: "pay",
-				CompensationAction: "refund"},
-			{ID: "ship", Kind: model.KindServiceTask, Action: "ship"},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("book", "book", model.WithCompensation("cancel-booking")),
+			model.NewServiceTask("pay", "pay", model.WithCompensation("refund")),
+			model.NewServiceTask("ship", "ship"),
 			// Boundary catches ship failure so the unhandled-error auto-compensation
 			// path (ADR-0034) is not triggered; RootCompensations stays intact for
 			// the admin-triggered CompensateRequested below.
-			{ID: "ship-err", Kind: model.KindBoundaryEvent, AttachedTo: "ship", ErrorCode: ""},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end-fail", Kind: model.KindEndEvent},
+			model.NewBoundaryEvent("ship-err", "ship", model.WithBoundaryErrorCode("")),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end-fail"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "book"},
@@ -189,13 +187,13 @@ func boundaryErrorDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "boundary-error-recovery", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "risky", Kind: model.KindServiceTask, Action: "risky-action"},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("risky", "risky-action"),
 			// KindBoundaryEvent: error boundary attached to "risky", catch-all (ErrorCode=="").
-			{ID: "err-boundary", Kind: model.KindBoundaryEvent, AttachedTo: "risky", ErrorCode: ""},
-			{ID: "recover", Kind: model.KindServiceTask, Action: "recover-action"},
-			{ID: "end", Kind: model.KindEndEvent},
-			{ID: "end-recovery", Kind: model.KindEndEvent},
+			model.NewBoundaryEvent("err-boundary", "risky", model.WithBoundaryErrorCode("")),
+			model.NewServiceTask("recover", "recover-action"),
+			model.NewEndEvent("end"),
+			model.NewEndEvent("end-recovery"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "risky"},

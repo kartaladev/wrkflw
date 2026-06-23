@@ -24,10 +24,10 @@ func timerIntermediateDef() *model.ProcessDefinition {
 		ID:      "timer-intermediate",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait1h", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "greet", Kind: model.KindServiceTask, Action: "greet"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
+			model.NewServiceTask("greet", "greet"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
@@ -99,17 +99,10 @@ func slaUserTaskDef() *model.ProcessDefinition {
 		ID:      "sla-user-task",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:             "review",
-				Kind:           model.KindUserTask,
-				CandidateRoles: []string{"reviewer"},
-				SLADuration:    `"30m"`,
-				SLAFlow:        "escalate",
-				SLAAction:      "notify-escalation",
-			},
-			{ID: "end-normal", Kind: model.KindEndEvent},
-			{ID: "end-escalated", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("review", []string{"reviewer"}, model.WithSLA(`"30m"`, "escalate", "notify-escalation")),
+			model.NewEndEvent("end-normal"),
+			model.NewEndEvent("end-escalated"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
