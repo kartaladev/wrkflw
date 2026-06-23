@@ -142,17 +142,33 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			}
 		}
 
-		// ADR-0039 (B1 fix): if a compensation THROW walk is already in flight
-		// (ResumeNode != "" distinguishes a throw walk from a terminal cancel/error walk),
-		// do NOT start a second compensation walk. beginCompensation would consolidate the
-		// throw's own not-yet-deleted archived records into root and re-emit them →
-		// double-compensation. Defer: record the cancel intent and let the in-flight throw
-		// walk finish; stepCompensationFinish then runs a full cancel over the REMAINING
-		// records (the throw's target is deleted by then) and terminates instead of resuming.
-		if s.Status == StatusCompensating && s.Compensating.ResumeNode != "" {
-			s.PendingCancel = true
-			cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
-			return StepResult{State: s, Commands: cmds}, nil
+		// If a compensation walk is ALREADY in flight, never start a second one: a
+		// second beginCompensation re-walks records that are still mid-consumption and
+		// re-emits the in-flight compensation, double-running money-moving actions.
+		if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
+			if s.Compensating.ResumeNode != "" {
+				// ADR-0039 (B1): a compensation THROW walk is in flight; it would
+				// otherwise RESUME past the throw, so the instance would keep running.
+				// Defer this cancel — record the intent and let the throw walk finish;
+				// stepCompensationFinish then runs a full cancel over the REMAINING
+				// records (the throw's target is deleted by then) and terminates instead
+				// of resuming.
+				s.PendingCancel = true
+				cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
+				return StepResult{State: s, Commands: cmds}, nil
+			}
+			// A TERMINAL (cancel/error/full-rollback) or admin PARTIAL-rollback walk is
+			// already in flight (ResumeNode == ""). The instance is already being
+			// compensated; a redundant cancel must NOT re-enter beginCompensation (which
+			// would re-emit the in-flight record → double-compensation). No-op: the
+			// in-flight walk drives the instance to its terminal (or, for an admin partial
+			// rollback, resuming) end on its own. The records already fired their cancel
+			// actions when the in-flight walk began, so none are re-emitted here.
+			//
+			// Limitation: a cancel racing an admin PARTIAL rollback is therefore dropped
+			// (the partial walk resumes at its ToNode) — a rare admin-debug edge accepted
+			// in exchange for the no-double-compensation guarantee.
+			return StepResult{State: s, Commands: nil}, nil
 		}
 
 		if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
@@ -2751,6 +2767,12 @@ func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecor
 // finalErr, producing StatusTerminated with no FailInstance on a full rollback —
 // identical to the prior behaviour.
 func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode) (StepResult, error) {
+	// If a compensation walk is already in flight, ignore the redundant request:
+	// restarting beginCompensation would re-walk records that are still
+	// mid-consumption and re-emit the in-flight compensation (double-compensation).
+	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
+		return StepResult{State: *s}, nil
+	}
 	s.Status = StatusCompensating
 	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode)
 }

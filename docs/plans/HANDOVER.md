@@ -20,7 +20,7 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0039 (0039 = scope-targeted compensation, branch `feat/scope-targeted-compensation`; 0038 =
+ADRs 0001–0040 (0040 = no compensation-walk re-entry / mid-walk double-comp fix; 0039 = scope-targeted compensation, branch `feat/scope-targeted-compensation`; 0038 =
 admin total-count + Lookup ctx, branch `feat/small-api-completeness`; 0037 =
 observability handler + Store spans, branch `feat/observability-gaps`; 0036 =
 casbin policy-admin, branch `feat/casbin-policy-admin`; 0035 = per-node cancel handlers, branch
@@ -76,7 +76,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0040**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0041**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -99,13 +99,13 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
   *(casbin adapter/watcher `context` propagation — CLOSED as a non-issue, ADR-0036 §0: upstream casbin
   persist.Adapter has no ctx; watcher already threads its lifecycle ctx)*; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
-  **⚠️ HIGH-PRIORITY FOLLOW-UP (pre-existing, found during ADR-0039 review):** a `CancelRequested`
-  delivered MID an in-flight TERMINAL cancel/error compensation walk (the ADR-0034 `RootCompensations`
-  walk, `Compensating.ResumeNode==""`) re-enters `beginCompensation` and **re-emits the in-flight
-  compensation record → double-compensation**. Pre-dates ADR-0039 (not introduced/worsened by it; the
-  ADR-0039 B1 fix handles the throw-walk case, `ResumeNode!=""`). `TestRedeliveredCancelIdempotent`
-  only guards the terminal state, not mid-walk. Fix: generalize the ADR-0039 PendingCancel defer idiom
-  to mid-terminal-walk re-cancel. Same money-double-run class as B1 — fix soon.
+  *(mid-walk compensation re-entry double-compensation — ✅ FIXED, ADR-0040: a `CancelRequested` /
+  `CompensateRequested` delivered MID an in-flight terminal/partial compensation walk now NO-OPs
+  instead of re-entering `beginCompensation` and re-emitting the in-flight record; the throw-walk case
+  keeps the ADR-0039 `PendingCancel` defer)*. **Remaining (pre-existing, lower-prio):** in **Macro**
+  mode, two compensation-throw nodes in parallel branches within ONE `drive` pass would overwrite the
+  single `s.Compensating` cursor (intra-`drive`, orthogonal to the Step-trigger re-entry fixed in 0040);
+  + the separate partial-rollback record-retention hazard (no `recordCompensation` dedup).
 - **Production-hardening:** *(cancellation propagation parent→child — ✅ DONE ADR-0032; orphaned-child
   cleanup handled by ErrTokenNotFound path; `wrkflw_processed_message` pruning — ✅ DONE ADR-0033)*;
   *(per-active-node cancel handlers — ✅ DONE ADR-0035)*;

@@ -849,3 +849,151 @@ func TestArchiveTwoLevelNestedCompensation(t *testing.T) {
 	require.Contains(t, gotActions, "gc-comp",
 		"grandchild activity must be rollback-able via archive consolidation after two-level nesting")
 }
+
+// TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate is a regression test
+// for a pre-existing double-compensation bug found during the ADR-0039 review: a
+// CancelRequested delivered while a TERMINAL cancel/error compensation walk is
+// already in flight (Compensating.ResumeNode == "") must NOT re-enter
+// beginCompensation — doing so re-emits the in-flight compensation record, running
+// a money-moving action twice. Each completed compensable activity must be
+// compensated AT MOST ONCE.
+func TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate(t *testing.T) {
+	def := threeCompensableDef()
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	state := runThreeCompensableActivities(t) // 3 root compensations (step1/2/3), Running.
+
+	invokeCount := map[string]int{}
+	record := func(cmds []engine.Command) {
+		for _, c := range cmds {
+			if ia, ok := c.(engine.InvokeAction); ok {
+				invokeCount[ia.Name]++
+			}
+		}
+	}
+
+	// Cancel #1 → starts the terminal compensation walk; emits c3 (most recent).
+	rA, err := engine.Step(def, state,
+		engine.NewCancelRequested(at.Add(10*time.Second)), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompensating, rA.State.Status)
+	record(rA.Commands)
+	var c3cmd string
+	for _, c := range rA.Commands {
+		if ia, ok := c.(engine.InvokeAction); ok && ia.Name == "c3" {
+			c3cmd = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, c3cmd, "cancel #1 must emit InvokeAction c3")
+
+	// Cancel #2 mid-walk (BEFORE c3's ActionCompleted). It must NOT start a second
+	// compensation walk: no new compensation InvokeAction.
+	rB, err := engine.Step(def, rA.State,
+		engine.NewCancelRequested(at.Add(11*time.Second)), engine.StepOptions{})
+	require.NoError(t, err)
+	for _, c := range rB.Commands {
+		_, isInvoke := c.(engine.InvokeAction)
+		assert.False(t, isInvoke,
+			"a cancel during an in-flight compensation walk must not emit a second compensation InvokeAction")
+	}
+
+	// Complete the walk on the ORIGINAL cursor (c3 → c2 → c1 → terminate). If the
+	// redundant cancel had restarted the walk, c3cmd would no longer be in flight
+	// and this would error / mis-route.
+	rC, err := engine.Step(def, rB.State,
+		engine.NewActionCompleted(at.Add(12*time.Second), c3cmd, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	record(rC.Commands)
+	c2cmd := firstInvokeCmd(rC.Commands, "c2")
+	require.NotEmpty(t, c2cmd, "walk must continue to c2 on the original cursor")
+
+	rD, err := engine.Step(def, rC.State,
+		engine.NewActionCompleted(at.Add(13*time.Second), c2cmd, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	record(rD.Commands)
+	c1cmd := firstInvokeCmd(rD.Commands, "c1")
+	require.NotEmpty(t, c1cmd, "walk must continue to c1")
+
+	rE, err := engine.Step(def, rD.State,
+		engine.NewActionCompleted(at.Add(14*time.Second), c1cmd, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	record(rE.Commands)
+
+	// Each compensation ran EXACTLY once; the instance terminated.
+	assert.Equal(t, 1, invokeCount["c1"], "c1 compensated exactly once")
+	assert.Equal(t, 1, invokeCount["c2"], "c2 compensated exactly once")
+	assert.Equal(t, 1, invokeCount["c3"],
+		"c3 compensated exactly once (not re-emitted by the redundant mid-walk cancel)")
+	assert.Equal(t, engine.StatusTerminated, rE.State.Status)
+}
+
+// TestSecondCompensateRequestedMidWalkDoesNotDoubleCompensate is the companion
+// regression test for the second trigger that can re-enter beginCompensation: a
+// redundant admin CompensateRequested delivered while a compensation walk is
+// already in flight must NOT restart the walk (which would re-emit the in-flight
+// record).
+func TestSecondCompensateRequestedMidWalkDoesNotDoubleCompensate(t *testing.T) {
+	def := threeCompensableDef()
+	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+	state := runThreeCompensableActivities(t)
+
+	invokeCount := map[string]int{}
+	record := func(cmds []engine.Command) {
+		for _, c := range cmds {
+			if ia, ok := c.(engine.InvokeAction); ok {
+				invokeCount[ia.Name]++
+			}
+		}
+	}
+
+	// Admin CompensateRequested (full rollback) → walk starts, emits c3.
+	rA, err := engine.Step(def, state,
+		engine.NewCompensateRequested(at.Add(10*time.Second), ""), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompensating, rA.State.Status)
+	record(rA.Commands)
+	c3cmd := firstInvokeCmd(rA.Commands, "c3")
+	require.NotEmpty(t, c3cmd)
+
+	// A SECOND CompensateRequested mid-walk must NOT emit a second InvokeAction.
+	rB, err := engine.Step(def, rA.State,
+		engine.NewCompensateRequested(at.Add(11*time.Second), ""), engine.StepOptions{})
+	require.NoError(t, err)
+	for _, c := range rB.Commands {
+		_, isInvoke := c.(engine.InvokeAction)
+		assert.False(t, isInvoke,
+			"a redundant CompensateRequested during an in-flight walk must not re-emit a compensation")
+	}
+
+	// The walk continues on the original cursor: c3 → c2 → c1 → terminate.
+	rC, err := engine.Step(def, rB.State,
+		engine.NewActionCompleted(at.Add(12*time.Second), c3cmd, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	record(rC.Commands)
+	c2cmd := firstInvokeCmd(rC.Commands, "c2")
+	require.NotEmpty(t, c2cmd)
+	rD, err := engine.Step(def, rC.State,
+		engine.NewActionCompleted(at.Add(13*time.Second), c2cmd, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	record(rD.Commands)
+	c1cmd := firstInvokeCmd(rD.Commands, "c1")
+	require.NotEmpty(t, c1cmd)
+	rE, err := engine.Step(def, rD.State,
+		engine.NewActionCompleted(at.Add(14*time.Second), c1cmd, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	record(rE.Commands)
+
+	assert.Equal(t, 1, invokeCount["c1"], "c1 compensated exactly once")
+	assert.Equal(t, 1, invokeCount["c2"], "c2 compensated exactly once")
+	assert.Equal(t, 1, invokeCount["c3"], "c3 compensated exactly once")
+}
+
+// firstInvokeCmd returns the CommandID of the first InvokeAction with the given
+// name in cmds, or "" if none.
+func firstInvokeCmd(cmds []engine.Command, name string) string {
+	for _, c := range cmds {
+		if ia, ok := c.(engine.InvokeAction); ok && ia.Name == name {
+			return ia.CommandID
+		}
+	}
+	return ""
+}
