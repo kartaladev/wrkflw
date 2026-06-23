@@ -182,7 +182,7 @@ WithName(name string)
 task := model.NewServiceTask("charge", "charge-card",
     model.WithName("Charge Card"),
     model.WithCompensation("refund-card"),
-    model.WithSLA("PT2H", "sla-breach-flow", "notify-ops"),
+    model.WithSLA("2h", "sla-breach-flow", "notify-ops"),
     model.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts:     5,
         InitialInterval: 2 * time.Second,
@@ -196,8 +196,8 @@ task := model.NewServiceTask("charge", "charge-card",
 ```go
 task := model.NewUserTask("approve", []string{"manager"},
     model.WithName("Approve Order"),
-    model.WithEligibilityExpr(`vars["region"] == actor.Region`),
-    model.WithReminder("PT24H", "send-reminder-email"),
+    model.WithEligibilityExpr(`actor.Attributes["region"] == "EU"`),
+    model.WithReminder("24h", "send-reminder-email"),
 )
 ```
 
@@ -384,7 +384,7 @@ nodes:
     kind: userTask
     name: Approve Order
     candidateRoles: [manager]
-    slaDuration: PT48H
+    slaDuration: 48h
     slaFlow: sla-breach->notify
     slaAction: notify-ops
 
