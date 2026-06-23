@@ -5,7 +5,7 @@
 //
 //	start → review[UserTask] ───────────────→ approved-end
 //	             │
-//	             │ (boundary timer PT1H, interrupting)
+//	             │ (boundary timer 1h, interrupting)
 //	             ↓
 //	         escalate[Service] → escalated-end
 //
