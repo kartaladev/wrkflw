@@ -65,6 +65,16 @@ type Service interface {
 	// definition-level cancel actions best-effort. Returns ErrConflict when the
 	// instance has already reached a terminal state.
 	CancelInstance(ctx context.Context, req CancelInstanceRequest) (engine.InstanceState, error)
+
+	// GetInstanceWithDefinition loads the current state of an existing instance
+	// and resolves its process definition from the registry. It is the transport
+	// layer's entry point whenever both the state and the definition are needed
+	// (e.g. to build an InstanceSnapshot or ActionableView).
+	//
+	// Returns runtime.ErrInstanceNotFound when no instance exists for the ID and
+	// runtime.ErrDefinitionNotFound when the registry has no entry for the
+	// instance's DefID:DefVersion key.
+	GetInstanceWithDefinition(ctx context.Context, instanceID string) (engine.InstanceState, *model.ProcessDefinition, error)
 }
 
 // Engine is the concrete implementation of Service. It wires together the
@@ -144,6 +154,18 @@ func (e *Engine) GetInstance(ctx context.Context, instanceID string) (engine.Ins
 		return engine.InstanceState{}, fmt.Errorf("workflow-service: get instance: %w", err)
 	}
 	return st, nil
+}
+
+// GetInstanceWithDefinition loads the current state of an existing instance and
+// resolves its process definition from the registry. It delegates to the private
+// resolveDefinition helper so that both pieces are fetched atomically from the
+// same store and registry.
+func (e *Engine) GetInstanceWithDefinition(ctx context.Context, instanceID string) (engine.InstanceState, *model.ProcessDefinition, error) {
+	def, st, err := e.resolveDefinition(ctx, instanceID)
+	if err != nil {
+		return engine.InstanceState{}, nil, fmt.Errorf("workflow-service: get instance with definition: %w", err)
+	}
+	return st, def, nil
 }
 
 // DeliverSignal resumes a process instance that is parked at a signal-catch
