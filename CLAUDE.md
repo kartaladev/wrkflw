@@ -257,30 +257,6 @@ On completion of any change, verify:
 2. `go test ./...` from the repo root passes — no regressions elsewhere.
 3. `golangci-lint run ./...` is clean. Use the `cc-skills-golang:golang-lint` skill if configuration is needed.
 
-## README Discipline (MANDATORY after every coding or plan-execution session)
-
-The root `README.md` is the public face of the library and **must not drift** from the
-code. At the **end of every coding session and every plan execution**, before you report
-completion, you MUST:
-
-1. **Review** `README.md` against the changes you made — check at minimum: the public
-   API surface (constructors, options, signatures), the Node-types reference, the
-   Complex-scenarios section, the package map, the authoring-forms table, and any code
-   snippet touching a symbol you changed.
-2. **Update** `README.md` if anything is now inaccurate, incomplete, or newly worth
-   documenting (new node type/option, new runtime option, new transport surface, changed
-   signature, removed feature, etc.). A new exported capability is not "done" until it is
-   reachable and documented through the README.
-3. **Guarantee correctness of examples.** Every Go snippet in `README.md` must compile.
-   Scenario programs live under `examples/scenarios/<name>/` as real `package main`
-   programs; when a snippet's behaviour changes, update the matching example and re-run
-   `go build ./examples/...` and `go vet ./examples/...` until clean before embedding the
-   verified code back into the README.
-4. **Record the outcome.** State explicitly in your completion report whether the README
-   needed changes and what you changed (or "README reviewed — no changes needed").
-
-This review is a deliverable in its own right; skipping it leaves the session incomplete.
-
 ## Common Pitfalls
 
 1. Don't ignore pre-existing errors in packages you aren't working on. Never excuse them as "not caused by this session." Queue them as follow-up tasks and address by priority.
