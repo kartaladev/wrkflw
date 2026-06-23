@@ -142,6 +142,19 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			}
 		}
 
+		// ADR-0039 (B1 fix): if a compensation THROW walk is already in flight
+		// (ResumeNode != "" distinguishes a throw walk from a terminal cancel/error walk),
+		// do NOT start a second compensation walk. beginCompensation would consolidate the
+		// throw's own not-yet-deleted archived records into root and re-emit them →
+		// double-compensation. Defer: record the cancel intent and let the in-flight throw
+		// walk finish; stepCompensationFinish then runs a full cancel over the REMAINING
+		// records (the throw's target is deleted by then) and terminates instead of resuming.
+		if s.Status == StatusCompensating && s.Compensating.ResumeNode != "" {
+			s.PendingCancel = true
+			cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
+			return StepResult{State: s, Commands: cmds}, nil
+		}
+
 		if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 			// Compensation walk before termination (ADR-0034).
 			// beginCompensation consolidates ArchivedCompensations into RootCompensations
@@ -2969,6 +2982,14 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		// Remove the archive entry (consume semantics — single ownership).
 		if archiveKey != "" && s.ArchivedCompensations != nil {
 			delete(s.ArchivedCompensations, archiveKey)
+		}
+		if s.PendingCancel {
+			// A cancel arrived mid-throw-walk. The throw's target is now compensated and
+			// removed from the archive, so a full cancel over the REMAINING records
+			// (root + other archives) cannot double-run it. Run it and terminate.
+			s.PendingCancel = false
+			s.Status = StatusCompensating
+			return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode)
 		}
 		s.Status = StatusRunning
 		// Place the resume token in the correct scope (the throw token's scope).

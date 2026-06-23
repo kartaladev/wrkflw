@@ -469,6 +469,198 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 		"cancel walk must emit cancel-inner from consolidated archive")
 }
 
+// ── (f) B1 fix: cancel mid throw-walk must not double-compensate ─────────────
+
+// cancelMidThrowDef returns a process definition:
+//
+//	start → rootSvc(CompensationAction:"cancel-root") → sub(inner-svc, CompensationAction:"cancel-inner")
+//	      → compThrow(ref:"sub") → afterThrow(UserTask) → end
+//
+// The root-level service task (rootSvc) completes first (recorded in RootCompensations).
+// Then the sub-process completes (inner-svc archived under "sub").
+// Then the throw fires: starts a throw walk (StatusCompensating, ResumeNode="afterThrow").
+// At this point, a CancelRequested arrives (mid-walk).
+// Then the throw's ActionCompleted arrives (walk finishes → deferred cancel runs).
+//
+// Correct behaviour:
+//   - cancel-inner invoked exactly once (from the throw walk)
+//   - cancel-root invoked exactly once (from the deferred cancel over remaining records)
+//   - instance terminates (StatusTerminated, FailInstance{"cancelled"})
+func cancelMidThrowDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
+		ID: "cmtw-nested", Version: 1,
+		Nodes: []model.Node{
+			{ID: "inner-start", Kind: model.KindStartEvent},
+			{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
+			{ID: "inner-end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
+			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "cmtw-proc", Version: 1,
+		Nodes: []model.Node{
+			{ID: "start", Kind: model.KindStartEvent},
+			{ID: "rootSvc", Kind: model.KindServiceTask, Action: "book-root", CompensationAction: "cancel-root"},
+			{ID: "sub", Kind: model.KindSubProcess, Subprocess: nested},
+			{ID: "compThrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "sub"},
+			{ID: "afterThrow", Kind: model.KindUserTask},
+			{ID: "end", Kind: model.KindEndEvent},
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "rootSvc"},
+			{ID: "f2", Source: "rootSvc", Target: "sub"},
+			{ID: "f3", Source: "sub", Target: "compThrow"},
+			{ID: "f4", Source: "compThrow", Target: "afterThrow"},
+			{ID: "f5", Source: "afterThrow", Target: "end"},
+		},
+	}
+}
+
+// TestCancelMidThrowWalkDoesNotDoubleCompensate is the regression test for B1.
+// It drives: start → complete rootSvc → complete inner-svc → sub exits → compThrow fires
+// (StatusCompensating, emits cancel-inner). Then CancelRequested arrives MID-WALK
+// (before cancel-inner's ActionCompleted). Then cancel-inner's ActionCompleted arrives
+// (throw walk finishes). The deferred cancel must then compensate REMAINING records
+// (cancel-root) and terminate.
+//
+// Invariants:
+//   - cancel-inner invoked EXACTLY once (the bug = twice when not deferred)
+//   - cancel-root invoked EXACTLY once (deferred cancel, no under-compensation)
+//   - instance terminates: StatusTerminated + FailInstance{"cancelled"}
+func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
+	at := time.Date(2026, 6, 23, 14, 0, 0, 0, time.UTC)
+	def := cancelMidThrowDef()
+
+	// Step 1: start → rootSvc invoked.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "cmtw-inst"},
+		engine.NewStartInstance(at, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.Commands, 1)
+	ia1, ok := r1.Commands[0].(engine.InvokeAction)
+	require.True(t, ok, "expected InvokeAction for rootSvc")
+	require.Equal(t, "book-root", ia1.Name)
+
+	// Step 2: complete rootSvc → drives to sub → inner-svc invoked.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionCompleted(at.Add(1*time.Second), ia1.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status)
+	require.Len(t, r2.Commands, 1)
+	ia2, ok := r2.Commands[0].(engine.InvokeAction)
+	require.True(t, ok, "expected InvokeAction for inner-svc")
+	require.Equal(t, "book-inner", ia2.Name)
+	// rootSvc must be recorded in RootCompensations.
+	require.Len(t, r2.State.RootCompensations, 1, "rootSvc must be recorded before inner-svc")
+
+	// Step 3: complete inner-svc → sub exits (archived) → compThrow fires →
+	// STARTS throw walk (StatusCompensating, emits cancel-inner).
+	r3, err := engine.Step(def, r2.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), ia2.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompensating, r3.State.Status,
+		"instance must be StatusCompensating after compThrow fires")
+	require.NotEmpty(t, r3.State.Compensating.ResumeNode,
+		"throw walk cursor must have a ResumeNode")
+
+	var throwCancelCmd *engine.InvokeAction
+	for _, cmd := range r3.Commands {
+		if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "cancel-inner" {
+			ia := ia
+			throwCancelCmd = &ia
+		}
+	}
+	require.NotNil(t, throwCancelCmd, "throw walk must emit InvokeAction{cancel-inner}")
+
+	// Step 4: CancelRequested arrives MID-WALK (before cancel-inner's ActionCompleted).
+	// The B1 bug: without the fix, beginCompensation runs again, consolidates the
+	// archive (still containing "sub") into RootCompensations, and re-emits cancel-inner.
+	cancelAt := at.Add(3 * time.Second)
+	r4, err := engine.Step(def, r3.State,
+		engine.NewCancelRequested(cancelAt),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	// With the B1 fix: PendingCancel=true, still StatusCompensating, no second
+	// cancel-inner emitted. The state must still be compensating (throw walk not done).
+	// (We collect InvokeActions across ALL steps at the end to count.)
+
+	// Step 5: deliver cancel-inner's ActionCompleted (throw walk finishes).
+	// With the fix: deferred cancel fires over REMAINING records (cancel-root) and terminates.
+	finishAt := at.Add(4 * time.Second)
+	r5, err := engine.Step(def, r4.State,
+		engine.NewActionCompleted(finishAt, throwCancelCmd.CommandID, nil),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// ── Collect all InvokeActions across all steps ────────────────────────────
+	cancelInnerCount := 0
+	cancelRootCount := 0
+	var allCmds []engine.Command
+	allCmds = append(allCmds, r1.Commands...)
+	allCmds = append(allCmds, r2.Commands...)
+	allCmds = append(allCmds, r3.Commands...)
+	allCmds = append(allCmds, r4.Commands...)
+	allCmds = append(allCmds, r5.Commands...)
+	for _, cmd := range allCmds {
+		if ia, ok := cmd.(engine.InvokeAction); ok {
+			switch ia.Name {
+			case "cancel-inner":
+				cancelInnerCount++
+			case "cancel-root":
+				cancelRootCount++
+			}
+		}
+	}
+
+	// B1 invariant: cancel-inner must be invoked exactly once (throw walk only).
+	assert.Equal(t, 1, cancelInnerCount,
+		"cancel-inner must be invoked EXACTLY once (B1: no double-compensation)")
+
+	// No-under-compensation invariant: cancel-root must be invoked exactly once (deferred cancel).
+	assert.Equal(t, 1, cancelRootCount,
+		"cancel-root must be invoked exactly once (deferred cancel, no under-compensation)")
+
+	// Terminal invariant: instance must be terminated after deferred cancel completes.
+	// The deferred cancel walk for cancel-root itself needs one more step to complete.
+	// If r5 is still compensating (cancel-root walk in flight), drive it to completion.
+	finalState := r5.State
+	finalCmds := r5.Commands
+	if finalState.Status == engine.StatusCompensating {
+		// Find the cancel-root InvokeAction from r5 commands to get its CommandID.
+		var cancelRootCmd *engine.InvokeAction
+		for _, cmd := range r5.Commands {
+			if ia, ok := cmd.(engine.InvokeAction); ok && ia.Name == "cancel-root" {
+				ia := ia
+				cancelRootCmd = &ia
+			}
+		}
+		require.NotNil(t, cancelRootCmd, "deferred cancel must emit cancel-root InvokeAction")
+		r6, err := engine.Step(def, r5.State,
+			engine.NewActionCompleted(finishAt.Add(time.Second), cancelRootCmd.CommandID, nil),
+			engine.StepOptions{})
+		require.NoError(t, err)
+		finalState = r6.State
+		finalCmds = r6.Commands
+	}
+
+	assert.Equal(t, engine.StatusTerminated, finalState.Status,
+		"instance must reach StatusTerminated after deferred cancel completes")
+
+	var hasFailInstance bool
+	for _, cmd := range finalCmds {
+		if fi, ok := cmd.(engine.FailInstance); ok && fi.Err == "cancelled" {
+			hasFailInstance = true
+		}
+	}
+	assert.True(t, hasFailInstance,
+		"deferred cancel must emit FailInstance{Err:\"cancelled\"}")
+}
+
 // ── (e) Defensive guard: a compensation throw with NO outgoing flow must not
 // terminate the instance ──────────────────────────────────────────────────────
 

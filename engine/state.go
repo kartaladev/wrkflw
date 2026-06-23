@@ -446,6 +446,12 @@ type InstanceState struct {
 	// retries or skips the failed node.
 	Incidents []Incident
 
+	// PendingCancel is set when a CancelRequested arrives while a compensation
+	// THROW walk is in flight; the throw walk finishes, then runs a full cancel
+	// over the remaining records and terminates instead of resuming — avoids
+	// double-compensating the throw's in-flight records (ADR-0039 B1 fix).
+	PendingCancel bool
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
