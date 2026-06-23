@@ -769,11 +769,17 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		// Kinds not yet in the registry fall through to the switch below.
 		if strat, ok := nodeStrategies[node.Kind]; ok {
 			c := &stepCtx{def: def, tdef: tdef, s: s, at: at, mode: mode}
-			produced, stratErr := strat.enter(c, tok, node)
+			produced, halt, stratErr := strat.enter(c, tok, node)
 			if stratErr != nil {
 				return nil, stratErr
 			}
 			cmds = append(cmds, produced...)
+			if halt {
+				// ErrorEndEvent: reproduce the original arm's `return cmds, nil` —
+				// exit drive() entirely (the instance is terminal or propagateError
+				// already drained/routed all tokens), not just this token.
+				return cmds, nil
+			}
 			// Preserve Micro-mode semantics: a strategy that parks the token
 			// (tok.State != TokenActive) counts as a stop, identical to the
 			// old `stopped = true` in the case arm.
