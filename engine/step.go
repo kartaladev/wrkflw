@@ -766,28 +766,25 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		// that produces new active tokens) leave stopped false so the loop continues.
 		stopped := false
 
-		switch node.Kind {
-		case model.KindStartEvent:
-			s.moveAlongSingleFlow(tdef, tok, at)
-
-		case model.KindServiceTask:
-			cmdID := s.nextCommandID()
-			cmds = append(cmds, InvokeAction{
-				CommandID: cmdID,
-				Name:      node.Action,
-				Input:     serviceActionInput(s, node),
-			})
-			tok.State = TokenWaitingCommand
-			tok.AwaitCommand = cmdID
-			// Arm any boundary events attached to this host activity.
-			bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID, at)
-			if err != nil {
-				return cmds, err
+		// Dispatch through the nodeStrategy registry for migrated kinds.
+		// Kinds not yet in the registry fall through to the switch below.
+		if strat, ok := nodeStrategies[node.Kind]; ok {
+			c := &stepCtx{def: def, tdef: tdef, s: s, at: at, mode: mode}
+			produced, stratErr := strat.enter(c, tok, node)
+			if stratErr != nil {
+				return nil, stratErr
 			}
-			cmds = append(cmds, bndCmds...)
-			stopped = true // token parked: Micro stops here
+			cmds = append(cmds, produced...)
+			// Preserve Micro-mode semantics: a strategy that parks the token
+			// (tok.State != TokenActive) counts as a stop, identical to the
+			// old `stopped = true` in the case arm.
+			stopped = tok.State != TokenActive
+		} else {
+			switch node.Kind {
+			case model.KindStartEvent:
+				s.moveAlongSingleFlow(tdef, tok, at)
 
-		case model.KindUserTask:
+			case model.KindUserTask:
 			taskToken := s.nextTaskToken()
 			spec := authz.AuthzSpec{
 				Roles:     node.CandidateRoles,
@@ -1355,6 +1352,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			tok.State = TokenWaitingCommand
 			stopped = true // token parked: Micro stops here
 		}
+		} // end else (non-registry kinds)
 
 		// Micro-mode: stop after the first park or terminal event. Auto-advancing
 		// cases (StartEvent, gateway routing that produces new active tokens) leave
