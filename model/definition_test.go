@@ -14,9 +14,9 @@ func linearDef() *model.ProcessDefinition {
 		ID:      "p1",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "greet", Kind: model.KindServiceTask, Action: "greet"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("greet", "greet"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
@@ -30,7 +30,7 @@ func TestProcessDefinitionLookups(t *testing.T) {
 
 	n, ok := d.Node("greet")
 	require.True(t, ok)
-	assert.Equal(t, model.KindServiceTask, n.Kind)
+	assert.Equal(t, model.KindServiceTask, n.Kind())
 
 	_, ok = d.Node("missing")
 	assert.False(t, ok)
@@ -45,7 +45,7 @@ func TestProcessDefinitionLookups(t *testing.T) {
 
 	starts := d.StartNodes()
 	require.Len(t, starts, 1)
-	assert.Equal(t, "start", starts[0].ID)
+	assert.Equal(t, "start", starts[0].ID())
 }
 
 func TestNodeUserTaskFields(t *testing.T) {
@@ -53,23 +53,22 @@ func TestNodeUserTaskFields(t *testing.T) {
 		ID:      "p2",
 		Version: 1,
 		Nodes: []model.Node{
-			{
-				ID:              "approve",
-				Kind:            model.KindUserTask,
-				Name:            "Approve Request",
-				CandidateRoles:  []string{"manager", "admin"},
-				EligibilityExpr: "amount > 1000",
-			},
+			model.NewUserTask("approve", []string{"manager", "admin"},
+				model.WithName("Approve Request"),
+				model.WithEligibilityExpr("amount > 1000"),
+			),
 		},
 		Flows: []model.SequenceFlow{},
 	}
 
 	n, ok := d.Node("approve")
 	require.True(t, ok)
-	assert.Equal(t, model.KindUserTask, n.Kind)
-	assert.Equal(t, "Approve Request", n.Name)
-	assert.Equal(t, []string{"manager", "admin"}, n.CandidateRoles)
-	assert.Equal(t, "amount > 1000", n.EligibilityExpr)
+	assert.Equal(t, model.KindUserTask, n.Kind())
+	assert.Equal(t, "Approve Request", n.Name())
+	ut, ok := n.(model.UserTask)
+	require.True(t, ok)
+	assert.Equal(t, []string{"manager", "admin"}, ut.CandidateRoles)
+	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
 }
 
 // TestNodeEventBoundaryFields asserts that the five new event/boundary fields
@@ -81,50 +80,28 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 	}{
 		{
 			name: "signal-catch",
-			node: model.Node{
-				ID:         "sig-catch",
-				Kind:       model.KindIntermediateCatchEvent,
-				SignalName: "order.placed",
-			},
+			node: model.NewIntermediateCatchEvent("sig-catch", model.WithSignalName("order.placed")),
 		},
 		{
 			name: "message-catch",
-			node: model.Node{
-				ID:             "msg-catch",
-				Kind:           model.KindIntermediateCatchEvent,
-				MessageName:    "payment.received",
-				CorrelationKey: "order.id",
-			},
+			node: model.NewIntermediateCatchEvent("msg-catch", model.WithMessageNameAndKey("payment.received", "order.id")),
 		},
 		{
 			name: "signal-throw",
-			node: model.Node{
-				ID:         "sig-throw",
-				Kind:       model.KindIntermediateThrowEvent,
-				SignalName: "order.shipped",
-			},
+			node: model.NewIntermediateThrowEvent("sig-throw", model.WithThrowSignal("order.shipped")),
 		},
 		{
 			// Zero-value NonInterrupting (false) = interrupting — the BPMN default.
 			name: "boundary-interrupting-default",
-			node: model.Node{
-				ID:              "boundary-1",
-				Kind:            model.KindBoundaryEvent,
-				SignalName:      "cancel.signal",
-				AttachedTo:      "task-1",
-				NonInterrupting: false,
-			},
+			node: model.NewBoundaryEvent("boundary-1", "task-1", model.WithBoundarySignal("cancel.signal")),
 		},
 		{
 			// NonInterrupting: true = non-interrupting boundary event.
 			name: "boundary-non-interrupting",
-			node: model.Node{
-				ID:              "boundary-2",
-				Kind:            model.KindBoundaryEvent,
-				MessageName:     "reminder.msg",
-				AttachedTo:      "task-2",
-				NonInterrupting: true,
-			},
+			node: model.NewBoundaryEvent("boundary-2", "task-2",
+				model.WithBoundaryMessage("reminder.msg", ""),
+				model.BoundaryNonInterrupting(),
+			),
 		},
 	}
 
@@ -137,13 +114,28 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 				Nodes:   []model.Node{tc.node},
 				Flows:   []model.SequenceFlow{},
 			}
-			n, ok := d.Node(tc.node.ID)
+			n, ok := d.Node(tc.node.ID())
 			require.True(t, ok)
-			assert.Equal(t, tc.node.SignalName, n.SignalName)
-			assert.Equal(t, tc.node.MessageName, n.MessageName)
-			assert.Equal(t, tc.node.CorrelationKey, n.CorrelationKey)
-			assert.Equal(t, tc.node.AttachedTo, n.AttachedTo)
-			assert.Equal(t, tc.node.NonInterrupting, n.NonInterrupting)
+			switch expected := tc.node.(type) {
+			case model.IntermediateCatchEvent:
+				got, ok := n.(model.IntermediateCatchEvent)
+				require.True(t, ok)
+				assert.Equal(t, expected.SignalName, got.SignalName)
+				assert.Equal(t, expected.MessageName, got.MessageName)
+				assert.Equal(t, expected.CorrelationKey, got.CorrelationKey)
+			case model.IntermediateThrowEvent:
+				got, ok := n.(model.IntermediateThrowEvent)
+				require.True(t, ok)
+				assert.Equal(t, expected.SignalName, got.SignalName)
+			case model.BoundaryEvent:
+				got, ok := n.(model.BoundaryEvent)
+				require.True(t, ok)
+				assert.Equal(t, expected.SignalName, got.SignalName)
+				assert.Equal(t, expected.MessageName, got.MessageName)
+				assert.Equal(t, expected.CorrelationKey, got.CorrelationKey)
+				assert.Equal(t, expected.AttachedTo, got.AttachedTo)
+				assert.Equal(t, expected.NonInterrupting, got.NonInterrupting)
+			}
 		})
 	}
 }
@@ -155,9 +147,9 @@ func TestNodeSubProcessField(t *testing.T) {
 		ID:      "nested-proc",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "ns-start", Kind: model.KindStartEvent},
-			{ID: "ns-task", Kind: model.KindServiceTask, Action: "inner-action"},
-			{ID: "ns-end", Kind: model.KindEndEvent},
+			model.NewStartEvent("ns-start"),
+			model.NewServiceTask("ns-task", "inner-action"),
+			model.NewEndEvent("ns-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "nf1", Source: "ns-start", Target: "ns-task"},
@@ -165,28 +157,23 @@ func TestNodeSubProcessField(t *testing.T) {
 		},
 	}
 
-	sp := model.Node{
-		ID:        "subprocess-1",
-		Kind:      model.KindSubProcess,
-		Name:      "Inner Subprocess",
-		Subprocess: nested,
-	}
-
 	d := &model.ProcessDefinition{
 		ID:      "outer",
 		Version: 1,
-		Nodes:   []model.Node{sp},
+		Nodes:   []model.Node{model.NewSubProcess("subprocess-1", nested, model.WithName("Inner Subprocess"))},
 		Flows:   []model.SequenceFlow{},
 	}
 
 	n, ok := d.Node("subprocess-1")
 	require.True(t, ok)
-	assert.Equal(t, model.KindSubProcess, n.Kind)
-	assert.Equal(t, "Inner Subprocess", n.Name)
-	require.NotNil(t, n.Subprocess)
-	assert.Equal(t, "nested-proc", n.Subprocess.ID)
-	assert.Len(t, n.Subprocess.Nodes, 3)
-	assert.Len(t, n.Subprocess.Flows, 2)
+	assert.Equal(t, model.KindSubProcess, n.Kind())
+	assert.Equal(t, "Inner Subprocess", n.Name())
+	sp, ok := n.(model.SubProcess)
+	require.True(t, ok)
+	require.NotNil(t, sp.Subprocess)
+	assert.Equal(t, "nested-proc", sp.Subprocess.ID)
+	assert.Len(t, sp.Subprocess.Nodes, 3)
+	assert.Len(t, sp.Subprocess.Flows, 2)
 }
 
 // TestNodeEventSubProcessField asserts that a KindEventSubProcess node with a
@@ -196,111 +183,118 @@ func TestNodeEventSubProcessField(t *testing.T) {
 		ID:      "event-nested-proc",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "es-start", Kind: model.KindStartEvent, SignalName: "cancel.signal"},
-			{ID: "es-end", Kind: model.KindEndEvent},
+			// The trigger is encoded on the nested StartEvent's SignalName field.
+			model.NewStartEvent("es-start", model.WithStartSignal("cancel.signal")),
+			model.NewEndEvent("es-end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "ef1", Source: "es-start", Target: "es-end"},
 		},
 	}
 
-	esp := model.Node{
-		ID:        "event-sub-1",
-		Kind:      model.KindEventSubProcess,
-		Name:      "Cancel Handler",
-		Subprocess: nested,
-	}
-
 	d := &model.ProcessDefinition{
 		ID:      "outer2",
 		Version: 1,
-		Nodes:   []model.Node{esp},
+		Nodes:   []model.Node{model.NewEventSubProcess("event-sub-1", nested, "Cancel Handler")},
 		Flows:   []model.SequenceFlow{},
 	}
 
 	n, ok := d.Node("event-sub-1")
 	require.True(t, ok)
-	assert.Equal(t, model.KindEventSubProcess, n.Kind)
-	require.NotNil(t, n.Subprocess)
-	assert.Equal(t, "event-nested-proc", n.Subprocess.ID)
+	assert.Equal(t, model.KindEventSubProcess, n.Kind())
+	esp, ok := n.(model.EventSubProcess)
+	require.True(t, ok)
+	require.NotNil(t, esp.Subprocess)
+	assert.Equal(t, "event-nested-proc", esp.Subprocess.ID)
 	// The trigger is encoded on the nested start event's SignalName field.
-	starts := n.Subprocess.StartNodes()
+	starts := esp.Subprocess.StartNodes()
 	require.Len(t, starts, 1)
-	assert.Equal(t, "cancel.signal", starts[0].SignalName)
+	se, ok := starts[0].(model.StartEvent)
+	require.True(t, ok)
+	assert.Equal(t, "cancel.signal", se.SignalName)
 }
 
 // TestNodeCallActivityDefRef asserts that a KindCallActivity node with a DefRef
 // field round-trips through ProcessDefinition.Node correctly.
 func TestNodeCallActivityDefRef(t *testing.T) {
-	ca := model.Node{
-		ID:     "call-1",
-		Kind:   model.KindCallActivity,
-		Name:   "Call External Process",
-		DefRef: "external-process-v2",
-	}
-
 	d := &model.ProcessDefinition{
 		ID:      "outer3",
 		Version: 1,
-		Nodes:   []model.Node{ca},
+		Nodes:   []model.Node{model.NewCallActivity("call-1", "external-process-v2", model.WithName("Call External Process"))},
 		Flows:   []model.SequenceFlow{},
 	}
 
 	n, ok := d.Node("call-1")
 	require.True(t, ok)
-	assert.Equal(t, model.KindCallActivity, n.Kind)
-	assert.Equal(t, "external-process-v2", n.DefRef)
+	assert.Equal(t, model.KindCallActivity, n.Kind())
+	ca, ok := n.(model.CallActivity)
+	require.True(t, ok)
+	assert.Equal(t, "external-process-v2", ca.DefRef)
 }
 
 // TestNodeTimerSLAReminderFields asserts that the six new timer/SLA/reminder
 // fields on model.Node round-trip through ProcessDefinition.Node correctly.
 func TestNodeTimerSLAReminderFields(t *testing.T) {
 	cases := []struct {
-		name string
-		node model.Node
+		name  string
+		node  model.Node
+		check func(t *testing.T, n model.Node)
 	}{
 		{
 			name: "timer-intermediate",
-			node: model.Node{
-				ID:            "wait-1h",
-				Kind:          model.KindIntermediateCatchEvent,
-				Name:          "Wait 1 hour",
-				TimerDuration: "PT1H",
+			node: model.NewIntermediateCatchEvent("wait-1h",
+				model.WithTimerDuration("PT1H"),
+				model.WithName("Wait 1 hour"),
+			),
+			check: func(t *testing.T, n model.Node) {
+				ice, ok := n.(model.IntermediateCatchEvent)
+				require.True(t, ok)
+				assert.Equal(t, "PT1H", ice.TimerDuration)
+				assert.Equal(t, "Wait 1 hour", n.Name())
 			},
 		},
 		{
 			name: "sla-with-flow-and-action",
-			node: model.Node{
-				ID:          "review",
-				Kind:        model.KindUserTask,
-				Name:        "Review",
-				SLADuration: "P1D",
-				SLAFlow:     "sla-breach-flow",
-				SLAAction:   "notify-manager",
+			node: model.NewUserTask("review", nil,
+				model.WithName("Review"),
+				model.WithSLA("P1D", "sla-breach-flow", "notify-manager"),
+			),
+			check: func(t *testing.T, n model.Node) {
+				ut, ok := n.(model.UserTask)
+				require.True(t, ok)
+				assert.Equal(t, "P1D", ut.SLADuration)
+				assert.Equal(t, "sla-breach-flow", ut.SLAFlow)
+				assert.Equal(t, "notify-manager", ut.SLAAction)
 			},
 		},
 		{
 			name: "reminder-every-with-action",
-			node: model.Node{
-				ID:             "approve",
-				Kind:           model.KindUserTask,
-				Name:           "Approve",
-				ReminderEvery:  "PT4H",
-				ReminderAction: "send-reminder",
+			node: model.NewUserTask("approve", nil,
+				model.WithName("Approve"),
+				model.WithReminder("PT4H", "send-reminder"),
+			),
+			check: func(t *testing.T, n model.Node) {
+				ut, ok := n.(model.UserTask)
+				require.True(t, ok)
+				assert.Equal(t, "PT4H", ut.ReminderEvery)
+				assert.Equal(t, "send-reminder", ut.ReminderAction)
 			},
 		},
 		{
 			name: "all-six-fields",
-			node: model.Node{
-				ID:             "task-full",
-				Kind:           model.KindUserTask,
-				Name:           "Full Task",
-				TimerDuration:  "PT30M",
-				SLADuration:    "P2D",
-				SLAFlow:        "escalate",
-				SLAAction:      "escalate-action",
-				ReminderEvery:  "PT6H",
-				ReminderAction: "remind-action",
+			node: model.NewUserTask("task-full", nil,
+				model.WithName("Full Task"),
+				model.WithSLA("P2D", "escalate", "escalate-action"),
+				model.WithReminder("PT6H", "remind-action"),
+			),
+			check: func(t *testing.T, n model.Node) {
+				ut, ok := n.(model.UserTask)
+				require.True(t, ok)
+				assert.Equal(t, "P2D", ut.SLADuration)
+				assert.Equal(t, "escalate", ut.SLAFlow)
+				assert.Equal(t, "escalate-action", ut.SLAAction)
+				assert.Equal(t, "PT6H", ut.ReminderEvery)
+				assert.Equal(t, "remind-action", ut.ReminderAction)
 			},
 		},
 	}
@@ -314,14 +308,9 @@ func TestNodeTimerSLAReminderFields(t *testing.T) {
 				Nodes:   []model.Node{tc.node},
 				Flows:   []model.SequenceFlow{},
 			}
-			n, ok := d.Node(tc.node.ID)
+			n, ok := d.Node(tc.node.ID())
 			require.True(t, ok)
-			assert.Equal(t, tc.node.TimerDuration, n.TimerDuration)
-			assert.Equal(t, tc.node.SLADuration, n.SLADuration)
-			assert.Equal(t, tc.node.SLAFlow, n.SLAFlow)
-			assert.Equal(t, tc.node.SLAAction, n.SLAAction)
-			assert.Equal(t, tc.node.ReminderEvery, n.ReminderEvery)
-			assert.Equal(t, tc.node.ReminderAction, n.ReminderAction)
+			tc.check(t, n)
 		})
 	}
 }

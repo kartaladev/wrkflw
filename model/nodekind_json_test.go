@@ -70,22 +70,25 @@ func TestNodeKindJSONUnmarshalUnknown(t *testing.T) {
 
 // TestNodeKindJSONInNode verifies that a Node containing a NodeKind field
 // round-trips through json.Marshal/Unmarshal with the name encoding.
+// Uses ProcessDefinition (Un)MarshalJSON which routes through nodeWire.
 func TestNodeKindJSONInNode(t *testing.T) {
-	node := model.Node{
-		ID:   "start",
-		Kind: model.KindStartEvent,
-		Name: "Order Received",
+	def := &model.ProcessDefinition{
+		ID:      "p",
+		Version: 1,
+		Nodes:   []model.Node{model.NewStartEvent("start", "Order Received")},
+		Flows:   []model.SequenceFlow{},
 	}
 
-	data, err := json.Marshal(node)
+	data, err := json.Marshal(def)
 	require.NoError(t, err)
 
 	// The JSON must contain the string "startEvent", not a number like "1".
 	assert.Contains(t, string(data), `"startEvent"`,
 		"NodeKind inside a Node must be encoded as a name string")
 
-	var got model.Node
+	var got model.ProcessDefinition
 	require.NoError(t, json.Unmarshal(data, &got))
-	assert.Equal(t, model.KindStartEvent, got.Kind)
-	assert.Equal(t, "Order Received", got.Name)
+	require.Len(t, got.Nodes, 1)
+	assert.Equal(t, model.KindStartEvent, got.Nodes[0].Kind())
+	assert.Equal(t, "Order Received", got.Nodes[0].Name())
 }
