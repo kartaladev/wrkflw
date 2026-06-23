@@ -430,6 +430,457 @@ in `CLAUDE.md`.
 
 ---
 
+## Node types
+
+A process definition is a graph of **nodes** connected by **sequence flows**. Every
+node is a value built with a `model.New*` constructor and implements the `model.Node`
+interface (`Kind() NodeKind`, `ID() string`, `Name() string`). Never construct the
+struct types directly — use the constructors. There are 19 node kinds, grouped below.
+
+All examples in this section are excerpts; the full, compiling programs they are
+drawn from live under [`examples/scenarios/`](examples/scenarios).
+
+### Shared activity options
+
+Every **activity** constructor (`NewServiceTask`, `NewUserTask`, `NewReceiveTask`,
+`NewSendTask`, `NewBusinessRuleTask`, `NewSubProcess`, `NewCallActivity`) accepts the
+same set of functional options:
+
+| Option | Configures |
+|---|---|
+| `model.WithName(string)` | Human-readable display name. |
+| `model.WithRetryPolicy(*model.RetryPolicy)` | Per-node retry policy (see below). |
+| `model.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
+| `model.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
+| `model.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
+| `model.WithSLA(duration, flowID, actionName string)` | On SLA breach: take `flowID` and/or run `actionName`. |
+| `model.WithReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
+
+Two options are **compile-enforced** to a single constructor:
+
+- `model.WithEligibilityExpr(expr string)` — **`NewUserTask` only**. Attribute-based
+  eligibility predicate (evaluated by authz over `vars[...]`). Passing it to any other
+  constructor is a compile error.
+- `model.WithCorrelationKey(key string)` — **`NewReceiveTask` only**. Correlation-key
+  expression. Passing it elsewhere is a compile error.
+
+> **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
+> them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
+> not ISO-8601. This applies to `WithBoundaryTimer`, `WithTimerDuration`, `WithSLA`,
+> `WithReminder`, `WithStartTimer`, and `WithICESLA`/`WithICEReminder`.
+
+`RetryPolicy` fields:
+
+```go
+model.RetryPolicy{
+    MaxAttempts:        5,                 // includes the first attempt; 0 = unlimited
+    InitialInterval:    1 * time.Second,
+    BackoffCoef:        2.0,               // exponential multiplier
+    MaxInterval:        30 * time.Second,
+    MaxElapsed:         5 * time.Minute,
+    NonRetryableErrors: []string{"validation"},
+}
+```
+
+### Events
+
+| Node | What it does | Constructor |
+|---|---|---|
+| **StartEvent** | Entry point of a process (or the trigger of an EventSubProcess). | `model.NewStartEvent(id string, opts ...) Node` |
+| **EndEvent** | Normal completion of one branch. | `model.NewEndEvent(id string, name ...string) Node` |
+| **TerminateEndEvent** | Terminates the whole instance, including parallel branches. | `model.NewTerminateEndEvent(id string, name ...string) Node` |
+| **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `model.NewErrorEndEvent(id, errorCode string, name ...string) Node` |
+
+`NewStartEvent` options (only meaningful when the start is an EventSubProcess trigger):
+`WithName(string)`, `WithStartSignal(name)`, `WithStartMessage(msg, key)`,
+`WithStartTimer(dur)`. An empty `errorCode` on `NewErrorEndEvent` throws an anonymous
+(catch-all) error.
+
+```go
+model.NewStartEvent("start")
+model.NewEndEvent("end", "Order complete")
+model.NewTerminateEndEvent("kill-all")
+model.NewErrorEndEvent("insufficient-funds", "FUNDS_ERROR")
+```
+
+### Activities
+
+| Node | What it does | Constructor |
+|---|---|---|
+| **ServiceTask** | Runs a named service action. | `model.NewServiceTask(id, action string, opts ...) Node` |
+| **UserTask** | Waits for a human to complete a work item. | `model.NewUserTask(id string, roles []string, opts ...) Node` |
+| **ReceiveTask** | Waits for an inbound correlated message. | `model.NewReceiveTask(id, messageName string, opts ...) Node` |
+| **SendTask** | Sends an outbound message. | `model.NewSendTask(id, messageName string, opts ...) Node` |
+| **BusinessRuleTask** | Runs a named business-rule action. | `model.NewBusinessRuleTask(id, action string, opts ...) Node` |
+| **SubProcess** | Runs an *embedded* nested definition as a scope. | `model.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
+| **CallActivity** | Calls a *separate* top-level definition by name. | `model.NewCallActivity(id, defRef string, opts ...) Node` |
+| **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `model.NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
+
+All activity constructors take the shared activity options above. `NewUserTask` also
+takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
+`NewEventSubProcess` takes `WithName(string)` and `WithESPNonInterrupting()` (default
+is interrupting) — its nested start event carries the trigger.
+
+```go
+model.NewServiceTask("charge", "charge-card",
+    model.WithCompensation("refund-card"),
+    model.WithRetryPolicy(&retry),
+)
+model.NewUserTask("approve", []string{"manager"},
+    model.WithSLA(`"3h"`, "escalate-flow", "notify-manager"),
+    model.WithEligibilityExpr(`vars["region"] == "EU"`),
+)
+model.NewReceiveTask("await-payment", "payment-received",
+    model.WithCorrelationKey("orderId"),
+)
+model.NewSubProcess("reserve-hotel", hotelDef)
+model.NewCallActivity("credit-check", "credit-check")        // resolved via a DefinitionRegistry
+model.NewEventSubProcess("on-cancel", cancelHandlerDef, model.WithESPNonInterrupting())
+```
+
+### Intermediate and boundary events
+
+| Node | What it does | Constructor |
+|---|---|---|
+| **IntermediateCatchEvent** | Pauses until a timer, signal, or message arrives. | `model.NewIntermediateCatchEvent(id string, opts ...) Node` |
+| **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `model.NewIntermediateThrowEvent(id string, opts ...) Node` |
+| **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `model.NewBoundaryEvent(id, attachedTo string, opts ...) Node` |
+
+`NewIntermediateCatchEvent` options: `WithTimerDuration(dur)`, `WithSignalName(name)`,
+`WithMessageNameAndKey(msg, key)`, `WithICESLA(dur, flow, action)`,
+`WithICEReminder(every, action)`, `WithName(string)`.
+`NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
+`WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
+`NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithBoundarySignal(name)`,
+`WithBoundaryMessage(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
+`BoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
+
+> **Boundary-event limitation:** timer, signal, and error boundaries are armed by the
+> engine. **Message** boundary events are not yet armed.
+
+```go
+model.NewIntermediateCatchEvent("wait-1h", model.WithTimerDuration(`"1h"`))
+model.NewIntermediateThrowEvent("compensate", model.WithCompensateRef("reserve-hotel"))
+model.NewBoundaryEvent("review-timeout", "review", model.WithBoundaryTimer(`"1h"`))
+```
+
+### Gateways
+
+Gateways take no options beyond an optional name — their behaviour is determined by
+the number of incoming and outgoing flows and (for conditional gateways) the flow
+conditions.
+
+| Node | What it does | Constructor |
+|---|---|---|
+| **ExclusiveGateway** | XOR. Split: first matching flow (or the default). Merge: pass-through. | `model.NewExclusiveGateway(id string, name ...string) Node` |
+| **ParallelGateway** | AND. Split: activate all outgoing. Join: wait for all incoming. | `model.NewParallelGateway(id string, name ...string) Node` |
+| **InclusiveGateway** | OR. Split: every matching flow. Join: wait for the active matching branches. | `model.NewInclusiveGateway(id string, name ...string) Node` |
+| **EventBasedGateway** | Race: routes to whichever following catch event fires first. | `model.NewEventBasedGateway(id string, name ...string) Node` |
+
+```go
+model.NewExclusiveGateway("route")
+model.NewParallelGateway("fork")
+model.NewInclusiveGateway("split")
+model.NewEventBasedGateway("await")
+```
+
+### DefinitionBuilder
+
+Assemble nodes and flows with the fluent builder, then `Build()` (which validates):
+
+```go
+def, err := model.NewDefinition("order-fulfillment", 1).
+    Add(model.NewStartEvent("start")).
+    Add(model.NewExclusiveGateway("route")).
+    Add(model.NewServiceTask("manual-review", "manual-review")).
+    Add(model.NewServiceTask("auto-approve", "auto-approve")).
+    Add(model.NewServiceTask("reject", "reject")).
+    Add(model.NewEndEvent("end")).
+    Connect("start", "route").
+    Connect("route", "manual-review", model.WithCondition("amount > 50000")).
+    Connect("route", "auto-approve", model.WithCondition("amount <= 50000")).
+    Connect("route", "reject", model.AsDefault()).
+    Connect("manual-review", "end").
+    Connect("auto-approve", "end").
+    Connect("reject", "end").
+    CancelActions("send-cancellation-email"). // best-effort on instance cancel
+    Build()
+```
+
+| Builder method | Purpose |
+|---|---|
+| `model.NewDefinition(id, version)` | Start a builder. |
+| `.Add(node)` | Append a node. |
+| `.Connect(fromID, toID, opts...)` | Add a sequence flow (ID auto = `"from->to"`). |
+| `.CancelActions(names...)` | Best-effort actions run when the instance is cancelled. |
+| `.Build()` | Assemble + validate; returns `(*model.ProcessDefinition, error)`. |
+
+Flow options for `.Connect`: `model.WithFlowID(id)`, `model.WithCondition(expr)`,
+`model.AsDefault()`.
+
+> **Flow conditions use bare variable keys.** A condition is evaluated by expr-lang
+> directly against the process-variable map, so write `model.WithCondition("amount > 100")`
+> — **not** `vars.amount`. (Only `WithEligibilityExpr` on a UserTask uses the
+> `vars[...]` form, because it is evaluated by authz.)
+
+### YAML authoring
+
+Definitions can also be authored in YAML and loaded with `model.ParseYAML(data)` or
+`model.LoadYAML(r)`. Each node carries a `kind` discriminator (lowerCamelCase):
+
+```yaml
+id: order
+version: 1
+nodes:
+  - id: start
+    kind: startEvent
+  - id: charge
+    kind: serviceTask
+    action: charge-card
+    compensationAction: refund-card
+    retryPolicy: { maxAttempts: 5, initialInterval: 1s, backoffCoef: 2.0 }
+  - id: approve
+    kind: userTask
+    candidateRoles: [manager]
+    slaDuration: "3h"
+    slaFlow: escalate
+    slaAction: notify-manager
+  - id: end
+    kind: endEvent
+flows:
+  - { id: f1, source: start,  target: charge }
+  - { id: f2, source: charge, target: approve }
+  - { id: f3, source: approve, target: end }
+```
+
+Valid `kind` values: `startEvent`, `endEvent`, `terminateEndEvent`, `errorEndEvent`,
+`serviceTask`, `userTask`, `receiveTask`, `sendTask`, `businessRuleTask`, `subProcess`,
+`callActivity`, `eventSubProcess`, `intermediateCatchEvent`, `intermediateThrowEvent`,
+`boundaryEvent`, `exclusiveGateway`, `parallelGateway`, `inclusiveGateway`,
+`eventBasedGateway`.
+
+---
+
+## Complex scenarios
+
+The scenarios below are realistic multi-node processes drawn from order-fulfillment
+and loan-origination domains. **Each is a complete, compiling, runnable program** under
+[`examples/scenarios/`](examples/scenarios) — run any of them with
+`go run ./examples/scenarios/<name>/`. The snippets here are excerpts; the linked
+program is the source of truth.
+
+### 1. Parallel fork & join
+
+A `ParallelGateway` split fans a single token into N branches that all run; a matching
+`ParallelGateway` join waits for **every** branch before the process continues.
+
+```
+start → fork[Parallel] → pick-items[Service]  ┐
+                       → charge-card[Service]  ┤→ join[Parallel] → ship[Service] → end
+```
+
+```go
+def, _ := model.NewDefinition("order-fulfillment", 1).
+    Add(model.NewStartEvent("start")).
+    Add(model.NewParallelGateway("fork")).
+    Add(model.NewServiceTask("pick-items", "pick-items")).
+    Add(model.NewServiceTask("charge-card", "charge-card")).
+    Add(model.NewParallelGateway("join")).
+    Add(model.NewServiceTask("ship", "ship")).
+    Add(model.NewEndEvent("end")).
+    Connect("start", "fork").
+    Connect("fork", "pick-items").
+    Connect("fork", "charge-card").
+    Connect("pick-items", "join").
+    Connect("charge-card", "join").
+    Connect("join", "ship").
+    Connect("ship", "end").
+    Build()
+```
+
+**At runtime:** `r.Run` drives `pick-items` and `charge-card`, then the join releases a
+single token to `ship` only after both arrive. Both branches' output variables are
+merged into the instance.
+→ [`examples/scenarios/parallel_fork_join`](examples/scenarios/parallel_fork_join)
+
+### 2. Exclusive routing with conditions and a default
+
+An `ExclusiveGateway` split takes the **first** outgoing flow whose condition is true,
+falling back to the flow marked `AsDefault()` when none match.
+
+```
+start → check-credit[Service] → route[Exclusive]
+            amount > 50000   → manual-review[Service] → end
+            amount <= 50000  → auto-approve[Service]  → end
+            (default)        → reject[Service]        → end
+```
+
+```go
+Connect("route", "manual-review", model.WithCondition("amount > 50000")).
+Connect("route", "auto-approve",  model.WithCondition("amount <= 50000")).
+Connect("route", "reject",        model.AsDefault()).
+```
+
+**At runtime:** the example runs the same definition twice — `amount=75000` routes to
+`manual-review`, `amount=20000` routes to `auto-approve`. Conditions reference the bare
+variable key `amount`, not `vars.amount`.
+→ [`examples/scenarios/exclusive_routing`](examples/scenarios/exclusive_routing)
+
+### 3. Boundary timer / timeout escalation
+
+An **interrupting** `BoundaryEvent` timer attached to an activity cancels the host and
+routes to an escalation path when the timer fires before the activity finishes.
+
+```
+start → review[UserTask] ─────────────────→ approved-end
+            │ (boundary timer "1h", interrupting)
+            ↓
+        escalate[Service] → escalated-end
+```
+
+```go
+Add(model.NewUserTask("review", []string{"reviewer"})).
+Add(model.NewBoundaryEvent("review-timeout", "review",
+    model.WithBoundaryTimer(`"1h"`))). // interrupting by default
+Add(model.NewServiceTask("escalate", "escalate")).
+// ...
+Connect("review", "approved-end").
+Connect("review-timeout", "escalate").
+```
+
+**At runtime:** the reviewer never claims the task; advancing a `*clockwork.FakeClock`
+past the timer and calling `sched.Tick(ctx)` fires the boundary timer, cancels the host
+user task, runs `escalate`, and completes via `escalated-end`. The example wires
+`WithHumanTasks` (so the user task parks) and `WithScheduler` (so the timer arms).
+*Message boundaries are not yet armed; timer, signal, and error boundaries are.*
+→ [`examples/scenarios/boundary_timer`](examples/scenarios/boundary_timer)
+
+### 4. Compensation / saga rollback
+
+Activities carrying `WithCompensation(...)` record an undo action when they complete. On
+rollback the engine invokes those undo actions in **reverse completion order**.
+
+```
+start → book[Service, comp:cancel-booking]
+      → pay [Service, comp:refund]
+      → ship[Service] -- fails ──(boundary error)──→ end-fail
+      → end
+
+then: deliver CompensateRequested("") → refund, then cancel-booking → terminated
+```
+
+```go
+Add(model.NewServiceTask("book", "book", model.WithCompensation("cancel-booking"))).
+Add(model.NewServiceTask("pay",  "pay",  model.WithCompensation("refund"))).
+Add(model.NewServiceTask("ship", "ship")).
+Add(model.NewBoundaryEvent("ship-err", "ship", model.WithBoundaryErrorCode(""))).
+// ... after the forward run completes via the boundary path:
+trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
+final, _ := r.Deliver(ctx, def, instanceID, trg)
+```
+
+**At runtime:** `book` and `pay` succeed, `ship` fails. A catch-all boundary error
+routes to `end-fail` so the instance reaches `StatusCompleted` **without** triggering
+the engine's automatic unhandled-error compensation — leaving the recorded
+compensations intact. An operator then delivers `CompensateRequested` with an empty
+`ToNode`; the engine runs `refund` then `cancel-booking` (reverse order) and the
+instance ends `StatusTerminated`. Observed invocation order:
+`[book pay ship refund cancel-booking]`.
+→ [`examples/scenarios/compensation_saga`](examples/scenarios/compensation_saga)
+
+### 5. Human-task approval
+
+A `UserTask` parks the instance until a human claims and completes it. The lifecycle is
+driven through the `humantask` ports and `runtime.TaskService`.
+
+```
+start → approve[UserTask, roles: manager] → end
+```
+
+```go
+r := runtime.NewRunner(nil, clk, runtime.NewMemStore(),
+    runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
+
+parked, _ := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
+
+claimable, _ := taskStore.ClaimableBy(ctx, manager)        // discover tasks
+svc := runtime.NewTaskService(taskStore, az, clk)
+
+claimTrg, _ := svc.Claim(ctx, claimable[0].TaskToken, manager)
+r.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed
+
+completeTrg, _ := svc.Complete(ctx, claimable[0].TaskToken, manager, map[string]any{"approved": true})
+final, _ := r.Deliver(ctx, def, instanceID, completeTrg)   // → Completed
+```
+
+**At runtime:** `Run` returns with `StatusRunning` (parked). `ClaimableBy` lists the
+task for the manager actor; `Claim` then `Complete` (each followed by `r.Deliver`) drive
+the instance to `StatusCompleted`, merging the completion output (`approved`) into the
+variables. See `runtime/human_example_test.go` for the authoritative end-to-end test
+(including attribute-based eligibility and SLA escalation).
+→ [`examples/scenarios/human_task_approval`](examples/scenarios/human_task_approval)
+
+### 6. Sub-process and call activity
+
+A `SubProcess` **embeds** a nested definition inline; a `CallActivity` **references** a
+separate, reusable top-level definition by name through a `DefinitionRegistry`. Both run
+the nested definition as a scope and merge its output back into the parent.
+
+```
+SubProcess:   start → reserve-hotel[SubProcess: hotel-start → book-room → hotel-end]
+                    → send-confirmation[Service] → end
+
+CallActivity: parent-start → call[CallActivity → "credit-check"] → parent-end
+              "credit-check" = child-start → score[Service] → child-end  (registered)
+```
+
+```go
+// Embedded sub-process:
+hotel, _ := model.NewDefinition("hotel-reservation", 1). /* ... */ .Build()
+def, _  := model.NewDefinition("travel-booking", 1).
+    Add(model.NewSubProcess("reserve-hotel", hotel)).
+    /* ... */ .Build()
+
+// Call activity (separate definition resolved by name):
+reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
+r   := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore(), runtime.WithDefinitions(reg))
+```
+
+**At runtime:** the SubProcess example books a room inside the nested scope and merges
+`confirmation` back into the parent; the CallActivity example resolves `"credit-check"`
+from the registry, runs it to completion, and merges `credit_score` into the parent.
+Use a SubProcess for a scope private to one definition; use a CallActivity to reuse a
+standalone, independently-versioned definition.
+→ [`examples/scenarios/subprocess_embedded`](examples/scenarios/subprocess_embedded),
+[`examples/scenarios/call_activity`](examples/scenarios/call_activity)
+
+### 7. Inclusive (OR) gateway split & join
+
+An `InclusiveGateway` split activates **every** outgoing flow whose condition is true
+(zero, one, or many); the matching join waits for exactly the branches that were
+activated.
+
+```
+start → assess[Service] → split[Inclusive]
+          score < 600     → notify-risk[Service]    ┐
+          amount > 10000  → senior-review[Service]  ┤→ join[Inclusive] → end
+          flagged == true → fraud-check[Service]    ┘
+```
+
+```go
+Connect("split", "notify-risk",   model.WithCondition("score < 600")).
+Connect("split", "senior-review", model.WithCondition("amount > 10000")).
+Connect("split", "fraud-check",   model.WithCondition("flagged == true")).
+```
+
+**At runtime:** with `score=580`, `amount=25000`, `flagged=false`, the split activates
+`notify-risk` and `senior-review` but skips `fraud-check`; the join waits for those two
+branches only, then continues to `end`. Contrast with the exclusive gateway (exactly
+one branch) and the parallel gateway (all branches unconditionally).
+→ [`examples/scenarios/inclusive_gateway`](examples/scenarios/inclusive_gateway)
+
+---
+
 ## License
 
 License: TBD by the project owner. No `LICENSE` file is present in this repository.

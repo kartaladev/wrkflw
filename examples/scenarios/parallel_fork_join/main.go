@@ -1,0 +1,81 @@
+// Package main demonstrates a parallel fork/join workflow for order fulfillment.
+//
+// Flow:
+//
+//	start → fork[Parallel] → pick-items[Service]
+//	                       → charge-card[Service]
+//	                       ← join[Parallel] ← both
+//	                       → ship[Service] → end
+//
+// This is a reference wiring example — not a shipped binary.
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Build the process definition.
+	def, err := model.NewDefinition("order-fulfillment", 1).
+		Add(model.NewStartEvent("start")).
+		Add(model.NewParallelGateway("fork")).
+		Add(model.NewServiceTask("pick-items", "pick-items")).
+		Add(model.NewServiceTask("charge-card", "charge-card")).
+		Add(model.NewParallelGateway("join")).
+		Add(model.NewServiceTask("ship", "ship")).
+		Add(model.NewEndEvent("end")).
+		Connect("start", "fork").
+		Connect("fork", "pick-items").
+		Connect("fork", "charge-card").
+		Connect("pick-items", "join").
+		Connect("charge-card", "join").
+		Connect("join", "ship").
+		Connect("ship", "end").
+		Build()
+	if err != nil {
+		log.Fatal("build def:", err)
+	}
+
+	// Wire up service actions.
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"pick-items": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+			fmt.Println("  [pick-items] picking items from warehouse")
+			return map[string]any{"items_picked": true}, nil
+		}),
+		"charge-card": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+			fmt.Printf("  [charge-card] charging card for order %v\n", vars["order_id"])
+			return map[string]any{"payment_ref": "PAY-001"}, nil
+		}),
+		"ship": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+			fmt.Println("  [ship] shipping order")
+			return map[string]any{"tracking": "TRACK-42"}, nil
+		}),
+	})
+
+	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
+
+	fmt.Println("--- Order Fulfillment: Parallel Fork/Join ---")
+	state, err := r.Run(ctx, def, "order-001", map[string]any{"order_id": "ORD-001"})
+	if err != nil {
+		log.Fatal("run:", err)
+	}
+
+	if state.Status == engine.StatusCompleted {
+		fmt.Println("Order completed successfully!")
+		fmt.Println("  items_picked:", state.Variables["items_picked"])
+		fmt.Println("  payment_ref:", state.Variables["payment_ref"])
+		fmt.Println("  tracking:", state.Variables["tracking"])
+	} else {
+		fmt.Printf("Unexpected status: %v\n", state.Status)
+	}
+}
