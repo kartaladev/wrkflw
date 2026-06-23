@@ -20,82 +20,108 @@ type activityOption interface {
 	applyName(b *baseNode)
 }
 
+// userTaskOption is the functional-options type for UserTask.
+// All activityOption values that implement applyUserTask also satisfy this interface,
+// so all shared activity options (WithName, WithRetryPolicy, etc.) work on NewUserTask.
+type userTaskOption interface {
+	applyUserTask(u *UserTask)
+}
+
+// receiveTaskOption is the functional-options type for ReceiveTask.
+// All activityOption values that implement applyReceiveTask also satisfy this interface,
+// so all shared activity options work on NewReceiveTask.
+type receiveTaskOption interface {
+	applyReceiveTask(r *ReceiveTask)
+}
+
 // activityOnlyOption wraps a function that mutates activityFields only.
 type activityOnlyOption struct{ fn func(*activityFields) }
 
 func (o activityOnlyOption) applyActivity(a *activityFields) { o.fn(a) }
 func (activityOnlyOption) applyName(_ *baseNode)             {}
+func (o activityOnlyOption) applyUserTask(u *UserTask)       { o.fn(&u.activityFields) }
+func (o activityOnlyOption) applyReceiveTask(r *ReceiveTask) { o.fn(&r.activityFields) }
 
-func withActivity(fn func(*activityFields)) activityOption {
+// withActivity constructs an activityOnlyOption. The concrete return type is
+// intentional: activityOnlyOption satisfies activityOption, userTaskOption, and
+// receiveTaskOption simultaneously, so callers can pass it to any constructor.
+func withActivity(fn func(*activityFields)) activityOnlyOption {
 	return activityOnlyOption{fn}
 }
 
-// nameOpt sets the name on a baseNode; implements activityOption, catchOption, boundaryOption, startEventOption, and eventSubProcessOption.
+// nameOpt sets the name on a baseNode; implements activityOption, catchOption, boundaryOption, startEventOption, eventSubProcessOption, userTaskOption, and receiveTaskOption.
 type nameOpt struct{ name string }
 
-func (o nameOpt) applyActivity(_ *activityFields)        {}
-func (o nameOpt) applyName(b *baseNode)                  { b.name = o.name }
-func (o nameOpt) applyCatch(n *IntermediateCatchEvent)   { n.name = o.name }
-func (o nameOpt) applyBoundary(n *BoundaryEvent)         { n.name = o.name }
-func (o nameOpt) applyStart(n *StartEvent)               { n.name = o.name }
+func (o nameOpt) applyActivity(_ *activityFields)         {}
+func (o nameOpt) applyName(b *baseNode)                   { b.name = o.name }
+func (o nameOpt) applyCatch(n *IntermediateCatchEvent)    { n.name = o.name }
+func (o nameOpt) applyBoundary(n *BoundaryEvent)          { n.name = o.name }
+func (o nameOpt) applyStart(n *StartEvent)                { n.name = o.name }
 func (o nameOpt) applyEventSubProcess(n *EventSubProcess) { n.name = o.name }
+func (o nameOpt) applyUserTask(u *UserTask)               { u.name = o.name }
+func (o nameOpt) applyReceiveTask(r *ReceiveTask)         { r.name = o.name }
 
 // WithName returns an option that sets the Name field on any node that accepts it.
-// It implements activityOption, catchOption, and boundaryOption.
+// It implements activityOption, catchOption, boundaryOption, userTaskOption, and receiveTaskOption.
 func WithName(name string) nameOpt { return nameOpt{name} }
 
 // WithRetryPolicy returns an activity option that sets RetryPolicy.
-func WithRetryPolicy(p *RetryPolicy) activityOption {
+// The concrete return type (activityOnlyOption) satisfies activityOption,
+// userTaskOption, and receiveTaskOption so it works on all constructors.
+func WithRetryPolicy(p *RetryPolicy) activityOnlyOption {
 	return withActivity(func(a *activityFields) { a.RetryPolicy = p })
 }
 
 // WithRecoveryFlow returns an activity option that sets RecoveryFlow.
-func WithRecoveryFlow(flowID string) activityOption {
+func WithRecoveryFlow(flowID string) activityOnlyOption {
 	return withActivity(func(a *activityFields) { a.RecoveryFlow = flowID })
 }
 
 // WithCompensation returns an activity option that sets CompensationAction.
-func WithCompensation(action string) activityOption {
+func WithCompensation(action string) activityOnlyOption {
 	return withActivity(func(a *activityFields) { a.CompensationAction = action })
 }
 
 // WithCancelHandler returns an activity option that sets CancelHandler.
-func WithCancelHandler(action string) activityOption {
+func WithCancelHandler(action string) activityOnlyOption {
 	return withActivity(func(a *activityFields) { a.CancelHandler = action })
 }
 
 // WithSLA returns an activity option that sets SLADuration, SLAFlow, and SLAAction.
-func WithSLA(duration, flowID, action string) activityOption {
+func WithSLA(duration, flowID, action string) activityOnlyOption {
 	return withActivity(func(a *activityFields) {
 		a.SLADuration, a.SLAFlow, a.SLAAction = duration, flowID, action
 	})
 }
 
 // WithReminder returns an activity option that sets ReminderEvery and ReminderAction.
-func WithReminder(every, action string) activityOption {
+func WithReminder(every, action string) activityOnlyOption {
 	return withActivity(func(a *activityFields) {
 		a.ReminderEvery, a.ReminderAction = every, action
 	})
 }
 
-// WithEligibilityExpr is a UserTask-specific option for setting EligibilityExpr.
-// Implemented as an activityOption (no-op on activityFields; caller reads it by type assertion).
+// eligibilityExprOpt satisfies only userTaskOption — passing it to any other
+// constructor (NewServiceTask, NewSendTask, etc.) is a compile-time error.
 type eligibilityExprOpt struct{ expr string }
 
-func (o eligibilityExprOpt) applyActivity(_ *activityFields) {}
-func (o eligibilityExprOpt) applyName(_ *baseNode)           {}
+func (o eligibilityExprOpt) applyUserTask(u *UserTask) { u.EligibilityExpr = o.expr }
 
-// WithEligibilityExpr returns a UserTask option that sets EligibilityExpr.
-func WithEligibilityExpr(expr string) activityOption { return eligibilityExprOpt{expr} }
+// WithEligibilityExpr returns a userTaskOption that sets EligibilityExpr.
+// It may only be passed to NewUserTask; passing it to any other constructor
+// is a compile-time error.
+func WithEligibilityExpr(expr string) userTaskOption { return eligibilityExprOpt{expr} }
 
-// WithCorrelationKey is a ReceiveTask-specific option for setting CorrelationKey.
+// correlationKeyOpt satisfies only receiveTaskOption — passing it to any other
+// constructor is a compile-time error.
 type correlationKeyOpt struct{ key string }
 
-func (o correlationKeyOpt) applyActivity(_ *activityFields) {}
-func (o correlationKeyOpt) applyName(_ *baseNode)           {}
+func (o correlationKeyOpt) applyReceiveTask(r *ReceiveTask) { r.CorrelationKey = o.key }
 
-// WithCorrelationKey returns a ReceiveTask option that sets CorrelationKey.
-func WithCorrelationKey(key string) activityOption { return correlationKeyOpt{key} }
+// WithCorrelationKey returns a receiveTaskOption that sets CorrelationKey.
+// It may only be passed to NewReceiveTask; passing it to any other constructor
+// is a compile-time error.
+func WithCorrelationKey(key string) receiveTaskOption { return correlationKeyOpt{key} }
 
 // applyActivityOpts applies all options to the given base and activity fields.
 func applyActivityOpts(b *baseNode, a *activityFields, opts []activityOption) {
@@ -199,37 +225,28 @@ func NewServiceTask(id, action string, opts ...activityOption) Node {
 }
 
 // NewUserTask constructs a UserTask with the given id and candidate roles.
-// Additional behaviour is configured via activityOption values; use
-// WithEligibilityExpr to set the eligibility predicate.
-func NewUserTask(id string, roles []string, opts ...activityOption) Node {
-	b := baseNode{id: id}
-	var a activityFields
-	var eligExpr string
+// Options may be any userTaskOption: all shared activity options (WithName,
+// WithRetryPolicy, WithSLA, WithReminder, WithRecoveryFlow, WithCompensation,
+// WithCancelHandler) work here, as does the UserTask-specific WithEligibilityExpr.
+// Passing a non-userTaskOption (e.g. WithCorrelationKey) is a compile-time error.
+func NewUserTask(id string, roles []string, opts ...userTaskOption) Node {
+	u := UserTask{baseNode: baseNode{id: id}, CandidateRoles: roles}
 	for _, o := range opts {
-		o.applyActivity(&a)
-		o.applyName(&b)
-		if ee, ok := o.(eligibilityExprOpt); ok {
-			eligExpr = ee.expr
-		}
+		o.applyUserTask(&u)
 	}
-	return UserTask{baseNode: b, activityFields: a, CandidateRoles: roles, EligibilityExpr: eligExpr}
+	return u
 }
 
 // NewReceiveTask constructs a ReceiveTask with the given id and message name.
-// Use WithCorrelationKey to set the correlation expression; other activity
-// behaviour via activityOption values.
-func NewReceiveTask(id, messageName string, opts ...activityOption) Node {
-	b := baseNode{id: id}
-	var a activityFields
-	var corrKey string
+// Options may be any receiveTaskOption: all shared activity options work here,
+// as does the ReceiveTask-specific WithCorrelationKey.
+// Passing a non-receiveTaskOption (e.g. WithEligibilityExpr) is a compile-time error.
+func NewReceiveTask(id, messageName string, opts ...receiveTaskOption) Node {
+	r := ReceiveTask{baseNode: baseNode{id: id}, MessageName: messageName}
 	for _, o := range opts {
-		o.applyActivity(&a)
-		o.applyName(&b)
-		if ck, ok := o.(correlationKeyOpt); ok {
-			corrKey = ck.key
-		}
+		o.applyReceiveTask(&r)
 	}
-	return ReceiveTask{baseNode: b, activityFields: a, MessageName: messageName, CorrelationKey: corrKey}
+	return r
 }
 
 // NewSendTask constructs a SendTask with the given id and message name.

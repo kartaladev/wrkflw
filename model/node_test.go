@@ -358,6 +358,54 @@ func TestEventSubProcessNonInterrupting(t *testing.T) {
 	}
 }
 
+// TestUserTaskCombinedOptions verifies that WithEligibilityExpr, WithName, and
+// WithRetryPolicy can all be combined on NewUserTask and that each field is set.
+func TestUserTaskCombinedOptions(t *testing.T) {
+	p := &model.RetryPolicy{MaxAttempts: 1}
+	n := model.NewUserTask("u", []string{"reviewer"},
+		model.WithEligibilityExpr("vars.score > 50"),
+		model.WithName("Review Task"),
+		model.WithRetryPolicy(p),
+	)
+	ut, ok := n.(model.UserTask)
+	if !ok {
+		t.Fatalf("node is %T, want model.UserTask", n)
+	}
+	if ut.EligibilityExpr != "vars.score > 50" {
+		t.Errorf("EligibilityExpr = %q, want %q", ut.EligibilityExpr, "vars.score > 50")
+	}
+	if ut.Name() != "Review Task" {
+		t.Errorf("Name() = %q, want %q", ut.Name(), "Review Task")
+	}
+	if ut.RetryPolicy != p {
+		t.Errorf("RetryPolicy not set")
+	}
+}
+
+// TestReceiveTaskCombinedOptions verifies that WithCorrelationKey, WithName, and
+// WithRetryPolicy can all be combined on NewReceiveTask and that each field is set.
+func TestReceiveTaskCombinedOptions(t *testing.T) {
+	p := &model.RetryPolicy{MaxAttempts: 2}
+	n := model.NewReceiveTask("recv-combo", "order.confirmed",
+		model.WithCorrelationKey("order.id"),
+		model.WithName("Wait For Confirmation"),
+		model.WithRetryPolicy(p),
+	)
+	rt, ok := n.(model.ReceiveTask)
+	if !ok {
+		t.Fatalf("node is %T, want model.ReceiveTask", n)
+	}
+	if rt.CorrelationKey != "order.id" {
+		t.Errorf("CorrelationKey = %q, want %q", rt.CorrelationKey, "order.id")
+	}
+	if rt.Name() != "Wait For Confirmation" {
+		t.Errorf("Name() = %q, want %q", rt.Name(), "Wait For Confirmation")
+	}
+	if rt.RetryPolicy != p {
+		t.Errorf("RetryPolicy not set")
+	}
+}
+
 func TestEventSubProcessNonInterruptingRoundTrip(t *testing.T) {
 	inner := &model.ProcessDefinition{
 		ID:      "inner",
