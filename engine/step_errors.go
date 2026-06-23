@@ -8,7 +8,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
-// propagateError implements BPMN error propagation for a thrown errorCode.
+// propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).
 //
 // It performs two checks in order, stopping at the first match:
 //

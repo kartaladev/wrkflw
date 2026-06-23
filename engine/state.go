@@ -90,7 +90,7 @@ type boundaryArm struct {
 	// to take when the boundary fires).
 	Flow string
 	// NonInterrupting mirrors model.Node.NonInterrupting; false = interrupting
-	// (BPMN default), true = non-interrupting.
+	// (the default), true = non-interrupting.
 	NonInterrupting bool
 	// TimerID is the scheduled timer id for timer boundary events. Empty for
 	// signal boundary events.
@@ -120,7 +120,7 @@ type eventSubprocessArm struct {
 	// the enclosing scope's definition.
 	EventSubprocessNode string
 	// NonInterrupting mirrors model.Node.NonInterrupting on the KindEventSubProcess
-	// node. false = interrupting (BPMN default); true = non-interrupting.
+	// node. false = interrupting (the default); true = non-interrupting.
 	NonInterrupting bool
 	// Signal is the signal name from the event sub-process's nested start event.
 	// Non-empty for signal-triggered event sub-processes.

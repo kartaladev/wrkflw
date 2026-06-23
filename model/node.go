@@ -176,7 +176,7 @@ type EventSubProcess struct {
 	// Subprocess is the nested process definition (must be non-nil).
 	Subprocess *ProcessDefinition
 	// NonInterrupting, when true, means the event sub-process does not cancel
-	// the enclosing scope's tokens when triggered. When false (the BPMN default),
+	// the enclosing scope's tokens when triggered. When false (the default, interrupting),
 	// the event sub-process interrupts the enclosing scope.
 	NonInterrupting bool
 }
@@ -229,7 +229,7 @@ type BoundaryEvent struct {
 	baseNode
 	// AttachedTo is the ID of the host activity node.
 	AttachedTo string
-	// NonInterrupting controls interrupting behavior: false = interrupting (BPMN default).
+	// NonInterrupting controls interrupting behavior: false = interrupting (the default).
 	NonInterrupting bool
 	// ErrorCode is the BPMN error code for a boundary error event (empty = catch-all).
 	ErrorCode string

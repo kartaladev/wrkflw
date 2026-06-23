@@ -248,7 +248,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					model.NewStartEvent("start"),
 					model.NewServiceTask("task", "do-work"),
-					// NonInterrupting omitted (false) = interrupting, the BPMN default.
+					// NonInterrupting omitted (false) = interrupting, the default.
 					model.NewBoundaryEvent("boundary", "task", model.WithBoundarySignal("cancel")),
 					model.NewEndEvent("end"),
 					model.NewEndEvent("cancel-end"),

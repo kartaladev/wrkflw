@@ -91,7 +91,7 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 			node: model.NewIntermediateThrowEvent("sig-throw", model.WithThrowSignal("order.shipped")),
 		},
 		{
-			// Zero-value NonInterrupting (false) = interrupting — the BPMN default.
+			// Zero-value NonInterrupting (false) = interrupting — the default.
 			name: "boundary-interrupting-default",
 			node: model.NewBoundaryEvent("boundary-1", "task-1", model.WithBoundarySignal("cancel.signal")),
 		},

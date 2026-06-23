@@ -1,5 +1,8 @@
-// Package model defines the in-memory BPMN-flavored process-definition types.
-// It is pure data plus validation; it imports only the standard library.
+// Package model defines the in-memory process-definition types: nodes,
+// gateways, sequence flows, and the ProcessDefinition template. The concepts
+// are inspired by BPMN, but this is NOT a BPMN-compatible implementation and
+// does not aim to load or round-trip arbitrary BPMN2 documents. It is pure data
+// plus validation; it imports only the standard library.
 package model
 
 // NodeKind discriminates the kind of a Node.
