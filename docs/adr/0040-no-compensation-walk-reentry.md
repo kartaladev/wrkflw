@@ -64,5 +64,14 @@ change.
   the alternative (re-entering compensation) is the double-run we are eliminating. A future change
   could defer it (extend `PendingCancel` to the partial-rollback finish), but that is entangled with
   the separate pre-existing partial-rollback record-retention issue and is out of scope here.
+- The terminal/partial **no-op** branch also drops the redundant trigger's fire-and-forget
+  `def.CancelActions` / per-node `CancelHandler` invocations (unlike the throw-defer branch, which
+  still emits them as that is the first cancel). For cancel→cancel this is correct — those actions
+  already fired when the first walk began, and re-emitting them would double-fire. For an
+  error→cancel race they never fire; acceptable, since they are best-effort (ADR-0028/0035) and the
+  instance was already terminating.
+- *Pre-existing, separate (flagged for backlog):* in **Macro** mode, two compensation-throw nodes in
+  parallel branches within a single `drive` pass would overwrite the single `s.Compensating` cursor.
+  That is an intra-`drive` concern orthogonal to the Step-trigger re-entry fixed here.
 
 Engine-only; `Step` stays pure/deterministic; no new dependencies.
