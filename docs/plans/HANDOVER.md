@@ -3,12 +3,32 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-22
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-23
 
 > **Fresh session: jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
 > below (just after the gate note).** It is the single prioritized entry point for new work. The
 > rest of this doc is the per-track detail behind it. Nothing *named* is in flight — `main` is
 > green and all work through ADR-0028 is merged (or in final merge for the CancelInstance track).
+
+> **▶ NEXT UP — the FOLLOWUPS resolution (4 sub-projects, FULLY PLANNED, ready to execute).**
+> This is different from every other backlog item: the **brainstorm + spec + plans already exist**,
+> so a fresh session **skips straight to `branch → SDD → review → merge`** — do NOT re-brainstorm.
+> Spec: `docs/specs/2026-06-23-followups-resolution-design.md` (devil's-advocate analysis + decisions;
+> note two rejections: `pkg/` reorg and `engine→exec` rename). Plans, **execute strictly in order**:
+> 1. `docs/plans/2026-06-23-layout-hygiene.md` — ① move `database`+`expreval`→`internal/`, root
+>    `doc.go`, **ADR-0041**. Pure refactor, low risk. *Start here.*
+> 2. `docs/plans/2026-06-23-node-interface-redesign.md` — ② `model.Node`→interface + 19 concrete
+>    types + constructors + builder + YAML loader, **ADR-0042**. The big one; all 108 engine sites are
+>    in `engine/step.go` alone. ⚠️ Its Tasks 1–2 are one **repo-wide red window** (atomic type change) —
+>    do them back-to-back, don't merge between.
+> 3. `docs/plans/2026-06-23-instance-serialization-dto.md` — ③ `runtime.InstanceSnapshot` +
+>    `ActionableView` DTOs, **ADR-0043**. Depends on ②.
+> 4. `docs/plans/2026-06-23-docs-bpmn-sweep-and-readme.md` — ⑤⑥ drop BPMN compat claims + README.
+>    Doc-only, no ADR. Depends on ①②③; **execute last.**
+>
+> All five docs are committed on branch `docs/followups-resolution-spec` (not merged). `FOLLOWUPS.md`
+> remains uncommitted in the working tree (the source discussion doc). Confirm scope with the user,
+> then begin executing plan 1.
 
 **Where we are:** the engine core (Plans 1–8), **all 5 productionization sub-projects**
 (Persistence, Scheduling, Authorization, Transports, Eventing), **all 4 deferred-backlog tracks**
@@ -76,9 +96,19 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0041**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next free number **0044** — 0041/0042/0043 are
+reserved by the already-written FOLLOWUPS plans) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
+
+**▶ Highest priority — FOLLOWUPS resolution (already specced + planned; see the "▶ NEXT UP" callout in
+the resume point above).** Four sub-projects to execute IN ORDER, skipping brainstorm/spec/plan (done):
+(1) layout hygiene `docs/plans/2026-06-23-layout-hygiene.md` (ADR-0041) → (2) Node→interface redesign
+`docs/plans/2026-06-23-node-interface-redesign.md` (ADR-0042) → (3) instance serialization DTO
+`docs/plans/2026-06-23-instance-serialization-dto.md` (ADR-0043) → (4) BPMN-claim sweep + README
+`docs/plans/2026-06-23-docs-bpmn-sweep-and-readme.md` (doc-only). Decisions/rationale (incl. why `pkg/`
+and `engine→exec` were rejected) in `docs/specs/2026-06-23-followups-resolution-design.md`. All committed
+on branch `docs/followups-resolution-spec`.
 
 **Recommended priority (top picks):** *(ADR-0029 gRPC/DLQ, 0030 reachability, 0031 call-link lease,
 0032 cancellation propagation parent→child — all ✅ DONE 2026-06-22; list re-numbered)*
