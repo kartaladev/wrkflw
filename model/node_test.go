@@ -1,6 +1,7 @@
 package model_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/model"
@@ -342,5 +343,64 @@ func TestRetryPolicyOption(t *testing.T) {
 	st, _ := n.(model.ServiceTask)
 	if st.RetryPolicy != p {
 		t.Fatal("RetryPolicy not set")
+	}
+}
+
+func TestEventSubProcessNonInterrupting(t *testing.T) {
+	sub := &model.ProcessDefinition{ID: "esp-ni-sub", Version: 1}
+	n := model.NewEventSubProcess("esp-ni", sub, model.WithESPNonInterrupting())
+	esp, ok := n.(model.EventSubProcess)
+	if !ok {
+		t.Fatalf("node is %T, want model.EventSubProcess", n)
+	}
+	if !esp.NonInterrupting {
+		t.Fatal("NonInterrupting should be true when WithESPNonInterrupting is used")
+	}
+}
+
+func TestEventSubProcessNonInterruptingRoundTrip(t *testing.T) {
+	inner := &model.ProcessDefinition{
+		ID:      "inner",
+		Version: 1,
+		Nodes: []model.Node{
+			model.NewStartEvent("s"),
+			model.NewEndEvent("e"),
+		},
+		Flows: []model.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+	}
+	outer := &model.ProcessDefinition{
+		ID:      "outer",
+		Version: 1,
+		Nodes: []model.Node{
+			model.NewEventSubProcess("esp-ni", inner,
+				model.WithESPNonInterrupting(),
+				model.WithName("Non-Interrupting ESP"),
+			),
+		},
+		Flows: []model.SequenceFlow{},
+	}
+
+	data, err := json.Marshal(outer)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	var decoded model.ProcessDefinition
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if len(decoded.Nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(decoded.Nodes))
+	}
+	esp, ok := decoded.Nodes[0].(model.EventSubProcess)
+	if !ok {
+		t.Fatalf("decoded node is %T, want model.EventSubProcess", decoded.Nodes[0])
+	}
+	if !esp.NonInterrupting {
+		t.Fatal("NonInterrupting not preserved through JSON round-trip")
+	}
+	if esp.Name() != "Non-Interrupting ESP" {
+		t.Fatalf("Name = %q, want 'Non-Interrupting ESP'", esp.Name())
 	}
 }

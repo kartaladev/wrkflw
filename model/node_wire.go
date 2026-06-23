@@ -67,6 +67,7 @@ func toWire(n Node) nodeWire {
 		applyActivityWire(&w, v.activityFields)
 	case EventSubProcess:
 		w.Subprocess = v.Subprocess
+		w.NonInterrupting = v.NonInterrupting
 	case IntermediateCatchEvent:
 		w.TimerDuration, w.SignalName, w.MessageName, w.CorrelationKey = v.TimerDuration, v.SignalName, v.MessageName, v.CorrelationKey
 		w.SLADuration, w.SLAFlow, w.SLAAction = v.SLADuration, v.SLAFlow, v.SLAAction
@@ -128,7 +129,7 @@ func fromWire(w nodeWire) (Node, error) {
 	case KindCallActivity:
 		return CallActivity{baseNode: b, activityFields: w.activity(), DefRef: w.DefRef}, nil
 	case KindEventSubProcess:
-		return EventSubProcess{baseNode: b, Subprocess: w.Subprocess}, nil
+		return EventSubProcess{baseNode: b, Subprocess: w.Subprocess, NonInterrupting: w.NonInterrupting}, nil
 	case KindIntermediateCatchEvent:
 		return IntermediateCatchEvent{
 			baseNode:       b,

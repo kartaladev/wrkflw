@@ -41,10 +41,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 		arm := eventSubprocessArm{
 			EnclosingScopeID:    enclosingScopeID,
 			EventSubprocessNode: n.ID(),
-			// NonInterrupting is not carried by model.EventSubProcess in the new
-			// interface model; defaults to false (interrupting). See BEHAVIOR_CONCERN
-			// in sp3-t2-report.md.
-			NonInterrupting: false,
+			NonInterrupting:     n.NonInterrupting,
 		}
 
 		// startNode is a model.Node; assert to StartEvent to read trigger fields.

@@ -175,6 +175,10 @@ type EventSubProcess struct {
 	baseNode
 	// Subprocess is the nested process definition (must be non-nil).
 	Subprocess *ProcessDefinition
+	// NonInterrupting, when true, means the event sub-process does not cancel
+	// the enclosing scope's tokens when triggered. When false (the BPMN default),
+	// the event sub-process interrupts the enclosing scope.
+	NonInterrupting bool
 }
 
 // Kind returns KindEventSubProcess.

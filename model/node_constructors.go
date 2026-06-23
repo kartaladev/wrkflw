@@ -30,14 +30,15 @@ func withActivity(fn func(*activityFields)) activityOption {
 	return activityOnlyOption{fn}
 }
 
-// nameOpt sets the name on a baseNode; implements activityOption, catchOption, boundaryOption, and startEventOption.
+// nameOpt sets the name on a baseNode; implements activityOption, catchOption, boundaryOption, startEventOption, and eventSubProcessOption.
 type nameOpt struct{ name string }
 
-func (o nameOpt) applyActivity(_ *activityFields)       {}
-func (o nameOpt) applyName(b *baseNode)                 { b.name = o.name }
-func (o nameOpt) applyCatch(n *IntermediateCatchEvent)  { n.name = o.name }
-func (o nameOpt) applyBoundary(n *BoundaryEvent)        { n.name = o.name }
-func (o nameOpt) applyStart(n *StartEvent)              { n.name = o.name }
+func (o nameOpt) applyActivity(_ *activityFields)        {}
+func (o nameOpt) applyName(b *baseNode)                  { b.name = o.name }
+func (o nameOpt) applyCatch(n *IntermediateCatchEvent)   { n.name = o.name }
+func (o nameOpt) applyBoundary(n *BoundaryEvent)         { n.name = o.name }
+func (o nameOpt) applyStart(n *StartEvent)               { n.name = o.name }
+func (o nameOpt) applyEventSubProcess(n *EventSubProcess) { n.name = o.name }
 
 // WithName returns an option that sets the Name field on any node that accepts it.
 // It implements activityOption, catchOption, and boundaryOption.
@@ -263,9 +264,30 @@ func NewCallActivity(id, defRef string, opts ...activityOption) Node {
 	return CallActivity{baseNode: b, activityFields: a, DefRef: defRef}
 }
 
+// eventSubProcessOption is the functional-options interface for EventSubProcess,
+// consistent with activityOption, catchOption, and boundaryOption.
+type eventSubProcessOption interface {
+	applyEventSubProcess(n *EventSubProcess)
+}
+
+// espNonInterruptingOpt sets NonInterrupting to true on an EventSubProcess.
+type espNonInterruptingOpt struct{}
+
+func (espNonInterruptingOpt) applyEventSubProcess(n *EventSubProcess) { n.NonInterrupting = true }
+
+// WithESPNonInterrupting returns an EventSubProcess option that sets NonInterrupting to true,
+// meaning the event sub-process runs alongside the enclosing scope without cancelling it.
+func WithESPNonInterrupting() eventSubProcessOption { return espNonInterruptingOpt{} }
+
 // NewEventSubProcess constructs an EventSubProcess with the given id and nested definition.
-func NewEventSubProcess(id string, sub *ProcessDefinition, name ...string) Node {
-	return EventSubProcess{baseNode: baseNode{id, optNameArg(name)}, Subprocess: sub}
+// Use WithESPNonInterrupting to mark the event sub-process as non-interrupting, and
+// WithName to set the display name.
+func NewEventSubProcess(id string, sub *ProcessDefinition, opts ...eventSubProcessOption) Node {
+	n := EventSubProcess{baseNode: baseNode{id: id}, Subprocess: sub}
+	for _, o := range opts {
+		o.applyEventSubProcess(&n)
+	}
+	return n
 }
 
 // --- intermediate / boundary event options ---

@@ -195,7 +195,7 @@ func TestNodeEventSubProcessField(t *testing.T) {
 	d := &model.ProcessDefinition{
 		ID:      "outer2",
 		Version: 1,
-		Nodes:   []model.Node{model.NewEventSubProcess("event-sub-1", nested, "Cancel Handler")},
+		Nodes:   []model.Node{model.NewEventSubProcess("event-sub-1", nested, model.WithName("Cancel Handler"))},
 		Flows:   []model.SequenceFlow{},
 	}
 
