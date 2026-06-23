@@ -158,6 +158,12 @@ spec → plan → implement cycle:
 1. **Layout hygiene (①)** — move `database` + `expreval` to `internal/`, add
    root `doc.go`, ADR reaffirming flat layout. Low risk; derisks the repo map
    before the README. *First.*
+1.5. **engine/step.go decomposition** — a late addition (not a FOLLOWUPS.md
+   item; full design in `docs/specs/2026-06-23-engine-step-decomposition-design.md`,
+   ADR-0044). Pure refactor of the 3251-line god file into a node-kind strategy
+   registry + extracted trigger handlers + collaborator files. Inserted **between
+   ① and ②** so ②'s engine migration edits small per-kind files, not the monolith.
+   *Second.*
 2. **Node model redesign (②)** — the big, risky thread; foundational. Its plan
    phases as: interface + concrete types → discriminated JSON → engine/runtime
    migration (131 sites) → `DefinitionBuilder` → YAML loader → per-kind
