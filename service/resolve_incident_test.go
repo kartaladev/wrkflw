@@ -26,9 +26,9 @@ func incidentDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "incident-test", Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "task", Kind: model.KindServiceTask, Action: "failing"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "failing"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
