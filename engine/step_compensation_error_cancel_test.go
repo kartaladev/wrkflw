@@ -439,3 +439,97 @@ func TestRedeliveredCancelIdempotent(t *testing.T) {
 	assert.Equal(t, engine.StatusTerminated, r4.State.Status,
 		"second CancelRequested on terminal instance must keep StatusTerminated")
 }
+
+// TestNoDoubleCompensationAfterArchiveConsolidate is the no-double-compensation
+// invariant test for ADR-0039 archive-by-scope. It verifies that:
+//
+//  1. A sub-process with a compensable task closes → record in ArchivedCompensations
+//  2. CancelRequested → consolidation merges archive into RootCompensations →
+//     compensation walk begins → compensation completes → instance Terminated
+//  3. A SECOND CancelRequested on the already-Terminated instance emits NO
+//     InvokeAction (idempotent: archive is nil + RootCompensations cleared).
+//
+// Uses compensableSubThenRootDef() (outer: start→sub→rootUserTask→end;
+// inner: inner-start→inner-svc(cancel-inner)→inner-end).
+func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
+	at := time.Date(2026, 6, 23, 11, 0, 0, 0, time.UTC)
+	// Import compensableSubThenRootDef via package-level access is not possible
+	// here (different file). Inline the same definition.
+	nested := func() *model.ProcessDefinition {
+		inner := &model.ProcessDefinition{
+			ID: "no-double-nested", Version: 1,
+			Nodes: []model.Node{
+				{ID: "inner-start", Kind: model.KindStartEvent},
+				{ID: "inner-svc", Kind: model.KindServiceTask, Action: "book-inner", CompensationAction: "cancel-inner"},
+				{ID: "inner-end", Kind: model.KindEndEvent},
+			},
+			Flows: []model.SequenceFlow{
+				{ID: "if1", Source: "inner-start", Target: "inner-svc"},
+				{ID: "if2", Source: "inner-svc", Target: "inner-end"},
+			},
+		}
+		return &model.ProcessDefinition{
+			ID: "no-double-outer", Version: 1,
+			Nodes: []model.Node{
+				{ID: "start", Kind: model.KindStartEvent},
+				{ID: "sub", Kind: model.KindSubProcess, Subprocess: inner},
+				{ID: "rootUserTask", Kind: model.KindUserTask},
+				{ID: "end", Kind: model.KindEndEvent},
+			},
+			Flows: []model.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "sub"},
+				{ID: "f2", Source: "sub", Target: "rootUserTask"},
+				{ID: "f3", Source: "rootUserTask", Target: "end"},
+			},
+		}
+	}()
+
+	// Step 1: start → inner-svc invoked.
+	r1, err := engine.Step(nested, engine.InstanceState{InstanceID: "no-double-1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	ia0 := r1.Commands[0].(engine.InvokeAction)
+	require.Equal(t, "book-inner", ia0.Name)
+
+	// Step 2: complete inner-svc → sub closes → record archived → parked at rootUserTask.
+	r2, err := engine.Step(nested, r1.State,
+		engine.NewActionCompleted(at.Add(1*time.Second), ia0.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status)
+	require.NotNil(t, r2.State.ArchivedCompensations,
+		"archive must be populated after sub-process closes")
+
+	// Step 3: CancelRequested → consolidate + walk begins → "cancel-inner" emitted.
+	r3, err := engine.Step(nested, r2.State,
+		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompensating, r3.State.Status)
+	ia1, found := findInvokeAction(r3.Commands, "cancel-inner")
+	require.True(t, found, "CancelRequested must emit InvokeAction{Name:\"cancel-inner\"} via consolidation")
+
+	// Step 4: ActionCompleted for cancel-inner → walk finishes → StatusTerminated.
+	r4, err := engine.Step(nested, r3.State,
+		engine.NewActionCompleted(at.Add(3*time.Second), ia1.CommandID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusTerminated, r4.State.Status)
+
+	// Verify archive is nil and RootCompensations cleared after walk completes.
+	assert.Nil(t, r4.State.ArchivedCompensations,
+		"ArchivedCompensations must be nil after consolidation + walk")
+	assert.Empty(t, r4.State.RootCompensations,
+		"RootCompensations must be cleared after walk completes")
+
+	// Step 5 (no-double-compensation): second CancelRequested on Terminated instance.
+	r5, err := engine.Step(nested, r4.State,
+		engine.NewCancelRequested(at.Add(4*time.Second)), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Must NOT emit any InvokeAction — no double compensation.
+	for _, cmd := range r5.Commands {
+		_, isInvoke := cmd.(engine.InvokeAction)
+		assert.False(t, isInvoke,
+			"second CancelRequested on terminal state must NOT emit InvokeAction (no double-compensation)")
+	}
+	assert.Equal(t, engine.StatusTerminated, r5.State.Status,
+		"second CancelRequested must keep StatusTerminated")
+}

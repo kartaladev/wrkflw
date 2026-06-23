@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -284,7 +285,20 @@ type NodeVisit struct {
 //
 // Fields:
 //   - ScopeID: the scope whose records are being walked ("" = root scope /
-//     RootCompensations). Used to locate the correct record slice on each step.
+//     RootCompensations). Used to locate the correct record slice on each step
+//     when ArchiveKey is empty.
+//   - ArchiveKey: when non-empty, the walk is drawing records from
+//     ArchivedCompensations[ArchiveKey] rather than a live scope or
+//     RootCompensations. Set by the compensation throw producer (Phase 3);
+//     empty for all beginCompensation (admin / cancel / error) walks.
+//   - ResumeNode: when non-empty, stepCompensationFinish resumes execution at
+//     this node (sets Status = StatusRunning, places a token here) instead of
+//     applying the terminal FinalStatus. Used by the compensation throw walk to
+//     continue past the throw event after the archived compensation records have
+//     been run. Empty for all beginCompensation (admin / cancel / error) walks.
+//   - ResumeScope: the ScopeID of the token that triggered the compensation
+//     throw. Used alongside ResumeNode so placeTokenInScope restores the token
+//     to the correct scope after the throw walk finishes. Empty means root scope.
 //   - ToNode: the rollback target — compensation walks back to (but not
 //     including) this node. Empty means "roll back everything".
 //   - NextIndex: the index into the relevant CompensationRecord slice of the
@@ -299,9 +313,9 @@ type NodeVisit struct {
 //     StatusCompensating, the engine advances the cursor to the next record
 //     rather than doing normal token routing.
 //   - FinalStatus: the Status applied by stepCompensationFinish on a full
-//     rollback (ToNode == ""). Zero ⇒ StatusTerminated (back-compat; admin path
-//     and pre-migration in-flight compensations). StatusFailed for unhandled
-//     errors; StatusTerminated for cancel.
+//     rollback (ToNode == "" and ResumeNode == ""). Zero ⇒ StatusTerminated
+//     (back-compat; admin path and pre-migration in-flight compensations).
+//     StatusFailed for unhandled errors; StatusTerminated for cancel.
 //   - FinalErr: when non-empty, stepCompensationFinish appends
 //     FailInstance{Err: FinalErr} on the full-rollback branch. The admin path
 //     leaves this empty.
@@ -310,7 +324,23 @@ type NodeVisit struct {
 // scalars — no pointers or maps). No additional deep-copy code is needed.
 type compensationCursor struct {
 	// ScopeID identifies the scope being compensated ("" = root).
+	// Ignored when ArchiveKey is non-empty (archive walk).
 	ScopeID string
+	// ArchiveKey is the ArchivedCompensations map key for a throw-walk
+	// (non-empty). When set, cursorRecords reads from ArchivedCompensations[ArchiveKey]
+	// instead of the live scope or RootCompensations. Empty for all
+	// beginCompensation (admin / cancel / error) walks.
+	ArchiveKey string
+	// ResumeNode is the node to place a token at when the compensation throw
+	// walk finishes (the throw event's single successor). When non-empty,
+	// stepCompensationFinish sets Status = StatusRunning and places a token
+	// here instead of applying FinalStatus. Empty for admin / cancel / error
+	// walks (which always terminate).
+	ResumeNode string
+	// ResumeScope is the ScopeID of the scope in which the token should be
+	// placed at ResumeNode after the throw walk finishes. Empty = root scope.
+	// Populated by the compensation throw producer from the throw token's ScopeID.
+	ResumeScope string
 	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
 	ToNode string
 	// NextIndex is the index of the CompensationRecord currently in-flight
@@ -321,13 +351,13 @@ type compensationCursor struct {
 	// in flight. Cleared when the step completes.
 	ActiveCmdID string
 	// FinalStatus is the Status the instance must enter when the full-rollback
-	// branch of stepCompensationFinish fires (toNode == ""). The zero value
-	// (StatusRunning == 0) means UNSET: stepCompensationFinish maps it to
-	// StatusTerminated (back-compat; admin full-rollback path and pre-migration
-	// in-flight compensations deserialized from JSONB retain the prior
-	// Terminated behaviour). Error/cancel paths that trigger compensation set
-	// this explicitly: StatusFailed for unhandled errors, StatusTerminated for
-	// cancel. This is always a terminal value at finish time — no caller of
+	// branch of stepCompensationFinish fires (toNode == "" and ResumeNode == "").
+	// The zero value (StatusRunning == 0) means UNSET: stepCompensationFinish
+	// maps it to StatusTerminated (back-compat; admin full-rollback path and
+	// pre-migration in-flight compensations deserialized from JSONB retain the
+	// prior Terminated behaviour). Error/cancel paths that trigger compensation
+	// set this explicitly: StatusFailed for unhandled errors, StatusTerminated
+	// for cancel. This is always a terminal value at finish time — no caller of
 	// beginCompensation ever wants a non-terminal final status here.
 	FinalStatus Status
 	// FinalErr is the error string passed to a FailInstance command when the
@@ -390,6 +420,13 @@ type InstanceState struct {
 	// back top-level compensable activities.
 	RootCompensations []CompensationRecord
 
+	// ArchivedCompensations holds completed sub-process compensation records keyed
+	// by the sub-process node id. On normal scope exit, scope.Compensations are moved
+	// here (instead of being hoisted to the parent) so scope identity survives for
+	// scope-targeted compensation (ADR-0039). A root/instance walk consolidates these
+	// into RootCompensations before traversal via consolidateArchiveIntoRoot.
+	ArchivedCompensations map[string][]CompensationRecord
+
 	// EventSubprocesses holds the set of pending arms for in-flight event
 	// sub-processes. One entry per KindEventSubProcess node while its enclosing
 	// scope is active. Entries are appended in definition-scan order (deterministic).
@@ -408,6 +445,12 @@ type InstanceState struct {
 	// or non-retryable error). Incidents are resolved (removed) when an operator
 	// retries or skips the failed node.
 	Incidents []Incident
+
+	// PendingCancel is set when a CancelRequested arrives while a compensation
+	// THROW walk is in flight; the throw walk finishes, then runs a full cancel
+	// over the remaining records and terminates instead of resuming — avoids
+	// double-compensating the throw's in-flight records (ADR-0039 B1 fix).
+	PendingCancel bool
 
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
@@ -756,23 +799,54 @@ func (s *InstanceState) tokensInScope(scopeID string) int {
 	return count
 }
 
-// hoistCompensations moves childID's accumulated compensation records into its
-// parent (parentID), appended in completion order, so they remain rollback-able
-// after the child scope closes. parentID "" targets RootCompensations. The
-// child's own slice is cleared. No-op if the child has no records or is not found.
-func (s *InstanceState) hoistCompensations(childID, parentID string) {
-	child := s.scopeByID(childID)
-	if child == nil || len(child.Compensations) == 0 {
+// archiveCompensations moves the Compensations of the scope identified by scopeID
+// into ArchivedCompensations keyed by that scope's NodeID (the sub-process node
+// that opened the scope). This replaces hoistCompensations on normal sub-process
+// exit (ADR-0039): scope identity is preserved for scope-targeted compensation,
+// and records are still reachable by the root/instance walk via
+// consolidateArchiveIntoRoot. A sub-process entered more than once accumulates
+// records in the same archive slot. No-op if the scope has no records or is not
+// found.
+func (s *InstanceState) archiveCompensations(scopeID string) {
+	scope := s.scopeByID(scopeID)
+	if scope == nil || len(scope.Compensations) == 0 {
 		return
 	}
-	if parentID == "" {
-		s.RootCompensations = append(s.RootCompensations, child.Compensations...)
-	} else if parent := s.scopeByID(parentID); parent != nil {
-		// The parent always exists here by construction: scopes close child-first,
-		// so a closing scope's parent is either root ("") or a still-open ancestor.
-		parent.Compensations = append(parent.Compensations, child.Compensations...)
+	if s.ArchivedCompensations == nil {
+		s.ArchivedCompensations = make(map[string][]CompensationRecord)
 	}
-	child.Compensations = nil
+	s.ArchivedCompensations[scope.NodeID] = append(s.ArchivedCompensations[scope.NodeID], scope.Compensations...)
+	scope.Compensations = nil
+}
+
+// consolidateArchiveIntoRoot moves all ArchivedCompensations into RootCompensations,
+// then stable-sorts the combined slice by (CompletedAt ascending, NodeID ascending
+// tiebreak) for determinism, then sets ArchivedCompensations to nil. This is called
+// by beginCompensation before the root/instance walk so the walk sees root + all
+// archived sub-process records as one reverse-ordered sequence. Records are MOVED
+// (single ownership: once consolidated, the archive is empty; stepCompensationFinish
+// clears RootCompensations on walk finish, covering everything).
+func (s *InstanceState) consolidateArchiveIntoRoot() {
+	if len(s.ArchivedCompensations) == 0 {
+		return
+	}
+	// Deterministic iteration: sort archive keys.
+	keys := make([]string, 0, len(s.ArchivedCompensations))
+	for k := range s.ArchivedCompensations {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		s.RootCompensations = append(s.RootCompensations, s.ArchivedCompensations[k]...)
+	}
+	s.ArchivedCompensations = nil
+	// Stable-sort combined slice by CompletedAt asc, NodeID asc tiebreak.
+	sort.SliceStable(s.RootCompensations, func(i, j int) bool {
+		if s.RootCompensations[i].CompletedAt.Equal(s.RootCompensations[j].CompletedAt) {
+			return s.RootCompensations[i].NodeID < s.RootCompensations[j].NodeID
+		}
+		return s.RootCompensations[i].CompletedAt.Before(s.RootCompensations[j].CompletedAt)
+	})
 }
 
 // closeScope removes the Scope with the given scopeID from s.Scopes. It is a

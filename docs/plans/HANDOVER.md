@@ -20,7 +20,8 @@ plus the **engine wrong-state sentinel + `workflow-` prefix sweep** track (ADR-0
 track (ADR-0029, branch `feat/grpc-resolveincident-dlq-admin`) and the **reachability + fork-join
 validation** track (ADR-0030), the **call-link lease exclusivity** track (ADR-0031), and the
 **cancellation propagation parent→child** track (ADR-0032, branch `feat/cancellation-propagation`).
-ADRs 0001–0038 (0038 = admin total-count + Lookup ctx, branch `feat/small-api-completeness`; 0037 =
+ADRs 0001–0039 (0039 = scope-targeted compensation, branch `feat/scope-targeted-compensation`; 0038 =
+admin total-count + Lookup ctx, branch `feat/small-api-completeness`; 0037 =
 observability handler + Store spans, branch `feat/observability-gaps`; 0036 =
 casbin policy-admin, branch `feat/casbin-policy-admin`; 0035 = per-node cancel handlers, branch
 `feat/cancel-handlers`).
@@ -75,7 +76,7 @@ deferred-backlog ×4 + the 3 "also-outstanding" items + the **engine wrong-state
 all production error messages carry a **`workflow-`** prefix (e.g. `workflow-engine:`); assert on
 sentinels with `errors.Is`, never string-matching — see the `error-sentinel-prefix` memory and ADR-0026.
 Pick the next piece of work from the prioritized backlog below — each item is a self-contained track:
-**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0039**) → plan (`docs/plans/`) →
+**brainstorm → spec (`docs/specs/`) → ADR (`docs/adr/`, next number **0040**) → plan (`docs/plans/`) →
 branch → SDD → opus whole-branch review → merge + push**. Confirm scope with the user before starting.
 The full per-item detail lives in the per-track "Deferred follow-ups" sections further down; this is the index.
 
@@ -94,10 +95,17 @@ The full per-item detail lives in the per-track "Deferred follow-ups" sections f
 - **Correctness / robustness:** *(reachability/fork-join pairing validation — ✅ DONE, ADR-0030;
   `AdvisoryLockOwnership` use-after-close guard — ✅ DONE, ADR-0033; compensation-on-error/cancel —
   ✅ DONE, ADR-0034)*
-  scope-targeted compensation (`Compensate` producer — ADR-0037, next/largest); *(casbin
-  adapter/watcher `context` propagation — CLOSED as a non-issue, ADR-0036 §0: upstream casbin
+  *(scope-targeted compensation — compensation throw event + archive-by-scope — ✅ DONE, ADR-0039)*;
+  *(casbin adapter/watcher `context` propagation — CLOSED as a non-issue, ADR-0036 §0: upstream casbin
   persist.Adapter has no ctx; watcher already threads its lifecycle ctx)*; JSONB
   numeric/enum fidelity. *(engine wrong-state sentinel — ✅ DONE, ADR-0026, see section below.)*
+  **⚠️ HIGH-PRIORITY FOLLOW-UP (pre-existing, found during ADR-0039 review):** a `CancelRequested`
+  delivered MID an in-flight TERMINAL cancel/error compensation walk (the ADR-0034 `RootCompensations`
+  walk, `Compensating.ResumeNode==""`) re-enters `beginCompensation` and **re-emits the in-flight
+  compensation record → double-compensation**. Pre-dates ADR-0039 (not introduced/worsened by it; the
+  ADR-0039 B1 fix handles the throw-walk case, `ResumeNode!=""`). `TestRedeliveredCancelIdempotent`
+  only guards the terminal state, not mid-walk. Fix: generalize the ADR-0039 PendingCancel defer idiom
+  to mid-terminal-walk re-cancel. Same money-double-run class as B1 — fix soon.
 - **Production-hardening:** *(cancellation propagation parent→child — ✅ DONE ADR-0032; orphaned-child
   cleanup handled by ErrTokenNotFound path; `wrkflw_processed_message` pruning — ✅ DONE ADR-0033)*;
   *(per-active-node cancel handlers — ✅ DONE ADR-0035)*;
@@ -270,6 +278,42 @@ contract). Authz stays the consumer's transport-gate responsibility.
    boundary (shared with the resilience deferred #5).
 4. **gRPC per-method auth interceptor sample** — ship/document an interceptor mirroring the REST
    admin gate (shared with the CancelInstance deferred #5).
+
+---
+
+## Scope-targeted compensation sub-project — ✅ COMPLETE
+
+Backlog top pick (Correctness). The LARGEST engine/model change. Branch
+`feat/scope-targeted-compensation`. Spec `docs/specs/2026-06-23-scope-targeted-compensation-design.md`,
+plan `docs/plans/2026-06-23-scope-targeted-compensation.md`, **ADR-0039**. 4 SDD phases (P1/P4 sonnet-
+Approved; P2/P3 independent-opus-Approved) + opus whole-branch review that **found & reproduced a real
+double-compensation bug (B1)** four per-phase reviews missed → fixed → opus re-review **Ready: Yes**.
+Gate: `go test -race ./engine/ ./model/ ./runtime/` green, cov 88.1%, lint 0, **engine touched
+deliberately (user-authorized)**.
+
+### What shipped
+A BPMN **compensation throw event** for scope-targeted compensation. **(model)** `Node.CompensateRef`
+on `KindIntermediateThrowEvent` + `Validate` (`ErrCompensateRefNotFound`). **(engine, reverses
+ADR-0013's hoist)** completed sub-process compensation records are **archived by sub-process node id**
+(`InstanceState.ArchivedCompensations`) instead of hoisted to root; the cancel/error/admin walk
+`consolidateArchiveIntoRoot()` compensates root+archive. Reaching a compensation throw runs that
+sub-process's archived compensations (reverse order) via the cursor (`ArchiveKey`/`ResumeNode`/
+`ResumeScope`) then **deletes the archive key and resumes** past the throw. **Single ownership** (MOVE
+at every hop) ⇒ no double-compensation across throw/cancel/error. B1 fix: a `CancelRequested` mid-throw-
+walk **defers** (`PendingCancel`) until the throw drains, then runs a full cancel over the remaining
+records — no double-run, no under-compensation.
+
+### Deferred follow-ups
+1. **⚠️ HIGH-PRIO (pre-existing, same money-double-run class as B1):** cancel-during-an-in-flight-
+   TERMINAL-cancel/error-walk re-emits the in-flight record (ADR-0034 `RootCompensations` walk,
+   `ResumeNode==""`). Generalize the `PendingCancel` defer idiom to mid-terminal-walk re-cancel. (See
+   the START-HERE Correctness bullet.)
+2. Compensation throw concurrent with an open parallel fork — v1 limitation (throw-on-main-flow); add
+   a `Validate` rule or pause siblings (ADR-0039 Deferred).
+3. Compensation **boundary** events; nested-scope addressing beyond a single node id; `command.go`
+   doc drift on the now-partly-built `Compensate` struct (cosmetic).
+4. Pre-existing partial-rollback (`toNode!=""`) retains already-compensated root records (no
+   `recordCompensation` dedup) → a later full cancel can re-run them — ADR-0035-era, engine-level.
 
 ---
 

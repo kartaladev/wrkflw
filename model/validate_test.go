@@ -643,6 +643,96 @@ func TestValidate(t *testing.T) {
 				require.NotErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
+		// CompensateRef validation rules
+		"compensation throw with dangling CompensateRef is rejected": {
+			// KindIntermediateThrowEvent with CompensateRef pointing to a non-existent node.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "task", Kind: model.KindServiceTask, Action: "do-work"},
+					{ID: "comp-throw", Kind: model.KindIntermediateThrowEvent, CompensateRef: "missing-node"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "comp-throw"},
+					{ID: "f3", Source: "comp-throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
+			},
+		},
+		"compensation throw with valid CompensateRef is accepted": {
+			// KindIntermediateThrowEvent with CompensateRef pointing to a real node.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "task", Kind: model.KindServiceTask, Action: "do-work", CompensationAction: "undo-work"},
+					{ID: "comp-throw", Kind: model.KindIntermediateThrowEvent, CompensateRef: "task"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "comp-throw"},
+					{ID: "f3", Source: "comp-throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"normal intermediate throw event with no CompensateRef is unaffected": {
+			// KindIntermediateThrowEvent with empty CompensateRef (a normal signal throw)
+			// must not trigger ErrCompensateRefNotFound.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "throw", Kind: model.KindIntermediateThrowEvent, SignalName: "sig.done"},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "throw"},
+					{ID: "f2", Source: "throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err, "a normal throw with no CompensateRef must validate clean")
+			},
+		},
+		"dangling CompensateRef inside a sub-process is rejected (recursion)": {
+			// The CompensateRef rule lives in the recursive validate(), so a dangling
+			// ref inside a nested sub-process definition must also be caught.
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					{ID: "start", Kind: model.KindStartEvent},
+					{ID: "sp", Kind: model.KindSubProcess, Subprocess: &model.ProcessDefinition{
+						ID: "inner", Version: 1,
+						Nodes: []model.Node{
+							{ID: "ns", Kind: model.KindStartEvent},
+							{ID: "nthrow", Kind: model.KindIntermediateThrowEvent, CompensateRef: "no-such"},
+							{ID: "ne", Kind: model.KindEndEvent},
+						},
+						Flows: []model.SequenceFlow{
+							{ID: "nf1", Source: "ns", Target: "nthrow"},
+							{ID: "nf2", Source: "nthrow", Target: "ne"},
+						},
+					}},
+					{ID: "end", Kind: model.KindEndEvent},
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
+			},
+		},
 	}
 
 	for name, tc := range tests {

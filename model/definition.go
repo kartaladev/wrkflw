@@ -79,6 +79,13 @@ type Node struct {
 	// in compensation. An empty value means the node is not compensable.
 	CompensationAction string
 
+	// CompensateRef marks a KindIntermediateThrowEvent as a COMPENSATION THROW.
+	// It names the node id of the completed activity or sub-process whose
+	// compensation to run when this throw event is reached. An empty value means
+	// "compensate the whole current/root scope" — a scope-wide compensation throw.
+	// This field is ignored on all node kinds other than KindIntermediateThrowEvent.
+	CompensateRef string
+
 	// CancelHandler is the optional name of a ServiceAction run fire-and-forget
 	// when THIS node is active (parked/in-flight) and the process instance is
 	// cancelled (CancelRequested trigger). The engine emits an InvokeCancelAction

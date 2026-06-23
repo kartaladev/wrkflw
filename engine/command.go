@@ -148,9 +148,10 @@ type InvokeCancelAction struct {
 //   - The admin entry point is the CompensateRequested trigger (a Trigger, not a
 //     Command), which walks InstanceState.RootCompensations in reverse order.
 //   - When a sub-process scope closes normally, its accumulated CompensationRecords
-//     are HOISTED into the parent scope (or root) via hoistCompensations before
-//     closeScope is called (ADR-0013). Hoisted records are therefore reachable by
-//     the root CompensateRequested walk in reverse completion order.
+//     are ARCHIVED into InstanceState.ArchivedCompensations keyed by the sub-process
+//     node ID via archiveCompensations before closeScope is called (ADR-0039).
+//     Archived records are merged into RootCompensations by consolidateArchiveIntoRoot
+//     when a compensation walk begins (CompensateRequested / cancel / error path).
 //   - Compensate{ScopeID, FromNode} remains RESERVED for future scope-targeted
 //     compensation, which requires a producer (e.g. a BPMN compensation boundary
 //     event or throw event) not yet built. Do not rely on this command being emitted.

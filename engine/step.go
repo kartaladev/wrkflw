@@ -142,11 +142,26 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 			}
 		}
 
-		if len(s.RootCompensations) > 0 {
+		// ADR-0039 (B1 fix): if a compensation THROW walk is already in flight
+		// (ResumeNode != "" distinguishes a throw walk from a terminal cancel/error walk),
+		// do NOT start a second compensation walk. beginCompensation would consolidate the
+		// throw's own not-yet-deleted archived records into root and re-emit them →
+		// double-compensation. Defer: record the cancel intent and let the in-flight throw
+		// walk finish; stepCompensationFinish then runs a full cancel over the REMAINING
+		// records (the throw's target is deleted by then) and terminates instead of resuming.
+		if s.Status == StatusCompensating && s.Compensating.ResumeNode != "" {
+			s.PendingCancel = true
+			cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
+			return StepResult{State: s, Commands: cmds}, nil
+		}
+
+		if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 			// Compensation walk before termination (ADR-0034).
-			// beginCompensation clears tokens/timers/arms and emits the first compensation
-			// InvokeAction, setting the cursor with FinalStatus=Terminated and FinalErr="cancelled".
-			// stepCompensationFinish will emit FailInstance{"cancelled"} at walk end.
+			// beginCompensation consolidates ArchivedCompensations into RootCompensations
+			// first (ADR-0039), then clears tokens/timers/arms and emits the first
+			// compensation InvokeAction, setting the cursor with FinalStatus=Terminated
+			// and FinalErr="cancelled". stepCompensationFinish will emit
+			// FailInstance{"cancelled"} at walk end.
 			s.Status = StatusCompensating
 			res, err := beginCompensation(def, &s, "", StatusTerminated, "cancelled", t.OccurredAt(), opt.Mode)
 			if err != nil {
@@ -1103,7 +1118,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 						for _, timerID := range s.removeEventSubprocessArmsForScope(currentScopeID) {
 							cmds = append(cmds, CancelTimer{TimerID: timerID})
 						}
-						s.hoistCompensations(currentScopeID, parentScopeID)
+						s.archiveCompensations(currentScopeID)
 						s.closeScope(currentScopeID)
 
 						// Resolve the parent definition and find the sub-process activity's
@@ -1278,7 +1293,53 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			stopped = true // token parked: Micro stops here
 
 		case model.KindIntermediateThrowEvent:
-			if node.SignalName != "" {
+			if node.CompensateRef != "" {
+				// Compensation throw intermediate event (ADR-0039, Phase 3).
+				// Runs the archived compensation records for the referenced sub-process
+				// node in reverse order, then resumes execution past the throw node.
+				// This is a localized walk — it does NOT call beginCompensation
+				// (which cancels ALL tokens and is designed for full/partial rollbacks).
+				ref := node.CompensateRef
+				records := s.ArchivedCompensations[ref]
+				// Determine the resume node: the throw's single outgoing successor.
+				resumeNode := ""
+				if out := tdef.Outgoing(node.ID); len(out) > 0 {
+					resumeNode = out[0].Target
+				}
+				if len(records) == 0 || resumeNode == "" {
+					// No archived records (never ran, already compensated by a prior
+					// throw, or the sub-process had no compensable activities), OR the
+					// throw has no outgoing flow. A throw with no successor must NOT
+					// start a walk: stepCompensationFinish would see ResumeNode=="" and
+					// take the terminal branch, wrongly terminating the instance. Validate
+					// forbids a dead-end throw (ErrDeadEnd); this guards Step defensively
+					// regardless. Auto-advance — fire-and-forget, no InvokeAction emitted.
+					s.moveAlongSingleFlow(tdef, tok, at)
+					// stopped remains false: auto-advance.
+				} else {
+					// Start the throw compensation walk (resumeNode is non-empty here).
+					// Remember the throw token's scope for correct placeTokenInScope on finish.
+					tokScope := tok.ScopeID
+					// Consume the throw token now (finish will place a fresh token at resumeNode).
+					s.consumeToken(tok, at)
+					// Set instance into compensation mode and stamp the cursor.
+					s.Status = StatusCompensating
+					cmdID := s.nextCommandID()
+					s.Compensating = compensationCursor{
+						ArchiveKey:  ref,
+						ResumeNode:  resumeNode,
+						ResumeScope: tokScope,
+						NextIndex:   len(records) - 1,
+						ActiveCmdID: cmdID,
+					}
+					cmds = append(cmds, InvokeAction{
+						CommandID: cmdID,
+						Name:      records[len(records)-1].Action,
+						Input:     copyVars(records[len(records)-1].Input),
+					})
+					stopped = true // walk started; Micro stops here
+				}
+			} else if node.SignalName != "" {
 				// Signal intermediate throw: emit ThrowSignal and continue along the
 				// single outgoing flow. The runtime broadcasts the signal; the engine
 				// does not wait for delivery (fire-and-forget from the engine's view).
@@ -1289,8 +1350,8 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 				s.moveAlongSingleFlow(tdef, tok, at)
 				// Auto-advance: signal throw is fire-and-forget; stopped remains false.
 			} else {
-				// Non-signal intermediate throw: park for future plans (e.g. message
-				// throw, error throw). Parking avoids an infinite drive loop.
+				// Non-signal, non-compensation intermediate throw: park for future plans
+				// (e.g. message throw, error throw). Parking avoids an infinite drive loop.
 				tok.State = TokenWaitingCommand
 				stopped = true // token parked: Micro stops here
 			}
@@ -2022,7 +2083,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	}
 
 	// Terminal unhandled error: run compensation walk before terminating (ADR-0034).
-	if len(s.RootCompensations) > 0 {
+	// Check both RootCompensations and ArchivedCompensations (ADR-0039) — consolidation
+	// happens inside beginCompensation.
+	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
 		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode)
 		if err != nil {
@@ -2667,6 +2730,17 @@ func compensationRecordsForScope(s *InstanceState, scopeID string) []Compensatio
 	return sc.Compensations
 }
 
+// cursorRecords returns the CompensationRecord slice for the current compensation
+// walk described by cur. When cur.ArchiveKey is non-empty, the records are drawn
+// from s.ArchivedCompensations[cur.ArchiveKey] (a scope-targeted throw walk);
+// otherwise compensationRecordsForScope is used (admin / cancel / error walks).
+func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecord {
+	if cur.ArchiveKey != "" {
+		return s.ArchivedCompensations[cur.ArchiveKey]
+	}
+	return compensationRecordsForScope(s, cur.ScopeID)
+}
+
 // stepCompensateRequested handles a CompensateRequested trigger. It sets the
 // instance to StatusCompensating, then delegates to beginCompensation to cancel
 // in-flight tokens, look up compensation records, and emit the first
@@ -2735,8 +2809,12 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	preCmds = append(preCmds, s.cancelAllTimers()...)
 	preCmds = append(preCmds, s.cancelAllArmsAndBoundaries()...)
 
-	// For now we compensate the root scope (top-level admin path).
-	// Task 4 will extend this to scope-targeted compensation.
+	// Merge any archived sub-process compensation records into RootCompensations before
+	// walking. consolidateArchiveIntoRoot is a no-op when ArchivedCompensations is nil.
+	s.consolidateArchiveIntoRoot()
+
+	// Compensate the root scope (top-level walk: root + all previously-archived records
+	// are now in RootCompensations after consolidation above).
 	const scopeID = ""
 	records := compensationRecordsForScope(s, scopeID)
 
@@ -2825,7 +2903,9 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 // next InvokeAction in reverse order, or finalises compensation if the walk is done.
 func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode) (StepResult, error) {
 	cur := s.Compensating
-	records := compensationRecordsForScope(s, cur.ScopeID)
+	// Use cursorRecords so that throw walks (ArchiveKey != "") read from the
+	// archive and admin/cancel/error walks read from the live scope.
+	records := cursorRecords(s, cur)
 
 	// Advance: the record we just completed is at cur.NextIndex. Move to the
 	// previous record (next in reverse order). nextIdx = cur.NextIndex - 1.
@@ -2849,11 +2929,16 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 		return stepCompensationFinish(def, s, cur.ToNode, at, mode)
 	}
 
-	// Emit the next compensation action.
+	// Emit the next compensation action. Preserve all cursor fields — including
+	// the Phase 3 fields (ArchiveKey, ResumeNode, ResumeScope) — so that
+	// stepCompensationFinish can use them when the walk eventually ends.
 	rec := records[nextIdx]
 	cmdID := s.nextCommandID()
 	s.Compensating = compensationCursor{
 		ScopeID:     cur.ScopeID,
+		ArchiveKey:  cur.ArchiveKey,
+		ResumeNode:  cur.ResumeNode,
+		ResumeScope: cur.ResumeScope,
 		ToNode:      cur.ToNode,
 		NextIndex:   nextIdx,
 		ActiveCmdID: cmdID,
@@ -2869,63 +2954,104 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 }
 
 // stepCompensationFinish finalises the compensation walk:
-//   - If toNode != "": place a token at toNode, set Status = StatusRunning, and
-//     drive forward (resuming execution from the rollback target).
-//   - If toNode == "": all records have been compensated; set Status =
-//     StatusTerminated (full rollback — no resume point).
+//   - If ResumeNode != "" (compensation throw walk): delete the archive entry,
+//     set Status = StatusRunning, place a token at ResumeNode in ResumeScope,
+//     and drive forward (resuming execution past the throw event).
+//   - If toNode != "" (partial rollback via CompensateRequested): place a token
+//     at toNode, set Status = StatusRunning, and drive forward.
+//   - If toNode == "" and ResumeNode == "": full rollback — apply the cursor's
+//     terminal FinalStatus (StatusTerminated / StatusFailed).
 func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode) (StepResult, error) {
-	// Save outcome fields AND scope BEFORE clearing the cursor.
+	// Save outcome fields AND cursor metadata BEFORE clearing the cursor.
 	finalStatus := s.Compensating.FinalStatus
 	finalErr := s.Compensating.FinalErr
 	scopeID := s.Compensating.ScopeID
+	archiveKey := s.Compensating.ArchiveKey
+	resumeNode := s.Compensating.ResumeNode
+	resumeScope := s.Compensating.ResumeScope
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
-	if toNode == "" {
-		// Full rollback: no resume point → apply the cursor's terminal outcome.
-		// Zero FinalStatus (== StatusRunning, the iota-0 constant) means UNSET;
-		// map it to StatusTerminated. Safe: full-rollback finish is always
-		// terminal, so no caller of beginCompensation ever wants a non-terminal
-		// outcome here. The admin path (CompensateRequested) leaves FinalStatus
-		// zero; error/cancel paths set it explicitly (StatusFailed / StatusTerminated).
-		if finalStatus == 0 {
-			finalStatus = StatusTerminated
+	// ── Phase 3: compensation throw resume branch ─────────────────────────────
+	// A throw walk always has a non-empty ResumeNode. When the walk finishes,
+	// we delete the archive entry (single ownership: a second throw to the same
+	// ref finds len == 0 and becomes a no-op; a later cancel walk also won't
+	// re-run them because the archive key is already gone), resume status to
+	// Running, and place a token at the throw's successor.
+	if resumeNode != "" {
+		// Remove the archive entry (consume semantics — single ownership).
+		if archiveKey != "" && s.ArchivedCompensations != nil {
+			delete(s.ArchivedCompensations, archiveKey)
 		}
-		s.Status = finalStatus
-		ended := at
-		s.EndedAt = &ended
-
-		// Clear the compensation records for the walk's scope so that a re-delivered
-		// CancelRequested (or any other terminal trigger) on an already-terminal instance
-		// cannot re-enter the walk and double-compensate money-moving actions.
-		// beginCompensation today always uses scopeID="" (root scope); future scope-targeted
-		// walks (ADR-0035) will set a non-empty scopeID, which the else branch handles.
-		if scopeID == "" {
-			s.RootCompensations = nil
-		} else {
-			if sc := s.scopeByID(scopeID); sc != nil {
-				sc.Compensations = nil
-			}
+		if s.PendingCancel {
+			// A cancel arrived mid-throw-walk. The throw's target is now compensated and
+			// removed from the archive, so a full cancel over the REMAINING records
+			// (root + other archives) cannot double-run it. Run it and terminate.
+			s.PendingCancel = false
+			s.Status = StatusCompensating
+			return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode)
 		}
-
-		var cmds []Command
-		if finalErr != "" {
-			cmds = append(cmds, FailInstance{Err: finalErr})
+		s.Status = StatusRunning
+		// Place the resume token in the correct scope (the throw token's scope).
+		s.placeTokenInScope(resumeNode, resumeScope, at)
+		driveCmds, err := drive(def, s, at, mode)
+		if err != nil {
+			return StepResult{}, err
 		}
-		cmds = append(cmds, s.cancelAllTimers()...)
-		cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-		return StepResult{State: *s, Commands: cmds}, nil
+		return StepResult{State: *s, Commands: driveCmds}, nil
 	}
 
-	// Partial rollback: resume at toNode.
-	s.Status = StatusRunning
-	// Place a new token at toNode and drive forward.
-	s.placeToken(toNode, at)
-	driveCmds, err := drive(def, s, at, mode)
-	if err != nil {
-		return StepResult{}, err
+	// ── Partial rollback (CompensateRequested with non-empty ToNode) ──────────
+	if toNode != "" {
+		// Records are intentionally RETAINED here (not cleared): the instance
+		// keeps running and a later full walk must still see them. There is no
+		// double-compensation risk — consolidateArchiveIntoRoot already drained
+		// the archive into RootCompensations (single ownership: the records now
+		// live only in root, with ArchivedCompensations nil).
+		s.Status = StatusRunning
+		// Place a new token at toNode and drive forward.
+		s.placeToken(toNode, at)
+		driveCmds, err := drive(def, s, at, mode)
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: *s, Commands: driveCmds}, nil
 	}
-	return StepResult{State: *s, Commands: driveCmds}, nil
+
+	// ── Full rollback (toNode == "" and ResumeNode == "") ─────────────────────
+	// Apply the cursor's terminal outcome.
+	// Zero FinalStatus (== StatusRunning, the iota-0 constant) means UNSET;
+	// map it to StatusTerminated. Safe: full-rollback finish is always
+	// terminal, so no caller of beginCompensation ever wants a non-terminal
+	// outcome here. The admin path (CompensateRequested) leaves FinalStatus
+	// zero; error/cancel paths set it explicitly (StatusFailed / StatusTerminated).
+	if finalStatus == 0 {
+		finalStatus = StatusTerminated
+	}
+	s.Status = finalStatus
+	ended := at
+	s.EndedAt = &ended
+
+	// Clear the compensation records for the walk's scope so that a re-delivered
+	// CancelRequested (or any other terminal trigger) on an already-terminal instance
+	// cannot re-enter the walk and double-compensate money-moving actions.
+	// beginCompensation today always uses scopeID="" (root scope); future scope-targeted
+	// walks (ADR-0035) will set a non-empty scopeID, which the else branch handles.
+	if scopeID == "" {
+		s.RootCompensations = nil
+	} else {
+		if sc := s.scopeByID(scopeID); sc != nil {
+			sc.Compensations = nil
+		}
+	}
+
+	var cmds []Command
+	if finalErr != "" {
+		cmds = append(cmds, FailInstance{Err: finalErr})
+	}
+	cmds = append(cmds, s.cancelAllTimers()...)
+	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // ---- retry helpers ----
@@ -3071,6 +3197,26 @@ func cloneState(st InstanceState) InstanceState {
 				}
 			}
 			s.Scopes[i] = cs
+		}
+	}
+	// Deep-copy ArchivedCompensations: each entry in the map holds a
+	// []CompensationRecord whose Input fields are map[string]any (reference types)
+	// and must be independently allocated so mutations to the clone do not affect
+	// the original. nil map in source → nil in clone.
+	if st.ArchivedCompensations != nil {
+		s.ArchivedCompensations = make(map[string][]CompensationRecord, len(st.ArchivedCompensations))
+		for k, recs := range st.ArchivedCompensations {
+			if recs == nil {
+				s.ArchivedCompensations[k] = nil
+			} else {
+				cloned := make([]CompensationRecord, len(recs))
+				for i, cr := range recs {
+					ccr := cr
+					ccr.Input = copyVars(cr.Input)
+					cloned[i] = ccr
+				}
+				s.ArchivedCompensations[k] = cloned
+			}
 		}
 	}
 	// Deep-copy Incidents: Incident is a flat value struct (all fields are plain
