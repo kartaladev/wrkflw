@@ -31,8 +31,8 @@ func minimalStartEndDefinition() *model.ProcessDefinition {
 		ID:      "minimal",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "end"},
@@ -136,7 +136,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 
 	// Round-trip a definition through the store.
 	def := &model.ProcessDefinition{ID: "d1", Version: 1,
-		Nodes: []model.Node{{ID: "start", Kind: model.KindStartEvent}},
+		Nodes: []model.Node{model.NewStartEvent("start")},
 	}
 	require.NoError(t, ds.PutDefinition(t.Context(), def))
 

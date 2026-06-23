@@ -22,8 +22,8 @@ func minimalDef() *model.ProcessDefinition {
 		ID:      "opt-test",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}

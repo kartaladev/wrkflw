@@ -33,10 +33,10 @@ func timerResumeDef() *model.ProcessDefinition {
 		ID:      "pg-timer-resume",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait1h", Kind: model.KindIntermediateCatchEvent, TimerDuration: `"1h"`},
-			{ID: "finish", Kind: model.KindServiceTask, Action: "finish"},
-			{ID: "end", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
+			model.NewServiceTask("finish", "finish"),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
@@ -60,13 +60,14 @@ func boundaryResumeDef() *model.ProcessDefinition {
 		ID:      "pg-boundary-resume",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{ID: "wait-task", Kind: model.KindUserTask, CandidateRoles: []string{"reviewer"}},
-			{ID: "bnd-timer", Kind: model.KindBoundaryEvent, AttachedTo: "wait-task",
-				TimerDuration: `"2h"`, NonInterrupting: false},
-			{ID: "finish", Kind: model.KindServiceTask, Action: "finish"},
-			{ID: "end-normal", Kind: model.KindEndEvent},
-			{ID: "end-escalated", Kind: model.KindEndEvent},
+			model.NewStartEvent("start"),
+			model.NewUserTask("wait-task", []string{"reviewer"}),
+			model.NewBoundaryEvent("bnd-timer", "wait-task",
+				model.WithBoundaryTimer(`"2h"`),
+			),
+			model.NewServiceTask("finish", "finish"),
+			model.NewEndEvent("end-normal"),
+			model.NewEndEvent("end-escalated"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-task"},
@@ -253,19 +254,16 @@ func retryResumeDef() *model.ProcessDefinition {
 		ID:      "pg-retry-resume",
 		Version: 1,
 		Nodes: []model.Node{
-			{ID: "start", Kind: model.KindStartEvent},
-			{
-				ID:     "task",
-				Kind:   model.KindServiceTask,
-				Action: "a",
-				RetryPolicy: &model.RetryPolicy{
+			model.NewStartEvent("start"),
+			model.NewServiceTask("task", "a",
+				model.WithRetryPolicy(&model.RetryPolicy{
 					MaxAttempts:     3,
 					InitialInterval: time.Hour,
 					BackoffCoef:     2,
 					MaxInterval:     24 * time.Hour,
-				},
-			},
-			{ID: "end", Kind: model.KindEndEvent},
+				}),
+			),
+			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
