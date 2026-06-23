@@ -8,36 +8,47 @@ and pick up the next work. Read it top to bottom before starting.
 > **Fresh session: jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
 > below (just after the gate note).** It is the single prioritized entry point for new work. The
 > rest of this doc is the per-track detail behind it. Nothing *named* is in flight — `main` is
-> green and all work through ADR-0028 is merged (or in final merge for the CancelInstance track).
+> green and **all work through ADR-0044 is merged** (incl. the full FOLLOWUPS resolution — see the
+> ✅ callout just below). Next free ADR: **0045**.
 
-> **▶ NEXT UP — the FOLLOWUPS resolution (4 sub-projects, FULLY PLANNED, ready to execute).**
-> This is different from every other backlog item: the **brainstorm + spec + plans already exist**,
-> so a fresh session **skips straight to `branch → SDD → review → merge`** — do NOT re-brainstorm.
-> Spec: `docs/specs/2026-06-23-followups-resolution-design.md` (devil's-advocate analysis + decisions;
-> note two rejections: `pkg/` reorg and `engine→exec` rename). Plans, **execute strictly in order**:
-> 1. `docs/plans/2026-06-23-layout-hygiene.md` — ① move `database`+`expreval`→`internal/`, root
->    `doc.go`, **ADR-0041**. Pure refactor, low risk. *Start here.*
-> 2. `docs/plans/2026-06-23-engine-step-decomposition.md` — **engine/step.go decomposition** (spec
->    `docs/specs/2026-06-23-engine-step-decomposition-design.md`, **ADR-0044**). Pure refactor of the
->    3251-line god file into a `map[NodeKind]nodeStrategy` registry + extracted trigger handlers +
->    `step_*.go` collaborator files + `stepCtx`. Stateless strategies; a completeness test buys back
->    the lost switch-exhaustiveness. **Before** ② on purpose: ②'s `drive()` migration then edits small
->    per-kind strategy files instead of the monolith. (Not a FOLLOWUPS.md item — added later.)
-> 3. `docs/plans/2026-06-23-node-interface-redesign.md` — ② `model.Node`→interface + 19 concrete
->    types + constructors + builder + YAML loader, **ADR-0042**. The big one; all 108 engine sites are
->    in `engine/step.go` (now split by step 2 above). ⚠️ Its Tasks 1–2 are one **repo-wide red window**
->    (atomic type change) — do them back-to-back, don't merge between.
-> 4. `docs/plans/2026-06-23-instance-serialization-dto.md` — ③ `runtime.InstanceSnapshot` +
->    `ActionableView` DTOs, **ADR-0043**. Depends on ②.
-> 5. `docs/plans/2026-06-23-docs-bpmn-sweep-and-readme.md` — ⑤⑥ drop BPMN compat claims + README.
->    Doc-only, no ADR. Depends on ①②③; **execute last.**
+> **✅ DONE — the FOLLOWUPS resolution (all 5 sub-projects) — merged to `main` 2026-06-23
+> (merge commit `4fa2651`, branch `feat/followups-resolution`, 37 commits, ADRs 0041–0044).**
+> Executed via subagent-driven development + an opus whole-branch review (verdict: Ready to merge,
+> no Critical/Important). Spec: `docs/specs/2026-06-23-followups-resolution-design.md`. What landed:
+> 1. **① Layout hygiene (ADR-0041)** — `database`+`expreval` moved to `internal/`; root `doc.go`
+>    front-door; 14 public packages. Flat layout reaffirmed; `pkg/` rejected.
+> 2. **step.go decomposition (ADR-0044)** — 3251→169-line `step.go`; `map[NodeKind]nodeStrategy`
+>    registry (`step_nodes.go`) + trigger handlers (`step_triggers.go`) + `step_*.go` collaborators.
+>    A `halt bool` was added to the strategy contract so ErrorEndEvent exits `drive()` like the old arm
+>    (caught by the per-task review; regression test `TestErrorEndEventHaltsDriveOnImmediateFailure`).
+> 3. **② Node interface (ADR-0042)** — flat `model.Node` struct → interface + 19 typed kinds +
+>    constructors/options + `DefinitionBuilder` + YAML loader (`gopkg.in/yaml.v3`) + flat `nodeWire`
+>    for backward-compatible JSONB. **SCOPE REALITY:** not "108 sites in one file" — ~995 node literals
+>    across ~50 test files repo-wide were rewritten to constructors (user re-confirmed full migration
+>    with that number known). Behavior-preserving: full suite green with NO assertion changes anywhere.
+>    Two field-map corrections during migration: `EventSubProcess.NonInterrupting` RESTORED (was a real
+>    regression); activities no longer carry `ErrorCode` (intended segregation; old retry-exhaustion
+>    `_error`-from-activity branch was dead).
+> 4. **③ Instance DTO (ADR-0043)** — `runtime.InstanceSnapshot` (full, no-bookkeeping-leak guard) +
+>    `runtime.ActionableView` (open tasks + next actions) pure mappers; REST `/instances/{id}/snapshot`
+>    + `/actionable`; `service.GetInstanceWithDefinition`. Engine ZERO-diff.
+> 5. **⑤⑥ Docs** — dropped BPMN compatibility claims (kept domain vocabulary); comprehensive
+>    `README.md` + compiling `examples/readme_quickstart/main.go`.
 >
-> ADR-number note: 0044 (step decomposition) > 0042/0043 but **executes before** them — ADR numbers
-> are chronological IDs, not execution order. Next free ADR after this wave: **0045**.
+> **Open follow-ups from the whole-branch review (all Minor / pre-existing — NOT blocking):**
+> - **M2 (cosmetic):** several `With*` option constructors return unexported option types
+>   (e.g. `nameOpt`) — pervasive intentional pattern; consider exporting an `Option` alias.
+> - **M3 (cosmetic):** three name-setting idioms coexist — `WithName` (most kinds), `WithThrowName`
+>   (IntermediateThrowEvent, because `throwOption` is a bare func type not the `nameOpt` interface
+>   family), and `name ...string` variadic (simple events/gateways). Unify or document.
+> - **Pre-existing (NOT this branch):** **message boundary events are never armed** — `engine/
+>   step_boundaries.go` + `boundaryArm` (`engine/state.go`) handle timer + signal only; `MessageName`
+>   is never read, yet `model.WithBoundaryMessage` exists and `validate.go` accepts message boundaries.
+>   A consumer can author a message boundary that silently never fires. Backlog item.
+> - **Deferred by plan:** gRPC `GetInstanceSnapshot` RPC (mirror the REST task); consolidate the
+>   duplicated status-string mapping (`runtime.StatusString` vs `transport/rest`'s private one).
 >
-> All five docs are committed on branch `docs/followups-resolution-spec` (not merged). `FOLLOWUPS.md`
-> remains uncommitted in the working tree (the source discussion doc). Confirm scope with the user,
-> then begin executing plan 1.
+> Next free ADR: **0045**. `FOLLOWUPS.md` is now committed on the branch (was the source discussion doc).
 
 **Where we are:** the engine core (Plans 1–8), **all 5 productionization sub-projects**
 (Persistence, Scheduling, Authorization, Transports, Eventing), **all 4 deferred-backlog tracks**
