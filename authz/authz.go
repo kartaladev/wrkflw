@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/expreval"
+	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 )
 
 // attrEval is the package-level expression evaluator for attribute predicates.

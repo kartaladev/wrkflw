@@ -11,7 +11,7 @@ import (
 	casbinv2 "github.com/casbin/casbin/v2"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/expreval"
+	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 )
 
 // Authorizer is a hybrid authz.Authorizer: casbin owns the RBAC role graph and

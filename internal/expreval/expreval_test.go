@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/expreval"
+	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 )
 
 func TestEvalBool(t *testing.T) {
