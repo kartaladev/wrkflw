@@ -34,6 +34,11 @@ type GocronScheduler struct {
 
 	tel observability.Telemetry
 
+	// locker, when set, is passed to gocron as a distributed locker so that across
+	// replicas only one runs each timer's fire callback (the lock key is the
+	// timerID, set via gocron.WithName). nil = no distributed locking.
+	locker gocron.Locker
+
 	mu   sync.Mutex
 	jobs map[string]uuid.UUID // timerID -> gocron job ID
 }
@@ -67,6 +72,18 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 	}
 }
 
+// WithLocker configures a distributed locker so that, across replicas, only one
+// instance runs each timer's fire callback. The lock key is the timerID. A nil
+// value is ignored. Pair with a Postgres-backed locker (NewPostgresLocker) for
+// multi-replica deployments.
+func WithLocker(l gocron.Locker) Option {
+	return func(s *GocronScheduler) {
+		if l != nil {
+			s.locker = l
+		}
+	}
+}
+
 // filterNilOpts returns only the non-nil observability.Option values from opts.
 func filterNilOpts(opts ...observability.Option) []observability.Option {
 	out := opts[:0]
@@ -81,19 +98,27 @@ func filterNilOpts(opts ...observability.Option) []observability.Option {
 // NewGocronScheduler constructs and starts a gocron-backed scheduler driven by
 // clk. The caller must Close it to avoid leaking gocron's executor goroutine.
 func NewGocronScheduler(clk clockwork.Clock, opts ...Option) (*GocronScheduler, error) {
-	gs, err := gocron.NewScheduler(gocron.WithClock(clk))
+	s := &GocronScheduler{
+		clk:  clk,
+		jobs: make(map[string]uuid.UUID),
+	}
+	// Apply options first so locker (and telemetry) are known before the gocron
+	// scheduler is constructed — WithDistributedLocker is a construction-time option.
+	for _, o := range opts {
+		o(s)
+	}
+
+	gocronOpts := []gocron.SchedulerOption{gocron.WithClock(clk)}
+	if s.locker != nil {
+		gocronOpts = append(gocronOpts, gocron.WithDistributedLocker(s.locker))
+	}
+	gs, err := gocron.NewScheduler(gocronOpts...)
 	if err != nil {
 		return nil, err
 	}
 	gs.Start() // non-blocking
-	s := &GocronScheduler{
-		sched: gs,
-		clk:   clk,
-		jobs:  make(map[string]uuid.UUID),
-	}
-	for _, o := range opts {
-		o(s)
-	}
+	s.sched = gs
+
 	// Build the Telemetry value after all options have been applied so that any
 	// subset of logger/tracer/meter providers can be set independently.
 	s.tel = observability.New(
@@ -128,6 +153,11 @@ func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()
 	job, err := s.sched.NewJob(
 		gocron.OneTimeJob(timing),
 		gocron.NewTask(fire),
+		// The job name is the distributed-lock key: with a locker configured, only
+		// one replica obtains pg lock(timerID) and runs the fire. Harmless without a
+		// locker. Two distinct armings of the same timerID still replace via the
+		// jobs map above, so the name need not be globally unique here.
+		gocron.WithName(timerID),
 		gocron.WithEventListeners(gocron.AfterJobRuns(func(jobID uuid.UUID, _ string) {
 			s.mu.Lock()
 			if cur, ok := s.jobs[timerID]; ok && cur == jobID {
