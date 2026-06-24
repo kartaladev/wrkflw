@@ -36,18 +36,28 @@ computed at the `deliverLoop` terminal edge, with the engine core untouched:
 
 | `st.Status` at the terminal edge | Topic | Payload |
 |---|---|---|
-| `StatusCompleted` | `instance.completed` | `st.Variables` (unchanged) |
-| `StatusFailed` | `instance.failed` | `{"error": terminalErr(st)}` |
-| `StatusTerminated` | `instance.terminated` (**new**) | `{"error": terminalErr(st)}` |
+| `StatusCompleted` | `instance.completed` | `st.Variables` (copied — unchanged) |
+| `StatusFailed` | `instance.failed` | `{"error": terminalEventErr}` |
+| `StatusTerminated` | `instance.terminated` (**new**) | `{"error": terminalEventErr}` |
 
-A new `terminalOutboxEvent(prevStatus, st)` in `runtime/outbox.go` returns the
-single event at a terminal edge (or none otherwise), reusing the existing
-`terminalErr(st)` helper (first incident error, else a status-keyed message).
-`deliverLoop` calls it in place of `outboxEventsFor(res.Commands)`. Because the
-command-driven mapping only ever handled the two terminal commands, this fully
-replaces it; `outboxEventsFor` is removed. Each terminal status now emits
-**exactly one** status-accurate event, carrying the instance id so an in-process
-subscriber can route it.
+A new `terminalOutboxEvent(prevStatus, st, cmds)` in `runtime/outbox.go` returns
+the single event at a terminal edge (or none otherwise). `deliverLoop` calls it
+in place of `outboxEventsFor(res.Commands)`. Because the command-driven mapping
+only ever handled the two terminal commands, this fully replaces it;
+`outboxEventsFor` is removed. Each terminal status now emits **exactly one**
+status-accurate event, carrying the instance id so an in-process subscriber can
+route it.
+
+**The topic is strictly status-driven** (the load-bearing fix). The error
+*string* stays best-effort, resolved by `terminalEventErr(st, cmds)` in order:
+(1) the first recorded incident's error; (2) the terminal `FailInstance`
+command's `Err`; (3) a status-keyed generic fallback. Routing off the command
+loses two existing, deliberately-added diagnostics — the `SubInstanceFailed`
+path records no incident yet carries a rich message ("child parked…",
+"recursion depth limit…") in `FailInstance.Err`, and the cancel path carries
+`"cancelled"` there. Sourcing the *string* (not the topic) from the command when
+no incident exists preserves them. This is why derivation takes `cmds`: only as
+an error-string fallback, never for routing.
 
 ## Consequences
 
@@ -58,10 +68,12 @@ subscriber can route it.
   payload shape.
 - **Migration note:** any consumer that relied on `instance.failed` firing for a
   *cancelled* instance must also subscribe `instance.terminated`. No in-repo
-  consumer does. The `{"error": …}` payload string for a cancel changes from the
-  command's literal `"cancelled"` to `terminalErr`'s value (the first incident
-  error, else `"instance terminated"`); consumers should treat the error string
-  as human-readable, not a stable enum (use the topic for routing).
+  consumer does. The `{"error": …}` payload string is unchanged where it was
+  meaningful (incident error, `SubInstanceFailed` diagnostic, the cancel path's
+  `"cancelled"`); only a full-rollback termination — which previously emitted
+  *no* event — now emits `instance.terminated` with `"instance terminated"`.
+  Consumers should treat the error string as human-readable, not a stable enum
+  (use the topic for routing).
 - Determinism/`Step` purity (ADR-0002) are unaffected — derivation reads only
   `prevStatus`/`st.Status` in `runtime`; engine/model production diff is **ZERO**.
 - Unblocks ADR-0045: all three terminal outcomes are now routable by topic.

@@ -299,7 +299,7 @@ func (r *Runner) Deliver(ctx context.Context, def *model.ProcessDefinition, inst
 
 // deliverLoop applies triggers from queue and then any follow-up triggers emitted
 // by perform (action results, etc.) until all commands are resolved or the engine
-// parks. It encapsulates the Step→outboxEventsFor→Create/Commit→perform cycle
+// parks. It encapsulates the Step→terminalOutboxEvent→Create/Commit→perform cycle
 // shared by Run and Deliver.
 //
 // token is the current optimistic-concurrency token; create=true on the very
@@ -368,7 +368,7 @@ func (r *Runner) deliverLoop(
 			r.obs.incidentsRaised.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
 		}
 
-		events := outboxEventsFor(res.Commands)
+		events := terminalOutboxEvent(prevStatus, st, res.Commands)
 
 		// Compute a CallOutcome when this step transitions the instance into a
 		// terminal status AND a CallLinkStore is configured. The Store's Commit
@@ -704,13 +704,15 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		return nil, nil
 
 	case engine.CompleteInstance:
-		// Outbox event ("instance.completed") is derived by outboxEventsFor and
-		// written inside the Commit tx; nothing to perform here.
+		// The terminal outbox event is derived status-driven by
+		// terminalOutboxEvent at the deliverLoop terminal edge and written inside
+		// the Commit tx; nothing to perform here (ADR-0046).
 		return nil, nil
 
 	case engine.FailInstance:
-		// Outbox event ("instance.failed") is derived by outboxEventsFor and
-		// written inside the Commit tx; nothing to perform here.
+		// The terminal outbox event is derived status-driven by
+		// terminalOutboxEvent at the deliverLoop terminal edge and written inside
+		// the Commit tx; nothing to perform here (ADR-0046).
 		return nil, nil
 
 	case engine.AwaitHuman:
