@@ -949,6 +949,71 @@ The full assembly — engine + scheduler + relay + mounted REST and health route
 `signal.NotifyContext` → cancel workers → `http.Server.Shutdown` → `ShutdownGroup.Shutdown`
 — is in [`examples/production_wiring`](examples/production_wiring).
 
+### Database pool (pgxpool) tuning
+
+The Postgres-backed stores, relay, advisory-lock ownership, and timer store all take a
+`*pgxpool.Pool` that **you** construct and own. The library never creates or tunes the
+pool — configure it before passing it in, and close it last (via `ShutdownGroup`):
+
+```go
+cfg, _ := pgxpool.ParseConfig(dsn)
+cfg.MaxConns = 20             // cap to your Postgres max_connections budget across replicas
+cfg.MinConns = 2             // keep a warm floor so the relay/hot paths don't cold-start
+cfg.MaxConnLifetime = time.Hour
+cfg.MaxConnIdleTime = 30 * time.Minute
+cfg.HealthCheckPeriod = time.Minute
+pool, _ := pgxpool.NewWithConfig(ctx, cfg)
+```
+
+Sizing guidance:
+
+- **`MaxConns`** is the dominant knob. Size it so `MaxConns × replicas + headroom` stays
+  under the server's `max_connections`. The relay's listen/poll loop, the timer
+  scheduler, and request handlers all draw from this one pool — undersizing it serializes
+  the hot path; oversizing it can exhaust Postgres. Start around 10–25 per replica and
+  tune from the `pgxpool` stats and your DB connection metrics.
+- **`MinConns`** keeps a warm floor so latency-sensitive paths (relay drain, instance
+  reads) don't pay connection setup on the first request after idle.
+- **`MaxConnLifetime` / `MaxConnIdleTime`** bound how long a connection lives, which plays
+  well with rolling Postgres failovers and PgBouncer in front of the pool.
+
+If you front Postgres with **PgBouncer in transaction-pooling mode**, the engine's use of
+`LISTEN/NOTIFY` (the relay's low-latency wake path) needs a session-pooled connection or a
+direct connection — transaction pooling drops `LISTEN`. The relay degrades gracefully to
+its poll-interval fallback if notifications are lost, but you lose the low-latency wake.
+
+### Single-tenant scope
+
+**The engine is single-tenant. It has no built-in tenant isolation.** All instances,
+definitions, tasks, timers, and outbox events share one logical namespace; there is no
+tenant column, no per-tenant authorization scoping, and no row-level isolation. A
+multi-tenant consumer **must enforce isolation itself** — e.g. one engine instance (and
+one schema/database) per tenant, or a tenant guard in front of every API call that filters
+by a tenant id the consumer threads through `authz.Actor` attributes and its own queries.
+Do not assume the authorization layer partitions data by tenant; it evaluates
+role/resource/attribute rules but does not invent a tenant boundary.
+
+### Secrets and sensitive variables
+
+Process-instance **variables** and **human-task variables** (`HumanTask.Vars`) frequently
+carry sensitive data (PII, tokens, payment details). Treat them as secrets:
+
+- **The engine does not log variables in cleartext.** The core state machine reads the
+  wall clock and emits no logs; the `runtime.Runner`'s `slog` records identify instances,
+  nodes, actions, and outcomes — they do **not** dump the variable map. This is a
+  deliberate invariant; keep it that way if you extend the logging.
+- **Redact in your own resolvers and actions.** When you write a `service.ServiceAction`,
+  a human-task resolver, or a `SuccessorPolicy`, do not `slog`/print the raw input/output
+  maps. Log only the keys you need, or a redacted view — never the whole map. The same
+  applies to error messages: don't interpolate a variable value into an error string that
+  flows back through the REST/gRPC transports.
+- **Encrypt at rest if required.** Variables persist to Postgres as JSONB. If your
+  compliance posture requires encryption-at-rest for these fields, encrypt the values in
+  your action layer before they enter the engine (the engine treats them as opaque
+  `any`), or rely on database/disk-level encryption.
+
+See [`STABILITY.md`](STABILITY.md) for the module's versioning and stability policy.
+
 ---
 
 ## License
