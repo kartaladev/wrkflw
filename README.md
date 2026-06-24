@@ -361,6 +361,43 @@ When a `With*` option is omitted, the runner defaults to the OTel global provide
 
 ---
 
+## Process-instance chaining
+
+Automatically start a new, **independent** top-level instance when another reaches a
+terminal state (completed, failed, or terminated) — e.g. when an `approval` process
+completes, start a `fulfillment` process seeded with its result. The predecessor fully
+ends and releases its resources; the successor is a fresh root instance that outlives it.
+This is sequential chaining of independent instances, driven off the durable terminal
+outbox events — **not** the parent→child nesting of a call activity.
+
+A `SuccessorPolicy` callback decides the successor for each terminal outcome; the
+`runtime.Chainer` records the lineage hop and starts the successor with a deterministic
+id, so a redelivered event is a clean no-op (exactly-once effect under at-least-once
+delivery).
+
+```go
+policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+    if ev.Outcome != runtime.OutcomeCompleted {
+        return runtime.SuccessorDecision{}, false // end the chain
+    }
+    return runtime.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
+}
+chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+
+// Drive it from the broker: mount eventing.NewChainHandler(chainer) on your own
+// message.Router, or run the turnkey wrapper that subscribes the terminal topics:
+go eventing.NewChainerRunner(chainer).Run(ctx, subscriber)
+```
+
+Terminal outbox events are **status-accurate**: completed → `instance.completed`, failed →
+`instance.failed`, terminated → `instance.terminated`. Chaining lineage is durable and
+queryable (`runtime.ChainLinkStore`, in-memory or Postgres via
+`persistence.NewChainLinkStore`), and a policy can route on the predecessor definition
+(`ChainEvent.PredecessorDefinitionRef`). See
+[`runtime/README.md`](runtime/README.md#process-instance-chaining) for the full API.
+
+---
+
 ## Testing
 
 ```bash
