@@ -97,13 +97,18 @@ func TestChainerHandle(t *testing.T) {
 				assert.Equal(t, runtime.OutcomeCompleted, got.Outcome)
 			},
 		},
-		"already-recorded link skips the start (exactly-once backstop)": {
+		"already-recorded link still attempts the start (idempotent via ErrInstanceExists)": {
 			ev:          completedEv,
 			policy:      successorFor(),
 			prepopulate: &runtime.ChainLink{PredecessorID: "p1", Outcome: runtime.OutcomeCompleted, SuccessorID: "p1-next-completed"},
 			assert: func(t *testing.T, gotErr error, starter *recordingStarter, links *runtime.MemChainLinkStore) {
-				require.NoError(t, gotErr, "duplicate hop is a clean no-op")
-				assert.Empty(t, starter.calls, "must not start when the link already exists")
+				require.NoError(t, gotErr)
+				// A pre-existing link must NOT suppress the start: the link may have
+				// been recorded by a prior delivery whose start then failed. Re-attempt
+				// the start; Store.Create's ErrInstanceExists makes a genuine duplicate
+				// a no-op, so this recovers a lost successor without double-starting.
+				require.Len(t, starter.calls, 1, "the start must be (re)attempted even when the link exists")
+				assert.Equal(t, "p1-next-completed", starter.calls[0].id)
 			},
 		},
 		"duplicate instance start is treated as no-op": {
@@ -152,6 +157,33 @@ func TestChainerHandle(t *testing.T) {
 			tc.assert(t, err, starter, links)
 		})
 	}
+}
+
+// TestChainerHandleRetriesStartAfterTransientFailure is the lost-successor
+// regression (whole-branch review CRITICAL): if the link is recorded but the
+// successor start then fails transiently, a redelivery must RE-ATTEMPT the start
+// — not be suppressed by the now-existing link. Recording the link before the
+// start must never drop the successor permanently.
+func TestChainerHandleRetriesStartAfterTransientFailure(t *testing.T) {
+	ctx := t.Context()
+	links := runtime.NewMemChainLinkStore()
+	starter := &recordingStarter{err: errors.New("db down")}
+	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+		return runtime.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
+	}
+	c := runtime.NewChainer(starter, policy, runtime.WithChainLinks(links))
+	ev := runtime.ChainEvent{PredecessorID: "p1", Outcome: runtime.OutcomeCompleted}
+
+	// First delivery: the link is recorded, then the start fails transiently.
+	require.Error(t, c.Handle(ctx, ev), "transient start failure must propagate (nack)")
+	_, ok, _ := links.LookupBySuccessor(ctx, "p1-next-completed")
+	require.True(t, ok, "the link was recorded before the failed start")
+
+	// Redelivery with the transient condition cleared: the start MUST be retried
+	// despite the existing link.
+	starter.err = nil
+	require.NoError(t, c.Handle(ctx, ev))
+	require.Len(t, starter.calls, 2, "the successor start must be re-attempted on redelivery, not skipped")
 }
 
 // TestChainerSatisfiedByRunner pins the InstanceStarter contract to *runtime.Runner.

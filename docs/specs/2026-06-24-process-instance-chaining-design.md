@@ -212,16 +212,24 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error
 
 1. `dec, ok := policy(ctx, ev)`; if `!ok || dec.Def == nil` → return nil (chain ends).
 2. Compute the deterministic successor id: **`<PredecessorID>-next-<Outcome>`**.
-3. If `links != nil`: `Record(ChainLink{…})`. On `ErrChainLinkExists` → return nil
-   (already chained — the exactly-once backstop). Other errors propagate (retry).
+3. If `links != nil`: `Record(ChainLink{…})`. On `ErrChainLinkExists` → **do NOT
+   return; fall through to step 4** (the link is *intent*: a prior delivery may
+   have recorded it and then failed to start the successor, so the start must
+   still be attempted). Other `Record` errors propagate (retry).
 4. `starter.Run(ctx, dec.Def, successorID, dec.Vars)`. If the store reports the
    instance already exists (`ErrInstanceExists`-class), treat as already-started →
    return nil. Other errors propagate (so the message is re-delivered/retried).
 5. Emit observability (span + `wrkflw_chain_started_total{outcome}` counter).
 
-**Idempotency** is layered: deterministic successor id + `ChainLinkStore` unique
-`(PredecessorID, Outcome)` + `Store.Create` duplicate rejection ⇒ exactly-once
-*effect* even if the terminal event is delivered more than once.
+**Idempotency.** The *real* exactly-once backstop for the successor is its
+**existence**: the deterministic successor id + `Store.Create`'s `ErrInstanceExists`
+guarantee at-most-one successor instance no matter how many times the terminal
+event is delivered. The `ChainLinkStore` unique `(PredecessorID, Outcome)` is
+durable *lineage* (and an early-dedup signal), **not** a start-suppressing gate —
+recording it before the start is intent, so an `ErrChainLinkExists` must never
+short-circuit the start (else a transient start failure after the link is written
+would drop the successor permanently). This ordering was corrected after the
+whole-branch review caught the lost-successor window.
 
 > **New runtime port needed:** `Store.Create` must surface a typed
 > "instance already exists" error so the Chainer can distinguish duplicate-start from

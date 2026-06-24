@@ -180,9 +180,14 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 		}
 		switch err := c.links.Record(ctx, link); {
 		case errors.Is(err, ErrChainLinkExists):
-			c.tel.Logger.DebugContext(ctx, "chain: hop already recorded; skipping",
+			// The link was recorded by a prior delivery, but that delivery's start
+			// may have failed AFTER the link was written. Do NOT return here — fall
+			// through and (re)attempt the start. Store.Create's ErrInstanceExists
+			// makes a genuine duplicate a clean no-op, so this recovers a lost
+			// successor without ever double-starting. Recording the link is intent;
+			// the successor's existence is the real exactly-once backstop.
+			c.tel.Logger.DebugContext(ctx, "chain: hop already recorded; ensuring successor started",
 				slog.String("predecessor_id", ev.PredecessorID), slog.String("outcome", string(ev.Outcome)))
-			return nil
 		case err != nil:
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())

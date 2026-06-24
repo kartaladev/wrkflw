@@ -59,11 +59,16 @@ engine core untouched:
   `NewChainerRunner(core).Run(ctx, sub)` is a turnkey wrapper subscribing the
   three terminal topics. All watermill imports stay in this package
   (`runtime`/`engine` remain watermill-free).
-- **Layered idempotency ⇒ exactly-once effect.** A deterministic successor id
-  `<PredecessorID>-next-<Outcome>` + the unique `(predecessor, outcome)` link +
-  `Store.Create` duplicate rejection (`ErrInstanceExists`, added here and mapped
-  in Postgres from SQLSTATE 23505) together make a redelivered terminal event a
-  clean no-op ack.
+- **Idempotency ⇒ exactly-once effect.** The exactly-once backstop is the
+  successor's *existence*: a deterministic successor id
+  `<PredecessorID>-next-<Outcome>` + `Store.Create` duplicate rejection
+  (`ErrInstanceExists`, added here and mapped in Postgres from SQLSTATE 23505)
+  make a redelivered terminal event a clean no-op ack. The unique
+  `(predecessor, outcome)` chain link is durable *lineage*, not a start-suppressing
+  gate: `Handle` records the link as intent and, on `ErrChainLinkExists`, still
+  (re)attempts the start. (An earlier design returned on `ErrChainLinkExists`,
+  which the whole-branch review showed would permanently drop a successor whose
+  start failed transiently after its link was written — fixed.)
 - **No code at the module root.** No `.go` files are added at the repo root; the
   public root **type aliases** for the exported chaining types are a separate,
   user-owned follow-up.
