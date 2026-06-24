@@ -12,6 +12,7 @@ package grpctransport
 import (
 	"errors"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -22,33 +23,61 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
-// mapToGRPCStatus classifies a domain error into the appropriate gRPC status.
-// Domain sentinels are matched via errors.Is so wrapped errors are handled correctly.
+// errorDomain is the ErrorInfo.Domain value stamped on every structured gRPC
+// error, identifying the engine module as the authority for the reason codes.
+const errorDomain = "github.com/zakyalvan/krtlwrkflw"
+
+// classifyError maps a domain error to a gRPC status code and a machine-readable
+// reason code. The reason codes are identical to the REST taxonomy in
+// transport/rest/errors.go so a client sees the same {code} regardless of
+// transport. Sentinels are matched via errors.Is so wrapped errors classify
+// correctly.
 //
-//   - runtime.ErrInstanceNotFound / runtime.ErrDefinitionNotFound / humantask.ErrTaskNotFound → codes.NotFound
-//   - authz.ErrNotAuthorized → codes.PermissionDenied
-//   - runtime.ErrConcurrentUpdate → codes.Aborted
-//   - runtime.ErrBadCursor → codes.InvalidArgument
-//   - service.ErrConflict / engine.ErrInvalidTransition → codes.FailedPrecondition
-//   - everything else → codes.Internal
-func mapToGRPCStatus(err error) error {
+//   - runtime.ErrInstanceNotFound / runtime.ErrDefinitionNotFound / humantask.ErrTaskNotFound → NotFound / "not_found"
+//   - authz.ErrNotAuthorized → PermissionDenied / "forbidden"
+//   - runtime.ErrConcurrentUpdate → Aborted / "conflict"
+//   - runtime.ErrBadCursor → InvalidArgument / "bad_request"
+//   - service.ErrConflict / engine.ErrInvalidTransition → FailedPrecondition / "conflict_state"
+//   - everything else → Internal / "internal_error"
+func classifyError(err error) (codes.Code, string) {
 	switch {
 	case errors.Is(err, runtime.ErrInstanceNotFound),
 		errors.Is(err, runtime.ErrDefinitionNotFound),
 		errors.Is(err, humantask.ErrTaskNotFound):
-		return status.Error(codes.NotFound, err.Error())
+		return codes.NotFound, "not_found"
 	case errors.Is(err, authz.ErrNotAuthorized):
-		return status.Error(codes.PermissionDenied, err.Error())
+		return codes.PermissionDenied, "forbidden"
 	case errors.Is(err, runtime.ErrConcurrentUpdate):
-		return status.Error(codes.Aborted, err.Error())
+		return codes.Aborted, "conflict"
 	case errors.Is(err, runtime.ErrBadCursor):
-		return status.Error(codes.InvalidArgument, err.Error())
+		return codes.InvalidArgument, "bad_request"
 	case errors.Is(err, service.ErrConflict),
 		errors.Is(err, engine.ErrInvalidTransition):
-		return status.Error(codes.FailedPrecondition, err.Error())
+		return codes.FailedPrecondition, "conflict_state"
 	default:
-		return status.Error(codes.Internal, err.Error())
+		return codes.Internal, "internal_error"
 	}
+}
+
+// mapToGRPCStatus classifies a domain error into the appropriate gRPC status and
+// attaches a machine-readable errdetails.ErrorInfo detail (Reason = the REST
+// taxonomy code, Domain = the engine module) so clients can branch on the code
+// rather than parsing the human-readable status message.
+//
+// If attaching the detail fails (it should not, for a freshly built status), the
+// status without the detail is returned — a degraded but still-valid error.
+func mapToGRPCStatus(err error) error {
+	code, reason := classifyError(err)
+	st := status.New(code, err.Error())
+
+	withDetail, detailErr := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: errorDomain,
+	})
+	if detailErr != nil {
+		return st.Err()
+	}
+	return withDetail.Err()
 }
 
 // MapToGRPCStatus is the exported version of mapToGRPCStatus exposed for

@@ -9,6 +9,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -215,6 +216,35 @@ func TestGetInstanceNotFound(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Equal(t, codes.NotFound, status.Code(err))
+}
+
+// TestGetInstanceNotFoundCarriesErrorInfo verifies the end-to-end bufconn path:
+// a not-found error returned by the real server carries a machine-readable
+// errdetails.ErrorInfo with Reason "not_found", so a client can branch on the
+// structured code rather than parsing the status message.
+func TestGetInstanceNotFoundCarriesErrorInfo(t *testing.T) {
+	t.Parallel()
+	h := newGRPCHarness(t)
+
+	_, err := h.client.GetInstance(t.Context(), &workflowpb.GetInstanceRequest{
+		InstanceId: "no-such-id",
+	})
+	require.Error(t, err)
+
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.NotFound, st.Code())
+
+	var info *errdetails.ErrorInfo
+	for _, d := range st.Details() {
+		if ei, isInfo := d.(*errdetails.ErrorInfo); isInfo {
+			info = ei
+			break
+		}
+	}
+	require.NotNil(t, info, "not-found status must carry an ErrorInfo detail")
+	assert.Equal(t, "not_found", info.GetReason())
+	assert.NotEmpty(t, info.GetDomain())
 }
 
 // TestDeliverSignalResumesInstance verifies that DeliverSignal resumes a parked instance.
