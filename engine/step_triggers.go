@@ -630,13 +630,17 @@ func handleSubInstanceFailed(s *InstanceState, t SubInstanceFailed) (StepResult,
 func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t MessageReceived, opt StepOptions) (StepResult, error) {
 	// Point-to-point semantics: resume the single token whose AwaitMessage
 	// matches the name AND whose AwaitMessageKey matches the correlation key.
-	// A message that matches no token (and no gateway arm, and no event sub-process arm)
-	// is a clean no-op.
+	// A message that matches no token (and no gateway arm, no boundary arm, and
+	// no event sub-process arm) is a clean no-op.
 	//
 	// Dispatch order for message:
 	// 1) event-based gateway arm (first-event-wins).
-	// 2) event sub-process arm (interrupting/non-interrupting).
-	// 3) standalone parked-message token (point-to-point).
+	// 2) boundary event arm (interrupting/non-interrupting on a host activity).
+	// 3) event sub-process arm (interrupting/non-interrupting).
+	// 4) standalone parked-message token (point-to-point).
+	//
+	// First match wins: unlike signal (broadcast), message delivery is
+	// point-to-point, so each dispatch branch returns immediately on a match.
 	//
 	// NOTE: mergeVars is deferred until after match-checking so that a no-match
 	// delivery does not mutate instance variables (Task-2 review fix).
@@ -651,7 +655,19 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 		return StepResult{State: *s, Commands: gwCmds}, nil
 	}
 
-	// 2) Check whether the message matches an event sub-process arm.
+	// 2) Check whether the message matches a boundary arm. Reuses the same
+	// fireBoundaryArm machinery as timer/signal boundaries (interrupting cancels
+	// the host and routes the boundary flow; non-interrupting spawns alongside).
+	if ba := s.boundaryArmByMessage(t.Name, t.CorrelationKey); ba != nil {
+		mergeVars(s, t.Payload)
+		baCmds, err := fireBoundaryArm(def, s, *ba, t.OccurredAt(), opt.Mode)
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: *s, Commands: baCmds}, nil
+	}
+
+	// 3) Check whether the message matches an event sub-process arm.
 	if ea := s.eventSubprocessArmByMessage(t.Name, t.CorrelationKey); ea != nil {
 		mergeVars(s, t.Payload)
 		eaCmds, err := fireEventSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode)
@@ -661,7 +677,7 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 		return StepResult{State: *s, Commands: eaCmds}, nil
 	}
 
-	// 3) Resume the standalone parked-message token.
+	// 4) Resume the standalone parked-message token.
 	tok := s.tokenAwaitingMessage(t.Name, t.CorrelationKey)
 	if tok == nil {
 		// No matching token: clean no-op (message may be for a different instance

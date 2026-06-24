@@ -93,11 +93,17 @@ type boundaryArm struct {
 	// (the default), true = non-interrupting.
 	NonInterrupting bool
 	// TimerID is the scheduled timer id for timer boundary events. Empty for
-	// signal boundary events.
+	// signal/message boundary events.
 	TimerID string
-	// Signal is the signal name for signal boundary events. Empty for timer
-	// boundary events.
+	// Signal is the signal name for signal boundary events. Empty for
+	// timer/message boundary events.
 	Signal string
+	// Message is the message name for message boundary events. Empty for
+	// timer/signal boundary events.
+	Message string
+	// MessageKey is the resolved correlation key for message boundary events
+	// (empty if no CorrelationKey was configured — match on message name alone).
+	MessageKey string
 }
 
 // eventSubprocessArm is the engine's bookkeeping entry for a single armed event
@@ -644,6 +650,49 @@ func (s *InstanceState) boundaryArmBySignal(name string) *boundaryArm {
 		}
 	}
 	return nil
+}
+
+// boundaryArmByMessage returns a pointer to the first boundaryArm whose Message
+// matches name and whose MessageKey matches correlationKey, or nil if none.
+func (s *InstanceState) boundaryArmByMessage(name, correlationKey string) *boundaryArm {
+	for i := range s.Boundaries {
+		ba := &s.Boundaries[i]
+		if ba.Message == name && ba.MessageKey == correlationKey {
+			return ba
+		}
+	}
+	return nil
+}
+
+// MessageWaiter identifies a (message name, correlation key) pair that the
+// instance can be woken by. A runtime correlates a delivered message to the
+// instance using these pairs. CorrelationKey is empty when the construct
+// matches on message name alone.
+type MessageWaiter struct {
+	// Name is the message name the instance is awaiting.
+	Name string
+	// CorrelationKey is the resolved correlation key, or "" for name-only matching.
+	CorrelationKey string
+}
+
+// MessageBoundaryWaiters returns the (message name, correlation key) pairs for
+// every armed MESSAGE boundary event on the instance. A runtime registers these
+// alongside message-catch tokens (Token.AwaitMessage) so a delivered message can
+// be correlated to a parked instance even when the boundary's host token parks on
+// a task/command rather than on the message itself.
+//
+// Timer and signal boundary arms contribute no entries. The result preserves
+// s.Boundaries slice order (deterministic) and is nil when no message boundary
+// is armed.
+func (s *InstanceState) MessageBoundaryWaiters() []MessageWaiter {
+	var out []MessageWaiter
+	for i := range s.Boundaries {
+		ba := &s.Boundaries[i]
+		if ba.Message != "" {
+			out = append(out, MessageWaiter{Name: ba.Message, CorrelationKey: ba.MessageKey})
+		}
+	}
+	return out
 }
 
 // removeBoundaryArmsForHost removes all boundaryArm entries for the given

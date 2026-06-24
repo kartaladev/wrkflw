@@ -510,12 +510,21 @@ func (r *Runner) syncMsgWaiters(st engine.InstanceState) {
 		}
 	}
 
-	// Re-register from current tokens.
+	// Re-register from current tokens (message-catch intermediate events / receive tasks).
 	for _, tok := range st.Tokens {
 		if tok.AwaitMessage != "" {
 			k := msgKey{Name: tok.AwaitMessage, CorrelationKey: tok.AwaitMessageKey}
 			r.msgWaiters[k] = st.InstanceID
 		}
+	}
+
+	// Re-register from armed message BOUNDARY events. Their host token parks on a
+	// task/command (not on the message), so they are not covered by the token loop
+	// above; DeliverMessage must still be able to correlate a delivered message to
+	// this instance to fire the boundary (ADR-0053).
+	for _, w := range st.MessageBoundaryWaiters() {
+		k := msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}
+		r.msgWaiters[k] = st.InstanceID
 	}
 }
 
