@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -71,15 +72,24 @@ func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Servic
 
 // ---- RPC implementations ----
 
+// invalidArg builds a codes.InvalidArgument status for a transport-boundary
+// validation failure, records it on the span, and returns it. It centralizes the
+// required-field guards so every mutating RPC rejects malformed requests
+// consistently (mirroring the REST transport's ErrBadInput → 400 behaviour)
+// instead of letting empty fields fall through to a deeper, less clear code.
+func invalidArg(span trace.Span, msg string) error {
+	err := status.Error(codes.InvalidArgument, msg)
+	recordSpanErr(span, err)
+	return err
+}
+
 // StartInstance creates a new process instance.
 func (s *server) StartInstance(ctx context.Context, req *workflowpb.StartInstanceRequest) (*workflowpb.InstanceResponse, error) {
 	ctx, span := s.startSpan(ctx, "StartInstance")
 	defer span.End()
 
 	if req.GetDefRef() == "" || req.GetInstanceId() == "" {
-		err := status.Error(codes.InvalidArgument, "def_ref and instance_id are required")
-		recordSpanErr(span, err)
-		return nil, err
+		return nil, invalidArg(span, "def_ref and instance_id are required")
 	}
 
 	st, err := s.svc.StartInstance(ctx, service.StartInstanceRequest{
@@ -122,6 +132,10 @@ func (s *server) DeliverSignal(ctx context.Context, req *workflowpb.DeliverSigna
 	ctx, span := s.startSpan(ctx, "DeliverSignal")
 	defer span.End()
 
+	if req.GetInstanceId() == "" || req.GetSignal() == "" {
+		return nil, invalidArg(span, "instance_id and signal are required")
+	}
+
 	st, err := s.svc.DeliverSignal(ctx, service.DeliverSignalRequest{
 		InstanceID: req.GetInstanceId(),
 		Signal:     req.GetSignal(),
@@ -148,6 +162,10 @@ func (s *server) DeliverMessage(ctx context.Context, req *workflowpb.DeliverMess
 	ctx, span := s.startSpan(ctx, "DeliverMessage")
 	defer span.End()
 
+	if req.GetDefRef() == "" || req.GetName() == "" {
+		return nil, invalidArg(span, "def_ref and name are required")
+	}
+
 	err := s.svc.DeliverMessage(ctx, service.DeliverMessageRequest{
 		DefRef:         req.GetDefRef(),
 		Name:           req.GetName(),
@@ -165,6 +183,13 @@ func (s *server) DeliverMessage(ctx context.Context, req *workflowpb.DeliverMess
 func (s *server) ClaimTask(ctx context.Context, req *workflowpb.ClaimTaskRequest) (*workflowpb.InstanceResponse, error) {
 	ctx, span := s.startSpan(ctx, "ClaimTask")
 	defer span.End()
+
+	if req.GetTaskToken() == "" {
+		return nil, invalidArg(span, "task_token is required")
+	}
+	if req.GetActor().GetId() == "" {
+		return nil, invalidArg(span, "actor.id is required")
+	}
 
 	st, err := s.svc.ClaimTask(ctx, service.ClaimTaskRequest{
 		TaskToken: req.GetTaskToken(),
@@ -187,6 +212,13 @@ func (s *server) CompleteTask(ctx context.Context, req *workflowpb.CompleteTaskR
 	ctx, span := s.startSpan(ctx, "CompleteTask")
 	defer span.End()
 
+	if req.GetTaskToken() == "" {
+		return nil, invalidArg(span, "task_token is required")
+	}
+	if req.GetActor().GetId() == "" {
+		return nil, invalidArg(span, "actor.id is required")
+	}
+
 	st, err := s.svc.CompleteTask(ctx, service.CompleteTaskRequest{
 		TaskToken: req.GetTaskToken(),
 		Actor:     protoToActor(req.GetActor()),
@@ -208,6 +240,16 @@ func (s *server) CompleteTask(ctx context.Context, req *workflowpb.CompleteTaskR
 func (s *server) ReassignTask(ctx context.Context, req *workflowpb.ReassignTaskRequest) (*workflowpb.InstanceResponse, error) {
 	ctx, span := s.startSpan(ctx, "ReassignTask")
 	defer span.End()
+
+	if req.GetTaskToken() == "" {
+		return nil, invalidArg(span, "task_token is required")
+	}
+	if req.GetFrom() == "" || req.GetTo() == "" {
+		return nil, invalidArg(span, "from and to are required")
+	}
+	if req.GetBy().GetId() == "" {
+		return nil, invalidArg(span, "by.id is required")
+	}
 
 	st, err := s.svc.ReassignTask(ctx, service.ReassignTaskRequest{
 		TaskToken: req.GetTaskToken(),
@@ -232,6 +274,10 @@ func (s *server) CancelInstance(ctx context.Context, req *workflowpb.CancelInsta
 	ctx, span := s.startSpan(ctx, "CancelInstance")
 	defer span.End()
 
+	if req.GetInstanceId() == "" {
+		return nil, invalidArg(span, "instance_id is required")
+	}
+
 	st, err := s.svc.CancelInstance(ctx, service.CancelInstanceRequest{InstanceID: req.GetInstanceId()})
 	if err != nil {
 		recordSpanErr(span, err)
@@ -250,6 +296,10 @@ func (s *server) CancelInstance(ctx context.Context, req *workflowpb.CancelInsta
 func (s *server) ResolveIncident(ctx context.Context, req *workflowpb.ResolveIncidentRequest) (*workflowpb.InstanceResponse, error) {
 	ctx, span := s.startSpan(ctx, "ResolveIncident")
 	defer span.End()
+
+	if req.GetInstanceId() == "" || req.GetIncidentId() == "" {
+		return nil, invalidArg(span, "instance_id and incident_id are required")
+	}
 
 	st, err := s.svc.ResolveIncident(ctx, service.ResolveIncidentRequest{
 		InstanceID:  req.GetInstanceId(),
@@ -298,6 +348,9 @@ func (s *server) RedriveDeadLetters(ctx context.Context, req *workflowpb.Redrive
 	if s.deadLetters == nil {
 		return nil, status.Error(codes.Unimplemented, "workflow-grpc: dead-letter admin not configured")
 	}
+	if len(req.GetIds()) == 0 {
+		return nil, invalidArg(span, "ids must contain at least one dead-letter id")
+	}
 	n, err := s.deadLetters.Redrive(ctx, req.GetIds()...)
 	if err != nil {
 		recordSpanErr(span, err)
@@ -314,6 +367,9 @@ func (s *server) AddPolicy(ctx context.Context, req *workflowpb.AddPolicyRequest
 
 	if s.policyAdmin == nil {
 		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	if err := validatePolicyRule(span, req.GetRule()); err != nil {
+		return nil, err
 	}
 	rule := protoToPolicyRule(req.GetRule())
 	added, err := s.policyAdmin.AddPolicy(ctx, rule)
@@ -332,6 +388,9 @@ func (s *server) RemovePolicy(ctx context.Context, req *workflowpb.RemovePolicyR
 
 	if s.policyAdmin == nil {
 		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	if err := validatePolicyRule(span, req.GetRule()); err != nil {
+		return nil, err
 	}
 	rule := protoToPolicyRule(req.GetRule())
 	removed, err := s.policyAdmin.RemovePolicy(ctx, rule)
@@ -372,6 +431,9 @@ func (s *server) AddRole(ctx context.Context, req *workflowpb.AddRoleRequest) (*
 	if s.policyAdmin == nil {
 		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
 	}
+	if err := validateRoleBinding(span, req.GetBinding()); err != nil {
+		return nil, err
+	}
 	binding := protoToRoleBinding(req.GetBinding())
 	added, err := s.policyAdmin.AddRole(ctx, binding)
 	if err != nil {
@@ -389,6 +451,9 @@ func (s *server) RemoveRole(ctx context.Context, req *workflowpb.RemoveRoleReque
 
 	if s.policyAdmin == nil {
 		return nil, status.Error(codes.Unimplemented, "workflow-grpc: policy admin not configured")
+	}
+	if err := validateRoleBinding(span, req.GetBinding()); err != nil {
+		return nil, err
 	}
 	binding := protoToRoleBinding(req.GetBinding())
 	removed, err := s.policyAdmin.RemoveRole(ctx, binding)
@@ -418,6 +483,25 @@ func (s *server) ListRoles(ctx context.Context, _ *workflowpb.ListRolesRequest) 
 		items[i] = roleBindingToProto(b)
 	}
 	return &workflowpb.ListRolesResponse{RoleBindings: items}, nil
+}
+
+// validatePolicyRule rejects a policy rule whose subject, object, or action is
+// empty with codes.InvalidArgument at the transport boundary. A nil rule fails
+// the same way (all three components are empty).
+func validatePolicyRule(span trace.Span, r *workflowpb.PolicyRule) error {
+	if r.GetSubject() == "" || r.GetObject() == "" || r.GetAction() == "" {
+		return invalidArg(span, "rule.subject, rule.object, and rule.action are required")
+	}
+	return nil
+}
+
+// validateRoleBinding rejects a role binding whose user or role is empty with
+// codes.InvalidArgument at the transport boundary. A nil binding fails the same way.
+func validateRoleBinding(span trace.Span, b *workflowpb.RoleBinding) error {
+	if b.GetUser() == "" || b.GetRole() == "" {
+		return invalidArg(span, "binding.user and binding.role are required")
+	}
+	return nil
 }
 
 // policyRuleToProto converts a service.PolicyRule to its proto representation.
