@@ -40,6 +40,7 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 				Payload:    map[string]any{"ok": true},
 				DedupKey:   "inst-1:3:0",
 				InstanceID: "inst-1",
+				Def:        "approval:2",
 			},
 			assert: func(t *testing.T, fp *fakePub, err error) {
 				require.NoError(t, err)
@@ -49,6 +50,7 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 				require.JSONEq(t, `{"ok":true}`, string(fp.msgs[0].Payload))
 				require.Equal(t, "inst-1", fp.msgs[0].Metadata.Get("instance_id"))
 				require.Equal(t, "instance.completed", fp.msgs[0].Metadata.Get("topic"))
+				require.Equal(t, "approval:2", fp.msgs[0].Metadata.Get("def"))
 			},
 		},
 		"empty dedup key gets a generated non-empty UUID": {

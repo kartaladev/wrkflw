@@ -1,6 +1,17 @@
 package runtime
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import (
+	"fmt"
+
+	"github.com/zakyalvan/krtlwrkflw/engine"
+)
+
+// instanceDefRef renders the "defID:version" reference of an instance, carried
+// on terminal outbox events so a consumer (chaining's PredecessorDef) can route
+// on the source definition (ADR-0047).
+func instanceDefRef(st engine.InstanceState) string {
+	return fmt.Sprintf("%s:%d", st.DefID, st.DefVersion)
+}
 
 // terminalOutboxEvent derives the single domain event to relay when a step
 // transitions an instance into a terminal status. The TOPIC is computed
@@ -22,13 +33,14 @@ func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds
 	if !isTerminal(st.Status) || isTerminal(prevStatus) {
 		return nil
 	}
+	def := instanceDefRef(st)
 	switch st.Status {
 	case engine.StatusCompleted:
-		return []OutboxEvent{{Topic: "instance.completed", Payload: copyVarsForOutcome(st.Variables), InstanceID: st.InstanceID}}
+		return []OutboxEvent{{Topic: "instance.completed", Payload: copyVarsForOutcome(st.Variables), InstanceID: st.InstanceID, Def: def}}
 	case engine.StatusFailed:
-		return []OutboxEvent{{Topic: "instance.failed", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID}}
+		return []OutboxEvent{{Topic: "instance.failed", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, Def: def}}
 	case engine.StatusTerminated:
-		return []OutboxEvent{{Topic: "instance.terminated", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID}}
+		return []OutboxEvent{{Topic: "instance.terminated", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, Def: def}}
 	default:
 		return nil
 	}

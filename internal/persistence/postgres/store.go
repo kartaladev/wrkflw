@@ -379,9 +379,9 @@ func writeOutbox(ctx context.Context, db DBTX, instanceID string, seq int64, eve
 		}
 		dedup := fmt.Sprintf("%s:%d:%d", instanceID, seq, i)
 		if _, err := db.Exec(ctx,
-			`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
-			 VALUES ($1,$2,$3,$4,$5)`,
-			instanceID, ev.Topic, payload, dedup, createdAt,
+			`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, def)
+			 VALUES ($1,$2,$3,$4,$5,$6)`,
+			instanceID, ev.Topic, payload, dedup, createdAt, ev.Def,
 		); err != nil {
 			return fmt.Errorf("workflow-postgres: write outbox: %w", err)
 		}

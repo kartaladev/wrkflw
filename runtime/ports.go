@@ -37,6 +37,10 @@ type OutboxEvent struct {
 	Payload    map[string]any
 	DedupKey   string
 	InstanceID string
+	// Def is the "defID:version" of the instance that produced the event, carried
+	// through to a consumer (e.g. chaining's PredecessorDef). It is best-effort
+	// routing context — empty for events/rows produced before ADR-0047.
+	Def string
 }
 
 // AppliedStep is the atomic persistence unit for exactly one applied trigger:

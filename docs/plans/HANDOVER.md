@@ -12,23 +12,27 @@ and pick up the next work. Read it top to bottom before starting.
 > whole-branch review that **found & fixed a CRITICAL lost-successor ordering bug** (see the
 > chaining section below). Gates: `go test -race -p 1 ./...` green; touched pkgs ≥85% (runtime
 > 89.2%, eventing 91.9%, postgres 85.2%, persistence 96.8%); lint 0; **engine/model production diff
-> ZERO**; watermill confined to `eventing`. Next free ADR: **0047**.
+> ZERO**; watermill confined to `eventing`. Plus **ADR-0047** (predecessor-def wiring, below).
+> Next free ADR: **0048**.
 >
 > **▶ STILL OPEN on this track (do NOT assume fully done):**
-> - **Phase 8 — root type aliases = USER-OWNED.** No `.go` files were added at the module root.
->   The public root aliases (`Chainer`, `SuccessorPolicy`, `SuccessorDecision`, `ChainEvent`,
->   `Outcome` + constants, `ChainLink`, `ChainLinkStore`, `ErrChainLinkExists`, `ErrInstanceExists`,
->   optionally the `eventing` handler/runner) are a SEPARATE, user-confirmed task — implement only
->   when explicitly asked.
-> - **`PredecessorDef` is empty over the built-in pipeline.** The publisher sets only `topic` +
->   `instance_id` metadata; `ChainEvent.PredecessorDef` is populated only if a consumer's own
->   pipeline supplies a `def` metadata key. Wiring `def` end-to-end (an outbox `def` column +
->   `OutboxEvent.Def` + relay) is a deferred follow-up so policies can route on predecessor def.
+> - **Phase 8 — root type aliases = USER-OWNED.** No `.go` files were added at the module root
+>   (the root `wrkflw` package `doc.go` deliberately "exports nothing"). The public root aliases
+>   (`Chainer`, `SuccessorPolicy`, `SuccessorDecision`, `ChainEvent`, `Outcome` + constants,
+>   `ChainLink`, `ChainLinkStore`, `ErrChainLinkExists`, `ErrInstanceExists`, optionally the
+>   `eventing` handler/runner — note `eventing.Chainer` collides with `runtime.Chainer`) are a
+>   SEPARATE, user-confirmed task. **User confirmed 2026-06-24 they own this — do NOT add unprompted.**
+> - **`PredecessorDef` end-to-end wiring — ✅ DONE (ADR-0047, merged 2026-06-24,** branch
+>   `claude/chaining-predecessor-def`). `OutboxEvent.Def` + `terminalOutboxEvent` stamp + publisher
+>   `def` metadata + outbox `def` column (migration `0009_outbox_def.sql`) + relay read-back.
+>   `ChainEvent.PredecessorDef` is now populated over the built-in pipeline; a `SuccessorPolicy`
+>   can route on the predecessor def. Focused review verdict: Ready to merge. engine/model diff ZERO.
 >
 > **Fresh session:** jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
 > below for the broader prioritized backlog. The rest of this doc is the per-track detail behind it.
-> **`main` is green and all work through ADR-0046 is merged** (incl. chaining + the full FOLLOWUPS
-> resolution — see the ✅ callout just below). No named work remains in flight.
+> **`main` is green and all work through ADR-0047 is merged** (incl. chaining + the full FOLLOWUPS
+> resolution — see the ✅ callout just below). Next free ADR: **0048**. The only remaining
+> chaining item is the USER-OWNED Phase 8 root aliases (above). No other named work in flight.
 
 > **✅ DONE — the FOLLOWUPS resolution (all 5 sub-projects) — merged to `main` 2026-06-23
 > (merge commit `4fa2651`, branch `feat/followups-resolution`, 37 commits, ADRs 0041–0044).**
@@ -104,8 +108,9 @@ Subscribe error); honest `PredecessorDef` docs; `workflow-` prefix on a scan err
 
 **Deferred follow-ups (open):**
 1. **Phase 8 root type aliases — USER-OWNED** (not implemented; see resume point).
-2. **`PredecessorDef` end-to-end wiring** — empty over the built-in publisher/relay; needs an
-   outbox `def` column + `OutboxEvent.Def` + relay so policies can route on predecessor def.
+2. **`PredecessorDef` end-to-end wiring — ✅ DONE (ADR-0047, merged 2026-06-24).** Outbox `def`
+   column (migration `0009`) + `OutboxEvent.Def` + `terminalOutboxEvent` stamp + publisher `def`
+   metadata + relay read-back; `ChainEvent.PredecessorDef` populated over the built-in pipeline.
 3. **Multi-replica chaining exclusivity** — chaining is idempotent under at-least-once delivery
    (link unique key + `ErrInstanceExists`), so concurrent replica handlers are correct but may both
    attempt a start (one wins). A claim/lease (like the call-link notifier, ADR-0031) is an

@@ -14,10 +14,12 @@ func TestTerminalOutboxEvent(t *testing.T) {
 		cmds   []engine.Command
 		assert func(t *testing.T, got []OutboxEvent)
 	}{
-		"running -> completed maps to instance.completed with vars": {
+		"running -> completed maps to instance.completed with vars and def": {
 			prev: engine.StatusRunning,
 			st: engine.InstanceState{
 				InstanceID: "i1",
+				DefID:      "approval",
+				DefVersion: 2,
 				Status:     engine.StatusCompleted,
 				Variables:  map[string]any{"ok": true},
 			},
@@ -27,6 +29,7 @@ func TestTerminalOutboxEvent(t *testing.T) {
 					Topic:      "instance.completed",
 					Payload:    map[string]any{"ok": true},
 					InstanceID: "i1",
+					Def:        "approval:2",
 				}}, got)
 			},
 		},
@@ -34,6 +37,8 @@ func TestTerminalOutboxEvent(t *testing.T) {
 			prev: engine.StatusRunning,
 			st: engine.InstanceState{
 				InstanceID: "i2",
+				DefID:      "approval",
+				DefVersion: 1,
 				Status:     engine.StatusFailed,
 				Incidents:  []engine.Incident{{Error: "boom"}},
 			},
@@ -43,6 +48,7 @@ func TestTerminalOutboxEvent(t *testing.T) {
 					Topic:      "instance.failed",
 					Payload:    map[string]any{"error": "boom"},
 					InstanceID: "i2",
+					Def:        "approval:1",
 				}}, got)
 			},
 		},
@@ -62,6 +68,8 @@ func TestTerminalOutboxEvent(t *testing.T) {
 			prev: engine.StatusRunning,
 			st: engine.InstanceState{
 				InstanceID: "i3",
+				DefID:      "approval",
+				DefVersion: 1,
 				Status:     engine.StatusTerminated,
 			},
 			cmds: nil,
@@ -70,6 +78,7 @@ func TestTerminalOutboxEvent(t *testing.T) {
 					Topic:      "instance.terminated",
 					Payload:    map[string]any{"error": "instance terminated"},
 					InstanceID: "i3",
+					Def:        "approval:1",
 				}}, got)
 			},
 		},
