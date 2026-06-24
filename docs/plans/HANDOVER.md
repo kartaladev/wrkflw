@@ -3,7 +3,32 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-24
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25
+
+> **✅ DONE — Production-hardening program (ADRs 0048–0055) — merged to `main` 2026-06-25**
+> (branch `feat/production-hardening`, 18 commits, merge `0b803d7`). Triggered by a 5-auditor
+> devil's-advocate production-readiness review ("do it all except CI"; CI pipeline deliberately
+> deferred). Executed as 8 SDD tracks (strict TDD, ADR each) + an adversarial whole-branch review
+> (verdict NEEDS-FIXES → fixed → clean). Gates: `go test -race ./...` green (testcontainers);
+> `golangci-lint` 0 issues; `gofmt -l` empty (swept 49→0); `engine.FuzzStep` 2.9M execs no crash;
+> **engine/model core stays import-pure AND wall-clock-free**. What landed:
+> - **0048** recover panics in service-action execution (`runtime.safeActionDo`) — one bad action no longer crashes a replica.
+> - **0049** expr-eval wall-clock guard *capability* (`expreval.WithTimeout`/`ErrEvalTimeout`). **Engine evaluator is constructed `WithTimeout(0)`** so `Step` stays wall-clock-free (review fix; honors locked ADR-0003). DoS guard is opt-in; injectable engine evaluator is a follow-up.
+> - **0050** multi-replica timer exclusivity = Postgres advisory-lock `gocron.Locker` via `scheduling.WithDistributedTimerLock(pool)` (key=timerID). Dedups concurrent fires; engine CAS remains exactly-once backstop.
+> - **0051** fail-closed gRPC `grpctransport.NewSecureServer(svc, authInterceptor, …)` (panics on nil) + `ExampleNewSecureServer` (actor-from-context) + StartInstance `InvalidArgument` validation.
+> - **0052** data-lifecycle pruners (`persistence.NewPruner`: outbox-published / call-links-notified / chain-links / processed-message) + `docs/retention.md` runbook. (Consumer owns the cron.)
+> - **0053** message boundary events arming+firing (ENGINE change; reuses `fireBoundaryArm`). **Known pre-existing limitation: boundaries on a ReceiveTask host are still not armed (all kinds).**
+> - **0054** graceful `runtime.ShutdownGroup` + health (`rest.NewHealthHandler` `/healthz` `/readyz` + `persistence.NewPingCheck`) + `examples/production_wiring` + AlwaysOwn one-time warn. `/readyz` does NOT leak raw probe errors (review fix).
+> - **0055** maturity: `goleak.VerifyTestMain` (3 pkgs), `engine.FuzzStep`, structured gRPC errors (`errdetails.ErrorInfo`), `STABILITY.md` + secrets/pgxpool/single-tenant docs. New dep: `go.uber.org/goleak`.
+>
+> **Next free ADR: 0056.** **NOT yet pushed to origin if this line still says so — confirm `git status`.**
+> **Open follow-ups (deferred, non-blocking):** CI pipeline (deliberately deferred); injectable
+> timeout-capable engine evaluator (so untrusted-definition consumers can enable the DoS guard
+> without breaking the pure core); message/timer/signal boundaries on a ReceiveTask host; `engine`
+> package at 84.9% (pre-existing &lt;85% baseline on untouched code); `ShutdownGroup` ignores an `Add`
+> after `Shutdown` started (documented single-shutdown contract). See the `production-hardening-run` memory.
+
+## ⏩ CURRENT RESUME POINT — updated 2026-06-24
 
 > **✅ DONE — Process-instance chaining (ADR-0045 + ADR-0046) — merged to `main` 2026-06-24**
 > (branch `claude/process-instance-chaining-iazvza`). A terminal instance (completed / failed /
