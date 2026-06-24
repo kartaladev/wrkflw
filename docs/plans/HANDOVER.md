@@ -3,13 +3,26 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-23
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-24
 
-> **Fresh session: jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
-> below (just after the gate note).** It is the single prioritized entry point for new work. The
-> rest of this doc is the per-track detail behind it. Nothing *named* is in flight — `main` is
-> green and **all work through ADR-0044 is merged** (incl. the full FOLLOWUPS resolution — see the
-> ✅ callout just below). Next free ADR: **0045**.
+> **▶ NEXT UP — Process-instance chaining (specced + planned; skip brainstorm).** Start a new,
+> independent top-level instance automatically when another reaches a terminal state (completed /
+> failed / terminated). Brainstorming is DONE and user-approved. Execute the plan:
+> `docs/plans/2026-06-24-process-instance-chaining.md`; decisions/rationale in the spec
+> `docs/specs/2026-06-24-process-instance-chaining-design.md`. Branch
+> `claude/process-instance-chaining-iazvza`. **Reserved ADRs: 0045** (chaining) **+ 0046**
+> (status-accurate terminal outbox events). See the "Process-instance chaining sub-project — 🚧
+> SPECCED + PLANNED" section below for the at-a-glance summary. **User constraints:** (a) NO Go
+> files at the module root — root type aliases for the public chaining types are a SEPARATE,
+> user-owned task (plan Phase 8, do not implement unprompted); (b) all watermill stays in
+> `eventing` (the broker-agnostic core lives in `runtime`).
+>
+> **Fresh session:** start with the NEXT UP track above, or jump to the "🧭 START HERE (fresh
+> session) — consolidated backlog" section below for the broader prioritized backlog. The rest of
+> this doc is the per-track detail behind it. **`main` is green and all work through ADR-0044 is
+> merged** (incl. the full FOLLOWUPS resolution — see the ✅ callout just below). The only
+> specced-but-unbuilt track is process-instance chaining (above). Next free ADR after the two
+> reserved for chaining: **0047**.
 
 > **✅ DONE — the FOLLOWUPS resolution (all 5 sub-projects) — merged to `main` 2026-06-23
 > (merge commit `4fa2651`, branch `feat/followups-resolution`, 37 commits, ADRs 0041–0044).**
@@ -48,7 +61,51 @@ and pick up the next work. Read it top to bottom before starting.
 > - **Deferred by plan:** gRPC `GetInstanceSnapshot` RPC (mirror the REST task); consolidate the
 >   duplicated status-string mapping (`runtime.StatusString` vs `transport/rest`'s private one).
 >
-> Next free ADR: **0045**. `FOLLOWUPS.md` is now committed on the branch (was the source discussion doc).
+> Next free ADR after the two reserved for chaining: **0047**. `FOLLOWUPS.md` is committed on `main`.
+
+---
+
+## Process-instance chaining sub-project — 🚧 SPECCED + PLANNED (NEXT UP)
+
+**Status:** brainstorming DONE + user-approved; **spec + plan written, ZERO code yet.** Pick this up
+in a fresh session. Branch `claude/process-instance-chaining-iazvza`. Spec
+`docs/specs/2026-06-24-process-instance-chaining-design.md`, plan
+`docs/plans/2026-06-24-process-instance-chaining.md`. **Reserved ADRs 0045 (chaining) + 0046
+(status-accurate terminal events).**
+
+**Goal:** automatically start a new, **independent** top-level instance when another reaches a
+terminal state. Event-driven over the durable outbox (Option A) — NOT call-activity nesting. Engine
+core untouched.
+
+**User-approved design decisions (the four forks):**
+1. **Trigger scope:** ALL terminal outcomes — completed, failed, **and terminated**.
+2. **Selection API:** Go callback `SuccessorPolicy` in v1; declarative/expr ruleset DEFERRED (the
+   callback is the seam it plugs into).
+3. **Lineage:** durable `ChainLinkStore` (predecessor→successor), mem + Postgres — enables admin
+   chain-ancestry queries + a DB-level exactly-once backstop (unique `(predecessor,outcome)`).
+4. **Packaging:** broker-agnostic core in `runtime` + watermill handler/`Chainer.Run` wrapper in
+   `eventing` (the eventing-pkg raw+convenience pattern).
+
+**The load-bearing finding (→ ADR-0046):** terminal outbox events today are **command-driven and
+NOT status-accurate**. Cancel emits `FailInstance{"cancelled"}` → `instance.failed` *despite*
+`StatusTerminated` (`engine/step_triggers.go:165-176`); admin full-rollback reaches `StatusTerminated`
+with **no terminal command** → **no event** (`engine/step_compensation.go:321-347`). So Phase 1
+re-derives terminal events **status-driven** at the `deliverLoop` edge (where `CallOutcome` already
+keys off `isTerminal(st.Status) && !isTerminal(prevStatus)`): Completed→`instance.completed`,
+Failed→`instance.failed`, Terminated→**`instance.terminated`** (new). This is a deliberate
+behavioural change (cancelled now emits `terminated`, not `failed`); migration note in ADR-0046. No
+in-repo consumer relies on the old behaviour. Engine/model diff stays ZERO.
+
+**Plan shape (8 phases, strict TDD):** 0 ADRs → 1 status-accurate terminal events [`runtime`] →
+2 `ErrInstanceExists` typed duplicate-start [`runtime`/pg] → 3 `ChainLink`+`ChainLinkStore`+
+`MemChainLinkStore` [`runtime`] → 4 `Chainer.Handle` core (policy→Record→`InstanceStarter.Run`,
+deterministic id `<pred>-next-<outcome>`, idempotent) [`runtime`] → 5 watermill handler + `Chainer.Run`
+[`eventing`] → 6 Postgres `ChainLinkStore` + migration **0008_chain_links.sql** [`persistence`] →
+7 example/docs → **8 root type aliases = USER-OWNED, do NOT implement unprompted.**
+
+**Constraints:** NO Go files at the module root (root aliases are the user's separate task);
+watermill only in `eventing`; `workflow-` error prefix; black-box tests; ≥85% touched; engine/model
+production diff ZERO; opus whole-branch review before merge.
 
 **Where we are:** the engine core (Plans 1–8), **all 5 productionization sub-projects**
 (Persistence, Scheduling, Authorization, Transports, Eventing), **all 4 deferred-backlog tracks**
