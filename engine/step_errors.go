@@ -56,7 +56,7 @@ import (
 // raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
 // unhandled error parks the failing token as a [TokenIncident] and keeps the
 // instance running (admin-resumable) instead of setting StatusFailed.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, raiseIncidentOnUnhandled bool) ([]Command, error) {
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
 	// ── Step 1: Direct-attachment check ──────────────────────────────────────
 	// Only when the caller provides an originating node (ActionFailed path).
 	// Inspect the failing token's OWN scope definition for a boundary error event
@@ -131,7 +131,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			s.placeTokenInScope(flowTarget, scopeID, at)
 
 			// Drive forward from the recovery token.
-			driveCmds, err := drive(top, s, at, mode)
+			driveCmds, err := drive(top, s, at, mode, eval)
 			if err != nil {
 				return cmds, err
 			}
@@ -244,7 +244,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			s.placeTokenInScope(flowTarget, parentScopeID, at)
 
 			// 5. Drive forward from the recovery token.
-			driveCmds, err := drive(top, s, at, mode)
+			driveCmds, err := drive(top, s, at, mode, eval)
 			if err != nil {
 				return cmds, err
 			}
@@ -289,7 +289,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	// happens inside beginCompensation.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
-		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode)
+		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode, eval)
 		if err != nil {
 			return nil, err
 		}

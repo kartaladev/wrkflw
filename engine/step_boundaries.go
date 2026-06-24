@@ -17,7 +17,7 @@ import (
 // A bad TimerDuration expression is returned as a wrapped error — consistent with
 // the intermediate-timer and SLA paths — so callers can fail fast rather than
 // silently no-arming the boundary.
-func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time) ([]Command, error) {
+func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
 		n, ok := raw.(model.BoundaryEvent)
@@ -40,7 +40,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		}
 
 		if n.TimerDuration != "" {
-			dur, err := conditions.EvalDuration(n.TimerDuration, s.Variables)
+			dur, err := eval.EvalDuration(n.TimerDuration, s.Variables)
 			if err != nil {
 				return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
 			}
@@ -55,7 +55,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		} else if n.SignalName != "" {
 			arm.Signal = n.SignalName
 		} else if n.MessageName != "" {
-			resolvedKey, err := conditions.EvalString(n.CorrelationKey, s.Variables)
+			resolvedKey, err := eval.EvalString(n.CorrelationKey, s.Variables)
 			if err != nil {
 				return nil, fmt.Errorf("workflow-engine: boundary %q on %q message correlation key: %w", n.ID(), hostNode, err)
 			}
@@ -85,7 +85,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 //  3. Remove ONLY this boundary arm (fired once; do not re-arm — repeating out of scope).
 //  4. Place an additional Active token at the boundary's outgoing flow target.
 //  5. Drive forward (the new token).
-func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, mode StepMode) ([]Command, error) {
+func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Find the host token by ID (not by AwaitCommand — the host token parks on
 	// taskToken/cmdID, not on the boundary timer). If the token is gone (already
 	// consumed by another path), this is a late fire — clean no-op.
@@ -156,7 +156,7 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 	}
 
 	// Drive forward (the newly placed token(s)).
-	driveCmds, err := drive(def, s, at, mode)
+	driveCmds, err := drive(def, s, at, mode, eval)
 	if err != nil {
 		return nil, err
 	}

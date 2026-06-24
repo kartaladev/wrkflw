@@ -41,7 +41,7 @@ func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecor
 // The admin path always calls beginCompensation with zero finalStatus and empty
 // finalErr, producing StatusTerminated with no FailInstance on a full rollback —
 // identical to the prior behaviour.
-func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode) (StepResult, error) {
+func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// If a compensation walk is already in flight, ignore the redundant request:
 	// restarting beginCompensation would re-walk records that are still
 	// mid-consumption and re-emit the in-flight compensation (double-compensation).
@@ -49,7 +49,7 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 		return StepResult{State: *s}, nil
 	}
 	s.Status = StatusCompensating
-	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode)
+	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode, eval)
 }
 
 // beginCompensation is the shared initiator of a reverse-order compensation walk.
@@ -74,7 +74,7 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 //
 // The FinalStatus/FinalErr values are carried on the cursor across all advance steps
 // so that stepCompensationFinish applies them when the walk completes.
-func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
+func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -146,7 +146,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 				// (resume at toNode) regardless of FinalStatus/FinalErr — which is correct
 				// for the admin path (outcome fields are zero).
 				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
-				finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode)
+				finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
 				if finishErr != nil {
 					return StepResult{}, finishErr
 				}
@@ -167,7 +167,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 		// No records at all — apply the terminal outcome immediately.
 		// Stamp the cursor so stepCompensationFinish reads the outcome fields.
 		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
-		finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode)
+		finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
 		if finishErr != nil {
 			return StepResult{}, finishErr
 		}
@@ -198,7 +198,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 // stepCompensationAdvance advances the compensation cursor after a compensation
 // InvokeAction completes (ActionCompleted with cursor.ActiveCmdID). It emits the
 // next InvokeAction in reverse order, or finalises compensation if the walk is done.
-func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode) (StepResult, error) {
+func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	cur := s.Compensating
 	// Use cursorRecords so that throw walks (ArchiveKey != "") read from the
 	// archive and admin/cancel/error walks read from the live scope.
@@ -223,7 +223,7 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 	// Eligible: nextIdx >= 0 AND nextIdx > toNodeIdx (i.e. the record is AFTER ToNode).
 	if nextIdx < 0 || nextIdx <= toNodeIdx {
 		// Walk complete: either exhausted all records, or reached ToNode boundary.
-		return stepCompensationFinish(def, s, cur.ToNode, at, mode)
+		return stepCompensationFinish(def, s, cur.ToNode, at, mode, eval)
 	}
 
 	// Emit the next compensation action. Preserve all cursor fields — including
@@ -258,7 +258,7 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 //     at toNode, set Status = StatusRunning, and drive forward.
 //   - If toNode == "" and ResumeNode == "": full rollback — apply the cursor's
 //     terminal FinalStatus (StatusTerminated / StatusFailed).
-func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode) (StepResult, error) {
+func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Save outcome fields AND cursor metadata BEFORE clearing the cursor.
 	finalStatus := s.Compensating.FinalStatus
 	finalErr := s.Compensating.FinalErr
@@ -286,12 +286,12 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			// (root + other archives) cannot double-run it. Run it and terminate.
 			s.PendingCancel = false
 			s.Status = StatusCompensating
-			return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode)
+			return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval)
 		}
 		s.Status = StatusRunning
 		// Place the resume token in the correct scope (the throw token's scope).
 		s.placeTokenInScope(resumeNode, resumeScope, at)
-		driveCmds, err := drive(def, s, at, mode)
+		driveCmds, err := drive(def, s, at, mode, eval)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -308,7 +308,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		s.Status = StatusRunning
 		// Place a new token at toNode and drive forward.
 		s.placeToken(toNode, at)
-		driveCmds, err := drive(def, s, at, mode)
+		driveCmds, err := drive(def, s, at, mode, eval)
 		if err != nil {
 			return StepResult{}, err
 		}

@@ -25,6 +25,17 @@ type StepOptions struct {
 	// DefaultRetryPolicy is the fallback retry policy applied when a node does
 	// not carry its own RetryPolicy. nil means retry is disabled by default.
 	DefaultRetryPolicy *model.RetryPolicy
+	// Evaluator overrides the expression evaluator the engine uses for gateway
+	// conditions, timer/SLA durations, and correlation keys. When nil (the
+	// default) the engine uses its pure, wall-clock-free package-global
+	// evaluator, keeping Step deterministic for replay.
+	//
+	// A consumer that evaluates UNTRUSTED definitions can supply a
+	// timeout-capable evaluator (e.g. expreval.New(expreval.WithTimeout(d)),
+	// which satisfies ConditionEvaluator) to bound evaluation latency and guard
+	// against expression-DoS. Doing so trades the deterministic-replay guarantee
+	// for that protection (ADR-0049, ADR-0056) — an explicit, opt-in choice.
+	Evaluator ConditionEvaluator
 }
 
 // StepResult is the output of a single [Step] call. Commands is the ordered
@@ -75,7 +86,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 	case MessageReceived:
 		return handleMessageReceived(def, sp, t, opt)
 	case ResolveIncident:
-		return handleResolveIncident(def, sp, t)
+		return handleResolveIncident(def, sp, t, opt)
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
@@ -101,7 +112,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 // definition (tdef) is resolved via defForScope against the token's ScopeID so
 // that tokens inside a sub-process scope resolve nodes/flows against the nested
 // definition rather than the top-level one.
-func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode) ([]Command, error) {
+func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for {
 		tok := s.firstActive()
@@ -132,7 +143,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		// Dispatch through the nodeStrategy registry for migrated kinds.
 		// Kinds not yet in the registry fall through to the switch below.
 		if strat, ok := nodeStrategies[node.Kind()]; ok {
-			c := &stepCtx{def: def, tdef: tdef, s: s, at: at, mode: mode}
+			c := &stepCtx{def: def, tdef: tdef, s: s, at: at, mode: mode, eval: eval}
 			produced, halt, stratErr := strat.enter(c, tok, node)
 			if stratErr != nil {
 				return nil, stratErr

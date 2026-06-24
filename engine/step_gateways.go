@@ -23,7 +23,7 @@ func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, n
 // If none are true it takes the default flow; if none are true and there is no
 // default it returns ErrNoMatchingFlow.
 // scopeID is the gateway token's scope; forked tokens inherit it.
-func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) error {
+func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time, eval ConditionEvaluator) error {
 	var taken []model.SequenceFlow
 	var dflt *model.SequenceFlow
 	for _, f := range def.Outgoing(node.ID()) {
@@ -36,7 +36,7 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 			taken = append(taken, f)
 			continue
 		}
-		ok, err := conditions.EvalBool(f.Condition, s.Variables)
+		ok, err := eval.EvalBool(f.Condition, s.Variables)
 		if err != nil {
 			return fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.ID, err)
 		}
@@ -165,7 +165,7 @@ func nodesThatCanReach(def *model.ProcessDefinition, target string) map[string]b
 // selectExclusiveTarget picks the target of an exclusive gateway: the first
 // outgoing flow (in definition order) with an empty or true condition, else the
 // default flow, else ErrNoMatchingFlow.
-func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node) (string, error) {
+func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node, eval ConditionEvaluator) (string, error) {
 	var defaultFlow *model.SequenceFlow
 	for _, f := range def.Outgoing(node.ID()) {
 		if f.IsDefault {
@@ -176,7 +176,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 		if f.Condition == "" {
 			return f.Target, nil
 		}
-		ok, err := conditions.EvalBool(f.Condition, s.Variables)
+		ok, err := eval.EvalBool(f.Condition, s.Variables)
 		if err != nil {
 			return "", fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.ID, err)
 		}
@@ -205,7 +205,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 //     cancelling the winner's timer since it already fired). We SKIP cancelling the
 //     winner's timer since it has already fired and no longer exists in the scheduler.
 //   - drive() is called to advance execution beyond the routed target.
-func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, mode StepMode) ([]Command, error) {
+func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Find the gateway token.
 	tok := s.tokenAwaiting("evtgw:" + ae.GatewayToken)
 	if tok == nil {
@@ -268,7 +268,7 @@ func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedE
 	}
 
 	// Drive forward from the branch target.
-	driveCmds, err := drive(def, s, at, mode)
+	driveCmds, err := drive(def, s, at, mode, eval)
 	if err != nil {
 		return nil, err
 	}

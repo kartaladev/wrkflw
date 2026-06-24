@@ -20,6 +20,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
@@ -84,6 +85,14 @@ type Runner struct {
 	// default and a failed action behaves as before (error boundary or instance failure).
 	// Set via [WithDefaultRetryPolicy].
 	defaultRetryPolicy *model.RetryPolicy
+
+	// conditionEval, when non-nil, is the expression evaluator the runner passes
+	// into engine.Step via StepOptions.Evaluator for every step. When nil (the
+	// default) the engine uses its pure, wall-clock-free package-global evaluator,
+	// preserving deterministic replay. A long-lived evaluator is held here so its
+	// compile cache is reused across steps. Set via [WithExpressionTimeout] or
+	// [WithConditionEvaluator] (ADR-0056).
+	conditionEval engine.ConditionEvaluator
 
 	// logOpt, tpOpt, mpOpt are staged observability options collected by the
 	// With* option functions and passed together to newRunnerObs after the option
@@ -186,6 +195,51 @@ func WithJitterSource(src JitterSource) Option { return func(r *Runner) { r.jitt
 // not affect the Runner.
 func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
 	return func(r *Runner) { r.defaultRetryPolicy = &p }
+}
+
+// WithExpressionTimeout builds a long-lived, timeout-capable expression evaluator
+// (compile cache reused across steps) and injects it into the engine for every
+// step, bounding each in-engine expression evaluation — gateway conditions,
+// timer/SLA durations, correlation keys — to d of wall-clock time. A runaway or
+// hostile expression then aborts with [expreval.ErrEvalTimeout] instead of
+// stalling the driver loop and every sibling instance behind it (the DoS the
+// audit flagged; ADR-0049).
+//
+// This is the explicit, per-runner opt-in the ADR-0049 follow-up called for
+// (ADR-0056). DETERMINISM TRADE-OFF: enabling the guard makes the engine's
+// expression evaluation wall-clock-dependent, so a timed-out result is no longer
+// reproducible on replay. Enable it only when you must evaluate UNTRUSTED
+// definitions; trusted-definition deployments should leave it off (the default)
+// to keep deterministic replay. A non-positive d disables the guard (equivalent
+// to the default pure evaluator).
+//
+// WithExpressionTimeout and [WithConditionEvaluator] set the same field; the last
+// option wins.
+func WithExpressionTimeout(d time.Duration) Option {
+	return func(r *Runner) {
+		r.conditionEval = expreval.New(expreval.WithTimeout(d))
+	}
+}
+
+// WithConditionEvaluator injects a caller-supplied [engine.ConditionEvaluator]
+// into the engine for every step, overriding the pure package-global default.
+// Use it when you need full control over compilation/evaluation (e.g. a custom
+// builtin set or a shared evaluator instance); for the common DoS-guard case
+// prefer [WithExpressionTimeout].
+//
+// A nil evaluator is ignored (the default pure evaluator remains in effect).
+// DETERMINISM: supplying an evaluator whose results depend on wall-clock time
+// (e.g. one built with expreval.WithTimeout(d>0)) trades deterministic replay for
+// that behaviour — an explicit consumer choice (ADR-0056).
+//
+// WithConditionEvaluator and [WithExpressionTimeout] set the same field; the last
+// option wins.
+func WithConditionEvaluator(eval engine.ConditionEvaluator) Option {
+	return func(r *Runner) {
+		if eval != nil {
+			r.conditionEval = eval
+		}
+	}
 }
 
 // WithLogger sets the structured logger used by the Runner (default: [slog.Default]).
@@ -337,7 +391,10 @@ func (r *Runner) deliverLoop(
 			attribute.String("wrkflw.trigger", triggerName(t)),
 		))
 		start := r.clk.Now()
-		res, err := engine.Step(def, st, t, engine.StepOptions{DefaultRetryPolicy: r.defaultRetryPolicy})
+		res, err := engine.Step(def, st, t, engine.StepOptions{
+			DefaultRetryPolicy: r.defaultRetryPolicy,
+			Evaluator:          r.conditionEval,
+		})
 		r.obs.stepDuration.Record(stepCtx, r.clk.Now().Sub(start).Seconds(),
 			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
 		if err != nil {
