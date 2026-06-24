@@ -60,7 +60,19 @@ Add an internal **wall-clock guard** to the `Evaluator`, default-on:
 - Each guarded evaluation spawns one goroutine + timer (~µs). Negligible for a
   workflow engine's evaluation rate; consumers who need maximum throughput on
   fully trusted definitions can disable it with `WithTimeout(0)`.
-- **Known limitation:** the engine's `conditions` evaluator is a package-global, so
-  the `WithTimeout` knob is not reachable by a consumer today. Making the engine's
-  evaluator injectable (so the timeout is configurable per consumer) is a deferred
-  follow-up.
+- **The engine disables the guard by default (revised after whole-branch review).**
+  `expreval.New()` defaults the guard on (5s) for general callers, but the engine's
+  package-global evaluator (`engine/conditions.go`) is constructed with
+  `WithTimeout(0)`. Enabling it there would make the deterministic `Step` reach a
+  real `time.NewTimer` and spawn a goroutine on every gateway/timer/correlation
+  evaluation — violating the **locked** "core never reads the wall clock" invariant
+  (ADR-0003) and adding hot-path overhead. So the core stays wall-clock-free and the
+  DoS guard is **not** active for in-engine evaluation by default. The `WithTimeout`
+  capability, `ErrEvalTimeout`, and the guarded `run` path remain fully implemented
+  and tested for any caller that constructs its own `Evaluator`.
+- **Known limitation / deferred follow-up:** because the engine evaluator is a
+  package-global with the guard off, a consumer that must evaluate *untrusted*
+  definitions cannot currently turn the DoS guard on for in-engine evaluation.
+  Making the engine's evaluator injectable (so such a consumer can supply a
+  timeout-capable evaluator while the default stays pure) is the deferred follow-up
+  — it is a deliberate engine-API change and must itself be ADR'd.

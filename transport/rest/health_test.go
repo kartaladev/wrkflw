@@ -69,7 +69,10 @@ func TestHealthHandler(t *testing.T) {
 				assert.Equal(t, "unavailable", body["status"])
 				checks, _ := body["checks"].(map[string]any)
 				require.Len(t, checks, 2)
-				assert.Contains(t, checks["db"], "connection refused")
+				// The failing check is NAMED but its raw error (which may carry
+				// host/DSN fragments) is NOT leaked into the response body.
+				assert.Equal(t, "unavailable", checks["db"])
+				assert.NotContains(t, checks["db"], "connection refused")
 				assert.Equal(t, "ok", checks["broker"])
 			},
 		},

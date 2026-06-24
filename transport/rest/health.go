@@ -50,8 +50,9 @@ type healthResponse struct {
 //	               unhealthy dependency never makes the orchestrator kill the pod.
 //	GET /readyz  — readiness: runs every registered check with the request
 //	               context. 200 {"status":"ok"} when all pass; 503
-//	               {"status":"unavailable", "checks": {name: "ok"|error}} naming
-//	               each failing check when any fails.
+//	               {"status":"unavailable", "checks": {name: "ok"|"unavailable"}}
+//	               naming each failing check when any fails (the raw probe error is
+//	               not exposed; the check implementation owns logging the detail).
 //
 // The patterns are root-relative; mount under any prefix with http.StripPrefix.
 func NewHealthHandler(checks ...HealthCheck) http.Handler {
@@ -64,7 +65,11 @@ func NewHealthHandler(checks ...HealthCheck) http.Handler {
 		ready := true
 		for _, c := range checks {
 			if err := c.Check(r.Context()); err != nil {
-				results[c.Name()] = err.Error()
+				// Name the failing check but do NOT leak the raw error: a probe
+				// error can carry host/DSN fragments and /readyz may be reachable
+				// by untrusted callers. The check implementation owns logging the
+				// detail (the handler stays dependency-free, no telemetry seam).
+				results[c.Name()] = "unavailable"
 				ready = false
 				continue
 			}
