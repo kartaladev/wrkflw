@@ -139,7 +139,7 @@ const (
 // terminal outbox event.
 type ChainEvent struct {
     PredecessorID  string         // the instance that reached a terminal state
-    PredecessorDef string         // "defID:version" (from event metadata, when present)
+    PredecessorDefinitionRef string         // "defID:version" (from event metadata, when present)
     Outcome        Outcome        // completed | failed | terminated
     Result         map[string]any // event payload: vars (completed) or {"error":…} (failed/terminated)
 }
@@ -163,10 +163,10 @@ Mirrors the `CallLinkStore` pattern (port + `Mem…` here, Postgres in `persiste
 ```go
 type ChainLink struct {
     PredecessorID  string
-    PredecessorDef string
+    PredecessorDefinitionRef string
     Outcome        Outcome
     SuccessorID    string
-    SuccessorDef   string
+    SuccessorDefinitionRef   string
     StartVars      map[string]any
     CreatedAt      time.Time
 }
@@ -267,7 +267,7 @@ route to the consumer's DLQ middleware.
 
 - Migration **`0008_chain_links.sql`**: table `wrkflw_chain_links` with
   `predecessor_instance_id text`, `outcome text`, `successor_instance_id text`,
-  `predecessor_def text`, `successor_def text`, `start_vars jsonb`,
+  `predecessor_definition_ref text`, `successor_definition_ref text`, `start_vars jsonb`,
   `created_at timestamptz`, **`PRIMARY KEY (predecessor_instance_id, outcome)`**
   (the dedup backstop), plus an index on `successor_instance_id` for ancestry lookup.
 - `postgres.ChainLinkStore` implementing the port; `Record` maps a unique-violation

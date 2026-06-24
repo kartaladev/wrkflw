@@ -7,7 +7,7 @@ import (
 )
 
 // instanceDefRef renders the "defID:version" reference of an instance, carried
-// on terminal outbox events so a consumer (chaining's PredecessorDef) can route
+// on terminal outbox events so a consumer (chaining's PredecessorDefinitionRef) can route
 // on the source definition (ADR-0047).
 func instanceDefRef(st engine.InstanceState) string {
 	return fmt.Sprintf("%s:%d", st.DefID, st.DefVersion)
@@ -36,11 +36,11 @@ func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds
 	def := instanceDefRef(st)
 	switch st.Status {
 	case engine.StatusCompleted:
-		return []OutboxEvent{{Topic: "instance.completed", Payload: copyVarsForOutcome(st.Variables), InstanceID: st.InstanceID, Def: def}}
+		return []OutboxEvent{{Topic: "instance.completed", Payload: copyVarsForOutcome(st.Variables), InstanceID: st.InstanceID, DefinitionRef: def}}
 	case engine.StatusFailed:
-		return []OutboxEvent{{Topic: "instance.failed", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, Def: def}}
+		return []OutboxEvent{{Topic: "instance.failed", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, DefinitionRef: def}}
 	case engine.StatusTerminated:
-		return []OutboxEvent{{Topic: "instance.terminated", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, Def: def}}
+		return []OutboxEvent{{Topic: "instance.terminated", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, DefinitionRef: def}}
 	default:
 		return nil
 	}

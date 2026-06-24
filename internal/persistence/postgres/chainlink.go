@@ -43,10 +43,10 @@ func (c *ChainLinkStore) Record(ctx context.Context, link runtime.ChainLink) err
 	_, err := c.pool.Exec(ctx,
 		`INSERT INTO wrkflw_chain_links
 		   (predecessor_instance_id, outcome, successor_instance_id,
-		    predecessor_def, successor_def, start_vars, created_at)
+		    predecessor_definition_ref, successor_definition_ref, start_vars, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		link.PredecessorID, string(link.Outcome), link.SuccessorID,
-		link.PredecessorDef, link.SuccessorDef, startVars, link.CreatedAt,
+		link.PredecessorDefinitionRef, link.SuccessorDefinitionRef, startVars, link.CreatedAt,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -62,7 +62,7 @@ func (c *ChainLinkStore) Record(ctx context.Context, link runtime.ChainLink) err
 func (c *ChainLinkStore) LookupBySuccessor(ctx context.Context, successorID string) (runtime.ChainLink, bool, error) {
 	row := c.pool.QueryRow(ctx,
 		`SELECT predecessor_instance_id, outcome, successor_instance_id,
-		        predecessor_def, successor_def, start_vars, created_at
+		        predecessor_definition_ref, successor_definition_ref, start_vars, created_at
 		   FROM wrkflw_chain_links
 		  WHERE successor_instance_id = $1`,
 		successorID,
@@ -82,7 +82,7 @@ func (c *ChainLinkStore) LookupBySuccessor(ctx context.Context, successorID stri
 func (c *ChainLinkStore) ListByPredecessor(ctx context.Context, predecessorID string) ([]runtime.ChainLink, error) {
 	rows, err := c.pool.Query(ctx,
 		`SELECT predecessor_instance_id, outcome, successor_instance_id,
-		        predecessor_def, successor_def, start_vars, created_at
+		        predecessor_definition_ref, successor_definition_ref, start_vars, created_at
 		   FROM wrkflw_chain_links
 		  WHERE predecessor_instance_id = $1
 		  ORDER BY outcome`,
@@ -109,7 +109,7 @@ func (c *ChainLinkStore) ListByPredecessor(ctx context.Context, predecessorID st
 
 // scanChainLink scans one row (QueryRow or Query result) into a ChainLink. The
 // column projection must be: predecessor_instance_id, outcome,
-// successor_instance_id, predecessor_def, successor_def, start_vars, created_at.
+// successor_instance_id, predecessor_definition_ref, successor_definition_ref, start_vars, created_at.
 func scanChainLink(row pgx.Row) (runtime.ChainLink, error) {
 	var (
 		link          runtime.ChainLink
@@ -118,7 +118,7 @@ func scanChainLink(row pgx.Row) (runtime.ChainLink, error) {
 	)
 	if err := row.Scan(
 		&link.PredecessorID, &outcome, &link.SuccessorID,
-		&link.PredecessorDef, &link.SuccessorDef, &startVarsJSON, &link.CreatedAt,
+		&link.PredecessorDefinitionRef, &link.SuccessorDefinitionRef, &startVarsJSON, &link.CreatedAt,
 	); err != nil {
 		return runtime.ChainLink{}, err
 	}

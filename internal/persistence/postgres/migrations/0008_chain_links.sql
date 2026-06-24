@@ -7,8 +7,8 @@ CREATE TABLE wrkflw_chain_links (
     predecessor_instance_id TEXT        NOT NULL,
     outcome                 TEXT        NOT NULL,
     successor_instance_id   TEXT        NOT NULL,
-    predecessor_def         TEXT        NOT NULL DEFAULT '',
-    successor_def           TEXT        NOT NULL DEFAULT '',
+    predecessor_definition_ref         TEXT        NOT NULL DEFAULT '',
+    successor_definition_ref           TEXT        NOT NULL DEFAULT '',
     start_vars              JSONB,
     created_at              TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (predecessor_instance_id, outcome)

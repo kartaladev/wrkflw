@@ -26,10 +26,10 @@ func TestTerminalOutboxEvent(t *testing.T) {
 			cmds: []engine.Command{engine.CompleteInstance{Result: map[string]any{"ok": true}}},
 			assert: func(t *testing.T, got []OutboxEvent) {
 				require.Equal(t, []OutboxEvent{{
-					Topic:      "instance.completed",
-					Payload:    map[string]any{"ok": true},
-					InstanceID: "i1",
-					Def:        "approval:2",
+					Topic:         "instance.completed",
+					Payload:       map[string]any{"ok": true},
+					InstanceID:    "i1",
+					DefinitionRef: "approval:2",
 				}}, got)
 			},
 		},
@@ -45,10 +45,10 @@ func TestTerminalOutboxEvent(t *testing.T) {
 			cmds: []engine.Command{engine.FailInstance{Err: "boom"}},
 			assert: func(t *testing.T, got []OutboxEvent) {
 				require.Equal(t, []OutboxEvent{{
-					Topic:      "instance.failed",
-					Payload:    map[string]any{"error": "boom"},
-					InstanceID: "i2",
-					Def:        "approval:1",
+					Topic:         "instance.failed",
+					Payload:       map[string]any{"error": "boom"},
+					InstanceID:    "i2",
+					DefinitionRef: "approval:1",
 				}}, got)
 			},
 		},
@@ -75,10 +75,10 @@ func TestTerminalOutboxEvent(t *testing.T) {
 			cmds: nil,
 			assert: func(t *testing.T, got []OutboxEvent) {
 				require.Equal(t, []OutboxEvent{{
-					Topic:      "instance.terminated",
-					Payload:    map[string]any{"error": "instance terminated"},
-					InstanceID: "i3",
-					Def:        "approval:1",
+					Topic:         "instance.terminated",
+					Payload:       map[string]any{"error": "instance terminated"},
+					InstanceID:    "i3",
+					DefinitionRef: "approval:1",
 				}}, got)
 			},
 		},

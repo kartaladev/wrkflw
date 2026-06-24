@@ -27,8 +27,9 @@ var chainTopics = map[string]runtime.Outcome{
 //
 //   - topic (msg.Metadata "topic", set by eventing.NewPublisher) → Outcome
 //   - msg.Metadata "instance_id" → PredecessorID
-//   - msg.Metadata "def" → PredecessorDef (set by the built-in publisher from the
-//     source instance's "defID:version", ADR-0047; empty for pre-ADR-0047 events)
+//   - msg.Metadata "definition_ref" → PredecessorDefinitionRef (set by the built-in
+//     publisher from the source instance's "defID:version", ADR-0047; empty for
+//     pre-ADR-0047 events)
 //   - the JSON body → Result
 //
 // Ack/Nack discipline (a returned error nacks for re-delivery):
@@ -55,10 +56,10 @@ func NewChainHandler(core *runtime.Chainer) message.NoPublishHandlerFunc {
 			}
 		}
 		ev := runtime.ChainEvent{
-			PredecessorID:  msg.Metadata.Get("instance_id"),
-			PredecessorDef: msg.Metadata.Get("def"),
-			Outcome:        outcome,
-			Result:         result,
+			PredecessorID:            msg.Metadata.Get("instance_id"),
+			PredecessorDefinitionRef: msg.Metadata.Get("definition_ref"),
+			Outcome:                  outcome,
+			Result:                   result,
 		}
 		return core.Handle(msg.Context(), ev)
 	}

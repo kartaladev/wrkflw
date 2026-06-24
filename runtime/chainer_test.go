@@ -41,10 +41,10 @@ func TestChainerHandle(t *testing.T) {
 	errTransient := errors.New("db down")
 
 	completedEv := runtime.ChainEvent{
-		PredecessorID:  "p1",
-		PredecessorDef: "approval:1",
-		Outcome:        runtime.OutcomeCompleted,
-		Result:         map[string]any{"orderID": "o-7"},
+		PredecessorID:            "p1",
+		PredecessorDefinitionRef: "approval:1",
+		Outcome:                  runtime.OutcomeCompleted,
+		Result:                   map[string]any{"orderID": "o-7"},
 	}
 
 	// successorFor returns a policy that always starts fulfillmentDef with the
@@ -64,8 +64,10 @@ func TestChainerHandle(t *testing.T) {
 		assert      func(t *testing.T, gotErr error, starter *recordingStarter, links *runtime.MemChainLinkStore)
 	}{
 		"no successor (ok=false) does nothing": {
-			ev:     completedEv,
-			policy: func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) { return runtime.SuccessorDecision{}, false },
+			ev: completedEv,
+			policy: func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+				return runtime.SuccessorDecision{}, false
+			},
 			assert: func(t *testing.T, gotErr error, starter *recordingStarter, links *runtime.MemChainLinkStore) {
 				require.NoError(t, gotErr)
 				assert.Empty(t, starter.calls, "no policy successor => no start")
@@ -74,8 +76,10 @@ func TestChainerHandle(t *testing.T) {
 			},
 		},
 		"no successor (nil Def) does nothing": {
-			ev:     completedEv,
-			policy: func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) { return runtime.SuccessorDecision{Def: nil}, true },
+			ev: completedEv,
+			policy: func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+				return runtime.SuccessorDecision{Def: nil}, true
+			},
 			assert: func(t *testing.T, gotErr error, starter *recordingStarter, links *runtime.MemChainLinkStore) {
 				require.NoError(t, gotErr)
 				assert.Empty(t, starter.calls)
