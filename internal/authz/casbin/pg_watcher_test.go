@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 )
 
 func TestPGWatcherNotifiesOtherNodesNotSelf(t *testing.T) {

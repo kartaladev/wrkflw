@@ -18,6 +18,7 @@ import (
 // This fails if:
 //   - A kind constant exists with no corresponding table row, or
 //   - A table row maps to a kind not in the canonical set.
+//
 // When a new variant is added to the sealed set, add a table case and the
 // corresponding kind constant to trigger_codec.go; AllTriggerKinds will then
 // include it automatically.

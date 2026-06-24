@@ -76,7 +76,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 
 	// Parent definition must be resolvable under the "id:version" ref format.
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"notifier-child":   child,
+		"notifier-child":    child,
 		"notifier-parent:1": parent,
 	})
 

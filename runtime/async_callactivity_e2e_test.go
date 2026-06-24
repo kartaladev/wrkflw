@@ -235,8 +235,8 @@ func TestFailurePathCallActivity(t *testing.T) {
 	// Register under both plain "defID" (for call activity resolution) and
 	// "defID:version" (for notifier parent-def lookup).
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"async-fail-child":   child,
-		"async-fail-parent":  parent,
+		"async-fail-child":    child,
+		"async-fail-parent":   parent,
 		"async-fail-parent:1": parent,
 	})
 

@@ -155,7 +155,7 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				clk.Advance(5 * time.Second)
 				require.Never(t, func() bool { return n.Load() > 0 },
 					150*time.Millisecond, 10*time.Millisecond) // old T+5 must not fire
-				clk.Advance(5 * time.Second)                    // now at T+10
+				clk.Advance(5 * time.Second) // now at T+10
 				wg.Wait()
 				require.Equal(t, int64(1), n.Load())
 			},

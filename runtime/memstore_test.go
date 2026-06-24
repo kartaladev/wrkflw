@@ -119,8 +119,8 @@ func TestMemStoreCommit(t *testing.T) {
 // with -race.
 func TestMemStoreConcurrentSafe(t *testing.T) {
 	const (
-		numWorkers  = 20
-		numCommits  = 10
+		numWorkers = 20
+		numCommits = 10
 	)
 
 	ms := runtime.NewMemStore()

@@ -69,7 +69,8 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 }
 
 // driveToThrow runs an instance through:
-//   start → sub (inner-svc invoked → completed) → sub exits → compThrow reached
+//
+//	start → sub (inner-svc invoked → completed) → sub exits → compThrow reached
 //
 // Returns the StepResult from the last Step call, just BEFORE delivering the
 // throw — so the caller can observe the commands and state at the throw node.

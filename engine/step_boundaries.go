@@ -54,6 +54,13 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 			})
 		} else if n.SignalName != "" {
 			arm.Signal = n.SignalName
+		} else if n.MessageName != "" {
+			resolvedKey, err := conditions.EvalString(n.CorrelationKey, s.Variables)
+			if err != nil {
+				return nil, fmt.Errorf("workflow-engine: boundary %q on %q message correlation key: %w", n.ID(), hostNode, err)
+			}
+			arm.Message = n.MessageName
+			arm.MessageKey = resolvedKey
 		}
 		s.Boundaries = append(s.Boundaries, arm)
 	}

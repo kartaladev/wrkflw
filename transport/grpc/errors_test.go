@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -47,6 +49,46 @@ func TestMapToGRPCStatus(t *testing.T) {
 			t.Parallel()
 			got := status.Code(grpctransport.MapToGRPCStatus(tc.err))
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestMapToGRPCStatus_ErrorInfoDetail verifies that the gRPC status carries a
+// machine-readable error code in an errdetails.ErrorInfo detail, mirroring the
+// REST {error,message} taxonomy so clients can branch on the code rather than
+// parsing the status message string.
+func TestMapToGRPCStatus_ErrorInfoDetail(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		err        error
+		wantReason string
+	}{
+		{"instance not found", runtime.ErrInstanceNotFound, "not_found"},
+		{"not authorized", authz.ErrNotAuthorized, "forbidden"},
+		{"concurrent update", runtime.ErrConcurrentUpdate, "conflict"},
+		{"bad cursor", runtime.ErrBadCursor, "bad_request"},
+		{"conflict state", fmt.Errorf("x: %w", service.ErrConflict), "conflict_state"},
+		{"unknown error", errors.New("boom"), "internal_error"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			st, ok := status.FromError(grpctransport.MapToGRPCStatus(tc.err))
+			require.True(t, ok, "expected a gRPC status error")
+
+			var info *errdetails.ErrorInfo
+			for _, d := range st.Details() {
+				if ei, isInfo := d.(*errdetails.ErrorInfo); isInfo {
+					info = ei
+					break
+				}
+			}
+			require.NotNil(t, info, "status must carry an ErrorInfo detail")
+			assert.Equal(t, tc.wantReason, info.GetReason())
+			assert.NotEmpty(t, info.GetDomain(), "ErrorInfo.Domain must identify the engine")
 		})
 	}
 }

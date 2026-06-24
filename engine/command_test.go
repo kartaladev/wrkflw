@@ -29,12 +29,12 @@ func TestCommandsImplementInterface(t *testing.T) {
 func TestHumanCommandsImplementInterface(t *testing.T) {
 	spec := authz.AuthzSpec{Roles: []string{"approver"}, Attribute: "actor.ID != \"\""}
 	task := humantask.HumanTask{
-		TaskToken:  "tok1",
-		InstanceID: "i1",
-		NodeID:     "approve",
+		TaskToken:   "tok1",
+		InstanceID:  "i1",
+		NodeID:      "approve",
 		Eligibility: authz.AuthzSpec{Roles: []string{"manager"}},
-		Candidates: []string{"u1", "u2"},
-		State:      humantask.Unclaimed,
+		Candidates:  []string{"u1", "u2"},
+		State:       humantask.Unclaimed,
 	}
 
 	cmds := []engine.Command{

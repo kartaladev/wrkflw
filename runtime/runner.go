@@ -510,12 +510,21 @@ func (r *Runner) syncMsgWaiters(st engine.InstanceState) {
 		}
 	}
 
-	// Re-register from current tokens.
+	// Re-register from current tokens (message-catch intermediate events / receive tasks).
 	for _, tok := range st.Tokens {
 		if tok.AwaitMessage != "" {
 			k := msgKey{Name: tok.AwaitMessage, CorrelationKey: tok.AwaitMessageKey}
 			r.msgWaiters[k] = st.InstanceID
 		}
+	}
+
+	// Re-register from armed message BOUNDARY events. Their host token parks on a
+	// task/command (not on the message), so they are not covered by the token loop
+	// above; DeliverMessage must still be able to correlate a delivered message to
+	// this instance to fire the boundary (ADR-0053).
+	for _, w := range st.MessageBoundaryWaiters() {
+		k := msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}
+		r.msgWaiters[k] = st.InstanceID
 	}
 }
 
@@ -639,6 +648,21 @@ func (r *Runner) propagateCancel(ctx context.Context, parentID string, visited m
 	}
 }
 
+// safeActionDo invokes a.Do, converting a panic into an error so a buggy or
+// malicious service action cannot crash the runner — and with it every in-flight
+// instance on the replica. A recovered panic is surfaced as an ordinary action
+// error, so callers route it through their normal failure path (a retryable
+// ActionFailed for InvokeAction, a best-effort log for InvokeCancelAction).
+func safeActionDo(ctx context.Context, a action.ServiceAction, in map[string]any) (out map[string]any, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			out = nil
+			err = fmt.Errorf("workflow-runtime: action panicked: %v", rec)
+		}
+	}()
+	return a.Do(ctx, in)
+}
+
 // perform executes one command and returns the resulting trigger, if any.
 // st is the current instance state, used for variable access when resolving
 // human-task candidates. def is the process definition, captured by timer
@@ -672,7 +696,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
 		start := r.clk.Now()
-		out, err := a.Do(actx, cmd.Input)
+		out, err := safeActionDo(actx, a, cmd.Input)
 		elapsed = r.clk.Now().Sub(start).Seconds()
 		if err != nil {
 			aspan.RecordError(err)
@@ -697,7 +721,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 				slog.String("action", cmd.Name))
 			return nil, nil
 		}
-		if _, err := a.Do(ctx, cmd.Input); err != nil {
+		if _, err := safeActionDo(ctx, a, cmd.Input); err != nil {
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",
 				slog.String("action", cmd.Name), slog.Any("error", err))
 		}

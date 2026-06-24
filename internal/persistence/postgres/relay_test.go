@@ -563,9 +563,9 @@ func TestRelayDLQAdmin(t *testing.T) {
 
 	// Verify the redriven row is now pending with reset state.
 	var (
-		status     string
-		retryCount int
-		lastErrPtr *string
+		status      string
+		retryCount  int
+		lastErrPtr  *string
 		nextAttempt time.Time
 	)
 	err = pool.QueryRow(t.Context(),

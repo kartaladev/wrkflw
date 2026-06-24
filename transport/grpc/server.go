@@ -76,6 +76,12 @@ func (s *server) StartInstance(ctx context.Context, req *workflowpb.StartInstanc
 	ctx, span := s.startSpan(ctx, "StartInstance")
 	defer span.End()
 
+	if req.GetDefRef() == "" || req.GetInstanceId() == "" {
+		err := status.Error(codes.InvalidArgument, "def_ref and instance_id are required")
+		recordSpanErr(span, err)
+		return nil, err
+	}
+
 	st, err := s.svc.StartInstance(ctx, service.StartInstanceRequest{
 		DefRef:     req.GetDefRef(),
 		InstanceID: req.GetInstanceId(),

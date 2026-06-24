@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -37,6 +38,7 @@ type config struct {
 	logger *slog.Logger
 	tp     trace.TracerProvider
 	mp     metric.MeterProvider
+	pool   *pgxpool.Pool
 }
 
 // Option configures a [Scheduler].
@@ -76,6 +78,20 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 	}
 }
 
+// WithDistributedTimerLock enables multi-replica timer exclusivity backed by
+// Postgres advisory locks (the same database the engine persists to). When set,
+// many replicas may arm the same timer but only one runs its fire callback per
+// firing — removing the steady-state N×-replica redundant Deliver storm. The
+// engine's version-CAS plus in-tx timer-row deletion (ADR-0027) remain the
+// exactly-once backstop. A nil pool is ignored. See ADR-0050.
+func WithDistributedTimerLock(pool *pgxpool.Pool) Option {
+	return func(c *config) {
+		if pool != nil {
+			c.pool = pool
+		}
+	}
+}
+
 // NewScheduler constructs and starts a gocron-backed [Scheduler] driven by
 // clk. The returned scheduler must be closed via [Scheduler.Close] when the
 // application shuts down.
@@ -94,6 +110,9 @@ func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
 	}
 	if cfg.mp != nil {
 		internalOpts = append(internalOpts, gocronsched.WithMeterProvider(cfg.mp))
+	}
+	if cfg.pool != nil {
+		internalOpts = append(internalOpts, gocronsched.WithLocker(gocronsched.NewPostgresLocker(cfg.pool)))
 	}
 
 	impl, err := gocronsched.NewGocronScheduler(clk, internalOpts...)

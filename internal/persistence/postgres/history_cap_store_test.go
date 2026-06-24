@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -25,7 +25,7 @@ func TestStoreHistoryCapTrimsClosedVisitsOnLoad(t *testing.T) {
 		InstanceID: "cap-1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning,
 		StartedAt: base,
 		History: []engine.NodeVisit{
-			open("human", base),                         // long-parked open visit
+			open("human", base), // long-parked open visit
 			closed("c1", base.Add(1*time.Minute)),
 			closed("c2", base.Add(2*time.Minute)),
 		},

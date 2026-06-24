@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -54,13 +54,13 @@ func appliedStepWithVars(id string, vars map[string]any) runtime.AppliedStep {
 			History: []engine.NodeVisit{
 				{NodeID: "node-start", TokenID: "tok-1", EnteredAt: now},
 			},
-			Scopes:    []engine.Scope{},
-			Tasks:     []humantask.HumanTask{},
-			CmdSeq:    1,
-			TokenSeq:  1,
-			TaskSeq:   0,
-			TimerSeq:  0,
-			ScopeSeq:  0,
+			Scopes:   []engine.Scope{},
+			Tasks:    []humantask.HumanTask{},
+			CmdSeq:   1,
+			TokenSeq: 1,
+			TaskSeq:  0,
+			TimerSeq: 0,
+			ScopeSeq: 0,
 		},
 		Trigger: engine.NewStartInstance(now, vars),
 		Events:  []runtime.OutboxEvent{{Topic: "topic", Payload: map[string]any{"x": float64(1)}}},
@@ -116,8 +116,8 @@ func TestStore(t *testing.T) {
 			assert: func(t *testing.T, s *pg.Store) {
 				now := time.Unix(1700000000, 0).UTC()
 				vars := map[string]any{
-					"str":    "hello",
-					"float":  float64(3.14),
+					"str":   "hello",
+					"float": float64(3.14),
 					// int goes in; float64 comes out (JSON number limitation, spec §7 known limitation).
 					// The test asserts the ACTUAL behavior: int(5) round-trips as float64(5).
 					"intval": int(5),

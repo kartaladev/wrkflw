@@ -89,4 +89,3 @@ func statusName(s engine.Status) string {
 func triggerName(t engine.Trigger) string {
 	return strings.TrimPrefix(fmt.Sprintf("%T", t), "engine.")
 }
-

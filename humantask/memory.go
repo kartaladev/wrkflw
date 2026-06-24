@@ -10,7 +10,7 @@ import (
 
 // Compile-time assertions that the in-memory fakes satisfy the ports.
 var (
-	_ TaskStore    = (*MemTaskStore)(nil)
+	_ TaskStore     = (*MemTaskStore)(nil)
 	_ ActorResolver = (*StaticActorResolver)(nil)
 )
 

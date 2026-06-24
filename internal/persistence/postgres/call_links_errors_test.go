@@ -58,7 +58,7 @@ func TestInsertCallLinkDuplicateError(t *testing.T) {
 	// wrkflw_call_links and returns an error — covering the error branch.
 	secondStep := callLinkBaseStep("dup-child-b")
 	secondStep.NewCallLink = &runtime.CallLink{
-		ChildInstanceID:  "dup-child",   // same as above — PK violation
+		ChildInstanceID:  "dup-child", // same as above — PK violation
 		ParentInstanceID: "dup-parent-b",
 		ParentCommandID:  "cmd-dup-2",
 		ParentDefID:      "def-parent",

@@ -11,31 +11,31 @@ import (
 // but uses a plain string for Kind so that yaml.v3 decodes the lowerCamelCase
 // discriminator without invoking NodeKind's JSON un/marshalers.
 type nodeYAML struct {
-	ID                 string             `yaml:"id"`
-	Kind               string             `yaml:"kind"`
-	Name               string             `yaml:"name,omitempty"`
-	Action             string             `yaml:"action,omitempty"`
-	CandidateRoles     []string           `yaml:"candidateRoles,omitempty"`
-	EligibilityExpr    string             `yaml:"eligibilityExpr,omitempty"`
-	TimerDuration      string             `yaml:"timerDuration,omitempty"`
-	SLADuration        string             `yaml:"slaDuration,omitempty"`
-	SLAFlow            string             `yaml:"slaFlow,omitempty"`
-	SLAAction          string             `yaml:"slaAction,omitempty"`
-	ReminderEvery      string             `yaml:"reminderEvery,omitempty"`
-	ReminderAction     string             `yaml:"reminderAction,omitempty"`
-	RetryPolicy        *RetryPolicy       `yaml:"retryPolicy,omitempty"`
-	RecoveryFlow       string             `yaml:"recoveryFlow,omitempty"`
-	CompensationAction string             `yaml:"compensationAction,omitempty"`
-	CompensateRef      string             `yaml:"compensateRef,omitempty"`
-	CancelHandler      string             `yaml:"cancelHandler,omitempty"`
-	SignalName         string             `yaml:"signalName,omitempty"`
-	MessageName        string             `yaml:"messageName,omitempty"`
-	CorrelationKey     string             `yaml:"correlationKey,omitempty"`
-	ErrorCode          string             `yaml:"errorCode,omitempty"`
-	AttachedTo         string             `yaml:"attachedTo,omitempty"`
-	NonInterrupting    bool               `yaml:"nonInterrupting,omitempty"`
-	Subprocess         *definitionYAML    `yaml:"subprocess,omitempty"`
-	DefRef             string             `yaml:"defRef,omitempty"`
+	ID                 string          `yaml:"id"`
+	Kind               string          `yaml:"kind"`
+	Name               string          `yaml:"name,omitempty"`
+	Action             string          `yaml:"action,omitempty"`
+	CandidateRoles     []string        `yaml:"candidateRoles,omitempty"`
+	EligibilityExpr    string          `yaml:"eligibilityExpr,omitempty"`
+	TimerDuration      string          `yaml:"timerDuration,omitempty"`
+	SLADuration        string          `yaml:"slaDuration,omitempty"`
+	SLAFlow            string          `yaml:"slaFlow,omitempty"`
+	SLAAction          string          `yaml:"slaAction,omitempty"`
+	ReminderEvery      string          `yaml:"reminderEvery,omitempty"`
+	ReminderAction     string          `yaml:"reminderAction,omitempty"`
+	RetryPolicy        *RetryPolicy    `yaml:"retryPolicy,omitempty"`
+	RecoveryFlow       string          `yaml:"recoveryFlow,omitempty"`
+	CompensationAction string          `yaml:"compensationAction,omitempty"`
+	CompensateRef      string          `yaml:"compensateRef,omitempty"`
+	CancelHandler      string          `yaml:"cancelHandler,omitempty"`
+	SignalName         string          `yaml:"signalName,omitempty"`
+	MessageName        string          `yaml:"messageName,omitempty"`
+	CorrelationKey     string          `yaml:"correlationKey,omitempty"`
+	ErrorCode          string          `yaml:"errorCode,omitempty"`
+	AttachedTo         string          `yaml:"attachedTo,omitempty"`
+	NonInterrupting    bool            `yaml:"nonInterrupting,omitempty"`
+	Subprocess         *definitionYAML `yaml:"subprocess,omitempty"`
+	DefRef             string          `yaml:"defRef,omitempty"`
 }
 
 // sequenceFlowYAML decodes a SequenceFlow from YAML. Field names match the

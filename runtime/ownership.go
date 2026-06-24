@@ -28,8 +28,16 @@ type Ownership interface {
 // AlwaysOwn is the in-process Ownership for single-replica or sticky-routed
 // deployments where this process is guaranteed to be the sole writer of every
 // instance it touches. Acquire always returns true; Release is a no-op. It is
-// correct and free for single-process embedding; multi-process deployments need
-// a real lease (e.g. persistence.NewAdvisoryLockOwnership).
+// correct and free for single-process embedding.
+//
+// SINGLE-REPLICA / SINGLE-WRITER ONLY. AlwaysOwn unconditionally grants
+// ownership, so pairing it with a [CachingStore] across more than one replica is
+// a stale-read footgun: every replica would cache the same instance and serve its
+// own out-of-date snapshot, firing a routing decision and side-effects before the
+// version-CAS could reject the write (ADR-0020, ADR-0054). For ANY multi-replica
+// deployment use a real lease — persistence.NewAdvisoryLockOwnership — so only the
+// owning replica caches. [NewCachingStore] logs a one-time Warn when it is
+// constructed with AlwaysOwn to make a misconfiguration visible.
 type AlwaysOwn struct{}
 
 // Compile-time assertion.

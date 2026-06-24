@@ -16,14 +16,79 @@ import (
 	"github.com/expr-lang/expr/vm"
 )
 
+// DefaultTimeout bounds a single expression evaluation. It is generous enough
+// that no legitimate gateway/timer/correlation expression approaches it, so it
+// never affects normal (deterministic) results — it only backstops a pathological
+// or malicious expression that would otherwise hang the engine's single-threaded
+// driver loop and stall every other instance.
+const DefaultTimeout = 5 * time.Second
+
+// ErrEvalTimeout is returned when an expression evaluation exceeds the Evaluator's
+// timeout. The evaluation is abandoned (the caller regains control) but, because
+// Go cannot preempt a running goroutine, a pure-CPU expression keeps consuming a
+// core until it finishes — the timeout bounds latency, not CPU. Disable the guard
+// with WithTimeout(0) only for fully trusted definitions.
+var ErrEvalTimeout = errors.New("workflow-expreval: expression evaluation timed out")
+
 // Evaluator compiles and evaluates expression strings, caching compiled programs.
 type Evaluator struct {
-	mu    sync.Mutex
-	cache map[string]*vm.Program
+	mu      sync.Mutex
+	cache   map[string]*vm.Program
+	timeout time.Duration
 }
 
-// New returns an empty Evaluator.
-func New() *Evaluator { return &Evaluator{cache: make(map[string]*vm.Program)} }
+// Option configures an Evaluator.
+type Option func(*Evaluator)
+
+// WithTimeout sets the per-evaluation wall-clock timeout. A value <= 0 disables
+// the guard (the fast path: no goroutine, current behavior) for consumers who
+// fully trust their definitions and want maximum throughput.
+func WithTimeout(d time.Duration) Option {
+	return func(e *Evaluator) { e.timeout = d }
+}
+
+// New returns an Evaluator. By default a DefaultTimeout guard is enabled; pass
+// WithTimeout to override it (including WithTimeout(0) to disable).
+func New(opts ...Option) *Evaluator {
+	e := &Evaluator{cache: make(map[string]*vm.Program), timeout: DefaultTimeout}
+	for _, o := range opts {
+		o(e)
+	}
+	return e
+}
+
+// run evaluates a compiled program, enforcing the timeout guard when configured.
+// When timeout <= 0 it calls expr.Run directly (no goroutine). Otherwise it runs
+// the evaluation on a goroutine and races it against the timeout; the channel is
+// buffered so the goroutine never blocks on send even after a timeout, and a
+// recover guards against a panic escaping the goroutine.
+func (e *Evaluator) run(p *vm.Program, env map[string]any) (any, error) {
+	if e.timeout <= 0 {
+		return expr.Run(p, env)
+	}
+	type result struct {
+		out any
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				ch <- result{nil, fmt.Errorf("workflow-expreval: evaluation panicked: %v", rec)}
+			}
+		}()
+		out, err := expr.Run(p, env)
+		ch <- result{out, err}
+	}()
+	timer := time.NewTimer(e.timeout)
+	defer timer.Stop()
+	select {
+	case r := <-ch:
+		return r.out, r.err
+	case <-timer.C:
+		return nil, ErrEvalTimeout
+	}
+}
 
 func (e *Evaluator) compile(code string) (*vm.Program, error) {
 	e.mu.Lock()
@@ -46,7 +111,7 @@ func (e *Evaluator) EvalBool(code string, env map[string]any) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	out, err := expr.Run(p, env)
+	out, err := e.run(p, env)
 	if err != nil {
 		// A process variable that is absent from env resolves to nil (because
 		// expr.AllowUndefinedVariables() is used at compile time). Comparing nil
@@ -88,7 +153,7 @@ func (e *Evaluator) EvalDuration(code string, env map[string]any) (time.Duration
 	if err != nil {
 		return 0, err
 	}
-	out, err := expr.Run(p, env)
+	out, err := e.run(p, env)
 	if err != nil {
 		return 0, fmt.Errorf("workflow-expreval: run %q: %w", code, err)
 	}
@@ -143,7 +208,7 @@ func (e *Evaluator) EvalString(code string, env map[string]any) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	out, err := expr.Run(p, env)
+	out, err := e.run(p, env)
 	if err != nil {
 		return "", fmt.Errorf("workflow-expreval: run %q: %w", code, err)
 	}

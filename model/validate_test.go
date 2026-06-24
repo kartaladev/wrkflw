@@ -344,9 +344,9 @@ func TestValidate(t *testing.T) {
 					{ID: "f0", Source: "start", Target: "a"},
 					{ID: "f0b", Source: "start", Target: "b"}, // start splits to a and b
 					{ID: "f1", Source: "a", Target: "gw"},
-					{ID: "f2", Source: "b", Target: "gw"},     // gw has 2 incoming
+					{ID: "f2", Source: "b", Target: "gw"}, // gw has 2 incoming
 					{ID: "f3", Source: "gw", Target: "c"},
-					{ID: "f4", Source: "gw", Target: "d"},     // gw has 2 outgoing → mixed
+					{ID: "f4", Source: "gw", Target: "d"}, // gw has 2 outgoing → mixed
 					{ID: "f5", Source: "c", Target: "end"},
 					{ID: "f6", Source: "d", Target: "end"},
 				},
@@ -1093,13 +1093,13 @@ func TestValidateCancelActions(t *testing.T) {
 		assert func(t *testing.T, err error)
 	}{
 		{
-			name: "nil cancel actions is valid",
-			def:  base(nil),
+			name:   "nil cancel actions is valid",
+			def:    base(nil),
 			assert: func(t *testing.T, err error) { require.NoError(t, err) },
 		},
 		{
-			name: "non-empty cancel action names are valid",
-			def:  base([]string{"notify", "refund"}),
+			name:   "non-empty cancel action names are valid",
+			def:    base([]string{"notify", "refund"}),
 			assert: func(t *testing.T, err error) { require.NoError(t, err) },
 		},
 		{

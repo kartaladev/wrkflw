@@ -197,7 +197,7 @@ func boundaryErrorDef() *model.ProcessDefinition {
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "risky"},
-			{ID: "f2", Source: "risky", Target: "end"},           // normal path
+			{ID: "f2", Source: "risky", Target: "end"},            // normal path
 			{ID: "f3", Source: "err-boundary", Target: "recover"}, // recovery path
 			{ID: "f4", Source: "recover", Target: "end-recovery"},
 		},
