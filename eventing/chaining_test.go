@@ -66,6 +66,7 @@ func TestChainHandlerProjection(t *testing.T) {
 				require.Len(t, seen, 1)
 				assert.Equal(t, runtime.OutcomeCompleted, seen[0].Outcome)
 				assert.Equal(t, "p1", seen[0].PredecessorID)
+				assert.Equal(t, "approval:1", seen[0].PredecessorDef, "def metadata must project into PredecessorDef (ADR-0047)")
 				assert.Equal(t, map[string]any{"orderID": "o-7"}, seen[0].Result)
 				assert.Equal(t, []string{"p1-next-completed"}, starter.startedIDs())
 			},
@@ -119,6 +120,7 @@ func TestChainHandlerProjection(t *testing.T) {
 			msg := message.NewMessage("uuid-1", []byte(tc.body))
 			msg.Metadata.Set("topic", tc.topic)
 			msg.Metadata.Set("instance_id", "p1")
+			msg.Metadata.Set("def", "approval:1")
 			err := h(msg)
 
 			mu.Lock()

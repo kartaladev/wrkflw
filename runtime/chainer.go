@@ -24,12 +24,11 @@ import (
 type ChainEvent struct {
 	// PredecessorID is the instance that reached a terminal state.
 	PredecessorID string
-	// PredecessorDef is "defID:version" when the terminal event carries a "def"
-	// metadata key. NOTE: wrkflw's built-in publisher/relay does not set "def"
-	// today (only "topic" and "instance_id"), so this is empty over the built-in
-	// pipeline — it is populated only when a consumer's own publishing pipeline
-	// supplies the key. Wiring "def" through the outbox end-to-end is a deferred
-	// follow-up; until then, route on Outcome, not PredecessorDef.
+	// PredecessorDef is the "defID:version" of the instance that reached a terminal
+	// state, carried end-to-end through the outbox by the built-in publisher/relay
+	// (ADR-0047) so a SuccessorPolicy can route on the predecessor's definition. It
+	// is empty only for events produced before ADR-0047 or by a consumer pipeline
+	// that does not set the "def" metadata key.
 	PredecessorDef string
 	// Outcome is the terminal outcome that fired the event.
 	Outcome Outcome

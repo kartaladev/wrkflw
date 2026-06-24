@@ -27,8 +27,8 @@ var chainTopics = map[string]runtime.Outcome{
 //
 //   - topic (msg.Metadata "topic", set by eventing.NewPublisher) → Outcome
 //   - msg.Metadata "instance_id" → PredecessorID
-//   - msg.Metadata "def" → PredecessorDef (optional; wrkflw's built-in publisher
-//     does not set it, so it is empty unless the consumer's pipeline supplies it)
+//   - msg.Metadata "def" → PredecessorDef (set by the built-in publisher from the
+//     source instance's "defID:version", ADR-0047; empty for pre-ADR-0047 events)
 //   - the JSON body → Result
 //
 // Ack/Nack discipline (a returned error nacks for re-delivery):
