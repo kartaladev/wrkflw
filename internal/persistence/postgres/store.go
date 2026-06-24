@@ -149,6 +149,9 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 		endedAt(step.State),
 		now,
 	); err != nil {
+		if isUniqueViolation(err) {
+			return 0, runtime.ErrInstanceExists
+		}
 		return 0, fmt.Errorf("workflow-postgres: create: insert instance: %w", err)
 	}
 
@@ -395,6 +398,14 @@ func mapConflict(err error) error {
 		return runtime.ErrConcurrentUpdate
 	}
 	return err
+}
+
+// isUniqueViolation reports whether err is (or wraps) a Postgres unique-violation
+// (SQLSTATE 23505), used to map a duplicate instance/chain-link insert to a typed
+// sentinel.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // insertCallLink writes a new wrkflw_call_links row with status='running' inside

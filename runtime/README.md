@@ -394,3 +394,50 @@ The production `Store` implementation lives in
 `internal/persistence/postgres` and satisfies the `runtime.Store` interface.
 Wire it via the `persistence` package's exported constructors — consumers do
 not import `internal/` directly.
+
+## Process-instance chaining
+
+Chaining automatically starts a new, **independent** top-level instance when
+another reaches a terminal state — completed, failed, or terminated (ADR-0045).
+The predecessor fully ends and releases its resources; the successor is a fresh
+root instance that outlives it. This is *not* the parent→child nesting of an
+async call activity (`StartSubInstance`); it is sequential chaining of
+independent instances, driven off the durable terminal outbox events.
+
+Three pieces:
+
+- **`SuccessorPolicy`** — a Go callback `func(ctx, ChainEvent) (SuccessorDecision,
+  bool)`. It decides the successor definition + seed variables for a terminal
+  predecessor; returning `ok=false` (or a nil `Def`) ends the chain.
+- **`Chainer`** — the broker-agnostic core. `Handle(ctx, ChainEvent)` applies the
+  policy, records the lineage hop, then starts the successor with the
+  deterministic id `<predecessor>-next-<outcome>`.
+- **`ChainLinkStore`** — durable lineage (`MemChainLinkStore` for tests/embedded;
+  `persistence.NewChainLinkStore` for Postgres). The unique `(predecessor,
+  outcome)` key plus the deterministic successor id and `Store.Create`'s
+  `ErrInstanceExists` give **exactly-once effect** under at-least-once delivery.
+
+```go
+policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+    if ev.Outcome != runtime.OutcomeCompleted {
+        return runtime.SuccessorDecision{}, false
+    }
+    return runtime.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
+}
+chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+```
+
+The terminal event reaches the `Chainer` over the broker: mount
+`eventing.NewChainHandler(chainer)` on your own `message.Router`, or run the
+turnkey `eventing.NewChainerRunner(chainer).Run(ctx, sub)` which subscribes the
+`instance.completed` / `instance.failed` / `instance.terminated` topics. All
+watermill stays in `eventing`; `runtime` never imports it. `Handle` is
+idempotent — a redelivered terminal event is a clean no-op. See
+[`ExampleChainer`](chainer_example_test.go).
+
+> **Terminal events are status-accurate (ADR-0046).** Each terminal status emits
+> exactly one event: completed→`instance.completed`, failed→`instance.failed`,
+> terminated→`instance.terminated`. A cancelled instance now emits
+> `instance.terminated` (previously `instance.failed`), and an admin full-rollback
+> termination now emits `instance.terminated` (previously nothing). Consumers
+> route on the topic; the `{"error": …}` payload is human-readable, not an enum.

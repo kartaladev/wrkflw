@@ -5,24 +5,30 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-24
 
-> **▶ NEXT UP — Process-instance chaining (specced + planned; skip brainstorm).** Start a new,
-> independent top-level instance automatically when another reaches a terminal state (completed /
-> failed / terminated). Brainstorming is DONE and user-approved. Execute the plan:
-> `docs/plans/2026-06-24-process-instance-chaining.md`; decisions/rationale in the spec
-> `docs/specs/2026-06-24-process-instance-chaining-design.md`. Branch
-> `claude/process-instance-chaining-iazvza`. **Reserved ADRs: 0045** (chaining) **+ 0046**
-> (status-accurate terminal outbox events). See the "Process-instance chaining sub-project — 🚧
-> SPECCED + PLANNED" section below for the at-a-glance summary. **User constraints:** (a) NO Go
-> files at the module root — root type aliases for the public chaining types are a SEPARATE,
-> user-owned task (plan Phase 8, do not implement unprompted); (b) all watermill stays in
-> `eventing` (the broker-agnostic core lives in `runtime`).
+> **✅ DONE — Process-instance chaining (ADR-0045 + ADR-0046) — merged to `main` 2026-06-24**
+> (branch `claude/process-instance-chaining-iazvza`). A terminal instance (completed / failed /
+> terminated) now emits a **status-accurate** outbox event and an event-driven `Chainer` starts an
+> independent successor instance. Phases 0–7 built strict-TDD (visible RED→GREEN per symbol) + opus
+> whole-branch review that **found & fixed a CRITICAL lost-successor ordering bug** (see the
+> chaining section below). Gates: `go test -race -p 1 ./...` green; touched pkgs ≥85% (runtime
+> 89.2%, eventing 91.9%, postgres 85.2%, persistence 96.8%); lint 0; **engine/model production diff
+> ZERO**; watermill confined to `eventing`. Next free ADR: **0047**.
 >
-> **Fresh session:** start with the NEXT UP track above, or jump to the "🧭 START HERE (fresh
-> session) — consolidated backlog" section below for the broader prioritized backlog. The rest of
-> this doc is the per-track detail behind it. **`main` is green and all work through ADR-0044 is
-> merged** (incl. the full FOLLOWUPS resolution — see the ✅ callout just below). The only
-> specced-but-unbuilt track is process-instance chaining (above). Next free ADR after the two
-> reserved for chaining: **0047**.
+> **▶ STILL OPEN on this track (do NOT assume fully done):**
+> - **Phase 8 — root type aliases = USER-OWNED.** No `.go` files were added at the module root.
+>   The public root aliases (`Chainer`, `SuccessorPolicy`, `SuccessorDecision`, `ChainEvent`,
+>   `Outcome` + constants, `ChainLink`, `ChainLinkStore`, `ErrChainLinkExists`, `ErrInstanceExists`,
+>   optionally the `eventing` handler/runner) are a SEPARATE, user-confirmed task — implement only
+>   when explicitly asked.
+> - **`PredecessorDef` is empty over the built-in pipeline.** The publisher sets only `topic` +
+>   `instance_id` metadata; `ChainEvent.PredecessorDef` is populated only if a consumer's own
+>   pipeline supplies a `def` metadata key. Wiring `def` end-to-end (an outbox `def` column +
+>   `OutboxEvent.Def` + relay) is a deferred follow-up so policies can route on predecessor def.
+>
+> **Fresh session:** jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
+> below for the broader prioritized backlog. The rest of this doc is the per-track detail behind it.
+> **`main` is green and all work through ADR-0046 is merged** (incl. chaining + the full FOLLOWUPS
+> resolution — see the ✅ callout just below). No named work remains in flight.
 
 > **✅ DONE — the FOLLOWUPS resolution (all 5 sub-projects) — merged to `main` 2026-06-23
 > (merge commit `4fa2651`, branch `feat/followups-resolution`, 37 commits, ADRs 0041–0044).**
@@ -65,13 +71,51 @@ and pick up the next work. Read it top to bottom before starting.
 
 ---
 
-## Process-instance chaining sub-project — 🚧 SPECCED + PLANNED (NEXT UP)
+## Process-instance chaining sub-project — ✅ COMPLETE (merged 2026-06-24)
 
-**Status:** brainstorming DONE + user-approved; **spec + plan written, ZERO code yet.** Pick this up
-in a fresh session. Branch `claude/process-instance-chaining-iazvza`. Spec
+**Status:** Phases 0–7 built + opus whole-branch reviewed + merged to `main`. Branch
+`claude/process-instance-chaining-iazvza`. Spec
 `docs/specs/2026-06-24-process-instance-chaining-design.md`, plan
-`docs/plans/2026-06-24-process-instance-chaining.md`. **Reserved ADRs 0045 (chaining) + 0046
-(status-accurate terminal events).**
+`docs/plans/2026-06-24-process-instance-chaining.md`, **ADR-0045 (chaining) + ADR-0046
+(status-accurate terminal events)**.
+
+**What shipped:**
+- **ADR-0046 (runtime):** terminal outbox events derived **status-driven** at the deliverLoop
+  terminal edge (`terminalOutboxEvent`), replacing the command-driven mapping. Completed→
+  `instance.completed`, Failed→`instance.failed`, Terminated→**`instance.terminated`** (new). Topic
+  is strictly status-driven; the error STRING is best-effort (incident → `FailInstance.Err` →
+  status fallback) so SubInstanceFailed diagnostics + the cancel `"cancelled"` message survive.
+  Cancel now emits `instance.terminated` (was `instance.failed`); full-rollback termination now
+  emits `instance.terminated` (was nothing).
+- **ADR-0045 (runtime/eventing/persistence):** `runtime.ErrInstanceExists` (MemStore + Postgres
+  23505 on instance PK); `ChainLink` + `ChainLinkStore` + `MemChainLinkStore`; `Chainer.Handle`
+  core (policy → record link → start successor `<pred>-next-<outcome>`); `eventing.NewChainHandler`
+  + `NewChainerRunner.Run`; Postgres `ChainLinkStore` + migration `0008_chain_links.sql`;
+  `persistence.NewChainLinkStore`. Testable `ExampleChainer`; runtime/README + eventing docs.
+
+**Whole-branch review (opus) — verdict after fixes: Ready.** Found & fixed a **CRITICAL
+lost-successor ordering bug**: `Handle` recorded the link before starting the successor and returned
+on `ErrChainLinkExists`, so a transient start failure after the link committed would permanently
+drop the successor on redelivery (at-most-once). **Fix:** on `ErrChainLinkExists` fall through and
+(re)attempt the start; the successor's existence (deterministic id + `Store.Create`/
+`ErrInstanceExists`) is the real exactly-once backstop; the link is lineage/intent. Also fixed:
+`eventing.Chainer.Run` subscribes all topics before starting goroutines (no leak on a later
+Subscribe error); honest `PredecessorDef` docs; `workflow-` prefix on a scan error.
+
+**Deferred follow-ups (open):**
+1. **Phase 8 root type aliases — USER-OWNED** (not implemented; see resume point).
+2. **`PredecessorDef` end-to-end wiring** — empty over the built-in publisher/relay; needs an
+   outbox `def` column + `OutboxEvent.Def` + relay so policies can route on predecessor def.
+3. **Multi-replica chaining exclusivity** — chaining is idempotent under at-least-once delivery
+   (link unique key + `ErrInstanceExists`), so concurrent replica handlers are correct but may both
+   attempt a start (one wins). A claim/lease (like the call-link notifier, ADR-0031) is an
+   optimization, not a correctness need.
+
+---
+
+### Historical brainstorm record (pre-build)
+
+**Reserved ADRs 0045 (chaining) + 0046 (status-accurate terminal events).**
 
 **Goal:** automatically start a new, **independent** top-level instance when another reaches a
 terminal state. Event-driven over the durable outbox (Option A) — NOT call-activity nesting. Engine

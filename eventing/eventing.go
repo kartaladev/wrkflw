@@ -3,6 +3,15 @@
 // NewPublisher and hand the result to persistence.NewRelay. watermill is
 // confined to this package and internal/eventing/watermill; engine/model/runtime
 // never import it.
+//
+// # Process-instance chaining
+//
+// The subscriber side of process-instance chaining (ADR-0045) also lives here so
+// runtime stays watermill-free: NewChainHandler adapts a runtime.Chainer to a
+// watermill no-publish handler you mount on your own message.Router, and
+// NewChainerRunner / Chainer.Run is a turnkey wrapper that subscribes the three
+// status-accurate terminal topics (instance.completed / instance.failed /
+// instance.terminated) and drives the chaining core.
 package eventing
 
 import (
