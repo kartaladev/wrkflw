@@ -140,7 +140,12 @@ var (
 	_ runtime.InstanceLister = (*postgres.Lister)(nil)
 	_ runtime.CallLinkStore  = (*postgres.CallLinkStore)(nil)
 	_ runtime.TimerStore     = (*postgres.TimerStore)(nil)
+	_ runtime.ChainLinkStore = (*postgres.ChainLinkStore)(nil)
 )
+
+// ErrInstanceExists is returned by Store.Create when an instance id already
+// exists (re-exported so consumers can errors.Is without importing runtime).
+var ErrInstanceExists = runtime.ErrInstanceExists
 
 // OpenPostgres constructs a Postgres-backed runtime.Store + JournalReader over pool.
 //
@@ -344,6 +349,22 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) runtime.CallLi
 //	armed, err := ts.ListArmed(ctx)
 func NewTimerStore(pool *pgxpool.Pool) runtime.TimerStore {
 	return postgres.NewTimerStore(pool)
+}
+
+// NewChainLinkStore constructs the Postgres-backed runtime.ChainLinkStore for
+// process-instance chaining lineage (ADR-0045): Record persists one
+// predecessor->successor hop (a unique (predecessor, outcome) is the
+// exactly-once backstop), LookupBySuccessor and ListByPredecessor serve
+// ancestry/audit queries. Migrate must have been applied before the first call.
+//
+// Wire it into a runtime.Chainer via runtime.WithChainLinks:
+//
+//	pool, _ := pgxpool.New(ctx, dsn)
+//	persistence.Migrate(ctx, pool)
+//	links := persistence.NewChainLinkStore(pool)
+//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
+	return postgres.NewChainLinkStore(pool)
 }
 
 // NewCallNotifier builds a durable call-activity notifier over pool: it claims
