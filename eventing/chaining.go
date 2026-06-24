@@ -1,0 +1,118 @@
+package eventing
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"sync"
+
+	"github.com/ThreeDotsLabs/watermill/message"
+
+	"github.com/zakyalvan/krtlwrkflw/runtime"
+)
+
+// chainTopics are the three status-accurate terminal topics a chaining consumer
+// subscribes (ADR-0046). The map also drives topic→Outcome projection.
+var chainTopics = map[string]runtime.Outcome{
+	"instance.completed":  runtime.OutcomeCompleted,
+	"instance.failed":     runtime.OutcomeFailed,
+	"instance.terminated": runtime.OutcomeTerminated,
+}
+
+// NewChainHandler adapts the broker-agnostic runtime.Chainer core to a watermill
+// no-publish handler. A consumer mounts it on their own message.Router (their
+// retry/poison/DLQ middleware wraps it), registering it for the three terminal
+// topics. It projects each message to a runtime.ChainEvent:
+//
+//   - topic (msg.Metadata "topic", set by eventing.NewPublisher) → Outcome
+//   - msg.Metadata "instance_id" → PredecessorID
+//   - the JSON body → Result
+//
+// Ack/Nack discipline (a returned error nacks for re-delivery):
+//
+//   - success / no-op (no successor, duplicate) → nil (ack)
+//   - non-terminal / unknown topic              → nil (ack, ignored)
+//   - malformed JSON body                        → nil (ack + log; never loop)
+//   - transient core failure                     → error (nack → re-delivered)
+func NewChainHandler(core *runtime.Chainer) message.NoPublishHandlerFunc {
+	logger := slog.Default()
+	return func(msg *message.Message) error {
+		outcome, ok := chainTopics[msg.Metadata.Get("topic")]
+		if !ok {
+			return nil // not a terminal chaining topic; ack and ignore
+		}
+		var result map[string]any
+		if len(msg.Payload) > 0 {
+			if err := json.Unmarshal(msg.Payload, &result); err != nil {
+				logger.WarnContext(msg.Context(), "chain: malformed event payload; acking",
+					slog.String("topic", msg.Metadata.Get("topic")),
+					slog.String("instance_id", msg.Metadata.Get("instance_id")),
+					slog.Any("error", err))
+				return nil // poison payload: ack so the broker does not loop on it
+			}
+		}
+		ev := runtime.ChainEvent{
+			PredecessorID:  msg.Metadata.Get("instance_id"),
+			PredecessorDef: msg.Metadata.Get("def"),
+			Outcome:        outcome,
+			Result:         result,
+		}
+		return core.Handle(msg.Context(), ev)
+	}
+}
+
+// Chainer is the turnkey convenience wrapper around NewChainHandler for consumers
+// who do not run their own message.Router. Run subscribes the three terminal
+// topics and drives the chaining core until ctx is cancelled (mirrors
+// runtime.CallNotifier.Run). Consumers who want their own retry/poison/DLQ
+// middleware should mount NewChainHandler on their Router instead.
+type Chainer struct {
+	handler message.NoPublishHandlerFunc
+	logger  *slog.Logger
+}
+
+// NewChainerRunner builds a Chainer runner over the chaining core. Pass
+// WithLogger to set the structured logger (default slog.Default()).
+func NewChainerRunner(core *runtime.Chainer, opts ...Option) *Chainer {
+	var o options
+	for _, fn := range opts {
+		fn(&o)
+	}
+	logger := o.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Chainer{handler: NewChainHandler(core), logger: logger}
+}
+
+// Run subscribes the three terminal topics on sub and drives the chaining core
+// for each delivered message until ctx is cancelled. A handler error nacks the
+// message (re-delivery); success acks it. Run returns ctx.Err() on cancellation
+// after all per-topic loops drain.
+func (c *Chainer) Run(ctx context.Context, sub message.Subscriber) error {
+	var wg sync.WaitGroup
+	for topic := range chainTopics {
+		msgs, err := sub.Subscribe(ctx, topic)
+		if err != nil {
+			return fmt.Errorf("workflow-eventing: chain subscribe %q: %w", topic, err)
+		}
+		wg.Add(1)
+		go func(ch <-chan *message.Message) {
+			defer wg.Done()
+			for msg := range ch {
+				if err := c.handler(msg); err != nil {
+					c.logger.ErrorContext(msg.Context(), "chain: handler failed; nacking",
+						slog.String("instance_id", msg.Metadata.Get("instance_id")),
+						slog.Any("error", err))
+					msg.Nack()
+					continue
+				}
+				msg.Ack()
+			}
+		}(msgs)
+	}
+	<-ctx.Done()
+	wg.Wait()
+	return ctx.Err()
+}
