@@ -143,6 +143,29 @@ func TestChainHandlerTransientErrorNacks(t *testing.T) {
 	require.Error(t, h(msg), "a transient start failure must return an error so the message is nacked")
 }
 
+// errSubscriber is a message.Subscriber whose Subscribe always fails.
+type errSubscriber struct{ err error }
+
+func (e errSubscriber) Subscribe(context.Context, string) (<-chan *message.Message, error) {
+	return nil, e.err
+}
+func (e errSubscriber) Close() error { return nil }
+
+// TestChainerRunSubscribeError asserts Run surfaces a Subscribe failure (and, by
+// subscribing all topics before starting any goroutine, does not leak workers).
+func TestChainerRunSubscribeError(t *testing.T) {
+	policy := func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+		return runtime.SuccessorDecision{}, false
+	}
+	core := runtime.NewChainer(&capturingStarter{}, policy)
+	cr := eventing.NewChainerRunner(core)
+
+	sentinel := errors.New("broker unavailable")
+	err := cr.Run(t.Context(), errSubscriber{err: sentinel})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinel)
+}
+
 // TestChainerRunStartsSuccessorEndToEnd drives the full subscription loop over a
 // real GoChannel pub/sub + a real Runner + MemStore + MemChainLinkStore: a
 // published instance.completed event starts the mapped successor exactly once.

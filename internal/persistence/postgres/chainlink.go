@@ -125,7 +125,7 @@ func scanChainLink(row pgx.Row) (runtime.ChainLink, error) {
 	link.Outcome = runtime.Outcome(outcome)
 	if len(startVarsJSON) > 0 {
 		if err := json.Unmarshal(startVarsJSON, &link.StartVars); err != nil {
-			return runtime.ChainLink{}, fmt.Errorf("unmarshal start vars: %w", err)
+			return runtime.ChainLink{}, fmt.Errorf("workflow-postgres: chain links: unmarshal start vars: %w", err)
 		}
 	}
 	return link, nil

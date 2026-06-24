@@ -27,6 +27,8 @@ var chainTopics = map[string]runtime.Outcome{
 //
 //   - topic (msg.Metadata "topic", set by eventing.NewPublisher) → Outcome
 //   - msg.Metadata "instance_id" → PredecessorID
+//   - msg.Metadata "def" → PredecessorDef (optional; wrkflw's built-in publisher
+//     does not set it, so it is empty unless the consumer's pipeline supplies it)
 //   - the JSON body → Result
 //
 // Ack/Nack discipline (a returned error nacks for re-delivery):
@@ -91,12 +93,19 @@ func NewChainerRunner(core *runtime.Chainer, opts ...Option) *Chainer {
 // message (re-delivery); success acks it. Run returns ctx.Err() on cancellation
 // after all per-topic loops drain.
 func (c *Chainer) Run(ctx context.Context, sub message.Subscriber) error {
-	var wg sync.WaitGroup
+	// Subscribe ALL topics before starting any goroutine, so a failure on a later
+	// Subscribe cannot leak the goroutines of earlier ones.
+	channels := make([]<-chan *message.Message, 0, len(chainTopics))
 	for topic := range chainTopics {
 		msgs, err := sub.Subscribe(ctx, topic)
 		if err != nil {
 			return fmt.Errorf("workflow-eventing: chain subscribe %q: %w", topic, err)
 		}
+		channels = append(channels, msgs)
+	}
+
+	var wg sync.WaitGroup
+	for _, ch := range channels {
 		wg.Add(1)
 		go func(ch <-chan *message.Message) {
 			defer wg.Done()
@@ -110,7 +119,7 @@ func (c *Chainer) Run(ctx context.Context, sub message.Subscriber) error {
 				}
 				msg.Ack()
 			}
-		}(msgs)
+		}(ch)
 	}
 	<-ctx.Done()
 	wg.Wait()
