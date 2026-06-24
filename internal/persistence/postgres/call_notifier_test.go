@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -84,7 +84,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 
 	// DefinitionRegistry keyed as required by CallNotifier's fmt.Sprintf("%s:%d", defID, version) lookup.
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"cncn-child":   child,
+		"cncn-child":    child,
 		"cncn-parent:1": parent,
 	})
 

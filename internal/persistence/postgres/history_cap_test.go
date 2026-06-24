@@ -41,9 +41,9 @@ func TestCapHistory(t *testing.T) {
 			name: "old open visit behind many closed visits survives the cap",
 			hist: []engine.NodeVisit{
 				open("human", base), // the long-parked open visit, oldest
-				closed("c1", base.Add(1 * time.Minute)),
-				closed("c2", base.Add(2 * time.Minute)),
-				closed("c3", base.Add(3 * time.Minute)),
+				closed("c1", base.Add(1*time.Minute)),
+				closed("c2", base.Add(2*time.Minute)),
+				closed("c3", base.Add(3*time.Minute)),
 			},
 			n: 1, // keep only 1 closed visit
 			assert: func(t *testing.T, got []engine.NodeVisit) {
@@ -57,10 +57,10 @@ func TestCapHistory(t *testing.T) {
 		{
 			name: "closed visits trimmed to most-recent n, all opens kept",
 			hist: []engine.NodeVisit{
-				closed("c1", base.Add(1 * time.Minute)),
-				closed("c2", base.Add(2 * time.Minute)),
-				open("o1", base.Add(3 * time.Minute)),
-				closed("c3", base.Add(4 * time.Minute)),
+				closed("c1", base.Add(1*time.Minute)),
+				closed("c2", base.Add(2*time.Minute)),
+				open("o1", base.Add(3*time.Minute)),
+				closed("c3", base.Add(4*time.Minute)),
 			},
 			n: 2,
 			assert: func(t *testing.T, got []engine.NodeVisit) {

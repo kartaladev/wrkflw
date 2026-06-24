@@ -164,4 +164,3 @@ func TestStepActionCompletedUnknownCommandID(t *testing.T) {
 		engine.NewActionCompleted(at, "no-such-command", nil), engine.StepOptions{})
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
 }
-

@@ -72,7 +72,7 @@ func TestMemStoreList(t *testing.T) {
 			},
 		},
 		{
-			name: "same started_at: tiebreak on instance_id desc",
+			name:   "same started_at: tiebreak on instance_id desc",
 			filter: runtime.InstanceFilter{},
 			seed: func(t *testing.T) *runtime.MemStore {
 				return seedMemStore(t,

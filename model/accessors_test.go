@@ -54,8 +54,8 @@ func TestRetryPolicyOf(t *testing.T) {
 
 func TestSLAOf(t *testing.T) {
 	cases := []struct {
-		name           string
-		node           model.Node
+		name                       string
+		node                       model.Node
 		wantDur, wantFlow, wantAct string
 	}{
 		{

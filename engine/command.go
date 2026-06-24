@@ -169,17 +169,17 @@ type Compensate struct {
 	FromNode string
 }
 
-func (InvokeAction) isCommand()        {}
-func (InvokeCancelAction) isCommand()  {}
-func (CompleteInstance) isCommand()    {}
-func (FailInstance) isCommand()        {}
-func (AwaitHuman) isCommand()          {}
-func (UpdateTask) isCommand()          {}
-func (ScheduleTimer) isCommand()       {}
-func (CancelTimer) isCommand()         {}
-func (ThrowSignal) isCommand()         {}
-func (StartSubInstance) isCommand()    {}
-func (Compensate) isCommand()          {}
+func (InvokeAction) isCommand()       {}
+func (InvokeCancelAction) isCommand() {}
+func (CompleteInstance) isCommand()   {}
+func (FailInstance) isCommand()       {}
+func (AwaitHuman) isCommand()         {}
+func (UpdateTask) isCommand()         {}
+func (ScheduleTimer) isCommand()      {}
+func (CancelTimer) isCommand()        {}
+func (ThrowSignal) isCommand()        {}
+func (StartSubInstance) isCommand()   {}
+func (Compensate) isCommand()         {}
 
 // Compile-time assertions: each command must satisfy Command.
 var _ Command = InvokeCancelAction{}

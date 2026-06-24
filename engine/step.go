@@ -166,4 +166,3 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 	}
 	return cmds, nil
 }
-

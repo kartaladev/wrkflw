@@ -131,8 +131,8 @@ func TestAuthorizer_Authorize(t *testing.T) {
 			},
 		},
 		"empty privilege token is skipped, no match denies": {
-			spec:   authz.AuthzSpec{Privileges: []string{""}},
-			actor:  alice,
+			spec:  authz.AuthzSpec{Privileges: []string{""}},
+			actor: alice,
 			assert: func(t *testing.T, err error) {
 				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
 			},

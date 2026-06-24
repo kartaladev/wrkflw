@@ -390,7 +390,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 	t.Parallel()
 
 	type eventCase struct {
-		event string
+		event  string
 		assert func(t *testing.T, rm metricdata.ResourceMetrics)
 	}
 

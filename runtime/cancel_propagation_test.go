@@ -477,11 +477,11 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 //
 // Without the shared-visited-map fix, propagateCancel re-enters CancelInstance for
 // each child, allocating a fresh visited map each time. In this diamond topology:
-//   1. parent→B: propagateCancel(B, {parent,B}) calls CancelInstance(D).
-//   2. CancelInstance(D) allocates visited={D}, succeeds, then calls propagateCancel(D, {D}).
-//   3. Back in the parent's branch: propagateCancel(C, {parent,B,C}) calls CancelInstance(D)
-//      again — D is already Terminated, so Deliver returns ErrWrongState which is
-//      logged and swallowed (best-effort), but D is attempted twice.
+//  1. parent→B: propagateCancel(B, {parent,B}) calls CancelInstance(D).
+//  2. CancelInstance(D) allocates visited={D}, succeeds, then calls propagateCancel(D, {D}).
+//  3. Back in the parent's branch: propagateCancel(C, {parent,B,C}) calls CancelInstance(D)
+//     again — D is already Terminated, so Deliver returns ErrWrongState which is
+//     logged and swallowed (best-effort), but D is attempted twice.
 //
 // With the fix (propagateCancel recurses into propagateCancel with the SAME visited
 // map, bypassing CancelInstance), D is marked visited before the first recursive

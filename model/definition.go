@@ -31,7 +31,6 @@ const (
 	KindEventBasedGateway
 )
 
-
 // SequenceFlow is a directed edge between two nodes.
 type SequenceFlow struct {
 	ID        string

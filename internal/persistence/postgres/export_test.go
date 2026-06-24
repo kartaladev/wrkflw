@@ -88,7 +88,7 @@ func (e errQueryRowDBTX) Query(_ context.Context, _ string, _ ...any) (pgx.Rows,
 func (e errQueryRowDBTX) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
 	return &errRow{err: e.err}
 }
-func (e errQueryRowDBTX) Begin(_ context.Context) (pgx.Tx, error)         { return nil, e.err }
+func (e errQueryRowDBTX) Begin(_ context.Context) (pgx.Tx, error) { return nil, e.err }
 func (e errQueryRowDBTX) SendBatch(_ context.Context, _ *pgx.Batch) pgx.BatchResults {
 	return nil
 }

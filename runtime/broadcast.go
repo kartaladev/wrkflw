@@ -20,17 +20,20 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 // subscribed as a waiter for that signal name.
 //
 // Design (option a — subscription tracking):
+//
 //   - The bus maintains a map[signalName]set<instanceID> updated by the runtime
 //     after each park (via Sync) or explicitly via Subscribe/Unsubscribe.
+//
 //   - Publish delivers engine.SignalReceived to every waiter for the given name
 //     in sorted (deterministic) instance-ID order.
+//
 //   - The deliver function is injected at construction time as a [DeliverFunc]:
 //     the caller typically wraps runner.Deliver with the definition pre-captured:
 //
-//	bus := runtime.NewSignalBus(clk, func(ctx context.Context, id string, trg engine.Trigger) error {
-//	    _, err := runner.Deliver(ctx, def, id, trg)
-//	    return err
-//	})
+//     bus := runtime.NewSignalBus(clk, func(ctx context.Context, id string, trg engine.Trigger) error {
+//     _, err := runner.Deliver(ctx, def, id, trg)
+//     return err
+//     })
 //
 // Concurrency: all internal state is protected by a mutex; the bus is safe for
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).

@@ -16,8 +16,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -120,7 +120,6 @@ func TestOpenPostgresNotFoundSentinel(t *testing.T) {
 	assert.ErrorIs(t, err, persistence.ErrInstanceNotFound,
 		"ErrInstanceNotFound must be usable via the persistence façade package")
 }
-
 
 // TestNewDefinitionStoreAndCachingRegistry exercises the NewDefinitionStore and
 // NewCachingDefinitionRegistry constructor façades.

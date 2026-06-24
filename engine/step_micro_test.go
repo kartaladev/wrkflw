@@ -68,9 +68,9 @@ func linearEndDef() *model.ProcessDefinition {
 //
 // Consequence on start→fork→(svc-a, svc-b):
 //   - Micro:  start(auto)→fork(auto-fork: tokens on svc-a and svc-b)→
-//             svc-a(PARKS) → stop.  One InvokeAction(do-a); svc-b token active.
+//     svc-a(PARKS) → stop.  One InvokeAction(do-a); svc-b token active.
 //   - Macro:  same to svc-a park, then continues → svc-b(PARKS).
-//             Two InvokeActions (do-a + do-b).
+//     Two InvokeActions (do-a + do-b).
 func TestMicroStepAdvancesOneNode(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := microForkDef()

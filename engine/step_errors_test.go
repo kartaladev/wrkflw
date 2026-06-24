@@ -220,10 +220,10 @@ func TestErrorEndCaughtByBoundary(t *testing.T) {
 // scope chain to root) causes StatusFailed + FailInstance.
 func TestUnhandledErrorFailsInstance(t *testing.T) {
 	tests := []struct {
-		name      string
-		buildDef  func() *model.ProcessDefinition
+		name       string
+		buildDef   func() *model.ProcessDefinition
 		stepsToErr func(def *model.ProcessDefinition, at time.Time) (engine.InstanceState, string, error)
-		errorCode string
+		errorCode  string
 	}{
 		{
 			name:      "root-level error end with no handler",
