@@ -24,12 +24,12 @@ import (
 type ChainEvent struct {
 	// PredecessorID is the instance that reached a terminal state.
 	PredecessorID string
-	// PredecessorDef is the "defID:version" of the instance that reached a terminal
+	// PredecessorDefinitionRef is the "defID:version" of the instance that reached a terminal
 	// state, carried end-to-end through the outbox by the built-in publisher/relay
 	// (ADR-0047) so a SuccessorPolicy can route on the predecessor's definition. It
 	// is empty only for events produced before ADR-0047 or by a consumer pipeline
 	// that does not set the "def" metadata key.
-	PredecessorDef string
+	PredecessorDefinitionRef string
 	// Outcome is the terminal outcome that fired the event.
 	Outcome Outcome
 	// Result is the event payload: the terminal variables (completed) or
@@ -174,13 +174,13 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 
 	if c.links != nil {
 		link := ChainLink{
-			PredecessorID:  ev.PredecessorID,
-			PredecessorDef: ev.PredecessorDef,
-			Outcome:        ev.Outcome,
-			SuccessorID:    id,
-			SuccessorDef:   defRef(dec.Def),
-			StartVars:      dec.Vars,
-			CreatedAt:      c.clk.Now(),
+			PredecessorID:            ev.PredecessorID,
+			PredecessorDefinitionRef: ev.PredecessorDefinitionRef,
+			Outcome:                  ev.Outcome,
+			SuccessorID:              id,
+			SuccessorDefinitionRef:   defRef(dec.Def),
+			StartVars:                dec.Vars,
+			CreatedAt:                c.clk.Now(),
 		}
 		switch err := c.links.Record(ctx, link); {
 		case errors.Is(err, ErrChainLinkExists):

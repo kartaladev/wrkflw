@@ -30,13 +30,13 @@ const (
 // per terminal outcome of a predecessor, which doubles as the exactly-once
 // backstop under at-least-once terminal-event delivery.
 type ChainLink struct {
-	PredecessorID  string
-	PredecessorDef string
-	Outcome        Outcome
-	SuccessorID    string
-	SuccessorDef   string
-	StartVars      map[string]any
-	CreatedAt      time.Time
+	PredecessorID            string
+	PredecessorDefinitionRef string
+	Outcome                  Outcome
+	SuccessorID              string
+	SuccessorDefinitionRef   string
+	StartVars                map[string]any
+	CreatedAt                time.Time
 }
 
 // ErrChainLinkExists signals an already-recorded (PredecessorID, Outcome) hop —

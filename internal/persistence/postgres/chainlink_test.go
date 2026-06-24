@@ -25,12 +25,12 @@ func TestPostgresChainLinkStoreRecordAndLookup(t *testing.T) {
 	ctx := t.Context()
 
 	link := runtime.ChainLink{
-		PredecessorID:  "approval-1",
-		PredecessorDef: "approval:1",
-		Outcome:        runtime.OutcomeCompleted,
-		SuccessorID:    "approval-1-next-completed",
-		SuccessorDef:   "fulfillment:1",
-		StartVars:      map[string]any{"orderID": "o-7"},
+		PredecessorID:            "approval-1",
+		PredecessorDefinitionRef: "approval:1",
+		Outcome:                  runtime.OutcomeCompleted,
+		SuccessorID:              "approval-1-next-completed",
+		SuccessorDefinitionRef:   "fulfillment:1",
+		StartVars:                map[string]any{"orderID": "o-7"},
 	}
 	require.NoError(t, cls.Record(ctx, link))
 
@@ -38,8 +38,8 @@ func TestPostgresChainLinkStoreRecordAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "approval-1", got.PredecessorID)
-	assert.Equal(t, "approval:1", got.PredecessorDef)
-	assert.Equal(t, "fulfillment:1", got.SuccessorDef)
+	assert.Equal(t, "approval:1", got.PredecessorDefinitionRef)
+	assert.Equal(t, "fulfillment:1", got.SuccessorDefinitionRef)
 	assert.Equal(t, runtime.OutcomeCompleted, got.Outcome)
 	assert.Equal(t, map[string]any{"orderID": "o-7"}, got.StartVars)
 }

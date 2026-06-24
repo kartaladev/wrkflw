@@ -22,11 +22,13 @@ and pick up the next work. Read it top to bottom before starting.
 >   `ChainLink`, `ChainLinkStore`, `ErrChainLinkExists`, `ErrInstanceExists`, optionally the
 >   `eventing` handler/runner — note `eventing.Chainer` collides with `runtime.Chainer`) are a
 >   SEPARATE, user-confirmed task. **User confirmed 2026-06-24 they own this — do NOT add unprompted.**
-> - **`PredecessorDef` end-to-end wiring — ✅ DONE (ADR-0047, merged 2026-06-24,** branch
->   `claude/chaining-predecessor-def`). `OutboxEvent.Def` + `terminalOutboxEvent` stamp + publisher
->   `def` metadata + outbox `def` column (migration `0009_outbox_def.sql`) + relay read-back.
->   `ChainEvent.PredecessorDef` is now populated over the built-in pipeline; a `SuccessorPolicy`
->   can route on the predecessor def. Focused review verdict: Ready to merge. engine/model diff ZERO.
+> - **`PredecessorDefinitionRef` end-to-end wiring — ✅ DONE (ADR-0047, merged 2026-06-24,** branch
+>   `claude/chaining-predecessor-def`). `OutboxEvent.DefinitionRef` + `terminalOutboxEvent` stamp +
+>   publisher `definition_ref` metadata + outbox `definition_ref` column (migration
+>   `0009_outbox_definition_ref.sql`) + relay read-back. `ChainEvent.PredecessorDefinitionRef` is
+>   now populated over the built-in pipeline; a `SuccessorPolicy` can route on the predecessor
+>   definition. (The cryptic `Def`/`def` naming was renamed to the self-explaining `DefinitionRef`
+>   on branch `claude/chaining-definition-ref-rename` — also covers `ChainLink.{Predecessor,Successor}DefinitionRef`.)
 >
 > **Fresh session:** jump to the "🧭 START HERE (fresh session) — consolidated backlog" section
 > below for the broader prioritized backlog. The rest of this doc is the per-track detail behind it.

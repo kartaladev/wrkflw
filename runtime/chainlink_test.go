@@ -14,12 +14,12 @@ func TestMemChainLinkStoreRecordAndLookup(t *testing.T) {
 	ctx := t.Context()
 
 	link := runtime.ChainLink{
-		PredecessorID:  "approval-1",
-		PredecessorDef: "approval:1",
-		Outcome:        runtime.OutcomeCompleted,
-		SuccessorID:    "approval-1-next-completed",
-		SuccessorDef:   "fulfillment:1",
-		StartVars:      map[string]any{"orderID": "o-7"},
+		PredecessorID:            "approval-1",
+		PredecessorDefinitionRef: "approval:1",
+		Outcome:                  runtime.OutcomeCompleted,
+		SuccessorID:              "approval-1-next-completed",
+		SuccessorDefinitionRef:   "fulfillment:1",
+		StartVars:                map[string]any{"orderID": "o-7"},
 	}
 	require.NoError(t, cls.Record(ctx, link))
 

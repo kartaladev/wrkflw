@@ -367,7 +367,7 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	rows, err := tx.Query(ctx,
-		`SELECT id, topic, payload, instance_id, dedup_key, retry_count, def
+		`SELECT id, topic, payload, instance_id, dedup_key, retry_count, definition_ref
 		   FROM wrkflw_outbox
 		  WHERE status = 'pending' AND next_attempt_at <= $1
 		  ORDER BY id
@@ -397,9 +397,9 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		var rawPayload []byte
 		var instanceID, dedupKey string
 		var retryCount int
-		var def string
+		var definitionRef string
 		// scan order matches the SELECT projection.
-		if err := rows.Scan(&id, &topic, &rawPayload, &instanceID, &dedupKey, &retryCount, &def); err != nil {
+		if err := rows.Scan(&id, &topic, &rawPayload, &instanceID, &dedupKey, &retryCount, &definitionRef); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("workflow-postgres: relay: scan: %w", err)
 		}
@@ -409,11 +409,11 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 			return 0, fmt.Errorf("workflow-postgres: relay: unmarshal payload id=%d: %w", id, err)
 		}
 		claims = append(claims, claim{id: id, retryCount: retryCount, event: runtime.OutboxEvent{
-			Topic:      topic,
-			Payload:    payload,
-			DedupKey:   dedupKey,
-			InstanceID: instanceID,
-			Def:        def,
+			Topic:         topic,
+			Payload:       payload,
+			DedupKey:      dedupKey,
+			InstanceID:    instanceID,
+			DefinitionRef: definitionRef,
 		}})
 	}
 	rows.Close()
