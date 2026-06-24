@@ -54,10 +54,11 @@ type nodeStrategy interface {
 
 // nodeStrategies maps each arm-bearing NodeKind to its strategy.
 // Kinds NOT in this map (KindTerminateEndEvent, KindBusinessRuleTask,
-// KindReceiveTask, KindSendTask, KindBoundaryEvent, KindEventSubProcess,
-// KindUnspecified) fall through to the post-dispatch logic in drive() unchanged.
+// KindSendTask, KindBoundaryEvent, KindEventSubProcess, KindUnspecified)
+// fall through to the post-dispatch logic in drive() unchanged.
 var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindServiceTask:            serviceTaskStrategy{},
+	model.KindReceiveTask:            receiveTaskStrategy{},
 	model.KindStartEvent:             startEventStrategy{},
 	model.KindEndEvent:               endEventStrategy{},
 	model.KindSubProcess:             subProcessStrategy{},
@@ -97,6 +98,31 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	}
 	cmds = append(cmds, bndCmds...)
 	return cmds, false, nil
+}
+
+// receiveTaskStrategy handles KindReceiveTask node entry: park the token
+// awaiting the task's message (with resolved correlation key) and arm any
+// boundary events attached to the ReceiveTask host.
+type receiveTaskStrategy struct{}
+
+func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	rt, ok := node.(model.ReceiveTask)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
+	resolvedKey, err := c.eval.EvalString(rt.CorrelationKey, c.s.Variables)
+	if err != nil {
+		return nil, false, fmt.Errorf("workflow-engine: receive task %q correlation key: %w", node.ID(), err)
+	}
+	tok.State = TokenWaitingCommand
+	tok.AwaitMessage = rt.MessageName
+	tok.AwaitMessageKey = resolvedKey
+	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
+	if err != nil {
+		return nil, false, err
+	}
+	return bndCmds, false, nil
 }
 
 // startEventStrategy handles KindStartEvent node entry.

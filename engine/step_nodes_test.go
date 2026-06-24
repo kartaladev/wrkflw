@@ -22,6 +22,7 @@ var armBearingKinds = []model.NodeKind{
 	model.KindCallActivity,
 	model.KindIntermediateThrowEvent,
 	model.KindServiceTask,
+	model.KindReceiveTask,
 }
 
 // intentionallyUnhandledKinds is the set of node kinds that must NOT have a
@@ -29,7 +30,6 @@ var armBearingKinds = []model.NodeKind{
 var intentionallyUnhandledKinds = []model.NodeKind{
 	model.KindTerminateEndEvent,
 	model.KindBusinessRuleTask,
-	model.KindReceiveTask,
 	model.KindSendTask,
 	model.KindBoundaryEvent,
 	model.KindEventSubProcess,
@@ -37,7 +37,7 @@ var intentionallyUnhandledKinds = []model.NodeKind{
 }
 
 // TestNodeStrategyRegistry asserts that nodeStrategies covers exactly the
-// 13 arm-bearing kinds and does NOT include the 7 intentionally-unhandled kinds.
+// 14 arm-bearing kinds and does NOT include the 6 intentionally-unhandled kinds.
 func TestNodeStrategyRegistry(t *testing.T) {
 	t.Run("all arm-bearing kinds are registered", func(t *testing.T) {
 		for _, k := range armBearingKinds {

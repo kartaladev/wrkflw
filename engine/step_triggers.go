@@ -688,6 +688,13 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	tok.AwaitMessage = ""
 	tok.AwaitMessageKey = ""
 	tok.State = TokenActive
+	// Disarm any boundary arms on this host token (e.g. a ReceiveTask with an
+	// attached timer/message boundary) now that the awaited message resolved
+	// the host before the boundary fired.
+	var preCmds []Command
+	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
+		preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+	}
 	msgTdef, msgTdefErr := defForScope(def, s, tok.ScopeID)
 	if msgTdefErr != nil {
 		return StepResult{}, msgTdefErr
@@ -697,7 +704,7 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: driveCmds}, nil
+	return StepResult{State: *s, Commands: append(preCmds, driveCmds...)}, nil
 }
 
 // handleResolveIncident processes a ResolveIncident trigger: clears a parked
