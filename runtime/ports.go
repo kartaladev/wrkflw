@@ -13,6 +13,12 @@ import (
 // ErrInstanceNotFound is returned by Store.Load when no instance exists for the id.
 var ErrInstanceNotFound = errors.New("workflow-runtime: instance not found")
 
+// ErrInstanceExists is returned by Store.Create when an instance with the same
+// id already exists. It lets a caller distinguish a duplicate start from a real
+// failure — process-instance chaining (ADR-0045) treats it as "already started"
+// (a clean no-op ack) under at-least-once terminal-event delivery.
+var ErrInstanceExists = errors.New("workflow-runtime: instance already exists")
+
 // JournalReader exposes the recorded trigger history for replay/audit.
 type JournalReader interface {
 	Entries(ctx context.Context, id string) ([]engine.Trigger, error)

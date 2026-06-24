@@ -30,6 +30,23 @@ func TestMemStoreCreateLoadRoundTrip(t *testing.T) {
 	require.Equal(t, tok, loaded)
 }
 
+func TestMemStoreCreateDuplicate(t *testing.T) {
+	ms := runtime.NewMemStore()
+	_, err := ms.Create(t.Context(), step("dup", "a"))
+	require.NoError(t, err)
+
+	// A second Create for the same instance id must not silently overwrite; it
+	// returns the typed ErrInstanceExists so callers (the Chainer) can treat a
+	// duplicate start as a no-op (ADR-0045).
+	_, err = ms.Create(t.Context(), step("dup", "b"))
+	require.ErrorIs(t, err, runtime.ErrInstanceExists)
+
+	// The original instance is intact (not clobbered by the rejected Create).
+	st, _, loadErr := ms.Load(t.Context(), "dup")
+	require.NoError(t, loadErr)
+	require.Equal(t, "dup", st.InstanceID)
+}
+
 func TestMemStoreLoadMissing(t *testing.T) {
 	ms := runtime.NewMemStore()
 	_, _, err := ms.Load(t.Context(), "nope")

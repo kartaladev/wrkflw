@@ -68,6 +68,9 @@ func (m *MemStore) Create(_ context.Context, step AppliedStep) (Token, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	const initial Token = 1
+	if _, exists := m.instances[step.State.InstanceID]; exists {
+		return 0, ErrInstanceExists
+	}
 	m.instances[step.State.InstanceID] = &memInstance{state: step.State.Clone(), version: initial}
 	m.journal[step.State.InstanceID] = append(m.journal[step.State.InstanceID], step.Trigger)
 	m.events = append(m.events, step.Events...)
