@@ -918,6 +918,39 @@ one branch) and the parallel gateway (all branches unconditionally).
 
 ---
 
+## Production wiring: health, readiness & graceful shutdown
+
+The library is lifecycle-neutral — the consumer owns the process. Three pieces make a
+clean production embedding ergonomic (ADR-0054):
+
+- **Health & readiness handlers.** `rest.NewHealthHandler(checks...)` returns an
+  `http.Handler` you mount alongside the workflow routes. It exposes `GET /healthz`
+  (liveness — always `200`, runs no checks) and `GET /readyz` (readiness — runs every
+  registered `rest.HealthCheck` and returns `200`, or `503` with a per-check JSON body
+  naming the failure). Wire readiness to Postgres with the ready-made
+  `persistence.NewPingCheck(pool)` (a `pool.Ping` probe), or register an inline check
+  with `rest.HealthCheckFunc(name, fn)`.
+
+- **One-call graceful shutdown.** `runtime.ShutdownGroup` aggregates your resource
+  holders — the `scheduling.Scheduler` (`io.Closer`), the advisory-lock ownership
+  closer, the eventing closer, the `pgxpool.Pool` — and `Shutdown(ctx)` closes them in
+  reverse registration order, running every one even if an earlier fails and joining the
+  errors with `errors.Join`. The background `Run(ctx)` workers (relay, call notifier,
+  chainer) keep their idiomatic stop story: you start their goroutines and stop them by
+  cancelling the context you passed.
+
+- **Single-replica caching guard.** Pairing `runtime.NewCachingStore` with
+  `runtime.AlwaysOwn` is single-writer / single-replica **only** — across replicas it is
+  a stale-read footgun. `NewCachingStore` now logs a one-time warning when constructed
+  with `AlwaysOwn`; for multi-replica deployments use
+  `persistence.NewAdvisoryLockOwnership` so only the owning replica caches an instance.
+
+The full assembly — engine + scheduler + relay + mounted REST and health routes +
+`signal.NotifyContext` → cancel workers → `http.Server.Shutdown` → `ShutdownGroup.Shutdown`
+— is in [`examples/production_wiring`](examples/production_wiring).
+
+---
+
 ## License
 
 License: TBD by the project owner. No `LICENSE` file is present in this repository.

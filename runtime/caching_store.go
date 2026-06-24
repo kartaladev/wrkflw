@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -29,10 +30,22 @@ const (
 // Store every time. The cache is bounded (LRU on entry count + TTL) and evicts an
 // entry on ErrConcurrentUpdate (a stale token). Per-instance keyed serialization
 // keeps the cache coherent under concurrent Load/Commit for the same instance.
+//
+// # Multi-replica safety (READ THIS)
+//
+// Pairing a CachingStore with [AlwaysOwn] is SINGLE-WRITER / SINGLE-REPLICA ONLY.
+// AlwaysOwn unconditionally reports ownership, so two replicas both caching the
+// same instance would each serve their own stale snapshot and could fire a
+// routing decision and its side-effects before the version-CAS rejected the
+// write — a stale-read footgun (ADR-0020, ADR-0054). For ANY multi-replica
+// deployment use a real lease — [persistence.NewAdvisoryLockOwnership] — so only
+// the owning replica caches an instance. As a guard, [NewCachingStore] logs a
+// one-time Warn when it is constructed with AlwaysOwn.
 type CachingStore struct {
 	backing    Store
 	owner      Ownership
 	clk        clock.Clock
+	logger     *slog.Logger
 	ttl        time.Duration
 	maxEntries int
 
@@ -70,6 +83,17 @@ func WithCacheMaxEntries(n int) CachingStoreOption {
 	return func(c *CachingStore) { c.maxEntries = n }
 }
 
+// WithCacheLogger sets the structured logger used for the one-time AlwaysOwn
+// single-replica warning emitted at construction. Default: slog.Default(). A nil
+// value is ignored.
+func WithCacheLogger(l *slog.Logger) CachingStoreOption {
+	return func(c *CachingStore) {
+		if l != nil {
+			c.logger = l
+		}
+	}
+}
+
 // NewCachingStore wraps backing with a single-writer, write-through cache gated
 // by owner. clk drives TTL (use clock.System() in production, a fake clock in
 // tests).
@@ -78,6 +102,7 @@ func NewCachingStore(backing Store, owner Ownership, clk clock.Clock, opts ...Ca
 		backing:    backing,
 		owner:      owner,
 		clk:        clk,
+		logger:     slog.Default(),
 		ttl:        defaultCacheTTL,
 		maxEntries: defaultCacheMaxEntries,
 		entries:    make(map[string]*cacheNode),
@@ -86,6 +111,15 @@ func NewCachingStore(backing Store, owner Ownership, clk clock.Clock, opts ...Ca
 	}
 	for _, o := range opts {
 		o(c)
+	}
+	// Single-replica footgun guard (ADR-0054): AlwaysOwn unconditionally grants
+	// ownership, so caching under it is correct only when this process is the sole
+	// writer. Warn once at construction so a multi-replica misconfiguration is
+	// visible in logs; the safe alternative is a real lease
+	// (persistence.NewAdvisoryLockOwnership).
+	if _, ok := owner.(AlwaysOwn); ok {
+		c.logger.Warn("runtime: CachingStore paired with AlwaysOwn is single-replica only; " +
+			"use persistence.NewAdvisoryLockOwnership for multi-replica deployments to avoid stale cached reads")
 	}
 	return c
 }
