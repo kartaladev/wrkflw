@@ -46,6 +46,15 @@ two are **mutually-exclusive operating modes**.
   - **Natural failover, no lease loop**: when the leader process dies its connection
     drops and Postgres auto-releases the advisory lock; a follower then wins it on
     its next `IsLeader` attempt. There is no heartbeat or lease-renewal goroutine.
+    Caveat (split-brain window): `IsLeader` is sticky — once leadership is held it
+    returns `nil` from an in-memory flag with no DB round-trip. If the leader's
+    dedicated connection is severed *server-side* (lock auto-released) while the
+    process keeps running, that process still believes it leads while a follower can
+    also acquire the lock — a transient two-leader window. The exactly-once backstop
+    (ADR-0027 version-CAS + in-tx timer-row deletion) downgrades this to redundant
+    fires, not double-execution — the same guarantee the Locker relies on. A
+    lease/heartbeat that re-checks the lock would close the window at the cost of the
+    distributed-scheduler machinery deliberately avoided here.
   - **`Close()`** releases the lock and returns the conn; idempotent (mirrors
     `AdvisoryLockOwnership.Close`).
   - Compile-time assertion `var _ gocron.Elector = (*PostgresElector)(nil)`.

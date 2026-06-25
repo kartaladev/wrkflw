@@ -60,3 +60,8 @@ engine core and keeps `Step` pure and deterministic:
   registry (14 entries, was 13); the registry-invariant test was updated accordingly.
 - `KindSendTask` remains an unimplemented fall-through — outbound-message emission is a
   separate concern and out of scope here.
+- Precedence note: if a ReceiveTask awaits message "m" AND carries a message boundary on
+  the same name "m", a delivered "m" fires the boundary (message dispatch step 2) before
+  the host-resume (step 4) — the boundary wins. This is an inherent authoring ambiguity
+  consistent with existing message-dispatch ordering, not a defect; authors should not
+  reuse one message name for both a ReceiveTask and its own boundary.
