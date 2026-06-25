@@ -3,7 +3,35 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25 (followups)
+
+> **✅ DONE — Production-hardening FOLLOW-UPS (ADRs 0056–0059) — merged to `main` 2026-06-25**
+> (branch `feat/production-hardening-followups`, 7 commits, merge `6166aa9`). The deferred
+> follow-ups from the program below ("do all except CI"), executed as SDD tracks + a whole-branch
+> adversarial review (verdict: **Ready to merge**, only 3 doc-Minors, addressed). Next free ADR: **0060**.
+> - **0056** injectable timeout-capable engine evaluator: `engine.ConditionEvaluator` + `StepOptions.Evaluator`,
+>   runtime `WithExpressionTimeout`/`WithConditionEvaluator`. **Default stays pure / wall-clock-free**;
+>   untrusted-definition consumers opt the ADR-0049 DoS guard in. Resolves the ADR-0049 follow-up.
+> - **0057** ReceiveTask implemented as a real message-receive node + host boundaries. **Finding: ReceiveTask
+>   was previously an unimplemented park-only fall-through** (never set AwaitMessage, never armed boundaries) —
+>   now sets AwaitMessage/Key, resumes on delivery, arms/disarms boundaries. Closes the ADR-0053 limitation.
+>   `KindSendTask` remains an unimplemented fall-through (out of scope).
+> - **0058** gRPC request-validation sweep (InvalidArgument on required-empty fields across all mutating RPCs) +
+>   a per-method auth interceptor `Example_` (authorize by FullMethod; actor-from-context).
+> - **0059** Postgres gocron `Elector` (single-leader timer firing) via `scheduling.WithTimerElector(pool)`;
+>   Locker/Elector mutually exclusive. **Intentionally NOT built: claim-on-rehydrate (`FOR UPDATE SKIP LOCKED`)** —
+>   failover-safe arming-partitioning needs the distributed scheduler declined in ADR-0050; Locker/Elector
+>   already make multi-replica timers correct, per-replica re-arming is acceptable overhead. (Elector has a
+>   documented sticky-leader split-brain window; ADR-0027 CAS downgrades it to redundant fires.)
+> - **fix(runtime):** `ShutdownGroup.Add` after `Shutdown` now closes the late component instead of leaking it.
+>
+> Gates: `go test -race ./...` green (testcontainers); `golangci-lint` 0; gofmt clean; `FuzzStep` no crash;
+> **engine 85.0%**; engine/model core import-pure + wall-clock-free. **Pushed to origin?** confirm `git status`.
+> **Remaining deferred (non-blocking):** CI pipeline (intentional); a lease/heartbeat to close the Elector
+> split-brain window (needs the declined distributed scheduler); `KindSendTask`; structured details on the new
+> gRPC InvalidArgument statuses. See the `production-hardening-run` memory.
+
+## ⏩ CURRENT RESUME POINT — updated 2026-06-25 (program)
 
 > **✅ DONE — Production-hardening program (ADRs 0048–0055) — merged to `main` 2026-06-25**
 > (branch `feat/production-hardening`, 18 commits, merge `0b803d7`). Triggered by a 5-auditor
