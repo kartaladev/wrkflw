@@ -41,11 +41,21 @@ type ShutdownGroup struct {
 
 // Add registers fn to be invoked by [ShutdownGroup.Shutdown]. A nil fn is
 // ignored. Components registered later are shut down earlier.
+//
+// If the group has ALREADY shut down, fn is closed immediately (best-effort, with
+// a background context) rather than being silently dropped — a late registration
+// would otherwise leak the component's resource. Its error is intentionally not
+// surfaced (Shutdown already returned).
 func (g *ShutdownGroup) Add(fn ShutdownFunc) {
 	if fn == nil {
 		return
 	}
 	g.mu.Lock()
+	if g.done {
+		g.mu.Unlock()
+		_ = fn(context.Background())
+		return
+	}
 	g.fns = append(g.fns, fn)
 	g.mu.Unlock()
 }
