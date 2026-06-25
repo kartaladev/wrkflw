@@ -55,6 +55,11 @@ two are **mutually-exclusive operating modes**.
     fires, not double-execution — the same guarantee the Locker relies on. A
     lease/heartbeat that re-checks the lock would close the window at the cost of the
     distributed-scheduler machinery deliberately avoided here.
+    **Narrowed by [ADR-0061](0061-elector-heartbeat.md):** a bounded background
+    heartbeat now `Ping`s the dedicated connection each interval and steps the leader
+    down on silent loss, narrowing this window to **≤ one heartbeat interval** (5s
+    default, tunable) without the full distributed-scheduler machinery. The ADR-0027
+    version-CAS remains the exactly-once backstop.
   - **`Close()`** releases the lock and returns the conn; idempotent (mirrors
     `AdvisoryLockOwnership.Close`).
   - Compile-time assertion `var _ gocron.Elector = (*PostgresElector)(nil)`.

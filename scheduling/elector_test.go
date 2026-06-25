@@ -78,6 +78,58 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 	}
 }
 
+// TestSchedulerElectorHeartbeatStepsDown proves the façade threads its scheduler
+// clock and a configurable heartbeat interval into the leader elector (ADR-0061):
+// after the leader's dedicated backend is severed out-of-band, advancing the shared
+// fake clock past one heartbeat interval makes the elector step down — closing the
+// split-brain window through the public façade.
+func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	ctx := t.Context()
+
+	const leaderKey = "facade-heartbeat"
+	clk := clockwork.NewFakeClock()
+	s, err := scheduling.NewScheduler(clk,
+		scheduling.WithTimerElector(pool,
+			scheduling.WithElectorKey(leaderKey),
+			scheduling.WithElectorHeartbeatInterval(time.Second)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Fire a timer so the leader actually wins leadership (gocron calls IsLeader on
+	// the job run), starting the heartbeat.
+	fired := make(chan struct{}, 1)
+	s.Schedule("timer", clk.Now().Add(time.Second), func() { fired <- struct{}{} })
+	require.NoError(t, clk.BlockUntilContext(ctx, 1))
+	clk.Advance(time.Second)
+	select {
+	case <-fired:
+	case <-time.After(3 * time.Second):
+		t.Fatal("leader timer must fire before severing the connection")
+	}
+
+	// Find and terminate the elector's dedicated backend out-of-band; Postgres
+	// auto-releases its leader lock. The leader still believes it leads until the
+	// heartbeat re-validates.
+	pid := scheduling.ElectorBackendPID(s)
+	require.NotZero(t, pid)
+	side, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	t.Cleanup(side.Release)
+	_, err = side.Exec(ctx, `SELECT pg_terminate_backend($1)`, pid)
+	require.NoError(t, err)
+
+	// Advance past one heartbeat interval; the heartbeat must catch the dead conn so
+	// the elector steps down (its sticky leadership is revoked).
+	require.NoError(t, clk.BlockUntilContext(ctx, 1))
+	clk.Advance(time.Second)
+
+	require.Eventually(t, func() bool {
+		return !scheduling.SchedulerIsLeader(ctx, s)
+	}, 3*time.Second, 10*time.Millisecond,
+		"the façade elector must step down after its connection is severed")
+}
+
 // TestSchedulerLockAndElectorConflict proves the façade rejects requesting both
 // distributed modes at once with a clear error.
 func TestSchedulerLockAndElectorConflict(t *testing.T) {
