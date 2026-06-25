@@ -62,10 +62,16 @@ pure and deterministic:
   parking forever. The sink **owns routing** — intra-engine delivery (e.g. via
   `Runner.DeliverMessage`), external publish to a broker / the eventing outbox, or both —
   so the engine core stays free of any transport/eventing vendor choice.
-- **Sink errors surface**: `Send` is invoked synchronously and a non-nil error is returned
-  to the caller of `Run`/`Deliver`. Because a step may be retried after a transient
-  failure, the SendMessage may be re-delivered; **idempotency is the sink's
-  responsibility**.
+- **Sink errors surface but the message can strand**: the runtime order is
+  `Step → Commit(state) → perform(SendMessage)` — the auto-advanced (often already
+  terminal/Completed) instance state is persisted **before** `sink.Send` runs (the same
+  commit-before-perform shape as `ThrowSignal`). `Send` is invoked synchronously and a
+  non-nil error is returned to the caller of `Run`/`Deliver`, but by then the instance has
+  already durably advanced, so the failed message is **not re-delivered or re-emitted**:
+  SendTask is **best-effort**, and a sink error **silently strands** the message (it is
+  never sent) rather than causing a double-send. Consumers who need atomic / at-least-once
+  send should wire the sink to the **transactional outbox** — writing the outbound message
+  in the same transaction as the state commit — so the relayer guarantees eventual delivery.
 - `Step` remains pure and deterministic — the correlation key evaluates through the
   injected evaluator, not the wall clock; the outbound side effect is a `Command` the
   runtime performs, not something `Step` executes. The `FuzzStep` corpus runs clean.

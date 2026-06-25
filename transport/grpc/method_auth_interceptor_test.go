@@ -77,3 +77,14 @@ func TestNewMethodAuthInterceptor(t *testing.T) {
 			"an allowed method must reach the handler, not be gated")
 	})
 }
+
+// TestNewMethodAuthInterceptorNilAuthorizePanics proves the constructor fails fast
+// on a nil authorize callback (mirroring NewSecureServer's nil-interceptor panic),
+// rather than returning an interceptor that nil-derefs on the first RPC.
+func TestNewMethodAuthInterceptorNilAuthorizePanics(t *testing.T) {
+	t.Parallel()
+
+	assert.Panics(t, func() {
+		_ = grpctransport.NewMethodAuthInterceptor(nil)
+	}, "a nil authorize callback must panic at construction (fail-closed)")
+}

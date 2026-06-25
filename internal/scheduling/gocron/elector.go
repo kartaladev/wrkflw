@@ -238,10 +238,13 @@ func (e *PostgresElector) revalidate() {
 	}
 }
 
-// Close releases the leader advisory lock (if held), stops the heartbeat goroutine,
-// and returns the dedicated session connection to the pool. Close is idempotent: a
-// second call returns nil without any action. After Close, IsLeader returns
-// ErrNotLeader.
+// Close releases ALL advisory locks the session holds (via pg_advisory_unlock_all,
+// covering any re-entrant stack a false step-down may have built up), stops the
+// heartbeat goroutine, and returns the dedicated session connection to the pool.
+// Note: conn.Release() returns the connection to the pool — it does NOT drop the
+// session or reset its locks — so the explicit unlock is what guarantees release.
+// Close is idempotent: a second call returns nil without any action. After Close,
+// IsLeader returns ErrNotLeader.
 func (e *PostgresElector) Close() error {
 	e.mu.Lock()
 	if e.closed {
@@ -263,10 +266,16 @@ func (e *PostgresElector) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.isLeader {
-		// Best-effort: ignore the unlock error on shutdown; dropping the connection
-		// auto-releases the lock regardless.
-		_, _ = e.conn.Exec(context.Background(),
-			`SELECT pg_advisory_unlock(hashtextextended($1, 0))`, e.key)
+		// Release EVERY advisory lock the session holds, not just one targeted unlock.
+		// A transient heartbeat ping failure can falsely step the elector down while
+		// the lock is still held; the next IsLeader re-runs pg_try_advisory_lock on
+		// this same conn, stacking the re-entrant counter. A single pg_advisory_unlock
+		// would only decrement that counter (leaving the lock held), and conn.Release()
+		// merely returns the conn to the pool — it does NOT drop the session or reset
+		// its advisory locks — so the lock would linger on a pooled backend.
+		// pg_advisory_unlock_all clears the whole stack regardless of re-entrant depth.
+		// Best-effort: ignore the error on shutdown.
+		_, _ = e.conn.Exec(context.Background(), `SELECT pg_advisory_unlock_all()`)
 		e.isLeader = false
 	}
 	e.conn.Release()

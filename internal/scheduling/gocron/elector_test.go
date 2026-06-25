@@ -57,6 +57,58 @@ func TestPostgresElectorCloseIdempotent(t *testing.T) {
 	require.NoError(t, elector.Close(), "second Close must be a no-op")
 }
 
+// TestPostgresElectorCloseReleasesReentrantLockStack proves ADR-0061's Close fully
+// releases leadership even when the session-level advisory lock was acquired more
+// than once on the SAME dedicated connection. A transient heartbeat ping failure
+// can falsely step the elector down (clearing isLeader while the lock is still
+// held); the next IsLeader then re-runs pg_try_advisory_lock on the same conn,
+// stacking the re-entrant counter. A single pg_advisory_unlock would drop the
+// counter by one and leave the lock held; combined with conn.Release() returning
+// the conn to the pool WITHOUT resetting session locks, the lock would linger on a
+// pooled backend. Close must use pg_advisory_unlock_all so a fresh session acquires
+// the key immediately after Close.
+func TestPostgresElectorCloseReleasesReentrantLockStack(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	ctx := t.Context()
+
+	electorA, err := sched.NewPostgresElector(ctx, pool, sched.WithElectorKey("reentrant-key"))
+	require.NoError(t, err)
+
+	// A becomes leader (counter == 1).
+	require.NoError(t, electorA.IsLeader(ctx), "first instance must be elected leader")
+	// Simulate a false step-down + re-acquire: re-lock on A's OWN conn, stacking the
+	// re-entrant counter to 2. A single pg_advisory_unlock would not fully release it.
+	require.NoError(t, electorA.ReacquireLockForTest(ctx), "re-acquire must stack the lock")
+
+	// Close must fully release every advisory lock the session holds.
+	require.NoError(t, electorA.Close())
+
+	// Assert directly from pg_locks (a cluster-global view, independent of which
+	// pooled backend asks) that NO advisory lock for the key lingers. A side session
+	// is used so re-entrancy on a reused backend cannot mask a still-held lock the way
+	// pg_try_advisory_lock from the same backend would.
+	side, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	t.Cleanup(side.Release)
+
+	var held int
+	require.NoError(t, side.QueryRow(ctx,
+		`SELECT count(*) FROM pg_locks
+		  WHERE locktype = 'advisory'
+		    AND ((classid::bigint << 32) | (objid::bigint & 4294967295)) = hashtextextended($1, 0)`,
+		"reentrant-key",
+	).Scan(&held))
+	require.Zero(t, held,
+		"Close must release the entire re-entrant advisory-lock stack; none may linger on the pooled backend")
+
+	// And a fresh session must win the SAME key immediately.
+	electorB, err := sched.NewPostgresElector(ctx, pool, sched.WithElectorKey("reentrant-key"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = electorB.Close() })
+	require.NoError(t, electorB.IsLeader(ctx),
+		"a fresh session must win the key after Close fully released the re-entrant lock stack")
+}
+
 // TestPostgresElectorKeyOverride proves WithElectorKey scopes leadership: two
 // electors contending under DIFFERENT keys can both be leaders, letting multiple
 // independent engines coexist in one database.

@@ -30,7 +30,14 @@ import (
 // authorize callback is the place to authenticate and stash that principal in
 // the returned context (return the derived ctx via context.WithValue inside a
 // wrapping interceptor if needed); this interceptor itself only gates.
+//
+// It panics if authorize is nil: a nil callback would build a fail-OPEN gate
+// that nil-derefs on the first RPC, so the constructor fails fast at wiring time
+// (mirroring [NewSecureServer], which panics on a nil interceptor).
 func NewMethodAuthInterceptor(authorize func(ctx context.Context, fullMethod string) error) grpc.UnaryServerInterceptor {
+	if authorize == nil {
+		panic("workflow-grpc: NewMethodAuthInterceptor: authorize callback must not be nil")
+	}
 	return func(
 		ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (any, error) {

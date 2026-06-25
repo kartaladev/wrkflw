@@ -86,3 +86,13 @@ mutual-exclusion-with-Locker semantics are otherwise unchanged.
 - Engine/model/runtime diff is **ZERO**: the change lives entirely in the scheduling
   adapter (`internal/scheduling/gocron`) and the `scheduling` façade option. Without
   the Elector, behaviour is unchanged.
+- **Re-entrant lock release on `Close`.** Because a transient heartbeat ping failure can
+  falsely step the elector down while the advisory lock is still held, the *next*
+  `IsLeader` re-runs `pg_try_advisory_lock` on the **same** dedicated connection, stacking
+  the session-level re-entrant counter. `Close` therefore issues
+  `SELECT pg_advisory_unlock_all()` (not a single targeted `pg_advisory_unlock`) before
+  `conn.Release()`: a single unlock would only decrement the counter and leave the lock
+  held, and `Release()` returns the connection to the pool **without** dropping the session
+  or resetting its locks, so a re-entrant lock would otherwise linger on a pooled backend.
+  `unlock_all` clears the whole stack regardless of depth; a fresh session then acquires
+  the key immediately after `Close`.
