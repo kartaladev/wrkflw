@@ -75,6 +75,7 @@ type Runner struct {
 	defsReg    DefinitionRegistry
 	callLinks  CallLinkStore
 	timerStore TimerStore
+	msgSink    MessageSink
 	// jitter supplies the random fraction used to de-synchronize retry backoff.
 	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
 	// trigger so that engine replay remains deterministic.
@@ -181,6 +182,19 @@ func WithCallLinks(store CallLinkStore) Option {
 // restart. Absent this option, timers are in-memory only and lost on restart.
 func WithTimerStore(store TimerStore) Option {
 	return func(r *Runner) { r.timerStore = store }
+}
+
+// WithMessageSink wires a [MessageSink] into the Runner, enabling the outbound
+// [engine.SendMessage] command emitted by KindSendTask nodes. Without this option,
+// any process that reaches a send-task node returns a descriptive error rather
+// than silently dropping the message.
+//
+// The sink owns routing: intra-engine delivery to a parked ReceiveTask (e.g. via
+// [Runner.DeliverMessage]), publication to an external broker / the eventing
+// outbox, or both. Send is invoked synchronously and its error is surfaced; the
+// sink should be idempotent (ADR-0060).
+func WithMessageSink(sink MessageSink) Option {
+	return func(r *Runner) { r.msgSink = sink }
 }
 
 // WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).
@@ -876,6 +890,20 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		}
 		if err := r.sigbus.Publish(ctx, cmd.Name, cmd.Payload); err != nil {
 			return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: %w", cmd.Name, err)
+		}
+		return nil, nil
+
+	case engine.SendMessage:
+		if r.msgSink == nil {
+			return nil, fmt.Errorf("workflow-runtime: perform SendMessage %q: no MessageSink configured (use WithMessageSink)", cmd.Name)
+		}
+		if err := r.msgSink.Send(ctx, OutboundMessage{
+			InstanceID:     st.InstanceID,
+			Name:           cmd.Name,
+			CorrelationKey: cmd.CorrelationKey,
+			Payload:        cmd.Payload,
+		}); err != nil {
+			return nil, fmt.Errorf("workflow-runtime: perform SendMessage %q: %w", cmd.Name, err)
 		}
 		return nil, nil
 

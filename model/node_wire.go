@@ -54,7 +54,7 @@ func toWire(n Node) nodeWire {
 		w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
 		applyActivityWire(&w, v.activityFields)
 	case SendTask:
-		w.MessageName = v.MessageName
+		w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
 		applyActivityWire(&w, v.activityFields)
 	case BusinessRuleTask:
 		w.Action = v.Action
@@ -121,7 +121,7 @@ func fromWire(w nodeWire) (Node, error) {
 	case KindReceiveTask:
 		return ReceiveTask{baseNode: b, activityFields: w.activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}, nil
 	case KindSendTask:
-		return SendTask{baseNode: b, activityFields: w.activity(), MessageName: w.MessageName}, nil
+		return SendTask{baseNode: b, activityFields: w.activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}, nil
 	case KindBusinessRuleTask:
 		return BusinessRuleTask{baseNode: b, activityFields: w.activity(), Action: w.Action}, nil
 	case KindSubProcess:

@@ -132,6 +132,9 @@ type SendTask struct {
 	activityFields
 	// MessageName is the message reference to send.
 	MessageName string
+	// CorrelationKey is an optional expr expression evaluated at runtime to derive
+	// the correlation key carried on the outbound message.
+	CorrelationKey string
 }
 
 // Kind returns KindSendTask.

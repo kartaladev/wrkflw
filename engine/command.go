@@ -124,6 +124,24 @@ type StartSubInstance struct {
 	Input map[string]any
 }
 
+// SendMessage asks the runtime to emit an outbound message through its
+// consumer-wired message sink. It is emitted when execution passes through a
+// KindSendTask node. The engine treats it as fire-and-forget: it does not wait
+// for delivery and the token auto-advances past the send node in the same Step.
+//
+// The sink decides how to route the message (intra-engine delivery to a parked
+// ReceiveTask via DeliverMessage, publication to an external broker / the
+// eventing outbox, or both). Payload carries a copy of the instance variables.
+type SendMessage struct {
+	// Name is the message reference to send (the SendTask's MessageName).
+	Name string
+	// CorrelationKey is the resolved correlation key (empty when the SendTask
+	// declared no correlation-key expression).
+	CorrelationKey string
+	// Payload is a copy of the sending instance's variables. May be nil.
+	Payload map[string]any
+}
+
 // InvokeCancelAction asks the runtime to run a named ServiceAction as a
 // best-effort side effect during cancellation. Unlike InvokeAction it carries no
 // CommandID and its result is never fed back into the engine (the instance is
@@ -178,6 +196,7 @@ func (UpdateTask) isCommand()         {}
 func (ScheduleTimer) isCommand()      {}
 func (CancelTimer) isCommand()        {}
 func (ThrowSignal) isCommand()        {}
+func (SendMessage) isCommand()        {}
 func (StartSubInstance) isCommand()   {}
 func (Compensate) isCommand()         {}
 

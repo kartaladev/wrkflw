@@ -139,6 +139,17 @@ func TestSendTaskConstructor(t *testing.T) {
 	}
 }
 
+func TestSendTaskCorrelationKey(t *testing.T) {
+	n := model.NewSendTask("send", "order.shipped", model.WithCorrelationKey(`vars.orderID`))
+	st, ok := n.(model.SendTask)
+	if !ok {
+		t.Fatalf("node is %T, want model.SendTask", n)
+	}
+	if st.CorrelationKey != `vars.orderID` {
+		t.Fatalf("CorrelationKey = %q, want %q", st.CorrelationKey, `vars.orderID`)
+	}
+}
+
 func TestBusinessRuleTaskConstructor(t *testing.T) {
 	n := model.NewBusinessRuleTask("brt", "apply-discount")
 	if n.Kind() != model.KindBusinessRuleTask {
