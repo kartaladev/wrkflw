@@ -3,7 +3,33 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25 (followups)
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25 (followups round 2)
+
+> **✅ DONE — Production-hardening FOLLOW-UPS round 2 (ADRs 0060–0062) — merged to `main` 2026-06-25**
+> (branch `feat/production-hardening-followups-2`, merge `c54a15b`). The remaining deferred items
+> ("all deferred except CI"), SDD tracks + a whole-branch review (Ready-to-merge; 2 Important + 1
+> Minor finding applied). Next free ADR: **0063**.
+> - **0060** `KindSendTask` implemented via a pluggable **`runtime.MessageSink`** port (`WithMessageSink`):
+>   engine emits a `SendMessage{Name,CorrelationKey,Payload}` command, `sendTaskStrategy` auto-advances
+>   (fire-and-forget), runtime routes via the consumer's sink (intra-engine / external / both — consumer
+>   decides). **Durability caveat (documented honestly):** send happens AFTER the state commit, so a sink
+>   error STRANDS the message (best-effort, not re-sent) — wire the sink to the transactional outbox for
+>   atomic/at-least-once. Same commit-before-perform shape as `ThrowSignal`. `model.SendTask.CorrelationKey`
+>   added (additive). **`KindSendTask` is no longer an unimplemented fall-through** (none remain except
+>   KindUnspecified/KindTerminateEndEvent/KindBusinessRuleTask which are intentional).
+> - **0061** Elector lease/**heartbeat** (`WithHeartbeatInterval`/façade `WithElectorHeartbeatInterval`):
+>   background goroutine pings the dedicated conn each interval, steps the leader down on silent loss —
+>   narrows the ADR-0059 split-brain window to ≤ one interval. `Close` now `pg_advisory_unlock_all()`s
+>   (no lingering lock on the pooled conn). goleak-clean.
+> - **0062** gRPC `InvalidArgument` statuses carry `errdetails.ErrorInfo` (shared `statusWithReason`);
+>   shippable `grpctransport.NewMethodAuthInterceptor(authorize)` (panics on nil = fail-closed).
+>
+> Gates: `go test -race ./...` green (testcontainers); `golangci-lint` 0; gofmt clean; `FuzzStep` no crash;
+> goleak clean; **engine 85.0%**; core import-pure + wall-clock-free. **Confirm pushed via `git status`.**
+> **Remaining deferred (non-blocking):** the **CI pipeline** (the only intentionally-deferred item left);
+> a transactional-outbox-backed `MessageSink` reference impl; `KindBusinessRuleTask` (still a fall-through).
+
+## ⏩ CURRENT RESUME POINT — updated 2026-06-25 (followups)
 
 > **✅ DONE — Production-hardening FOLLOW-UPS (ADRs 0056–0059) — merged to `main` 2026-06-25**
 > (branch `feat/production-hardening-followups`, 7 commits, merge `6166aa9`). The deferred
