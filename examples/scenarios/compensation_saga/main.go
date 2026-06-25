@@ -47,11 +47,11 @@ func main() {
 	// book and pay each carry a compensation action; ship has none and fails.
 	def, err := model.NewDefinition("booking-saga", 1).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("book", "book",
+		Add(model.NewServiceTask("book", model.WithActionName("book"),
 			model.WithCompensation("cancel-booking"))).
-		Add(model.NewServiceTask("pay", "pay",
+		Add(model.NewServiceTask("pay", model.WithActionName("pay"),
 			model.WithCompensation("refund"))).
-		Add(model.NewServiceTask("ship", "ship")).
+		Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
 		// Catch-all boundary error keeps recorded compensations intact for the
 		// explicit rollback below.
 		Add(model.NewBoundaryEvent("ship-err", "ship",

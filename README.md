@@ -68,7 +68,8 @@ import (
 func main() {
 	def, err := model.NewDefinition("order-fulfillment", 1).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge", "charge-card",
+		Add(model.NewServiceTask("charge",
+			model.WithActionName("charge-card"),
 			model.WithCompensation("refund-card"),
 		)).
 		Add(model.NewUserTask("approve", []string{"manager"})).
@@ -83,6 +84,43 @@ func main() {
 	fmt.Printf("defined %q v%d with %d nodes\n", def.ID, def.Version, len(def.Nodes))
 }
 ```
+
+### Definition-scoped & inline actions
+
+Actions can be bound to a definition or a node in three ways:
+
+| Style | How | Scope |
+|---|---|---|
+| Named catalog reference | `WithActionName("name")` | Resolves scoped → global |
+| Node-local inline | `WithActionFunc(fn)` / `WithAction(a)` | That node only; never serialized |
+| Default-by-id | omit name | Node id is the lookup key |
+
+```go
+score := action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+    return map[string]any{"score": 42}, nil
+})
+
+def, _ := model.NewDefinition("loan", 1).
+    RegisterAction("score", score).                   // def-scoped, by name
+    Add(model.NewStartEvent("start")).
+    Add(model.NewServiceTask("risk",
+        model.WithActionName("score"),                // resolves scoped → global
+    )).
+    Add(model.NewServiceTask("notify",
+        model.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+            return in, nil                            // node-local inline
+        }),
+    )).
+    Add(model.NewServiceTask("archive")).             // default-by-id → looks up "archive"
+    Add(model.NewEndEvent("end")).
+    Connect("start", "risk").Connect("risk", "notify").
+    Connect("notify", "archive").Connect("archive", "end").
+    Build()
+```
+
+`WithActionName` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
+returns `model.ErrActionInlineAndNameConflict` if both are set. See
+`runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
 
 ### Author in YAML
 
@@ -131,7 +169,7 @@ func main() {
 
 	def, _ := model.NewDefinition("order", 1).
 		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("charge", "charge-card")).
+		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"))).
 		Add(model.NewEndEvent("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
@@ -320,7 +358,8 @@ Attach an optional compensation action to any activity. When the engine rolls ba
 process (e.g. after a downstream failure), it runs compensation actions in reverse order.
 
 ```go
-model.NewServiceTask("charge", "charge-card",
+model.NewServiceTask("charge",
+    model.WithActionName("charge-card"),
     model.WithCompensation("refund-card"),
 )
 ```
@@ -544,11 +583,11 @@ model.NewErrorEndEvent("insufficient-funds", "FUNDS_ERROR")
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **ServiceTask** | Runs a named service action. | `model.NewServiceTask(id, action string, opts ...) Node` |
+| **ServiceTask** | Runs a named service action. | `model.NewServiceTask(id string, opts ...) Node` |
 | **UserTask** | Waits for a human to complete a work item. | `model.NewUserTask(id string, roles []string, opts ...) Node` |
 | **ReceiveTask** | Waits for an inbound correlated message. | `model.NewReceiveTask(id, messageName string, opts ...) Node` |
 | **SendTask** | Sends an outbound message. | `model.NewSendTask(id, messageName string, opts ...) Node` |
-| **BusinessRuleTask** | Runs a named business-rule action. | `model.NewBusinessRuleTask(id, action string, opts ...) Node` |
+| **BusinessRuleTask** | Runs a named business-rule action. | `model.NewBusinessRuleTask(id string, opts ...) Node` |
 | **SubProcess** | Runs an *embedded* nested definition as a scope. | `model.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
 | **CallActivity** | Calls a *separate* top-level definition by name. | `model.NewCallActivity(id, defRef string, opts ...) Node` |
 | **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `model.NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
@@ -559,7 +598,8 @@ takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
 is interrupting) — its nested start event carries the trigger.
 
 ```go
-model.NewServiceTask("charge", "charge-card",
+model.NewServiceTask("charge",
+    model.WithActionName("charge-card"),
     model.WithCompensation("refund-card"),
     model.WithRetryPolicy(&retry),
 )
@@ -629,9 +669,9 @@ Assemble nodes and flows with the fluent builder, then `Build()` (which validate
 def, err := model.NewDefinition("order-fulfillment", 1).
     Add(model.NewStartEvent("start")).
     Add(model.NewExclusiveGateway("route")).
-    Add(model.NewServiceTask("manual-review", "manual-review")).
-    Add(model.NewServiceTask("auto-approve", "auto-approve")).
-    Add(model.NewServiceTask("reject", "reject")).
+    Add(model.NewServiceTask("manual-review", model.WithActionName("manual-review"))).
+    Add(model.NewServiceTask("auto-approve", model.WithActionName("auto-approve"))).
+    Add(model.NewServiceTask("reject", model.WithActionName("reject"))).
     Add(model.NewEndEvent("end")).
     Connect("start", "route").
     Connect("route", "manual-review", model.WithCondition("amount > 50000")).
@@ -720,10 +760,10 @@ start → fork[Parallel] → pick-items[Service]  ┐
 def, _ := model.NewDefinition("order-fulfillment", 1).
     Add(model.NewStartEvent("start")).
     Add(model.NewParallelGateway("fork")).
-    Add(model.NewServiceTask("pick-items", "pick-items")).
-    Add(model.NewServiceTask("charge-card", "charge-card")).
+    Add(model.NewServiceTask("pick-items", model.WithActionName("pick-items"))).
+    Add(model.NewServiceTask("charge-card", model.WithActionName("charge-card"))).
     Add(model.NewParallelGateway("join")).
-    Add(model.NewServiceTask("ship", "ship")).
+    Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
     Add(model.NewEndEvent("end")).
     Connect("start", "fork").
     Connect("fork", "pick-items").
@@ -779,7 +819,7 @@ start → review[UserTask] ─────────────────�
 Add(model.NewUserTask("review", []string{"reviewer"})).
 Add(model.NewBoundaryEvent("review-timeout", "review",
     model.WithBoundaryTimer(`"1h"`))). // interrupting by default
-Add(model.NewServiceTask("escalate", "escalate")).
+Add(model.NewServiceTask("escalate", model.WithActionName("escalate"))).
 // ...
 Connect("review", "approved-end").
 Connect("review-timeout", "escalate").
@@ -807,9 +847,9 @@ then: deliver CompensateRequested("") → refund, then cancel-booking → termin
 ```
 
 ```go
-Add(model.NewServiceTask("book", "book", model.WithCompensation("cancel-booking"))).
-Add(model.NewServiceTask("pay",  "pay",  model.WithCompensation("refund"))).
-Add(model.NewServiceTask("ship", "ship")).
+Add(model.NewServiceTask("book", model.WithActionName("book"), model.WithCompensation("cancel-booking"))).
+Add(model.NewServiceTask("pay", model.WithActionName("pay"), model.WithCompensation("refund"))).
+Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
 Add(model.NewBoundaryEvent("ship-err", "ship", model.WithBoundaryErrorCode(""))).
 // ... after the forward run completes via the boundary path:
 trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback

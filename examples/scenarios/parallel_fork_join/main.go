@@ -29,10 +29,10 @@ func main() {
 	def, err := model.NewDefinition("order-fulfillment", 1).
 		Add(model.NewStartEvent("start")).
 		Add(model.NewParallelGateway("fork")).
-		Add(model.NewServiceTask("pick-items", "pick-items")).
-		Add(model.NewServiceTask("charge-card", "charge-card")).
+		Add(model.NewServiceTask("pick-items", model.WithActionName("pick-items"))).
+		Add(model.NewServiceTask("charge-card", model.WithActionName("charge-card"))).
 		Add(model.NewParallelGateway("join")).
-		Add(model.NewServiceTask("ship", "ship")).
+		Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
 		Add(model.NewEndEvent("end")).
 		Connect("start", "fork").
 		Connect("fork", "pick-items").

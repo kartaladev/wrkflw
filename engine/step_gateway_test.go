@@ -18,8 +18,8 @@ func exclusiveDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewExclusiveGateway("xor"),
-			model.NewServiceTask("big", "big"),
-			model.NewServiceTask("small", "small"),
+			model.NewServiceTask("big", model.WithActionName("big")),
+			model.NewServiceTask("small", model.WithActionName("small")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -64,8 +64,8 @@ func parallelForkDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewParallelGateway("fork"),
-			model.NewServiceTask("a", "a"),
-			model.NewServiceTask("b", "b"),
+			model.NewServiceTask("a", model.WithActionName("a")),
+			model.NewServiceTask("b", model.WithActionName("b")),
 			model.NewEndEvent("enda"),
 			model.NewEndEvent("endb"),
 		},
@@ -109,8 +109,8 @@ func diamondDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewParallelGateway("fork"),
-			model.NewServiceTask("a", "a"),
-			model.NewServiceTask("b", "b"),
+			model.NewServiceTask("a", model.WithActionName("a")),
+			model.NewServiceTask("b", model.WithActionName("b")),
 			model.NewParallelGateway("join"),
 			model.NewEndEvent("end"),
 		},
@@ -172,8 +172,8 @@ func dualSubProcessParallelDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
 			model.NewParallelGateway("ifork"),
-			model.NewServiceTask("inner-a", "action-a"),
-			model.NewServiceTask("inner-b", "action-b"),
+			model.NewServiceTask("inner-a", model.WithActionName("action-a")),
+			model.NewServiceTask("inner-b", model.WithActionName("action-b")),
 			model.NewParallelGateway("ijoin"),
 			model.NewEndEvent("inner-end"),
 		},
@@ -339,7 +339,7 @@ func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewExclusiveGateway("xor"),
-			model.NewServiceTask("big", "big"),
+			model.NewServiceTask("big", model.WithActionName("big")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

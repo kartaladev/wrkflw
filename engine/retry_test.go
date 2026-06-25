@@ -21,7 +21,7 @@ func retryDef(p *model.RetryPolicy) *model.ProcessDefinition {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("task", "a", model.WithRetryPolicy(p)),
+			model.NewServiceTask("task", model.WithActionName("a"), model.WithRetryPolicy(p)),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -200,8 +200,8 @@ func recoveryFlowDef(p *model.RetryPolicy) *model.ProcessDefinition {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("task", "a", model.WithRecoveryFlow("rf"), model.WithRetryPolicy(p)),
-			model.NewServiceTask("recover", "compensate"),
+			model.NewServiceTask("task", model.WithActionName("a"), model.WithRecoveryFlow("rf"), model.WithRetryPolicy(p)),
+			model.NewServiceTask("recover", model.WithActionName("compensate")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -221,9 +221,9 @@ func boundaryWithPolicyDef(p *model.RetryPolicy) *model.ProcessDefinition {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("task", "a", model.WithRetryPolicy(p)),
+			model.NewServiceTask("task", model.WithActionName("a"), model.WithRetryPolicy(p)),
 			model.NewBoundaryEvent("bnd", "task"),
-			model.NewServiceTask("recover", "compensate"),
+			model.NewServiceTask("recover", model.WithActionName("compensate")),
 			model.NewEndEvent("end"),
 			model.NewEndEvent("end-recover"),
 		},

@@ -753,13 +753,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			aspan.End()
 		}()
 
-		if r.cat == nil {
-			err := errors.New("no action catalog: " + cmd.Name)
-			aspan.RecordError(err)
-			aspan.SetStatus(codes.Error, err.Error())
-			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "no action catalog: "+cmd.Name, false), nil
-		}
-		a, ok := r.cat.Resolve(cmd.Name)
+		a, ok := r.resolveInvokeAction(def, cmd)
 		if !ok {
 			err := errors.New("unknown action: " + cmd.Name)
 			aspan.RecordError(err)
@@ -781,12 +775,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		// Best-effort, fire-and-forget: run the action for its side effect, log any
 		// failure, and NEVER feed a result back or return an error — the instance is
 		// already terminal and cancellation must report success regardless (ADR-0028).
-		if r.cat == nil {
-			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action skipped: no catalog",
-				slog.String("action", cmd.Name))
-			return nil, nil
-		}
-		a, ok := r.cat.Resolve(cmd.Name)
+		a, ok := r.resolveActionName(def, cmd.Name)
 		if !ok {
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action not found",
 				slog.String("action", cmd.Name))

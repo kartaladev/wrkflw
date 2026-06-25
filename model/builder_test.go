@@ -9,7 +9,7 @@ import (
 func TestDefinitionBuilderBuildsAndValidates(t *testing.T) {
 	def, err := model.NewDefinition("p", 1).
 		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("t", "do")).
+		Add(model.NewServiceTask("t", model.WithActionName("do"))).
 		Add(model.NewEndEvent("e")).
 		Connect("s", "t").
 		Connect("t", "e").
@@ -23,7 +23,7 @@ func TestDefinitionBuilderBuildsAndValidates(t *testing.T) {
 }
 
 func TestDefinitionBuilderRejectsInvalid(t *testing.T) {
-	_, err := model.NewDefinition("p", 1).Add(model.NewServiceTask("t", "do")).Build()
+	_, err := model.NewDefinition("p", 1).Add(model.NewServiceTask("t", model.WithActionName("do"))).Build()
 	if err == nil {
 		t.Fatal("expected validation error (no start event)")
 	}
@@ -33,8 +33,8 @@ func TestDefinitionBuilderConnectOptions(t *testing.T) {
 	def, err := model.NewDefinition("p", 1).
 		Add(model.NewStartEvent("s")).
 		Add(model.NewExclusiveGateway("gw")).
-		Add(model.NewServiceTask("a", "act-a")).
-		Add(model.NewServiceTask("b", "act-b")).
+		Add(model.NewServiceTask("a", model.WithActionName("act-a"))).
+		Add(model.NewServiceTask("b", model.WithActionName("act-b"))).
 		Add(model.NewEndEvent("e")).
 		Connect("s", "gw").
 		Connect("gw", "a", model.WithCondition("vars.x == 1")).

@@ -215,7 +215,7 @@ func paymentDef() *model.ProcessDefinition {
 		ID: "payment", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("charge", "charge"),
+			model.NewServiceTask("charge", model.WithActionName("charge")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -337,7 +337,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		ID: "incident-obs", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("task", "a"),
+			model.NewServiceTask("task", model.WithActionName("a")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

@@ -30,11 +30,11 @@ func main() {
 	// Build the process definition once; run it multiple times with different vars.
 	def, err := model.NewDefinition("loan-approval", 1).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("check-credit", "check-credit")).
+		Add(model.NewServiceTask("check-credit", model.WithActionName("check-credit"))).
 		Add(model.NewExclusiveGateway("route")).
-		Add(model.NewServiceTask("manual-review", "manual-review")).
-		Add(model.NewServiceTask("auto-approve", "auto-approve")).
-		Add(model.NewServiceTask("reject", "reject")).
+		Add(model.NewServiceTask("manual-review", model.WithActionName("manual-review"))).
+		Add(model.NewServiceTask("auto-approve", model.WithActionName("auto-approve"))).
+		Add(model.NewServiceTask("reject", model.WithActionName("reject"))).
 		Add(model.NewEndEvent("end")).
 		Connect("start", "check-credit").
 		Connect("check-credit", "route").

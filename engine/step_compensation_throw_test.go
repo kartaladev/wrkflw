@@ -39,7 +39,7 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 		ID: "throw-nested", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewServiceTask("inner-svc", model.WithActionName("book-inner"), model.WithCompensation("cancel-inner")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -198,7 +198,7 @@ func secondThrowDef() *model.ProcessDefinition {
 		ID: "second-throw-nested", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "book-2", model.WithCompensation("cancel-2")),
+			model.NewServiceTask("inner-svc", model.WithActionName("book-2"), model.WithCompensation("cancel-2")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -296,7 +296,7 @@ func throwThenCancelDef() *model.ProcessDefinition {
 		ID: "ttc-nested", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "book-ttc", model.WithCompensation("cancel-ttc")),
+			model.NewServiceTask("inner-svc", model.WithActionName("book-ttc"), model.WithCompensation("cancel-ttc")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -492,7 +492,7 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 		ID: "cmtw-nested", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewServiceTask("inner-svc", model.WithActionName("book-inner"), model.WithCompensation("cancel-inner")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -504,7 +504,7 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 		ID: "cmtw-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("rootSvc", "book-root", model.WithCompensation("cancel-root")),
+			model.NewServiceTask("rootSvc", model.WithActionName("book-root"), model.WithCompensation("cancel-root")),
 			model.NewSubProcess("sub", nested),
 			model.NewIntermediateThrowEvent("compThrow", model.WithCompensateRef("sub")),
 			model.NewUserTask("afterThrow", nil),
@@ -680,7 +680,7 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 		ID: "throw-nested-noout", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewServiceTask("inner-svc", model.WithActionName("book-inner"), model.WithCompensation("cancel-inner")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{

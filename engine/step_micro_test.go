@@ -26,8 +26,8 @@ func microForkDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewParallelGateway("fork"),
-			model.NewServiceTask("svc-a", "do-a"),
-			model.NewServiceTask("svc-b", "do-b"),
+			model.NewServiceTask("svc-a", model.WithActionName("do-a")),
+			model.NewServiceTask("svc-b", model.WithActionName("do-b")),
 		},
 		Flows: []model.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -44,7 +44,7 @@ func linearEndDef() *model.ProcessDefinition {
 		ID: "lend", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "work"),
+			model.NewServiceTask("svc", model.WithActionName("work")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

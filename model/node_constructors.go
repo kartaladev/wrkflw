@@ -1,5 +1,11 @@
 package model
 
+import (
+	"context"
+
+	"github.com/zakyalvan/krtlwrkflw/action"
+)
+
 // --- universal option (name) ---
 
 // optNameArg returns the first name from a variadic or "".
@@ -41,6 +47,55 @@ type sendTaskOption interface {
 	applySendTask(s *SendTask)
 }
 
+// serviceTaskOption configures a ServiceTask.
+type serviceTaskOption interface{ applyServiceTask(s *ServiceTask) }
+
+// businessRuleOption configures a BusinessRuleTask.
+type businessRuleOption interface{ applyBusinessRule(b *BusinessRuleTask) }
+
+// actionNameOpt sets the action name on a ServiceTask or BusinessRuleTask.
+type actionNameOpt struct{ name string }
+
+func (o actionNameOpt) applyServiceTask(s *ServiceTask)       { s.Action = o.name }
+func (o actionNameOpt) applyBusinessRule(b *BusinessRuleTask) { b.Action = o.name }
+
+// WithActionName sets the catalog action name. Resolved scoped→global at runtime.
+// Mutually exclusive with WithAction/WithActionFunc (Build reports a conflict).
+func WithActionName(name string) interface {
+	serviceTaskOption
+	businessRuleOption
+} {
+	return actionNameOpt{name}
+}
+
+// inlineActionOpt sets a node-local inline action.
+type inlineActionOpt struct{ a action.ServiceAction }
+
+func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.inline = o.a }
+func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.inline = o.a }
+
+// WithAction attaches a node-local inline ServiceAction available to this node
+// only. Mutually exclusive with WithActionName (Build reports a conflict).
+//
+// Inline actions resolve at any sub-process nesting depth (the engine carries
+// the resolved action on the invocation command). They are never serialized: a
+// definition round-tripped through JSONB loses its inline actions, so a consumer
+// that persists definitions must re-attach them in code on restart.
+func WithAction(a action.ServiceAction) interface {
+	serviceTaskOption
+	businessRuleOption
+} {
+	return inlineActionOpt{a}
+}
+
+// WithActionFunc is WithAction sugar wrapping a plain function as action.Func.
+func WithActionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) interface {
+	serviceTaskOption
+	businessRuleOption
+} {
+	return inlineActionOpt{action.Func(fn)}
+}
+
 // activityOnlyOption wraps a function that mutates activityFields only.
 type activityOnlyOption struct{ fn func(*activityFields) }
 
@@ -49,6 +104,10 @@ func (activityOnlyOption) applyName(_ *baseNode)             {}
 func (o activityOnlyOption) applyUserTask(u *UserTask)       { o.fn(&u.activityFields) }
 func (o activityOnlyOption) applyReceiveTask(r *ReceiveTask) { o.fn(&r.activityFields) }
 func (o activityOnlyOption) applySendTask(s *SendTask)       { o.fn(&s.activityFields) }
+func (o activityOnlyOption) applyServiceTask(s *ServiceTask) { o.fn(&s.activityFields) }
+func (o activityOnlyOption) applyBusinessRule(b *BusinessRuleTask) {
+	o.fn(&b.activityFields)
+}
 
 // withActivity constructs an activityOnlyOption. The concrete return type is
 // intentional: activityOnlyOption satisfies activityOption, userTaskOption,
@@ -70,6 +129,8 @@ func (o nameOpt) applyEventSubProcess(n *EventSubProcess) { n.name = o.name }
 func (o nameOpt) applyUserTask(u *UserTask)               { u.name = o.name }
 func (o nameOpt) applyReceiveTask(r *ReceiveTask)         { r.name = o.name }
 func (o nameOpt) applySendTask(s *SendTask)               { s.name = o.name }
+func (o nameOpt) applyServiceTask(s *ServiceTask)         { s.name = o.name }
+func (o nameOpt) applyBusinessRule(b *BusinessRuleTask)   { b.name = o.name }
 
 // WithName returns an option that sets the Name field on any node that accepts it.
 // It implements activityOption, catchOption, boundaryOption, userTaskOption, and receiveTaskOption.
@@ -231,13 +292,16 @@ func NewEventBasedGateway(id string, name ...string) Node {
 
 // --- activity constructors ---
 
-// NewServiceTask constructs a ServiceTask with the given id and service-action name.
-// Additional behaviour (retry, SLA, etc.) is configured via activityOption values.
-func NewServiceTask(id, action string, opts ...activityOption) Node {
-	b := baseNode{id: id}
-	var a activityFields
-	applyActivityOpts(&b, &a, opts)
-	return ServiceTask{baseNode: b, activityFields: a, Action: action}
+// NewServiceTask constructs a ServiceTask. Set the action with WithActionName
+// (catalog reference) or WithAction/WithActionFunc (node-local inline); with
+// neither, the action name defaults to the node id at execution time. Other
+// behaviour (retry, SLA, name, etc.) is configured via the shared activity options.
+func NewServiceTask(id string, opts ...serviceTaskOption) Node {
+	s := ServiceTask{baseNode: baseNode{id: id}}
+	for _, o := range opts {
+		o.applyServiceTask(&s)
+	}
+	return s
 }
 
 // NewUserTask constructs a UserTask with the given id and candidate roles.
@@ -277,12 +341,14 @@ func NewSendTask(id, messageName string, opts ...sendTaskOption) Node {
 	return s
 }
 
-// NewBusinessRuleTask constructs a BusinessRuleTask with the given id and action name.
-func NewBusinessRuleTask(id, action string, opts ...activityOption) Node {
-	b := baseNode{id: id}
-	var a activityFields
-	applyActivityOpts(&b, &a, opts)
-	return BusinessRuleTask{baseNode: b, activityFields: a, Action: action}
+// NewBusinessRuleTask constructs a BusinessRuleTask. Action configuration mirrors
+// NewServiceTask (WithActionName / WithAction / WithActionFunc / default-by-id).
+func NewBusinessRuleTask(id string, opts ...businessRuleOption) Node {
+	b := BusinessRuleTask{baseNode: baseNode{id: id}}
+	for _, o := range opts {
+		o.applyBusinessRule(&b)
+	}
+	return b
 }
 
 // NewSubProcess constructs a SubProcess with the given id and nested definition.

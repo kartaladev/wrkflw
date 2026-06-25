@@ -53,11 +53,12 @@ type nodeStrategy interface {
 }
 
 // nodeStrategies maps each arm-bearing NodeKind to its strategy.
-// Kinds NOT in this map (KindTerminateEndEvent, KindBusinessRuleTask,
+// Kinds NOT in this map (KindTerminateEndEvent,
 // KindBoundaryEvent, KindEventSubProcess, KindUnspecified)
 // fall through to the post-dispatch logic in drive() unchanged.
 var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindServiceTask:            serviceTaskStrategy{},
+	model.KindBusinessRuleTask:       businessRuleTaskStrategy{},
 	model.KindReceiveTask:            receiveTaskStrategy{},
 	model.KindSendTask:               sendTaskStrategy{},
 	model.KindStartEvent:             startEventStrategy{},
@@ -78,8 +79,7 @@ var nodeStrategies = map[model.NodeKind]nodeStrategy{
 type serviceTaskStrategy struct{}
 
 func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	st, ok := node.(model.ServiceTask)
-	if !ok {
+	if _, ok := node.(model.ServiceTask); !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
 	}
@@ -87,7 +87,40 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	cmdID := c.s.nextCommandID()
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
-		Name:      st.Action,
+		Name:      mainActionName(node),
+		Inline:    model.InlineActionOf(node),
+		Scoped:    c.tdef.ScopedCatalog(),
+		Input:     serviceActionInput(c.s, node),
+	})
+	tok.State = TokenWaitingCommand
+	tok.AwaitCommand = cmdID
+	// Arm any boundary events attached to this host activity.
+	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
+	if err != nil {
+		return cmds, false, err
+	}
+	cmds = append(cmds, bndCmds...)
+	return cmds, false, nil
+}
+
+// businessRuleTaskStrategy handles KindBusinessRuleTask node entry. It mirrors
+// serviceTaskStrategy: emit the primary InvokeAction (default-by-id name plus
+// the scope-resolved inline action and scoped catalog), park the token, and arm
+// boundary events.
+type businessRuleTaskStrategy struct{}
+
+func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	if _, ok := node.(model.BusinessRuleTask); !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
+	var cmds []Command
+	cmdID := c.s.nextCommandID()
+	cmds = append(cmds, InvokeAction{
+		CommandID: cmdID,
+		Name:      mainActionName(node),
+		Inline:    model.InlineActionOf(node),
+		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
 	tok.State = TokenWaitingCommand

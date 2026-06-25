@@ -21,7 +21,7 @@ func panicTaskDef() *model.ProcessDefinition {
 		ID: "panic-test", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("task", "p"),
+			model.NewServiceTask("task", model.WithActionName("p")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

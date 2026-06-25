@@ -53,7 +53,7 @@ func serverLinearDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("greet", "greet"),
+			model.NewServiceTask("greet", model.WithActionName("greet")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

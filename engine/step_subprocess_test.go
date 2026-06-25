@@ -24,7 +24,7 @@ func subProcessDef() *model.ProcessDefinition {
 		ID: "inner", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewServiceTask("inner-svc", model.WithActionName("inner-action")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -160,8 +160,8 @@ func parallelSubProcessDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
 			model.NewParallelGateway("pfork"),
-			model.NewServiceTask("inner-a", "action-a"),
-			model.NewServiceTask("inner-b", "action-b"),
+			model.NewServiceTask("inner-a", model.WithActionName("action-a")),
+			model.NewServiceTask("inner-b", model.WithActionName("action-b")),
 			model.NewParallelGateway("pjoin"),
 			model.NewEndEvent("inner-end"),
 		},
@@ -205,7 +205,7 @@ func eventSubProcessDef(nonInterrupting bool) *model.ProcessDefinition {
 		ID: "evtsub-inner", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("evtsub-start", model.WithStartSignal("cancel")),
-			model.NewServiceTask("evtsub-svc", "cancel-action"),
+			model.NewServiceTask("evtsub-svc", model.WithActionName("cancel-action")),
 			model.NewEndEvent("evtsub-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -505,7 +505,7 @@ func timerEventSubProcessDef() *model.ProcessDefinition {
 		ID: "evtsub-timer-inner", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("evtsub-start", model.WithStartTimer(`"1h"`)),
-			model.NewServiceTask("evtsub-svc", "timeout-action"),
+			model.NewServiceTask("evtsub-svc", model.WithActionName("timeout-action")),
 			model.NewEndEvent("evtsub-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -517,7 +517,7 @@ func timerEventSubProcessDef() *model.ProcessDefinition {
 		ID: "inner-timer-evtsub", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewServiceTask("inner-svc", model.WithActionName("inner-action")),
 			model.NewEndEvent("inner-end"),
 			model.NewEventSubProcess("evtsub", evtsubInner),
 		},
@@ -635,7 +635,7 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 		ID: "esp-gw-evtsub-inner", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("evtsub-start", model.WithStartSignal("cancel")),
-			model.NewServiceTask("evtsub-svc", "cancel-action"),
+			model.NewServiceTask("evtsub-svc", model.WithActionName("cancel-action")),
 			model.NewEndEvent("evtsub-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -772,7 +772,7 @@ func rootLevelESPDef() *model.ProcessDefinition {
 		ID: "root-esp-inner", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("esp-start", model.WithStartSignal("cancel")),
-			model.NewServiceTask("esp-svc", "esp-action"),
+			model.NewServiceTask("esp-svc", model.WithActionName("esp-action")),
 			model.NewEndEvent("esp-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -785,7 +785,7 @@ func rootLevelESPDef() *model.ProcessDefinition {
 		ID: "root-esp-def", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("root-start"),
-			model.NewServiceTask("root-svc", "normal-action"),
+			model.NewServiceTask("root-svc", model.WithActionName("normal-action")),
 			model.NewEndEvent("root-end"),
 			model.NewEventSubProcess("root-esp", espInner),
 		},
@@ -1199,9 +1199,9 @@ func boundaryTimerInsideSubProcessDef() *model.ProcessDefinition {
 		ID: "inner-bnd-timer", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewServiceTask("inner-svc", model.WithActionName("inner-action")),
 			model.NewBoundaryEvent("bnd-timer", "inner-svc", model.WithBoundaryTimer(`"2h"`)),
-			model.NewServiceTask("bnd-target", "escalate-action"),
+			model.NewServiceTask("bnd-target", model.WithActionName("escalate-action")),
 			model.NewEndEvent("inner-end"),
 			model.NewEndEvent("bnd-end"),
 		},
@@ -1342,8 +1342,8 @@ func eventBasedGatewayInsideSubProcessDef() *model.ProcessDefinition {
 			model.NewEventBasedGateway("evtgw"),
 			model.NewIntermediateCatchEvent("timer-catch", model.WithTimerDuration(`"1h"`)),
 			model.NewIntermediateCatchEvent("signal-catch", model.WithSignalName("approved")),
-			model.NewServiceTask("svc-timer", "timer-action"),
-			model.NewServiceTask("svc-signal", "signal-action"),
+			model.NewServiceTask("svc-timer", model.WithActionName("timer-action")),
+			model.NewServiceTask("svc-signal", model.WithActionName("signal-action")),
 			model.NewEndEvent("inner-end"),
 			model.NewEndEvent("inner-end2"),
 		},
@@ -1479,10 +1479,10 @@ func inclusiveGatewayInsideSubProcessDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
 			model.NewInclusiveGateway("orsplit"),
-			model.NewServiceTask("ta", "action-a"),
-			model.NewServiceTask("tb", "action-b"),
+			model.NewServiceTask("ta", model.WithActionName("action-a")),
+			model.NewServiceTask("tb", model.WithActionName("action-b")),
 			model.NewInclusiveGateway("orjoin"),
-			model.NewServiceTask("post", "post-action"),
+			model.NewServiceTask("post", model.WithActionName("post-action")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{

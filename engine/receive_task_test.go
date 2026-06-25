@@ -35,7 +35,7 @@ func receiveTaskBoundaryDef(boundary model.Node) *model.ProcessDefinition {
 			model.NewStartEvent("start"),
 			model.NewReceiveTask("recv", "m"),
 			boundary,
-			model.NewServiceTask("escalate", "esc"),
+			model.NewServiceTask("escalate", model.WithActionName("esc")),
 			model.NewEndEvent("end"),
 			model.NewEndEvent("end2"),
 		},

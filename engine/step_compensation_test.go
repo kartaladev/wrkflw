@@ -29,7 +29,7 @@ func compensableDef() *model.ProcessDefinition {
 		ID: "comp-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "charge", model.WithCompensation("refund")),
+			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -45,7 +45,7 @@ func nonCompensableDef() *model.ProcessDefinition {
 		ID: "plain-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "charge"),
+			model.NewServiceTask("svc", model.WithActionName("charge")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -63,7 +63,7 @@ func compensableSubProcessDef() *model.ProcessDefinition {
 		ID: "nested", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "book", model.WithCompensation("cancel-booking")),
+			model.NewServiceTask("inner-svc", model.WithActionName("book"), model.WithCompensation("cancel-booking")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -256,7 +256,7 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 		ID: "nested-hoist", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+			model.NewServiceTask("inner-svc", model.WithActionName("book-inner"), model.WithCompensation("cancel-inner")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -352,7 +352,7 @@ func openSubProcessWithParkDef() *model.ProcessDefinition {
 		ID: "nested-park", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("svc", "book", model.WithCompensation("x")),
+			model.NewServiceTask("svc", model.WithActionName("book"), model.WithCompensation("x")),
 			model.NewUserTask("userTask", nil),
 			model.NewEndEvent("inner-end"),
 		},
@@ -441,9 +441,9 @@ func threeCompensableDef() *model.ProcessDefinition {
 		ID: "three-comp", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("step1", "a1", model.WithCompensation("c1")),
-			model.NewServiceTask("step2", "a2", model.WithCompensation("c2")),
-			model.NewServiceTask("step3", "a3", model.WithCompensation("c3")),
+			model.NewServiceTask("step1", model.WithActionName("a1"), model.WithCompensation("c1")),
+			model.NewServiceTask("step2", model.WithActionName("a2"), model.WithCompensation("c2")),
+			model.NewServiceTask("step3", model.WithActionName("a3"), model.WithCompensation("c3")),
 			model.NewUserTask("userTask", nil),
 			model.NewEndEvent("end"),
 		},
@@ -632,7 +632,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 		ID: "nested-order", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "inner-book", model.WithCompensation("inner-comp")),
+			model.NewServiceTask("inner-svc", model.WithActionName("inner-book"), model.WithCompensation("inner-comp")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -644,7 +644,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 		ID: "order-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("rootSvc", "root-book", model.WithCompensation("root-comp")),
+			model.NewServiceTask("rootSvc", model.WithActionName("root-book"), model.WithCompensation("root-comp")),
 			model.NewSubProcess("sub", nested),
 			model.NewUserTask("rootUserTask", nil),
 			model.NewEndEvent("end"),
@@ -758,7 +758,7 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 		ID: "grandchild", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("g-start"),
-			model.NewServiceTask("grandchildSvc", "gc-book", model.WithCompensation("gc-comp")),
+			model.NewServiceTask("grandchildSvc", model.WithActionName("gc-book"), model.WithCompensation("gc-comp")),
 			model.NewEndEvent("g-end"),
 		},
 		Flows: []model.SequenceFlow{

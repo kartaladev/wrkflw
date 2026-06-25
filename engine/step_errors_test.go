@@ -30,7 +30,7 @@ func errorEndCaughtByBoundaryDef() *model.ProcessDefinition {
 		ID: "sp-nested", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewServiceTask("inner-svc", model.WithActionName("inner-action")),
 			model.NewErrorEndEvent("inner-err-end", "E1"),
 		},
 		Flows: []model.SequenceFlow{
@@ -46,7 +46,7 @@ func errorEndCaughtByBoundaryDef() *model.ProcessDefinition {
 			model.NewSubProcess("sp", nestedDef),
 			// Boundary error event on sp, catches "E1"
 			model.NewBoundaryEvent("bnd-err", "sp", model.WithBoundaryErrorCode("E1")),
-			model.NewServiceTask("recover", "recover-action"),
+			model.NewServiceTask("recover", model.WithActionName("recover-action")),
 			model.NewEndEvent("end"),
 			model.NewEndEvent("end-ok"),
 		},
@@ -69,7 +69,7 @@ func unhandledErrorDef() *model.ProcessDefinition {
 		ID: "p-unhandled-err", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "svc-action"),
+			model.NewServiceTask("svc", model.WithActionName("svc-action")),
 			model.NewErrorEndEvent("err-end", "E2"),
 		},
 		Flows: []model.SequenceFlow{
@@ -123,7 +123,7 @@ func actionFailedBoundaryDef() *model.ProcessDefinition {
 		ID: "sp-af-nested", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "work-action"),
+			model.NewServiceTask("inner-svc", model.WithActionName("work-action")),
 			model.NewEndEvent("inner-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -139,7 +139,7 @@ func actionFailedBoundaryDef() *model.ProcessDefinition {
 			model.NewSubProcess("sp", nestedDef),
 			// Catch-all boundary error (ErrorCode == "") catches any error thrown from sp
 			model.NewBoundaryEvent("bnd-err", "sp", model.WithBoundaryErrorCode("")),
-			model.NewServiceTask("recover", "recover-action"),
+			model.NewServiceTask("recover", model.WithActionName("recover-action")),
 			model.NewEndEvent("end"),
 			model.NewEndEvent("end-ok"),
 		},
@@ -288,10 +288,10 @@ func directBoundaryOnRootSvcDef() *model.ProcessDefinition {
 		ID: "p-direct-bnd", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "svc-action"),
+			model.NewServiceTask("svc", model.WithActionName("svc-action")),
 			// Direct boundary error event on svc (specific error code "E1")
 			model.NewBoundaryEvent("bnd-svc-err", "svc", model.WithBoundaryErrorCode("E1")),
-			model.NewServiceTask("recover", "recover-action"),
+			model.NewServiceTask("recover", model.WithActionName("recover-action")),
 			model.NewEndEvent("end"),
 			model.NewEndEvent("end-recover"),
 		},
@@ -313,10 +313,10 @@ func directBoundaryCatchAllOnRootSvcDef() *model.ProcessDefinition {
 		ID: "p-direct-bnd-catchall", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "svc-action"),
+			model.NewServiceTask("svc", model.WithActionName("svc-action")),
 			// Catch-all boundary error event on svc
 			model.NewBoundaryEvent("bnd-svc-err", "svc", model.WithBoundaryErrorCode("")),
-			model.NewServiceTask("recover", "recover-action"),
+			model.NewServiceTask("recover", model.WithActionName("recover-action")),
 			model.NewEndEvent("end"),
 			model.NewEndEvent("end-recover"),
 		},
@@ -343,10 +343,10 @@ func directBoundaryOnInnerSvcInSubprocessDef() *model.ProcessDefinition {
 		ID: "sp-direct-bnd-inner", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", "inner-action"),
+			model.NewServiceTask("inner-svc", model.WithActionName("inner-action")),
 			// Boundary attached directly to inner-svc (specific error code)
 			model.NewBoundaryEvent("inner-bnd", "inner-svc", model.WithBoundaryErrorCode("INNER_ERR")),
-			model.NewServiceTask("inner-recover", "inner-recover-action"),
+			model.NewServiceTask("inner-recover", model.WithActionName("inner-recover-action")),
 			model.NewEndEvent("inner-end"),
 			model.NewEndEvent("inner-end-recover"),
 		},
@@ -671,7 +671,7 @@ func cancelWithTimerDef() *model.ProcessDefinition {
 		ID: "p-cancel", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "work"),
+			model.NewServiceTask("svc", model.WithActionName("work")),
 			// Timer boundary on svc (30-second deadline).
 			model.NewBoundaryEvent("bnd-timer", "svc", model.WithBoundaryTimer(`"30s"`)),
 			model.NewEndEvent("timeout-end"),
@@ -885,7 +885,7 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 		ID: "p-comp-unknown", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "charge", model.WithCompensation("refund")),
+			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
 			model.NewUserTask("userTask", nil),
 			model.NewEndEvent("end"),
 		},
@@ -929,7 +929,7 @@ func TestCancelRequestedEmitsCancelActions(t *testing.T) {
 		ID: "d", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "work"),
+			model.NewServiceTask("svc", model.WithActionName("work")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

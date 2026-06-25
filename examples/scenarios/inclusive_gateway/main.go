@@ -38,11 +38,11 @@ func main() {
 
 	def, err := model.NewDefinition("application-screening", 1).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("assess", "assess")).
+		Add(model.NewServiceTask("assess", model.WithActionName("assess"))).
 		Add(model.NewInclusiveGateway("split")).
-		Add(model.NewServiceTask("notify-risk", "notify-risk")).
-		Add(model.NewServiceTask("senior-review", "senior-review")).
-		Add(model.NewServiceTask("fraud-check", "fraud-check")).
+		Add(model.NewServiceTask("notify-risk", model.WithActionName("notify-risk"))).
+		Add(model.NewServiceTask("senior-review", model.WithActionName("senior-review"))).
+		Add(model.NewServiceTask("fraud-check", model.WithActionName("fraud-check"))).
 		Add(model.NewInclusiveGateway("join")).
 		Add(model.NewEndEvent("end")).
 		Connect("start", "assess").

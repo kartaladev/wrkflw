@@ -1,5 +1,7 @@
 package model
 
+import "github.com/zakyalvan/krtlwrkflw/action"
+
 // Node is a single point in a process: an event, activity, or gateway.
 // Concrete types (one per NodeKind) carry only the fields meaningful to their
 // kind. Construct nodes with the New* constructors; build definitions with
@@ -93,8 +95,11 @@ type activityFields struct {
 type ServiceTask struct {
 	baseNode
 	activityFields
-	// Action is the service-action name.
+	// Action is the service-action name; empty means default to the node id.
 	Action string
+	// inline is a node-local ServiceAction taking precedence over name lookup.
+	// It is never serialized (re-attached in code on rehydration).
+	inline action.ServiceAction
 }
 
 // Kind returns KindServiceTask.
@@ -140,12 +145,15 @@ type SendTask struct {
 // Kind returns KindSendTask.
 func (SendTask) Kind() NodeKind { return KindSendTask }
 
-// BusinessRuleTask executes a named business rule action.
+// BusinessRuleTask executes a business rule action (by name or inline).
 type BusinessRuleTask struct {
 	baseNode
 	activityFields
 	// Action is the business-rule action name.
 	Action string
+	// inline is a node-local ServiceAction taking precedence over name lookup.
+	// It is never serialized (re-attached in code on rehydration).
+	inline action.ServiceAction
 }
 
 // Kind returns KindBusinessRuleTask.
