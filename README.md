@@ -583,11 +583,11 @@ model.NewErrorEndEvent("insufficient-funds", "FUNDS_ERROR")
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **ServiceTask** | Runs a named service action. | `model.NewServiceTask(id, action string, opts ...) Node` |
+| **ServiceTask** | Runs a named service action. | `model.NewServiceTask(id string, opts ...) Node` |
 | **UserTask** | Waits for a human to complete a work item. | `model.NewUserTask(id string, roles []string, opts ...) Node` |
 | **ReceiveTask** | Waits for an inbound correlated message. | `model.NewReceiveTask(id, messageName string, opts ...) Node` |
 | **SendTask** | Sends an outbound message. | `model.NewSendTask(id, messageName string, opts ...) Node` |
-| **BusinessRuleTask** | Runs a named business-rule action. | `model.NewBusinessRuleTask(id, action string, opts ...) Node` |
+| **BusinessRuleTask** | Runs a named business-rule action. | `model.NewBusinessRuleTask(id string, opts ...) Node` |
 | **SubProcess** | Runs an *embedded* nested definition as a scope. | `model.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
 | **CallActivity** | Calls a *separate* top-level definition by name. | `model.NewCallActivity(id, defRef string, opts ...) Node` |
 | **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `model.NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
@@ -598,7 +598,8 @@ takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
 is interrupting) — its nested start event carries the trigger.
 
 ```go
-model.NewServiceTask("charge", "charge-card",
+model.NewServiceTask("charge",
+    model.WithActionName("charge-card"),
     model.WithCompensation("refund-card"),
     model.WithRetryPolicy(&retry),
 )
@@ -668,9 +669,9 @@ Assemble nodes and flows with the fluent builder, then `Build()` (which validate
 def, err := model.NewDefinition("order-fulfillment", 1).
     Add(model.NewStartEvent("start")).
     Add(model.NewExclusiveGateway("route")).
-    Add(model.NewServiceTask("manual-review", "manual-review")).
-    Add(model.NewServiceTask("auto-approve", "auto-approve")).
-    Add(model.NewServiceTask("reject", "reject")).
+    Add(model.NewServiceTask("manual-review", model.WithActionName("manual-review"))).
+    Add(model.NewServiceTask("auto-approve", model.WithActionName("auto-approve"))).
+    Add(model.NewServiceTask("reject", model.WithActionName("reject"))).
     Add(model.NewEndEvent("end")).
     Connect("start", "route").
     Connect("route", "manual-review", model.WithCondition("amount > 50000")).
@@ -759,10 +760,10 @@ start → fork[Parallel] → pick-items[Service]  ┐
 def, _ := model.NewDefinition("order-fulfillment", 1).
     Add(model.NewStartEvent("start")).
     Add(model.NewParallelGateway("fork")).
-    Add(model.NewServiceTask("pick-items", "pick-items")).
-    Add(model.NewServiceTask("charge-card", "charge-card")).
+    Add(model.NewServiceTask("pick-items", model.WithActionName("pick-items"))).
+    Add(model.NewServiceTask("charge-card", model.WithActionName("charge-card"))).
     Add(model.NewParallelGateway("join")).
-    Add(model.NewServiceTask("ship", "ship")).
+    Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
     Add(model.NewEndEvent("end")).
     Connect("start", "fork").
     Connect("fork", "pick-items").
@@ -818,7 +819,7 @@ start → review[UserTask] ─────────────────�
 Add(model.NewUserTask("review", []string{"reviewer"})).
 Add(model.NewBoundaryEvent("review-timeout", "review",
     model.WithBoundaryTimer(`"1h"`))). // interrupting by default
-Add(model.NewServiceTask("escalate", "escalate")).
+Add(model.NewServiceTask("escalate", model.WithActionName("escalate"))).
 // ...
 Connect("review", "approved-end").
 Connect("review-timeout", "escalate").
@@ -846,9 +847,9 @@ then: deliver CompensateRequested("") → refund, then cancel-booking → termin
 ```
 
 ```go
-Add(model.NewServiceTask("book", "book", model.WithCompensation("cancel-booking"))).
-Add(model.NewServiceTask("pay",  "pay",  model.WithCompensation("refund"))).
-Add(model.NewServiceTask("ship", "ship")).
+Add(model.NewServiceTask("book", model.WithActionName("book"), model.WithCompensation("cancel-booking"))).
+Add(model.NewServiceTask("pay", model.WithActionName("pay"), model.WithCompensation("refund"))).
+Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
 Add(model.NewBoundaryEvent("ship-err", "ship", model.WithBoundaryErrorCode(""))).
 // ... after the forward run completes via the boundary path:
 trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
