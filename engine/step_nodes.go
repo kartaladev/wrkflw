@@ -54,11 +54,12 @@ type nodeStrategy interface {
 
 // nodeStrategies maps each arm-bearing NodeKind to its strategy.
 // Kinds NOT in this map (KindTerminateEndEvent, KindBusinessRuleTask,
-// KindSendTask, KindBoundaryEvent, KindEventSubProcess, KindUnspecified)
+// KindBoundaryEvent, KindEventSubProcess, KindUnspecified)
 // fall through to the post-dispatch logic in drive() unchanged.
 var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindServiceTask:            serviceTaskStrategy{},
 	model.KindReceiveTask:            receiveTaskStrategy{},
+	model.KindSendTask:               sendTaskStrategy{},
 	model.KindStartEvent:             startEventStrategy{},
 	model.KindEndEvent:               endEventStrategy{},
 	model.KindSubProcess:             subProcessStrategy{},
@@ -123,6 +124,33 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 		return nil, false, err
 	}
 	return bndCmds, false, nil
+}
+
+// sendTaskStrategy handles KindSendTask node entry: emit a fire-and-forget
+// SendMessage command (carrying the resolved correlation key and a copy of the
+// instance variables) and AUTO-ADVANCE the token along its single outgoing flow.
+// The engine does not park or wait for delivery — the consumer-wired message sink
+// owns routing (intra-engine delivery, external publish, or both); ADR-0060.
+type sendTaskStrategy struct{}
+
+func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	st, ok := node.(model.SendTask)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
+	resolvedKey, err := c.eval.EvalString(st.CorrelationKey, c.s.Variables)
+	if err != nil {
+		return nil, false, fmt.Errorf("workflow-engine: send task %q correlation key: %w", node.ID(), err)
+	}
+	cmds := []Command{SendMessage{
+		Name:           st.MessageName,
+		CorrelationKey: resolvedKey,
+		Payload:        copyVars(c.s.Variables),
+	}}
+	c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+	// tok.State stays TokenActive (auto-advance): drive() derives stopped=false.
+	return cmds, false, nil
 }
 
 // startEventStrategy handles KindStartEvent node entry.

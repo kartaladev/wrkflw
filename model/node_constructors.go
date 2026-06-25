@@ -34,6 +34,13 @@ type receiveTaskOption interface {
 	applyReceiveTask(r *ReceiveTask)
 }
 
+// sendTaskOption is the functional-options type for SendTask.
+// All activityOption values that implement applySendTask also satisfy this interface,
+// so all shared activity options work on NewSendTask, as does WithCorrelationKey.
+type sendTaskOption interface {
+	applySendTask(s *SendTask)
+}
+
 // activityOnlyOption wraps a function that mutates activityFields only.
 type activityOnlyOption struct{ fn func(*activityFields) }
 
@@ -41,10 +48,12 @@ func (o activityOnlyOption) applyActivity(a *activityFields) { o.fn(a) }
 func (activityOnlyOption) applyName(_ *baseNode)             {}
 func (o activityOnlyOption) applyUserTask(u *UserTask)       { o.fn(&u.activityFields) }
 func (o activityOnlyOption) applyReceiveTask(r *ReceiveTask) { o.fn(&r.activityFields) }
+func (o activityOnlyOption) applySendTask(s *SendTask)       { o.fn(&s.activityFields) }
 
 // withActivity constructs an activityOnlyOption. The concrete return type is
-// intentional: activityOnlyOption satisfies activityOption, userTaskOption, and
-// receiveTaskOption simultaneously, so callers can pass it to any constructor.
+// intentional: activityOnlyOption satisfies activityOption, userTaskOption,
+// receiveTaskOption, and sendTaskOption simultaneously, so callers can pass it to
+// any constructor.
 func withActivity(fn func(*activityFields)) activityOnlyOption {
 	return activityOnlyOption{fn}
 }
@@ -60,6 +69,7 @@ func (o nameOpt) applyStart(n *StartEvent)                { n.name = o.name }
 func (o nameOpt) applyEventSubProcess(n *EventSubProcess) { n.name = o.name }
 func (o nameOpt) applyUserTask(u *UserTask)               { u.name = o.name }
 func (o nameOpt) applyReceiveTask(r *ReceiveTask)         { r.name = o.name }
+func (o nameOpt) applySendTask(s *SendTask)               { s.name = o.name }
 
 // WithName returns an option that sets the Name field on any node that accepts it.
 // It implements activityOption, catchOption, boundaryOption, userTaskOption, and receiveTaskOption.
@@ -112,16 +122,22 @@ func (o eligibilityExprOpt) applyUserTask(u *UserTask) { u.EligibilityExpr = o.e
 // is a compile-time error.
 func WithEligibilityExpr(expr string) userTaskOption { return eligibilityExprOpt{expr} }
 
-// correlationKeyOpt satisfies only receiveTaskOption — passing it to any other
-// constructor is a compile-time error.
+// correlationKeyOpt satisfies receiveTaskOption and sendTaskOption — passing it to
+// any other constructor is a compile-time error.
 type correlationKeyOpt struct{ key string }
 
 func (o correlationKeyOpt) applyReceiveTask(r *ReceiveTask) { r.CorrelationKey = o.key }
+func (o correlationKeyOpt) applySendTask(s *SendTask)       { s.CorrelationKey = o.key }
 
-// WithCorrelationKey returns a receiveTaskOption that sets CorrelationKey.
-// It may only be passed to NewReceiveTask; passing it to any other constructor
-// is a compile-time error.
-func WithCorrelationKey(key string) receiveTaskOption { return correlationKeyOpt{key} }
+// WithCorrelationKey returns an option that sets CorrelationKey on a ReceiveTask
+// or a SendTask. It may only be passed to NewReceiveTask or NewSendTask; passing
+// it to any other constructor is a compile-time error.
+func WithCorrelationKey(key string) interface {
+	receiveTaskOption
+	sendTaskOption
+} {
+	return correlationKeyOpt{key}
+}
 
 // applyActivityOpts applies all options to the given base and activity fields.
 func applyActivityOpts(b *baseNode, a *activityFields, opts []activityOption) {
@@ -250,11 +266,15 @@ func NewReceiveTask(id, messageName string, opts ...receiveTaskOption) Node {
 }
 
 // NewSendTask constructs a SendTask with the given id and message name.
-func NewSendTask(id, messageName string, opts ...activityOption) Node {
-	b := baseNode{id: id}
-	var a activityFields
-	applyActivityOpts(&b, &a, opts)
-	return SendTask{baseNode: b, activityFields: a, MessageName: messageName}
+// Options may be any sendTaskOption: all shared activity options work here, as
+// does the SendTask-specific WithCorrelationKey.
+// Passing a non-sendTaskOption (e.g. WithEligibilityExpr) is a compile-time error.
+func NewSendTask(id, messageName string, opts ...sendTaskOption) Node {
+	s := SendTask{baseNode: baseNode{id: id}, MessageName: messageName}
+	for _, o := range opts {
+		o.applySendTask(&s)
+	}
+	return s
 }
 
 // NewBusinessRuleTask constructs a BusinessRuleTask with the given id and action name.

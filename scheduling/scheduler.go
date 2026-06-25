@@ -80,6 +80,20 @@ func WithElectorKey(key string) ElectorOption {
 	}
 }
 
+// WithElectorHeartbeatInterval overrides how often the elected leader re-validates
+// its dedicated connection (default: an internal sane value, currently 5s). It
+// bounds the residual split-brain window to at most one interval (ADR-0061): if the
+// leader's connection is severed server-side the heartbeat catches it within one
+// interval and the leader steps down so a follower can take over. A non-positive
+// value is ignored.
+func WithElectorHeartbeatInterval(d time.Duration) ElectorOption {
+	return func(c *config) {
+		if d > 0 {
+			c.electorOpts = append(c.electorOpts, gocronsched.WithHeartbeatInterval(d))
+		}
+	}
+}
+
 // WithLogger sets the scheduler's structured logger (default: [slog.Default]).
 // A nil value is ignored.
 func WithLogger(l *slog.Logger) Option {
@@ -188,7 +202,11 @@ func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
 	// dedicated connection is owned for the Scheduler's lifetime and released by Close.
 	var elector *gocronsched.PostgresElector
 	if cfg.electorEnabled {
-		e, err := gocronsched.NewPostgresElector(context.Background(), cfg.electorPool, cfg.electorOpts...)
+		// Share the scheduler's clock so the leadership heartbeat is driven by the
+		// same time source as timer firing (ADR-0003); a caller-supplied clock option,
+		// if any, takes precedence as it is applied after this one.
+		electorOpts := append([]gocronsched.ElectorOption{gocronsched.WithElectorClock(clk)}, cfg.electorOpts...)
+		e, err := gocronsched.NewPostgresElector(context.Background(), cfg.electorPool, electorOpts...)
 		if err != nil {
 			return nil, err
 		}

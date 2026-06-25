@@ -5,15 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jonboulle/clockwork"
 )
 
 // defaultElectorKey is the well-known leader-lock key. All replicas of one engine
 // contend for this single key, so exactly one wins leadership. Override it via
 // WithElectorKey when several independent engines share one database.
 const defaultElectorKey = "workflow-scheduling: timer-leader"
+
+// defaultHeartbeatInterval is how often a leader re-validates that its dedicated
+// connection (and thus its advisory lock) is still alive. It bounds the residual
+// split-brain window to at most one interval (ADR-0061). Five seconds keeps the
+// re-validation cheap while closing the window promptly.
+const defaultHeartbeatInterval = 5 * time.Second
 
 // ErrNotLeader is returned by PostgresElector.IsLeader when another instance
 // currently holds leadership. gocron treats any IsLeader error as "do not run
@@ -33,17 +41,34 @@ var ErrNotLeader = errors.New("workflow-scheduling: not the timer leader")
 // its next IsLeader attempt — natural failover with no lease-renewal loop.
 //
 // IsLeader is sticky: once leadership is held, it returns nil from an in-memory
-// flag without a DB round-trip, satisfying gocron's per-job-run hot path.
+// flag without a DB round-trip, satisfying gocron's per-job-run hot path. To close
+// the split-brain window left by that stickiness (ADR-0059), a bounded background
+// heartbeat (ADR-0061) periodically re-validates the dedicated connection; if it
+// has been severed server-side (the advisory lock auto-released), the heartbeat
+// flips isLeader back to false so the next IsLeader re-attempts acquisition. The
+// residual two-leader window is therefore at most one heartbeat interval, and the
+// engine's version-CAS (ADR-0027) remains the exactly-once backstop.
 //
 // The Elector is the single-leader ALTERNATIVE to the load-balanced PostgresLocker
 // (ADR-0050): use one or the other, never both (see ADR-0059).
 type PostgresElector struct {
-	conn *pgxpool.Conn
-	key  string
+	conn      *pgxpool.Conn
+	key       string
+	clk       clockwork.Clock
+	heartbeat time.Duration
 
 	mu       sync.Mutex
 	isLeader bool
 	closed   bool
+
+	// heartbeat goroutine lifecycle. started guards a single lazy start on first
+	// leadership acquisition; bgCancel/done stop it and wg waits for its exit so
+	// Close leaves no goroutine behind (goleak-enforced).
+	started  bool
+	wg       sync.WaitGroup
+	done     chan struct{}
+	bgCtx    context.Context
+	bgCancel context.CancelFunc
 }
 
 // Compile-time assertion: PostgresElector must satisfy gocron.Elector.
@@ -63,19 +88,49 @@ func WithElectorKey(key string) ElectorOption {
 	}
 }
 
+// WithElectorClock sets the clock that drives the leadership heartbeat ticker
+// (default: a real clock). Pass the same [clockwork.Clock] used to build the
+// scheduler so a fake clock advances both timer firing and heartbeat ticks in
+// tests. A nil value is ignored.
+func WithElectorClock(clk clockwork.Clock) ElectorOption {
+	return func(e *PostgresElector) {
+		if clk != nil {
+			e.clk = clk
+		}
+	}
+}
+
+// WithHeartbeatInterval overrides how often a leader re-validates its dedicated
+// connection (default: [defaultHeartbeatInterval]). It bounds the residual
+// split-brain window to at most one interval (ADR-0061). A non-positive value is
+// ignored.
+func WithHeartbeatInterval(d time.Duration) ElectorOption {
+	return func(e *PostgresElector) {
+		if d > 0 {
+			e.heartbeat = d
+		}
+	}
+}
+
 // NewPostgresElector acquires a dedicated session connection from pool and returns
 // an Elector that contends for a single leader advisory lock on it.
 //
-// Call [PostgresElector.Close] to release leadership and return the dedicated
-// connection to the pool.
+// Call [PostgresElector.Close] to release leadership, stop the heartbeat, and
+// return the dedicated connection to the pool.
 func NewPostgresElector(ctx context.Context, pool *pgxpool.Pool, opts ...ElectorOption) (*PostgresElector, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-scheduling: elector: acquire session conn: %w", err)
 	}
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	e := &PostgresElector{
-		conn: conn,
-		key:  defaultElectorKey,
+		conn:      conn,
+		key:       defaultElectorKey,
+		clk:       clockwork.NewRealClock(),
+		heartbeat: defaultHeartbeatInterval,
+		done:      make(chan struct{}),
+		bgCtx:     bgCtx,
+		bgCancel:  bgCancel,
 	}
 	for _, o := range opts {
 		o(e)
@@ -83,11 +138,24 @@ func NewPostgresElector(ctx context.Context, pool *pgxpool.Pool, opts ...Elector
 	return e, nil
 }
 
+// BackendPID returns the Postgres backend PID of the elector's dedicated
+// connection. It lets operators correlate the leader's session in pg_stat_activity
+// and lets tests sever the connection out-of-band (pg_terminate_backend) to
+// exercise the heartbeat step-down path (ADR-0061). It returns 0 after Close.
+func (e *PostgresElector) BackendPID() uint32 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed {
+		return 0
+	}
+	return e.conn.Conn().PgConn().PID()
+}
+
 // IsLeader returns nil if this instance should run jobs (it is the leader) and
 // ErrNotLeader otherwise. It is sticky: an already-held leadership returns nil
 // without a DB round-trip. Otherwise it attempts pg_try_advisory_lock on the
-// dedicated connection; on success it becomes leader, on refusal it returns
-// ErrNotLeader.
+// dedicated connection; on success it becomes leader (starting the heartbeat on
+// first acquisition), on refusal it returns ErrNotLeader.
 func (e *PostgresElector) IsLeader(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -97,7 +165,8 @@ func (e *PostgresElector) IsLeader(ctx context.Context) error {
 	}
 
 	if e.isLeader {
-		// Sticky fast-path: still leader, no DB round-trip.
+		// Sticky fast-path: still leader, no DB round-trip. The heartbeat is what
+		// catches a silently-lost lock and flips this flag back.
 		return nil
 	}
 
@@ -111,28 +180,104 @@ func (e *PostgresElector) IsLeader(ctx context.Context) error {
 		return ErrNotLeader
 	}
 	e.isLeader = true
+	e.startHeartbeatLocked()
 	return nil
 }
 
-// Close releases the leader advisory lock (if held) and returns the dedicated
-// session connection to the pool. Close is idempotent: a second call returns nil
-// without any action. After Close, IsLeader returns ErrNotLeader.
-func (e *PostgresElector) Close() error {
+// startHeartbeatLocked launches the heartbeat goroutine the first time leadership
+// is won. The caller must hold e.mu. Subsequent calls are no-ops (the goroutine
+// lives for the elector's whole lifetime and re-checks leadership each tick).
+func (e *PostgresElector) startHeartbeatLocked() {
+	if e.started {
+		return
+	}
+	e.started = true
+
+	e.wg.Add(1)
+	go e.heartbeatLoop()
+}
+
+// heartbeatLoop periodically re-validates the dedicated connection. If the
+// connection has been severed server-side (so Postgres auto-released the advisory
+// lock), it steps the elector down by clearing isLeader, so the next IsLeader
+// re-attempts acquisition. It exits when Close signals done / cancels bgCtx.
+func (e *PostgresElector) heartbeatLoop() {
+	defer e.wg.Done()
+
+	ticker := e.clk.NewTicker(e.heartbeat)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-e.done:
+			return
+		case <-ticker.Chan():
+			e.revalidate()
+		}
+	}
+}
+
+// revalidate pings the dedicated connection under the mutex (the conn is also used
+// by IsLeader and Close, so all access is mutex-guarded to avoid a pgx data race).
+// A failed ping means the connection — and with it the advisory lock — is gone, so
+// the elector steps down.
+func (e *PostgresElector) revalidate() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.closed {
-		return nil
+	if e.closed || !e.isLeader {
+		return
 	}
 
+	// Ping is a cheap round-trip on the dedicated conn; it fails iff the backend
+	// was terminated/severed, which is exactly when the lock has been released.
+	if err := e.conn.Ping(e.bgCtx); err != nil {
+		// Lost the connection (and thus leadership): step down so the next IsLeader
+		// re-attempts acquisition or a follower takes over.
+		e.isLeader = false
+	}
+}
+
+// Close releases ALL advisory locks the session holds (via pg_advisory_unlock_all,
+// covering any re-entrant stack a false step-down may have built up), stops the
+// heartbeat goroutine, and returns the dedicated session connection to the pool.
+// Note: conn.Release() returns the connection to the pool — it does NOT drop the
+// session or reset its locks — so the explicit unlock is what guarantees release.
+// Close is idempotent: a second call returns nil without any action. After Close,
+// IsLeader returns ErrNotLeader.
+func (e *PostgresElector) Close() error {
+	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return nil
+	}
+	e.closed = true
+	started := e.started
+	e.mu.Unlock()
+
+	// Stop the heartbeat (if it was started) before touching the conn so it cannot
+	// race a concurrent Ping against the Release below.
+	e.bgCancel()
+	if started {
+		close(e.done)
+		e.wg.Wait()
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.isLeader {
-		// Best-effort: ignore the unlock error on shutdown; dropping the connection
-		// auto-releases the lock regardless.
-		_, _ = e.conn.Exec(context.Background(),
-			`SELECT pg_advisory_unlock(hashtextextended($1, 0))`, e.key)
+		// Release EVERY advisory lock the session holds, not just one targeted unlock.
+		// A transient heartbeat ping failure can falsely step the elector down while
+		// the lock is still held; the next IsLeader re-runs pg_try_advisory_lock on
+		// this same conn, stacking the re-entrant counter. A single pg_advisory_unlock
+		// would only decrement that counter (leaving the lock held), and conn.Release()
+		// merely returns the conn to the pool — it does NOT drop the session or reset
+		// its advisory locks — so the lock would linger on a pooled backend.
+		// pg_advisory_unlock_all clears the whole stack regardless of re-entrant depth.
+		// Best-effort: ignore the error on shutdown.
+		_, _ = e.conn.Exec(context.Background(), `SELECT pg_advisory_unlock_all()`)
 		e.isLeader = false
 	}
 	e.conn.Release()
-	e.closed = true
 	return nil
 }
