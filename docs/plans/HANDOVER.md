@@ -3,7 +3,40 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25 (followups round 2)
+## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25 (definition-scoped action catalog)
+
+> **✅ DONE — Definition-scoped action catalog, optional names & inline actions (ADR-0063) — merged to `main` 2026-06-25**
+> (branch `feat/definition-scoped-action-catalog`). Next free ADR: **0064**.
+>
+> **What shipped:**
+> - **`action.Resolve(scoped, global, name)`** — pure helper centralising the scoped→global lookup (tiers 2–3).
+> - **`model` gains a `model → action` import** (`action` is a pure leaf; no cycle). `ServiceTask` and
+>   `BusinessRuleTask` now carry a node-local `inline action.ServiceAction`; `ProcessDefinition` carries a
+>   `scoped action.Catalog`. Neither is serialized (Option A in-memory re-attach).
+> - **`NewServiceTask`/`NewBusinessRuleTask` constructors** drop the positional action string; use
+>   `WithActionName(name)`, `WithAction(a)`, or `WithActionFunc(fn)`. `Build()` enforces mutual exclusion
+>   (`ErrActionInlineAndNameConflict`) and duplicate scoped registration (`ErrDuplicateScopedAction`).
+> - **`DefinitionBuilder.RegisterAction`/`RegisterActionFunc`** accumulate a def-scoped catalog; `ScopedCatalog()`
+>   returns it (nil when nothing registered).
+> - **Default-by-id:** omitting the action name on a ServiceTask/BusinessRuleTask defaults the runtime lookup
+>   key to the node id.
+> - **Three-tier precedence** wired into `runtime.Runner.perform`: inline → scoped → global for the main action;
+>   scoped → global for all secondary action references (compensation, SLA, reminder, cancel-handler,
+>   CancelActions).
+> - **`engine.InvokeAction` gains `NodeID string`** so the runner can locate the node for inline lookup.
+> - **`businessRuleTaskStrategy`** added — `BusinessRuleTask` is now executed (was a fall-through).
+> - **Docs:** `docs/adr/0063-definition-scoped-action-catalog.md`; README updated (stale positional-arg
+>   snippets fixed; "Definition-scoped & inline actions" subsection added);
+>   `runtime/example_scoped_action_test.go` (runnable godoc Example).
+>
+> **Out-of-scope follow-ups (queue for next session):**
+> - Scoped catalog is not surfaced in `InstanceSnapshot`/`ActionableView` DTOs or gRPC snapshots.
+> - YAML/BPMN authoring of inline actions is impossible (Go funcs are not serializable); YAML supports action
+>   names only.
+> - Minor M-1: `retry_test.go` `hasInvokeActionForNode` helper casts `.(ServiceTask).Action` — would break if
+>   a retry test used default-by-id; update the helper to use `model.ActionOf` or read from `InvokeAction.Name`.
+
+## ⏩ CURRENT RESUME POINT — updated 2026-06-25 (followups round 2)
 
 > **✅ DONE — Production-hardening FOLLOW-UPS round 2 (ADRs 0060–0062) — merged to `main` 2026-06-25**
 > (branch `feat/production-hardening-followups-2`, merge `c54a15b`). The remaining deferred items

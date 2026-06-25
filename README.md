@@ -68,7 +68,8 @@ import (
 func main() {
 	def, err := model.NewDefinition("order-fulfillment", 1).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge", "charge-card",
+		Add(model.NewServiceTask("charge",
+			model.WithActionName("charge-card"),
 			model.WithCompensation("refund-card"),
 		)).
 		Add(model.NewUserTask("approve", []string{"manager"})).
@@ -83,6 +84,43 @@ func main() {
 	fmt.Printf("defined %q v%d with %d nodes\n", def.ID, def.Version, len(def.Nodes))
 }
 ```
+
+### Definition-scoped & inline actions
+
+Actions can be bound to a definition or a node in three ways:
+
+| Style | How | Scope |
+|---|---|---|
+| Named catalog reference | `WithActionName("name")` | Resolves scoped → global |
+| Node-local inline | `WithActionFunc(fn)` / `WithAction(a)` | That node only; never serialized |
+| Default-by-id | omit name | Node id is the lookup key |
+
+```go
+score := action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+    return map[string]any{"score": 42}, nil
+})
+
+def, _ := model.NewDefinition("loan", 1).
+    RegisterAction("score", score).                   // def-scoped, by name
+    Add(model.NewStartEvent("start")).
+    Add(model.NewServiceTask("risk",
+        model.WithActionName("score"),                // resolves scoped → global
+    )).
+    Add(model.NewServiceTask("notify",
+        model.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+            return in, nil                            // node-local inline
+        }),
+    )).
+    Add(model.NewServiceTask("archive")).             // default-by-id → looks up "archive"
+    Add(model.NewEndEvent("end")).
+    Connect("start", "risk").Connect("risk", "notify").
+    Connect("notify", "archive").Connect("archive", "end").
+    Build()
+```
+
+`WithActionName` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
+returns `model.ErrActionInlineAndNameConflict` if both are set. See
+`runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
 
 ### Author in YAML
 
@@ -131,7 +169,7 @@ func main() {
 
 	def, _ := model.NewDefinition("order", 1).
 		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("charge", "charge-card")).
+		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"))).
 		Add(model.NewEndEvent("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
@@ -320,7 +358,8 @@ Attach an optional compensation action to any activity. When the engine rolls ba
 process (e.g. after a downstream failure), it runs compensation actions in reverse order.
 
 ```go
-model.NewServiceTask("charge", "charge-card",
+model.NewServiceTask("charge",
+    model.WithActionName("charge-card"),
     model.WithCompensation("refund-card"),
 )
 ```
