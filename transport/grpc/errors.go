@@ -59,16 +59,23 @@ func classifyError(err error) (codes.Code, string) {
 	}
 }
 
-// mapToGRPCStatus classifies a domain error into the appropriate gRPC status and
-// attaches a machine-readable errdetails.ErrorInfo detail (Reason = the REST
-// taxonomy code, Domain = the engine module) so clients can branch on the code
-// rather than parsing the human-readable status message.
+// reasonInvalidArgument is the ErrorInfo.Reason stamped on transport-boundary
+// validation failures (the codes.InvalidArgument sweep from ADR-0058). It is a
+// stable, machine-readable code for "the request was malformed" so a client
+// branches on the reason rather than parsing the human-readable status message.
+const reasonInvalidArgument = "invalid_argument"
+
+// statusWithReason builds a gRPC status carrying a machine-readable
+// errdetails.ErrorInfo detail (Reason = the given reason code, Domain = the
+// engine module) so clients can branch on the code rather than parsing the
+// human-readable status message. It is the single place that stamps the detail
+// shape, shared by both the classified-error path (mapToGRPCStatus) and the
+// transport-boundary validation path (invalidArg).
 //
 // If attaching the detail fails (it should not, for a freshly built status), the
 // status without the detail is returned — a degraded but still-valid error.
-func mapToGRPCStatus(err error) error {
-	code, reason := classifyError(err)
-	st := status.New(code, err.Error())
+func statusWithReason(code codes.Code, reason, msg string) error {
+	st := status.New(code, msg)
 
 	withDetail, detailErr := st.WithDetails(&errdetails.ErrorInfo{
 		Reason: reason,
@@ -78,6 +85,18 @@ func mapToGRPCStatus(err error) error {
 		return st.Err()
 	}
 	return withDetail.Err()
+}
+
+// mapToGRPCStatus classifies a domain error into the appropriate gRPC status and
+// attaches a machine-readable errdetails.ErrorInfo detail (Reason = the REST
+// taxonomy code, Domain = the engine module) so clients can branch on the code
+// rather than parsing the human-readable status message.
+//
+// If attaching the detail fails (it should not, for a freshly built status), the
+// status without the detail is returned — a degraded but still-valid error.
+func mapToGRPCStatus(err error) error {
+	code, reason := classifyError(err)
+	return statusWithReason(code, reason, err.Error())
 }
 
 // MapToGRPCStatus is the exported version of mapToGRPCStatus exposed for

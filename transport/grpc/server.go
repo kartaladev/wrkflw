@@ -77,8 +77,13 @@ func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Servic
 // required-field guards so every mutating RPC rejects malformed requests
 // consistently (mirroring the REST transport's ErrBadInput → 400 behaviour)
 // instead of letting empty fields fall through to a deeper, less clear code.
+//
+// The returned status carries an errdetails.ErrorInfo detail with Reason
+// "invalid_argument" and Domain = the engine module, identical in shape to the
+// classified-error path (mapToGRPCStatus), so a client branches on the structured
+// reason rather than parsing the message string.
 func invalidArg(span trace.Span, msg string) error {
-	err := status.Error(codes.InvalidArgument, msg)
+	err := statusWithReason(codes.InvalidArgument, reasonInvalidArgument, msg)
 	recordSpanErr(span, err)
 	return err
 }
