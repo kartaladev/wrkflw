@@ -53,7 +53,7 @@ func main() {
 			// ISO-8601. The outer backticks keep the inner quotes literal.
 			model.WithBoundaryTimer(`"1h"`), // interrupting by default
 		)).
-		Add(model.NewServiceTask("escalate", "escalate")).
+		Add(model.NewServiceTask("escalate", model.WithActionName("escalate"))).
 		Add(model.NewEndEvent("approved-end")).
 		Add(model.NewEndEvent("escalated-end")).
 		Connect("start", "review").

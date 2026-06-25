@@ -1,5 +1,21 @@
 package model
 
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/zakyalvan/krtlwrkflw/action"
+)
+
+// ErrActionInlineAndNameConflict is returned by Build when a node carries both
+// an inline action (WithAction/WithActionFunc) and an action name (WithActionName).
+var ErrActionInlineAndNameConflict = errors.New("workflow-model: node has both an inline action and an action name")
+
+// ErrDuplicateScopedAction is returned by Build when RegisterAction registered
+// the same name twice.
+var ErrDuplicateScopedAction = errors.New("workflow-model: duplicate scoped action name")
+
 // DefinitionBuilder is a fluent builder for ProcessDefinition. Construct one
 // with NewDefinition, chain Add/Connect/CancelActions calls, then call Build to
 // assemble and validate the definition.
@@ -9,6 +25,8 @@ type DefinitionBuilder struct {
 	nodes         []Node
 	flows         []SequenceFlow
 	cancelActions []string
+	actions       map[string]action.ServiceAction // scoped catalog accumulator; nil until first register
+	dupAction     string                          // first duplicate-registered name, "" if none
 }
 
 // NewDefinition returns a new DefinitionBuilder for a process with the given
@@ -48,15 +66,44 @@ func (b *DefinitionBuilder) CancelActions(names ...string) *DefinitionBuilder {
 	return b
 }
 
+// RegisterAction adds a definition-scoped action under name, visible only to
+// this definition (global catalog is the fallback). Returns the builder.
+func (b *DefinitionBuilder) RegisterAction(name string, a action.ServiceAction) *DefinitionBuilder {
+	if b.actions == nil {
+		b.actions = make(map[string]action.ServiceAction)
+	}
+	if _, exists := b.actions[name]; exists && b.dupAction == "" {
+		b.dupAction = name
+	}
+	b.actions[name] = a
+	return b
+}
+
+// RegisterActionFunc is RegisterAction sugar wrapping a plain function.
+func (b *DefinitionBuilder) RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) *DefinitionBuilder {
+	return b.RegisterAction(name, action.Func(fn))
+}
+
 // Build assembles the ProcessDefinition and runs Validate. If validation fails
 // the error is returned; the partial definition is not returned on error.
 func (b *DefinitionBuilder) Build() (*ProcessDefinition, error) {
+	if b.dupAction != "" {
+		return nil, fmt.Errorf("%w: %q", ErrDuplicateScopedAction, b.dupAction)
+	}
+	for _, n := range b.nodes {
+		if ActionOf(n) != "" && InlineActionOf(n) != nil {
+			return nil, fmt.Errorf("%w: node %q", ErrActionInlineAndNameConflict, n.ID())
+		}
+	}
 	def := ProcessDefinition{
 		ID:            b.id,
 		Version:       b.version,
 		Nodes:         b.nodes,
 		Flows:         b.flows,
 		CancelActions: b.cancelActions,
+	}
+	if b.actions != nil {
+		def.scoped = action.NewMapCatalog(b.actions)
 	}
 	if err := Validate(&def); err != nil {
 		return nil, err

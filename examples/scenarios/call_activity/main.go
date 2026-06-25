@@ -36,7 +36,7 @@ func main() {
 	// Child definition — a reusable credit-check process.
 	child, err := model.NewDefinition("credit-check", 1).
 		Add(model.NewStartEvent("child-start")).
-		Add(model.NewServiceTask("score", "score")).
+		Add(model.NewServiceTask("score", model.WithActionName("score"))).
 		Add(model.NewEndEvent("child-end")).
 		Connect("child-start", "score").
 		Connect("score", "child-end").

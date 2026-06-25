@@ -37,7 +37,7 @@ func compensationOnCancelDef() *model.ProcessDefinition {
 		ID: "comp-cancel-def", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("charge", "charge", model.WithCompensation("refund")),
+			model.NewServiceTask("charge", model.WithActionName("charge"), model.WithCompensation("refund")),
 			model.NewUserTask("approve", []string{"reviewer"}),
 			model.NewEndEvent("end"),
 		},

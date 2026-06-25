@@ -28,7 +28,7 @@ func cancelWithCompDef() *model.ProcessDefinition {
 		ID: "cancel-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "charge", model.WithCompensation("refund")),
+			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
 			model.NewUserTask("user", nil),
 			model.NewEndEvent("end"),
 		},
@@ -48,8 +48,8 @@ func errorWithCompDef() *model.ProcessDefinition {
 		ID: "error-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc1", "charge", model.WithCompensation("refund")),
-			model.NewServiceTask("svc2", "notify"),
+			model.NewServiceTask("svc1", model.WithActionName("charge"), model.WithCompensation("refund")),
+			model.NewServiceTask("svc2", model.WithActionName("notify")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -68,8 +68,8 @@ func twoCompNodesDef() *model.ProcessDefinition {
 		ID: "two-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc1", "step1", model.WithCompensation("undo1")),
-			model.NewServiceTask("svc2", "step2", model.WithCompensation("undo2")),
+			model.NewServiceTask("svc1", model.WithActionName("step1"), model.WithCompensation("undo1")),
+			model.NewServiceTask("svc2", model.WithActionName("step2"), model.WithCompensation("undo2")),
 			model.NewUserTask("user", nil),
 			model.NewEndEvent("end"),
 		},
@@ -232,7 +232,7 @@ func TestEmptyRecordsCancelImmediate(t *testing.T) {
 		ID: "no-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "charge"),
+			model.NewServiceTask("svc", model.WithActionName("charge")),
 			model.NewUserTask("user", nil),
 			model.NewEndEvent("end"),
 		},
@@ -272,7 +272,7 @@ func TestEmptyRecordsErrorImmediate(t *testing.T) {
 		ID: "no-comp-err-proc", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "charge"),
+			model.NewServiceTask("svc", model.WithActionName("charge")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -460,7 +460,7 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 			ID: "no-double-nested", Version: 1,
 			Nodes: []model.Node{
 				model.NewStartEvent("inner-start"),
-				model.NewServiceTask("inner-svc", "book-inner", model.WithCompensation("cancel-inner")),
+				model.NewServiceTask("inner-svc", model.WithActionName("book-inner"), model.WithCompensation("cancel-inner")),
 				model.NewEndEvent("inner-end"),
 			},
 			Flows: []model.SequenceFlow{

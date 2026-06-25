@@ -130,7 +130,7 @@ func run(logger *slog.Logger) error {
 	// --- A demo definition + catalog so the engine can actually run instances ---
 	def, err := model.NewDefinition("order", 1).
 		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("charge", "charge-card")).
+		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"))).
 		Add(model.NewEndEvent("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").

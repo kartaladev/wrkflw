@@ -26,8 +26,8 @@ func gatewayBlockDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewExclusiveGateway("xor"),
-			model.NewServiceTask("big", "noop"),
-			model.NewServiceTask("small", "noop"),
+			model.NewServiceTask("big", model.WithActionName("noop")),
+			model.NewServiceTask("small", model.WithActionName("noop")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -100,8 +100,8 @@ func exclusiveRuntimeDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewExclusiveGateway("xor"),
-			model.NewServiceTask("big", "noop"),
-			model.NewServiceTask("small", "noop"),
+			model.NewServiceTask("big", model.WithActionName("noop")),
+			model.NewServiceTask("small", model.WithActionName("noop")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

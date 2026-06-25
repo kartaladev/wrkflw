@@ -13,7 +13,7 @@ import (
 
 func TestRetryPolicyOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 5}
-	n := model.NewServiceTask("a", "act", model.WithRetryPolicy(p))
+	n := model.NewServiceTask("a", model.WithActionName("act"), model.WithRetryPolicy(p))
 	if model.RetryPolicyOf(n) != p {
 		t.Fatal("RetryPolicyOf did not return the activity's policy")
 	}
@@ -25,7 +25,7 @@ func TestRetryPolicyOf(t *testing.T) {
 		model.NewUserTask("ut", nil, model.WithRetryPolicy(p)),
 		model.NewReceiveTask("rt", "msg", model.WithRetryPolicy(p)),
 		model.NewSendTask("st", "msg", model.WithRetryPolicy(p)),
-		model.NewBusinessRuleTask("brt", "act", model.WithRetryPolicy(p)),
+		model.NewBusinessRuleTask("brt", model.WithActionName("act"), model.WithRetryPolicy(p)),
 		model.NewSubProcess("sp", nil, model.WithRetryPolicy(p)),
 		model.NewCallActivity("ca", "ref", model.WithRetryPolicy(p)),
 	}
@@ -60,7 +60,7 @@ func TestSLAOf(t *testing.T) {
 	}{
 		{
 			name:     "service task with SLA",
-			node:     model.NewServiceTask("st", "act", model.WithSLA("P1D", "sla-flow", "sla-act")),
+			node:     model.NewServiceTask("st", model.WithActionName("act"), model.WithSLA("P1D", "sla-flow", "sla-act")),
 			wantDur:  "P1D",
 			wantFlow: "sla-flow",
 			wantAct:  "sla-act",
@@ -120,8 +120,8 @@ func TestReminderOf(t *testing.T) {
 }
 
 func TestActionOf(t *testing.T) {
-	assert.Equal(t, "charge-card", model.ActionOf(model.NewServiceTask("st", "charge-card")))
-	assert.Equal(t, "apply-discount", model.ActionOf(model.NewBusinessRuleTask("brt", "apply-discount")))
+	assert.Equal(t, "charge-card", model.ActionOf(model.NewServiceTask("st", model.WithActionName("charge-card"))))
+	assert.Equal(t, "apply-discount", model.ActionOf(model.NewBusinessRuleTask("brt", model.WithActionName("apply-discount"))))
 	assert.Equal(t, "", model.ActionOf(model.NewUserTask("ut", nil)))
 	assert.Equal(t, "", model.ActionOf(model.NewStartEvent("s")))
 }
@@ -135,7 +135,8 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 		Version: 2,
 		Nodes: []model.Node{
 			model.NewStartEvent("start", model.WithName("Start")),
-			model.NewServiceTask("charge", "charge-card",
+			model.NewServiceTask("charge",
+				model.WithActionName("charge-card"),
 				model.WithCompensation("refund-card"),
 				model.WithRecoveryFlow("f-error"),
 				model.WithRetryPolicy(p),

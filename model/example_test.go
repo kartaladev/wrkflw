@@ -12,7 +12,8 @@ import (
 func ExampleDefinitionBuilder() {
 	def, err := model.NewDefinition("order-fulfillment", 1).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge", "charge-card",
+		Add(model.NewServiceTask("charge",
+			model.WithActionName("charge-card"),
 			model.WithCompensation("refund-card"),
 		)).
 		Add(model.NewUserTask("approve", []string{"manager"})).

@@ -56,7 +56,7 @@ func retryOnceTaskDef() *model.ProcessDefinition {
 		ID: "retry-test", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("task", "a", model.WithRetryPolicy(&model.RetryPolicy{
+			model.NewServiceTask("task", model.WithActionName("a"), model.WithRetryPolicy(&model.RetryPolicy{
 				MaxAttempts:     3,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,

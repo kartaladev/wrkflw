@@ -35,7 +35,7 @@ func timerResumeDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
-			model.NewServiceTask("finish", "finish"),
+			model.NewServiceTask("finish", model.WithActionName("finish")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -65,7 +65,7 @@ func boundaryResumeDef() *model.ProcessDefinition {
 			model.NewBoundaryEvent("bnd-timer", "wait-task",
 				model.WithBoundaryTimer(`"2h"`),
 			),
-			model.NewServiceTask("finish", "finish"),
+			model.NewServiceTask("finish", model.WithActionName("finish")),
 			model.NewEndEvent("end-normal"),
 			model.NewEndEvent("end-escalated"),
 		},
@@ -255,7 +255,7 @@ func retryResumeDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("task", "a",
+			model.NewServiceTask("task", model.WithActionName("a"),
 				model.WithRetryPolicy(&model.RetryPolicy{
 					MaxAttempts:     3,
 					InitialInterval: time.Hour,

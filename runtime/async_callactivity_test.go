@@ -134,7 +134,7 @@ func asyncImmediateChildDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("child-start"),
-			model.NewServiceTask("child-work", "complete-action"),
+			model.NewServiceTask("child-work", model.WithActionName("complete-action")),
 			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -171,7 +171,7 @@ func asyncFailingChildDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("child-start"),
-			model.NewServiceTask("child-work", "fail-action"),
+			model.NewServiceTask("child-work", model.WithActionName("fail-action")),
 			model.NewEndEvent("child-end"),
 		},
 		Flows: []model.SequenceFlow{

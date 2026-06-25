@@ -33,7 +33,7 @@ func richDefinition() *model.ProcessDefinition {
 				model.WithCompensation("cancel-review"),
 			),
 			model.NewExclusiveGateway("approve", "Approved?"),
-			model.NewServiceTask("fulfill", "fulfillment-service",
+			model.NewServiceTask("fulfill", model.WithActionName("fulfillment-service"),
 				model.WithName("Fulfill Order"),
 				model.WithCompensation("rollback-fulfillment"),
 			),

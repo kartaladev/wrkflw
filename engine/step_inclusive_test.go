@@ -18,9 +18,9 @@ func inclusiveForkDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewInclusiveGateway("or"),
-			model.NewServiceTask("ta", "a"),
-			model.NewServiceTask("tb", "b"),
-			model.NewServiceTask("tc", "c"),
+			model.NewServiceTask("ta", model.WithActionName("a")),
+			model.NewServiceTask("tb", model.WithActionName("b")),
+			model.NewServiceTask("tc", model.WithActionName("c")),
 			model.NewEndEvent("ea"),
 			model.NewEndEvent("eb"),
 			model.NewEndEvent("ec"),
@@ -84,8 +84,8 @@ func TestInclusiveForkUnconditionalFlowSuppressesDefault(t *testing.T) {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewInclusiveGateway("or"),
-			model.NewServiceTask("ta", "a"), // unconditional (empty condition)
-			model.NewServiceTask("tb", "b"), // default
+			model.NewServiceTask("ta", model.WithActionName("a")), // unconditional (empty condition)
+			model.NewServiceTask("tb", model.WithActionName("b")), // default
 			model.NewEndEvent("ea"),
 			model.NewEndEvent("eb"),
 		},
@@ -116,11 +116,11 @@ func orDiamondDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewInclusiveGateway("orsplit"),
-			model.NewServiceTask("ta", "a"),
-			model.NewServiceTask("tb", "b"),
-			model.NewServiceTask("tc", "c"),
+			model.NewServiceTask("ta", model.WithActionName("a")),
+			model.NewServiceTask("tb", model.WithActionName("b")),
+			model.NewServiceTask("tc", model.WithActionName("c")),
 			model.NewInclusiveGateway("orjoin"),
-			model.NewServiceTask("post", "post"),
+			model.NewServiceTask("post", model.WithActionName("post")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -209,7 +209,7 @@ func TestInclusiveForkNoMatchNoDefaultErrors(t *testing.T) {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewInclusiveGateway("or"),
-			model.NewServiceTask("ta", "a"),
+			model.NewServiceTask("ta", model.WithActionName("a")),
 			model.NewEndEvent("ea"),
 		},
 		Flows: []model.SequenceFlow{

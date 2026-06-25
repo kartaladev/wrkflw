@@ -26,7 +26,7 @@ func timerIntermediateDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
-			model.NewServiceTask("greet", "greet"),
+			model.NewServiceTask("greet", model.WithActionName("greet")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

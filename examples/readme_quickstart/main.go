@@ -21,7 +21,7 @@ func main() {
 	// --- Define a process (Go builder) ---
 	def, err := model.NewDefinition("order-fulfillment", 1).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge", "charge-card",
+		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"),
 			model.WithCompensation("refund-card"),
 		)).
 		Add(model.NewUserTask("approve", []string{"manager"})).
@@ -62,7 +62,7 @@ flows:
 	// --- Run it ---
 	simpleDef, _ := model.NewDefinition("order", 1).
 		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("charge", "charge-card")).
+		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"))).
 		Add(model.NewEndEvent("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").

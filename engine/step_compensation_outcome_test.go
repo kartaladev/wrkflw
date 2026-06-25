@@ -27,7 +27,7 @@ func oneCompensableDef() *model.ProcessDefinition {
 		ID: "one-comp", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", "charge", model.WithCompensation("refund")),
+			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{

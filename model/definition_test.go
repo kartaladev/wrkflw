@@ -15,7 +15,7 @@ func linearDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
-			model.NewServiceTask("greet", "greet"),
+			model.NewServiceTask("greet", model.WithActionName("greet")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -148,7 +148,7 @@ func TestNodeSubProcessField(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("ns-start"),
-			model.NewServiceTask("ns-task", "inner-action"),
+			model.NewServiceTask("ns-task", model.WithActionName("inner-action")),
 			model.NewEndEvent("ns-end"),
 		},
 		Flows: []model.SequenceFlow{

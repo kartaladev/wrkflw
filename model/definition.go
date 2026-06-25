@@ -2,8 +2,11 @@
 // gateways, sequence flows, and the ProcessDefinition template. The concepts
 // are inspired by BPMN, but this is NOT a BPMN-compatible implementation and
 // does not aim to load or round-trip arbitrary BPMN2 documents. It is pure data
-// plus validation; it imports only the standard library.
+// plus validation; it imports only the standard library and the in-repo
+// [action] package (a pure leaf).
 package model
+
+import "github.com/zakyalvan/krtlwrkflw/action"
 
 // NodeKind discriminates the kind of a Node.
 type NodeKind int
@@ -53,7 +56,15 @@ type ProcessDefinition struct {
 	// cancel actions. Action-name existence is not validated here (the catalog is
 	// not available at validate time); an unresolved name is logged at runtime.
 	CancelActions []string
+	// scoped is the optional definition-scoped action catalog. nil means none.
+	// It is never serialized; resolution falls back to the global catalog on a
+	// miss (see action.Resolve).
+	scoped action.Catalog
 }
+
+// ScopedCatalog returns the definition-scoped action catalog, or nil when the
+// definition registered no scoped actions.
+func (d *ProcessDefinition) ScopedCatalog() action.Catalog { return d.scoped }
 
 // Node returns the node with the given id.
 func (d *ProcessDefinition) Node(id string) (Node, bool) {

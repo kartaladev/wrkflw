@@ -1,5 +1,7 @@
 package model
 
+import "github.com/zakyalvan/krtlwrkflw/action"
+
 // RetryPolicyOf returns the RetryPolicy of a Node if it is an activity kind that
 // carries one, or nil otherwise. Non-activity nodes (events, gateways) always
 // return nil.
@@ -84,5 +86,19 @@ func ActionOf(n Node) string {
 		return v.Action
 	default:
 		return ""
+	}
+}
+
+// InlineActionOf returns the node-local inline ServiceAction of a ServiceTask or
+// BusinessRuleTask, or nil when the node has none (or is another kind). Inline
+// actions are never serialized; a node decoded from JSONB always returns nil.
+func InlineActionOf(n Node) action.ServiceAction {
+	switch v := n.(type) {
+	case ServiceTask:
+		return v.inline
+	case BusinessRuleTask:
+		return v.inline
+	default:
+		return nil
 	}
 }

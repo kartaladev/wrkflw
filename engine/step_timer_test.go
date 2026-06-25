@@ -22,7 +22,7 @@ func timerDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			model.NewStartEvent("start"),
 			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
-			model.NewServiceTask("notify", "send-notification"),
+			model.NewServiceTask("notify", model.WithActionName("send-notification")),
 			model.NewEndEvent("end"),
 		},
 		Flows: []model.SequenceFlow{
@@ -696,7 +696,7 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 			model.NewStartEvent("start"),
 			model.NewParallelGateway("fork"),
 			model.NewUserTask("userTask", []string{"manager"}, model.WithSLA(`"3h"`, "esc", "notify")),
-			model.NewServiceTask("svcTask", "work"),
+			model.NewServiceTask("svcTask", model.WithActionName("work")),
 			model.NewEndEvent("endA"),
 			model.NewEndEvent("endB"),
 		},
