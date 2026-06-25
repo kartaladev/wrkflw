@@ -87,8 +87,9 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	cmdID := c.s.nextCommandID()
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
-		NodeID:    node.ID(),
 		Name:      mainActionName(node),
+		Inline:    model.InlineActionOf(node),
+		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
 	tok.State = TokenWaitingCommand
@@ -103,8 +104,9 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 }
 
 // businessRuleTaskStrategy handles KindBusinessRuleTask node entry. It mirrors
-// serviceTaskStrategy: emit the primary InvokeAction (with default-by-id name +
-// NodeID for inline resolution), park the token, and arm boundary events.
+// serviceTaskStrategy: emit the primary InvokeAction (default-by-id name plus
+// the scope-resolved inline action and scoped catalog), park the token, and arm
+// boundary events.
 type businessRuleTaskStrategy struct{}
 
 func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
@@ -116,8 +118,9 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 	cmdID := c.s.nextCommandID()
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
-		NodeID:    node.ID(),
 		Name:      mainActionName(node),
+		Inline:    model.InlineActionOf(node),
+		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
 	tok.State = TokenWaitingCommand

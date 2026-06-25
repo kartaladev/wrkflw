@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
@@ -27,83 +28,94 @@ func tagOf(t *testing.T, a action.ServiceAction) string {
 	return out["tag"].(string)
 }
 
-// resolveActionPrecedenceDef builds a definition for the precedence tests:
-//
-//	start → inlineNode (WithAction inline) → namedNode (WithActionName "x") → idNode → e
-//
-// The definition also registers scoped actions "x" (also in global) and "scoped-only"
-// (not in global), and no entry for "idNode".
-func resolveActionPrecedenceDef(t *testing.T) *model.ProcessDefinition {
+// resolveActionScopedDef builds a definition whose top-level scoped catalog
+// registers "x" (also in global, to prove scoped precedence) and "scoped-only"
+// (not in global). It is used for the def-fallback case of resolveInvokeAction
+// and the scoped tier of resolveActionName.
+func resolveActionScopedDef(t *testing.T) *model.ProcessDefinition {
 	t.Helper()
 	def, err := model.NewDefinition("d", 1).
 		RegisterAction("x", tag("scoped")).
 		RegisterAction("scoped-only", tag("scoped-only")).
 		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("inlineNode", model.WithAction(tag("inline")))).
-		Add(model.NewServiceTask("namedNode", model.WithActionName("x"))).
 		Add(model.NewServiceTask("idNode", model.WithActionName("idNode"))).
 		Add(model.NewEndEvent("e")).
-		Connect("start", "inlineNode").
-		Connect("inlineNode", "namedNode").
-		Connect("namedNode", "idNode").
+		Connect("start", "idNode").
 		Connect("idNode", "e").
 		Build()
-	require.NoError(t, err, "resolveActionPrecedenceDef: Build must succeed")
+	require.NoError(t, err, "resolveActionScopedDef: Build must succeed")
 	return def
 }
 
-// TestResolveActionFor verifies the inline→scoped→global precedence chain of
-// resolveActionFor and the scoped→global chain of resolveActionName.
-func TestResolveActionFor(t *testing.T) {
+// TestResolveInvokeAction verifies the inline→scoped→global precedence chain of
+// resolveInvokeAction, where inline and the scope-effective scoped catalog are
+// carried on the command by the engine (with a fallback to the top-level def's
+// scoped catalog when the command carries none).
+func TestResolveInvokeAction(t *testing.T) {
 	t.Parallel()
 
 	global := action.NewMapCatalog(map[string]action.ServiceAction{
-		"x":    tag("global"),
-		"comp": tag("global-comp"),
+		"x":     tag("global"),
+		"gonly": tag("global-only"),
 	})
 	// clk and store are nil: resolvers never dereference them.
 	r := NewRunner(global, nil, nil)
-	def := resolveActionPrecedenceDef(t)
+	def := resolveActionScopedDef(t)
+
+	// cmdScoped is the scope-effective scoped catalog carried by the engine; it
+	// registers "x" so we can prove the carried catalog (not the def's) is used.
+	cmdScoped := action.NewMapCatalog(map[string]action.ServiceAction{
+		"x": tag("cmd-scoped"),
+	})
 
 	type testCase struct {
 		name   string
-		nodeID string
-		action string
+		def    *model.ProcessDefinition
+		cmd    engine.InvokeAction
 		assert func(t *testing.T, got action.ServiceAction, ok bool)
 	}
 
 	cases := []testCase{
 		{
-			name:   "inline beats scoped and global",
-			nodeID: "inlineNode",
-			action: "x",
+			name: "inline carried wins over scoped and global",
+			def:  def,
+			cmd:  engine.InvokeAction{Name: "x", Inline: tag("inline"), Scoped: cmdScoped},
 			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "inline", tagOf(t, got))
 			},
 		},
 		{
-			name:   "scoped beats global when no inline",
-			nodeID: "namedNode",
-			action: "x",
+			name: "carried scoped catalog is used (over global, ignoring def)",
+			def:  def,
+			cmd:  engine.InvokeAction{Name: "x", Scoped: cmdScoped},
+			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+				require.True(t, ok, "must resolve")
+				assert.Equal(t, "cmd-scoped", tagOf(t, got))
+			},
+		},
+		{
+			name: "scoped nil falls back to def.ScopedCatalog()",
+			def:  def,
+			cmd:  engine.InvokeAction{Name: "x"},
 			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "scoped", tagOf(t, got))
 			},
 		},
 		{
-			name:   "global reached when empty nodeID (name-only path)",
-			nodeID: "",
-			action: "comp",
+			name: "global fallback when not in scoped",
+			def:  def,
+			cmd:  engine.InvokeAction{Name: "gonly"},
 			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
 				require.True(t, ok, "must resolve")
-				assert.Equal(t, "global-comp", tagOf(t, got))
+				assert.Equal(t, "global-only", tagOf(t, got))
 			},
 		},
 		{
-			name:   "miss returns false when name absent from all catalogs",
-			nodeID: "idNode",
-			action: "no-such-action",
+			name: "total miss returns false",
+			def:  def,
+			cmd:  engine.InvokeAction{Name: "no-such-action"},
 			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
 				assert.False(t, ok, "must not resolve unknown name")
 				assert.Nil(t, got)
@@ -114,7 +126,7 @@ func TestResolveActionFor(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, ok := r.resolveActionFor(def, tc.nodeID, tc.action)
+			got, ok := r.resolveInvokeAction(tc.def, tc.cmd)
 			tc.assert(t, got, ok)
 		})
 	}
@@ -130,7 +142,7 @@ func TestResolveActionName(t *testing.T) {
 		"gonly": tag("global-only"),
 	})
 	r := NewRunner(global, nil, nil)
-	def := resolveActionPrecedenceDef(t)
+	def := resolveActionScopedDef(t)
 
 	type testCase struct {
 		name       string

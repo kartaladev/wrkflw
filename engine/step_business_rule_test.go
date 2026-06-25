@@ -1,12 +1,14 @@
 package engine_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
@@ -17,6 +19,10 @@ var atBR = time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 	t.Parallel()
 
+	inlineAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		return nil, nil
+	})
+
 	type testCase struct {
 		name   string
 		def    *model.ProcessDefinition
@@ -25,7 +31,7 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "service task default-by-id: NodeID and Name both equal node id",
+			name: "service task default-by-id: Name equals node id, no inline",
 			def: &model.ProcessDefinition{
 				ID: "p-svc-default", Version: 1,
 				Nodes: []model.Node{
@@ -39,12 +45,12 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, ia engine.InvokeAction) {
-				assert.Equal(t, "work", ia.NodeID, "NodeID must equal node id")
 				assert.Equal(t, "work", ia.Name, "Name must equal node id (default-by-id)")
+				assert.Nil(t, ia.Inline, "no inline action declared → Inline must be nil")
 			},
 		},
 		{
-			name: "service task explicit name: NodeID is node id, Name is explicit",
+			name: "service task explicit name: Name is explicit, no inline",
 			def: &model.ProcessDefinition{
 				ID: "p-svc-explicit", Version: 1,
 				Nodes: []model.Node{
@@ -58,12 +64,31 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, ia engine.InvokeAction) {
-				assert.Equal(t, "work", ia.NodeID, "NodeID must equal node id")
 				assert.Equal(t, "pay", ia.Name, "Name must equal explicit action name")
+				assert.Nil(t, ia.Inline, "named action → Inline must be nil")
 			},
 		},
 		{
-			name: "business rule task explicit name: emits InvokeAction with NodeID and Name",
+			name: "service task inline: carries the inline action on the command",
+			def: &model.ProcessDefinition{
+				ID: "p-svc-inline", Version: 1,
+				Nodes: []model.Node{
+					model.NewStartEvent("start"),
+					model.NewServiceTask("work", model.WithAction(inlineAction)),
+					model.NewEndEvent("end"),
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "work"},
+					{ID: "f2", Source: "work", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, ia engine.InvokeAction) {
+				assert.Equal(t, "work", ia.Name, "Name still defaults to node id")
+				assert.NotNil(t, ia.Inline, "inline node → Inline must carry the inline action")
+			},
+		},
+		{
+			name: "business rule task explicit name: Name is explicit, no inline",
 			def: &model.ProcessDefinition{
 				ID: "p-br-explicit", Version: 1,
 				Nodes: []model.Node{
@@ -77,12 +102,12 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, ia engine.InvokeAction) {
-				assert.Equal(t, "rule", ia.NodeID, "NodeID must equal node id")
 				assert.Equal(t, "decide", ia.Name, "Name must equal explicit action name")
+				assert.Nil(t, ia.Inline, "named action → Inline must be nil")
 			},
 		},
 		{
-			name: "business rule task default-by-id: NodeID and Name both equal node id",
+			name: "business rule task default-by-id: Name equals node id, no inline",
 			def: &model.ProcessDefinition{
 				ID: "p-br-default", Version: 1,
 				Nodes: []model.Node{
@@ -96,8 +121,27 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, ia engine.InvokeAction) {
-				assert.Equal(t, "brule", ia.NodeID, "NodeID must equal node id")
 				assert.Equal(t, "brule", ia.Name, "Name must equal node id (default-by-id)")
+				assert.Nil(t, ia.Inline, "no inline action declared → Inline must be nil")
+			},
+		},
+		{
+			name: "business rule task inline: carries the inline action on the command",
+			def: &model.ProcessDefinition{
+				ID: "p-br-inline", Version: 1,
+				Nodes: []model.Node{
+					model.NewStartEvent("start"),
+					model.NewBusinessRuleTask("brule", model.WithAction(inlineAction)),
+					model.NewEndEvent("end"),
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "brule"},
+					{ID: "f2", Source: "brule", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, ia engine.InvokeAction) {
+				assert.Equal(t, "brule", ia.Name, "Name still defaults to node id")
+				assert.NotNil(t, ia.Inline, "inline node → Inline must carry the inline action")
 			},
 		},
 	}

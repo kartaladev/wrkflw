@@ -79,13 +79,21 @@ func Resolve(scoped, global Catalog, name string) (ServiceAction, bool)
 
 This is used by `runtime.Runner` internally and is independently testable.
 
-**`engine.InvokeAction` gains `NodeID string`.** The engine stamps the node id on every
-`InvokeAction` command so the runner can locate the node for inline-action lookup without
-an additional query.
+**`engine.InvokeAction` carries the resolved inline action and scope-effective scoped
+catalog.** For a main-action invocation the engine resolves both from the scope-effective
+definition (`tdef`) and node at emission time and stamps them on the command
+(`InvokeAction.Inline action.ServiceAction`, `InvokeAction.Scoped action.Catalog`). The
+runtime uses `Inline` first, then `Scoped` (falling back to the top-level definition's scoped
+catalog when the command carries none, e.g. secondary actions), then the global catalog. This
+makes resolution **scope-aware** — inline actions and scoped catalogs work for nodes at any
+sub-process nesting depth — without a runtime flat node-id lookup that could match the wrong
+node when ids repeat across sub-processes. The engine therefore imports `action` directly
+(`action` is a pure leaf; commands invoking actions is a first-class engine concept). The
+`Name` field still carries the default-by-id lookup key for the scoped/global tiers.
 
 **`BusinessRuleTask` execution.** A dedicated `businessRuleTaskStrategy` is added alongside
 `serviceTaskStrategy`. Both strategies share the same default-by-id name defaulting and
-node-id stamping logic.
+inline/scoped stamping logic.
 
 ## Consequences
 
@@ -108,6 +116,14 @@ node-id stamping logic.
 - **`BusinessRuleTask` is now executed.** Processes that previously stalled on a
   `BusinessRuleTask` node will now proceed. This is intentional; any such stalled instances
   represent an engine gap that is now corrected.
+- **Main-action resolution is scope-aware; secondary actions are root-scoped.** Inline
+  actions and scoped catalogs resolve correctly for a `ServiceTask`/`BusinessRuleTask` at any
+  sub-process nesting depth (the engine carries the resolved inline action and scope-effective
+  scoped catalog on the command). **Limitation:** secondary actions
+  (compensation/SLA/reminder/cancel handlers and definition `CancelActions`) are name-only and
+  resolve against the **root** definition's scoped catalog plus the global catalog — not a
+  nested sub-process's scoped catalog. Put such actions in the global catalog (the shared tier)
+  or the root definition. Bounded and documented; revisit if a concrete need arises.
 - **Follow-up obligations:**
   - The scoped catalog is not surfaced in `InstanceSnapshot`/`ActionableView` DTOs or gRPC
     snapshots — out of scope for this change.

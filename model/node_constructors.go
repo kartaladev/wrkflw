@@ -76,6 +76,11 @@ func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.inline = o.a
 
 // WithAction attaches a node-local inline ServiceAction available to this node
 // only. Mutually exclusive with WithActionName (Build reports a conflict).
+//
+// Inline actions resolve at any sub-process nesting depth (the engine carries
+// the resolved action on the invocation command). They are never serialized: a
+// definition round-tripped through JSONB loses its inline actions, so a consumer
+// that persists definitions must re-attach them in code on restart.
 func WithAction(a action.ServiceAction) interface {
 	serviceTaskOption
 	businessRuleOption

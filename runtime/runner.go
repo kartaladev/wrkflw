@@ -753,7 +753,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			aspan.End()
 		}()
 
-		a, ok := r.resolveActionFor(def, cmd.NodeID, cmd.Name)
+		a, ok := r.resolveInvokeAction(def, cmd)
 		if !ok {
 			err := errors.New("unknown action: " + cmd.Name)
 			aspan.RecordError(err)

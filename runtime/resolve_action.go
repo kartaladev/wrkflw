@@ -2,30 +2,32 @@ package runtime
 
 import (
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
-// resolveActionName resolves name against the definition-scoped catalog first,
-// then the runner's global catalog (action.Resolve). Used for every secondary
-// action reference (compensation, SLA, reminder, cancel handler, CancelActions).
+// resolveInvokeAction resolves the action for a main-action InvokeAction:
+// node-local inline (carried by the engine, scope-correct) → the scope-effective
+// scoped catalog carried on the command (falling back to the top-level def's
+// scoped catalog when the command carries none, e.g. secondary actions) → the
+// global catalog.
+func (r *Runner) resolveInvokeAction(def *model.ProcessDefinition, cmd engine.InvokeAction) (action.ServiceAction, bool) {
+	if cmd.Inline != nil {
+		return cmd.Inline, true
+	}
+	scoped := cmd.Scoped
+	if scoped == nil && def != nil {
+		scoped = def.ScopedCatalog()
+	}
+	return action.Resolve(scoped, r.cat, cmd.Name)
+}
+
+// resolveActionName resolves a name-only (secondary / cancel) action against the
+// top-level definition's scoped catalog, then the global catalog.
 func (r *Runner) resolveActionName(def *model.ProcessDefinition, name string) (action.ServiceAction, bool) {
 	var scoped action.Catalog
 	if def != nil {
 		scoped = def.ScopedCatalog()
 	}
 	return action.Resolve(scoped, r.cat, name)
-}
-
-// resolveActionFor resolves a node's primary action: a node-local inline action
-// (highest precedence) when nodeID names a task carrying one, else the
-// scoped→global name chain. nodeID may be empty for non-node invocations.
-func (r *Runner) resolveActionFor(def *model.ProcessDefinition, nodeID, name string) (action.ServiceAction, bool) {
-	if def != nil && nodeID != "" {
-		if n, ok := def.Node(nodeID); ok {
-			if inline := model.InlineActionOf(n); inline != nil {
-				return inline, true
-			}
-		}
-	}
-	return r.resolveActionName(def, name)
 }
