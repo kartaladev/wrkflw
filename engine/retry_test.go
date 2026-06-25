@@ -255,7 +255,14 @@ func hasInvokeActionForNode(t *testing.T, r engine.StepResult, def *model.Proces
 	if !ok {
 		t.Fatalf("hasInvokeActionForNode: node %q not found in definition", nodeID)
 	}
-	return hasInvokeActionForName(r.Commands, node.(model.ServiceTask).Action)
+	// Mirror the engine's main-action lookup key: explicit action name, or the
+	// node id when none is set (default-by-id). Avoids a panic on non-ServiceTask
+	// nodes and a wrong empty-string match for default-by-id nodes.
+	name := model.ActionOf(node)
+	if name == "" {
+		name = node.ID()
+	}
+	return hasInvokeActionForName(r.Commands, name)
 }
 
 // TestStepResolveIncidentReinvokes verifies that delivering a ResolveIncident

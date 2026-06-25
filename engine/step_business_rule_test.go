@@ -13,9 +13,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
-// at is a fixed test timestamp shared by all cases in this file.
-var atBR = time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
-
 func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 	t.Parallel()
 
@@ -150,8 +147,9 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			at := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 			res, err := engine.Step(tc.def, engine.InstanceState{InstanceID: "i1"},
-				engine.NewStartInstance(atBR, nil), engine.StepOptions{})
+				engine.NewStartInstance(at, nil), engine.StepOptions{})
 			require.NoError(t, err)
 
 			ia := firstInvokeAction(t, res.Commands)
