@@ -222,7 +222,8 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 	cmdID := s.nextCommandID()
 	cmds := []Command{InvokeAction{
 		CommandID: cmdID,
-		Name:      model.ActionOf(node),
+		NodeID:    node.ID(),
+		Name:      mainActionName(node),
 		Input:     serviceActionInput(s, node),
 	}}
 	tok.State = TokenWaitingCommand

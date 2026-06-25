@@ -60,10 +60,13 @@ type CancelTimer struct {
 	TimerID string
 }
 
-// InvokeAction asks the runtime to run a named ServiceAction. Its result
-// returns as an ActionCompleted/ActionFailed trigger carrying the same CommandID.
+// InvokeAction asks the runtime to run a ServiceAction. NodeID identifies the
+// emitting node so the runtime can honour a node-local inline action; it is
+// empty for secondary invocations (compensation, SLA, reminder) that resolve by
+// name only. Its result returns as ActionCompleted/ActionFailed with the same CommandID.
 type InvokeAction struct {
 	CommandID string
+	NodeID    string
 	Name      string
 	Input     map[string]any
 }
