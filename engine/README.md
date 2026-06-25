@@ -128,7 +128,7 @@ them all before persisting the new state.
 
 | Command | What the runtime must do |
 |---|---|
-| `InvokeAction{CommandID, Name, Input}` | Run the named `ServiceAction`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. |
+| `InvokeAction{CommandID, Name, Inline, Scoped, Input}` | Run a `ServiceAction`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. |
 | `ScheduleTimer{TimerID, Token, FireAt, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` at `FireAt`. `Kind` is `TimerIntermediate`, `TimerSLA`, `TimerInWait`, or `TimerRetry`. |
 | `CancelTimer{TimerID}` | Cancel a previously scheduled timer. |
 | `AwaitHuman{TaskToken, Eligibility}` | Create a human-task record; park until `HumanCompleted`. |

@@ -169,6 +169,14 @@ the consumer re-attaches in code (Option A).
 
 ### `engine` package
 
+> **Superseded — see ADR-0063.** This section's `InvokeAction.NodeID` + runtime
+> `def.Node(nodeID)` lookup design was changed during implementation: a flat
+> top-level node lookup could not resolve inline/scoped actions for nodes inside
+> sub-processes. The shipped design instead has the engine carry the resolved
+> inline action and scope-effective scoped catalog on the command
+> (`InvokeAction.Inline` + `InvokeAction.Scoped`; `NodeID` removed). The rest of
+> this doc is retained as the point-in-time design record; ADR-0063 is authoritative.
+
 `InvokeAction` gains a node id so the runner can find the node for inline lookup:
 
 ```go
