@@ -39,9 +39,21 @@ type GocronScheduler struct {
 	// timerID, set via gocron.WithName). nil = no distributed locking.
 	locker gocron.Locker
 
+	// elector, when set, is passed to gocron as a distributed elector so that
+	// across replicas only the elected leader runs ALL timer fires (single-leader
+	// mode). It is the mutually-exclusive alternative to locker (ADR-0059): setting
+	// both is a construction error. nil = no leader election.
+	elector gocron.Elector
+
 	mu   sync.Mutex
 	jobs map[string]uuid.UUID // timerID -> gocron job ID
 }
+
+// ErrLockerElectorConflict is returned by NewGocronScheduler when both a Locker
+// and an Elector are configured. They are mutually-exclusive distributed modes
+// (load-balanced per-timer exclusion vs. single-leader); pick one.
+var ErrLockerElectorConflict = errors.New(
+	"workflow-scheduling: a distributed locker and elector are mutually exclusive — set only one")
 
 // Option configures a [GocronScheduler].
 type Option func(*GocronScheduler)
@@ -84,6 +96,19 @@ func WithLocker(l gocron.Locker) Option {
 	}
 }
 
+// WithElector configures a distributed elector so that, across replicas, only the
+// elected leader runs timer fires (single-leader mode). It is the mutually-
+// exclusive alternative to WithLocker (setting both errors at construction — see
+// ErrLockerElectorConflict). A nil value is ignored. Pair with a Postgres-backed
+// elector (NewPostgresElector) for multi-replica deployments.
+func WithElector(e gocron.Elector) Option {
+	return func(s *GocronScheduler) {
+		if e != nil {
+			s.elector = e
+		}
+	}
+}
+
 // filterNilOpts returns only the non-nil observability.Option values from opts.
 func filterNilOpts(opts ...observability.Option) []observability.Option {
 	out := opts[:0]
@@ -108,9 +133,16 @@ func NewGocronScheduler(clk clockwork.Clock, opts ...Option) (*GocronScheduler, 
 		o(s)
 	}
 
+	if s.locker != nil && s.elector != nil {
+		return nil, ErrLockerElectorConflict
+	}
+
 	gocronOpts := []gocron.SchedulerOption{gocron.WithClock(clk)}
 	if s.locker != nil {
 		gocronOpts = append(gocronOpts, gocron.WithDistributedLocker(s.locker))
+	}
+	if s.elector != nil {
+		gocronOpts = append(gocronOpts, gocron.WithDistributedElector(s.elector))
 	}
 	gs, err := gocron.NewScheduler(gocronOpts...)
 	if err != nil {

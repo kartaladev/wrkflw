@@ -22,7 +22,7 @@ import (
 // only (delivery arrives via SignalReceived/MessageReceived).
 //
 // Definition-scan order is deterministic; arms are appended in that order.
-func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time) ([]Command, error) {
+func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
 		n, ok := raw.(model.EventSubProcess)
@@ -49,7 +49,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 			if se.SignalName != "" {
 				arm.Signal = se.SignalName
 			} else if se.TimerDuration != "" {
-				dur, err := conditions.EvalDuration(se.TimerDuration, s.Variables)
+				dur, err := eval.EvalDuration(se.TimerDuration, s.Variables)
 				if err != nil {
 					return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
 				}
@@ -62,7 +62,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 					Kind:    TimerIntermediate,
 				})
 			} else if se.MessageName != "" {
-				resolvedKey, err := conditions.EvalString(se.CorrelationKey, s.Variables)
+				resolvedKey, err := eval.EvalString(se.CorrelationKey, s.Variables)
 				if err != nil {
 					return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", n.ID(), err)
 				}
@@ -104,7 +104,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 //  3. Remove ONLY this arm (one-shot).
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
-func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventSubprocessArm, at time.Time, mode StepMode) ([]Command, error) {
+func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Verify the enclosing scope is still active. For root scope (empty enclosingScopeID),
 	// the scope is always "active" as long as the instance is running.
 	if ea.EnclosingScopeID != "" {
@@ -214,7 +214,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 	}
 
 	// Drive forward.
-	driveCmds, err := drive(def, s, at, mode)
+	driveCmds, err := drive(def, s, at, mode, eval)
 	if err != nil {
 		return nil, err
 	}

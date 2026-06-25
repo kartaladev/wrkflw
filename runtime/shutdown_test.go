@@ -136,6 +136,25 @@ func TestShutdownGroupIdempotent(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
+// TestShutdownGroupAddAfterShutdownClosesImmediately asserts that a component
+// registered AFTER the group has already shut down is not silently dropped
+// (which would leak its resource) — it is closed immediately instead.
+func TestShutdownGroupAddAfterShutdownClosesImmediately(t *testing.T) {
+	t.Parallel()
+
+	var g runtime.ShutdownGroup
+	require.NoError(t, g.Shutdown(t.Context()))
+
+	closed := false
+	g.Add(func(context.Context) error { closed = true; return nil })
+	assert.True(t, closed, "a component added after Shutdown must be closed immediately, not dropped")
+
+	// AddCloser routes through Add, so it benefits from the same guard.
+	closerRan := false
+	g.AddCloser(closerFunc(func() error { closerRan = true; return nil }))
+	assert.True(t, closerRan, "AddCloser after Shutdown must also close immediately")
+}
+
 type closerFunc func() error
 
 func (f closerFunc) Close() error { return f() }
