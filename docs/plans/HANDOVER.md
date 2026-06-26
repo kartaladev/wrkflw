@@ -3,7 +3,47 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this first) — updated 2026-06-25 (definition-scoped action catalog)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26
+
+> **State:** `main` is clean, pushed to `origin` (HEAD `165eb86`), full suite green, gofmt/vet/lint clean.
+> **Next free ADR: 0066.**
+>
+> **⚠️ Corrections to older blocks below (they are point-in-time records and now stale on these points):**
+> - **`BusinessRuleTask` IS executed** (via `businessRuleTaskStrategy`, ADR-0063). Any text below calling
+>   `KindBusinessRuleTask` an "unimplemented fall-through" is obsolete. The only remaining intentional
+>   non-executing kinds are `KindUnspecified` and `KindTerminateEndEvent`.
+> - **Message boundary events ARE armed and fired** (ADR-0053). Any text below saying they are "never armed"
+>   is obsolete (the only nuance: boundaries on a `ReceiveTask` host — see ADR-0053).
+> - Minor M-1 (`retry_test.go` `hasInvokeActionForNode`) is **fixed** (uses `model.ActionOf` + node-id fallback).
+>
+> **Merged 2026-06-26 (newest first):**
+> - **0065** `165eb86` (example) + `1df2931` — **deadline-breach & reminder actions are fire-and-forget.**
+>   They were emitted as fed-back `InvokeAction`s no token awaited → spurious `ErrTokenNotFound` / "Deliver
+>   failed" ERROR log. Added `engine.InvokeAction.FireAndForget`; the runtime runs such actions for side
+>   effect (keeps span+metric) and returns no trigger. The `ErrTokenNotFound` contract for genuine
+>   late/duplicate triggers (→ 409 Conflict, call-notifier completed-parent detection) is preserved untouched.
+>   `examples/scenarios/boundary_timer` now demonstrates `WithDeadline` with a fire-once breach action +
+>   escalation service task on the deadline flow.
+> - **0064** `f45d632` — **renamed the SLA concept to Deadline** across the public API and the persisted
+>   wire format. `WithSLA`→`WithDeadline`, `WithICESLA`→`WithICEDeadline`, `SLA{Duration,Flow,Action}`→
+>   `Deadline{…}`, `SLAOf`→`DeadlineOf`, `engine.TimerSLA`→`engine.TimerDeadline` (iota preserved). **Breaking
+>   wire keys:** JSON/YAML `slaDuration/slaFlow/slaAction`→`deadlineDuration/deadlineFlow/deadlineAction`
+>   (accepted — pre-consumer, no production data). Excluded false-positives: `slaSeconds` (expreval test data),
+>   `ThreeDotsLabs` (watermill import).
+> - `b88f8f7` — README corrected: message boundary events are armed (ADR-0053), not "not yet armed".
+> - `f38b14a` (2026-06-25) + scope-aware fix in that branch — **definition-scoped action catalog** (ADR-0063),
+>   inline actions, optional names/default-by-id, `BusinessRuleTask` execution; inline+scoped resolution is
+>   scope-aware for sub-process nodes (engine carries `InvokeAction.Inline`+`Scoped`; the `NodeID` field
+>   mentioned in the 2026-06-25 block below was REPLACED by these). See that block for the full feature list.
+>
+> **Open backlog (discretionary — nothing blocking):**
+> 1. **CI pipeline** — the only intentionally-deferred item across the whole hardening program. Highest-value.
+> 2. **Surface the def-scoped catalog in `InstanceSnapshot`/`ActionableView` DTOs + gRPC snapshots** (ADR-0063 follow-up).
+> 3. **Transactional-outbox-backed `MessageSink` reference impl** (ADR-0060 follow-up; current sink is best-effort).
+> 4. **YAML/BPMN inline-action authoring** is impossible by design (Go funcs aren't serializable) — names only.
+> 5. Minor: the fire-and-forget perform path records `elapsed=0` on a resolution-miss (metric noise only).
+
+## ⏩ CURRENT RESUME POINT — updated 2026-06-25 (definition-scoped action catalog)
 
 > **✅ DONE — Definition-scoped action catalog, optional names & inline actions (ADR-0063) — merged to `main` 2026-06-25**
 > (branch `feat/definition-scoped-action-catalog`). Next free ADR: **0064**.
