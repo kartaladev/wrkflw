@@ -28,12 +28,11 @@ func ExampleNewCachingStore() {
 	store := runtime.NewCachingStore(
 		runtime.NewMemStore(),
 		runtime.AlwaysOwn{},
-		clock.System(),
 	)
 
 	def := signalCatchDef("approved")
 
-	r := runtime.NewRunner(nil, clock.System(), store)
+	r := runtime.NewRunner(nil, store)
 
 	// Run parks at the signal-catch node.
 	parked, err := r.Run(ctx, def, "cache-demo-1", nil)

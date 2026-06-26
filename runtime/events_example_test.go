@@ -92,12 +92,12 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	// its signal bus) handles deliveries. This ensures subscriptions/msgWaiters
 	// are always in sync — not a separate ephemeral runner.
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	})
+	}, runtime.WithSignalBusClock(fc))
 
-	r = runtime.NewRunner(nil, fc, store, runtime.WithSignalBus(bus))
+	r = runtime.NewRunner(nil, store, runtime.WithRunnerClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := r.Run(ctx, def, "inst-1", nil)
@@ -146,7 +146,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	r := runtime.NewRunner(nil, clockwork.NewFakeClock(), runtime.NewMemStore())
+	r := runtime.NewRunner(nil, runtime.NewMemStore(), runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
 	_, err := r.Run(t.Context(), def, "i1", nil)
@@ -163,18 +163,19 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtime.NewMemStore()
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
 	// dependency with a forward reference via a pointer.
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	})
+	}, runtime.WithSignalBusClock(fc))
 
-	r = runtime.NewRunner(nil, fc, store,
+	r = runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -208,16 +209,17 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtime.NewMemStore()
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	})
+	}, runtime.WithSignalBusClock(fc))
 
-	r = runtime.NewRunner(nil, fc, store,
+	r = runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -258,7 +260,7 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	store := runtime.NewMemStore()
 	def := messageCatchDef("order-shipped")
 
-	r := runtime.NewRunner(nil, fc, store)
+	r := runtime.NewRunner(nil, store, runtime.WithRunnerClock(fc))
 
 	// Start two instances with different orderId values.
 	_, err := r.Run(ctx, def, "order-100", map[string]any{"orderId": "100"})

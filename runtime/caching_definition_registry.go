@@ -44,17 +44,34 @@ type CachingDefinitionRegistry struct {
 	group   singleflight.Group
 }
 
+// CachingDefinitionRegistryOption configures a [CachingDefinitionRegistry].
+type CachingDefinitionRegistryOption func(*CachingDefinitionRegistry)
+
+// WithCachingDefinitionRegistryClock sets the time source used to evaluate TTL.
+// Default: [clock.System]. A nil clock is ignored. Inject a fake clock in tests.
+func WithCachingDefinitionRegistryClock(clk clock.Clock) CachingDefinitionRegistryOption {
+	return func(c *CachingDefinitionRegistry) {
+		if clk != nil {
+			c.clk = clk
+		}
+	}
+}
+
 // NewCachingDefinitionRegistry wraps backing with a TTL-bounded, single-flight
-// read-through cache. ttl is the maximum age of a cached definition; clk is
-// the time source used to evaluate TTL (use [clock.System] in production,
-// a fake clock in tests).
-func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration, clk clock.Clock) *CachingDefinitionRegistry {
-	return &CachingDefinitionRegistry{
+// read-through cache. ttl is the maximum age of a cached definition. The time
+// source used to evaluate TTL defaults to [clock.System]; override it with
+// [WithCachingDefinitionRegistryClock] (a fake clock in tests).
+func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration, opts ...CachingDefinitionRegistryOption) *CachingDefinitionRegistry {
+	c := &CachingDefinitionRegistry{
 		backing: backing,
 		ttl:     ttl,
-		clk:     clk,
+		clk:     clock.System(),
 		entries: make(map[string]cacheEntry),
 	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Lookup returns the ProcessDefinition for defRef. On a cache miss (or after

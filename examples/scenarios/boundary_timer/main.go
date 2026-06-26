@@ -101,10 +101,11 @@ func main() {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"reviewer": {reviewer},
 	})
-	sched := runtime.NewMemScheduler(clk)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(clk))
 	store := runtime.NewMemStore()
 
-	r := runtime.NewRunner(cat, clk, store,
+	r := runtime.NewRunner(cat, store,
+		runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
 		runtime.WithScheduler(sched),
 	)

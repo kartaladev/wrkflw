@@ -69,7 +69,7 @@ func TestNewCachingStoreAlwaysOwnWarning(t *testing.T) {
 			_ = runtime.NewCachingStore(
 				runtime.NewMemStore(),
 				tc.owner,
-				clockwork.NewFakeClock(),
+				runtime.WithCachingStoreClock(clockwork.NewFakeClock()),
 				runtime.WithCacheLogger(logger),
 			)
 

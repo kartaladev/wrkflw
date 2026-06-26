@@ -91,7 +91,7 @@ func main() {
 
 	clk := clock.System()
 	store := runtime.NewMemStore()
-	r := runtime.NewRunner(cat, clk, store)
+	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk))
 
 	const instanceID = "saga-001"
 

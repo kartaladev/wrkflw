@@ -98,7 +98,21 @@ type Engine struct {
 	clk       clock.Clock
 }
 
-// New constructs an Engine facade. All parameters are required.
+// EngineOption configures an Engine returned by New.
+type EngineOption func(*Engine)
+
+// WithEngineClock sets the time source used to stamp signal triggers.
+// Default: clock.System(). A nil clock is ignored.
+func WithEngineClock(clk clock.Clock) EngineOption {
+	return func(e *Engine) {
+		if clk != nil {
+			e.clk = clk
+		}
+	}
+}
+
+// New constructs an Engine facade. The first six parameters are required;
+// opts are optional functional options (e.g. WithEngineClock).
 //
 //   - runner: drives process execution (Run / Deliver / DeliverMessage).
 //   - tasks: authorizes and returns triggers for human-task interactions.
@@ -109,7 +123,7 @@ type Engine struct {
 //   - lister: enumerates instance summaries for ListInstances.
 //   - taskStore: used to resolve the owning instance ID from a task token in
 //     task-lifecycle operations (ClaimTask, CompleteTask, ReassignTask).
-//   - clk: the time source used to stamp signal triggers.
+//   - opts: optional; use WithEngineClock to override the default clock.System().
 func New(
 	runner *runtime.Runner,
 	tasks *runtime.TaskService,
@@ -117,17 +131,21 @@ func New(
 	store runtime.Store,
 	lister runtime.InstanceLister,
 	taskStore humantask.TaskStore,
-	clk clock.Clock,
+	opts ...EngineOption,
 ) *Engine {
-	return &Engine{
+	e := &Engine{
 		runner:    runner,
 		tasks:     tasks,
 		reg:       reg,
 		store:     store,
 		lister:    lister,
 		taskStore: taskStore,
-		clk:       clk,
+		clk:       clock.System(),
 	}
+	for _, o := range opts {
+		o(e)
+	}
+	return e
 }
 
 // Compile-time assertion: *Engine satisfies Service.

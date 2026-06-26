@@ -31,10 +31,10 @@ func minimalSvc(t *testing.T) service.Service {
 	store := runtime.NewMemStore()
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
-	runner := runtime.NewRunner(action.NewMapCatalog(nil), fc, store)
+	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 	reg := runtime.NewMapDefinitionRegistry(nil)
-	tasks := runtime.NewTaskService(taskStore, az, fc)
-	return service.New(runner, tasks, reg, store, store, taskStore, fc)
+	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	return service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 }
 
 // TestNewSecureServerRequiresInterceptor asserts the fail-closed contract: a nil

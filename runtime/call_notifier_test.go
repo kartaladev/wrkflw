@@ -3,7 +3,9 @@ package runtime_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -87,7 +89,8 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -114,7 +117,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	taskToken := claimable[0].TaskToken
 
 	// ── Step 2: complete the human task → child completes, link flips ────────
-	svc := runtime.NewTaskService(tasks, az, clk)
+	svc := runtime.NewTaskService(tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"childResult": "done"})
 	require.NoError(t, err)
 
@@ -134,7 +137,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 		return err2
 	})
 
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg, clk)
+	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
 
 	notified, err := notifier.DrainOnce(ctx)
 	require.NoError(t, err)
@@ -150,4 +153,65 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	notified2, err := notifier.DrainOnce(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 0, notified2, "second DrainOnce must be a no-op (link already notified)")
+}
+
+// TestNewCallNotifierDefaultClockNoPanic verifies that NewCallNotifier works
+// without a positional clock argument (ADR-0003: clock defaults to clock.System()).
+func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
+	cl := runtime.NewMemCallLinkStore()
+	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+		return nil
+	})
+	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
+
+	n := runtime.NewCallNotifier(cl, deliver, reg)
+	assert.NotNil(t, n)
+}
+
+// TestNewCallNotifierWithClockOption verifies that WithCallNotifierClock injects
+// a fake clock whose time flows into delivered trigger timestamps (ADR-0003).
+func TestNewCallNotifierWithClockOption(t *testing.T) {
+	ctx := t.Context()
+
+	fakeTime := time.Unix(1000, 0).UTC()
+	fake := clockwork.NewFakeClockAt(fakeTime)
+
+	cl := runtime.NewMemCallLinkStore()
+	var capturedTrigger engine.Trigger
+	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, trg engine.Trigger) error {
+		capturedTrigger = trg
+		return nil
+	})
+
+	// Wire minimal parent def so the registry resolves the parent ref.
+	parentDef := &model.ProcessDefinition{ID: "opt-parent", Version: 1}
+	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		"opt-parent:1": parentDef,
+	})
+
+	n := runtime.NewCallNotifier(cl, deliver, reg, runtime.WithCallNotifierClock(fake))
+	require.NotNil(t, n)
+
+	// Seed a terminal call link so DrainOnce delivers a trigger.
+	link := runtime.CallLink{
+		ChildInstanceID:  "child-1",
+		ParentInstanceID: "parent-1",
+		ParentDefID:      "opt-parent",
+		ParentDefVersion: 1,
+		ParentCommandID:  "cmd-1",
+	}
+	runtime.SeedCallLink(cl, link)
+	runtime.SeedTerminal(cl, "child-1", runtime.CallOutcome{
+		Completed: true,
+		Output:    map[string]any{"k": "v"},
+	})
+
+	notified, err := n.DrainOnce(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, notified, "DrainOnce must report 1 notified link")
+	require.NotNil(t, capturedTrigger, "deliver must have been called with a trigger")
+
+	// The trigger timestamp must equal the fake clock's time.
+	assert.Equal(t, fakeTime, capturedTrigger.OccurredAt(),
+		"trigger timestamp must reflect the injected fake clock time")
 }

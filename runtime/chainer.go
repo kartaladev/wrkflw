@@ -88,9 +88,13 @@ func WithChainLinks(links ChainLinkStore) ChainerOption {
 }
 
 // WithChainClock sets the clock used to stamp ChainLink.CreatedAt.
-// Default: clock.System().
+// Default: clock.System(). A nil clock is ignored (the default is kept).
 func WithChainClock(clk clock.Clock) ChainerOption {
-	return func(c *chainerConfig) { c.clk = clk }
+	return func(c *chainerConfig) {
+		if clk != nil {
+			c.clk = clk
+		}
+	}
 }
 
 // WithChainLogger sets the structured logger. Default: slog.Default().

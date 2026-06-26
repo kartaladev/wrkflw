@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -57,7 +56,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			return map[string]any{"b": true}, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
+	r := runtime.NewRunner(cat, runtime.NewMemStore())
 
 	final, err := r.Run(t.Context(), def, "i1", nil)
 	require.NoError(t, err)
@@ -102,7 +101,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 		})
 	}
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
+	r := runtime.NewRunner(cat, runtime.NewMemStore())
 
 	final, err := r.Run(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
 	require.NoError(t, err)
@@ -127,7 +126,7 @@ func TestRunnerExecutesLinearProcess(t *testing.T) {
 		}),
 	})
 	store := runtime.NewMemStore()
-	r := runtime.NewRunner(cat, clock.System(), store)
+	r := runtime.NewRunner(cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", map[string]any{"name": "Ada"})
 	require.NoError(t, err)

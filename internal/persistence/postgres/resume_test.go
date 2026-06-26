@@ -109,8 +109,8 @@ func TestPostgresParkedTimerResumesAfterReload(t *testing.T) {
 
 	// Runner #1 over the Postgres store: start → park at the intermediate timer.
 	store1 := pg.NewStore(pool)
-	sched1 := runtime.NewMemScheduler(fc)
-	r1 := runtime.NewRunner(cat, fc, store1, runtime.WithScheduler(sched1))
+	sched1 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	r1 := runtime.NewRunner(cat, store1, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched1))
 
 	parked, err := r1.Run(t.Context(), def, id, nil)
 	require.NoError(t, err)
@@ -147,8 +147,8 @@ func TestPostgresParkedTimerResumesAfterReload(t *testing.T) {
 	// use the timer ID from the reloaded token to fire manually.
 	fc.Advance(1*time.Hour + time.Second)
 
-	sched2 := runtime.NewMemScheduler(fc)
-	r2 := runtime.NewRunner(cat, fc, store2, runtime.WithScheduler(sched2))
+	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	r2 := runtime.NewRunner(cat, store2, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched2))
 
 	final, err := r2.Deliver(t.Context(), def, id, engine.NewTimerFired(fc.Now(), reloadedTimerID))
 	require.NoError(t, err)
@@ -197,8 +197,8 @@ func TestPostgresParkedBoundaryResumesAfterReload(t *testing.T) {
 
 	// Runner #1 over the Postgres store: start → park at user-task with boundary timer armed.
 	store1 := pg.NewStore(pool)
-	sched1 := runtime.NewMemScheduler(fc)
-	r1 := runtime.NewRunner(cat, fc, store1,
+	sched1 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	r1 := runtime.NewRunner(cat, store1, runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched1),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -231,8 +231,8 @@ func TestPostgresParkedBoundaryResumesAfterReload(t *testing.T) {
 	fc.Advance(2*time.Hour + time.Second)
 	boundaryTimerID := reloaded.Boundaries[0].TimerID
 
-	sched2 := runtime.NewMemScheduler(fc)
-	r2 := runtime.NewRunner(cat, fc, store2,
+	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	r2 := runtime.NewRunner(cat, store2, runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched2),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -320,8 +320,8 @@ func TestPostgresParkedRetryResumesAfterReload(t *testing.T) {
 	// ── Runner #1: drive the instance until it parks on the retry timer ──
 
 	store1 := pg.NewStore(pool)
-	sched1 := runtime.NewMemScheduler(fc)
-	r1 := runtime.NewRunner(cat, fc, store1,
+	sched1 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	r1 := runtime.NewRunner(cat, store1, runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched1),
 		runtime.WithJitterSource(jitter),
 	)
@@ -384,8 +384,8 @@ func TestPostgresParkedRetryResumesAfterReload(t *testing.T) {
 
 	fc.Advance(time.Hour + time.Second) // clock is now startAt+1h+1s → past fire-at
 
-	sched2 := runtime.NewMemScheduler(fc)
-	r2 := runtime.NewRunner(cat, fc, store2,
+	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	r2 := runtime.NewRunner(cat, store2, runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched2),
 		runtime.WithJitterSource(jitter),
 	)

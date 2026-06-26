@@ -126,7 +126,8 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		"e2e-parent:1":     pDef,
 	})
 
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -136,7 +137,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg, clk)
+	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
 
 	// ── step 1: run parent; parks because grandchild parks at human task ─────
 	const parentID = "e2e-nested-parent-i1"
@@ -172,7 +173,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	require.Len(t, claimable, 1, "exactly one human task must be pending (grandchild's task)")
 	taskToken := claimable[0].TaskToken
 
-	svc := runtime.NewTaskService(tasks, az, clk)
+	svc := runtime.NewTaskService(tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"gcResult": "done"})
 	require.NoError(t, err)
 
@@ -240,7 +241,8 @@ func TestFailurePathCallActivity(t *testing.T) {
 		"async-fail-parent:1": parent,
 	})
 
-	runner := runtime.NewRunner(cat, clk, store,
+	runner := runtime.NewRunner(cat, store,
+		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 	)
@@ -249,7 +251,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg, clk)
+	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
 
 	// ── step 1: run parent; child fails immediately during its first burst ────
 	const parentID = "e2e-fail-parent-i1"
@@ -337,7 +339,8 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		"self-call:1": def,
 	})
 
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 	)
@@ -346,7 +349,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def2, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg, clk)
+	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
 
 	// ── step 1: run the self-calling root ─────────────────────────────────────
 	// During Run, each child synchronously spawns its own child (via runChild
@@ -478,7 +481,8 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 
 	// Runner built WITHOUT WithCallLinks → synchronous call-activity path.
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)

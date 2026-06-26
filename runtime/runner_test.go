@@ -13,7 +13,6 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -45,7 +44,7 @@ func (s *commitErrStore) Commit(_ context.Context, _ runtime.Token, _ runtime.Ap
 func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	cat := action.NewMapCatalog(nil)
 	store := runtime.NewMemStore()
-	r := runtime.NewRunner(cat, clock.System(), store)
+	r := runtime.NewRunner(cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -63,7 +62,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 		}),
 	})
 	store := runtime.NewMemStore()
-	r := runtime.NewRunner(cat, clock.System(), store)
+	r := runtime.NewRunner(cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -82,7 +81,7 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), errStore{runtime.NewMemStore()})
+	r := runtime.NewRunner(cat, errStore{runtime.NewMemStore()})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -99,7 +98,7 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	})
 	// commitErrStore: Create succeeds (first step), Commit fails (second step when
 	// ActionCompleted is delivered).
-	r := runtime.NewRunner(cat, clock.System(), &commitErrStore{runtime.NewMemStore()})
+	r := runtime.NewRunner(cat, &commitErrStore{runtime.NewMemStore()})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -132,7 +131,6 @@ func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 	// Build a Runner with no human-task option (nil resolver and nil tasks).
 	r := runtime.NewRunner(
 		nil, // no catalog
-		clock.System(),
 		runtime.NewMemStore(),
 		// WithHumanTasks intentionally omitted to test error path.
 	)
@@ -166,7 +164,6 @@ func timerOnlyDef() *model.ProcessDefinition {
 func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
 	r := runtime.NewRunner(
 		nil,
-		clock.System(),
 		runtime.NewMemStore(),
 		// WithScheduler intentionally omitted.
 	)
@@ -218,7 +215,6 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 	// the error messages for both cases must contain "no Scheduler configured".
 	r := runtime.NewRunner(
 		nil,
-		clock.System(),
 		runtime.NewMemStore(),
 		// WithScheduler intentionally omitted.
 	)
@@ -289,9 +285,9 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 
 	inner := runtime.NewMemStore()
 	store := &onceConflictStore{inner: inner}
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
-	r := runtime.NewRunner(nil, fc, store, runtime.WithScheduler(sched))
+	r := runtime.NewRunner(nil, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
 
 	def := conflictTimerDef()
 	const instanceID = "conflict-timer-1"
@@ -328,9 +324,45 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, clock.System(), errStore{runtime.NewMemStore()})
+	r := runtime.NewRunner(cat, errStore{runtime.NewMemStore()})
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
+}
+
+// TestNewRunnerDefaultUsesSystemClock verifies that a Runner constructed without a
+// clock option stamps instance StartedAt from the system clock (within a real-time bracket).
+func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return map[string]any{"ok": true}, nil
+		}),
+	})
+	before := time.Now()
+	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	st, err := r.Run(t.Context(), linearDef(), "i-sys-1", nil)
+	after := time.Now()
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusCompleted, st.Status)
+	// StartedAt is set from r.clk.Now() inside the engine's StartInstance handler.
+	assert.False(t, st.StartedAt.Before(before) || st.StartedAt.After(after),
+		"StartedAt must be within [before, after] wall-clock bracket")
+}
+
+// TestNewRunnerWithClockOption verifies that WithRunnerClock injects a fake clock
+// whose time flows into the engine's StartedAt stamp (behavioral assertion).
+func TestNewRunnerWithClockOption(t *testing.T) {
+	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return map[string]any{"ok": true}, nil
+		}),
+	})
+	r := runtime.NewRunner(cat, runtime.NewMemStore(), runtime.WithRunnerClock(fake))
+	st, err := r.Run(t.Context(), linearDef(), "i-fake-1", nil)
+	require.NoError(t, err)
+	// StartedAt is stamped from r.clk.Now() = fake.Now() = time.Unix(1000, 0).
+	assert.Equal(t, time.Unix(1000, 0), st.StartedAt,
+		"StartedAt must equal fake clock's epoch")
 }

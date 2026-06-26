@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -74,7 +73,7 @@ flows:
 		}),
 	})
 
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
+	r := runtime.NewRunner(cat, runtime.NewMemStore())
 
 	state, err := r.Run(ctx, simpleDef, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {

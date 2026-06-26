@@ -73,8 +73,15 @@ func WithBatchSize(n int) RelayOption { return func(r *Relay) { r.batch = n } }
 
 // WithClock sets the clock used to stamp published_at / next_attempt_at and to
 // evaluate the claim predicate. Default: clock.System(). Tests inject a fake
-// clock so backoff windows are deterministic.
-func WithClock(clk clock.Clock) RelayOption { return func(r *Relay) { r.clk = clk } }
+// clock so backoff windows are deterministic. A nil clock is ignored (the
+// default is kept).
+func WithClock(clk clock.Clock) RelayOption {
+	return func(r *Relay) {
+		if clk != nil {
+			r.clk = clk
+		}
+	}
+}
 
 // WithMaxDeliveryAttempts sets how many failed publish attempts a row tolerates
 // before it is quarantined to status 'dead'. Default: 10. A value <= 0 is

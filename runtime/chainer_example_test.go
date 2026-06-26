@@ -23,7 +23,7 @@ func ExampleChainer() {
 	ctx := context.Background()
 	store := runtime.NewMemStore()
 	links := runtime.NewMemChainLinkStore()
-	runner := runtime.NewRunner(action.NewMapCatalog(nil), clockwork.NewFakeClock(), store)
+	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
 
 	fulfillment := &model.ProcessDefinition{
 		ID: "fulfillment", Version: 1,

@@ -30,10 +30,10 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 //   - The deliver function is injected at construction time as a [DeliverFunc]:
 //     the caller typically wraps runner.Deliver with the definition pre-captured:
 //
-//     bus := runtime.NewSignalBus(clk, func(ctx context.Context, id string, trg engine.Trigger) error {
+//     bus := runtime.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
 //     _, err := runner.Deliver(ctx, def, id, trg)
 //     return err
-//     })
+//     }, runtime.WithSignalBusClock(clk))
 //
 // Concurrency: all internal state is protected by a mutex; the bus is safe for
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).
@@ -48,16 +48,33 @@ type SignalBus struct {
 	deliver DeliverFunc
 }
 
-// NewSignalBus constructs a SignalBus backed by the given clock and delivery
-// function. clk is used to stamp SignalReceived triggers (ADR-0003 — never
-// time.Now()). deliver is called once per registered waiter for each Publish,
-// with the instance ID and the SignalReceived trigger.
-func NewSignalBus(clk clock.Clock, deliver DeliverFunc) *SignalBus {
-	return &SignalBus{
-		clk:     clk,
+// SignalBusOption configures a SignalBus.
+type SignalBusOption func(*SignalBus)
+
+// WithSignalBusClock sets the time source used to stamp SignalReceived triggers.
+// Default: clock.System(). A nil clock is ignored. Pass the Runner's fake clock in
+// tests so downstream timers anchored to the signal timestamp stay deterministic.
+func WithSignalBusClock(clk clock.Clock) SignalBusOption {
+	return func(b *SignalBus) {
+		if clk != nil {
+			b.clk = clk
+		}
+	}
+}
+
+// NewSignalBus constructs a SignalBus backed by the given delivery function.
+// deliver is called once per registered waiter for each Publish. The time source
+// defaults to clock.System(); override it with WithSignalBusClock (ADR-0003).
+func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) *SignalBus {
+	b := &SignalBus{
+		clk:     clock.System(),
 		waiters: make(map[string]map[string]struct{}),
 		deliver: deliver,
 	}
+	for _, o := range opts {
+		o(b)
+	}
+	return b
 }
 
 // Subscribe registers instanceID as a waiter for signal signalName. Calling

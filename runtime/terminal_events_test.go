@@ -32,7 +32,8 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 	store := runtime.NewMemStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := runtime.NewRunner(action.NewMapCatalog(nil), fc, store,
+	r := runtime.NewRunner(action.NewMapCatalog(nil), store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := &model.ProcessDefinition{
@@ -65,7 +66,7 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 func TestCompleteEmitsInstanceCompleted(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	store := runtime.NewMemStore()
-	r := runtime.NewRunner(action.NewMapCatalog(nil), fc, store)
+	r := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 
 	def := &model.ProcessDefinition{
 		ID: "complete-evt", Version: 1,

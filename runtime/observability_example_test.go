@@ -8,7 +8,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -60,7 +59,6 @@ func ExampleRunner_observability() {
 
 	r := runtime.NewRunner(
 		cat,
-		clock.System(),
 		runtime.NewMemStore(),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),

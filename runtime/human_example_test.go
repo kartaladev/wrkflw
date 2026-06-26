@@ -50,12 +50,10 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 		"manager": {manager},
 	})
 	az := authz.RoleAuthorizer{}
-	clk := clock.System()
 	store := runtime.NewMemStore()
 
 	r := runtime.NewRunner(
 		nil, // no service actions needed for this process
-		clk,
 		store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -81,7 +79,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	taskToken := task.TaskToken
 
 	// --- TaskService.Claim → Deliver ---
-	svc := runtime.NewTaskService(taskStore, az, clk)
+	svc := runtime.NewTaskService(taskStore, az)
 
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)
 	require.NoError(t, err)
@@ -144,7 +142,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
-	r := runtime.NewRunner(nil, clock.System(), runtime.NewMemStore())
+	r := runtime.NewRunner(nil, runtime.NewMemStore())
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
 	_, err := r.Deliver(ctx, approvalDef(), "non-existent", trg)
@@ -166,11 +164,9 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 		"manager": {manager},
 	})
 	az := authz.RoleAuthorizer{}
-	clk := clock.System()
 
 	r := runtime.NewRunner(
 		nil,
-		clk,
 		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -263,12 +259,10 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 			// Each sub-test gets its own isolated stores so they do not share state.
 			taskStore := humantask.NewMemTaskStore()
 			az := authz.RoleAuthorizer{}
-			clk := clock.System()
 			store := runtime.NewMemStore()
 
 			r := runtime.NewRunner(
 				nil, // no service actions needed
-				clk,
 				store,
 				runtime.WithHumanTasks(resolver, taskStore, az),
 			)
@@ -293,7 +287,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 
 			// Step 3: Claim — the TaskService evaluates the EligibilityExpr against
 			// the snapshotted vars. Result depends on whether region matches the predicate.
-			svc := runtime.NewTaskService(taskStore, az, clk)
+			svc := runtime.NewTaskService(taskStore, az)
 			_, err = svc.Claim(ctx, taskToken, approver)
 			tc.assertErr(t, err)
 		})

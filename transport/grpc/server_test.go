@@ -143,7 +143,7 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 		"greet": serverTestGreetAction{},
 	})
 
-	runner := runtime.NewRunner(cat, fc, store, runtime.WithHumanTasks(resolver, taskStore, az))
+	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {
@@ -151,9 +151,9 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 		defsMap[d.ID] = d
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	tasks := runtime.NewTaskService(taskStore, az, fc)
+	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 
-	svc := service.New(runner, tasks, reg, store, store, taskStore, fc)
+	svc := service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 
 	// Stand up bufconn server.
 	lis := bufconn.Listen(bufSize)

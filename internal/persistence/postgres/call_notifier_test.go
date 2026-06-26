@@ -92,7 +92,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 	store := pg.NewStore(pool)
 	cl := pg.NewCallLinkStore(pool)
 
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -114,7 +114,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 		"child must be StatusRunning (parked at human task)")
 
 	// Phase 2: Complete the child's human task → child completes → link flips to 'completed'.
-	taskSvc := runtime.NewTaskService(tasks, az, clk)
+	taskSvc := runtime.NewTaskService(tasks, az)
 
 	// Find the task token — the human task was created when the child ran.
 	// Use ClaimableBy to list tasks claimable by the worker actor.
@@ -152,7 +152,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 	// the "crash"; the task store is not on the notifier's delivery path).
 	freshStore := pg.NewStore(pool)
 	freshCl := pg.NewCallLinkStore(pool)
-	freshRunner := runtime.NewRunner(nil, clk, freshStore,
+	freshRunner := runtime.NewRunner(nil, freshStore, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(freshCl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -164,7 +164,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 			return err
 		}),
 		reg,
-		clk,
+		runtime.WithCallNotifierClock(clk),
 	)
 
 	// DrainOnce must notify exactly 1 link (the completed child).
@@ -212,7 +212,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 	store := pg.NewStore(pool)
 	cl := pg.NewCallLinkStore(pool)
 
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -225,7 +225,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 	childID := parentID + "-sub-c1"
 
 	// Complete the human task.
-	taskSvc := runtime.NewTaskService(tasks, az, clk)
+	taskSvc := runtime.NewTaskService(tasks, az)
 	taskList, err := tasks.ClaimableBy(ctx, worker)
 	require.NoError(t, err)
 	require.Len(t, taskList, 1)
@@ -245,7 +245,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 	// First notifier: drains and resumes the parent normally.
 	callCount := 0
 	freshStore1 := pg.NewStore(pool)
-	freshRunner1 := runtime.NewRunner(nil, clk, freshStore1,
+	freshRunner1 := runtime.NewRunner(nil, freshStore1, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(pg.NewCallLinkStore(pool)),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -257,7 +257,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 			return err
 		}),
 		reg,
-		clk,
+		runtime.WithCallNotifierClock(clk),
 	)
 	notified, err := notifier1.DrainOnce(ctx)
 	require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 			return engine.ErrTokenNotFound
 		}),
 		reg,
-		clk,
+		runtime.WithCallNotifierClock(clk),
 	)
 	notified2, err := notifier2.DrainOnce(ctx)
 	require.NoError(t, err)

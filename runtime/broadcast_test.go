@@ -49,7 +49,7 @@ func TestSignalBusPublishDeliversToAllSubscribers(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
 
-	bus := runtime.NewSignalBus(clockwork.NewFakeClock(), rec.deliver)
+	bus := runtime.NewSignalBus(rec.deliver, runtime.WithSignalBusClock(clockwork.NewFakeClock()))
 	bus.Subscribe("inst-b", "approved")
 	bus.Subscribe("inst-a", "approved")
 	bus.Subscribe("inst-c", "approved")
@@ -77,7 +77,7 @@ func TestSignalBusPublishDeliversToAllSubscribers(t *testing.T) {
 func TestSignalBusPublishNoWaitersIsNoop(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
-	bus := runtime.NewSignalBus(clockwork.NewFakeClock(), rec.deliver)
+	bus := runtime.NewSignalBus(rec.deliver, runtime.WithSignalBusClock(clockwork.NewFakeClock()))
 
 	err := bus.Publish(ctx, "nonexistent", nil)
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestSignalBusPublishNoWaitersIsNoop(t *testing.T) {
 func TestSignalBusUnsubscribeRemovesWaiter(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
-	bus := runtime.NewSignalBus(clockwork.NewFakeClock(), rec.deliver)
+	bus := runtime.NewSignalBus(rec.deliver, runtime.WithSignalBusClock(clockwork.NewFakeClock()))
 
 	bus.Subscribe("inst-a", "approved")
 	bus.Subscribe("inst-b", "approved")
@@ -105,7 +105,7 @@ func TestSignalBusUnsubscribeRemovesWaiter(t *testing.T) {
 func TestSignalBusSyncReconciles(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
-	bus := runtime.NewSignalBus(clockwork.NewFakeClock(), rec.deliver)
+	bus := runtime.NewSignalBus(rec.deliver, runtime.WithSignalBusClock(clockwork.NewFakeClock()))
 
 	// Initial subscriptions.
 	bus.Subscribe("inst-a", "sig-old")
@@ -131,9 +131,9 @@ func TestSignalBusPublishDeliverErrorPropagates(t *testing.T) {
 	ctx := context.Background()
 	errDeliver := errors.New("deliver: forced failure")
 
-	bus := runtime.NewSignalBus(clockwork.NewFakeClock(), func(_ context.Context, _ string, _ engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(_ context.Context, _ string, _ engine.Trigger) error {
 		return errDeliver
-	})
+	}, runtime.WithSignalBusClock(clockwork.NewFakeClock()))
 	bus.Subscribe("inst-a", "approved")
 
 	err := bus.Publish(ctx, "approved", nil)
@@ -149,13 +149,13 @@ func TestSignalBusPublishBestEffortDeliversAll(t *testing.T) {
 	errFirst := errors.New("deliver: first instance failed")
 
 	delivered := make(map[string]bool)
-	bus := runtime.NewSignalBus(clockwork.NewFakeClock(), func(_ context.Context, instanceID string, _ engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(_ context.Context, instanceID string, _ engine.Trigger) error {
 		if instanceID == "inst-a" {
 			return errFirst
 		}
 		delivered[instanceID] = true
 		return nil
-	})
+	}, runtime.WithSignalBusClock(clockwork.NewFakeClock()))
 	bus.Subscribe("inst-a", "sig") // will fail
 	bus.Subscribe("inst-b", "sig") // must still be delivered
 	bus.Subscribe("inst-c", "sig") // must still be delivered
@@ -173,7 +173,7 @@ func TestSignalBusIsSafeForConcurrentUse(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
 	fc := clockwork.NewFakeClock()
-	bus := runtime.NewSignalBus(fc, rec.deliver)
+	bus := runtime.NewSignalBus(rec.deliver, runtime.WithSignalBusClock(fc))
 
 	var wg sync.WaitGroup
 	for i := range 50 {
@@ -197,10 +197,10 @@ func TestSignalBusPublishStampsViaClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(knownTime)
 
 	var captured engine.Trigger
-	bus := runtime.NewSignalBus(fc, func(_ context.Context, _ string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(_ context.Context, _ string, trg engine.Trigger) error {
 		captured = trg
 		return nil
-	})
+	}, runtime.WithSignalBusClock(fc))
 	bus.Subscribe("inst-x", "pay")
 
 	err := bus.Publish(context.Background(), "pay", nil)
@@ -211,4 +211,31 @@ func TestSignalBusPublishStampsViaClock(t *testing.T) {
 	require.True(t, ok, "trigger must be SignalReceived")
 	assert.Equal(t, knownTime, sig.OccurredAt(),
 		"OccurredAt must equal the fake clock's time, not wall-clock time.Now()")
+}
+
+func TestNewSignalBusDefaultUsesSystemClock(t *testing.T) {
+	var got time.Time
+	deliver := func(_ context.Context, _ string, trg engine.Trigger) error {
+		got = trg.OccurredAt()
+		return nil
+	}
+	bus := runtime.NewSignalBus(deliver)
+	bus.Subscribe("inst-1", "sig")
+	before := time.Now()
+	require.NoError(t, bus.Publish(t.Context(), "sig", nil))
+	after := time.Now()
+	assert.False(t, got.Before(before) || got.After(after), "SignalReceived should be stamped from the system clock")
+}
+
+func TestNewSignalBusWithClockOption(t *testing.T) {
+	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
+	var got time.Time
+	deliver := func(_ context.Context, _ string, trg engine.Trigger) error {
+		got = trg.OccurredAt()
+		return nil
+	}
+	bus := runtime.NewSignalBus(deliver, runtime.WithSignalBusClock(fake))
+	bus.Subscribe("inst-1", "sig")
+	require.NoError(t, bus.Publish(t.Context(), "sig", nil))
+	assert.Equal(t, time.Unix(1000, 0).UTC(), got.UTC())
 }

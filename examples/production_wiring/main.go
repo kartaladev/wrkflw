@@ -39,7 +39,6 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
@@ -152,11 +151,11 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner := runtime.NewRunner(cat, clock.System(), store,
+	runner := runtime.NewRunner(cat, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
-	tasks := runtime.NewTaskService(taskStore, az, clock.System())
-	svc := service.New(runner, tasks, reg, store, lister, taskStore, clock.System())
+	tasks := runtime.NewTaskService(taskStore, az)
+	svc := service.New(runner, tasks, reg, store, lister, taskStore)
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---
 	mux := http.NewServeMux()

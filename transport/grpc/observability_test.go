@@ -44,7 +44,7 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": serverTestGreetAction{},
 	})
-	runner := runtime.NewRunner(cat, fc, store, runtime.WithHumanTasks(resolver, taskStore, az))
+	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {
@@ -52,8 +52,8 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 		defsMap[d.ID] = d
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	tasks := runtime.NewTaskService(taskStore, az, fc)
-	svc := service.New(runner, tasks, reg, store, store, taskStore, fc)
+	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	svc := service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 
 	lis := bufconn.Listen(bufSize)
 	grpcServer := grpc.NewServer()
