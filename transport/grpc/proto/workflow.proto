@@ -49,6 +49,14 @@ service WorkflowService {
   // WithDeadLetterAdmin, else returns Unimplemented.
   rpc RedriveDeadLetters(RedriveDeadLettersRequest) returns (RedriveDeadLettersResponse);
 
+  // GetInstanceSnapshot returns the full snapshot projection of an instance,
+  // including tokens, history, tasks, incidents, and action-binding metadata.
+  rpc GetInstanceSnapshot(GetInstanceRequest) returns (InstanceSnapshotResponse);
+
+  // GetActionableView returns the actionable projection of an instance: open
+  // human tasks and their allowed next actions derived from the definition.
+  rpc GetActionableView(GetInstanceRequest) returns (ActionableViewResponse);
+
   // AddPolicy adds a casbin permission rule. Admin-scoped; requires
   // WithPolicyAdmin, else returns Unimplemented.
   rpc AddPolicy(AddPolicyRequest) returns (MutateAck);
@@ -264,4 +272,114 @@ message ListInstancesResponse {
   // total_count is set only when ListInstancesRequest.include_total was true;
   // 0 otherwise.
   int64 total_count = 4;
+}
+
+// TokenView is the gRPC projection of a single engine token.
+message TokenView {
+  string id = 1;
+  string node_id = 2;
+  string scope_id = 3;
+  string state = 4;
+  google.protobuf.Struct payload = 5;
+  google.protobuf.Timestamp entered_at = 6;
+  int32 retry_attempts = 7;
+}
+
+// NodeVisitView is the gRPC projection of a single node-visit audit entry.
+message NodeVisitView {
+  string node_id = 1;
+  string token_id = 2;
+  google.protobuf.Timestamp entered_at = 3;
+  google.protobuf.Timestamp left_at = 4;
+  string actor_id = 5;
+}
+
+// TaskView is the gRPC projection of a human task record.
+message TaskView {
+  string task_token = 1;
+  string node_id = 2;
+  string state = 3;
+  string claimed_by = 4;
+  repeated string candidates = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp due_at = 7;
+}
+
+// IncidentView is the gRPC projection of an open incident record.
+message IncidentView {
+  string id = 1;
+  string token_id = 2;
+  string node_id = 3;
+  string scope_id = 4;
+  string error = 5;
+  int32 attempts = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// ActionBindingView describes how a single service-action-bearing node
+// (ServiceTask or BusinessRuleTask) is wired to its action within a definition.
+message ActionBindingView {
+  string node_id = 1;
+  // node_kind is "serviceTask" or "businessRuleTask".
+  string node_kind = 2;
+  // action is the explicit catalog-action name; empty means default-by-id.
+  string action = 3;
+  // inline is true when the node carries a node-local inline ServiceAction.
+  bool inline = 4;
+}
+
+// InstanceSnapshot is the full gRPC snapshot of a process instance, mirroring
+// the runtime.InstanceSnapshot DTO returned by the REST snapshot endpoint.
+message InstanceSnapshot {
+  string instance_id = 1;
+  string def_id = 2;
+  int32 def_version = 3;
+  string status = 4;
+  google.protobuf.Struct variables = 5;
+  repeated TokenView tokens = 6;
+  repeated NodeVisitView history = 7;
+  repeated TaskView tasks = 8;
+  repeated IncidentView incidents = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp ended_at = 11;
+  repeated string scoped_actions = 12;
+  repeated ActionBindingView action_bindings = 13;
+}
+
+// InstanceSnapshotResponse wraps InstanceSnapshot for forward-compat.
+message InstanceSnapshotResponse {
+  InstanceSnapshot snapshot = 1;
+}
+
+// NextAction describes a single outgoing sequence flow (allowed next step) from
+// a human-task node.
+message NextAction {
+  string flow_id = 1;
+  string target = 2;
+  string condition = 3;
+  bool is_default = 4;
+}
+
+// ActionableTask is the curated view of a single open human task together with
+// the allowed next actions derived from the process definition.
+message ActionableTask {
+  string task_token = 1;
+  string node_id = 2;
+  string state = 3;
+  string claimed_by = 4;
+  repeated string candidates = 5;
+  repeated NextAction allowed_actions = 6;
+}
+
+// ActionableView is the curated gRPC projection of a process instance focused
+// on actionability, mirroring the runtime.ActionableView DTO.
+message ActionableView {
+  string instance_id = 1;
+  string status = 2;
+  repeated ActionableTask open_tasks = 3;
+}
+
+// ActionableViewResponse wraps ActionableView for forward-compat.
+message ActionableViewResponse {
+  ActionableView actionable = 1;
 }

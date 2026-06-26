@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 )
@@ -104,6 +105,12 @@ func (b *DefinitionBuilder) Build() (*ProcessDefinition, error) {
 	}
 	if b.actions != nil {
 		def.scoped = action.NewMapCatalog(b.actions)
+		names := make([]string, 0, len(b.actions))
+		for name := range b.actions {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		def.scopedNames = names
 	}
 	if err := Validate(&def); err != nil {
 		return nil, err
