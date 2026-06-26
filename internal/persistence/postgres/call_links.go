@@ -33,9 +33,12 @@ func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
 
 // WithCallLinkClock overrides the clock used for lease timestamps. The default
 // is clock.System(). Inject a fake clock in tests for deterministic behaviour.
+// A nil clock is ignored (the default is kept).
 func WithCallLinkClock(clk clock.Clock) CallLinkOption {
 	return func(s *CallLinkStore) {
-		s.clk = clk
+		if clk != nil {
+			s.clk = clk
+		}
 	}
 }
 

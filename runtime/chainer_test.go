@@ -205,3 +205,28 @@ func TestNewChainerNilGuards(t *testing.T) {
 	assert.Panics(t, func() { runtime.NewChainer(&recordingStarter{}, nil) }, "nil policy must panic")
 	assert.NotPanics(t, func() { runtime.NewChainer(&recordingStarter{}, policy) }, "both set must construct")
 }
+
+// TestWithChainClockNilFallsBackToSystem asserts that passing a nil clock to
+// WithChainClock does NOT overwrite the constructor's clock.System() default.
+// The guard is verified by exercising Handle on a path that calls clk.Now()
+// (ChainLink.CreatedAt stamping) — a nil clock would panic.
+func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
+	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+		return runtime.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
+	}
+	links := runtime.NewMemChainLinkStore()
+	starter := &recordingStarter{}
+	c := runtime.NewChainer(starter, policy,
+		runtime.WithChainLinks(links),
+		runtime.WithChainClock(nil), // must be ignored — default clock.System() must survive
+	)
+	ev := runtime.ChainEvent{
+		PredecessorID: "p-nil-clk",
+		Outcome:       runtime.OutcomeCompleted,
+		Result:        map[string]any{"k": "v"},
+	}
+	// If the nil-guard is absent the nil clock's Now() call panics here.
+	assert.NotPanics(t, func() {
+		_ = c.Handle(t.Context(), ev)
+	}, "WithChainClock(nil) must be ignored; clk.Now() must not panic")
+}

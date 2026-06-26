@@ -35,9 +35,12 @@ func WithMemCallLinkLease(owner string, ttl time.Duration) MemCallLinkOption {
 
 // WithMemCallLinkClock overrides the clock used for lease timestamps. The
 // default is clock.System(). Inject a fake clock in tests.
+// A nil clock is ignored (the default is kept).
 func WithMemCallLinkClock(clk clock.Clock) MemCallLinkOption {
 	return func(s *MemCallLinkStore) {
-		s.clk = clk
+		if clk != nil {
+			s.clk = clk
+		}
 	}
 }
 

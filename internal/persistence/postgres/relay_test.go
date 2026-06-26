@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
@@ -593,4 +594,23 @@ func TestRelayDLQAdmin(t *testing.T) {
 	).Scan(&finalStatus)
 	require.NoError(t, err)
 	require.Equal(t, "published", finalStatus, "redriven row must be published after drain")
+}
+
+// TestWithClockNilFallsBackToSystem asserts that passing a nil clock to
+// WithClock does NOT overwrite the constructor's clock.System() default. The
+// guard is verified via DrainOnce — it calls r.clk.Now() as the claim
+// predicate even when the outbox is empty. A nil clock would panic there.
+func TestWithClockNilFallsBackToSystem(t *testing.T) {
+	t.Parallel()
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	pub := &recordingPub{}
+	relay := pg.NewRelay(pool, pub, pg.WithClock(nil)) // nil must be ignored; clock.System() must survive
+
+	// DrainOnce calls r.clk.Now() at the top to build the claim predicate.
+	// On an empty outbox it returns (0, nil); it must not panic.
+	assert.NotPanics(t, func() {
+		_, _ = relay.DrainOnce(t.Context())
+	}, "WithClock(nil) must be ignored; DrainOnce must not panic on nil clock")
 }
