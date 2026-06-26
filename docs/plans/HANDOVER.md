@@ -5,7 +5,7 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26 (transactional SendTask outbox)
 
-> **State:** `main` HEAD (latest after ADR-0067 merge), full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean. **Next free ADR: 0068.**
+> **State:** `main` HEAD `1ea8400` (pushed to `origin`), full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean, `engine/`+`model/` zero-diff. **Next free ADR: 0068.**
 >
 > **✅ Merged 2026-06-26 — transactional SendTask outbox (ADR-0067, supersedes ADR-0060).**
 > `SendTask` now emits a `message.<MessageName>` event written into the **existing `wrkflw_outbox`**
