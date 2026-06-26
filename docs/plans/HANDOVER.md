@@ -3,10 +3,38 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26 (clock-optional refactor)
 
-> **State:** `main` is clean, pushed to `origin` (HEAD `165eb86`), full suite green, gofmt/vet/lint clean.
-> **Next free ADR: 0066.**
+> **State:** `main` HEAD `7a1543f`, full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean, `engine/`+`model/` zero-diff. **Next free ADR: 0067.** Local `main` is ahead of `origin/main` — **push pending** (see below).
+>
+> **✅ Merged 2026-06-26 — `clock.Clock` is now OPTIONAL via `With<Component>Clock` options (ADR-0066).**
+> Repo-wide refactor (branch `refactor/optional-clock-via-option`, merge `7a1543f`, 11 commits, SDD): every
+> positional `clk clock.Clock` parameter was moved to a `With<Component>Clock(clk)` functional option that
+> defaults to `clock.System()` (nil-guarded — explicit `nil` falls back to system). **BREAKING** constructor
+> signatures (advise against the old positional forms):
+> - `runtime.NewRunner(cat, store, opts...)` — **`clk` removed; `store` is now arg 2** → `WithRunnerClock`.
+> - `runtime.NewSignalBus(deliver, opts...)` — **`deliver` is now arg 1** → `WithSignalBusClock`.
+> - `runtime.NewMemScheduler(opts...)` → `WithMemSchedulerClock`; `runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)` → `WithCachingDefinitionRegistryClock`; `runtime.NewCachingStore(backing, owner, opts...)` → `WithCachingStoreClock`; `runtime.NewCallNotifier(cl, deliver, reg, opts...)` → `WithCallNotifierClock`; `runtime.NewTaskService(store, az, opts...)` → `WithTaskServiceClock`; `service.New(...6 args..., opts...)` → `WithEngineClock`; `persistence.NewCachingDefinitionRegistry`/`NewCallNotifier` facades drop positional `clk`, forward opts.
+> - The 4 pre-existing options (`WithChainClock`, `WithMemCallLinkClock`, postgres relay `WithClock`, `WithCallLinkClock`) gained the nil-guard.
+> - **EXCLUDED (still positional):** the `clockwork.Clock` gocron seam — `scheduling.NewScheduler`, `internal/scheduling/gocron.NewGocronScheduler`, `WithElectorClock` (different type; could be a follow-up).
+> - **Footgun (ADR-0066 Consequences):** omitting the clock in a test now silently uses wall time (no compile error); determinism-sensitive tests must pass `With…Clock(fake)`. Whole-branch review confirmed every existing fake clock was correctly re-threaded.
+>
+> **▶ NEXT (Track 1, designed but NOT yet implemented): transactional SendTask outbox.** Spec committed at
+> `docs/specs/transactional-sendtask-outbox.md` (Option A + Replace): route `SendTask` messages as a
+> `message.<Name>` event in the **existing `wrkflw_outbox`** (atomic with the state commit, at-least-once via
+> the existing relay), **retiring the ADR-0060 `MessageSink`/`OutboundMessage`/`WithMessageSink`** (consumers
+> customize via a `message.*` subscriber + `eventing.NewMessageHandler`). **Plan NOT yet written** (run
+> `superpowers:writing-plans` next). ADR to record on implementation: **0067** (supersedes ADR-0060).
+>
+> **Discretionary backlog (unchanged, still nothing blocking):** (1) **CI pipeline** — still highest-value, the only
+> intentionally-deferred item; (2) surface def-scoped catalog in InstanceSnapshot/ActionableView DTOs + gRPC;
+> (3) Track 1 above; (4) tidy: delete now-redundant `runtime.TestCachingDefinitionRegistry_SystemClock`; service pkg
+> coverage 84.7% (pre-existing, untested `deadletter.go`/`policyadmin.go`).
+
+## ⏩ PRIOR RESUME POINT — updated 2026-06-26 (deadline rename / fire-and-forget)
+
+> **State:** `main` was clean, pushed to `origin` (HEAD `165eb86`), full suite green, gofmt/vet/lint clean.
+> **Next free ADR was: 0066.**
 >
 > **⚠️ Corrections to older blocks below (they are point-in-time records and now stale on these points):**
 > - **`BusinessRuleTask` IS executed** (via `businessRuleTaskStrategy`, ADR-0063). Any text below calling
