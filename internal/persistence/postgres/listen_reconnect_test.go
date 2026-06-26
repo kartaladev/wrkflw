@@ -68,17 +68,27 @@ func TestListenLoopExitsOnContextCancellation(t *testing.T) {
 	pool := database.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), pool))
 
+	// Synchronize on the listen loop's ACTUAL establishment (not a sleep): the
+	// relay signals listenReady once LISTEN is set up, so the test cancels while
+	// the loop is genuinely blocked in WaitForNotification rather than guessing.
+	ready := make(chan struct{}, 1)
 	relay := postgres.NewRelay(pool, &countingPublisher{},
 		postgres.WithListenNotify(),
 		postgres.WithPollInterval(50*time.Millisecond),
+		postgres.WithListenReady(ready),
 	)
 
 	runCtx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- relay.Run(runCtx) }()
 
-	// Let the relay establish its LISTEN connection.
-	time.Sleep(200 * time.Millisecond)
+	// Wait for the listen loop to establish (deterministic; generous upper bound
+	// only to fail fast if establishment never happens).
+	select {
+	case <-ready:
+	case <-time.After(10 * time.Second):
+		t.Fatal("listen loop did not establish LISTEN within 10s")
+	}
 
 	cancel()
 

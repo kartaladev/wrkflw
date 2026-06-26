@@ -49,7 +49,8 @@ type Relay struct {
 	maxDelivery  int
 	backoffBase  time.Duration
 	backoffMax   time.Duration
-	listen       bool // wake the poll loop on NOTIFY wrkflw_outbox (ADR-0022)
+	listen       bool          // wake the poll loop on NOTIFY wrkflw_outbox (ADR-0022)
+	listenReady  chan struct{} // test-only: signalled once when LISTEN is established (nil in production)
 
 	// staged telemetry option values; assembled into tel after all RelayOptions
 	// have been applied in NewRelay.
@@ -117,6 +118,13 @@ func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
 // as a fallback for missed notifications, restarts, and multi-worker fan-out
 // (ADR-0022). Default: off (pure polling).
 func WithListenNotify() RelayOption { return func(r *Relay) { r.listen = true } }
+
+// withListenReady sets a test-only channel that the listen loop signals (once,
+// non-blocking) when its LISTEN is first established. Production callers never
+// set it; it exists so tests can synchronize deterministically on the loop's
+// established state instead of sleeping. Exposed to black-box tests via
+// export_test.go's WithListenReady.
+func withListenReady(ch chan struct{}) RelayOption { return func(r *Relay) { r.listenReady = ch } }
 
 // WithRelayLogger sets the structured logger used by the relay for drain logs.
 // Default: slog.Default().
@@ -227,6 +235,14 @@ func (r *Relay) listenLoop(ctx context.Context, wake chan<- struct{}) {
 			case <-time.After(r.pollInterval):
 			}
 			continue
+		}
+		// LISTEN established: signal readiness once (non-blocking). Test-only;
+		// r.listenReady is nil in production so this is a no-op there.
+		if r.listenReady != nil {
+			select {
+			case r.listenReady <- struct{}{}:
+			default: // already signalled (reconnect) or buffer full — coalesce
+			}
 		}
 		for ctx.Err() == nil {
 			if _, err := conn.Conn().WaitForNotification(ctx); err != nil {

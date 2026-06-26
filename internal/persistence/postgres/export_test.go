@@ -121,3 +121,8 @@ func TestWriteOutboxExecError(t *testing.T) {
 
 // CapHistory exposes the unexported capHistory helper for black-box tests.
 var CapHistory = capHistory
+
+// WithListenReady exposes the test-only withListenReady relay option to black-box
+// tests so they can synchronize on the listen loop's actual LISTEN establishment
+// instead of sleeping.
+func WithListenReady(ch chan struct{}) RelayOption { return withListenReady(ch) }
