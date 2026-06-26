@@ -803,33 +803,36 @@ Connect("route", "reject",        model.AsDefault()).
 variable key `amount`, not `vars.amount`.
 → [`examples/scenarios/exclusive_routing`](examples/scenarios/exclusive_routing)
 
-### 3. Boundary timer / timeout escalation
+### 3. Activity deadline / timeout escalation
 
-An **interrupting** `BoundaryEvent` timer attached to an activity cancels the host and
-routes to an escalation path when the timer fires before the activity finishes.
+A **`WithDeadline`** option attached to an activity arms a deadline timer; if the
+activity is still in progress when the deadline elapses, the engine cancels the
+in-progress task and routes the token down a named deadline flow to an escalation
+path (and optionally runs a fire-once breach action — the third argument).
 
 ```
-start → review[UserTask] ─────────────────→ approved-end
-            │ (boundary timer "1h", interrupting)
+start → review[UserTask, deadline "1h" → flow "review-overdue"] ──→ approved-end
+            │ (deadline breach)
             ↓
-        escalate[Service] → escalated-end
+        escalate[Service "reassign"] → escalated-end
 ```
 
 ```go
-Add(model.NewUserTask("review", []string{"reviewer"})).
-Add(model.NewBoundaryEvent("review-timeout", "review",
-    model.WithBoundaryTimer(`"1h"`))). // interrupting by default
-Add(model.NewServiceTask("escalate", model.WithActionName("escalate"))).
+Add(model.NewUserTask("review", []string{"reviewer"},
+    model.WithDeadline(`"1h"`, "review-overdue", ""))). // empty breach action; escalate via the flow
+Add(model.NewServiceTask("escalate", model.WithActionName("reassign"))).
 // ...
-Connect("review", "approved-end").
-Connect("review-timeout", "escalate").
+Connect("review", "approved-end").                                  // normal path
+Connect("review", "escalate", model.WithFlowID("review-overdue")).  // deadline flow
+Connect("escalate", "escalated-end").
 ```
 
 **At runtime:** the reviewer never claims the task; advancing a `*clockwork.FakeClock`
-past the timer and calling `sched.Tick(ctx)` fires the boundary timer, cancels the host
-user task, runs `escalate`, and completes via `escalated-end`. The example wires
-`WithHumanTasks` (so the user task parks) and `WithScheduler` (so the timer arms).
-*Timer, signal, error, and message boundaries are all armed and fired by the engine.*
+past the deadline and calling `sched.Tick(ctx)` fires the deadline timer, cancels the
+host user task, routes to `escalate`, and completes via `escalated-end`. The example
+wires `WithHumanTasks` (so the user task parks) and `WithScheduler` (so the timer arms).
+(For edge-attached `BoundaryEvent` timers/signals/errors/messages, see the
+`WithBoundary*` options in the node reference above.)
 → [`examples/scenarios/boundary_timer`](examples/scenarios/boundary_timer)
 
 ### 4. Compensation / saga rollback
