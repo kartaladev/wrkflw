@@ -52,7 +52,7 @@ func TestGocronScheduler_WithLogger(t *testing.T) {
 				h := &captureHandler{}
 				logger := slog.New(h)
 
-				s, err := sched.NewGocronScheduler(clk, sched.WithLogger(logger))
+				s, err := sched.NewGocronScheduler(sched.WithClock(clk), sched.WithLogger(logger))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 
@@ -69,7 +69,7 @@ func TestGocronScheduler_WithLogger(t *testing.T) {
 			name: "construction with nil logger option falls back to default",
 			assert: func(t *testing.T, clk *clockwork.FakeClock) {
 				// nil logger option must be a no-op — no panic, no nil pointer.
-				s, err := sched.NewGocronScheduler(clk, sched.WithLogger(nil))
+				s, err := sched.NewGocronScheduler(sched.WithClock(clk), sched.WithLogger(nil))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				assert.NotNil(t, s)
@@ -78,7 +78,7 @@ func TestGocronScheduler_WithLogger(t *testing.T) {
 		{
 			name: "construction with no options still works",
 			assert: func(t *testing.T, clk *clockwork.FakeClock) {
-				s, err := sched.NewGocronScheduler(clk)
+				s, err := sched.NewGocronScheduler(sched.WithClock(clk))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				assert.NotNil(t, s)
@@ -96,7 +96,7 @@ func TestGocronScheduler_WithLogger(t *testing.T) {
 
 func TestGocronScheduler_FiresAtTime(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
-	s, err := sched.NewGocronScheduler(fakeClock)
+	s, err := sched.NewGocronScheduler(sched.WithClock(fakeClock))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -218,7 +218,7 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			clk := clockwork.NewFakeClock()
-			s, err := sched.NewGocronScheduler(clk)
+			s, err := sched.NewGocronScheduler(sched.WithClock(clk))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 			c.assert(t, s, clk)
@@ -243,7 +243,7 @@ func TestGocronScheduler_WithTracerAndMeterProvider(t *testing.T) {
 			assert: func(t *testing.T, clk *clockwork.FakeClock) {
 				tp := sdktrace.NewTracerProvider()
 				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
-				s, err := sched.NewGocronScheduler(clk, sched.WithTracerProvider(tp))
+				s, err := sched.NewGocronScheduler(sched.WithClock(clk), sched.WithTracerProvider(tp))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				assert.NotNil(t, s)
@@ -254,7 +254,7 @@ func TestGocronScheduler_WithTracerAndMeterProvider(t *testing.T) {
 			assert: func(t *testing.T, clk *clockwork.FakeClock) {
 				mp := sdkmetric.NewMeterProvider()
 				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
-				s, err := sched.NewGocronScheduler(clk, sched.WithMeterProvider(mp))
+				s, err := sched.NewGocronScheduler(sched.WithClock(clk), sched.WithMeterProvider(mp))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				assert.NotNil(t, s)
@@ -268,7 +268,8 @@ func TestGocronScheduler_WithTracerAndMeterProvider(t *testing.T) {
 				mp := sdkmetric.NewMeterProvider()
 				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 				l := slog.New(slog.Default().Handler())
-				s, err := sched.NewGocronScheduler(clk,
+				s, err := sched.NewGocronScheduler(
+					sched.WithClock(clk),
 					sched.WithTracerProvider(tp),
 					sched.WithMeterProvider(mp),
 					sched.WithLogger(l),
@@ -295,7 +296,7 @@ func TestSchedulePastFireAtFiresImmediately(t *testing.T) {
 	startTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startTime)
 
-	s, err := sched.NewGocronScheduler(clk)
+	s, err := sched.NewGocronScheduler(sched.WithClock(clk))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 

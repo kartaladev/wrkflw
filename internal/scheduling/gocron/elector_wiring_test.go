@@ -58,7 +58,7 @@ func TestGocronSchedulerElectorGatesFire(t *testing.T) {
 			t.Cleanup(func() { _ = elector.Close() })
 
 			clk := clockwork.NewFakeClock()
-			s, err := sched.NewGocronScheduler(clk, sched.WithElector(elector))
+			s, err := sched.NewGocronScheduler(sched.WithClock(clk), sched.WithElector(elector))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 
@@ -96,7 +96,8 @@ func TestGocronSchedulerLockerElectorMutuallyExclusive(t *testing.T) {
 	t.Cleanup(func() { _ = elector.Close() })
 
 	clk := clockwork.NewFakeClock()
-	_, err = sched.NewGocronScheduler(clk,
+	_, err = sched.NewGocronScheduler(
+		sched.WithClock(clk),
 		sched.WithLocker(sched.NewPostgresLocker(pool)),
 		sched.WithElector(elector),
 	)

@@ -109,6 +109,18 @@ func WithElector(e gocron.Elector) Option {
 	}
 }
 
+// WithClock sets the [clockwork.Clock] that drives timer scheduling (default:
+// [clockwork.NewRealClock]). Pass a fake clock in tests so that a single
+// clock.Advance drives both engine timestamps and timer firing (ADR-0003,
+// ADR-0069). A nil value is ignored (falls back to the default real clock).
+func WithClock(clk clockwork.Clock) Option {
+	return func(s *GocronScheduler) {
+		if clk != nil {
+			s.clk = clk
+		}
+	}
+}
+
 // filterNilOpts returns only the non-nil observability.Option values from opts.
 func filterNilOpts(opts ...observability.Option) []observability.Option {
 	out := opts[:0]
@@ -120,24 +132,30 @@ func filterNilOpts(opts ...observability.Option) []observability.Option {
 	return out
 }
 
-// NewGocronScheduler constructs and starts a gocron-backed scheduler driven by
-// clk. The caller must Close it to avoid leaking gocron's executor goroutine.
-func NewGocronScheduler(clk clockwork.Clock, opts ...Option) (*GocronScheduler, error) {
+// NewGocronScheduler constructs and starts a gocron-backed scheduler. Pass
+// [WithClock] to drive timer scheduling with a specific [clockwork.Clock]
+// (default: [clockwork.NewRealClock]). The caller must Close it to avoid
+// leaking gocron's executor goroutine.
+func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	s := &GocronScheduler{
-		clk:  clk,
 		jobs: make(map[string]uuid.UUID),
 	}
-	// Apply options first so locker (and telemetry) are known before the gocron
-	// scheduler is constructed — WithDistributedLocker is a construction-time option.
+	// Apply options first so locker, elector, clock (and telemetry) are known
+	// before the gocron scheduler is constructed.
 	for _, o := range opts {
 		o(s)
+	}
+
+	// Resolve the effective clock: option-provided or real-clock default.
+	if s.clk == nil {
+		s.clk = clockwork.NewRealClock()
 	}
 
 	if s.locker != nil && s.elector != nil {
 		return nil, ErrLockerElectorConflict
 	}
 
-	gocronOpts := []gocron.SchedulerOption{gocron.WithClock(clk)}
+	gocronOpts := []gocron.SchedulerOption{gocron.WithClock(s.clk)}
 	if s.locker != nil {
 		gocronOpts = append(gocronOpts, gocron.WithDistributedLocker(s.locker))
 	}
