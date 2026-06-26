@@ -323,6 +323,171 @@ func (s *server) ResolveIncident(ctx context.Context, req *workflowpb.ResolveInc
 	return &workflowpb.InstanceResponse{Instance: proto}, nil
 }
 
+// GetInstanceSnapshot returns the full snapshot projection of a process instance,
+// including tokens, history, tasks, incidents, scoped_actions, and action_bindings.
+func (s *server) GetInstanceSnapshot(ctx context.Context, req *workflowpb.GetInstanceRequest) (*workflowpb.InstanceSnapshotResponse, error) {
+	ctx, span := s.startSpan(ctx, "GetInstanceSnapshot")
+	defer span.End()
+
+	st, def, err := s.svc.GetInstanceWithDefinition(ctx, req.GetInstanceId())
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	snap := runtime.NewInstanceSnapshot(st, def)
+	protoSnap, err := snapshotToProto(snap)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, status.Errorf(codes.Internal, "response serialization: %s", err)
+	}
+	return &workflowpb.InstanceSnapshotResponse{Snapshot: protoSnap}, nil
+}
+
+// GetActionableView returns the actionable projection of a process instance:
+// open human tasks and their allowed next actions derived from the definition.
+func (s *server) GetActionableView(ctx context.Context, req *workflowpb.GetInstanceRequest) (*workflowpb.ActionableViewResponse, error) {
+	ctx, span := s.startSpan(ctx, "GetActionableView")
+	defer span.End()
+
+	st, def, err := s.svc.GetInstanceWithDefinition(ctx, req.GetInstanceId())
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	av := runtime.NewActionableView(st, def)
+	return &workflowpb.ActionableViewResponse{Actionable: actionableViewToProto(av)}, nil
+}
+
+// snapshotToProto converts a runtime.InstanceSnapshot to its proto representation.
+// Returns an error when the Variables map contains a value that cannot be
+// represented as a proto Struct.
+func snapshotToProto(snap runtime.InstanceSnapshot) (*workflowpb.InstanceSnapshot, error) {
+	vars, err := toStruct(snap.Variables)
+	if err != nil {
+		return nil, err
+	}
+
+	tokens := make([]*workflowpb.TokenView, len(snap.Tokens))
+	for i, t := range snap.Tokens {
+		payload, payloadErr := toStruct(t.Payload)
+		if payloadErr != nil {
+			return nil, payloadErr
+		}
+		tokens[i] = &workflowpb.TokenView{
+			Id:            t.ID,
+			NodeId:        t.NodeID,
+			ScopeId:       t.ScopeID,
+			State:         t.State,
+			Payload:       payload,
+			EnteredAt:     timestamppb.New(t.EnteredAt),
+			RetryAttempts: int32(t.RetryAttempts), //nolint:gosec // bounded retry count
+		}
+	}
+
+	history := make([]*workflowpb.NodeVisitView, len(snap.History))
+	for i, v := range snap.History {
+		nv := &workflowpb.NodeVisitView{
+			NodeId:    v.NodeID,
+			TokenId:   v.TokenID,
+			EnteredAt: timestamppb.New(v.EnteredAt),
+		}
+		if v.LeftAt != nil {
+			nv.LeftAt = timestamppb.New(*v.LeftAt)
+		}
+		if v.ActorID != nil {
+			nv.ActorId = *v.ActorID
+		}
+		history[i] = nv
+	}
+
+	tasks := make([]*workflowpb.TaskView, len(snap.Tasks))
+	for i, t := range snap.Tasks {
+		tv := &workflowpb.TaskView{
+			TaskToken:  t.TaskToken,
+			NodeId:     t.NodeID,
+			State:      t.State,
+			ClaimedBy:  t.ClaimedBy,
+			Candidates: t.Candidates,
+			CreatedAt:  timestamppb.New(t.CreatedAt),
+		}
+		if t.DueAt != nil {
+			tv.DueAt = timestamppb.New(*t.DueAt)
+		}
+		tasks[i] = tv
+	}
+
+	incidents := make([]*workflowpb.IncidentView, len(snap.Incidents))
+	for i, inc := range snap.Incidents {
+		incidents[i] = &workflowpb.IncidentView{
+			Id:        inc.ID,
+			TokenId:   inc.TokenID,
+			NodeId:    inc.NodeID,
+			ScopeId:   inc.ScopeID,
+			Error:     inc.Error,
+			Attempts:  int32(inc.Attempts), //nolint:gosec // bounded attempt count
+			CreatedAt: timestamppb.New(inc.CreatedAt),
+		}
+	}
+
+	bindings := make([]*workflowpb.ActionBindingView, len(snap.ActionBindings))
+	for i, b := range snap.ActionBindings {
+		bindings[i] = &workflowpb.ActionBindingView{
+			NodeId:   b.NodeID,
+			NodeKind: b.NodeKind,
+			Action:   b.Action,
+			Inline:   b.Inline,
+		}
+	}
+
+	pb := &workflowpb.InstanceSnapshot{
+		InstanceId:     snap.InstanceID,
+		DefId:          snap.DefID,
+		DefVersion:     int32(snap.DefVersion), //nolint:gosec // version is small
+		Status:         snap.Status,
+		Variables:      vars,
+		Tokens:         tokens,
+		History:        history,
+		Tasks:          tasks,
+		Incidents:      incidents,
+		StartedAt:      timestamppb.New(snap.StartedAt),
+		ScopedActions:  snap.ScopedActions,
+		ActionBindings: bindings,
+	}
+	if snap.EndedAt != nil {
+		pb.EndedAt = timestamppb.New(*snap.EndedAt)
+	}
+	return pb, nil
+}
+
+// actionableViewToProto converts a runtime.ActionableView to its proto representation.
+func actionableViewToProto(av runtime.ActionableView) *workflowpb.ActionableView {
+	openTasks := make([]*workflowpb.ActionableTask, len(av.OpenTasks))
+	for i, t := range av.OpenTasks {
+		allowed := make([]*workflowpb.NextAction, len(t.AllowedActions))
+		for j, a := range t.AllowedActions {
+			allowed[j] = &workflowpb.NextAction{
+				FlowId:    a.FlowID,
+				Target:    a.Target,
+				Condition: a.Condition,
+				IsDefault: a.IsDefault,
+			}
+		}
+		openTasks[i] = &workflowpb.ActionableTask{
+			TaskToken:      t.TaskToken,
+			NodeId:         t.NodeID,
+			State:          t.State,
+			ClaimedBy:      t.ClaimedBy,
+			Candidates:     t.Candidates,
+			AllowedActions: allowed,
+		}
+	}
+	return &workflowpb.ActionableView{
+		InstanceId: av.InstanceID,
+		Status:     av.Status,
+		OpenTasks:  openTasks,
+	}
+}
+
 // ListDeadLetters returns dead-lettered outbox rows. It requires the server to be
 // registered with WithDeadLetterAdmin; otherwise it returns codes.Unimplemented.
 func (s *server) ListDeadLetters(ctx context.Context, req *workflowpb.ListDeadLettersRequest) (*workflowpb.ListDeadLettersResponse, error) {
