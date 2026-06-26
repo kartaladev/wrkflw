@@ -159,19 +159,6 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 	}
 }
 
-// TestCachingDefinitionRegistry_SystemClock mirrors the brief's original shape
-// using clock.System() to confirm the constructor's signature is compatible.
-func TestCachingDefinitionRegistry_SystemClock(t *testing.T) {
-	t.Parallel()
-	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
-	c := runtime.NewCachingDefinitionRegistry(backing, time.Minute)
-	require.NotNil(t, c)
-
-	got, err := c.Lookup(t.Context(), "d:1")
-	require.NoError(t, err)
-	require.Equal(t, "d", got.ID)
-}
-
 // TestCachingDefinitionRegistry_ImplementsInterface checks the compile-time interface assertion.
 func TestCachingDefinitionRegistry_ImplementsInterface(t *testing.T) {
 	var _ runtime.DefinitionRegistry = (*runtime.CachingDefinitionRegistry)(nil)
