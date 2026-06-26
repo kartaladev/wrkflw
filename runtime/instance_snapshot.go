@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"sort"
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -133,6 +134,21 @@ type TaskView struct {
 	DueAt *time.Time `json:"due_at,omitempty"`
 }
 
+// ActionBindingView describes how a single service-action-bearing node (ServiceTask
+// or BusinessRuleTask) is wired to its action within a process definition.
+type ActionBindingView struct {
+	// NodeID is the process node identifier.
+	NodeID string `json:"node_id"`
+	// NodeKind is the BPMN node kind: "serviceTask" or "businessRuleTask".
+	NodeKind string `json:"node_kind"`
+	// Action is the explicit catalog-action name set on the node. Empty means
+	// the node uses the default-by-id resolution (action name == node ID).
+	Action string `json:"action,omitempty"`
+	// Inline is true when the node carries a node-local inline ServiceAction
+	// (attached via WithAction/WithActionFunc). Inline actions are never serialized.
+	Inline bool `json:"inline"`
+}
+
 // InstanceSnapshot is the full, stable, JSON-serializable snapshot of a process
 // instance. It includes all consumer-relevant fields and deliberately excludes
 // engine bookkeeping (Timers, ArmedEvents, Boundaries, Scopes, RootCompensations,
@@ -164,12 +180,21 @@ type InstanceSnapshot struct {
 	// EndedAt is the time the instance reached a terminal state, or nil if
 	// the instance is still running.
 	EndedAt *time.Time `json:"ended_at,omitempty"`
+	// ScopedActions holds the sorted names registered in the definition-scoped
+	// action catalog. Nil when no scoped actions are registered or when no
+	// definition is available.
+	ScopedActions []string `json:"scoped_actions,omitempty"`
+	// ActionBindings lists the action wiring for each ServiceTask and
+	// BusinessRuleTask in the definition, sorted by NodeID. Nil when no
+	// definition is available or the definition has no such nodes.
+	ActionBindings []ActionBindingView `json:"action_bindings,omitempty"`
 }
 
 // NewInstanceSnapshot maps an engine.InstanceState to an InstanceSnapshot DTO.
-// The def parameter is accepted for API symmetry with NewActionableView but is
-// not used here; pass nil when the definition is unavailable.
-func NewInstanceSnapshot(st engine.InstanceState, _ *model.ProcessDefinition) InstanceSnapshot {
+// When def is non-nil, ScopedActions and ActionBindings are populated from the
+// definition's scoped catalog and service-action node wiring. Pass nil when the
+// definition is unavailable; both fields will be omitted.
+func NewInstanceSnapshot(st engine.InstanceState, def *model.ProcessDefinition) InstanceSnapshot {
 	tokens := make([]TokenView, 0, len(st.Tokens))
 	for _, t := range st.Tokens {
 		tokens = append(tokens, TokenView{
@@ -220,7 +245,7 @@ func NewInstanceSnapshot(st engine.InstanceState, _ *model.ProcessDefinition) In
 		})
 	}
 
-	return InstanceSnapshot{
+	snap := InstanceSnapshot{
 		InstanceID: st.InstanceID,
 		DefID:      st.DefID,
 		DefVersion: st.DefVersion,
@@ -233,4 +258,35 @@ func NewInstanceSnapshot(st engine.InstanceState, _ *model.ProcessDefinition) In
 		StartedAt:  st.StartedAt,
 		EndedAt:    st.EndedAt,
 	}
+
+	if def != nil {
+		snap.ScopedActions = def.ScopedActionNames()
+		var bindings []ActionBindingView
+		for _, n := range def.Nodes {
+			switch n.Kind() {
+			case model.KindServiceTask:
+				bindings = append(bindings, ActionBindingView{
+					NodeID:   n.ID(),
+					NodeKind: "serviceTask",
+					Action:   model.ActionOf(n),
+					Inline:   model.InlineActionOf(n) != nil,
+				})
+			case model.KindBusinessRuleTask:
+				bindings = append(bindings, ActionBindingView{
+					NodeID:   n.ID(),
+					NodeKind: "businessRuleTask",
+					Action:   model.ActionOf(n),
+					Inline:   model.InlineActionOf(n) != nil,
+				})
+			}
+		}
+		if len(bindings) > 0 {
+			sort.Slice(bindings, func(i, j int) bool {
+				return bindings[i].NodeID < bindings[j].NodeID
+			})
+			snap.ActionBindings = bindings
+		}
+	}
+
+	return snap
 }

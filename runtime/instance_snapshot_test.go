@@ -2,12 +2,15 @@ package runtime_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -105,5 +108,243 @@ func TestNewInstanceSnapshot(t *testing.T) {
 		if bytes.Contains(bytes.ToLower(b), bytes.ToLower([]byte(banned))) {
 			t.Errorf("snapshot JSON leaks bookkeeping key %q: %s", banned, b)
 		}
+	}
+}
+
+// noop returns a trivial inline ServiceAction for use in test definitions.
+func noop() action.ServiceAction {
+	return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		return nil, nil
+	})
+}
+
+// TestNewInstanceSnapshotActionMetadata asserts that NewInstanceSnapshot populates
+// ScopedActions and ActionBindings from the supplied definition, and that passing
+// nil leaves both fields empty.
+func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
+	st := engine.InstanceState{
+		InstanceID: "i-meta",
+		DefID:      "meta-proc",
+		DefVersion: 1,
+		Status:     engine.StatusRunning,
+	}
+
+	cases := []struct {
+		name   string
+		def    func() *model.ProcessDefinition
+		assert func(t *testing.T, snap runtime.InstanceSnapshot)
+	}{
+		{
+			name: "nil_def_leaves_fields_empty",
+			def:  func() *model.ProcessDefinition { return nil },
+			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+				t.Helper()
+				if snap.ScopedActions != nil {
+					t.Errorf("ScopedActions = %v, want nil", snap.ScopedActions)
+				}
+				if snap.ActionBindings != nil {
+					t.Errorf("ActionBindings = %v, want nil", snap.ActionBindings)
+				}
+			},
+		},
+		{
+			name: "service_task_with_action_name",
+			def: func() *model.ProcessDefinition {
+				def, err := model.NewDefinition("meta-proc", 1).
+					Add(model.NewStartEvent("start")).
+					Add(model.NewServiceTask("svc-named", model.WithActionName("my-action"))).
+					Add(model.NewEndEvent("end")).
+					Connect("start", "svc-named").
+					Connect("svc-named", "end").
+					RegisterAction("my-action", noop()).
+					Build()
+				if err != nil {
+					t.Fatalf("Build: %v", err)
+				}
+				return def
+			},
+			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+				t.Helper()
+				// Scoped action name exposed.
+				if len(snap.ScopedActions) != 1 || snap.ScopedActions[0] != "my-action" {
+					t.Errorf("ScopedActions = %v, want [my-action]", snap.ScopedActions)
+				}
+				// One binding for the service task.
+				if len(snap.ActionBindings) != 1 {
+					t.Fatalf("ActionBindings = %v, want 1 entry", snap.ActionBindings)
+				}
+				b := snap.ActionBindings[0]
+				if b.NodeID != "svc-named" {
+					t.Errorf("NodeID = %q, want svc-named", b.NodeID)
+				}
+				if b.NodeKind != "serviceTask" {
+					t.Errorf("NodeKind = %q, want serviceTask", b.NodeKind)
+				}
+				if b.Action != "my-action" {
+					t.Errorf("Action = %q, want my-action", b.Action)
+				}
+				if b.Inline {
+					t.Errorf("Inline = true, want false for named action")
+				}
+			},
+		},
+		{
+			name: "service_task_inline_action",
+			def: func() *model.ProcessDefinition {
+				def, err := model.NewDefinition("meta-proc", 1).
+					Add(model.NewStartEvent("start")).
+					Add(model.NewServiceTask("svc-inline", model.WithAction(noop()))).
+					Add(model.NewEndEvent("end")).
+					Connect("start", "svc-inline").
+					Connect("svc-inline", "end").
+					Build()
+				if err != nil {
+					t.Fatalf("Build: %v", err)
+				}
+				return def
+			},
+			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+				t.Helper()
+				if snap.ScopedActions != nil {
+					t.Errorf("ScopedActions = %v, want nil", snap.ScopedActions)
+				}
+				if len(snap.ActionBindings) != 1 {
+					t.Fatalf("ActionBindings = %v, want 1 entry", snap.ActionBindings)
+				}
+				b := snap.ActionBindings[0]
+				if b.NodeID != "svc-inline" {
+					t.Errorf("NodeID = %q, want svc-inline", b.NodeID)
+				}
+				if b.NodeKind != "serviceTask" {
+					t.Errorf("NodeKind = %q, want serviceTask", b.NodeKind)
+				}
+				if b.Action != "" {
+					t.Errorf("Action = %q, want empty (default-by-id for inline)", b.Action)
+				}
+				if !b.Inline {
+					t.Errorf("Inline = false, want true for inline action")
+				}
+			},
+		},
+		{
+			name: "service_task_default_by_id",
+			def: func() *model.ProcessDefinition {
+				def, err := model.NewDefinition("meta-proc", 1).
+					Add(model.NewStartEvent("start")).
+					Add(model.NewServiceTask("svc-default")).
+					Add(model.NewEndEvent("end")).
+					Connect("start", "svc-default").
+					Connect("svc-default", "end").
+					Build()
+				if err != nil {
+					t.Fatalf("Build: %v", err)
+				}
+				return def
+			},
+			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+				t.Helper()
+				if len(snap.ActionBindings) != 1 {
+					t.Fatalf("ActionBindings = %v, want 1 entry", snap.ActionBindings)
+				}
+				b := snap.ActionBindings[0]
+				if b.NodeID != "svc-default" {
+					t.Errorf("NodeID = %q, want svc-default", b.NodeID)
+				}
+				if b.NodeKind != "serviceTask" {
+					t.Errorf("NodeKind = %q, want serviceTask", b.NodeKind)
+				}
+				// Default-by-id: Action is empty, not substituted with the node ID.
+				if b.Action != "" {
+					t.Errorf("Action = %q, want empty for default-by-id", b.Action)
+				}
+				if b.Inline {
+					t.Errorf("Inline = true, want false for default-by-id")
+				}
+			},
+		},
+		{
+			name: "business_rule_task",
+			def: func() *model.ProcessDefinition {
+				def, err := model.NewDefinition("meta-proc", 1).
+					Add(model.NewStartEvent("start")).
+					Add(model.NewBusinessRuleTask("brt-node", model.WithActionName("rule-action"))).
+					Add(model.NewEndEvent("end")).
+					Connect("start", "brt-node").
+					Connect("brt-node", "end").
+					Build()
+				if err != nil {
+					t.Fatalf("Build: %v", err)
+				}
+				return def
+			},
+			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+				t.Helper()
+				if len(snap.ActionBindings) != 1 {
+					t.Fatalf("ActionBindings = %v, want 1 entry", snap.ActionBindings)
+				}
+				b := snap.ActionBindings[0]
+				if b.NodeID != "brt-node" {
+					t.Errorf("NodeID = %q, want brt-node", b.NodeID)
+				}
+				if b.NodeKind != "businessRuleTask" {
+					t.Errorf("NodeKind = %q, want businessRuleTask", b.NodeKind)
+				}
+				if b.Action != "rule-action" {
+					t.Errorf("Action = %q, want rule-action", b.Action)
+				}
+				if b.Inline {
+					t.Errorf("Inline = true, want false")
+				}
+			},
+		},
+		{
+			name: "mixed_nodes_sorted_by_node_id",
+			def: func() *model.ProcessDefinition {
+				def, err := model.NewDefinition("meta-proc", 1).
+					Add(model.NewStartEvent("start")).
+					Add(model.NewServiceTask("z-svc", model.WithActionName("svc-x"))).
+					Add(model.NewBusinessRuleTask("a-brt")).
+					Add(model.NewEndEvent("end")).
+					Connect("start", "z-svc").
+					Connect("z-svc", "a-brt").
+					Connect("a-brt", "end").
+					RegisterAction("svc-x", noop()).
+					Build()
+				if err != nil {
+					t.Fatalf("Build: %v", err)
+				}
+				return def
+			},
+			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+				t.Helper()
+				if len(snap.ScopedActions) != 1 || snap.ScopedActions[0] != "svc-x" {
+					t.Errorf("ScopedActions = %v, want [svc-x]", snap.ScopedActions)
+				}
+				if len(snap.ActionBindings) != 2 {
+					t.Fatalf("ActionBindings = %v, want 2 entries", snap.ActionBindings)
+				}
+				// Sorted by NodeID: a-brt < z-svc.
+				if snap.ActionBindings[0].NodeID != "a-brt" {
+					t.Errorf("ActionBindings[0].NodeID = %q, want a-brt", snap.ActionBindings[0].NodeID)
+				}
+				if snap.ActionBindings[1].NodeID != "z-svc" {
+					t.Errorf("ActionBindings[1].NodeID = %q, want z-svc", snap.ActionBindings[1].NodeID)
+				}
+				if snap.ActionBindings[0].NodeKind != "businessRuleTask" {
+					t.Errorf("ActionBindings[0].NodeKind = %q, want businessRuleTask", snap.ActionBindings[0].NodeKind)
+				}
+				if snap.ActionBindings[1].NodeKind != "serviceTask" {
+					t.Errorf("ActionBindings[1].NodeKind = %q, want serviceTask", snap.ActionBindings[1].NodeKind)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			snap := runtime.NewInstanceSnapshot(st, tc.def())
+			tc.assert(t, snap)
+		})
 	}
 }
