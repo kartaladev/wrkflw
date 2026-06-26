@@ -28,10 +28,11 @@ var ErrTimerLockElectorConflict = errors.New(
 	"workflow-scheduling: WithDistributedTimerLock and WithTimerElector are mutually exclusive — set only one")
 
 // Scheduler is the production, gocron-backed [runtime.Scheduler]. Construct it
-// with [NewScheduler], passing the same [clockwork.Clock] instance used to
-// build the runtime so one fake-clock advance drives both engine timestamps and
-// timer firing under test (ADR-0003). Call [Close] on shutdown to release the
-// underlying gocron goroutine.
+// with [NewScheduler]; supply the same [clockwork.Clock] instance used to build
+// the runtime via [WithSchedulerClock] so one fake-clock advance drives both
+// engine timestamps and timer firing under test (ADR-0003). When the clock
+// option is omitted, a real clock is used. Call [Close] on shutdown to release
+// the underlying gocron goroutine.
 type Scheduler struct {
 	impl *gocronsched.GocronScheduler
 
