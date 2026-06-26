@@ -7,9 +7,11 @@ import (
 	"time"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
@@ -126,8 +128,8 @@ func TestRelayWithLogger(t *testing.T) {
 }
 
 // TestRelayWithMeterProvider verifies that WithRelayMeterProvider is accepted
-// without error. The relay creates no metric instruments in this track, so the
-// test just ensures the option wires up without panicking.
+// without error and that the relay emits metric instruments driven by the
+// injected MeterProvider.
 func TestRelayWithMeterProvider(t *testing.T) {
 	pool := database.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
@@ -228,4 +230,115 @@ func TestRelayRedriveClosedPoolError(t *testing.T) {
 	require.Error(t, err, "Redrive on a closed pool must return an error")
 	require.Contains(t, err.Error(), "relay: redrive",
 		"error must reference the redrive operation")
+}
+
+// TestRelayEventsPublishedCounter verifies that wrkflw_relay_events_published_total
+// is incremented by exactly N when DrainOnce publishes N events.
+func TestRelayEventsPublishedCounter(t *testing.T) {
+	type testCase struct {
+		name        string
+		seedRows    int
+		wantCounter int64
+	}
+
+	cases := []testCase{
+		{name: "empty outbox — counter stays 0", seedRows: 0, wantCounter: 0},
+		{name: "1 event published", seedRows: 1, wantCounter: 1},
+		{name: "3 events published", seedRows: 3, wantCounter: 3},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := database.RunTestDatabase(t)
+			require.NoError(t, pg.Migrate(t.Context(), pool))
+
+			// Seed rows into the outbox.
+			for i := range tc.seedRows {
+				dedup := "relay-counter-" + tc.name + "-" + string(rune('a'+i))
+				_, err := pool.Exec(t.Context(),
+					`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
+					 VALUES ($1, $2, $3::jsonb, $4, $5)`,
+					"relay-counter-instance", "relay.counter.event", `{"n":1}`, dedup, time.Now().UTC(),
+				)
+				require.NoError(t, err, "seed outbox row")
+			}
+
+			reader := sdkmetric.NewManualReader()
+			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+			t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+
+			relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayMeterProvider(mp))
+			n, err := relay.DrainOnce(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, tc.seedRows, n, "DrainOnce must return the seeded row count")
+
+			// Collect metrics.
+			var rm metricdata.ResourceMetrics
+			require.NoError(t, reader.Collect(t.Context(), &rm))
+
+			var counterSum int64
+			var found bool
+			for _, sm := range rm.ScopeMetrics {
+				for _, m := range sm.Metrics {
+					if m.Name == "wrkflw_relay_events_published_total" {
+						found = true
+						data, ok := m.Data.(metricdata.Sum[int64])
+						require.True(t, ok, "expected Sum[int64] data type for counter")
+						for _, dp := range data.DataPoints {
+							counterSum += dp.Value
+						}
+					}
+				}
+			}
+			if tc.wantCounter > 0 {
+				require.True(t, found, "expected wrkflw_relay_events_published_total metric")
+				assert.Equal(t, tc.wantCounter, counterSum,
+					"counter must equal number of events published in the batch")
+			}
+		})
+	}
+}
+
+// TestRelayBatchDurationHistogram verifies that wrkflw_relay_batch_duration_seconds
+// records at least 1 observation after DrainOnce completes.
+func TestRelayBatchDurationHistogram(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	require.NoError(t, pg.Migrate(t.Context(), pool))
+
+	// Seed one row so the drain does real work.
+	_, err := pool.Exec(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
+		 VALUES ($1, $2, $3::jsonb, $4, $5)`,
+		"relay-hist-instance", "relay.hist.event", `{"h":1}`, "relay-hist-dedup-1", time.Now().UTC(),
+	)
+	require.NoError(t, err)
+
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+
+	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayMeterProvider(mp))
+	n, err := relay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(t.Context(), &rm))
+
+	var histCount uint64
+	var found bool
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name == "wrkflw_relay_batch_duration_seconds" {
+				found = true
+				data, ok := m.Data.(metricdata.Histogram[float64])
+				require.True(t, ok, "expected Histogram[float64] data type")
+				for _, dp := range data.DataPoints {
+					histCount += dp.Count
+				}
+			}
+		}
+	}
+	require.True(t, found, "expected wrkflw_relay_batch_duration_seconds metric")
+	assert.GreaterOrEqual(t, histCount, uint64(1), "histogram must have at least 1 observation")
 }
