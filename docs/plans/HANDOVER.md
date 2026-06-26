@@ -3,7 +3,31 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26 (transactional SendTask outbox)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-27 (autonomous backlog-completion program)
+
+> **State:** `main` HEAD `6cc15e7` (pushed to `origin`). **Next free ADR: 0069.** An autonomous
+> multi-track backlog-completion program is IN PROGRESS — index + triage in
+> `docs/plans/2026-06-27-backlog-completion-program.md`, live ledger in `.superpowers/sdd/progress.md`.
+> Order: **T1 → H1 → H2 → H3 → L1 → P1 → P2**, then a spec-only proposal for T2.
+>
+> **✅ Merged 2026-06-27 — T1: snapshot action metadata + gRPC snapshot RPCs (ADR-0068).**
+> `runtime.InstanceSnapshot` now carries `ScopedActions []string` + `ActionBindings []ActionBindingView`
+> (`{NodeID,NodeKind,Action,Inline}`), populated by `NewInstanceSnapshot` from the definition (the
+> formerly-ignored `def` param is now used). `model.ProcessDefinition.ScopedActionNames()` added (additive;
+> engine untouched). New gRPC RPCs `GetInstanceSnapshot`/`GetActionableView` mirror the REST endpoints with
+> full proto projections. Whole-branch opus review: Ready to merge (0 Critical/Important).
+>
+> **Triage for the rest of the program:** T2 (multi-replica timer exclusivity) is DEFERRED to spec/proposal
+> only — major architectural (distributed failover scheduler); double-fire is already correct via the engine
+> CAS so it is an optimization, needs explicit approval. SKIPPED (need approval): broker constructors
+> (Kafka/NATS/SNS), streaming/grpc-gateway, casbin ABAC/FilteredAdapter, and the CI pipeline.
+>
+> **New follow-ups queued (Minor, from T1 review):** (a) `runtime.NewInstanceSnapshot`/`NewActionableView`
+> still alias engine `Candidates`/token `Payload` into the DTO (pre-existing; harmless over the wire, but a
+> direct library consumer could observe tearing — defensive-copy pass worth doing); (b) `snapshotToProto`
+> `toStruct` error branches uncovered (75.8%) — one non-JSON-var test closes it.
+
+## ⏩ PRIOR RESUME POINT — updated 2026-06-26 (transactional SendTask outbox)
 
 > **State:** `main` HEAD `0b4da71` (pushed to `origin`), full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean, `engine/`+`model/` zero-diff. **Next free ADR: 0068.** The ADR-0067 async-e2e follow-up is **DONE** (`eventing/message_e2e_test.go` — real Postgres+relay → `NewMessageHandler` → `DeliverMessage` resumes a parked ReceiveTask).
 >
