@@ -92,10 +92,10 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	// its signal bus) handles deliveries. This ensures subscriptions/msgWaiters
 	// are always in sync — not a separate ephemeral runner.
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	})
+	}, runtime.WithSignalBusClock(fc))
 
 	r = runtime.NewRunner(nil, fc, store, runtime.WithSignalBus(bus))
 
@@ -169,10 +169,10 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
 	// dependency with a forward reference via a pointer.
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	})
+	}, runtime.WithSignalBusClock(fc))
 
 	r = runtime.NewRunner(nil, fc, store,
 		runtime.WithScheduler(sched),
@@ -212,10 +212,10 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	def := eventGatewayDef()
 
 	var r *runtime.Runner
-	bus := runtime.NewSignalBus(fc, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtime.NewSignalBus(func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	})
+	}, runtime.WithSignalBusClock(fc))
 
 	r = runtime.NewRunner(nil, fc, store,
 		runtime.WithScheduler(sched),
