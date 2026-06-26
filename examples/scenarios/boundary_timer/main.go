@@ -3,24 +3,25 @@
 //
 // A deadline is attached directly to an activity via WithDeadline(duration,
 // flowID, action). When a token sits in the activity past the duration, the
-// engine arms a TimerDeadline that, on breach, routes the token down the named
-// deadline flow to an alternative path and cancels the in-progress human task.
-// (WithDeadline can also run a fire-once breach action — the third argument;
-// here it is left empty and the escalation work is done by the service task on
-// the alternative path instead.)
+// engine arms a TimerDeadline that, on breach, does two things:
+//
+//  1. runs the breach action (a fire-once ServiceAction — the third argument —
+//     run for its side effect; its result is not fed back), and
+//  2. routes the token down the named deadline flow to an alternative path,
+//     cancelling the in-progress human task.
 //
 // Flow:
 //
-//	start → review[UserTask, deadline "1h" → flow "review-overdue"]
+//	start → review[UserTask, deadline "1h" → flow "review-overdue", action "notify-overdue"]
 //	             │                                   │
 //	             │ (reviewer approves)               │ (deadline breach)
 //	             ↓                                   ↓
 //	         approved-end                    escalate[Service "reassign"] → escalated-end
 //
-// The reviewer never claims the task. After the deadline elapses, the token is
-// routed via the "review-overdue" flow to the escalate service task ("reassign"),
-// the human task is marked Cancelled, and the instance completes via the
-// escalation path.
+// The reviewer never claims the task. After the deadline elapses, the breach
+// action "notify-overdue" runs (fire-once), the token is routed via the
+// "review-overdue" flow to the escalate service task ("reassign"), the human
+// task is marked Cancelled, and the instance completes via the escalation path.
 //
 // A *clockwork.FakeClock drives both the engine and the in-memory scheduler so
 // the example is deterministic and runs instantly: advancing the fake clock and
@@ -49,17 +50,17 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process: a user task carrying a 1-hour deadline. On breach the
-	// engine routes the token down the "review-overdue" flow to the escalate
-	// service task.
+	// engine runs the "notify-overdue" breach action (fire-once) and routes the
+	// token down the "review-overdue" flow to the escalate service task.
 	//
 	// Durations are expr-lang expressions parsed by time.ParseDuration, so they
 	// are quoted Go-duration strings ("1h", "30m", "45s"). The outer backticks
-	// keep the inner quotes literal. The empty third argument means no fire-once
-	// breach action; escalation is handled by the service task on the deadline path.
+	// keep the inner quotes literal. The third argument is the fire-once breach
+	// action; the escalation work proper is the service task on the deadline path.
 	def, err := model.NewDefinition("review-escalation", 1).
 		Add(model.NewStartEvent("start")).
 		Add(model.NewUserTask("review", []string{"reviewer"},
-			model.WithDeadline(`"1h"`, "review-overdue", ""),
+			model.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"),
 		)).
 		Add(model.NewServiceTask("escalate", model.WithActionName("reassign"))).
 		Add(model.NewEndEvent("approved-end")).
@@ -76,10 +77,16 @@ func main() {
 
 	escalated := false
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		// Fire-once breach action: run by the engine the moment the deadline
+		// elapses, for its side effect only (its result is not fed back).
+		"notify-overdue": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			fmt.Println("  [notify-overdue] review deadline breached — notifying the manager")
+			return nil, nil
+		}),
 		// Service action on the escalation path the token is routed to on breach.
 		"reassign": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			escalated = true
-			fmt.Println("  [reassign] review deadline breached — reassigning to a senior reviewer")
+			fmt.Println("  [reassign] reassigning the review to a senior reviewer")
 			return map[string]any{"escalated": true}, nil
 		}),
 	})

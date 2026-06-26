@@ -806,12 +806,12 @@ variable key `amount`, not `vars.amount`.
 ### 3. Activity deadline / timeout escalation
 
 A **`WithDeadline`** option attached to an activity arms a deadline timer; if the
-activity is still in progress when the deadline elapses, the engine cancels the
-in-progress task and routes the token down a named deadline flow to an escalation
-path (and optionally runs a fire-once breach action — the third argument).
+activity is still in progress when the deadline elapses, the engine runs the fire-once
+breach action (the third argument), cancels the in-progress task, and routes the token
+down a named deadline flow to an escalation path.
 
 ```
-start → review[UserTask, deadline "1h" → flow "review-overdue"] ──→ approved-end
+start → review[UserTask, deadline "1h" → flow "review-overdue", action "notify-overdue"] ──→ approved-end
             │ (deadline breach)
             ↓
         escalate[Service "reassign"] → escalated-end
@@ -819,7 +819,7 @@ start → review[UserTask, deadline "1h" → flow "review-overdue"] ──→ ap
 
 ```go
 Add(model.NewUserTask("review", []string{"reviewer"},
-    model.WithDeadline(`"1h"`, "review-overdue", ""))). // empty breach action; escalate via the flow
+    model.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"))). // fire-once breach action
 Add(model.NewServiceTask("escalate", model.WithActionName("reassign"))).
 // ...
 Connect("review", "approved-end").                                  // normal path
@@ -828,9 +828,11 @@ Connect("escalate", "escalated-end").
 ```
 
 **At runtime:** the reviewer never claims the task; advancing a `*clockwork.FakeClock`
-past the deadline and calling `sched.Tick(ctx)` fires the deadline timer, cancels the
-host user task, routes to `escalate`, and completes via `escalated-end`. The example
-wires `WithHumanTasks` (so the user task parks) and `WithScheduler` (so the timer arms).
+past the deadline and calling `sched.Tick(ctx)` fires the deadline timer, runs the
+fire-once `notify-overdue` breach action, cancels the host user task, routes to
+`escalate`, and completes via `escalated-end`. The breach action is fire-and-forget
+(its result is not fed back). The example wires `WithHumanTasks` (so the user task
+parks) and `WithScheduler` (so the timer arms).
 (For edge-attached `BoundaryEvent` timers/signals/errors/messages, see the
 `WithBoundary*` options in the node reference above.)
 → [`examples/scenarios/boundary_timer`](examples/scenarios/boundary_timer)
