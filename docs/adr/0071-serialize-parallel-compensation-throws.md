@@ -34,7 +34,20 @@ guarded by `ActiveCmdID != ""`).
 `recordCompensation` dedup (also flagged in the backlog) was investigated: the `ActionCompleted` path
 is already idempotent via the `tokenAwaiting` → `ErrTokenNotFound` guard. It is changed ONLY if a
 reproducing double-compensation test can be written; otherwise left untouched (no speculative edits)
-and the analysis recorded here. [Implementer fills the outcome.]
+and the analysis recorded here.
+
+Outcome (implementer, 2026-06-27): NOT reproducible — `recordCompensation` is left UNTOUCHED. Both
+call sites are single-shot per execution: (1) the `ActionCompleted` site (`step_triggers.go`) records
+before `moveAlongSingleFlow` clears `AwaitCommand`, so a duplicate/stale `ActionCompleted` for the same
+`CommandID` finds no awaiting token (`tokenAwaiting` → nil) and returns `ErrTokenNotFound` BEFORE
+reaching `recordCompensation`; (2) the sub-process-exit site (`step_nodes.go`) runs exactly once per
+scope exit, immediately followed by `closeScope`, so the same scope cannot re-record. A probe test
+(`step_compensation_dedup_probe_test.go::TestRecordCompensationDoubleRecordIsRejected`) confirms a
+duplicate `ActionCompleted` yields `ErrTokenNotFound` and exactly one record persists. Adding a
+`nodeID`-only dedup would have been actively WRONG (it would drop legitimate loop re-executions of the
+same node); a `token-id+node-id` key was considered but is unnecessary since no double-record path
+exists. Recommendation: revisit only if a future call site records compensation outside the
+`ActionCompleted`/scope-exit guards.
 
 ## Consequences
 
