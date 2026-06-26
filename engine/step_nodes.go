@@ -851,6 +851,19 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			// regardless. Auto-advance — fire-and-forget, no InvokeAction emitted.
 			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 			// stopped remains false: auto-advance (tok.State == TokenActive).
+		} else if c.s.Compensating.ActiveCmdID != "" {
+			// SERIALIZE (ADR-0071): a compensation walk is already in flight. The
+			// single-cursor model permits at most ONE walk at a time; starting a
+			// second here would overwrite the in-flight cursor and orphan the first
+			// walk. This happens when two compensation throws in parallel branches
+			// are processed in the SAME Macro drive pass. Park (defer) this throw:
+			// do NOT consume the token, do NOT touch the cursor, emit no InvokeAction.
+			// stepCompensationFinish re-activates exactly one deferred throw per finish,
+			// draining the queue one walk at a time. The parked token is re-activated
+			// (TokenActive) later, re-entering this handler when the cursor is clear.
+			tok.State = TokenWaitingCommand
+			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
+			// token parked: tok.State == TokenWaitingCommand → stopped=true.
 		} else {
 			// Start the throw compensation walk (resumeNode is non-empty here).
 			// Remember the throw token's scope for correct placeTokenInScope on finish.

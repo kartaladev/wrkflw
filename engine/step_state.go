@@ -370,5 +370,8 @@ func cloneState(st InstanceState) InstanceState {
 	if len(st.Incidents) > 0 {
 		s.Incidents = append([]Incident(nil), st.Incidents...)
 	}
+	// Deep-copy DeferredCompensationThrows: a []string of token IDs (value type),
+	// so an append-copy is sufficient to isolate the clone from the original.
+	s.DeferredCompensationThrows = append([]string(nil), st.DeferredCompensationThrows...)
 	return s
 }

@@ -291,6 +291,19 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		s.Status = StatusRunning
 		// Place the resume token in the correct scope (the throw token's scope).
 		s.placeTokenInScope(resumeNode, resumeScope, at)
+		// SERIALIZE (ADR-0071): if compensation throws were deferred while this walk
+		// was in flight, re-activate exactly ONE now. The cursor was just cleared
+		// (ActiveCmdID == ""), so the subsequent drive re-enters the throw handler for
+		// that token and starts its walk through the normal walk-start path — no logic
+		// duplication. Popping one-per-finish keeps at most one walk in flight; any
+		// further deferred throws stay queued and drain as each walk completes.
+		if len(s.DeferredCompensationThrows) > 0 {
+			deferredTok := s.DeferredCompensationThrows[0]
+			s.DeferredCompensationThrows = s.DeferredCompensationThrows[1:]
+			if tok := s.tokenByID(deferredTok); tok != nil {
+				tok.State = TokenActive
+			}
+		}
 		driveCmds, err := drive(def, s, at, mode, eval)
 		if err != nil {
 			return StepResult{}, err

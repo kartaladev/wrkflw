@@ -152,8 +152,8 @@ type ActionBindingView struct {
 // InstanceSnapshot is the full, stable, JSON-serializable snapshot of a process
 // instance. It includes all consumer-relevant fields and deliberately excludes
 // engine bookkeeping (Timers, ArmedEvents, Boundaries, Scopes, RootCompensations,
-// ArchivedCompensations, EventSubprocesses, Compensating, PendingCancel, and the
-// *Seq counters).
+// ArchivedCompensations, EventSubprocesses, Compensating, PendingCancel,
+// DeferredCompensationThrows, and the *Seq counters).
 //
 // Use NewInstanceSnapshot to construct one from an engine.InstanceState.
 type InstanceSnapshot struct {
