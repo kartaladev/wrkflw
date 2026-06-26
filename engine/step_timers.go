@@ -8,21 +8,21 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
-// handleSLAFired processes a TimerFired event for an SLA timer. It is called
-// from the TimerFired handler in Step when the timer record's Kind is TimerSLA.
+// handleDeadlineFired processes a TimerFired event for a deadline timer. It is called
+// from the TimerFired handler in Step when the timer record's Kind is TimerDeadline.
 //
 // Contract:
 //   - If the guarded task is already completed (or the parked token is gone),
 //     it is a clean no-op: no commands, no error.
-//   - If the task is still in progress, it performs the SLA breach:
-//     (a) emits InvokeAction for node.SLAAction (if set),
-//     (b) moves the token to the target of node.SLAFlow (alternative path),
+//   - If the task is still in progress, it performs the deadline breach:
+//     (a) emits InvokeAction for node.DeadlineAction (if set),
+//     (b) moves the token to the target of node.DeadlineFlow (alternative path),
 //     (c) marks the task Cancelled and emits UpdateTask,
 //     (d) cancels any other timers (e.g. reminders) for the same task,
-//     (e) removes the SLA timer record and drives forward.
-func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+//     (e) removes the deadline timer record and drives forward.
+func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Find the parked token. If the token is gone (task completed, instance
-	// advanced), the SLA fired late → clean no-op.
+	// advanced), the deadline fired late → clean no-op.
 	tok := s.tokenAwaiting(rec.TaskToken)
 	if tok == nil {
 		// Also clean up the stale timer record.
@@ -32,7 +32,7 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 
 	// If the task has already been completed or cancelled, treat as no-op.
 	// task.IsOpen() returns true only for Unclaimed or Claimed states; both
-	// Completed and Cancelled are "already resolved", including a duplicate SLA
+	// Completed and Cancelled are "already resolved", including a duplicate deadline
 	// fire after cancellation.
 	task := s.TaskByToken(rec.TaskToken)
 	if task != nil && !task.IsOpen() {
@@ -40,55 +40,55 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
-	// Resolve the effective definition for the timer's scope so that SLA timers
+	// Resolve the effective definition for the timer's scope so that deadline timers
 	// inside a sub-process resolve nodes against the nested definition.
-	tdefSLA, tdefSLAErr := defForScope(def, s, rec.ScopeID)
-	if tdefSLAErr != nil {
-		return StepResult{}, tdefSLAErr
+	tdefDeadline, tdefDeadlineErr := defForScope(def, s, rec.ScopeID)
+	if tdefDeadlineErr != nil {
+		return StepResult{}, tdefDeadlineErr
 	}
 
-	// Resolve the SLA alternative-path flow.
-	node, ok := tdefSLA.Node(rec.NodeID)
+	// Resolve the deadline alternative-path flow.
+	node, ok := tdefDeadline.Node(rec.NodeID)
 	if !ok {
-		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: node %q not found in definition", rec.NodeID)
+		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: node %q not found in definition", rec.NodeID)
 	}
-	_, slaFlow, slaAction := model.SLAOf(node)
-	if slaFlow == "" {
-		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: node %q has no SLAFlow defined", rec.NodeID)
+	_, deadlineFlow, deadlineAction := model.DeadlineOf(node)
+	if deadlineFlow == "" {
+		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: node %q has no DeadlineFlow defined", rec.NodeID)
 	}
-	// Find the sequence flow with ID == slaFlow.
-	var slaTarget string
-	for _, f := range tdefSLA.Flows {
-		if f.ID == slaFlow {
-			slaTarget = f.Target
+	// Find the sequence flow with ID == deadlineFlow.
+	var deadlineTarget string
+	for _, f := range tdefDeadline.Flows {
+		if f.ID == deadlineFlow {
+			deadlineTarget = f.Target
 			break
 		}
 	}
-	if slaTarget == "" {
-		return StepResult{}, fmt.Errorf("workflow-engine: SLA breach: SLAFlow %q not found in definition flows for node %q", slaFlow, rec.NodeID)
+	if deadlineTarget == "" {
+		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: DeadlineFlow %q not found in definition flows for node %q", deadlineFlow, rec.NodeID)
 	}
 
 	var cmds []Command
 
-	// (a) Emit the SLA alternative action, if configured.
-	if slaAction != "" {
+	// (a) Emit the deadline alternative action, if configured.
+	if deadlineAction != "" {
 		cmdID := s.nextCommandID()
 		cmds = append(cmds, InvokeAction{
 			CommandID: cmdID,
-			Name:      slaAction,
+			Name:      deadlineAction,
 			Input:     copyVars(s.Variables),
 		})
 	}
 
 	// (b) Move the token to the alternative path target. The token was parked
 	//     (TokenWaitingCommand / AwaitCommand == TaskToken); reactivate it and
-	//     route to the SLA path.
+	//     route to the deadline path.
 	// Fix A: explicitly set TokenActive before moveTokenToTarget for symmetry
 	// with HumanCompleted and as a defensive measure (moveTokenToTarget also
 	// sets it, but being explicit here makes the intent unambiguous).
 	tok.AwaitCommand = ""
 	tok.State = TokenActive
-	s.moveTokenToTarget(tok, slaTarget, at)
+	s.moveTokenToTarget(tok, deadlineTarget, at)
 
 	// (c) Mark the task Cancelled and emit UpdateTask.
 	if task != nil {
@@ -101,7 +101,7 @@ func handleSLAFired(def *model.ProcessDefinition, s *InstanceState, rec timerRec
 		cmds = append(cmds, CancelTimer{TimerID: reminderID})
 	}
 
-	// Remove the SLA timer record — it has been consumed.
+	// Remove the deadline timer record — it has been consumed.
 	s.removeTimer(rec.TimerID)
 
 	// (e) Drive forward from the alternative path.
@@ -230,7 +230,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 	tok.State = TokenWaitingCommand
 	tok.AwaitCommand = cmdID
 
-	// Re-arm boundary events (SLA timers, reminder timers) so they are active
+	// Re-arm boundary events (deadline timers, reminder timers) so they are active
 	// for this invocation attempt.
 	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID(), at, eval)
 	if err != nil {
@@ -248,7 +248,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 //   - Otherwise: removes the consumed timer record, re-emits InvokeAction for
 //     the node (mirroring the service-task drive path), re-parks the token on
 //     the new command ID, and re-arms any boundary events (which Task 5 cancelled
-//     on failure) so SLA and reminder timers are active for the retry attempt.
+//     on failure) so deadline and reminder timers are active for the retry attempt.
 func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Find the parked token. The token was parked with AwaitCommand == rec.TimerID
 	// by Task 5 (ActionFailed retry path). If absent, the timer fired after the

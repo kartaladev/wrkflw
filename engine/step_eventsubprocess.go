@@ -80,11 +80,11 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 // Called from the SignalReceived, TimerFired, and MessageReceived handlers when the
 // trigger matches an eventSubprocessArm entry.
 //
-// Dispatch order (relative to gateway/boundary/SLA/standalone):
+// Dispatch order (relative to gateway/boundary/deadline/standalone):
 //  1. Event-gateway arm (first-event-wins routing).
 //  2. Boundary event arm (interrupting/non-interrupting on host activity).
 //  3. Event sub-process arm (interrupting: cancel scope; non-interrupting: spawn alongside).
-//  4. SLA/in-wait timer record.
+//  4. deadline/in-wait timer record.
 //  5. Standalone parked token.
 //
 // For interrupting (!ea.NonInterrupting):
@@ -156,9 +156,9 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 				tokensToCancel = append(tokensToCancel, tok)
 			}
 		}
-		// Cancel SLA/reminder timers and boundary arms for each token in scope, then consume.
+		// Cancel deadline/reminder timers and boundary arms for each token in scope, then consume.
 		for _, tok := range tokensToCancel {
-			// Cancel SLA/reminder timers (UserTask case).
+			// Cancel deadline/reminder timers (UserTask case).
 			taskTok := tok.AwaitCommand
 			for _, timerID := range s.cancelTimersByTaskToken(taskTok, "") {
 				cmds = append(cmds, CancelTimer{TimerID: timerID})

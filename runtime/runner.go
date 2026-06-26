@@ -214,7 +214,7 @@ func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
 // WithExpressionTimeout builds a long-lived, timeout-capable expression evaluator
 // (compile cache reused across steps) and injects it into the engine for every
 // step, bounding each in-engine expression evaluation — gateway conditions,
-// timer/SLA durations, correlation keys — to d of wall-clock time. A runaway or
+// timer/deadline durations, correlation keys — to d of wall-clock time. A runaway or
 // hostile expression then aborts with [expreval.ErrEvalTimeout] instead of
 // stalling the driver loop and every sibling instance behind it (the DoS the
 // audit flagged; ADR-0049).

@@ -26,26 +26,26 @@ func RetryPolicyOf(n Node) *RetryPolicy {
 	}
 }
 
-// SLAOf returns the SLADuration, SLAFlow, and SLAAction of a Node that carries
-// SLA fields. Returns ("", "", "") for nodes that do not carry SLA fields.
-func SLAOf(n Node) (duration, flow, action string) {
+// DeadlineOf returns the DeadlineDuration, DeadlineFlow, and DeadlineAction of a Node that carries
+// deadline fields. Returns ("", "", "") for nodes that do not carry deadline fields.
+func DeadlineOf(n Node) (duration, flow, action string) {
 	switch v := n.(type) {
 	case ServiceTask:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	case UserTask:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	case ReceiveTask:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	case SendTask:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	case BusinessRuleTask:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	case SubProcess:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	case CallActivity:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	case IntermediateCatchEvent:
-		return v.SLADuration, v.SLAFlow, v.SLAAction
+		return v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 	default:
 		return "", "", ""
 	}

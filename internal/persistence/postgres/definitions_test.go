@@ -28,7 +28,7 @@ func richDefinition() *model.ProcessDefinition {
 			model.NewUserTask("review", []string{"reviewer", "manager"},
 				model.WithName("Review Order"),
 				model.WithEligibilityExpr("vars.amount > 100"),
-				model.WithSLA("PT24H", "sla-breach", "notify-manager"),
+				model.WithDeadline("PT24H", "sla-breach", "notify-manager"),
 				model.WithReminder("PT6H", "send-reminder"),
 				model.WithCompensation("cancel-review"),
 			),

@@ -11,7 +11,7 @@ import (
 // timerRecord is the engine's internal bookkeeping entry for a scheduled timer.
 // It allows the engine to route a TimerFired back to the correct token and task
 // without relying on the token's AwaitCommand (which is set to the TaskToken for
-// user-task nodes, not the SLA timer ID).
+// user-task nodes, not the deadline timer ID).
 //
 // For intermediate-catch-event timers the TaskToken field is empty because the
 // token parks on the TimerID itself and the tokenAwaiting lookup still works.
@@ -19,17 +19,17 @@ import (
 type timerRecord struct {
 	// TimerID is the unique timer identifier emitted in ScheduleTimer.
 	TimerID string
-	// Kind discriminates intermediate, SLA, and in-wait timers.
+	// Kind discriminates intermediate, deadline, and in-wait timers.
 	Kind TimerKind
 	// Token is the ID of the parked engine token this timer guards.
 	Token string
 	// TaskToken is the human-task correlation token ("" for intermediate timers).
 	TaskToken string
-	// NodeID is the BPMN node that owns the timer (needed to resolve SLAFlow/SLAAction).
+	// NodeID is the BPMN node that owns the timer (needed to resolve DeadlineFlow/DeadlineAction).
 	NodeID string
 	// ScopeID is the execution scope of the token that owns this timer. Empty
 	// string means the root scope. Used to resolve the correct nested definition
-	// when a SLA or reminder timer fires inside a sub-process.
+	// when a deadline or reminder timer fires inside a sub-process.
 	ScopeID string
 }
 
@@ -508,7 +508,7 @@ func (s *InstanceState) removeTimer(timerID string) {
 // cancelTimersByTaskToken removes all timer records associated with the given
 // taskToken (excluding the one already being handled), returning their TimerIDs
 // so the caller can emit CancelTimer commands. Used to cancel in-wait/reminder
-// timers when an SLA breach or task completion supersedes them.
+// timers when a deadline breach or task completion supersedes them.
 func (s *InstanceState) cancelTimersByTaskToken(taskToken, excludeTimerID string) []string {
 	var toCancel []string
 	out := make([]timerRecord, 0, len(s.Timers))

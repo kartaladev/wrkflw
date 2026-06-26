@@ -158,10 +158,10 @@ func WithCancelHandler(action string) activityOnlyOption {
 	return withActivity(func(a *activityFields) { a.CancelHandler = action })
 }
 
-// WithSLA returns an activity option that sets SLADuration, SLAFlow, and SLAAction.
-func WithSLA(duration, flowID, action string) activityOnlyOption {
+// WithDeadline returns an activity option that sets DeadlineDuration, DeadlineFlow, and DeadlineAction.
+func WithDeadline(duration, flowID, action string) activityOnlyOption {
 	return withActivity(func(a *activityFields) {
-		a.SLADuration, a.SLAFlow, a.SLAAction = duration, flowID, action
+		a.DeadlineDuration, a.DeadlineFlow, a.DeadlineAction = duration, flowID, action
 	})
 }
 
@@ -295,7 +295,7 @@ func NewEventBasedGateway(id string, name ...string) Node {
 // NewServiceTask constructs a ServiceTask. Set the action with WithActionName
 // (catalog reference) or WithAction/WithActionFunc (node-local inline); with
 // neither, the action name defaults to the node id at execution time. Other
-// behaviour (retry, SLA, name, etc.) is configured via the shared activity options.
+// behaviour (retry, deadline, name, etc.) is configured via the shared activity options.
 func NewServiceTask(id string, opts ...serviceTaskOption) Node {
 	s := ServiceTask{baseNode: baseNode{id: id}}
 	for _, o := range opts {
@@ -306,7 +306,7 @@ func NewServiceTask(id string, opts ...serviceTaskOption) Node {
 
 // NewUserTask constructs a UserTask with the given id and candidate roles.
 // Options may be any userTaskOption: all shared activity options (WithName,
-// WithRetryPolicy, WithSLA, WithReminder, WithRecoveryFlow, WithCompensation,
+// WithRetryPolicy, WithDeadline, WithReminder, WithRecoveryFlow, WithCompensation,
 // WithCancelHandler) work here, as does the UserTask-specific WithEligibilityExpr.
 // Passing a non-userTaskOption (e.g. WithCorrelationKey) is a compile-time error.
 func NewUserTask(id string, roles []string, opts ...userTaskOption) Node {
@@ -448,21 +448,21 @@ func WithMessageNameAndKey(msg, key string) interface {
 	return messageNameKeyOpt{msg, key}
 }
 
-// iceSLAOpt sets SLA fields on an IntermediateCatchEvent.
-type iceSLAOpt struct{ dur, flow, act string }
+// iceDeadlineOpt sets deadline fields on an IntermediateCatchEvent.
+type iceDeadlineOpt struct{ dur, flow, act string }
 
-func (o iceSLAOpt) applyCatch(n *IntermediateCatchEvent) {
-	n.SLADuration, n.SLAFlow, n.SLAAction = o.dur, o.flow, o.act
+func (o iceDeadlineOpt) applyCatch(n *IntermediateCatchEvent) {
+	n.DeadlineDuration, n.DeadlineFlow, n.DeadlineAction = o.dur, o.flow, o.act
 }
-func (o iceSLAOpt) applyActivity(_ *activityFields) {}
-func (o iceSLAOpt) applyName(_ *baseNode)           {}
+func (o iceDeadlineOpt) applyActivity(_ *activityFields) {}
+func (o iceDeadlineOpt) applyName(_ *baseNode)           {}
 
-// WithICESLA returns an IntermediateCatchEvent option that sets SLADuration, SLAFlow, SLAAction.
-func WithICESLA(duration, flowID, action string) interface {
+// WithICEDeadline returns an IntermediateCatchEvent option that sets DeadlineDuration, DeadlineFlow, DeadlineAction.
+func WithICEDeadline(duration, flowID, action string) interface {
 	catchOption
 	activityOption
 } {
-	return iceSLAOpt{duration, flowID, action}
+	return iceDeadlineOpt{duration, flowID, action}
 }
 
 // iceReminderOpt sets reminder fields on an IntermediateCatchEvent.
@@ -484,7 +484,7 @@ func WithICEReminder(every, action string) interface {
 
 // NewIntermediateCatchEvent constructs an IntermediateCatchEvent.
 // Options can be WithTimerDuration, WithSignalName, WithMessageNameAndKey,
-// WithICESLA, WithICEReminder, or WithName (as a catchOption-compatible value).
+// WithICEDeadline, WithICEReminder, or WithName (as a catchOption-compatible value).
 func NewIntermediateCatchEvent(id string, opts ...catchOption) Node {
 	n := IntermediateCatchEvent{baseNode: baseNode{id: id}}
 	for _, o := range opts {

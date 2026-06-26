@@ -83,7 +83,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	tokensToCancel := make([]Token, len(s.Tokens))
 	copy(tokensToCancel, s.Tokens)
 	for _, tok := range tokensToCancel {
-		// Cancel SLA/reminder timers for this token.
+		// Cancel deadline/reminder timers for this token.
 		for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
 			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 		}

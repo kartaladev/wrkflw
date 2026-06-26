@@ -20,8 +20,8 @@ type TimerKind int
 const (
 	// TimerIntermediate is a timer on an intermediate catch event node.
 	TimerIntermediate TimerKind = iota
-	// TimerSLA is a deadline timer that fires when an SLA is breached.
-	TimerSLA
+	// TimerDeadline is a deadline timer that fires when a deadline is breached.
+	TimerDeadline
 	// TimerInWait is a recurring in-wait timer (e.g. reminder) that fires
 	// periodically during a wait period.
 	TimerInWait
@@ -35,8 +35,8 @@ func (k TimerKind) String() string {
 	switch k {
 	case TimerIntermediate:
 		return "TimerIntermediate"
-	case TimerSLA:
-		return "TimerSLA"
+	case TimerDeadline:
+		return "TimerDeadline"
 	case TimerInWait:
 		return "TimerInWait"
 	case TimerRetry:
@@ -47,7 +47,7 @@ func (k TimerKind) String() string {
 }
 
 // ScheduleTimer asks the runtime to schedule a timer that will deliver a
-// TimerFired trigger at FireAt. Kind distinguishes intermediate, SLA, and
+// TimerFired trigger at FireAt. Kind distinguishes intermediate, deadline, and
 // in-wait timers so the runtime can apply the right scheduling policy.
 type ScheduleTimer struct {
 	TimerID string
@@ -80,7 +80,7 @@ type CancelTimer struct {
 //   - Scoped is the scope-effective definition's scoped catalog, or nil. The
 //     runtime resolves Name against it before the global catalog.
 //
-// SECONDARY invocations (compensation, SLA, reminder, throw-compensation) leave
+// SECONDARY invocations (compensation, deadline, reminder, throw-compensation) leave
 // both nil; the runtime falls back to the top-level definition's scoped catalog
 // + global for them. That is a documented limitation: secondary actions resolve
 // against the ROOT definition's scoped catalog + global, not nested scoped catalogs.

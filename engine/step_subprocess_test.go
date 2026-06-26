@@ -1011,20 +1011,20 @@ func TestSubInstanceCompletedUnknownCommandID(t *testing.T) {
 // callActivityWithParallelUserTaskDef builds a definition where a parallel gateway
 // splits into two concurrent branches:
 //
-//	Branch A: user-task with SLA "1h" → merge-join (adds a timerRecord to Timers)
+//	Branch A: user-task with deadline "1h" → merge-join (adds a timerRecord to Timers)
 //	Branch B: call-activity (DefRef "child") → merge-join
 //	merge-join (parallel, converging) → end
 //
-// The SLA timer on the user-task records a timerRecord in state.Timers.
+// The deadline timer on the user-task records a timerRecord in state.Timers.
 // When SubInstanceFailed arrives for the call-activity, cancelAllTimers must
-// emit CancelTimer for the SLA timer — proving the cleanup path is complete.
+// emit CancelTimer for the deadline timer — proving the cleanup path is complete.
 func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "ca-sla-parent", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("p-start"),
 			model.NewParallelGateway("p-fork"),
-			model.NewUserTask("p-user", nil, model.WithSLA(`"1h"`, "", "")),
+			model.NewUserTask("p-user", nil, model.WithDeadline(`"1h"`, "", "")),
 			model.NewCallActivity("p-call", "child"),
 			model.NewParallelGateway("p-join"),
 			model.NewEndEvent("p-end"),
@@ -1042,45 +1042,45 @@ func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
 
 // TestCallActivitySubInstanceFailedCancelsOutstandingTimers (Fix 3 assertion):
 //
-// A parent definition has both a parallel user-task (with SLA timer) and a
+// A parent definition has both a parallel user-task (with deadline timer) and a
 // call-activity branch. When StartInstance drives, both branches start:
-//   - A ScheduleTimer (SLA) is emitted for the user-task → timerRecord in state.Timers.
+//   - A ScheduleTimer (Deadline) is emitted for the user-task → timerRecord in state.Timers.
 //   - A StartSubInstance is emitted for the call-activity → token parks.
 //
 // When SubInstanceFailed arrives, the engine must:
 //  1. Emit FailInstance (transition to StatusFailed).
-//  2. Emit CancelTimer for the SLA timer, proving cancelAllTimers runs on the
+//  2. Emit CancelTimer for the deadline timer, proving cancelAllTimers runs on the
 //     SubInstanceFailed path and cleans up all outstanding timer records.
 func TestCallActivitySubInstanceFailedCancelsOutstandingTimers(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := callActivityWithParallelUserTaskDef()
 
-	// ---- Step 1: StartInstance → parallel fork → SLA timer + call-activity starts ----
+	// ---- Step 1: StartInstance → parallel fork → deadline timer + call-activity starts ----
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-sla-i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
 
-	// Find the ScheduleTimer (SLA) and StartSubInstance commands.
-	var slaTimerID string
+	// Find the ScheduleTimer (Deadline) and StartSubInstance commands.
+	var deadlineTimerID string
 	var ssiCmdID string
 	for _, cmd := range r1.Commands {
 		switch c := cmd.(type) {
 		case engine.ScheduleTimer:
-			if c.Kind == engine.TimerSLA {
-				slaTimerID = c.TimerID
+			if c.Kind == engine.TimerDeadline {
+				deadlineTimerID = c.TimerID
 			}
 		case engine.StartSubInstance:
 			ssiCmdID = c.CommandID
 		}
 	}
-	require.NotEmpty(t, slaTimerID, "expected ScheduleTimer (SLA) for the user-task branch")
+	require.NotEmpty(t, deadlineTimerID, "expected ScheduleTimer (Deadline) for the user-task branch")
 	require.NotEmpty(t, ssiCmdID, "expected StartSubInstance for the call-activity branch")
 
-	// SLA timer must be recorded in state.Timers.
-	require.NotEmpty(t, r1.State.Timers, "SLA timerRecord must be recorded in Timers")
+	// Deadline timer must be recorded in state.Timers.
+	require.NotEmpty(t, r1.State.Timers, "deadline timerRecord must be recorded in Timers")
 
-	// ---- Step 2: SubInstanceFailed → parent must fail AND cancel the SLA timer ----
+	// ---- Step 2: SubInstanceFailed → parent must fail AND cancel the deadline timer ----
 	r2, err := engine.Step(def, r1.State,
 		engine.NewSubInstanceFailed(at.Add(time.Second), ssiCmdID, "child blew up"),
 		engine.StepOptions{})
@@ -1099,14 +1099,14 @@ func TestCallActivitySubInstanceFailedCancelsOutstandingTimers(t *testing.T) {
 			failInstFound = true
 			assert.Contains(t, c.Err, "child blew up")
 		case engine.CancelTimer:
-			if c.TimerID == slaTimerID {
+			if c.TimerID == deadlineTimerID {
 				cancelTimerFound = true
 			}
 		}
 	}
 	assert.True(t, failInstFound, "FailInstance must be emitted on SubInstanceFailed")
 	assert.True(t, cancelTimerFound,
-		"CancelTimer for SLA timer %q must be emitted on SubInstanceFailed (cancelAllTimers path)", slaTimerID)
+		"CancelTimer for deadline timer %q must be emitted on SubInstanceFailed (cancelAllTimers path)", deadlineTimerID)
 
 	// Timer must be gone from state after cleanup.
 	assert.Empty(t, r2.State.Timers, "Timers must be empty after cancelAllTimers on failure path")
@@ -1597,22 +1597,22 @@ func TestInclusiveGatewayInsideSubProcess(t *testing.T) {
 	assert.True(t, found, "expected CompleteInstance after inclusive-gateway sub-process exits")
 }
 
-// slaUserTaskInsideSubProcessDef builds:
+// deadlineUserTaskInsideSubProcessDef builds:
 //
 // outer: outer-start → sub (KindSubProcess) → outer-end
 //
 // sub's inner def:
 //
-//	inner-start → inner-user (KindUserTask, SLADuration "30m", SLAFlow "inner-escalate",
-//	              SLAAction "notify-action") → inner-end
+//	inner-start → inner-user (KindUserTask, DeadlineDuration "30m", DeadlineFlow "inner-escalate",
+//	              DeadlineAction "notify-action") → inner-end
 //	inner-user → (inner-escalate flow) → escalate-node (KindEndEvent)
-func slaUserTaskInsideSubProcessDef() *model.ProcessDefinition {
+func deadlineUserTaskInsideSubProcessDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "inner-sla", Version: 1,
 		Nodes: []model.Node{
 			model.NewStartEvent("inner-start"),
 			model.NewUserTask("inner-user", []string{"reviewer"},
-				model.WithSLA(`"30m"`, "inner-escalate", "notify-action")),
+				model.WithDeadline(`"30m"`, "inner-escalate", "notify-action")),
 			model.NewEndEvent("inner-end"),
 			model.NewEndEvent("escalate-node"),
 		},
@@ -1636,20 +1636,20 @@ func slaUserTaskInsideSubProcessDef() *model.ProcessDefinition {
 	}
 }
 
-// TestSLAUserTaskInsideSubProcess verifies that an SLA timer on a user task
+// TestDeadlineUserTaskInsideSubProcess verifies that a deadline timer on a user task
 // nested inside a sub-process:
 //
-//  1. Arms the SLA timer (ScheduleTimer) and parks the user task within the child scope.
-//  2. When the SLA timer fires (task NOT completed), the escalation path runs within
+//  1. Arms the deadline timer (ScheduleTimer) and parks the user task within the child scope.
+//  2. When the deadline timer fires (task NOT completed), the escalation path runs within
 //     the child scope (InvokeAction for "notify-action"), the task is cancelled
 //     (UpdateTask), and the token moves to the escalation end node.
 //  3. The escalation end drains the inner scope → outer-end → StatusCompleted
 //     (sub-process exits cleanly to the parent).
-func TestSLAUserTaskInsideSubProcess(t *testing.T) {
+func TestDeadlineUserTaskInsideSubProcess(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
-	def := slaUserTaskInsideSubProcessDef()
+	def := deadlineUserTaskInsideSubProcessDef()
 
-	// ---- Step 1: StartInstance → sub enters → user-task parks + SLA armed ----
+	// ---- Step 1: StartInstance → sub enters → user-task parks + deadline armed ----
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "sla-sub-i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
@@ -1659,21 +1659,21 @@ func TestSLAUserTaskInsideSubProcess(t *testing.T) {
 	require.Len(t, r1.State.Scopes, 1, "sub-process scope must be open")
 	scopeID := r1.State.Scopes[0].ID
 
-	// AwaitHuman + ScheduleTimer(SLA) emitted.
-	var slaTimerID string
+	// AwaitHuman + ScheduleTimer(Deadline) emitted.
+	var deadlineTimerID string
 	var taskToken string
 	for _, cmd := range r1.Commands {
 		switch c := cmd.(type) {
 		case engine.AwaitHuman:
 			taskToken = c.TaskToken
 		case engine.ScheduleTimer:
-			if c.Kind == engine.TimerSLA {
-				slaTimerID = c.TimerID
+			if c.Kind == engine.TimerDeadline {
+				deadlineTimerID = c.TimerID
 			}
 		}
 	}
 	require.NotEmpty(t, taskToken, "expected AwaitHuman for inner-user task")
-	require.NotEmpty(t, slaTimerID, "expected ScheduleTimer(SLA) for inner-user task")
+	require.NotEmpty(t, deadlineTimerID, "expected ScheduleTimer(Deadline) for inner-user task")
 
 	// One token parked at inner-user, in the sub-process scope.
 	require.Len(t, r1.State.Tokens, 1)
@@ -1681,10 +1681,10 @@ func TestSLAUserTaskInsideSubProcess(t *testing.T) {
 	assert.Equal(t, scopeID, r1.State.Tokens[0].ScopeID,
 		"inner-user token must carry the sub-process scope ID")
 
-	// ---- Step 2: SLA fires (task NOT completed) → escalation path inside scope ----
+	// ---- Step 2: deadline fires (task NOT completed) → escalation path inside scope ----
 	fireAt := at.Add(30 * time.Minute)
 	r2, err := engine.Step(def, r1.State,
-		engine.NewTimerFired(fireAt, slaTimerID), engine.StepOptions{})
+		engine.NewTimerFired(fireAt, deadlineTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 
 	// InvokeAction for notify-action, UpdateTask (cancelled), and CompleteInstance
@@ -1706,14 +1706,14 @@ func TestSLAUserTaskInsideSubProcess(t *testing.T) {
 			foundComplete = true
 		}
 	}
-	assert.True(t, foundNotify, "expected InvokeAction for notify-action on SLA breach")
-	assert.True(t, foundUpdateTask, "expected UpdateTask (task cancelled) on SLA breach")
+	assert.True(t, foundNotify, "expected InvokeAction for notify-action on deadline breach")
+	assert.True(t, foundUpdateTask, "expected UpdateTask (task cancelled) on deadline breach")
 	assert.True(t, foundComplete,
 		"expected CompleteInstance: escalation end drains inner scope → outer-end reached")
 
 	// Instance must be completed (escalate-node is EndEvent → inner scope drains → outer-end).
 	assert.Equal(t, engine.StatusCompleted, r2.State.Status,
-		"instance must complete after SLA breach escalation path drains sub-process scope")
+		"instance must complete after deadline breach escalation path drains sub-process scope")
 	assert.Empty(t, r2.State.Tokens, "all tokens must be consumed on completion")
 	assert.Empty(t, r2.State.Scopes, "sub-process scope must be closed on completion")
 	require.NotNil(t, r2.State.EndedAt)

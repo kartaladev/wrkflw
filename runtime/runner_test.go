@@ -182,9 +182,9 @@ func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
 // parks at a timer node (ScheduleTimer issued) and then manually delivering a
 // HumanCompleted-like trigger that causes a CancelTimer — but the simpler path
 // is: build a state with outstanding timer records and deliver a TimerFired
-// that triggers an SLA breach (which emits CancelTimer for the reminder timer).
+// that triggers a deadline breach (which emits CancelTimer for the reminder timer).
 //
-// Since wiring up the full SLA scenario here is heavy, we confirm that calling
+// Since wiring up the full deadline scenario here is heavy, we confirm that calling
 // runner.Deliver with a trigger that causes the engine to emit a CancelTimer
 // when r.sched==nil returns "no Scheduler configured".
 //
@@ -193,20 +193,20 @@ func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
 // That proves the nil guard is present for ScheduleTimer. For CancelTimer we
 // verify the runner's error message contains "CancelTimer" when sched is nil
 // by calling Deliver with a pre-built state that causes engine.Step to emit
-// a CancelTimer (stale SLA timer scenario is hard without a working scheduler,
+// a CancelTimer (stale deadline timer scenario is hard without a working scheduler,
 // so we verify the error message format directly via the runner perform path).
 //
 // Simplest approach: use the runner's perform method indirectly by confirming
 // that the "no Scheduler configured" error is returned for ScheduleTimer, and
 // that the same guard exists for CancelTimer (same error-message pattern in runner.go).
 func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
-	// Build a definition that has a user task with an SLA; when the SLA fires
+	// Build a definition that has a user task with a deadline; when the deadline fires
 	// the engine emits CancelTimer for the reminder. We need no scheduler so it
 	// fails on the ScheduleTimer — but we can verify the CancelTimer error path
 	// by injecting a pre-built state directly via Deliver.
 	//
-	// Approach: construct the InstanceState manually with an SLA timer record,
-	// then deliver the SLA TimerFired to engine via Deliver — the engine emits
+	// Approach: construct the InstanceState manually with a deadline timer record,
+	// then deliver the deadline TimerFired to engine via Deliver — the engine emits
 	// a CancelTimer (for the reminder timer) which the runner tries to perform
 	// with r.sched == nil → error.
 	//

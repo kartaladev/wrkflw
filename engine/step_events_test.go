@@ -623,7 +623,7 @@ func interruptingBoundaryTimerDef() *model.ProcessDefinition {
 //     is emitted for the interrupting boundary timer (3h).
 //  2. Firing the boundary timer (WITHOUT completing the task) cancels the host token,
 //     places a new token on "escalate" (InvokeAction for escalate-action), emits
-//     a CancelTimer for any SLA/reminder timers on the task (none here).
+//     a CancelTimer for any deadline/reminder timers on the task (none here).
 //  3. A late HumanCompleted for the now-consumed host token is a clean no-op
 //     (ErrTokenNotFound).
 func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
@@ -940,7 +940,7 @@ func actionFailedCancelsArmsAndBoundariesDef() *model.ProcessDefinition {
 // When ActionFailed is received for the host token, the engine must emit
 // CancelTimer commands for ALL pending boundary timer arms (s.Boundaries) and
 // event-gateway timer arms (s.ArmedEvents), and clear both slices. Previously
-// only s.Timers (SLA/reminder records) were drained, leaving boundary and
+// only s.Timers (deadline/reminder records) were drained, leaving boundary and
 // gateway timer arms orphaned in the scheduler.
 func TestActionFailedCancelsArmsAndBoundaries(t *testing.T) {
 	def := actionFailedCancelsArmsAndBoundariesDef()

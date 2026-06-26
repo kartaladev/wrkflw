@@ -503,24 +503,24 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		State:       humantask.Unclaimed,
 		CreatedAt:   c.at,
 	}
-	// If the node carries an SLA, schedule the SLA timer and record the
+	// If the node carries a deadline, schedule the deadline timer and record the
 	// deadline on the HumanTask so callers can surface the due date.
-	if ut.SLADuration != "" {
-		dur, err := c.eval.EvalDuration(ut.SLADuration, c.s.Variables)
+	if ut.DeadlineDuration != "" {
+		dur, err := c.eval.EvalDuration(ut.DeadlineDuration, c.s.Variables)
 		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: SLA node %q: %w", node.ID(), err)
+			return cmds, false, fmt.Errorf("workflow-engine: deadline node %q: %w", node.ID(), err)
 		}
 		fireAt := c.at.Add(dur)
-		slaTimerID := c.s.nextTimerID()
+		deadlineTimerID := c.s.nextTimerID()
 		cmds = append(cmds, ScheduleTimer{
-			TimerID: slaTimerID,
+			TimerID: deadlineTimerID,
 			Token:   tok.ID,
 			FireAt:  fireAt,
-			Kind:    TimerSLA,
+			Kind:    TimerDeadline,
 		})
 		c.s.Timers = append(c.s.Timers, timerRecord{
-			TimerID:   slaTimerID,
-			Kind:      TimerSLA,
+			TimerID:   deadlineTimerID,
+			Kind:      TimerDeadline,
 			Token:     tok.ID,
 			TaskToken: taskToken,
 			NodeID:    node.ID(),

@@ -138,7 +138,7 @@ func (e *Evaluator) EvalBool(code string, env map[string]any) (bool, error) {
 //   - time.Duration — used as-is.
 //   - integer (any int/uint kind): interpreted as a number of whole seconds
 //     (e.g. the literal `90` yields 90s). This matches the most common author
-//     intent when writing SLA values in process definitions.
+//     intent when writing deadline values in process definitions.
 //   - float64: interpreted as fractional seconds (e.g. `1.5` yields 1500ms).
 //     expr-lang/expr frequently produces float64 for numeric literals without
 //     a decimal, so fractional support is a strict superset of integral-only;

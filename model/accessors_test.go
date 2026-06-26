@@ -52,29 +52,29 @@ func TestRetryPolicyOf(t *testing.T) {
 	}
 }
 
-func TestSLAOf(t *testing.T) {
+func TestDeadlineOf(t *testing.T) {
 	cases := []struct {
 		name                       string
 		node                       model.Node
 		wantDur, wantFlow, wantAct string
 	}{
 		{
-			name:     "service task with SLA",
-			node:     model.NewServiceTask("st", model.WithActionName("act"), model.WithSLA("P1D", "sla-flow", "sla-act")),
+			name:     "service task with deadline",
+			node:     model.NewServiceTask("st", model.WithActionName("act"), model.WithDeadline("P1D", "sla-flow", "sla-act")),
 			wantDur:  "P1D",
 			wantFlow: "sla-flow",
 			wantAct:  "sla-act",
 		},
 		{
-			name:     "user task with SLA",
-			node:     model.NewUserTask("ut", nil, model.WithSLA("PT2H", "ut-flow", "ut-act")),
+			name:     "user task with deadline",
+			node:     model.NewUserTask("ut", nil, model.WithDeadline("PT2H", "ut-flow", "ut-act")),
 			wantDur:  "PT2H",
 			wantFlow: "ut-flow",
 			wantAct:  "ut-act",
 		},
 		{
-			name:     "intermediate catch event with SLA",
-			node:     model.NewIntermediateCatchEvent("ice", model.WithICESLA("P2D", "ice-flow", "ice-act")),
+			name:     "intermediate catch event with deadline",
+			node:     model.NewIntermediateCatchEvent("ice", model.WithICEDeadline("P2D", "ice-flow", "ice-act")),
 			wantDur:  "P2D",
 			wantFlow: "ice-flow",
 			wantAct:  "ice-act",
@@ -89,7 +89,7 @@ func TestSLAOf(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dur, flow, act := model.SLAOf(tc.node)
+			dur, flow, act := model.DeadlineOf(tc.node)
 			assert.Equal(t, tc.wantDur, dur)
 			assert.Equal(t, tc.wantFlow, flow)
 			assert.Equal(t, tc.wantAct, act)
@@ -140,7 +140,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				model.WithCompensation("refund-card"),
 				model.WithRecoveryFlow("f-error"),
 				model.WithRetryPolicy(p),
-				model.WithSLA("P1D", "sla-flow", "sla-act"),
+				model.WithDeadline("P1D", "sla-flow", "sla-act"),
 				model.WithReminder("PT4H", "remind-act"),
 				model.WithCancelHandler("cancel-charge"),
 			),
@@ -203,7 +203,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "refund-card", charge.CompensationAction)
 	assert.Equal(t, "f-error", charge.RecoveryFlow)
 	assert.Equal(t, "cancel-charge", charge.CancelHandler)
-	assert.Equal(t, "P1D", charge.SLADuration)
+	assert.Equal(t, "P1D", charge.DeadlineDuration)
 	assert.Equal(t, "PT4H", charge.ReminderEvery)
 	require.NotNil(t, charge.RetryPolicy)
 	assert.Equal(t, 3, charge.RetryPolicy.MaxAttempts)

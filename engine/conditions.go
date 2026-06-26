@@ -7,7 +7,7 @@ import (
 )
 
 // ConditionEvaluator evaluates the expression strings a process definition
-// carries — gateway conditions, timer/SLA durations, and message/event
+// carries — gateway conditions, timer/deadline durations, and message/event
 // correlation keys — against a process-instance variable environment.
 //
 // The engine depends on this interface, not on a concrete evaluator, so a
@@ -20,7 +20,7 @@ import (
 type ConditionEvaluator interface {
 	// EvalBool evaluates code to a boolean (gateway/flow conditions).
 	EvalBool(code string, env map[string]any) (bool, error)
-	// EvalDuration evaluates code to a time.Duration (timer/SLA durations).
+	// EvalDuration evaluates code to a time.Duration (timer/deadline durations).
 	EvalDuration(code string, env map[string]any) (time.Duration, error)
 	// EvalString evaluates code to a string (correlation keys).
 	EvalString(code string, env map[string]any) (string, error)

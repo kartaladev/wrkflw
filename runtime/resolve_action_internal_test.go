@@ -133,7 +133,7 @@ func TestResolveInvokeAction(t *testing.T) {
 }
 
 // TestResolveActionName verifies the scoped→global two-tier chain used for
-// secondary action references (compensation, cancel, SLA, etc.).
+// secondary action references (compensation, cancel, deadline, etc.).
 func TestResolveActionName(t *testing.T) {
 	t.Parallel()
 
