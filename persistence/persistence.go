@@ -186,7 +186,7 @@ func NewDefinitionStore(pool *pgxpool.Pool) DefinitionStore {
 // Definitions are immutable per (defID, version), so caching without invalidation
 // is safe. The only eviction mechanism is TTL expiry.
 func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.Duration, clk clock.Clock) *runtime.CachingDefinitionRegistry {
-	return runtime.NewCachingDefinitionRegistry(backing, ttl, clk)
+	return runtime.NewCachingDefinitionRegistry(backing, ttl, runtime.WithCachingDefinitionRegistryClock(clk))
 }
 
 // NewRelay constructs an outbox relay over pool that publishes each event via pub.
