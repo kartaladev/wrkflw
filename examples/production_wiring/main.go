@@ -82,7 +82,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(evClose)
 
 	// --- Scheduler: gocron-backed timer/deadline driver ---
-	scheduler, err := scheduling.NewScheduler(clk, scheduling.WithLogger(logger))
+	scheduler, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithLogger(logger))
 	if err != nil {
 		return err
 	}
