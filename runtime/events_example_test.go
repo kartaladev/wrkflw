@@ -163,7 +163,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtime.NewMemStore()
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
@@ -208,7 +208,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtime.NewMemStore()
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	var r *runtime.Runner

@@ -289,7 +289,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 
 	inner := runtime.NewMemStore()
 	store := &onceConflictStore{inner: inner}
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
 	r := runtime.NewRunner(nil, fc, store, runtime.WithScheduler(sched))
 

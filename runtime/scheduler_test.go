@@ -21,7 +21,7 @@ var baseTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 // FireAt <= clock.Now(), in deterministic (FireAt, TimerID) order.
 func TestMemSchedulerTickFiresDue(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(baseTime)
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
 	var mu sync.Mutex
 	var fired []string
@@ -70,7 +70,7 @@ func TestMemSchedulerTickFiresDue(t *testing.T) {
 // from firing on the next Tick even if its FireAt <= clock.Now().
 func TestMemSchedulerCancelRemovesTimer(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(baseTime)
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
 	fired := false
 	sched.Schedule("cancel-me", baseTime.Add(1*time.Second), func() { fired = true })
@@ -86,7 +86,7 @@ func TestMemSchedulerCancelRemovesTimer(t *testing.T) {
 // clock.Now() does NOT fire even after a Tick.
 func TestMemSchedulerNotYetDueDoesNotFire(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(baseTime)
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
 	fired := false
 	sched.Schedule("future", baseTime.Add(10*time.Second), func() { fired = true })
@@ -103,7 +103,7 @@ func TestMemSchedulerNotYetDueDoesNotFire(t *testing.T) {
 // in the next Tick.
 func TestMemSchedulerNewlyScheduledInCallbackNotFiredSameTick(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(baseTime)
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
 	secondFired := false
 	sched.Schedule("first", baseTime.Add(1*time.Second), func() {
@@ -120,11 +120,29 @@ func TestMemSchedulerNewlyScheduledInCallbackNotFiredSameTick(t *testing.T) {
 	assert.True(t, secondFired, "timer scheduled from a callback MUST fire in the next Tick")
 }
 
+func TestNewMemSchedulerDefaultUsesSystemClock(t *testing.T) {
+	// No clock option → uses clock.System(); a past-due timer fires on Tick.
+	s := runtime.NewMemScheduler()
+	fired := false
+	s.Schedule("t1", time.Now().Add(-time.Second), func() { fired = true })
+	require.NoError(t, s.Tick(t.Context()))
+	assert.True(t, fired, "past-due timer should fire under the system clock")
+}
+
+func TestNewMemSchedulerWithClockOption(t *testing.T) {
+	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
+	s := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fake))
+	fired := false
+	s.Schedule("t1", time.Unix(999, 0), func() { fired = true }) // fireAt <= fake now
+	require.NoError(t, s.Tick(t.Context()))
+	assert.True(t, fired, "timer due at the fake clock's now should fire")
+}
+
 // TestMemSchedulerConcurrentSafe verifies that concurrent Schedule/Cancel calls
 // and Tick do not race (exercise with -race).
 func TestMemSchedulerConcurrentSafe(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(baseTime)
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
 	var wg sync.WaitGroup
 	const n = 50

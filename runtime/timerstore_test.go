@@ -109,7 +109,7 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := runtime.NewMemTimerStore()
 	store := runtime.NewMemStoreWithTimers(mts)
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	r := runtime.NewRunner(action.NewMapCatalog(nil), fc, store,
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 

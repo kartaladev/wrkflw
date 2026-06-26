@@ -95,7 +95,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched := runtime.NewMemScheduler(fc)
+	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	store := runtime.NewMemStore()
 
 	rec := &recordingHandler{}

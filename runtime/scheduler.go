@@ -48,12 +48,30 @@ type MemScheduler struct {
 	pending map[string]pendingTimer
 }
 
-// NewMemScheduler constructs a MemScheduler driven by clk.
-func NewMemScheduler(clk clock.Clock) *MemScheduler {
-	return &MemScheduler{
-		clk:     clk,
+// MemSchedulerOption configures a MemScheduler.
+type MemSchedulerOption func(*MemScheduler)
+
+// WithMemSchedulerClock sets the time source used to evaluate timer due-ness.
+// Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
+func WithMemSchedulerClock(clk clock.Clock) MemSchedulerOption {
+	return func(s *MemScheduler) {
+		if clk != nil {
+			s.clk = clk
+		}
+	}
+}
+
+// NewMemScheduler constructs a MemScheduler. The time source defaults to
+// clock.System(); override it with WithMemSchedulerClock (e.g. a fake clock in tests).
+func NewMemScheduler(opts ...MemSchedulerOption) *MemScheduler {
+	s := &MemScheduler{
+		clk:     clock.System(),
 		pending: make(map[string]pendingTimer),
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Schedule registers a timer. Replaces any existing timer with the same timerID.

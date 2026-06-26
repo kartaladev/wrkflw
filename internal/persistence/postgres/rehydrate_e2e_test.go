@@ -51,7 +51,7 @@ func TestPostgresTimerRehydrationResumesAfterRestart(t *testing.T) {
 	// sched1 is discarded at end of block, simulating a crash/restart.
 	store1 := pg.NewStore(pool)
 	{
-		sched1 := runtime.NewMemScheduler(fc)
+		sched1 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 		r1 := runtime.NewRunner(cat, fc, store1,
 			runtime.WithScheduler(sched1),
 			runtime.WithTimerStore(ts),
@@ -71,7 +71,7 @@ func TestPostgresTimerRehydrationResumesAfterRestart(t *testing.T) {
 	// "Restart": brand-new Store + Scheduler + Runner reading the same Postgres DB.
 	// sched1 and store1's in-memory state are gone — only Postgres rows survive.
 	store2 := pg.NewStore(pool)
-	sched2 := runtime.NewMemScheduler(fc)
+	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	r2 := runtime.NewRunner(cat, fc, store2,
 		runtime.WithScheduler(sched2),
 		runtime.WithTimerStore(ts),
