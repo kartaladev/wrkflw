@@ -232,9 +232,9 @@ func TestNodeCallActivityDefRef(t *testing.T) {
 	assert.Equal(t, "external-process-v2", ca.DefRef)
 }
 
-// TestNodeTimerSLAReminderFields asserts that the six new timer/SLA/reminder
+// TestNodeTimerDeadlineReminderFields asserts that the six new timer/deadline/reminder
 // fields on model.Node round-trip through ProcessDefinition.Node correctly.
-func TestNodeTimerSLAReminderFields(t *testing.T) {
+func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 	cases := []struct {
 		name  string
 		node  model.Node
@@ -254,17 +254,17 @@ func TestNodeTimerSLAReminderFields(t *testing.T) {
 			},
 		},
 		{
-			name: "sla-with-flow-and-action",
+			name: "deadline-with-flow-and-action",
 			node: model.NewUserTask("review", nil,
 				model.WithName("Review"),
-				model.WithSLA("P1D", "sla-breach-flow", "notify-manager"),
+				model.WithDeadline("P1D", "sla-breach-flow", "notify-manager"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(model.UserTask)
 				require.True(t, ok)
-				assert.Equal(t, "P1D", ut.SLADuration)
-				assert.Equal(t, "sla-breach-flow", ut.SLAFlow)
-				assert.Equal(t, "notify-manager", ut.SLAAction)
+				assert.Equal(t, "P1D", ut.DeadlineDuration)
+				assert.Equal(t, "sla-breach-flow", ut.DeadlineFlow)
+				assert.Equal(t, "notify-manager", ut.DeadlineAction)
 			},
 		},
 		{
@@ -284,15 +284,15 @@ func TestNodeTimerSLAReminderFields(t *testing.T) {
 			name: "all-six-fields",
 			node: model.NewUserTask("task-full", nil,
 				model.WithName("Full Task"),
-				model.WithSLA("P2D", "escalate", "escalate-action"),
+				model.WithDeadline("P2D", "escalate", "escalate-action"),
 				model.WithReminder("PT6H", "remind-action"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(model.UserTask)
 				require.True(t, ok)
-				assert.Equal(t, "P2D", ut.SLADuration)
-				assert.Equal(t, "escalate", ut.SLAFlow)
-				assert.Equal(t, "escalate-action", ut.SLAAction)
+				assert.Equal(t, "P2D", ut.DeadlineDuration)
+				assert.Equal(t, "escalate", ut.DeadlineFlow)
+				assert.Equal(t, "escalate-action", ut.DeadlineAction)
 				assert.Equal(t, "PT6H", ut.ReminderEvery)
 				assert.Equal(t, "remind-action", ut.ReminderAction)
 			},

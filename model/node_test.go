@@ -79,7 +79,7 @@ func TestErrorEndEventConstructor(t *testing.T) {
 func TestUserTaskConstructor(t *testing.T) {
 	n := model.NewUserTask("task-1", []string{"manager", "admin"},
 		model.WithEligibilityExpr("amount > 1000"),
-		model.WithSLA("P1D", "sla-breach", "notify-manager"),
+		model.WithDeadline("P1D", "sla-breach", "notify-manager"),
 		model.WithReminder("PT4H", "send-reminder"),
 	)
 	if n.Kind() != model.KindUserTask {
@@ -95,8 +95,8 @@ func TestUserTaskConstructor(t *testing.T) {
 	if len(ut.CandidateRoles) != 2 || ut.CandidateRoles[0] != "manager" {
 		t.Fatalf("CandidateRoles = %v", ut.CandidateRoles)
 	}
-	if ut.SLADuration != "P1D" || ut.SLAFlow != "sla-breach" || ut.SLAAction != "notify-manager" {
-		t.Fatalf("SLA fields = %q/%q/%q", ut.SLADuration, ut.SLAFlow, ut.SLAAction)
+	if ut.DeadlineDuration != "P1D" || ut.DeadlineFlow != "sla-breach" || ut.DeadlineAction != "notify-manager" {
+		t.Fatalf("deadline fields = %q/%q/%q", ut.DeadlineDuration, ut.DeadlineFlow, ut.DeadlineAction)
 	}
 	if ut.ReminderEvery != "PT4H" || ut.ReminderAction != "send-reminder" {
 		t.Fatalf("Reminder fields = %q/%q", ut.ReminderEvery, ut.ReminderAction)
@@ -212,7 +212,7 @@ func TestEventSubProcessConstructor(t *testing.T) {
 func TestIntermediateCatchEventConstructor(t *testing.T) {
 	n := model.NewIntermediateCatchEvent("ice",
 		model.WithTimerDuration("PT1H"),
-		model.WithICESLA("P1D", "sla-flow", "sla-act"),
+		model.WithICEDeadline("P1D", "sla-flow", "sla-act"),
 		model.WithICEReminder("PT2H", "remind-act"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
@@ -225,8 +225,8 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 	if ice.TimerDuration != "PT1H" {
 		t.Fatalf("TimerDuration = %q", ice.TimerDuration)
 	}
-	if ice.SLADuration != "P1D" {
-		t.Fatalf("SLADuration = %q", ice.SLADuration)
+	if ice.DeadlineDuration != "P1D" {
+		t.Fatalf("DeadlineDuration = %q", ice.DeadlineDuration)
 	}
 }
 

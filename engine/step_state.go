@@ -246,7 +246,7 @@ func copyVars(in map[string]any) map[string]any {
 // attempt-independent idempotency key ("<instanceID>:<nodeID>") so action
 // authors can dedup external side effects across retries.
 //
-// v1 scope: only the primary service-task action carries this key. SLA,
+// v1 scope: only the primary service-task action carries this key. Deadline,
 // reminder, and compensation actions do NOT — those are separate fire-once
 // operations on the same node; stamping instanceID:nodeID on them would
 // collide with the primary action's key and could cause an external system to

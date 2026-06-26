@@ -264,8 +264,8 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 			s.Variables["_errorAttempts"] = tok.RetryAttempts + 1
 			// ErrorCode on activity nodes is not part of the new model; the
 			// _error variable injection is skipped (no ErrorCode field on activities).
-			// Resolve the RecoveryFlow target (mirror the SLAFlow routing in
-			// handleSLAFired: scan the scope def's flows for the flow ID).
+			// Resolve the RecoveryFlow target (mirror the DeadlineFlow routing in
+			// handleDeadlineFired: scan the scope def's flows for the flow ID).
 			var target string
 			for _, f := range tdef.Flows {
 				if f.ID == rf {
@@ -337,15 +337,15 @@ func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, err
 
 // handleTimerFired processes a TimerFired trigger: dispatches in priority order
 // through event-gateway arms, boundary arms, event sub-process arms,
-// SLA/in-wait/retry timer records, and finally standalone intermediate timers.
+// deadline/in-wait/retry timer records, and finally standalone intermediate timers.
 //
-// The TimerSLA/TimerInWait/TimerRetry sub-dispatch is preserved exactly as today.
+// The TimerDeadline/TimerInWait/TimerRetry sub-dispatch is preserved exactly as today.
 func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFired, opt StepOptions) (StepResult, error) {
 	// Dispatch order:
 	// 1) event-based gateway arm (first-event-wins routing).
 	// 2) boundary event arm (interrupting/non-interrupting).
 	// 3) event sub-process arm (interrupting: cancel scope; non-interrupting: spawn alongside).
-	// 4) SLA/in-wait timer record (task-guarded timers).
+	// 4) deadline/in-wait timer record (task-guarded timers).
 	// 5) standalone intermediate catch event (token parks on TimerID).
 
 	// 1) Gateway arm check.
@@ -375,16 +375,16 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 		return StepResult{State: *s, Commands: eaCmds}, nil
 	}
 
-	// 4) SLA/in-wait/retry timer record.
-	// s.Timers holds SLA (TimerSLA), in-wait/reminder (TimerInWait), and retry
+	// 4) deadline/in-wait/retry timer record.
+	// s.Timers holds deadline (TimerDeadline), in-wait/reminder (TimerInWait), and retry
 	// (TimerRetry) records. Intermediate timers (TimerIntermediate) are never
 	// appended to s.Timers; for those, the token parks on the TimerID as its
 	// AwaitCommand, so they route via the tokenAwaiting path below.
 	rec := s.timerByID(t.TimerID)
 	if rec != nil {
 		switch rec.Kind {
-		case TimerSLA:
-			return handleSLAFired(def, s, *rec, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		case TimerDeadline:
+			return handleDeadlineFired(def, s, *rec, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 		case TimerInWait:
 			return handleReminderFired(def, s, *rec, t.OccurredAt(), resolveEvaluator(opt))
 		case TimerRetry:
@@ -442,7 +442,7 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 	}
 	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
 	cmds := []Command{UpdateTask{Task: *task}}
-	// Cancel any SLA or reminder timers that were guarding this task.
+	// Cancel any deadline or reminder timers that were guarding this task.
 	for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}

@@ -34,7 +34,7 @@
 //
 //   - persistence  The persistence façade over the SQL/Postgres store.
 //   - eventing     The eventing façade for publishing domain events (outbox).
-//   - scheduling   The façade over the timer/SLA scheduler.
+//   - scheduling   The façade over the timer/deadline scheduler.
 //   - observability Metrics, traces, and slog wiring at the runtime boundary.
 //   - clock        The clock.Clock time abstraction; supply a fake in tests.
 //   - service      The service facade and error classification.

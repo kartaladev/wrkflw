@@ -54,7 +54,7 @@ token sits at a node in the process definition and has one of four states:
 | `TokenIncident`     | Token's retry budget exhausted; parked until an operator resolves it. |
 
 **Variables** are stored flat on `InstanceState.Variables` as `map[string]any`.
-All gateway conditions, SLA duration expressions, and correlation-key expressions
+All gateway conditions, deadline duration expressions, and correlation-key expressions
 are evaluated by [`expr-lang/expr`](https://github.com/expr-lang/expr) against
 this map using **bare key names** (e.g. `amount > 100`, not `vars.amount`).
 
@@ -129,7 +129,7 @@ them all before persisting the new state.
 | Command | What the runtime must do |
 |---|---|
 | `InvokeAction{CommandID, Name, Inline, Scoped, Input}` | Run a `ServiceAction`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. |
-| `ScheduleTimer{TimerID, Token, FireAt, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` at `FireAt`. `Kind` is `TimerIntermediate`, `TimerSLA`, `TimerInWait`, or `TimerRetry`. |
+| `ScheduleTimer{TimerID, Token, FireAt, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` at `FireAt`. `Kind` is `TimerIntermediate`, `TimerDeadline`, `TimerInWait`, or `TimerRetry`. |
 | `CancelTimer{TimerID}` | Cancel a previously scheduled timer. |
 | `AwaitHuman{TaskToken, Eligibility}` | Create a human-task record; park until `HumanCompleted`. |
 | `UpdateTask{Task}` | Persist an updated `HumanTask` record (e.g. after a claim or reassignment). |
@@ -193,7 +193,7 @@ The engine's file layout after the ADR-0044 decomposition:
 | `step_eventsubprocess.go` | Event-subprocess arming, scope open/close. |
 | `step_compensation.go` | Compensation walk cursor, `beginCompensation`, `stepCompensationFinish`. |
 | `step_errors.go` | `propagateError` — scope-chain error propagation for error end events and boundary error handlers. |
-| `step_timers.go` | SLA/reminder/retry timer sub-dispatch inside `handleTimerFired`. |
+| `step_timers.go` | deadline/reminder/retry timer sub-dispatch inside `handleTimerFired`. |
 | `step_state.go` | Token/scope/variable utility helpers shared across trigger handlers. |
 | `state.go` | `InstanceState`, `Token`, `Incident`, `NodeVisit`, `Scope`, `Status`, `TokenState`, `CompensationRecord` type definitions + `InstanceState` method set. |
 | `command.go` | Sealed `Command` interface + all command types. |

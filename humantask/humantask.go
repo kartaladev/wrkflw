@@ -35,7 +35,7 @@ const (
 // HumanTask is the in-flight record of a human-task node execution. It is stored
 // in a [TaskStore] and queried by the runtime and API layer.
 //
-// DueAt is reserved for Plan 5 (SLA / timer integration) and is left nil here.
+// DueAt is reserved for Plan 5 (deadline / timer integration) and is left nil here.
 type HumanTask struct {
 	// TaskToken uniquely identifies this task instance (matches the engine token).
 	TaskToken string
@@ -53,7 +53,7 @@ type HumanTask struct {
 	ClaimedBy string
 	// CreatedAt is the wall-clock time at which the task was created.
 	CreatedAt time.Time
-	// DueAt is the optional SLA deadline (Plan 5; nil in this implementation).
+	// DueAt is the optional deadline (Plan 5; nil in this implementation).
 	DueAt *time.Time
 	// Vars is a snapshot of the process Variables at task-creation time, used for
 	// attribute-based eligibility predicates that reference data variables
@@ -68,7 +68,7 @@ type HumanTask struct {
 // IsOpen reports whether the task is still in progress — that is, it has been
 // created but not yet completed or cancelled. An open task may be Unclaimed or
 // Claimed. Use this in engine handlers to check whether a task is still
-// actionable (e.g. before applying an SLA breach or reminder). The caller is
+// actionable (e.g. before applying a deadline breach or reminder). The caller is
 // still responsible for guarding against a nil *HumanTask before calling IsOpen.
 func (t HumanTask) IsOpen() bool {
 	return t.State == Unclaimed || t.State == Claimed

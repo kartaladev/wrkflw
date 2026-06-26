@@ -68,8 +68,8 @@ func (ErrorEndEvent) Kind() NodeKind { return KindErrorEndEvent }
 // --- activities ---
 
 // activityFields holds the cross-cutting fields every activity kind shares
-// (retry, recovery, compensation, cancel, SLA, reminder). Embedded into each
-// activity type so the engine reads e.g. node.SLADuration with no kind prefix.
+// (retry, recovery, compensation, cancel, deadline, reminder). Embedded into each
+// activity type so the engine reads e.g. node.DeadlineDuration with no kind prefix.
 type activityFields struct {
 	// RetryPolicy is the optional per-node retry policy. Nil means use runtime default.
 	RetryPolicy *RetryPolicy
@@ -79,12 +79,12 @@ type activityFields struct {
 	CompensationAction string
 	// CancelHandler is the optional ServiceAction to run when this node is interrupted.
 	CancelHandler string
-	// SLADuration is an ISO-8601 duration string for the SLA deadline.
-	SLADuration string
-	// SLAFlow is the ID of the sequence flow to take on SLA breach.
-	SLAFlow string
-	// SLAAction is the name of the ServiceAction to invoke on SLA breach.
-	SLAAction string
+	// DeadlineDuration is an ISO-8601 duration string for the deadline.
+	DeadlineDuration string
+	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
+	DeadlineFlow string
+	// DeadlineAction is the name of the ServiceAction to invoke on deadline breach.
+	DeadlineAction string
 	// ReminderEvery is an ISO-8601 duration string for the reminder interval.
 	ReminderEvery string
 	// ReminderAction is the name of the ServiceAction to invoke for each reminder.
@@ -208,12 +208,12 @@ type IntermediateCatchEvent struct {
 	MessageName string
 	// CorrelationKey is an expr expression for message correlation.
 	CorrelationKey string
-	// SLADuration is an ISO-8601 duration string for the SLA deadline.
-	SLADuration string
-	// SLAFlow is the ID of the sequence flow to take on SLA breach.
-	SLAFlow string
-	// SLAAction is the name of the ServiceAction to invoke on SLA breach.
-	SLAAction string
+	// DeadlineDuration is an ISO-8601 duration string for the deadline.
+	DeadlineDuration string
+	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
+	DeadlineFlow string
+	// DeadlineAction is the name of the ServiceAction to invoke on deadline breach.
+	DeadlineAction string
 	// ReminderEvery is an ISO-8601 duration string for the reminder interval.
 	ReminderEvery string
 	// ReminderAction is the name of the ServiceAction to invoke for each reminder.

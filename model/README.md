@@ -108,7 +108,7 @@ The following options work on **all** activity constructors (`NewServiceTask`,
 | `WithRecoveryFlow(flowID string)` | Flow to take when retries are exhausted |
 | `WithCompensation(actionName string)` | Service-action name invoked during rollback |
 | `WithCancelHandler(actionName string)` | Service-action invoked when the node is interrupted |
-| `WithSLA(dur, flowID, actionName string)` | SLA deadline (ISO-8601 duration), escape flow, and/or action on breach |
+| `WithDeadline(dur, flowID, actionName string)` | Deadline (ISO-8601 duration), escape flow, and/or action on breach |
 | `WithReminder(every, actionName string)` | Periodic reminder action (ISO-8601 interval) fired while the node is active |
 
 ### Kind-specific options (compile-enforced)
@@ -148,7 +148,7 @@ WithESPNonInterrupting() // run alongside enclosing scope; default is interrupti
 WithTimerDuration(dur string)
 WithSignalName(name string)
 WithMessageNameAndKey(msg, key string)
-WithICESLA(dur, flowID, action string)
+WithICEDeadline(dur, flowID, action string)
 WithICEReminder(every, action string)
 WithName(name string)
 ```
@@ -176,13 +176,13 @@ WithName(name string)
 > signal, and error boundary events work. Message is accepted by the model but
 > has no runtime effect in the current release.
 
-### Example — service task with compensation and SLA
+### Example — service task with compensation and deadline
 
 ```go
 task := model.NewServiceTask("charge", "charge-card",
     model.WithName("Charge Card"),
     model.WithCompensation("refund-card"),
-    model.WithSLA("2h", "sla-breach-flow", "notify-ops"),
+    model.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
     model.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts:     5,
         InitialInterval: 2 * time.Second,

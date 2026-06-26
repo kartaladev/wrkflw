@@ -18,9 +18,9 @@ type nodeYAML struct {
 	CandidateRoles     []string        `yaml:"candidateRoles,omitempty"`
 	EligibilityExpr    string          `yaml:"eligibilityExpr,omitempty"`
 	TimerDuration      string          `yaml:"timerDuration,omitempty"`
-	SLADuration        string          `yaml:"slaDuration,omitempty"`
-	SLAFlow            string          `yaml:"slaFlow,omitempty"`
-	SLAAction          string          `yaml:"slaAction,omitempty"`
+	DeadlineDuration   string          `yaml:"deadlineDuration,omitempty"`
+	DeadlineFlow       string          `yaml:"deadlineFlow,omitempty"`
+	DeadlineAction     string          `yaml:"deadlineAction,omitempty"`
 	ReminderEvery      string          `yaml:"reminderEvery,omitempty"`
 	ReminderAction     string          `yaml:"reminderAction,omitempty"`
 	RetryPolicy        *RetryPolicy    `yaml:"retryPolicy,omitempty"`
@@ -83,9 +83,9 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		CandidateRoles:     ny.CandidateRoles,
 		EligibilityExpr:    ny.EligibilityExpr,
 		TimerDuration:      ny.TimerDuration,
-		SLADuration:        ny.SLADuration,
-		SLAFlow:            ny.SLAFlow,
-		SLAAction:          ny.SLAAction,
+		DeadlineDuration:   ny.DeadlineDuration,
+		DeadlineFlow:       ny.DeadlineFlow,
+		DeadlineAction:     ny.DeadlineAction,
 		ReminderEvery:      ny.ReminderEvery,
 		ReminderAction:     ny.ReminderAction,
 		RetryPolicy:        ny.RetryPolicy,

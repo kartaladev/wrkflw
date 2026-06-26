@@ -206,7 +206,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 				}
 			}
 			for _, tok := range tokensToCancel {
-				// Cancel SLA/reminder timers (UserTask case).
+				// Cancel deadline/reminder timers (UserTask case).
 				for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
 					cmds = append(cmds, CancelTimer{TimerID: timerID})
 				}

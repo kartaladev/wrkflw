@@ -224,7 +224,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 | `transport` | REST `http.Handler` factory (`transport/rest.NewHandler`) and gRPC `ServiceRegistrar` registration (`transport/grpc.RegisterWorkflowServiceServer`). |
 | `persistence` | Persistence façade over the SQL/PostgreSQL store. |
 | `eventing` | Eventing façade for publishing domain events via the transactional outbox. |
-| `scheduling` | Façade over the timer/SLA scheduler (gocron behind the abstraction). |
+| `scheduling` | Façade over the timer/deadline scheduler (gocron behind the abstraction). |
 | `observability` | Metrics, traces, and `slog` wiring at the runtime boundary. |
 | `clock` | `clock.Clock` time abstraction. Supply `clock.System()` in production; inject a fake in tests. |
 | `service` | Application-layer `Service` façade consumed by transport adapters. |
@@ -330,10 +330,10 @@ Pass the authorizer to `runtime.NewRunner` via `runtime.WithAuthorizer(a)`.
 
 ## Scheduling and waits
 
-Timers and SLA deadlines are driven by gocron (behind the `scheduling` abstraction).
+Timers and deadlines are driven by gocron (behind the `scheduling` abstraction).
 
 - **Intermediate timer events** — pause execution for an ISO-8601 duration before continuing.
-- **SLA deadlines** — if a human task (or any wait node) is not resolved within the SLA
+- **Deadlines** — if a human task (or any wait node) is not resolved within the deadline
   duration, the engine takes an alternative sequence flow and/or runs a recovery action.
 - **In-wait reminder actions** — service actions executed on a repeating interval _during_
   a wait period (e.g. send a reminder email every 24 h while waiting for approval).
@@ -341,9 +341,9 @@ Timers and SLA deadlines are driven by gocron (behind the `scheduling` abstracti
 Configure timers on nodes:
 
 ```go
-// UserTask with a 3-day SLA and daily reminders:
+// UserTask with a 3-day deadline and daily reminders:
 model.NewUserTask("approve", []string{"manager"},
-    model.WithSLA("P3D", "escalate-flow", "notify-manager"),
+    model.WithDeadline("P3D", "escalate-flow", "notify-manager"),
     model.WithReminder("P1D", "send-reminder"),
 )
 ```
@@ -529,7 +529,7 @@ same set of functional options:
 | `model.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
 | `model.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
 | `model.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
-| `model.WithSLA(duration, flowID, actionName string)` | On SLA breach: take `flowID` and/or run `actionName`. |
+| `model.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
 | `model.WithReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
 Two options are **compile-enforced** to a single constructor:
@@ -542,8 +542,8 @@ Two options are **compile-enforced** to a single constructor:
 
 > **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
 > them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
-> not ISO-8601. This applies to `WithBoundaryTimer`, `WithTimerDuration`, `WithSLA`,
-> `WithReminder`, `WithStartTimer`, and `WithICESLA`/`WithICEReminder`.
+> not ISO-8601. This applies to `WithBoundaryTimer`, `WithTimerDuration`, `WithDeadline`,
+> `WithReminder`, `WithStartTimer`, and `WithICEDeadline`/`WithICEReminder`.
 
 `RetryPolicy` fields:
 
@@ -604,7 +604,7 @@ model.NewServiceTask("charge",
     model.WithRetryPolicy(&retry),
 )
 model.NewUserTask("approve", []string{"manager"},
-    model.WithSLA(`"3h"`, "escalate-flow", "notify-manager"),
+    model.WithDeadline(`"3h"`, "escalate-flow", "notify-manager"),
     model.WithEligibilityExpr(`vars["region"] == "EU"`),
 )
 model.NewReceiveTask("await-payment", "payment-received",
@@ -624,7 +624,7 @@ model.NewEventSubProcess("on-cancel", cancelHandlerDef, model.WithESPNonInterrup
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `model.NewBoundaryEvent(id, attachedTo string, opts ...) Node` |
 
 `NewIntermediateCatchEvent` options: `WithTimerDuration(dur)`, `WithSignalName(name)`,
-`WithMessageNameAndKey(msg, key)`, `WithICESLA(dur, flow, action)`,
+`WithMessageNameAndKey(msg, key)`, `WithICEDeadline(dur, flow, action)`,
 `WithICEReminder(every, action)`, `WithName(string)`.
 `NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
@@ -719,9 +719,9 @@ nodes:
   - id: approve
     kind: userTask
     candidateRoles: [manager]
-    slaDuration: "3h"
-    slaFlow: escalate
-    slaAction: notify-manager
+    deadlineDuration: "3h"
+    deadlineFlow: escalate
+    deadlineAction: notify-manager
   - id: end
     kind: endEvent
 flows:
@@ -894,7 +894,7 @@ final, _ := r.Deliver(ctx, def, instanceID, completeTrg)   // → Completed
 task for the manager actor; `Claim` then `Complete` (each followed by `r.Deliver`) drive
 the instance to `StatusCompleted`, merging the completion output (`approved`) into the
 variables. See `runtime/human_example_test.go` for the authoritative end-to-end test
-(including attribute-based eligibility and SLA escalation).
+(including attribute-based eligibility and deadline escalation).
 → [`examples/scenarios/human_task_approval`](examples/scenarios/human_task_approval)
 
 ### 6. Sub-process and call activity

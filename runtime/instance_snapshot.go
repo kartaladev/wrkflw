@@ -129,7 +129,7 @@ type TaskView struct {
 	Candidates []string `json:"candidates,omitempty"`
 	// CreatedAt is the time the task was created.
 	CreatedAt time.Time `json:"created_at"`
-	// DueAt is the optional SLA deadline for this task.
+	// DueAt is the optional deadline for this task.
 	DueAt *time.Time `json:"due_at,omitempty"`
 }
 

@@ -115,7 +115,7 @@ func TestCompensateCommandFields(t *testing.T) {
 func TestTimerKindConstsAreDistinct(t *testing.T) {
 	kinds := []engine.TimerKind{
 		engine.TimerIntermediate,
-		engine.TimerSLA,
+		engine.TimerDeadline,
 		engine.TimerInWait,
 	}
 	seen := map[engine.TimerKind]bool{}
@@ -132,7 +132,7 @@ func TestTimerKindStringable(t *testing.T) {
 		want string
 	}{
 		{engine.TimerIntermediate, "TimerIntermediate"},
-		{engine.TimerSLA, "TimerSLA"},
+		{engine.TimerDeadline, "TimerDeadline"},
 		{engine.TimerInWait, "TimerInWait"},
 	}
 	for _, tc := range cases {
@@ -159,12 +159,12 @@ func TestTimerCommandsImplementInterface(t *testing.T) {
 			},
 		},
 		{
-			name: "ScheduleTimer/SLA",
+			name: "ScheduleTimer/Deadline",
 			cmd: engine.ScheduleTimer{
 				TimerID: "tmr-2",
 				Token:   "tok-2",
 				FireAt:  fireAt,
-				Kind:    engine.TimerSLA,
+				Kind:    engine.TimerDeadline,
 			},
 		},
 		{
@@ -198,12 +198,12 @@ func TestScheduleTimerFieldsRoundTrip(t *testing.T) {
 		TimerID: "tmr-42",
 		Token:   "tok-99",
 		FireAt:  fireAt,
-		Kind:    engine.TimerSLA,
+		Kind:    engine.TimerDeadline,
 	}
 	assert.Equal(t, "tmr-42", cmd.TimerID)
 	assert.Equal(t, "tok-99", cmd.Token)
 	assert.Equal(t, fireAt, cmd.FireAt)
-	assert.Equal(t, engine.TimerSLA, cmd.Kind)
+	assert.Equal(t, engine.TimerDeadline, cmd.Kind)
 }
 
 // TestCancelTimerFieldsRoundTrip asserts CancelTimer.TimerID is stored faithfully.
@@ -215,7 +215,7 @@ func TestCancelTimerFieldsRoundTrip(t *testing.T) {
 // TestTimerRetryDistinctAndStringable asserts that TimerRetry is distinct from all
 // other TimerKind constants and has a non-empty, non-"unknown" String() value.
 func TestTimerRetryDistinctAndStringable(t *testing.T) {
-	if engine.TimerRetry == engine.TimerIntermediate || engine.TimerRetry == engine.TimerSLA || engine.TimerRetry == engine.TimerInWait {
+	if engine.TimerRetry == engine.TimerIntermediate || engine.TimerRetry == engine.TimerDeadline || engine.TimerRetry == engine.TimerInWait {
 		t.Fatal("TimerRetry not distinct")
 	}
 	if engine.TimerRetry.String() == "" || engine.TimerRetry.String() == "TimerKind(unknown)" {

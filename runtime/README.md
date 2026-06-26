@@ -272,10 +272,10 @@ For `ReceiveTask` and message catch events, use `DeliverMessage`. The runner
 tracks message waiters internally; no extra configuration is needed beyond
 constructing the runner.
 
-### Timers and SLAs
+### Timers and deadlines
 
 Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
-`WithTimerDuration`), SLA deadlines (`WithSLA` on any activity), and reminders
+`WithTimerDuration`), deadlines (`WithDeadline` on any activity), and reminders
 (`WithReminder`). Use `NewMemScheduler` for tests:
 
 ```go

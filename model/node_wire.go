@@ -16,9 +16,9 @@ type nodeWire struct {
 	CandidateRoles     []string           `json:"candidateRoles,omitempty"`
 	EligibilityExpr    string             `json:"eligibilityExpr,omitempty"`
 	TimerDuration      string             `json:"timerDuration,omitempty"`
-	SLADuration        string             `json:"slaDuration,omitempty"`
-	SLAFlow            string             `json:"slaFlow,omitempty"`
-	SLAAction          string             `json:"slaAction,omitempty"`
+	DeadlineDuration   string             `json:"deadlineDuration,omitempty"`
+	DeadlineFlow       string             `json:"deadlineFlow,omitempty"`
+	DeadlineAction     string             `json:"deadlineAction,omitempty"`
 	ReminderEvery      string             `json:"reminderEvery,omitempty"`
 	ReminderAction     string             `json:"reminderAction,omitempty"`
 	RetryPolicy        *RetryPolicy       `json:"retryPolicy,omitempty"`
@@ -70,7 +70,7 @@ func toWire(n Node) nodeWire {
 		w.NonInterrupting = v.NonInterrupting
 	case IntermediateCatchEvent:
 		w.TimerDuration, w.SignalName, w.MessageName, w.CorrelationKey = v.TimerDuration, v.SignalName, v.MessageName, v.CorrelationKey
-		w.SLADuration, w.SLAFlow, w.SLAAction = v.SLADuration, v.SLAFlow, v.SLAAction
+		w.DeadlineDuration, w.DeadlineFlow, w.DeadlineAction = v.DeadlineDuration, v.DeadlineFlow, v.DeadlineAction
 		w.ReminderEvery, w.ReminderAction = v.ReminderEvery, v.ReminderAction
 	case IntermediateThrowEvent:
 		w.SignalName, w.CompensateRef = v.SignalName, v.CompensateRef
@@ -84,7 +84,7 @@ func toWire(n Node) nodeWire {
 func applyActivityWire(w *nodeWire, a activityFields) {
 	w.RetryPolicy, w.RecoveryFlow = a.RetryPolicy, a.RecoveryFlow
 	w.CompensationAction, w.CancelHandler = a.CompensationAction, a.CancelHandler
-	w.SLADuration, w.SLAFlow, w.SLAAction = a.SLADuration, a.SLAFlow, a.SLAAction
+	w.DeadlineDuration, w.DeadlineFlow, w.DeadlineAction = a.DeadlineDuration, a.DeadlineFlow, a.DeadlineAction
 	w.ReminderEvery, w.ReminderAction = a.ReminderEvery, a.ReminderAction
 }
 
@@ -94,9 +94,9 @@ func (w nodeWire) activity() activityFields {
 		RecoveryFlow:       w.RecoveryFlow,
 		CompensationAction: w.CompensationAction,
 		CancelHandler:      w.CancelHandler,
-		SLADuration:        w.SLADuration,
-		SLAFlow:            w.SLAFlow,
-		SLAAction:          w.SLAAction,
+		DeadlineDuration:   w.DeadlineDuration,
+		DeadlineFlow:       w.DeadlineFlow,
+		DeadlineAction:     w.DeadlineAction,
 		ReminderEvery:      w.ReminderEvery,
 		ReminderAction:     w.ReminderAction,
 	}
@@ -132,16 +132,16 @@ func fromWire(w nodeWire) (Node, error) {
 		return EventSubProcess{baseNode: b, Subprocess: w.Subprocess, NonInterrupting: w.NonInterrupting}, nil
 	case KindIntermediateCatchEvent:
 		return IntermediateCatchEvent{
-			baseNode:       b,
-			TimerDuration:  w.TimerDuration,
-			SignalName:     w.SignalName,
-			MessageName:    w.MessageName,
-			CorrelationKey: w.CorrelationKey,
-			SLADuration:    w.SLADuration,
-			SLAFlow:        w.SLAFlow,
-			SLAAction:      w.SLAAction,
-			ReminderEvery:  w.ReminderEvery,
-			ReminderAction: w.ReminderAction,
+			baseNode:         b,
+			TimerDuration:    w.TimerDuration,
+			SignalName:       w.SignalName,
+			MessageName:      w.MessageName,
+			CorrelationKey:   w.CorrelationKey,
+			DeadlineDuration: w.DeadlineDuration,
+			DeadlineFlow:     w.DeadlineFlow,
+			DeadlineAction:   w.DeadlineAction,
+			ReminderEvery:    w.ReminderEvery,
+			ReminderAction:   w.ReminderAction,
 		}, nil
 	case KindIntermediateThrowEvent:
 		return IntermediateThrowEvent{baseNode: b, SignalName: w.SignalName, CompensateRef: w.CompensateRef}, nil

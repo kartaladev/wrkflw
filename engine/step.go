@@ -26,7 +26,7 @@ type StepOptions struct {
 	// not carry its own RetryPolicy. nil means retry is disabled by default.
 	DefaultRetryPolicy *model.RetryPolicy
 	// Evaluator overrides the expression evaluator the engine uses for gateway
-	// conditions, timer/SLA durations, and correlation keys. When nil (the
+	// conditions, timer/deadline durations, and correlation keys. When nil (the
 	// default) the engine uses its pure, wall-clock-free package-global
 	// evaluator, keeping Step deterministic for replay.
 	//

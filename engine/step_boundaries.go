@@ -15,7 +15,7 @@ import (
 // appended in the same order so s.Boundaries is deterministic.
 //
 // A bad TimerDuration expression is returned as a wrapped error — consistent with
-// the intermediate-timer and SLA paths — so callers can fail fast rather than
+// the intermediate-timer and deadline paths — so callers can fail fast rather than
 // silently no-arming the boundary.
 func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
@@ -72,7 +72,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 //
 // For interrupting boundaries (!ba.NonInterrupting):
 //  1. Verify the host token is still parked. If not, it's a late/stale fire → no-op.
-//  2. Cancel any SLA/reminder timers on the host (UserTask) via cancelTimersByTaskToken
+//  2. Cancel any deadline/reminder timers on the host (UserTask) via cancelTimersByTaskToken
 //     using the host's taskToken (AwaitCommand == taskToken for UserTask hosts).
 //  3. Consume the host token (close its visit, remove from slice).
 //  4. Remove ALL boundary arms for this host (emit CancelTimer for timer siblings).
@@ -123,7 +123,7 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 	if !ba.NonInterrupting {
 		// Interrupting: consume the host, cancel its task timers and boundary siblings.
 
-		// Cancel SLA/reminder timers for the host (UserTask case: AwaitCommand == taskToken).
+		// Cancel deadline/reminder timers for the host (UserTask case: AwaitCommand == taskToken).
 		// For a ServiceTask host, AwaitCommand is a cmdID (not a taskToken), so
 		// cancelTimersByTaskToken will find no records — which is correct.
 		hostTaskToken := hostTok.AwaitCommand
