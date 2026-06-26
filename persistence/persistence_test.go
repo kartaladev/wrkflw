@@ -144,7 +144,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	assert.Equal(t, "d1", got.ID)
 
 	// NewCachingDefinitionRegistry wraps ds with a TTL cache.
-	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute, clock.System())
+	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
 	require.NotNil(t, cached)
 
 	// Lookup through the cache.

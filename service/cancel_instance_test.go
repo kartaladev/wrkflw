@@ -52,7 +52,7 @@ func newCancelTestService(t *testing.T) *service.Engine {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, done2.Status, "ci-done must be terminal")
 
-	return service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	return service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 }
 
 func TestCancelInstance(t *testing.T) {

@@ -78,7 +78,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
 	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
-	svc := service.New(r, taskSvc, reg, store, store, taskStore, clk)
+	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	// Start the instance — parks with an incident after the first failure.
 	ctx := t.Context()
@@ -139,7 +139,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
 	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
-	svc := service.New(r, taskSvc, reg, store, store, taskStore, clk)
+	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	ctx := t.Context()
 	parked, err := r.Run(ctx, def, "inc-inst-zero", nil)
@@ -161,7 +161,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 // ErrInstanceNotFound for an unknown instance ID.
 func TestEngineResolveIncidentInstanceNotFound(t *testing.T) {
 	h := newHarness(t, linearDef())
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	_, err := svc.ResolveIncident(t.Context(), service.ResolveIncidentRequest{
 		InstanceID:  "no-such-instance",

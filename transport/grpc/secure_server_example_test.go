@@ -40,7 +40,7 @@ func buildService() service.Service {
 	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 	reg := runtime.NewMapDefinitionRegistry(nil)
 	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
-	return service.New(runner, tasks, reg, store, store, taskStore, fc)
+	return service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 }
 
 // ExampleNewSecureServer shows the fail-closed gRPC wiring: an auth interceptor

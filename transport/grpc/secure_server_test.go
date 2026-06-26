@@ -34,7 +34,7 @@ func minimalSvc(t *testing.T) service.Service {
 	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 	reg := runtime.NewMapDefinitionRegistry(nil)
 	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
-	return service.New(runner, tasks, reg, store, store, taskStore, fc)
+	return service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 }
 
 // TestNewSecureServerRequiresInterceptor asserts the fail-closed contract: a nil

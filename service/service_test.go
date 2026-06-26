@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
@@ -166,7 +167,7 @@ func (greetAction) Do(_ context.Context, in map[string]any) (map[string]any, err
 func TestStartInstance(t *testing.T) {
 	def := linearDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
 		DefRef:     "greeting",
@@ -182,7 +183,7 @@ func TestStartInstance(t *testing.T) {
 // ErrDefinitionNotFound for an unregistered DefRef.
 func TestStartInstanceUnknownDefRef(t *testing.T) {
 	h := newHarness(t) // no defs registered
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
 		DefRef:     "non-existent",
@@ -197,7 +198,7 @@ func TestStartInstanceUnknownDefRef(t *testing.T) {
 func TestGetInstance(t *testing.T) {
 	def := linearDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	// Start an instance first.
 	started, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
@@ -228,7 +229,7 @@ func TestDeliverSignal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at signal catch")
 
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	// DeliverSignal resumes the instance.
 	final, err := svc.DeliverSignal(t.Context(), service.DeliverSignalRequest{
@@ -245,7 +246,7 @@ func TestDeliverSignal(t *testing.T) {
 func TestDeliverSignalInstanceNotFound(t *testing.T) {
 	def := signalCatchDef("approved")
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	_, err := svc.DeliverSignal(t.Context(), service.DeliverSignalRequest{
 		InstanceID: "no-such-id",
@@ -260,7 +261,7 @@ func TestDeliverSignalInstanceNotFound(t *testing.T) {
 func TestHumanTaskLifecycle(t *testing.T) {
 	def := approvalDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	ctx := t.Context()
 
@@ -328,7 +329,7 @@ func TestDeliverMessage(t *testing.T) {
 	_, err := h.runner.Run(t.Context(), def, "order-100", map[string]any{"orderId": "100"})
 	require.NoError(t, err)
 
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	err = svc.DeliverMessage(t.Context(), service.DeliverMessageRequest{
 		DefRef:         defRefFor(def),
@@ -348,7 +349,7 @@ func TestDeliverMessage(t *testing.T) {
 func TestListInstances(t *testing.T) {
 	def := linearDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	ctx := t.Context()
 
@@ -377,7 +378,7 @@ func TestListInstances(t *testing.T) {
 // ErrDefinitionNotFound when the DefRef is not registered.
 func TestDeliverMessageUnknownDefRef(t *testing.T) {
 	h := newHarness(t) // no defs registered
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	err := svc.DeliverMessage(t.Context(), service.DeliverMessageRequest{
 		DefRef:         "non-existent:1",
@@ -405,7 +406,7 @@ func TestReassignTaskUnauthorized(t *testing.T) {
 
 	// Claim the task first (required for Reassign's "from" check).
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{
 		TaskToken: taskToken,
@@ -441,7 +442,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 
 	// Build a registry WITHOUT the definition so resolveDefinition fails.
 	emptyReg := runtime.NewMapDefinitionRegistry(nil)
-	svc := service.New(h.runner, h.tasks, emptyReg, h.store, h.lister, h.taskStore, h.clk)
+	svc := service.New(h.runner, h.tasks, emptyReg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	_, err = svc.DeliverSignal(ctx, service.DeliverSignalRequest{
 		InstanceID: "sig-def-missing",
@@ -449,4 +450,20 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, runtime.ErrDefinitionNotFound)
+}
+
+// TestNewEngineDefaultClockNoPanic verifies that New works without a clock
+// option and returns a non-nil Engine (default clock.System() is applied).
+func TestNewEngineDefaultClockNoPanic(t *testing.T) {
+	h := newHarness(t)
+	e := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore)
+	assert.NotNil(t, e)
+}
+
+// TestNewEngineWithClockOption verifies that WithEngineClock injects a fake clock.
+func TestNewEngineWithClockOption(t *testing.T) {
+	h := newHarness(t)
+	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
+	e := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(fake))
+	assert.NotNil(t, e)
 }

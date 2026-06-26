@@ -51,7 +51,7 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
 	svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
-	facade := service.New(r, svc, reg, store, store, taskStore, fc)
+	facade := service.New(r, svc, reg, store, store, taskStore, service.WithEngineClock(fc))
 	return &testHarness{runner: r, store: store, taskStore: taskStore, clk: fc}, facade
 }
 

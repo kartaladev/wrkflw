@@ -164,7 +164,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 			return err
 		}),
 		reg,
-		clk,
+		runtime.WithCallNotifierClock(clk),
 	)
 
 	// DrainOnce must notify exactly 1 link (the completed child).
@@ -257,7 +257,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 			return err
 		}),
 		reg,
-		clk,
+		runtime.WithCallNotifierClock(clk),
 	)
 	notified, err := notifier1.DrainOnce(ctx)
 	require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 			return engine.ErrTokenNotFound
 		}),
 		reg,
-		clk,
+		runtime.WithCallNotifierClock(clk),
 	)
 	notified2, err := notifier2.DrainOnce(ctx)
 	require.NoError(t, err)

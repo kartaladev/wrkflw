@@ -180,13 +180,21 @@ func NewDefinitionStore(pool *pgxpool.Pool) DefinitionStore {
 }
 
 // NewCachingDefinitionRegistry wraps backing with a TTL-bounded, single-flight
-// read-through cache. ttl is the maximum age of a cached definition; clk is
-// the time source (use clock.System() in production, a fake clock in tests).
+// read-through cache. ttl is the maximum age of a cached definition.
+// opts are forwarded to runtime.NewCachingDefinitionRegistry; use
+// runtime.WithCachingDefinitionRegistryClock to inject a fake clock in tests.
 //
 // Definitions are immutable per (defID, version), so caching without invalidation
 // is safe. The only eviction mechanism is TTL expiry.
-func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.Duration, clk clock.Clock) *runtime.CachingDefinitionRegistry {
-	return runtime.NewCachingDefinitionRegistry(backing, ttl, runtime.WithCachingDefinitionRegistryClock(clk))
+//
+// Example:
+//
+//	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
+//	// inject a fake clock in tests:
+//	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute,
+//	    runtime.WithCachingDefinitionRegistryClock(fakeClock))
+func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.Duration, opts ...runtime.CachingDefinitionRegistryOption) *runtime.CachingDefinitionRegistry {
+	return runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)
 }
 
 // NewRelay constructs an outbox relay over pool that publishes each event via pub.
@@ -371,6 +379,9 @@ func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
 // terminal call links and resumes parked parents (SubInstanceCompleted/Failed)
 // idempotently. Run it in a goroutine (notifier.Run) or drain manually (DrainOnce).
 //
+// opts are forwarded to runtime.NewCallNotifier; use runtime.WithCallNotifierClock
+// to inject a fake clock in tests.
+//
 // For lease-based multi-replica exclusivity (ADR-0031), build the CallLinkStore
 // explicitly via [NewCallLinkStore] with [WithCallLinkLease] and pass it to
 // [runtime.NewCallNotifier] directly:
@@ -378,9 +389,9 @@ func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
 //	cls := persistence.NewCallLinkStore(pool,
 //	    persistence.WithCallLinkLease("replica-1", 30*time.Second),
 //	)
-//	notifier := runtime.NewCallNotifier(cls, deliver, reg, clk)
+//	notifier := runtime.NewCallNotifier(cls, deliver, reg)
 //
-// Typical wiring (simulating a process restart over the same DB pool):
+// Typical wiring:
 //
 //	notifier := persistence.NewCallNotifier(pool,
 //	    runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, id string, trg engine.Trigger) error {
@@ -388,12 +399,11 @@ func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
 //	        return err
 //	    }),
 //	    reg,
-//	    clock.System(),
 //	)
 //	go notifier.Run(ctx)
 //
 // reg MUST resolve every parent definition under the exact key "<defID>:<version>";
 // an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
-func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, clk clock.Clock, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
-	return runtime.NewCallNotifier(postgres.NewCallLinkStore(pool), deliver, reg, append([]runtime.CallNotifierOption{runtime.WithCallNotifierClock(clk)}, opts...)...)
+func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+	return runtime.NewCallNotifier(postgres.NewCallLinkStore(pool), deliver, reg, opts...)
 }

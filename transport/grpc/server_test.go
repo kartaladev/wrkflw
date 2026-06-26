@@ -153,7 +153,7 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
 	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 
-	svc := service.New(runner, tasks, reg, store, store, taskStore, fc)
+	svc := service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 
 	// Stand up bufconn server.
 	lis := bufconn.Listen(bufSize)
