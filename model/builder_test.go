@@ -1,8 +1,10 @@
 package model_test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
@@ -107,6 +109,52 @@ func TestDefinitionBuilderAutoFlowID(t *testing.T) {
 	}
 	if def.Flows[0].ID != "start->end" {
 		t.Fatalf("auto flow ID = %q, want start->end", def.Flows[0].ID)
+	}
+}
+
+// TestScopedActionNamesReturnsNilWhenEmpty asserts that a definition with no
+// scoped actions returns nil from ScopedActionNames.
+func TestScopedActionNamesReturnsNilWhenEmpty(t *testing.T) {
+	def, err := model.NewDefinition("p", 1).
+		Add(model.NewStartEvent("s")).
+		Add(model.NewEndEvent("e")).
+		Connect("s", "e").
+		Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := def.ScopedActionNames(); got != nil {
+		t.Fatalf("ScopedActionNames() = %v, want nil", got)
+	}
+}
+
+// TestScopedActionNamesReturnsSortedNames asserts that a definition with two
+// registered scoped actions returns them sorted, regardless of registration order.
+func TestScopedActionNamesReturnsSortedNames(t *testing.T) {
+	noop := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		return nil, nil
+	})
+	def, err := model.NewDefinition("p", 1).
+		Add(model.NewStartEvent("s")).
+		Add(model.NewEndEvent("e")).
+		Connect("s", "e").
+		RegisterAction("b", noop).
+		RegisterActionFunc("a", func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return nil, nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	got := def.ScopedActionNames()
+	want := []string{"a", "b"}
+	if len(got) != len(want) {
+		t.Fatalf("ScopedActionNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ScopedActionNames()[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 

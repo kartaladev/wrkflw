@@ -60,11 +60,18 @@ type ProcessDefinition struct {
 	// It is never serialized; resolution falls back to the global catalog on a
 	// miss (see action.Resolve).
 	scoped action.Catalog
+	// scopedNames is the sorted slice of names registered in the scoped catalog.
+	// nil when no scoped actions were registered. Set by Build().
+	scopedNames []string
 }
 
 // ScopedCatalog returns the definition-scoped action catalog, or nil when the
 // definition registered no scoped actions.
 func (d *ProcessDefinition) ScopedCatalog() action.Catalog { return d.scoped }
+
+// ScopedActionNames returns the sorted names registered in the definition-scoped
+// action catalog, or nil when none were registered.
+func (d *ProcessDefinition) ScopedActionNames() []string { return d.scopedNames }
 
 // Node returns the node with the given id.
 func (d *ProcessDefinition) Node(id string) (Node, bool) {
