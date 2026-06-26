@@ -92,7 +92,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 	store := pg.NewStore(pool)
 	cl := pg.NewCallLinkStore(pool)
 
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -152,7 +152,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 	// the "crash"; the task store is not on the notifier's delivery path).
 	freshStore := pg.NewStore(pool)
 	freshCl := pg.NewCallLinkStore(pool)
-	freshRunner := runtime.NewRunner(nil, clk, freshStore,
+	freshRunner := runtime.NewRunner(nil, freshStore, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(freshCl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -212,7 +212,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 	store := pg.NewStore(pool)
 	cl := pg.NewCallLinkStore(pool)
 
-	runner := runtime.NewRunner(nil, clk, store,
+	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -245,7 +245,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 	// First notifier: drains and resumes the parent normally.
 	callCount := 0
 	freshStore1 := pg.NewStore(pool)
-	freshRunner1 := runtime.NewRunner(nil, clk, freshStore1,
+	freshRunner1 := runtime.NewRunner(nil, freshStore1, runtime.WithRunnerClock(clk),
 		runtime.WithCallLinks(pg.NewCallLinkStore(pool)),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),

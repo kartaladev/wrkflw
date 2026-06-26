@@ -57,7 +57,7 @@ func main() {
 	clk := clock.System()
 
 	// No service-action catalog is needed for this process, so pass nil.
-	r := runtime.NewRunner(nil, clk, runtime.NewMemStore(),
+	r := runtime.NewRunner(nil, runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 

@@ -178,7 +178,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	clk := clockwork.NewFakeClock()
 	store := runtime.NewMemStore()
 	links := runtime.NewMemChainLinkStore()
-	runner := runtime.NewRunner(action.NewMapCatalog(nil), clk, store)
+	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clk))
 
 	succ := &model.ProcessDefinition{
 		ID: "fulfillment", Version: 1,

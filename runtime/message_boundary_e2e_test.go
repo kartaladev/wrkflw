@@ -52,7 +52,8 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	r := runtime.NewRunner(nil, fc, store,
+	r := runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 
 	def := messageBoundaryDef()

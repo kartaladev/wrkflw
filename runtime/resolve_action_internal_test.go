@@ -58,8 +58,8 @@ func TestResolveInvokeAction(t *testing.T) {
 		"x":     tag("global"),
 		"gonly": tag("global-only"),
 	})
-	// clk and store are nil: resolvers never dereference them.
-	r := NewRunner(global, nil, nil)
+	// store is nil: resolvers never dereference it.
+	r := NewRunner(global, nil)
 	def := resolveActionScopedDef(t)
 
 	// cmdScoped is the scope-effective scoped catalog carried by the engine; it
@@ -141,7 +141,7 @@ func TestResolveActionName(t *testing.T) {
 		"x":     tag("global-x"),
 		"gonly": tag("global-only"),
 	})
-	r := NewRunner(global, nil, nil)
+	r := NewRunner(global, nil)
 	def := resolveActionScopedDef(t)
 
 	type testCase struct {

@@ -57,7 +57,7 @@ func sendTaskRuntimeDef() *model.ProcessDefinition {
 func TestRunnerSendTaskInvokesMessageSink(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	sink := &recordingSink{}
-	r := runtime.NewRunner(nil, fc, runtime.NewMemStore(), runtime.WithMessageSink(sink))
+	r := runtime.NewRunner(nil, runtime.NewMemStore(), runtime.WithRunnerClock(fc), runtime.WithMessageSink(sink))
 
 	st, err := r.Run(t.Context(), sendTaskRuntimeDef(), "i1", map[string]any{"orderID": "o-7"})
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestRunnerSendTaskInvokesMessageSink(t *testing.T) {
 // dropping the message.
 func TestRunnerSendTaskNoSinkErrors(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	r := runtime.NewRunner(nil, fc, runtime.NewMemStore())
+	r := runtime.NewRunner(nil, runtime.NewMemStore(), runtime.WithRunnerClock(fc))
 
 	_, err := r.Run(t.Context(), sendTaskRuntimeDef(), "i1", map[string]any{"orderID": "o-7"})
 	require.Error(t, err)

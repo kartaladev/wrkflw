@@ -60,7 +60,7 @@ func TestEngineResolveIncident(t *testing.T) {
 		"failing": failingAction,
 	})
 
-	r := runtime.NewRunner(cat, clk, store,
+	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		// MaxAttempts=1 → first failure becomes an incident.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -122,7 +122,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		"failing": failingAction,
 	})
 
-	r := runtime.NewRunner(cat, clk, store,
+	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,

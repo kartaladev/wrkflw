@@ -76,7 +76,7 @@ func TestRunnerCompensationOnCancel(t *testing.T) {
 	store := runtime.NewMemStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := runtime.NewRunner(cat, fc, store, runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := compensationOnCancelDef()
 	const instanceID = "comp-cancel-i1"

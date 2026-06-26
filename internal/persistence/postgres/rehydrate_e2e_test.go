@@ -52,7 +52,7 @@ func TestPostgresTimerRehydrationResumesAfterRestart(t *testing.T) {
 	store1 := pg.NewStore(pool)
 	{
 		sched1 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-		r1 := runtime.NewRunner(cat, fc, store1,
+		r1 := runtime.NewRunner(cat, store1, runtime.WithRunnerClock(fc),
 			runtime.WithScheduler(sched1),
 			runtime.WithTimerStore(ts),
 			runtime.WithDefinitions(reg),
@@ -72,7 +72,7 @@ func TestPostgresTimerRehydrationResumesAfterRestart(t *testing.T) {
 	// sched1 and store1's in-memory state are gone — only Postgres rows survive.
 	store2 := pg.NewStore(pool)
 	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	r2 := runtime.NewRunner(cat, fc, store2,
+	r2 := runtime.NewRunner(cat, store2, runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched2),
 		runtime.WithTimerStore(ts),
 		runtime.WithDefinitions(reg),

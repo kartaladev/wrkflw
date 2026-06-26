@@ -110,7 +110,8 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	mts := runtime.NewMemTimerStore()
 	store := runtime.NewMemStoreWithTimers(mts)
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	r := runtime.NewRunner(action.NewMapCatalog(nil), fc, store,
+	r := runtime.NewRunner(action.NewMapCatalog(nil), store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 
 	def := timerIntermediateDef() // reuse the helper in runtime/timer_example_test.go (1h intermediate timer)

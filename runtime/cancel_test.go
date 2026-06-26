@@ -40,7 +40,7 @@ func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime
 	store := runtime.NewMemStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	return runtime.NewRunner(cat, fc, store, runtime.WithHumanTasks(resolver, tasks, nil))
+	return runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 }
 
 // TestRunnerCancelInstanceRunsCancelActions verifies that:

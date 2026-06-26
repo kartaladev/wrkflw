@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -28,11 +27,9 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 		"manager": {manager},
 	})
 	az := authz.RoleAuthorizer{}
-	clk := clock.System()
 
 	r := runtime.NewRunner(
 		nil,
-		clk,
 		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -69,11 +66,9 @@ func TestTaskServiceReassign(t *testing.T) {
 		"manager": {manager, admin},
 	})
 	az := authz.RoleAuthorizer{}
-	clk := clock.System()
 
 	r := runtime.NewRunner(
 		nil,
-		clk,
 		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -131,11 +126,9 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 		"manager": {manager},
 	})
 	az := authz.RoleAuthorizer{}
-	clk := clock.System()
 
 	r := runtime.NewRunner(
 		nil,
-		clk,
 		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -178,11 +171,9 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 		"manager": {manager},
 	})
 	az := authz.RoleAuthorizer{}
-	clk := clock.System()
 
 	r := runtime.NewRunner(
 		nil,
-		clk,
 		runtime.NewMemStore(),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)

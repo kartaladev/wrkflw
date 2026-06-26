@@ -63,7 +63,7 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 				}),
 			})
 			fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC))
-			r := NewRunner(cat, fc, nil)
+			r := NewRunner(cat, nil, WithRunnerClock(fc))
 
 			cmd := engine.InvokeAction{
 				CommandID:     "cmd-1",

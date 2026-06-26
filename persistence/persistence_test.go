@@ -71,7 +71,7 @@ func TestOpenPostgresEndToEnd(t *testing.T) {
 
 	def := minimalStartEndDefinition()
 
-	r := runtime.NewRunner(nil, clock.System(), store)
+	r := runtime.NewRunner(nil, store)
 	st, err := r.Run(t.Context(), def, "i-e2e", map[string]any{"k": "v"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, st.Status)
@@ -186,7 +186,7 @@ func TestNewRelayDrainsOutbox(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run a process to generate an outbox event.
-	r := runtime.NewRunner(nil, clock.System(), store)
+	r := runtime.NewRunner(nil, store)
 	st, err := r.Run(t.Context(), minimalStartEndDefinition(), "i-relay", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, st.Status)

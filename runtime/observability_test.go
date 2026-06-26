@@ -144,7 +144,6 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 
 			r := runtime.NewRunner(
 				action.NewMapCatalog(nil),
-				clock.System(),
 				runtime.NewMemStore(),
 				tc.opt,
 			)
@@ -173,7 +172,6 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 
 	r := runtime.NewRunner(
 		cat,
-		clock.System(),
 		runtime.NewMemStore(),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
@@ -300,7 +298,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			cat := action.NewMapCatalog(map[string]action.ServiceAction{
 				"charge": action.Func(tc.actionFunc),
 			})
-			r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore(),
+			r := runtime.NewRunner(cat, runtime.NewMemStore(),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
 
 			_, _ = r.Run(t.Context(), paymentDef(), "i1", map[string]any{})
@@ -346,7 +344,8 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		},
 	}
 
-	runner := runtime.NewRunner(cat, clk, runtime.NewMemStore(),
+	runner := runtime.NewRunner(cat, runtime.NewMemStore(),
+		runtime.WithRunnerClock(clk),
 		runtime.WithMeterProvider(mp),
 		// MaxAttempts=1: first failure parks immediately as an incident.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -448,8 +447,8 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 
 			r := runtime.NewRunner(
 				nil,
-				clk,
 				runtime.NewMemStore(),
+				runtime.WithRunnerClock(clk),
 				runtime.WithHumanTasks(resolver, taskStore, az),
 				runtime.WithMeterProvider(mp),
 			)
@@ -529,7 +528,7 @@ func TestDeliverSpan(t *testing.T) {
 	}
 
 	store := runtime.NewMemStore()
-	runner := runtime.NewRunner(nil, clk, store, runtime.WithTracerProvider(tp))
+	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk), runtime.WithTracerProvider(tp))
 
 	// Run parks at the catch-message node.
 	parked, err := runner.Run(t.Context(), msgDef, "del-obs-1", nil)

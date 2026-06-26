@@ -9,7 +9,7 @@
 //	if err := persistence.Migrate(ctx, pool); err != nil { ... }
 //
 //	store, err := persistence.OpenPostgres(ctx, pool)
-//	runner := runtime.NewRunner(cat, clock.System(), store)
+//	runner := runtime.NewRunner(cat, store)
 //
 // # Relay (transactional outbox drain)
 //
@@ -157,7 +157,7 @@ var ErrInstanceExists = runtime.ErrInstanceExists
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
 //	store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
-//	runner := runtime.NewRunner(nil, clock.System(), store)
+//	runner := runtime.NewRunner(nil, store)
 func OpenPostgres(_ context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
 	return postgres.NewStore(pool, opts...), nil
 }

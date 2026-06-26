@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -134,7 +133,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	store := runtime.NewMemStore()
 
-	runner := runtime.NewRunner(cat, fakeClock, store)
+	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fakeClock))
 
 	def := sagaDef()
 
@@ -217,10 +216,9 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 		"recover-action": &recordingAction{name: "recover-action", rec: rec},
 	})
 
-	clk := clock.System()
 	store := runtime.NewMemStore()
 
-	runner := runtime.NewRunner(cat, clk, store)
+	runner := runtime.NewRunner(cat, store)
 
 	def := boundaryErrorDef()
 

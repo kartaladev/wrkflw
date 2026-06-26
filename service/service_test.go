@@ -124,8 +124,8 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 
 	r := runtime.NewRunner(
 		cat,
-		fc,
 		store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 

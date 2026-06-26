@@ -10,7 +10,6 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
@@ -75,7 +74,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	runner := runtime.NewRunner(nil, clock.System(), store,
+	runner := runtime.NewRunner(nil, store,
 		runtime.WithCallLinks(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -242,7 +241,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-imm-child": child,
 		})
 
-		runner := runtime.NewRunner(cat, clock.System(), store,
+		runner := runtime.NewRunner(cat, store,
 			runtime.WithCallLinks(cl),
 			runtime.WithDefinitions(reg),
 		)
@@ -283,7 +282,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-fail-child": child,
 		})
 
-		runner := runtime.NewRunner(cat, clock.System(), store,
+		runner := runtime.NewRunner(cat, store,
 			runtime.WithCallLinks(cl),
 			runtime.WithDefinitions(reg),
 		)

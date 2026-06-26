@@ -256,6 +256,17 @@ func WithConditionEvaluator(eval engine.ConditionEvaluator) Option {
 	}
 }
 
+// WithRunnerClock sets the time source the Runner uses to stamp triggers,
+// step-duration metrics, and armed-timer times. Default: clock.System().
+// A nil clock is ignored. Inject a fake clock in tests for determinism (ADR-0003).
+func WithRunnerClock(clk clock.Clock) Option {
+	return func(r *Runner) {
+		if clk != nil {
+			r.clk = clk
+		}
+	}
+}
+
 // WithLogger sets the structured logger used by the Runner (default: [slog.Default]).
 // A nil value is ignored.
 func WithLogger(l *slog.Logger) Option {
@@ -274,32 +285,34 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(r *Runner) { r.mpOpt = observability.WithMeterProvider(mp) }
 }
 
-// NewRunner constructs a Runner with the three required core ports (cat, clk,
-// store) and any optional capability bundles supplied as functional options.
+// NewRunner constructs a Runner with the two required core ports (cat, store)
+// and any optional capability bundles supplied as functional options.
 //
 // Required ports:
 //   - cat: the service-action catalog (may be nil for processes with no service tasks).
-//   - clk: the time source. Pass a fake clock in tests.
 //   - store: the transactional persistence port (snapshot + journal + outbox).
 //     See [Store]; the in-memory [MemStore] is the reference fake.
+//
+// The time source defaults to [clock.System]. Inject a fake clock in tests via
+// [WithRunnerClock] for deterministic timestamps (ADR-0003).
 //
 // ADR-0007 amends ADR-0005: the former store/jnl/out positionals collapse to
 // one transactional Store, so snapshot, journal, and outbox commit atomically
 // per applied trigger.
 //
 // Optional capabilities (via Option):
+//   - [WithRunnerClock]: override the time source (default: clock.System()).
 //   - [WithHumanTasks]: human-task support (resolver, task store, authorizer).
 //   - [WithScheduler]: timer scheduling support.
 //   - [WithSignalBus]: signal broadcast support (ThrowSignal).
 func NewRunner(
 	cat action.Catalog,
-	clk clock.Clock,
 	store Store,
 	opts ...Option,
 ) *Runner {
 	r := &Runner{
 		cat:        cat,
-		clk:        clk,
+		clk:        clock.System(),
 		store:      store,
 		jitter:     NewJitterSource(),
 		msgWaiters: make(map[msgKey]string),

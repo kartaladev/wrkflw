@@ -25,7 +25,6 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -71,7 +70,7 @@ func main() {
 		}),
 	})
 
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
+	r := runtime.NewRunner(cat, runtime.NewMemStore())
 
 	fmt.Println("--- Travel Booking: Embedded Sub-process ---")
 	state, err := r.Run(ctx, def, "trip-001", map[string]any{"city": "Lisbon"})

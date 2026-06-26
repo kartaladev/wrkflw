@@ -152,7 +152,7 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner := runtime.NewRunner(cat, clock.System(), store,
+	runner := runtime.NewRunner(cat, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	tasks := runtime.NewTaskService(taskStore, az)

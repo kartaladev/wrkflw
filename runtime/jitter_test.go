@@ -92,7 +92,8 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 
 	sched := &recordingScheduler{}
 	runner := runtime.NewRunner(
-		cat, clk, runtime.NewMemStore(),
+		cat, runtime.NewMemStore(),
+		runtime.WithRunnerClock(clk),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(fixedJitter{0.5}),
 	)

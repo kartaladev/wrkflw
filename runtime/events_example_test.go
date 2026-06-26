@@ -97,7 +97,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 		return err
 	}, runtime.WithSignalBusClock(fc))
 
-	r = runtime.NewRunner(nil, fc, store, runtime.WithSignalBus(bus))
+	r = runtime.NewRunner(nil, store, runtime.WithRunnerClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := r.Run(ctx, def, "inst-1", nil)
@@ -146,7 +146,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	r := runtime.NewRunner(nil, clockwork.NewFakeClock(), runtime.NewMemStore())
+	r := runtime.NewRunner(nil, runtime.NewMemStore(), runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
 	_, err := r.Run(t.Context(), def, "i1", nil)
@@ -174,7 +174,8 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 		return err
 	}, runtime.WithSignalBusClock(fc))
 
-	r = runtime.NewRunner(nil, fc, store,
+	r = runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -217,7 +218,8 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 		return err
 	}, runtime.WithSignalBusClock(fc))
 
-	r = runtime.NewRunner(nil, fc, store,
+	r = runtime.NewRunner(nil, store,
+		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -258,7 +260,7 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	store := runtime.NewMemStore()
 	def := messageCatchDef("order-shipped")
 
-	r := runtime.NewRunner(nil, fc, store)
+	r := runtime.NewRunner(nil, store, runtime.WithRunnerClock(fc))
 
 	// Start two instances with different orderId values.
 	_, err := r.Run(ctx, def, "order-100", map[string]any{"orderId": "100"})
