@@ -458,6 +458,17 @@ type InstanceState struct {
 	// double-compensating the throw's in-flight records (ADR-0039 B1 fix).
 	PendingCancel bool
 
+	// DeferredCompensationThrows holds the token IDs of compensation-throw tokens
+	// that were reached while a compensation walk was already in flight
+	// (Compensating.ActiveCmdID != ""). The single-cursor model permits at most
+	// one walk in flight, so concurrent throws (parallel branches processed in one
+	// Macro drive pass) are SERIALIZED: the second+ throw tokens are parked
+	// (TokenWaitingCommand, not consumed) and enqueued here. stepCompensationFinish
+	// re-activates exactly one per finish, draining the queue one walk at a time
+	// (ADR-0071). It is engine bookkeeping (persisted with the state, excluded from
+	// the runtime.InstanceSnapshot DTO like Compensating/PendingCancel).
+	DeferredCompensationThrows []string
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
