@@ -30,7 +30,7 @@ func TestSchedulerWithDistributedTimerLock(t *testing.T) {
 	})
 
 	clk := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(clk, scheduling.WithDistributedTimerLock(pool))
+	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithDistributedTimerLock(pool))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 

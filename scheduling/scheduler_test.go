@@ -18,7 +18,7 @@ import (
 
 func TestNewScheduler_SatisfiesPortAndFires(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(fakeClock)
+	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(fakeClock))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -36,7 +36,7 @@ func TestNewScheduler_SatisfiesPortAndFires(t *testing.T) {
 
 func TestScheduler_Cancel_NoOp(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(fakeClock)
+	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(fakeClock))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -69,7 +69,7 @@ func TestNewScheduler_WithLogger(t *testing.T) {
 			assert: func(t *testing.T) {
 				clk := clockwork.NewFakeClock()
 				logger := slog.New(slog.Default().Handler())
-				s, err := scheduling.NewScheduler(clk, scheduling.WithLogger(logger))
+				s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithLogger(logger))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 
@@ -86,7 +86,7 @@ func TestNewScheduler_WithLogger(t *testing.T) {
 			name: "WithLogger nil is a no-op — construction succeeds",
 			assert: func(t *testing.T) {
 				clk := clockwork.NewFakeClock()
-				s, err := scheduling.NewScheduler(clk, scheduling.WithLogger(nil))
+				s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithLogger(nil))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				require.NotNil(t, s)
@@ -96,7 +96,7 @@ func TestNewScheduler_WithLogger(t *testing.T) {
 			name: "no options still constructs correctly",
 			assert: func(t *testing.T) {
 				clk := clockwork.NewFakeClock()
-				s, err := scheduling.NewScheduler(clk)
+				s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				require.NotNil(t, s)
@@ -129,7 +129,7 @@ func TestNewScheduler_ObservabilityOptions(t *testing.T) {
 				clk := clockwork.NewFakeClock()
 				tp := sdktrace.NewTracerProvider()
 				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
-				s, err := scheduling.NewScheduler(clk, scheduling.WithTracerProvider(tp))
+				s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithTracerProvider(tp))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				require.NotNil(t, s)
@@ -141,7 +141,7 @@ func TestNewScheduler_ObservabilityOptions(t *testing.T) {
 				clk := clockwork.NewFakeClock()
 				mp := sdkmetric.NewMeterProvider()
 				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
-				s, err := scheduling.NewScheduler(clk, scheduling.WithMeterProvider(mp))
+				s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithMeterProvider(mp))
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = s.Close() })
 				require.NotNil(t, s)
@@ -156,7 +156,8 @@ func TestNewScheduler_ObservabilityOptions(t *testing.T) {
 				mp := sdkmetric.NewMeterProvider()
 				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 				l := slog.New(slog.Default().Handler())
-				s, err := scheduling.NewScheduler(clk,
+				s, err := scheduling.NewScheduler(
+					scheduling.WithSchedulerClock(clk),
 					scheduling.WithTracerProvider(tp),
 					scheduling.WithMeterProvider(mp),
 					scheduling.WithLogger(l),

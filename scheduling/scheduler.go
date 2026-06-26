@@ -49,6 +49,7 @@ var (
 
 // config holds façade-level options.
 type config struct {
+	clk    clockwork.Clock
 	logger *slog.Logger
 	tp     trace.TracerProvider
 	mp     metric.MeterProvider
@@ -90,6 +91,18 @@ func WithElectorHeartbeatInterval(d time.Duration) ElectorOption {
 	return func(c *config) {
 		if d > 0 {
 			c.electorOpts = append(c.electorOpts, gocronsched.WithHeartbeatInterval(d))
+		}
+	}
+}
+
+// WithSchedulerClock sets the [clockwork.Clock] that drives timer scheduling
+// (default: [clockwork.NewRealClock]). Pass a fake clock in tests so that a
+// single clock.Advance drives both engine timestamps and timer firing (ADR-0003,
+// ADR-0069). A nil value is ignored (falls back to the default real clock).
+func WithSchedulerClock(clk clockwork.Clock) Option {
+	return func(c *config) {
+		if clk != nil {
+			c.clk = clk
 		}
 	}
 }
@@ -168,16 +181,23 @@ func WithTimerElector(pool *pgxpool.Pool, opts ...ElectorOption) Option {
 	}
 }
 
-// NewScheduler constructs and starts a gocron-backed [Scheduler] driven by
-// clk. The returned scheduler must be closed via [Scheduler.Close] when the
-// application shuts down.
+// NewScheduler constructs and starts a gocron-backed [Scheduler]. Pass
+// [WithSchedulerClock] to drive timer scheduling with a specific
+// [clockwork.Clock] (default: [clockwork.NewRealClock]). The returned
+// scheduler must be closed via [Scheduler.Close] when the application shuts down.
 //
 // [WithDistributedTimerLock] and [WithTimerElector] are mutually exclusive;
 // requesting both returns [ErrTimerLockElectorConflict].
-func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
+func NewScheduler(opts ...Option) (*Scheduler, error) {
 	cfg := &config{}
 	for _, o := range opts {
 		o(cfg)
+	}
+
+	// Resolve the effective clock once: option-provided or real-clock default.
+	clk := cfg.clk
+	if clk == nil {
+		clk = clockwork.NewRealClock()
 	}
 
 	if cfg.pool != nil && cfg.electorEnabled {
@@ -185,6 +205,8 @@ func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
 	}
 
 	var internalOpts []gocronsched.Option
+	// Always pass the resolved clock to the internal adapter.
+	internalOpts = append(internalOpts, gocronsched.WithClock(clk))
 	if cfg.logger != nil {
 		internalOpts = append(internalOpts, gocronsched.WithLogger(cfg.logger))
 	}
@@ -202,9 +224,9 @@ func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
 	// dedicated connection is owned for the Scheduler's lifetime and released by Close.
 	var elector *gocronsched.PostgresElector
 	if cfg.electorEnabled {
-		// Share the scheduler's clock so the leadership heartbeat is driven by the
-		// same time source as timer firing (ADR-0003); a caller-supplied clock option,
-		// if any, takes precedence as it is applied after this one.
+		// Share the resolved clock so the leadership heartbeat is driven by the same
+		// time source as timer firing (ADR-0003, ADR-0069). Prepend so a caller-supplied
+		// elector clock option (in cfg.electorOpts) still wins — applied after this one.
 		electorOpts := append([]gocronsched.ElectorOption{gocronsched.WithElectorClock(clk)}, cfg.electorOpts...)
 		e, err := gocronsched.NewPostgresElector(context.Background(), cfg.electorPool, electorOpts...)
 		if err != nil {
@@ -214,7 +236,7 @@ func NewScheduler(clk clockwork.Clock, opts ...Option) (*Scheduler, error) {
 		internalOpts = append(internalOpts, gocronsched.WithElector(elector))
 	}
 
-	impl, err := gocronsched.NewGocronScheduler(clk, internalOpts...)
+	impl, err := gocronsched.NewGocronScheduler(internalOpts...)
 	if err != nil {
 		if elector != nil {
 			_ = elector.Close()
