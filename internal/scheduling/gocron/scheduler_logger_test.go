@@ -19,7 +19,7 @@ func TestWithLogger_FieldInjection(t *testing.T) {
 	// Sub-test 1: default (no option).
 	t.Run("default uses slog.Default()", func(t *testing.T) {
 		clk := clockwork.NewFakeClock()
-		s, err := NewGocronScheduler(clk)
+		s, err := NewGocronScheduler(WithClock(clk))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = s.Close() })
 		assert.Same(t, slog.Default(), s.tel.Logger,
@@ -30,7 +30,7 @@ func TestWithLogger_FieldInjection(t *testing.T) {
 	t.Run("WithLogger sets injected logger", func(t *testing.T) {
 		custom := slog.New(slog.Default().Handler())
 		clk := clockwork.NewFakeClock()
-		s, err := NewGocronScheduler(clk, WithLogger(custom))
+		s, err := NewGocronScheduler(WithClock(clk), WithLogger(custom))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = s.Close() })
 		assert.Same(t, custom, s.tel.Logger,
@@ -42,7 +42,7 @@ func TestWithLogger_FieldInjection(t *testing.T) {
 // a no-op (the scheduler falls back to slog.Default()).
 func TestWithLogger_NilIgnored(t *testing.T) {
 	clk := clockwork.NewFakeClock()
-	s, err := NewGocronScheduler(clk, WithLogger(nil))
+	s, err := NewGocronScheduler(WithClock(clk), WithLogger(nil))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	assert.Equal(t, slog.Default(), s.tel.Logger,

@@ -51,7 +51,7 @@ func TestGocronSchedulerLockerGatesFire(t *testing.T) {
 			}
 
 			clk := clockwork.NewFakeClock()
-			s, err := sched.NewGocronScheduler(clk, sched.WithLocker(sched.NewPostgresLocker(pool)))
+			s, err := sched.NewGocronScheduler(sched.WithClock(clk), sched.WithLocker(sched.NewPostgresLocker(pool)))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 

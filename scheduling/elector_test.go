@@ -51,7 +51,8 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 			}
 
 			clk := clockwork.NewFakeClock()
-			s, err := scheduling.NewScheduler(clk,
+			s, err := scheduling.NewScheduler(
+				scheduling.WithSchedulerClock(clk),
 				scheduling.WithTimerElector(pool, scheduling.WithElectorKey(leaderKey)))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
@@ -89,7 +90,8 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 
 	const leaderKey = "facade-heartbeat"
 	clk := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(clk,
+	s, err := scheduling.NewScheduler(
+		scheduling.WithSchedulerClock(clk),
 		scheduling.WithTimerElector(pool,
 			scheduling.WithElectorKey(leaderKey),
 			scheduling.WithElectorHeartbeatInterval(time.Second)))
@@ -136,7 +138,8 @@ func TestSchedulerLockAndElectorConflict(t *testing.T) {
 	pool := database.RunTestDatabase(t)
 
 	clk := clockwork.NewFakeClock()
-	_, err := scheduling.NewScheduler(clk,
+	_, err := scheduling.NewScheduler(
+		scheduling.WithSchedulerClock(clk),
 		scheduling.WithDistributedTimerLock(pool),
 		scheduling.WithTimerElector(pool),
 	)
