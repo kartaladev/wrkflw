@@ -34,7 +34,8 @@ type TaskService struct {
 
 // taskServiceConfig holds the optional configuration for [TaskService].
 type taskServiceConfig struct {
-	mp metric.MeterProvider
+	clk clock.Clock
+	mp  metric.MeterProvider
 }
 
 // TaskServiceOption configures a [TaskService].
@@ -61,28 +62,38 @@ func WithTaskServiceMeterProvider(mp metric.MeterProvider) TaskServiceOption {
 	}
 }
 
+// WithTaskServiceClock sets the time source used to stamp task-lifecycle triggers.
+// Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
+func WithTaskServiceClock(clk clock.Clock) TaskServiceOption {
+	return func(c *taskServiceConfig) {
+		if clk != nil {
+			c.clk = clk
+		}
+	}
+}
+
 // NewTaskService constructs a TaskService with the given task store, authorizer,
-// clock, and optional [TaskServiceOption] values.
+// and optional [TaskServiceOption] values. The clock defaults to [clock.System];
+// inject a fake clock via [WithTaskServiceClock] in tests.
 //
 // The variadic opts are additive; callers that do not need custom observability
-// can omit them and the default OTel global meter provider is used.
-func NewTaskService(store humantask.TaskStore, az authz.Authorizer, clk clock.Clock, opts ...TaskServiceOption) *TaskService {
-	cfg := &taskServiceConfig{}
+// or a custom clock can omit them entirely.
+func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...TaskServiceOption) *TaskService {
+	cfg := taskServiceConfig{clk: clock.System()}
 	for _, o := range opts {
-		o(cfg)
+		o(&cfg)
 	}
 	var obsOpts []observability.Option
 	if cfg.mp != nil {
 		obsOpts = append(obsOpts, observability.WithMeterProvider(cfg.mp))
 	}
 	tel := observability.New(runnerInstrumentationName, obsOpts...)
-	ts := &TaskService{
+	return &TaskService{
 		store:      store,
 		authz:      az,
-		clk:        clk,
+		clk:        cfg.clk,
 		humanTasks: tel.Int64Counter("wrkflw_human_tasks_total", "Human-task lifecycle transitions."),
 	}
-	return ts
 }
 
 // Claim authorizes actor against the task's eligibility and, on success, returns

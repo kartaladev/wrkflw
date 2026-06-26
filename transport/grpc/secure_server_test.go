@@ -33,7 +33,7 @@ func minimalSvc(t *testing.T) service.Service {
 	az := authz.RoleAuthorizer{}
 	runner := runtime.NewRunner(action.NewMapCatalog(nil), fc, store)
 	reg := runtime.NewMapDefinitionRegistry(nil)
-	tasks := runtime.NewTaskService(taskStore, az, fc)
+	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 	return service.New(runner, tasks, reg, store, store, taskStore, fc)
 }
 

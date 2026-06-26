@@ -84,7 +84,7 @@ func main() {
 	taskToken := claimable[0].TaskToken
 	fmt.Printf("manager %q sees %d claimable task(s)\n", manager.ID, len(claimable))
 
-	svc := runtime.NewTaskService(taskStore, az, clk)
+	svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
 
 	// 3. Claim the task and deliver the trigger.
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)

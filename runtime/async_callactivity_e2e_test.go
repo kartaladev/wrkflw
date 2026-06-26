@@ -172,7 +172,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	require.Len(t, claimable, 1, "exactly one human task must be pending (grandchild's task)")
 	taskToken := claimable[0].TaskToken
 
-	svc := runtime.NewTaskService(tasks, az, clk)
+	svc := runtime.NewTaskService(tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"gcResult": "done"})
 	require.NoError(t, err)
 

@@ -155,7 +155,7 @@ func run(logger *slog.Logger) error {
 	runner := runtime.NewRunner(cat, clock.System(), store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
-	tasks := runtime.NewTaskService(taskStore, az, clock.System())
+	tasks := runtime.NewTaskService(taskStore, az)
 	svc := service.New(runner, tasks, reg, store, lister, taskStore, clock.System())
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---

@@ -114,7 +114,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 		"child must be StatusRunning (parked at human task)")
 
 	// Phase 2: Complete the child's human task → child completes → link flips to 'completed'.
-	taskSvc := runtime.NewTaskService(tasks, az, clk)
+	taskSvc := runtime.NewTaskService(tasks, az)
 
 	// Find the task token — the human task was created when the child ran.
 	// Use ClaimableBy to list tasks claimable by the worker actor.
@@ -225,7 +225,7 @@ func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 	childID := parentID + "-sub-c1"
 
 	// Complete the human task.
-	taskSvc := runtime.NewTaskService(tasks, az, clk)
+	taskSvc := runtime.NewTaskService(tasks, az)
 	taskList, err := tasks.ClaimableBy(ctx, worker)
 	require.NoError(t, err)
 	require.Len(t, taskList, 1)
