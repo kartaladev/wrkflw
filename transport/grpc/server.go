@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -407,7 +408,7 @@ func snapshotToProto(snap runtime.InstanceSnapshot) (*workflowpb.InstanceSnapsho
 			NodeId:     t.NodeID,
 			State:      t.State,
 			ClaimedBy:  t.ClaimedBy,
-			Candidates: t.Candidates,
+			Candidates: slices.Clone(t.Candidates),
 			CreatedAt:  timestamppb.New(t.CreatedAt),
 		}
 		if t.DueAt != nil {
@@ -477,7 +478,7 @@ func actionableViewToProto(av runtime.ActionableView) *workflowpb.ActionableView
 			NodeId:         t.NodeID,
 			State:          t.State,
 			ClaimedBy:      t.ClaimedBy,
-			Candidates:     t.Candidates,
+			Candidates:     slices.Clone(t.Candidates),
 			AllowedActions: allowed,
 		}
 	}

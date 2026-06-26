@@ -47,30 +47,60 @@ func snapshotDef() *model.ProcessDefinition {
 	return def
 }
 
-// TestGetInstanceSnapshotNotFound verifies that GetInstanceSnapshot returns
-// codes.NotFound when the instance ID does not exist.
-func TestGetInstanceSnapshotNotFound(t *testing.T) {
+// TestGetInstanceSnapshotNotFound and TestGetActionableViewNotFound are
+// merged here: both RPCs should return codes.NotFound when the instance ID is
+// deliberately absent / never registered.
+func TestSnapshotNotFound(t *testing.T) {
 	t.Parallel()
-	h := newGRPCHarness(t)
 
-	_, err := h.client.GetInstanceSnapshot(t.Context(), &workflowpb.GetInstanceRequest{
-		InstanceId: "no-such-instance",
-	})
-	require.Error(t, err)
-	assert.Equal(t, codes.NotFound, status.Code(err))
-}
+	type testCase struct {
+		name   string
+		assert func(t *testing.T, err error)
+	}
 
-// TestGetActionableViewNotFound verifies that GetActionableView returns
-// codes.NotFound when the instance ID does not exist.
-func TestGetActionableViewNotFound(t *testing.T) {
-	t.Parallel()
-	h := newGRPCHarness(t)
+	cases := []testCase{
+		{
+			name: "GetInstanceSnapshot returns NotFound for absent instance",
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
+				assert.Equal(t, codes.NotFound, status.Code(err))
+			},
+		},
+		{
+			name: "GetActionableView returns NotFound for absent instance",
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
+				assert.Equal(t, codes.NotFound, status.Code(err))
+			},
+		},
+	}
 
-	_, err := h.client.GetActionableView(t.Context(), &workflowpb.GetInstanceRequest{
-		InstanceId: "no-such-instance",
-	})
-	require.Error(t, err)
-	assert.Equal(t, codes.NotFound, status.Code(err))
+	// Each row needs its own harness so they run fully in parallel.
+	rpcs := []func(h *grpcHarness) error{
+		func(h *grpcHarness) error {
+			// Instance ID is deliberately absent — never registered in this harness.
+			_, err := h.client.GetInstanceSnapshot(t.Context(), &workflowpb.GetInstanceRequest{
+				InstanceId: "no-such-instance",
+			})
+			return err
+		},
+		func(h *grpcHarness) error {
+			// Instance ID is deliberately absent — never registered in this harness.
+			_, err := h.client.GetActionableView(t.Context(), &workflowpb.GetInstanceRequest{
+				InstanceId: "no-such-instance",
+			})
+			return err
+		},
+	}
+
+	for i, tc := range cases {
+		rpc := rpcs[i]
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newGRPCHarness(t)
+			tc.assert(t, rpc(h))
+		})
+	}
 }
 
 // TestGetInstanceSnapshotMappedFields verifies that GetInstanceSnapshot returns
@@ -134,6 +164,26 @@ func TestGetInstanceSnapshotMappedFields(t *testing.T) {
 	require.True(t, ok, "expected binding for default-svc")
 	assert.Empty(t, defaultBinding.GetAction()) // default-by-id: no explicit name
 	assert.False(t, defaultBinding.GetInline())
+
+	// Concrete history assertions: start, named-svc, inline-svc, and default-svc
+	// must all appear (the instance reached default-svc before failing).
+	history := snap.GetHistory()
+	require.NotEmpty(t, history, "completed nodes must appear in history")
+	// Collect visited node IDs and verify each entry has an entered_at timestamp.
+	visitedNodes := make(map[string]bool, len(history))
+	for _, v := range history {
+		visitedNodes[v.GetNodeId()] = true
+		assert.NotNil(t, v.GetEnteredAt(), "every history entry must have entered_at")
+	}
+	assert.True(t, visitedNodes["start"], "start event must appear in history")
+	assert.True(t, visitedNodes["named-svc"], "named-svc must appear in history")
+	assert.True(t, visitedNodes["inline-svc"], "inline-svc must appear in history")
+	assert.True(t, visitedNodes["default-svc"], "default-svc must appear in history")
+
+	// The instance fails when default-svc has no catalog entry (no retry policy →
+	// no incident, status goes to "failed" with EndedAt populated).
+	assert.Equal(t, "failed", snap.GetStatus())
+	assert.NotNil(t, snap.GetEndedAt(), "a failed instance must have ended_at populated")
 }
 
 // TestGetInstanceSnapshotTokensAndHistory verifies that tokens and history
@@ -161,6 +211,15 @@ func TestGetInstanceSnapshotTokensAndHistory(t *testing.T) {
 	// A completed instance has no live tokens but has history entries.
 	assert.NotEmpty(t, snap.GetHistory(), "completed instance must have non-empty history")
 	assert.NotNil(t, snap.GetStartedAt())
+
+	// A completed instance must have EndedAt populated.
+	assert.NotNil(t, snap.GetEndedAt(), "completed instance must have non-nil ended_at")
+
+	// Verify concrete history field: every entry has a node_id and entered_at.
+	for _, v := range snap.GetHistory() {
+		assert.NotEmpty(t, v.GetNodeId(), "history entry must have a node_id")
+		assert.NotNil(t, v.GetEnteredAt(), "history entry must have entered_at")
+	}
 }
 
 // TestGetActionableViewMappedFields verifies that GetActionableView returns the
