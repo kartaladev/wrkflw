@@ -90,6 +90,14 @@ type InvokeAction struct {
 	Inline    action.ServiceAction
 	Scoped    action.Catalog
 	Input     map[string]any
+	// FireAndForget marks an action the engine runs for its side effect only
+	// (deadline-breach and reminder actions). No token awaits its result, so the
+	// runtime must run it WITHOUT feeding an ActionCompleted/ActionFailed back into
+	// the engine — otherwise handleActionCompleted would report ErrTokenNotFound for
+	// a command no token ever parked on. CommandID is still set for tracing/metrics.
+	// (Distinct from InvokeCancelAction, which is cancel-specific and carries no
+	// CommandID.)
+	FireAndForget bool
 }
 
 // CompleteInstance marks the instance complete with a result.
