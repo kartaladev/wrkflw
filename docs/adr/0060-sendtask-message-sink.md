@@ -1,6 +1,6 @@
 # 60. Implement SendTask via a pluggable MessageSink port
 
-- Status: Accepted
+- Status: Superseded by ADR-0067
 - Date: 2026-06-25
 
 ## Context
