@@ -46,6 +46,27 @@ func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds
 	}
 }
 
+// outboundMessageEvents turns each engine.SendMessage command into a message.<Name>
+// outbox event so a SendTask message is written atomically in the state-commit tx and
+// relayed at-least-once, exactly like a domain event (ADR-0067). The payload carries the
+// message name, the resolved correlation key, and a copy of the sender's variables.
+func outboundMessageEvents(st engine.InstanceState, cmds []engine.Command) []OutboxEvent {
+	var out []OutboxEvent
+	for _, c := range cmds {
+		m, ok := c.(engine.SendMessage)
+		if !ok {
+			continue
+		}
+		out = append(out, OutboxEvent{
+			Topic:         "message." + m.Name,
+			Payload:       map[string]any{"messageName": m.Name, "correlationKey": m.CorrelationKey, "variables": m.Payload},
+			InstanceID:    st.InstanceID,
+			DefinitionRef: instanceDefRef(st),
+		})
+	}
+	return out
+}
+
 // terminalEventErr resolves the error string for a terminal outbox event. Only
 // the topic is status-driven (ADR-0046); the error string stays best-effort so
 // existing diagnostics survive. It prefers the most concrete description

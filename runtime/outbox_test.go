@@ -3,6 +3,7 @@ package runtime
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
@@ -120,6 +121,54 @@ func TestTerminalOutboxEvent(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc.assert(t, terminalOutboxEvent(tc.prev, tc.st, tc.cmds))
+		})
+	}
+}
+
+func TestOutboundMessageEvents(t *testing.T) {
+	st := engine.InstanceState{InstanceID: "i-1", DefID: "shipping", DefVersion: 2}
+	cases := []struct {
+		name   string
+		cmds   []engine.Command
+		assert func(t *testing.T, got []OutboxEvent)
+	}{
+		{
+			name: "no send commands yields nil",
+			cmds: []engine.Command{engine.CompleteInstance{}},
+			assert: func(t *testing.T, got []OutboxEvent) {
+				assert.Nil(t, got)
+			},
+		},
+		{
+			name: "one send command yields one message event",
+			cmds: []engine.Command{engine.SendMessage{Name: "OrderPlaced", CorrelationKey: "ord-7", Payload: map[string]any{"amount": 10}}},
+			assert: func(t *testing.T, got []OutboxEvent) {
+				require.Len(t, got, 1)
+				assert.Equal(t, "message.OrderPlaced", got[0].Topic)
+				assert.Equal(t, "i-1", got[0].InstanceID)
+				assert.Equal(t, "shipping:2", got[0].DefinitionRef)
+				assert.Equal(t, "OrderPlaced", got[0].Payload["messageName"])
+				assert.Equal(t, "ord-7", got[0].Payload["correlationKey"])
+				assert.Equal(t, map[string]any{"amount": 10}, got[0].Payload["variables"])
+			},
+		},
+		{
+			name: "multiple send commands preserve order",
+			cmds: []engine.Command{
+				engine.SendMessage{Name: "A"},
+				engine.InvokeAction{},
+				engine.SendMessage{Name: "B"},
+			},
+			assert: func(t *testing.T, got []OutboxEvent) {
+				require.Len(t, got, 2)
+				assert.Equal(t, "message.A", got[0].Topic)
+				assert.Equal(t, "message.B", got[1].Topic)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, outboundMessageEvents(st, tc.cmds))
 		})
 	}
 }
