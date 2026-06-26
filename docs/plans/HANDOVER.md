@@ -5,10 +5,11 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-27 (autonomous backlog-completion program)
 
-> **State:** `main` HEAD `6cc15e7` (pushed to `origin`). **Next free ADR: 0069.** An autonomous
+> **State:** `main` HEAD `9d676b1` (pushed to `origin`). **Next free ADR: 0070.** An autonomous
 > multi-track backlog-completion program is IN PROGRESS — index + triage in
 > `docs/plans/2026-06-27-backlog-completion-program.md`, live ledger in `.superpowers/sdd/progress.md`.
 > Order: **T1 → H1 → H2 → H3 → L1 → P1 → P2**, then a spec-only proposal for T2.
+> **Done & merged so far: T1 (ADR-0068), H1 (gofmt enforce), H2 (service cov 91.8%), H3 (ADR-0069 optional gocron clock).** Remaining: L1, P1, P2, T2-proposal.
 >
 > **✅ Merged 2026-06-27 — T1: snapshot action metadata + gRPC snapshot RPCs (ADR-0068).**
 > `runtime.InstanceSnapshot` now carries `ScopedActions []string` + `ActionBindings []ActionBindingView`
