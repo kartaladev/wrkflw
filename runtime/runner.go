@@ -758,6 +758,14 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			err := errors.New("unknown action: " + cmd.Name)
 			aspan.RecordError(err)
 			aspan.SetStatus(codes.Error, err.Error())
+			if cmd.FireAndForget {
+				// No token awaits a fire-and-forget action's result, so an
+				// ActionFailed would only surface as ErrTokenNotFound. Log and
+				// drop instead — the action was never actionable anyway.
+				r.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action not found",
+					slog.String("action", cmd.Name))
+				return nil, nil
+			}
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
 		start := r.clk.Now()
@@ -766,9 +774,22 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		if err != nil {
 			aspan.RecordError(err)
 			aspan.SetStatus(codes.Error, err.Error())
+			if cmd.FireAndForget {
+				// Deadline-breach and reminder actions run for their side effect
+				// only; no token awaits the result. Log the failure rather than
+				// feeding back an ActionFailed that no token could ever match.
+				r.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action failed",
+					slog.String("action", cmd.Name), slog.Any("error", err))
+				return nil, nil
+			}
 			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), true, r.jitter.Fraction()), nil
 		}
 		outcome = "ok"
+		if cmd.FireAndForget {
+			// Side effect performed and observed (span + duration metric). No
+			// token awaits the result, so return no trigger.
+			return nil, nil
+		}
 		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
 
 	case engine.InvokeCancelAction:

@@ -74,9 +74,10 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	if deadlineAction != "" {
 		cmdID := s.nextCommandID()
 		cmds = append(cmds, InvokeAction{
-			CommandID: cmdID,
-			Name:      deadlineAction,
-			Input:     copyVars(s.Variables),
+			CommandID:     cmdID,
+			Name:          deadlineAction,
+			Input:         copyVars(s.Variables),
+			FireAndForget: true,
 		})
 	}
 
@@ -164,9 +165,10 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	if reminderAction != "" {
 		cmdID := s.nextCommandID()
 		cmds = append(cmds, InvokeAction{
-			CommandID: cmdID,
-			Name:      reminderAction,
-			Input:     copyVars(s.Variables),
+			CommandID:     cmdID,
+			Name:          reminderAction,
+			Input:         copyVars(s.Variables),
+			FireAndForget: true,
 		})
 	}
 
