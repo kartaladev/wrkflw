@@ -5,7 +5,7 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26 (transactional SendTask outbox)
 
-> **State:** `main` HEAD `1ea8400` (pushed to `origin`), full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean, `engine/`+`model/` zero-diff. **Next free ADR: 0068.**
+> **State:** `main` HEAD `0b4da71` (pushed to `origin`), full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean, `engine/`+`model/` zero-diff. **Next free ADR: 0068.** The ADR-0067 async-e2e follow-up is **DONE** (`eventing/message_e2e_test.go` — real Postgres+relay → `NewMessageHandler` → `DeliverMessage` resumes a parked ReceiveTask).
 >
 > **✅ Merged 2026-06-26 — transactional SendTask outbox (ADR-0067, supersedes ADR-0060).**
 > `SendTask` now emits a `message.<MessageName>` event written into the **existing `wrkflw_outbox`**
