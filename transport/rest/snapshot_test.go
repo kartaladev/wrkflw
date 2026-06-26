@@ -165,6 +165,10 @@ func TestHandlerGetInstanceSnapshotActionMetadata(t *testing.T) {
 	if inlineVal, _ := b0["inline"].(bool); !inlineVal {
 		t.Errorf("action_bindings[0].inline = %v, want true", b0["inline"])
 	}
+	// The "action" key must be absent for inline tasks (omitempty + empty string).
+	if _, present := b0["action"]; present {
+		t.Errorf("action_bindings[0].action key present for inline task, want absent (omitempty)")
+	}
 
 	// svc-named: action=scoped-action, inline=false.
 	if b1["action"] != "scoped-action" {

@@ -112,49 +112,90 @@ func TestDefinitionBuilderAutoFlowID(t *testing.T) {
 	}
 }
 
-// TestScopedActionNamesReturnsNilWhenEmpty asserts that a definition with no
-// scoped actions returns nil from ScopedActionNames.
-func TestScopedActionNamesReturnsNilWhenEmpty(t *testing.T) {
-	def, err := model.NewDefinition("p", 1).
-		Add(model.NewStartEvent("s")).
-		Add(model.NewEndEvent("e")).
-		Connect("s", "e").
-		Build()
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	if got := def.ScopedActionNames(); got != nil {
-		t.Fatalf("ScopedActionNames() = %v, want nil", got)
-	}
-}
+// TestScopedActionNames covers ScopedActionNames across the nil-when-empty,
+// single-action, and sorted-multiple-actions cases.
+func TestScopedActionNames(t *testing.T) {
+	t.Parallel()
 
-// TestScopedActionNamesReturnsSortedNames asserts that a definition with two
-// registered scoped actions returns them sorted, regardless of registration order.
-func TestScopedActionNamesReturnsSortedNames(t *testing.T) {
 	noop := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return nil, nil
 	})
-	def, err := model.NewDefinition("p", 1).
-		Add(model.NewStartEvent("s")).
-		Add(model.NewEndEvent("e")).
-		Connect("s", "e").
-		RegisterAction("b", noop).
-		RegisterActionFunc("a", func(_ context.Context, _ map[string]any) (map[string]any, error) {
-			return nil, nil
-		}).
-		Build()
-	if err != nil {
-		t.Fatalf("Build: %v", err)
+
+	type testCase struct {
+		name   string
+		build  func() (*model.ProcessDefinition, error)
+		assert func(t *testing.T, got []string)
 	}
-	got := def.ScopedActionNames()
-	want := []string{"a", "b"}
-	if len(got) != len(want) {
-		t.Fatalf("ScopedActionNames() = %v, want %v", got, want)
+
+	cases := []testCase{
+		{
+			name: "no scoped actions returns nil",
+			build: func() (*model.ProcessDefinition, error) {
+				return model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "e").
+					Build()
+			},
+			assert: func(t *testing.T, got []string) {
+				if got != nil {
+					t.Errorf("ScopedActionNames() = %v, want nil", got)
+				}
+			},
+		},
+		{
+			name: "single scoped action returns single-element slice",
+			build: func() (*model.ProcessDefinition, error) {
+				return model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "e").
+					RegisterAction("only", noop).
+					Build()
+			},
+			assert: func(t *testing.T, got []string) {
+				if len(got) != 1 || got[0] != "only" {
+					t.Errorf("ScopedActionNames() = %v, want [only]", got)
+				}
+			},
+		},
+		{
+			name: "multiple scoped actions returned sorted regardless of registration order",
+			build: func() (*model.ProcessDefinition, error) {
+				return model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "e").
+					RegisterAction("b", noop).
+					RegisterActionFunc("a", func(_ context.Context, _ map[string]any) (map[string]any, error) {
+						return nil, nil
+					}).
+					Build()
+			},
+			assert: func(t *testing.T, got []string) {
+				want := []string{"a", "b"}
+				if len(got) != len(want) {
+					t.Fatalf("ScopedActionNames() = %v, want %v", got, want)
+				}
+				for i := range want {
+					if got[i] != want[i] {
+						t.Errorf("ScopedActionNames()[%d] = %q, want %q", i, got[i], want[i])
+					}
+				}
+			},
+		},
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("ScopedActionNames()[%d] = %q, want %q", i, got[i], want[i])
-		}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			def, err := tc.build()
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			tc.assert(t, def.ScopedActionNames())
+		})
 	}
 }
 

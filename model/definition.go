@@ -70,8 +70,11 @@ type ProcessDefinition struct {
 func (d *ProcessDefinition) ScopedCatalog() action.Catalog { return d.scoped }
 
 // ScopedActionNames returns the sorted names registered in the definition-scoped
-// action catalog, or nil when none were registered.
-func (d *ProcessDefinition) ScopedActionNames() []string { return d.scopedNames }
+// action catalog, or nil when none were registered. The returned slice is a
+// defensive copy; callers may mutate it without affecting the definition.
+func (d *ProcessDefinition) ScopedActionNames() []string {
+	return append([]string(nil), d.scopedNames...)
+}
 
 // Node returns the node with the given id.
 func (d *ProcessDefinition) Node(id string) (Node, bool) {

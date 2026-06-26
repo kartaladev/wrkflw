@@ -341,7 +341,6 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			snap := runtime.NewInstanceSnapshot(st, tc.def())
 			tc.assert(t, snap)
