@@ -3,7 +3,26 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26 (clock-optional refactor)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-26 (transactional SendTask outbox)
+
+> **State:** `main` HEAD (latest after ADR-0067 merge), full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean. **Next free ADR: 0068.**
+>
+> **✅ Merged 2026-06-26 — transactional SendTask outbox (ADR-0067, supersedes ADR-0060).**
+> `SendTask` now emits a `message.<MessageName>` event written into the **existing `wrkflw_outbox`**
+> in the same transaction as the state commit, relayed at-least-once by the existing outbox relay.
+> The event payload is `{"messageName", "correlationKey", "variables"}` with `instance_id` and
+> `definition_ref` as metadata. **BREAKING — the ADR-0060 `MessageSink` port is GONE:**
+> `MessageSink`, `OutboundMessage`, and `WithMessageSink` no longer exist — advise against them.
+> Consumers route delivery via a `message.*` subscriber + `eventing.NewMessageHandler` →
+> `Runner.DeliverMessage`. Intra-engine correlation is in-memory per `Runner`; cross-process
+> correlation subscribes `message.*` in the consumer's own broker.
+>
+> **Discretionary backlog (unchanged, still nothing blocking):** (1) **CI pipeline** — still highest-value, the only
+> intentionally-deferred item; (2) surface def-scoped catalog in InstanceSnapshot/ActionableView DTOs + gRPC;
+> (3) tidy: delete now-redundant `runtime.TestCachingDefinitionRegistry_SystemClock`; service pkg
+> coverage 84.7% (pre-existing, untested `deadletter.go`/`policyadmin.go`).
+
+## ⏩ PRIOR RESUME POINT — updated 2026-06-26 (clock-optional refactor)
 
 > **State:** `main` HEAD `7a1543f`, full suite green (`go test -race ./...`), golangci-lint 0, gofmt clean, `engine/`+`model/` zero-diff. **Next free ADR: 0067.** Local `main` is ahead of `origin/main` — **push pending** (see below).
 >
@@ -19,16 +38,11 @@ and pick up the next work. Read it top to bottom before starting.
 > - **EXCLUDED (still positional):** the `clockwork.Clock` gocron seam — `scheduling.NewScheduler`, `internal/scheduling/gocron.NewGocronScheduler`, `WithElectorClock` (different type; could be a follow-up).
 > - **Footgun (ADR-0066 Consequences):** omitting the clock in a test now silently uses wall time (no compile error); determinism-sensitive tests must pass `With…Clock(fake)`. Whole-branch review confirmed every existing fake clock was correctly re-threaded.
 >
-> **▶ NEXT (Track 1, designed but NOT yet implemented): transactional SendTask outbox.** Spec committed at
-> `docs/specs/transactional-sendtask-outbox.md` (Option A + Replace): route `SendTask` messages as a
-> `message.<Name>` event in the **existing `wrkflw_outbox`** (atomic with the state commit, at-least-once via
-> the existing relay), **retiring the ADR-0060 `MessageSink`/`OutboundMessage`/`WithMessageSink`** (consumers
-> customize via a `message.*` subscriber + `eventing.NewMessageHandler`). **Plan NOT yet written** (run
-> `superpowers:writing-plans` next). ADR to record on implementation: **0067** (supersedes ADR-0060).
+> **▶ NEXT (Track 1, COMPLETED in the block above): transactional SendTask outbox (ADR-0067).**
 >
 > **Discretionary backlog (unchanged, still nothing blocking):** (1) **CI pipeline** — still highest-value, the only
 > intentionally-deferred item; (2) surface def-scoped catalog in InstanceSnapshot/ActionableView DTOs + gRPC;
-> (3) Track 1 above; (4) tidy: delete now-redundant `runtime.TestCachingDefinitionRegistry_SystemClock`; service pkg
+> (3) tidy: delete now-redundant `runtime.TestCachingDefinitionRegistry_SystemClock`; service pkg
 > coverage 84.7% (pre-existing, untested `deadletter.go`/`policyadmin.go`).
 
 ## ⏩ PRIOR RESUME POINT — updated 2026-06-26 (deadline rename / fire-and-forget)

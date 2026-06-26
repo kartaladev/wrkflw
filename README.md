@@ -615,6 +615,26 @@ model.NewCallActivity("credit-check", "credit-check")        // resolved via a D
 model.NewEventSubProcess("on-cancel", cancelHandlerDef, model.WithESPNonInterrupting())
 ```
 
+### SendTask delivery (transactional outbox)
+
+A BPMN `SendTask` emits its outbound message as a `message.<MessageName>` event written
+into the same `wrkflw_outbox` (and the same transaction) as the state commit, then relayed
+at-least-once by the outbox relay — no `MessageSink` wiring, no stranding window (ADR-0067).
+
+The event payload is `{"messageName", "correlationKey", "variables"}`, with `instance_id`
+and `definition_ref` as message metadata. Consume it like any other outbox topic. To deliver
+a message intra-engine (resume a parked `ReceiveTask`), mount `eventing.NewMessageHandler`
+on your message router and route to `Runner.DeliverMessage`:
+
+```go
+handler := eventing.NewMessageHandler(func(ctx context.Context, name, key string, vars map[string]any) error {
+    return runner.DeliverMessage(ctx, receiverDef, name, key, vars)
+})
+```
+
+`DeliverMessage`'s waiter index is in-memory per `Runner`, so intra-engine correlation works
+within one process; for cross-process correlation, subscribe `message.*` in your own consumer.
+
 ### Intermediate and boundary events
 
 | Node | What it does | Constructor |
