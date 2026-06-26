@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
+
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
@@ -35,6 +40,15 @@ type CallNotifier struct {
 	clk     clock.Clock
 	batch   int
 	poll    time.Duration
+
+	// staged telemetry option values; assembled into tel after all
+	// CallNotifierOptions have been applied in NewCallNotifier.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	tel                  observability.Telemetry
+	linksNotifiedCounter metric.Int64Counter
 }
 
 // CallNotifierOption configures a [CallNotifier].
@@ -70,6 +84,24 @@ func WithCallNotifierClock(clk clock.Clock) CallNotifierOption {
 	}
 }
 
+// WithCallNotifierLogger sets the structured logger used by the call notifier.
+// Default: slog.Default(). A nil value is ignored.
+func WithCallNotifierLogger(l *slog.Logger) CallNotifierOption {
+	return func(n *CallNotifier) { n.logOpt = observability.WithLogger(l) }
+}
+
+// WithCallNotifierTracerProvider sets the OTel TracerProvider for call notifier
+// batch spans. Default: the OTel global provider.
+func WithCallNotifierTracerProvider(tp trace.TracerProvider) CallNotifierOption {
+	return func(n *CallNotifier) { n.tpOpt = observability.WithTracerProvider(tp) }
+}
+
+// WithCallNotifierMeterProvider sets the OTel MeterProvider for call notifier
+// metrics. Default: the OTel global provider.
+func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
+	return func(n *CallNotifier) { n.mpOpt = observability.WithMeterProvider(mp) }
+}
+
 // NewCallNotifier constructs a CallNotifier that claims terminal call links
 // from cl, resolves each parent definition via reg, and delivers the
 // SubInstanceCompleted / SubInstanceFailed trigger via deliver.
@@ -97,7 +129,28 @@ func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRe
 	for _, o := range opts {
 		o(n)
 	}
+	// Build the Telemetry value after all options have been applied so that any
+	// subset of logger/tracer/meter providers can be set independently.
+	n.tel = observability.New(
+		"github.com/zakyalvan/krtlwrkflw/runtime",
+		filterCallNotifierNilOpts(n.logOpt, n.tpOpt, n.mpOpt)...,
+	)
+	n.linksNotifiedCounter = n.tel.Int64Counter(
+		"wrkflw_callnotifier_links_notified_total",
+		"Total number of call-link notifications delivered by the CallNotifier.",
+	)
 	return n
+}
+
+// filterCallNotifierNilOpts returns only the non-nil observability.Option values.
+func filterCallNotifierNilOpts(opts ...observability.Option) []observability.Option {
+	out := opts[:0]
+	for _, o := range opts {
+		if o != nil {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // DrainOnce claims up to one batch of terminal call links and resumes each
@@ -111,6 +164,9 @@ func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRe
 //   - If reg.Lookup fails, the link is skipped (not marked notified) so a
 //     later drain retries it after the definition is available.
 func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
+	ctx, span := n.tel.Tracer.Start(ctx, "wrkflw.callnotifier.batch")
+	defer span.End()
+
 	pending, err := n.cl.ClaimPending(ctx, n.batch)
 	if err != nil {
 		return 0, fmt.Errorf("workflow-runtime: call notifier: claim: %w", err)
@@ -145,6 +201,9 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 			return notified, fmt.Errorf("workflow-runtime: call notifier: mark notified: %w", merr)
 		}
 		notified++
+	}
+	if notified > 0 {
+		n.linksNotifiedCounter.Add(ctx, int64(notified))
 	}
 	return notified, nil
 }

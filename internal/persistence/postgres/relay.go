@@ -58,6 +58,9 @@ type Relay struct {
 	mpOpt  observability.Option
 
 	tel observability.Telemetry
+
+	eventsPublished  metric.Int64Counter
+	batchDurationSec metric.Float64Histogram
 }
 
 // RelayOption configures a Relay.
@@ -128,8 +131,8 @@ func WithRelayTracerProvider(tp trace.TracerProvider) RelayOption {
 }
 
 // WithRelayMeterProvider sets the OTel MeterProvider for relay metrics.
-// Default: the OTel global provider. The relay creates no metric instruments
-// in this track (API parity only; DLQ counters live in the resilience adapter).
+// Default: the OTel global provider. Records wrkflw_relay_events_published_total
+// (Int64Counter) and wrkflw_relay_batch_duration_seconds (Float64Histogram).
 func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 	return func(r *Relay) { r.mpOpt = observability.WithMeterProvider(mp) }
 }
@@ -155,6 +158,14 @@ func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) *R
 	r.tel = observability.New(
 		"github.com/zakyalvan/krtlwrkflw/persistence",
 		filterNilOpts(r.logOpt, r.tpOpt, r.mpOpt)...,
+	)
+	r.eventsPublished = r.tel.Int64Counter(
+		"wrkflw_relay_events_published_total",
+		"Total number of outbox events successfully published by the Relay.",
+	)
+	r.batchDurationSec = r.tel.Float64Histogram(
+		"wrkflw_relay_batch_duration_seconds",
+		"Wall-clock duration of each DrainOnce call in seconds.",
 	)
 	return r
 }
@@ -360,7 +371,8 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	ctx, span := r.tel.Tracer.Start(ctx, "wrkflw.relay.batch")
 	defer span.End()
 
-	now := r.clk.Now()
+	drainStart := r.clk.Now()
+	now := drainStart
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -493,5 +505,13 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	span.SetAttributes(attribute.Int("wrkflw.batch_size", published))
 	r.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "persistence: relay drained batch",
 		append(r.tel.LogAttrs(ctx), slog.Int("published", published))...)
+
+	// Record metrics: published counter and per-drain duration.
+	if published > 0 {
+		r.eventsPublished.Add(ctx, int64(published))
+	}
+	elapsed := r.clk.Now().Sub(drainStart)
+	r.batchDurationSec.Record(ctx, elapsed.Seconds())
+
 	return published, nil
 }

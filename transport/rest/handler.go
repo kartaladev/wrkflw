@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
@@ -67,7 +70,21 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 		nonNilOpts(cfg.logOpt, cfg.tpOpt, cfg.mpOpt)...,
 	)
 
-	h := &handler{cfg: cfg, svc: svc}
+	requestsTotal := cfg.tel.Int64Counter(
+		"wrkflw_rest_requests_total",
+		"Total number of HTTP requests handled by the workflow REST handler.",
+	)
+	requestDuration := cfg.tel.Float64Histogram(
+		"wrkflw_rest_request_duration_seconds",
+		"Duration of HTTP requests handled by the workflow REST handler, in seconds.",
+	)
+
+	h := &handler{
+		cfg:             cfg,
+		svc:             svc,
+		requestsTotal:   requestsTotal,
+		requestDuration: requestDuration,
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /instances", h.handleStartInstance)
@@ -134,13 +151,39 @@ func nonNilOpts(opts ...observability.Option) []observability.Option {
 
 // handler holds shared state for the route handlers that need cfg.
 type handler struct {
-	cfg config
-	svc service.Service
+	cfg             config
+	svc             service.Service
+	requestsTotal   metric.Int64Counter
+	requestDuration metric.Float64Histogram
 }
 
-// traceMiddleware wraps the given handler with a per-request OTel span.
-// It extracts W3C trace context from the incoming request headers so that
-// distributed traces propagate correctly across service boundaries.
+// statusRecorder wraps an http.ResponseWriter to capture the HTTP status code
+// written by the downstream handler so it can be used in span attributes and
+// metrics after ServeHTTP returns.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
+// traceMiddleware wraps the given handler with a per-request OTel span and
+// per-request metrics.
+//
+// Span naming: the span starts as "wrkflw.rest <METHOD>" with the raw path as
+// http.target. After next.ServeHTTP returns, r.Pattern (populated by the Go
+// ServeMux after routing) is read to obtain the matched route template. The span
+// is then renamed to "wrkflw.rest <METHOD> <route-template>" and the http.route
+// attribute is set. An empty r.Pattern (unmatched request) maps to "unmatched".
+//
+// Route template — not the concrete path — is the only path-derived metric label
+// so metric cardinality stays bounded.
+//
+// IMPORTANT: the span rename and metric record MUST happen after next.ServeHTTP
+// because r.Pattern is only populated once the mux matches.
 func (h *handler) traceMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
@@ -149,7 +192,40 @@ func (h *handler) traceMiddleware(next http.Handler) http.Handler {
 			attribute.String("http.target", r.URL.Path),
 		))
 		defer span.End()
-		next.ServeHTTP(w, r.WithContext(ctx))
+
+		sw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		// Use the context-enriched request. The mux will set Pattern on this
+		// request object after routing, so we read Pattern from it post-ServeHTTP.
+		rWithCtx := r.WithContext(ctx)
+		start := time.Now()
+		next.ServeHTTP(sw, rWithCtx)
+
+		// Read the matched route template AFTER routing so rWithCtx.Pattern is
+		// populated by the ServeMux. An empty Pattern means the request was not
+		// matched by any registered route.
+		//
+		// The Go ServeMux includes the method prefix in Pattern when using
+		// method-qualified patterns (e.g. "GET /instances/{id}"). Strip the
+		// method prefix so the route template is path-only (e.g. "/instances/{id}").
+		route := rWithCtx.Pattern
+		if route == "" {
+			route = "unmatched"
+		} else if len(route) > len(rWithCtx.Method)+1 && route[:len(rWithCtx.Method)] == rWithCtx.Method {
+			route = route[len(rWithCtx.Method)+1:]
+		}
+
+		// Rename span and set http.route attribute.
+		span.SetName("wrkflw.rest " + r.Method + " " + route)
+		span.SetAttributes(attribute.String("http.route", route))
+
+		// Record per-request metrics with method + route + status attributes.
+		attrs := []attribute.KeyValue{
+			attribute.String("http.method", r.Method),
+			attribute.String("http.route", route),
+			attribute.String("http.status_code", strconv.Itoa(sw.status)),
+		}
+		h.requestsTotal.Add(ctx, 1, metric.WithAttributes(attrs...))
+		h.requestDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(attrs...))
 	})
 }
 
