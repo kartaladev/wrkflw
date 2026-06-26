@@ -286,7 +286,7 @@ func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
 //	owner, closer, _ := persistence.NewAdvisoryLockOwnership(ctx, pool)
 //	defer closer.Close()
 //	store, _ := persistence.OpenPostgres(ctx, pool)
-//	cachingStore := runtime.NewCachingStore(store, owner, clock.System())
+//	cachingStore := runtime.NewCachingStore(store, owner)
 func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.Ownership, io.Closer, error) {
 	o, err := postgres.NewAdvisoryLockOwnership(ctx, pool)
 	if err != nil {

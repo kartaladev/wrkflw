@@ -94,14 +94,24 @@ func WithCacheLogger(l *slog.Logger) CachingStoreOption {
 	}
 }
 
+// WithCachingStoreClock sets the time source used to evaluate cache TTL.
+// Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
+func WithCachingStoreClock(clk clock.Clock) CachingStoreOption {
+	return func(c *CachingStore) {
+		if clk != nil {
+			c.clk = clk
+		}
+	}
+}
+
 // NewCachingStore wraps backing with a single-writer, write-through cache gated
-// by owner. clk drives TTL (use clock.System() in production, a fake clock in
-// tests).
-func NewCachingStore(backing Store, owner Ownership, clk clock.Clock, opts ...CachingStoreOption) *CachingStore {
+// by owner. The clock defaults to clock.System(); inject a fake clock in tests
+// via [WithCachingStoreClock].
+func NewCachingStore(backing Store, owner Ownership, opts ...CachingStoreOption) *CachingStore {
 	c := &CachingStore{
 		backing:    backing,
 		owner:      owner,
-		clk:        clk,
+		clk:        clock.System(),
 		logger:     slog.Default(),
 		ttl:        defaultCacheTTL,
 		maxEntries: defaultCacheMaxEntries,

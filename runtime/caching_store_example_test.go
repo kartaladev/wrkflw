@@ -28,7 +28,6 @@ func ExampleNewCachingStore() {
 	store := runtime.NewCachingStore(
 		runtime.NewMemStore(),
 		runtime.AlwaysOwn{},
-		clock.System(),
 	)
 
 	def := signalCatchDef("approved")
