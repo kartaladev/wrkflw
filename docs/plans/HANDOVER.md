@@ -5,11 +5,26 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-27 (autonomous backlog-completion program)
 
-> **State:** `main` HEAD `9d676b1` (pushed to `origin`). **Next free ADR: 0070.** An autonomous
-> multi-track backlog-completion program is IN PROGRESS — index + triage in
-> `docs/plans/2026-06-27-backlog-completion-program.md`, live ledger in `.superpowers/sdd/progress.md`.
-> Order: **T1 → H1 → H2 → H3 → L1 → P1 → P2**, then a spec-only proposal for T2.
-> **Done & merged so far: T1 (ADR-0068), H1 (gofmt enforce), H2 (service cov 91.8%), H3 (ADR-0069 optional gocron clock).** Remaining: L1, P1, P2, T2-proposal.
+> **State:** `main` HEAD `e92844f` (pushed to `origin`). Full build/vet/lint/gofmt/config-verify clean.
+> **Next free ADR: 0073.** The autonomous backlog-completion program of 2026-06-27 is **✅ COMPLETE** —
+> index + triage in `docs/plans/2026-06-27-backlog-completion-program.md`, ledger in
+> `.superpowers/sdd/progress.md`. All 7 implementation tracks merged + the T2 proposal written:
+>
+> - **T1 (ADR-0068)** snapshot action metadata + gRPC `GetInstanceSnapshot`/`GetActionableView` RPCs.
+> - **H1** gofmt enforced via golangci-lint v2 `formatters` + migrated config to valid v2 schema.
+> - **H2** service coverage 84.7%→91.8% (covered `GetInstanceWithDefinition`); dropped a redundant test.
+> - **H3 (ADR-0069)** gocron/clockwork clock seam optional via `WithSchedulerClock`/`WithClock` (BREAKING ctor sig).
+> - **L1 (ADR-0070)** observability: CallNotifier `wrkflw.callnotifier.batch` span, relay + REST meters now emit, route-template REST span naming.
+> - **P1 (ADR-0071)** ENGINE FIX: serialize concurrent compensation throws (`DeferredCompensationThrows` queue) — fixes the Macro-mode parallel-branch cursor overwrite. `recordCompensation` dedup investigated → not reproducible, left untouched.
+> - **P2** hardened flaky `TestListenLoopExitsOnContextCancellation` via a test-only `listenReady` signal (no more sleep).
+> - **T2 (ADR-0072 _Proposed_, NOT implemented)** multi-replica timer exclusivity — `docs/specs/2026-06-27-multi-replica-timer-exclusivity-proposal.md`. **Awaiting maintainer decision** (3 questions in the proposal); double-fire is already CAS-safe so this is an optimization. SKIPPED entirely (need approval): broker constructors, streaming/grpc-gateway, casbin ABAC/FilteredAdapter, CI.
+>
+> **Process note:** P2 (`4471882`) was committed directly to `main` rather than via a feature branch (a branch-discipline slip) — code is verified green, but flagging it for transparency.
+>
+> **New Minor follow-ups queued from this program's reviews (all non-blocking):**
+> - T1: `runtime.NewInstanceSnapshot`/`NewActionableView` alias engine `Candidates`/`Payload` into the DTO (pre-existing; defensive-copy pass worth doing); `snapshotToProto` `toStruct` error branches uncovered (75.8%).
+> - L1: relay `wrkflw_relay_batch_duration_seconds` not recorded on error/empty drains (move to `defer`); REST `statusRecorder` records last (not first) `WriteHeader` and does not forward `http.Flusher`/`Hijacker`/`Pusher` (note before adding any SSE/streaming/WebSocket endpoint).
+> - P1: a parked token with empty `AwaitCommand` is matchable by `tokenAwaiting("")` (pre-existing across all empty-AwaitCommand parks); consider rejecting empty `CommandID` in `handleActionCompleted`/`handleActionFailed`. `FuzzStep` generator can't synthesize `CompensateRef` nodes (serialize path covered by dedicated tests instead).
 >
 > **✅ Merged 2026-06-27 — T1: snapshot action metadata + gRPC snapshot RPCs (ADR-0068).**
 > `runtime.InstanceSnapshot` now carries `ScopedActions []string` + `ActionBindings []ActionBindingView`
