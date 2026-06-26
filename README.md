@@ -632,8 +632,8 @@ model.NewEventSubProcess("on-cancel", cancelHandlerDef, model.WithESPNonInterrup
 `WithBoundaryMessage(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
 `BoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
 
-> **Boundary-event limitation:** timer, signal, and error boundaries are armed by the
-> engine. **Message** boundary events are not yet armed.
+> **Boundary events:** timer, signal, error, and message boundaries are all armed and
+> fired by the engine (message boundaries since ADR-0053).
 
 ```go
 model.NewIntermediateCatchEvent("wait-1h", model.WithTimerDuration(`"1h"`))
@@ -829,7 +829,7 @@ Connect("review-timeout", "escalate").
 past the timer and calling `sched.Tick(ctx)` fires the boundary timer, cancels the host
 user task, runs `escalate`, and completes via `escalated-end`. The example wires
 `WithHumanTasks` (so the user task parks) and `WithScheduler` (so the timer arms).
-*Message boundaries are not yet armed; timer, signal, and error boundaries are.*
+*Timer, signal, error, and message boundaries are all armed and fired by the engine.*
 → [`examples/scenarios/boundary_timer`](examples/scenarios/boundary_timer)
 
 ### 4. Compensation / saga rollback
