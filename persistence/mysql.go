@@ -349,15 +349,55 @@ func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runti
 	return runtime.NewCallNotifier(mysqlstore.NewCallLinkStore(db), deliver, reg, opts...)
 }
 
+// NewMySQLDefinitionStore constructs the durable MySQL-backed definition store.
+// It satisfies runtime.DefinitionRegistry via its Lookup method, which resolves
+// a DefRef of the form "defID:version" (exact match) or "defID" (latest version).
+//
+// Use this together with NewCachingDefinitionRegistry to cache hot definitions.
+// It returns the same DefinitionStore interface as NewDefinitionStore (the Postgres
+// analog) so the two backends are interchangeable at the consumer site.
+//
+// Example:
+//
+//	db, _ := sql.Open("mysql", dsn)
+//	persistence.MigrateMySQL(ctx, db)
+//	ds := persistence.NewMySQLDefinitionStore(db)
+//	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
+func NewMySQLDefinitionStore(db *sql.DB) DefinitionStore {
+	return mysqlstore.NewDefinitionStore(db)
+}
+
+// NewMySQLPruner constructs a Pruner over db (returns the stable Pruner interface).
+// MigrateMySQL must have been applied before calling any method.
+//
+// It returns the same Pruner interface as NewPruner (the Postgres analog) so the
+// two backends are interchangeable at the consumer site. The underlying MySQL
+// concrete type additionally offers PruneTimers (a MySQL-specific method with no
+// Postgres analog) accessible by type-asserting to *mysqlstore.Pruner if needed.
+//
+// Wire it into a scheduled job the consumer owns, e.g.:
+//
+//	db, _ := sql.Open("mysql", dsn)
+//	persistence.MigrateMySQL(ctx, db)
+//	pruner := persistence.NewMySQLPruner(db)
+//	// every hour, drop outbox events published more than 7 days ago:
+//	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
+func NewMySQLPruner(db *sql.DB) Pruner {
+	return mysqlstore.NewPruner(db)
+}
+
 // Compile-time checks: MySQL internal concrete types must satisfy the same
 // public interfaces as their Postgres analogs.
 var (
-	_ Store                  = (*mysqlstore.Store)(nil)
-	_ runtime.TimerStore     = (*mysqlstore.TimerStore)(nil)
-	_ Relay                  = (*mysqlstore.Relay)(nil)
-	_ MySQLDeduper           = (*mysqlstore.Deduper)(nil)
-	_ runtime.CallLinkStore  = (*mysqlstore.CallLinkStore)(nil)
-	_ runtime.ChainLinkStore = (*mysqlstore.ChainLinkStore)(nil)
-	_ runtime.InstanceLister = (*mysqlstore.Lister)(nil)
-	_ runtime.Ownership      = (*mysqlstore.AdvisoryLockOwnership)(nil)
+	_ Store                      = (*mysqlstore.Store)(nil)
+	_ runtime.TimerStore         = (*mysqlstore.TimerStore)(nil)
+	_ Relay                      = (*mysqlstore.Relay)(nil)
+	_ MySQLDeduper               = (*mysqlstore.Deduper)(nil)
+	_ runtime.CallLinkStore      = (*mysqlstore.CallLinkStore)(nil)
+	_ runtime.ChainLinkStore     = (*mysqlstore.ChainLinkStore)(nil)
+	_ runtime.InstanceLister     = (*mysqlstore.Lister)(nil)
+	_ runtime.Ownership          = (*mysqlstore.AdvisoryLockOwnership)(nil)
+	_ DefinitionStore            = (*mysqlstore.DefinitionStore)(nil)
+	_ Pruner                     = (*mysqlstore.Pruner)(nil)
+	_ runtime.DefinitionRegistry = (*mysqlstore.DefinitionStore)(nil)
 )
