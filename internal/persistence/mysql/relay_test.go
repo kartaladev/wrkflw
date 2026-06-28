@@ -368,6 +368,29 @@ func TestRelay_Run_ReturnsDeadlineExceededOnTimeout(t *testing.T) {
 		"Run must return ctx.Err() exactly, not a wrapped error, on deadline expiry")
 }
 
+// TestRelay_Run_ReturnsDeadlineExceededOnAlreadyExpiredCtx deterministically
+// exercises the first guard site in Run (the ctx.Err() != nil check after
+// drainUntilEmpty → DrainOnce → BeginTx returns an error). It calls Run with an
+// ALREADY-EXPIRED context so that db.BeginTx fails immediately and the guard
+// site is hit before the select loop. This is a strict gate: a guard that only
+// checks errors.Is(err, context.Canceled) would fail to intercept
+// context.DeadlineExceeded and return a workflow-prefixed error instead.
+func TestRelay_Run_ReturnsDeadlineExceededOnAlreadyExpiredCtx(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	relay := mypkg.NewRelay(db, &recordingPub{})
+
+	// Construct a context whose deadline is already in the past — BeginTx will
+	// fail immediately with context.DeadlineExceeded, hitting the first guard site.
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	err := relay.Run(ctx)
+	require.Equal(t, context.DeadlineExceeded, err,
+		"Run must return ctx.Err() (context.DeadlineExceeded) exactly when the context is already expired; got: %v", err)
+}
+
 // TestRelay_Run_DrainsUntilCancelled verifies Run exits cleanly on ctx cancel
 // and leaves no leaked goroutines.
 func TestRelay_Run_DrainsUntilCancelled(t *testing.T) {

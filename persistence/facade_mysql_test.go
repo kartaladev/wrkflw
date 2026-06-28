@@ -7,6 +7,7 @@ package persistence_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
@@ -184,7 +185,7 @@ func seedOutboxForFacadeTest(t *testing.T, db *sql.DB, n int, base time.Time) {
 	t.Helper()
 	ctx := t.Context()
 	for i := range n {
-		dedup := "facade-seed-" + time.Now().Format("20060102150405.000000000") + "-" + string(rune('0'+i))
+		dedup := "facade-seed-" + time.Now().Format("20060102150405.000000000") + "-" + fmt.Sprintf("%d", i)
 		_, err := db.ExecContext(ctx,
 			`INSERT INTO wrkflw_outbox
 			   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
