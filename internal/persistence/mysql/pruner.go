@@ -107,11 +107,10 @@ func (p *Pruner) PruneProcessedMessages(ctx context.Context, cutoff time.Time) (
 // PruneTimers deletes timer rows whose fire_at is strictly before cutoff.
 // Returns the number of rows deleted.
 //
-// NOTE: This is a MySQL-specific addition with no Postgres analog. The Postgres
-// Pruner does not expose PruneTimers because the Postgres scheduler backend
-// manages timer lifecycle differently. On MySQL, fired timers that are no longer
-// needed accumulate in wrkflw_timers and must be pruned explicitly. Choose a
-// cutoff safely past any window in which a timer could still fire or be
+// NOTE: This is a MySQL-specific addition with no Postgres analog — the Postgres
+// Pruner does not expose PruneTimers. Fired timers that are no longer needed can
+// accumulate in wrkflw_timers; this lets a consumer's retention job drop them.
+// Choose a cutoff safely past any window in which a timer could still fire or be
 // rescheduled.
 func (p *Pruner) PruneTimers(ctx context.Context, cutoff time.Time) (int64, error) {
 	res, err := p.db.ExecContext(ctx,

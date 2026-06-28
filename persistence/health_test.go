@@ -117,5 +117,5 @@ func TestMySQLPingCheckNilDB(t *testing.T) {
 	check := persistence.NewMySQLPingCheck((*sql.DB)(nil))
 	err := check.Check(t.Context())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "nil")
+	assert.Contains(t, err.Error(), "nil db")
 }

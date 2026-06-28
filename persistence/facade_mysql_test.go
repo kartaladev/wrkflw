@@ -497,6 +497,8 @@ func TestNewMySQLPruner_PruneProcessedMessages(t *testing.T) {
 	require.NoError(t, err)
 
 	pr := persistence.NewMySQLPruner(db)
+	require.NotNil(t, pr)
+
 	n, err := pr.PruneProcessedMessages(ctx, cutoff)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, n, int64(1), "at least the seeded old row must be deleted")
