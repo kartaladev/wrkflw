@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	mysqlRootPassword   = "wrkflw_root"
-	mysqlDefaultDB      = "wrkflw_test"
-	mysqlRootUser       = "root"
+	mysqlRootPassword = "wrkflw_root"
+	mysqlDefaultDB    = "wrkflw_test"
+	mysqlRootUser     = "root"
 )
 
 type sharedMySQLContainer struct {

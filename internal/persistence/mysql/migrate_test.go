@@ -30,7 +30,7 @@ func TestMigrate_CreatesAllTables(t *testing.T) {
 	rows, err := db.QueryContext(ctx,
 		"SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	found := make(map[string]bool)
 	for rows.Next() {
