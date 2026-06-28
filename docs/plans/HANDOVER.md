@@ -3,7 +3,26 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (ADR-0072 Option A + MySQL backend program)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (backlog follow-ups: relay + tests)
+
+> **State:** `main` HEAD `38fd3d0` (merge) — **NOT yet pushed to `origin/main`** (local main is ahead by 5 commits; push held for maintainer review). `go build ./...` clean, `golangci-lint run ./...` 0 issues, gofmt clean on touched dirs, working tree clean. **Next free ADR: 0074** (none consumed this run). Ledger: `.superpowers/sdd/progress.md` (section "Backlog follow-ups run — 2026-06-29").
+>
+> **✅ Four non-blocking backlog pickups — DONE & merged to local main (branch `fix/backlog-followups-relay-tests`, merge `38fd3d0`).** Executed via subagent-driven-development; each task individually reviewed (all Approved) + a final opus whole-branch review (Ready to merge, 0 Critical/Important).
+> 1. **(`c51e973`) Postgres relay `Run` ctx-guard fix** — the documented bug: 3 guard sites changed `errors.Is(err, context.Canceled)` → `if ctx.Err() != nil` (parity with the already-fixed mysql relay), `errors` import removed. New `internal/persistence/postgres/relay_ctx_cancel_test.go` (2 deterministic tests, RED-proved against old guard). NOTE: pg timeout test needed `pg.Migrate` because `RunTestDatabase` (unlike `RunTestMySQL`) does NOT auto-migrate.
+> 2. **(`ba5e8a7`) Relay span `wrkflw.batch_size` semantics** — now records the CLAIMED count `len(claims)` (not published); new `wrkflw.published_count` attr carries the published total. Applied **byte-identically to BOTH backends** (postgres+mysql `DrainOnce`). `DrainOnce` return value / metrics counter / debug log all stay published-based (return-value switch would infinite-loop `drainUntilEmpty`). New `internal/persistence/mysql/relay_observability_test.go` mirrors postgres (7 tests); poison-row test pins `batch_size=1, published_count=0`. **This changes the meaning of an internal span attr (not a consumer API) — no ADR; recorded here.**
+> 3. **(`3bfb0b3`) MySQL facade test minors** — `TestNewMySQLLister_ListsInstances` tightened to `Len==2` + set-membership on both seeded IDs; new `TestNewMySQLAdvisoryLockOwnership_ClosedDBReturnsError` covers the `(nil,nil,err)` branch. Test-only.
+> 4. **(`f658b76`) Builder fluent equivalence test widened** to all 19 `AddX` kinds (was 7) — table-test closure form, `reflect.DeepEqual` per kind that `AddX` ≡ `Add(NewX(...))`. `builder_fluent.go` stays 100%. Test-only.
+>
+> **🟢 NEXT SESSION — two OPTIONAL cosmetic follow-ups (confirmed-Minor by final review; non-blocking, sweep together if desired):**
+> 1. Relay empty-drain early-return sets only `wrkflw.batch_size=0`; add `wrkflw.published_count=0` too (BOTH backends, keep symmetric) so the attribute set is consistent across drain paths. `postgres/relay.go` ~L464 / `mysql/relay.go` ~L391.
+> 2. Happy-path span tests (`TestRelayBatchSpan` / `TestMySQLRelayBatchSpan`) assert `batch_size` but not `published_count==1` — add the assertion (the poison-row tests already pin both).
+> 3. (Trivial) Task-4 equivalence table node-count mismatch uses `t.Errorf` not `t.Fatalf` (`model/builder_fluent_test.go`); `nodeByID` t.Fatals on a missing node anyway, so effectively moot.
+>
+> **⚠️ PUSH PENDING:** local `main` (`38fd3d0`) is ahead of `origin/main` (`c3772a8`) by 5 commits. Push with `git push origin main` after review. The older pre-pushed pickups below (postgres relay ctx bug, batch_size drift, mysql minors, builder widening) are now ALL RESOLVED by this run — disregard them in the older block.
+>
+> ---
+
+## ⏩ PRIOR RESUME POINT — updated 2026-06-29 (ADR-0072 Option A + MySQL backend program)
 
 > **State:** `main` HEAD `4802e37` — **pushed to `origin/main`** (in sync). Full `go test -race ./...` GREEN (zero failures), `golangci-lint run ./...` 0 issues, `go build ./...` clean, working tree clean. **Next free ADR: 0074.**
 > Ledger: `.superpowers/sdd/progress.md`. Plan: `docs/plans/mysql-persistence-backend.md`. Spec: `docs/specs/2026-06-28-mysql-persistence-backend-design.md`. Builder-sugar spec/plan: `docs/specs/2026-06-29-builder-fluent-node-methods-design.md` / `docs/plans/builder-fluent-node-methods.md`.
