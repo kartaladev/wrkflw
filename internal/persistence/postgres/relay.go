@@ -517,7 +517,10 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		return 0, infraErr
 	}
 
-	span.SetAttributes(attribute.Int("wrkflw.batch_size", published))
+	span.SetAttributes(
+		attribute.Int("wrkflw.batch_size", len(claims)),
+		attribute.Int("wrkflw.published_count", published),
+	)
 	r.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "persistence: relay drained batch",
 		append(r.tel.LogAttrs(ctx), slog.Int("published", published))...)
 
