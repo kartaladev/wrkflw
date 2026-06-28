@@ -96,6 +96,31 @@ func WithElectorHeartbeatInterval(d time.Duration) ElectorOption {
 	}
 }
 
+// WithOnLeadershipAcquired registers a callback invoked each time the elected
+// leader wins (or re-wins, after a heartbeat step-down) leadership. It runs
+// asynchronously and never blocks timer firing. Wire it to
+// [runtime.Runner.RehydrateTimers] so a new leader re-arms the full persisted
+// timer set on leadership acquisition — not only at startup — closing the window
+// where timers armed at runtime would otherwise be lost on the new leader until a
+// restart (Option A, ADR-0072). Because the runner is typically built after the
+// scheduler, capture it in the closure and assign it afterwards:
+//
+//	var runner *runtime.Runner
+//	s, _ := scheduling.NewScheduler(scheduling.WithTimerElector(pool,
+//		scheduling.WithOnLeadershipAcquired(func(ctx context.Context) {
+//			_ = runner.RehydrateTimers(ctx)
+//		})))
+//	runner = buildRunner(s) // the closure observes this assignment
+//
+// A nil callback is ignored. Only meaningful together with [WithTimerElector].
+func WithOnLeadershipAcquired(fn func(context.Context)) ElectorOption {
+	return func(c *config) {
+		if fn != nil {
+			c.electorOpts = append(c.electorOpts, gocronsched.WithOnLeadershipAcquired(fn))
+		}
+	}
+}
+
 // WithSchedulerClock sets the [clockwork.Clock] that drives timer scheduling
 // (default: [clockwork.NewRealClock]). Pass a fake clock in tests so that a
 // single clock.Advance drives both engine timestamps and timer firing (ADR-0003,

@@ -1,7 +1,9 @@
 package gocron_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -43,6 +45,34 @@ func TestPostgresElectorLeadership(t *testing.T) {
 	// The follower now wins leadership on its next attempt — natural failover.
 	require.NoError(t, electorB.IsLeader(ctx), "a follower must take leadership after the leader closes")
 	require.NoError(t, electorB.Close())
+}
+
+// TestPostgresElectorInvokesOnLeadershipAcquired proves the Option-A failover
+// hook (ADR-0072): when an instance wins leadership, the registered
+// on-leadership-acquired callback fires. Wiring it to Runner.RehydrateTimers
+// re-arms the full persisted timer set on a new leader after failover, closing
+// the window where runtime-armed timers would otherwise be lost until restart.
+// The callback runs asynchronously so it never blocks gocron's IsLeader hot path.
+func TestPostgresElectorInvokesOnLeadershipAcquired(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	ctx := t.Context()
+
+	acquired := make(chan struct{}, 1)
+	elector, err := sched.NewPostgresElector(ctx, pool,
+		sched.WithOnLeadershipAcquired(func(context.Context) {
+			acquired <- struct{}{}
+		}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = elector.Close() })
+
+	require.NoError(t, elector.IsLeader(ctx), "first instance must be elected leader")
+
+	select {
+	case <-acquired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("on-leadership-acquired callback was not invoked after winning leadership")
+	}
 }
 
 // TestPostgresElectorCloseIdempotent proves Close is idempotent (mirrors the

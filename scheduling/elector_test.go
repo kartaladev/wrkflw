@@ -132,6 +132,37 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 		"the façade elector must step down after its connection is severed")
 }
 
+// TestSchedulerElectorOnLeadershipAcquired proves the façade plumbs the
+// on-leadership-acquired hook (Option A, ADR-0072) down to the elector: when this
+// instance wins leadership the registered callback fires. Wiring it to
+// Runner.RehydrateTimers re-arms persisted timers on a new leader after failover.
+func TestSchedulerElectorOnLeadershipAcquired(t *testing.T) {
+	pool := database.RunTestDatabase(t)
+	ctx := t.Context()
+
+	acquired := make(chan struct{}, 1)
+	clk := clockwork.NewFakeClock()
+	s, err := scheduling.NewScheduler(
+		scheduling.WithSchedulerClock(clk),
+		scheduling.WithTimerElector(pool,
+			scheduling.WithElectorKey("facade-onacquire"),
+			scheduling.WithOnLeadershipAcquired(func(context.Context) { acquired <- struct{}{} })))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// A timer run makes gocron call IsLeader, so the leader wins leadership and the
+	// hook fires (in production this is wired to Runner.RehydrateTimers).
+	s.Schedule("timer", clk.Now().Add(time.Second), func() {})
+	require.NoError(t, clk.BlockUntilContext(ctx, 1))
+	clk.Advance(time.Second)
+
+	select {
+	case <-acquired:
+	case <-time.After(3 * time.Second):
+		t.Fatal("on-leadership-acquired hook must fire through the façade elector")
+	}
+}
+
 // TestSchedulerLockAndElectorConflict proves the façade rejects requesting both
 // distributed modes at once with a clear error.
 func TestSchedulerLockAndElectorConflict(t *testing.T) {
