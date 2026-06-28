@@ -61,6 +61,14 @@ type PostgresElector struct {
 	isLeader bool
 	closed   bool
 
+	// onAcquire, if set, is invoked each time this elector transitions to leader
+	// (Option A, ADR-0072). Wiring it to Runner.RehydrateTimers re-arms persisted
+	// timers on a new leader after failover. It runs in a wg-tracked goroutine on
+	// bgCtx so Close waits for it and cancellation propagates; acquiring coalesces
+	// overlapping invocations from rapid step-down/re-acquire cycles.
+	onAcquire func(context.Context)
+	acquiring bool
+
 	// heartbeat goroutine lifecycle. started guards a single lazy start on first
 	// leadership acquisition; bgCancel/done stop it and wg waits for its exit so
 	// Close leaves no goroutine behind (goleak-enforced).
@@ -108,6 +116,21 @@ func WithHeartbeatInterval(d time.Duration) ElectorOption {
 	return func(e *PostgresElector) {
 		if d > 0 {
 			e.heartbeat = d
+		}
+	}
+}
+
+// WithOnLeadershipAcquired registers a callback invoked each time this elector
+// wins leadership (including re-acquisition after a heartbeat step-down). It runs
+// asynchronously — never blocking gocron's IsLeader hot path — on a background
+// context that is cancelled when Close is called; Close waits for it to return.
+// Overlapping invocations from rapid step-down/re-acquire cycles are coalesced.
+// Wire it to Runner.RehydrateTimers to re-arm persisted timers on a new leader
+// after failover (Option A, ADR-0072). A nil value is ignored.
+func WithOnLeadershipAcquired(fn func(context.Context)) ElectorOption {
+	return func(e *PostgresElector) {
+		if fn != nil {
+			e.onAcquire = fn
 		}
 	}
 }
@@ -181,7 +204,28 @@ func (e *PostgresElector) IsLeader(ctx context.Context) error {
 	}
 	e.isLeader = true
 	e.startHeartbeatLocked()
+	e.fireOnAcquireLocked()
 	return nil
+}
+
+// fireOnAcquireLocked launches the on-leadership-acquired callback (if registered)
+// in a wg-tracked goroutine. The caller must hold e.mu. It coalesces overlapping
+// invocations via the acquiring flag so rapid step-down/re-acquire cycles do not
+// stack concurrent callbacks. The callback runs on bgCtx (cancelled by Close), and
+// wg tracking lets Close wait for it so no goroutine outlives the elector.
+func (e *PostgresElector) fireOnAcquireLocked() {
+	if e.onAcquire == nil || e.acquiring {
+		return
+	}
+	e.acquiring = true
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.onAcquire(e.bgCtx)
+		e.mu.Lock()
+		e.acquiring = false
+		e.mu.Unlock()
+	}()
 }
 
 // startHeartbeatLocked launches the heartbeat goroutine the first time leadership

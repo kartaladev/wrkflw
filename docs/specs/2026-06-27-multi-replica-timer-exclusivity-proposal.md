@@ -1,8 +1,10 @@
 # Proposal (NOT YET APPROVED) — Multi-replica TIMER exclusivity
 
 Date: 2026-06-27
-Status: **PROPOSAL — awaiting approval.** Deliberately NOT implemented in the 2026-06-27 backlog
-program (flagged as a major architectural change per the user's "skip items needing major approvals").
+Status: **APPROVED 2026-06-28 → Option A implemented** (see ADR-0072, now Accepted). Originally
+deliberately NOT implemented in the 2026-06-27 backlog program (flagged as a major architectural change
+per the user's "skip items needing major approvals"); the maintainer subsequently chose Option A and
+confirmed MySQL portability as a goal, which reinforced A over B.
 Relates to: ADR-0027 (timer rehydration), ADR-0031/0059/0061 (call-link lease, elector, heartbeat),
 the engine CAS (`runtime.Store.Commit` optimistic concurrency).
 
@@ -76,6 +78,40 @@ change reusing the elector + RehydrateTimers), with **Option B** recorded as the
 load distribution across replicas becomes a requirement. Option C only if multi-replica timer load is
 not a near-term concern.
 
+## Cross-dialect portability (e.g. future MySQL support)
+
+Both options keep the engine core dialect-neutral — the DB-specific coordination primitive lives in
+`internal/` behind a port (`gocron.Elector` for A, `runtime.Scheduler` for B), so the engine never
+imports it. "Add MySQL support" means writing one more adapter, not touching `engine/`/`model/`/
+`runtime/`. They differ in how cheaply that adapter ports:
+
+- **Option A — low friction.** The only DB-specific piece is the elector. `PostgresElector`
+  (`internal/scheduling/gocron/elector.go`, `var _ gocron.Elector`) runs
+  `SELECT pg_try_advisory_lock(hashtextextended($1, 0))` inside its single `IsLeader(ctx) error`
+  method. MySQL has a direct 1:1 analog — `SELECT GET_LOCK(?, 0)` / `SELECT RELEASE_LOCK(?)` — that is
+  arguably a cleaner fit: it takes a string key directly (no `hashtextextended` hashing) and is
+  session-scoped, so a dropped connection releases leadership, matching the failover behaviour the
+  heartbeat (ADR-0061) already relies on. Everything else in A (`RehydrateTimers`, the `Store.Commit`
+  CAS, the leadership-acquired hook) is dialect-neutral. **Porting A = one new `Elector` impl; no
+  minimum MySQL version, no migration.**
+
+- **Option B — medium friction, with two caveats.**
+  1. `FOR UPDATE SKIP LOCKED` works on **MySQL 8.0+** (and MariaDB 10.6+) but **hard-requires** it —
+     MySQL 5.7 has no `SKIP LOCKED`, so the claim approach is off the table there.
+  2. `LISTEN/NOTIFY` (B's wake optimization to cut poll latency) **does not exist in MySQL**. On MySQL
+     you fall back to pure interval polling — functionally correct, just higher timer latency.
+  Plus a second dialect of the `wrkflw_timers` lease migration and a dialect switch (or parallel
+  adapter) inside the `dbclaim` scheduler.
+
+| | DB-specific primitive | MySQL equivalent | Porting friction |
+|---|---|---|---|
+| **A** | `pg_try_advisory_lock` (elector) | `GET_LOCK()` — direct, session-scoped | **Low** — one `Elector` impl, no migration, no version floor |
+| **B** | `SKIP LOCKED` + `LISTEN/NOTIFY` | `SKIP LOCKED` (8.0+ only); **no NOTIFY** | **Medium** — MySQL 8.0+ floor, lose NOTIFY wake → polling, second migration |
+
+If cross-dialect portability is a near-term goal, this is an additional point in favour of **Option A**
+(or, if B is chosen, of designing the `dbclaim` adapter dialect-aware from day one rather than
+hard-coding Postgres-only `LISTEN/NOTIFY`).
+
 ## Decision needed from the maintainer
 
 1. Is multi-replica timer **load distribution** required (→ Option B), or is single-leader firing with
@@ -83,5 +119,8 @@ not a near-term concern.
 2. Acceptable failover window? (Option A: ≤ heartbeat interval + rehydrate; Option B: ≤ poll interval.)
 3. Willing to add `wrkflw_timers` lease columns + a migration (Option B), or keep the table read-only
    for arming (Option A)?
+4. Is **cross-dialect portability** (e.g. future MySQL support) a near-term goal? If so it favours
+   Option A (cheap `GET_LOCK` elector port, no version floor); Option B is still possible but imposes a
+   MySQL 8.0+ floor and loses its `LISTEN/NOTIFY` wake.
 
 No code will be written for this until one of the options is approved.
