@@ -66,14 +66,17 @@ import (
 )
 
 func main() {
+	// Fluent per-node-type builder methods (AddStartEvent, AddServiceTask, …)
+	// are the preferred form; each mirrors its New<Kind> constructor and appends
+	// the node. The generic .Add(node) still works for dynamically-built nodes.
 	def, err := model.NewDefinition("order-fulfillment", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge",
+		AddStartEvent("start").
+		AddServiceTask("charge",
 			model.WithActionName("charge-card"),
 			model.WithCompensation("refund-card"),
-		)).
-		Add(model.NewUserTask("approve", []string{"manager"})).
-		Add(model.NewEndEvent("end")).
+		).
+		AddUserTask("approve", []string{"manager"}).
+		AddEndEvent("end").
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").
@@ -202,7 +205,7 @@ For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
 
 | Form | Function | Notes |
 |---|---|---|
-| Go builder | `model.NewDefinition(...).Add(...).Connect(...).Build()` | Preferred; compile-time safe |
+| Go builder | `model.NewDefinition(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Fluent `Add<Kind>` methods (one per node kind) mirror the `New<Kind>` constructors; the generic `.Add(node)` remains for dynamic nodes. |
 | YAML | `model.ParseYAML(data)` / `model.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator |
 | BPMN2 XML | loadable | Not the preferred form; see `model` package for details |
 

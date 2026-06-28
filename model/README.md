@@ -62,7 +62,7 @@ Every node satisfies this interface. The 19 concrete kinds are grouped below.
 
 | Kind constant | Concrete type | Constructor |
 |---|---|---|
-| `KindServiceTask` | `ServiceTask` | `NewServiceTask(id, action, opts...)` |
+| `KindServiceTask` | `ServiceTask` | `NewServiceTask(id, opts...)` |
 | `KindUserTask` | `UserTask` | `NewUserTask(id, roles, opts...)` |
 | `KindReceiveTask` | `ReceiveTask` | `NewReceiveTask(id, messageName, opts...)` |
 | `KindSendTask` | `SendTask` | `NewSendTask(id, messageName, opts...)` |
@@ -179,7 +179,8 @@ WithName(name string)
 ### Example — service task with compensation and deadline
 
 ```go
-task := model.NewServiceTask("charge", "charge-card",
+task := model.NewServiceTask("charge",
+    model.WithActionName("charge-card"),
     model.WithName("Charge Card"),
     model.WithCompensation("refund-card"),
     model.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
@@ -208,29 +209,52 @@ task := model.NewUserTask("approve", []string{"manager"},
 `DefinitionBuilder` wires nodes and flows into a `ProcessDefinition` and calls
 `Validate` on `Build`.
 
+The **fluent `AddX` methods** are the preferred way to add nodes: there is one
+`Add<Kind>` per node kind, each mirroring its `New<Kind>` constructor exactly and
+appending the node — so you write `AddServiceTask("charge", …)` instead of
+`Add(NewServiceTask("charge", …))`. They make the node palette discoverable via
+autocomplete and keep the chain terse:
+
 ```go
 def, err := model.NewDefinition("order-fulfillment", 1).
-    Add(model.NewStartEvent("start")).
-    Add(model.NewServiceTask("charge", "charge-card",
+    AddStartEvent("start").
+    AddServiceTask("charge",
+        model.WithActionName("charge-card"),
         model.WithCompensation("refund-card"),
-    )).
-    Add(model.NewUserTask("approve", []string{"manager"})).
-    Add(model.NewEndEvent("end")).
+    ).
+    AddUserTask("approve", []string{"manager"}).
+    AddEndEvent("end").
     Connect("start", "charge").
     Connect("charge", "approve").
     Connect("approve", "end").
     Build()
 ```
 
+The generic `Add(n Node)` is retained for programmatically- or dynamically-built
+nodes (and is what YAML loading uses internally); the two forms are equivalent —
+`AddServiceTask(id, opts...)` is exactly `Add(NewServiceTask(id, opts...))`.
+
 **Method summary:**
 
 | Method | Description |
 |---|---|
 | `NewDefinition(id string, version int) *DefinitionBuilder` | Start a new builder |
-| `.Add(n Node) *DefinitionBuilder` | Append a node |
+| `.Add<Kind>(…) *DefinitionBuilder` | **Fluent per-kind node adder** — one per node kind (see table below); mirrors `New<Kind>` and appends the node |
+| `.Add(n Node) *DefinitionBuilder` | Append a pre-built node (programmatic / dynamic; YAML uses this) |
 | `.Connect(fromID, toID string, opts ...FlowOption) *DefinitionBuilder` | Add a directed sequence flow |
 | `.CancelActions(names ...string) *DefinitionBuilder` | Best-effort actions on instance cancel |
+| `.RegisterAction(name string, a action.ServiceAction) *DefinitionBuilder` | Register a definition-scoped action |
+| `.RegisterActionFunc(name string, fn …) *DefinitionBuilder` | Register a scoped action from a plain func |
 | `.Build() (*ProcessDefinition, error)` | Assemble and validate |
+
+**Fluent node adders** (each takes the same arguments as its `New<Kind>` constructor and returns `*DefinitionBuilder`):
+
+| Group | Methods |
+|---|---|
+| Events | `AddStartEvent(id, opts...)`, `AddEndEvent(id, name...)`, `AddTerminateEndEvent(id, name...)`, `AddErrorEndEvent(id, errorCode, name...)` |
+| Gateways | `AddExclusiveGateway(id, name...)`, `AddParallelGateway(id, name...)`, `AddInclusiveGateway(id, name...)`, `AddEventBasedGateway(id, name...)` |
+| Activities | `AddServiceTask(id, opts...)`, `AddUserTask(id, roles, opts...)`, `AddReceiveTask(id, messageName, opts...)`, `AddSendTask(id, messageName, opts...)`, `AddBusinessRuleTask(id, opts...)`, `AddSubProcess(id, sub, opts...)`, `AddCallActivity(id, defRef, opts...)` |
+| Subprocess / intermediate / boundary | `AddEventSubProcess(id, sub, opts...)`, `AddIntermediateCatchEvent(id, opts...)`, `AddIntermediateThrowEvent(id, opts...)`, `AddBoundaryEvent(id, attachedTo, opts...)` |
 
 **`FlowOption` values:**
 
@@ -258,12 +282,12 @@ by the authz layer.
 
 ```go
 model.NewDefinition("loan", 1).
-    Add(model.NewStartEvent("start")).
-    Add(model.NewExclusiveGateway("gw")).
-    Add(model.NewServiceTask("approve", "approve-loan")).
-    Add(model.NewServiceTask("reject", "reject-loan")).
-    Add(model.NewEndEvent("end-ok")).
-    Add(model.NewEndEvent("end-ko")).
+    AddStartEvent("start").
+    AddExclusiveGateway("gw").
+    AddServiceTask("approve", model.WithActionName("approve-loan")).
+    AddServiceTask("reject", model.WithActionName("reject-loan")).
+    AddEndEvent("end-ok").
+    AddEndEvent("end-ko").
     Connect("start", "gw").
     Connect("gw", "approve", model.WithCondition("score >= 700")).
     Connect("gw", "reject", model.AsDefault()).
