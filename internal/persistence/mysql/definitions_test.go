@@ -125,7 +125,8 @@ func TestDefinitionStore_GetDefinitionNotFound(t *testing.T) {
 }
 
 // TestDefinitionStore_LookupBadVersion verifies that Lookup returns an error
-// when the version segment of a "defID:version" ref cannot be parsed as an int.
+// when the version segment of a "defID:version" ref cannot be parsed as an int,
+// and that the error message contains "bad version segment".
 func TestDefinitionStore_LookupBadVersion(t *testing.T) {
 	t.Parallel()
 	db := database.RunTestMySQL(t)
@@ -134,4 +135,86 @@ func TestDefinitionStore_LookupBadVersion(t *testing.T) {
 
 	_, err := store.Lookup(ctx, "proc-x:notanumber")
 	require.Error(t, err, "Lookup with bad version segment must return an error")
+	require.Contains(t, err.Error(), "bad version segment")
+}
+
+// richMySQLDefinition builds a realistic ProcessDefinition with multiple typed
+// nodes, sequence flows with conditions, and option-bearing fields (deadline,
+// signal, compensation). It mirrors the postgres richDefinition helper so the
+// MySQL JSON round-trip is tested with an equivalent workload.
+func richMySQLDefinition() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "order-process",
+		Version: 2,
+		Nodes: []model.Node{
+			model.NewStartEvent("start",
+				model.WithName("Order Received"),
+				model.WithStartSignal("sig-order"),
+				model.WithStartMessage("msg-order", "vars.orderID"),
+			),
+			model.NewUserTask("review", []string{"reviewer", "manager"},
+				model.WithName("Review Order"),
+				model.WithEligibilityExpr("vars.amount > 100"),
+				model.WithDeadline("PT24H", "sla-breach", "notify-manager"),
+				model.WithReminder("PT6H", "send-reminder"),
+				model.WithCompensation("cancel-review"),
+			),
+			model.NewExclusiveGateway("approve", "Approved?"),
+			model.NewServiceTask("fulfill", model.WithActionName("fulfillment-service"),
+				model.WithName("Fulfill Order"),
+				model.WithCompensation("rollback-fulfillment"),
+			),
+			model.NewSubProcess("sub", &model.ProcessDefinition{
+				ID:      "nested",
+				Version: 1,
+				Nodes: []model.Node{
+					model.NewStartEvent("n-start"),
+					model.NewEndEvent("n-end"),
+				},
+				Flows: []model.SequenceFlow{
+					{ID: "nf1", Source: "n-start", Target: "n-end"},
+				},
+			}, model.WithName("Nested Sub")),
+			model.NewBoundaryEvent("boundary-err", "fulfill",
+				model.WithBoundaryErrorCode("FULFILLMENT_ERROR"),
+			),
+			model.NewBoundaryEvent("boundary-sig", "review",
+				model.BoundaryNonInterrupting(),
+				model.WithBoundarySignal("sig-cancel"),
+			),
+			model.NewCallActivity("call", "sub-def:3",
+				model.WithName("Call Sub-process"),
+			),
+			model.NewEndEvent("end", "Done"),
+			model.NewErrorEndEvent("err-end", "ORDER_ERROR"),
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "review"},
+			{ID: "f2", Source: "review", Target: "approve"},
+			{ID: "f3", Source: "approve", Target: "fulfill", Condition: "vars.approved == true", IsDefault: false},
+			{ID: "f4", Source: "approve", Target: "end", Condition: "vars.approved != true", IsDefault: true},
+			{ID: "f5", Source: "fulfill", Target: "end"},
+			{ID: "sla-breach", Source: "review", Target: "err-end"},
+		},
+	}
+}
+
+// TestDefinitionStore_RichRoundTrip verifies that a realistic ProcessDefinition
+// containing multiple typed nodes (StartEvent, UserTask, ExclusiveGateway,
+// ServiceTask, SubProcess with nested definition, BoundaryEvents, CallActivity,
+// EndEvent, ErrorEndEvent), sequence flows with conditions, and option-bearing
+// fields (deadline, signal, compensation) survives the JSON store/load
+// round-trip through MySQL faithfully.
+func TestDefinitionStore_RichRoundTrip(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+	store := mypkg.NewDefinitionStore(db)
+	ctx := t.Context()
+
+	orig := richMySQLDefinition()
+	require.NoError(t, store.PutDefinition(ctx, orig))
+
+	got, err := store.GetDefinition(ctx, orig.ID, orig.Version)
+	require.NoError(t, err)
+	require.Equal(t, orig, got, "all fields must survive the JSON round-trip through MySQL")
 }
