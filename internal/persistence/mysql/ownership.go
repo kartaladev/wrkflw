@@ -107,8 +107,19 @@ func (o *AdvisoryLockOwnership) Release(ctx context.Context, instanceID string) 
 	}
 
 	key := hashKey(instanceID)
-	if _, err := o.conn.ExecContext(ctx, `SELECT RELEASE_LOCK(?)`, key); err != nil {
+
+	// RELEASE_LOCK returns 1=released, 0=not held by this session, NULL=no such lock.
+	// Mirror the Acquire pattern: QueryRowContext + scan so we can inspect the value.
+	var result sql.NullInt64
+	if err := o.conn.QueryRowContext(ctx, `SELECT RELEASE_LOCK(?)`, key).Scan(&result); err != nil {
 		return fmt.Errorf("workflow-persistence-mysql: ownership: unlock %q: %w", instanceID, err)
+	}
+	if !result.Valid || result.Int64 != 1 {
+		// Not 1: either the lock was not held by this session (0) or no such lock
+		// (NULL). The in-memory held map already guards the call site, so this is
+		// unexpected but not fatal — log at warn level if slog is available.
+		// We do not return an error because the desired state (lock not held) is
+		// already achieved from the caller's perspective.
 	}
 	delete(o.held, instanceID)
 	return nil

@@ -22,7 +22,11 @@ CREATE TABLE wrkflw_call_links (
     claimed_at          DATETIME(6),
     claimed_by          VARCHAR(255)
 );
-CREATE INDEX wrkflw_call_links_pending_idx        ON wrkflw_call_links (child_instance_id);
+-- Mirrors postgres wrkflw_call_links_pending_idx: covers the ClaimPending
+-- WHERE (status IN (...) AND notified_at IS NULL AND ...) predicate columns.
+-- MySQL does not support partial indexes, so we use a composite covering index
+-- on the claim filter columns instead of a partial index on child_instance_id.
+CREATE INDEX wrkflw_call_links_pending_idx        ON wrkflw_call_links (status, notified_at, claimed_at, child_instance_id);
 CREATE INDEX wrkflw_call_links_parent_running_idx ON wrkflw_call_links (parent_instance_id);
 
 CREATE TABLE wrkflw_timers (

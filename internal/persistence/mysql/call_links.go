@@ -107,7 +107,7 @@ func (c *CallLinkStore) claimPendingPlain(ctx context.Context, limit int) ([]run
 	}
 	defer func() { _ = rows.Close() }()
 
-	return mysqlScanPendingRows(rows)
+	return mysqlScanPendingRowsWithIDs(rows)
 }
 
 // claimPendingLeased is the lease-stamping SELECT...FOR UPDATE SKIP LOCKED +
@@ -183,14 +183,10 @@ func (c *CallLinkStore) claimPendingLeased(ctx context.Context, limit int) ([]ru
 	return pending, nil
 }
 
-// mysqlScanPendingRows scans a *sql.Rows result into a slice of PendingNotify.
+// mysqlScanPendingRowsWithIDs scans a *sql.Rows result into a slice of PendingNotify.
 // The column projection must be:
 // child_instance_id, parent_instance_id, parent_command_id,
 // parent_def_id, parent_def_version, depth, status, output, error.
-func mysqlScanPendingRows(rows *sql.Rows) ([]runtime.PendingNotify, error) {
-	return mysqlScanPendingRowsWithIDs(rows)
-}
-
 func mysqlScanPendingRowsWithIDs(rows *sql.Rows) ([]runtime.PendingNotify, error) {
 	var pending []runtime.PendingNotify
 	for rows.Next() {
