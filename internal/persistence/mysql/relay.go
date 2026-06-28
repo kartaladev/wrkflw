@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -191,7 +190,7 @@ func (r *Relay) Run(ctx context.Context) error {
 
 	// Attempt an immediate drain before waiting for the first tick.
 	if err := r.drainUntilEmpty(ctx); err != nil {
-		if errors.Is(err, context.Canceled) {
+		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return err
@@ -203,7 +202,7 @@ func (r *Relay) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := r.drainUntilEmpty(ctx); err != nil {
-				if errors.Is(err, context.Canceled) {
+				if ctx.Err() != nil {
 					return ctx.Err()
 				}
 				return err

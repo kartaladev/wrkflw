@@ -1,11 +1,14 @@
 package persistence_test
 
 // facade_mysql_test.go covers the MySQL façade constructors: OpenMySQL,
-// MigrateMySQL, and NewMySQLTimerStore. It is kept in the black-box
-// persistence_test package to enforce API-boundary tests only.
+// MigrateMySQL, NewMySQLTimerStore, NewMySQLRelay, and NewMySQLDeduper. It is
+// kept in the black-box persistence_test package to enforce API-boundary tests only.
 
 import (
+	"context"
+	"database/sql"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +23,25 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
+
+// facadePub is a thread-safe recording publisher for facade tests.
+type facadePub struct {
+	mu     sync.Mutex
+	events []runtime.OutboxEvent
+}
+
+func (p *facadePub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, ev)
+	return nil
+}
+
+func (p *facadePub) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.events)
+}
 
 // mysqlMinimalDef returns the simplest process definition for MySQL tests.
 func mysqlMinimalDef() *model.ProcessDefinition {
@@ -154,4 +176,77 @@ func TestOpenMySQL_WithStoreObservabilityOptions(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, store)
+}
+
+// seedOutboxForFacadeTest inserts n pending outbox rows directly into wrkflw_outbox.
+// next_attempt_at is set to base so fake-clock relays claim the rows.
+func seedOutboxForFacadeTest(t *testing.T, db *sql.DB, n int, base time.Time) {
+	t.Helper()
+	ctx := t.Context()
+	for i := range n {
+		dedup := "facade-seed-" + time.Now().Format("20060102150405.000000000") + "-" + string(rune('0'+i))
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO wrkflw_outbox
+			   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+			 VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
+			"facade-inst",
+			"facade.event",
+			`{"x":"y"}`,
+			dedup,
+			base.UTC(),
+			base.UTC(),
+		)
+		require.NoError(t, err, "seed outbox row %d", i)
+	}
+}
+
+// TestNewMySQLRelay_DrainsViaFacade verifies that NewMySQLRelay returns a Relay
+// whose DrainOnce publishes seeded outbox rows via the supplied publisher.
+func TestNewMySQLRelay_DrainsViaFacade(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	base := time.Now().UTC().Truncate(time.Second)
+	seedOutboxForFacadeTest(t, db, 3, base)
+
+	pub := &facadePub{}
+	relay := persistence.NewMySQLRelay(db, pub,
+		persistence.MySQLWithPollInterval(10*time.Millisecond),
+		persistence.MySQLWithBatchSize(10),
+	)
+
+	n, err := relay.DrainOnce(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 3, n, "DrainOnce must publish all 3 seeded rows")
+	require.Equal(t, 3, pub.count(), "publisher must have received 3 events")
+}
+
+// TestNewMySQLDeduper_FirstThenDup verifies that NewMySQLDeduper returns a
+// MySQLDeduper whose Seen method returns true on first observation and false on
+// a repeat within a MySQL transaction.
+func TestNewMySQLDeduper_FirstThenDup(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	d := persistence.NewMySQLDeduper(db)
+
+	// Helper to call Seen inside a committed tx.
+	callSeen := func(subscriber, msgID string) (bool, error) {
+		tx, err := db.BeginTx(t.Context(), nil)
+		require.NoError(t, err)
+		first, err := d.Seen(t.Context(), tx, subscriber, msgID)
+		if err != nil {
+			_ = tx.Rollback()
+			return false, err
+		}
+		return first, tx.Commit()
+	}
+
+	first, err := callSeen("sub-facade", "msg-facade-1")
+	require.NoError(t, err)
+	require.True(t, first, "first observation must return true")
+
+	dup, err := callSeen("sub-facade", "msg-facade-1")
+	require.NoError(t, err)
+	require.False(t, dup, "duplicate observation must return false")
 }

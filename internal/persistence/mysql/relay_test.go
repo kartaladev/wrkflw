@@ -72,19 +72,28 @@ func (p *poisonPub) publishCount(dedup string) int {
 }
 
 // seedOutboxMySQL inserts n unpublished rows directly into wrkflw_outbox for MySQL.
+// next_attempt_at is set explicitly to time.Now().UTC() (a past-or-present instant) so
+// that real-clock relays claim the rows immediately. This also makes the function safe
+// with fake-clock relays when the caller advances the clock before calling DrainOnce —
+// relying on the schema DEFAULT (which inserts NOW() at the moment of the INSERT) was a
+// footgun because a fake clock relay would see rows with next_attempt_at in the real
+// future and skip them.
 func seedOutboxMySQL(t *testing.T, db *sql.DB, n int) {
 	t.Helper()
 	ctx := t.Context()
+	now := time.Now().UTC()
 	for i := range n {
-		dedup := fmt.Sprintf("seed-%s-%d", time.Now().Format("20060102150405.000000000"), i)
+		dedup := fmt.Sprintf("seed-%s-%d", now.Format("20060102150405.000000000"), i)
 		_, err := db.ExecContext(ctx,
-			`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
-			 VALUES (?, ?, ?, ?, ?)`,
+			`INSERT INTO wrkflw_outbox
+			   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+			 VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
 			"test-instance",
 			"test.event",
 			`{"k":"v"}`,
 			dedup,
-			time.Now().UTC(),
+			now,
+			now,
 		)
 		require.NoError(t, err, "seed outbox row %d", i)
 	}
@@ -330,6 +339,33 @@ func TestRelay_ListDeadLettered_And_Redrive(t *testing.T) {
 	).Scan(&finalStatus)
 	require.NoError(t, err)
 	require.Equal(t, "published", finalStatus, "redriven row must be published after drain")
+}
+
+// TestRelay_Run_ReturnsDeadlineExceededOnTimeout verifies that Run returns
+// context.DeadlineExceeded (not a raw wrapped driver error) when the context
+// deadline fires. This guards Fix I1: the original code only checked
+// context.Canceled at the two guard sites; a deadline-expired context fell
+// through to "return err", returning a workflow-persistence-mysql: prefixed
+// error instead of the clean context sentinel. After Fix I1 the guard checks
+// ctx.Err() != nil for both cancel and deadline cases, so Run always returns
+// ctx.Err() on context termination — specifically context.DeadlineExceeded here.
+func TestRelay_Run_ReturnsDeadlineExceededOnTimeout(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithPollInterval(10*time.Millisecond))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 40*time.Millisecond)
+	defer cancel()
+
+	err := relay.Run(ctx)
+	// Must be exactly context.DeadlineExceeded, not a workflow-prefixed wrapper.
+	require.ErrorIs(t, err, context.DeadlineExceeded,
+		"Run must return context.DeadlineExceeded when the context deadline fires, got: %v", err)
+	// Additionally: the error must not carry the workflow-persistence-mysql prefix,
+	// i.e. it should be ctx.Err() not a wrapped driver/relay error.
+	require.Equal(t, context.DeadlineExceeded, err,
+		"Run must return ctx.Err() exactly, not a wrapped error, on deadline expiry")
 }
 
 // TestRelay_Run_DrainsUntilCancelled verifies Run exits cleanly on ctx cancel
