@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
+	mysqlpersistence "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 )
 
 const (
@@ -75,6 +76,8 @@ func RunTestMySQL(t *testing.T) *sql.DB {
 
 		mysqlShared = &sharedMySQLContainer{
 			rootDSN: func(dbName string) string {
+				// parseTime=true&loc=UTC are required for correct DATETIME scanning.
+				// multiStatements=true is required for goose multi-statement migration files.
 				return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=UTC&multiStatements=true",
 					mysqlRootUser, mysqlRootPassword, host, port.Port(), dbName)
 			},
@@ -113,5 +116,6 @@ func RunTestMySQL(t *testing.T) *sql.DB {
 
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, db.PingContext(ctx), "ping per-test mysql db")
+	require.NoError(t, mysqlpersistence.Migrate(ctx, db), "auto-migrate per-test mysql db")
 	return db
 }

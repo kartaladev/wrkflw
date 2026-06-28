@@ -39,7 +39,7 @@ CREATE TABLE wrkflw_outbox (
     definition_ref  VARCHAR(255) NOT NULL DEFAULT ''
 );
 CREATE INDEX wrkflw_outbox_claim_idx ON wrkflw_outbox (next_attempt_at);
-CREATE INDEX wrkflw_outbox_dead_idx  ON wrkflw_outbox (id);
+CREATE INDEX wrkflw_outbox_dead_idx  ON wrkflw_outbox (status, id);
 
 CREATE TABLE wrkflw_definitions (
     def_id      VARCHAR(255) NOT NULL,

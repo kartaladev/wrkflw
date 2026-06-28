@@ -46,9 +46,10 @@ func TestMigrate_CreatesAllTables(t *testing.T) {
 }
 
 func TestMigrate_IsIdempotent(t *testing.T) {
+	// RunTestMySQL already runs Migrate once internally; calling it again on the
+	// same *sql.DB (same goose_db_version table) proves re-running is a no-op.
 	db := database.RunTestMySQL(t)
 	ctx := context.Background()
 
-	require.NoError(t, mysqlpkg.Migrate(ctx, db), "first migrate must succeed")
-	require.NoError(t, mysqlpkg.Migrate(ctx, db), "second migrate (idempotent) must succeed")
+	require.NoError(t, mysqlpkg.Migrate(ctx, db), "migrate on already-migrated db must be idempotent")
 }
