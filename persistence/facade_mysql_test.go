@@ -251,3 +251,188 @@ func TestNewMySQLDeduper_FirstThenDup(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, dup, "duplicate observation must return false")
 }
+
+// ─── MySQL Correlation Facade Tests ────────────────────────────────────────
+
+// staticReg is a simple in-memory DefinitionRegistry for tests.
+type staticReg struct {
+	defs map[string]*model.ProcessDefinition
+}
+
+func (r *staticReg) Lookup(_ context.Context, defRef string) (*model.ProcessDefinition, error) {
+	d, ok := r.defs[defRef]
+	if !ok {
+		return nil, fmt.Errorf("def not found: %s", defRef)
+	}
+	return d, nil
+}
+
+// TestNewMySQLCallLinkStore_ClaimAndMarkNotified seeds a terminal call link via
+// the store and asserts that NewMySQLCallLinkStore.ClaimPending returns it,
+// and MarkNotified marks it so a second ClaimPending returns nothing.
+func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	store, err := persistence.OpenMySQL(t.Context(), db)
+	require.NoError(t, err)
+
+	// Seed a parent instance.
+	r := runtime.NewRunner(nil, store)
+	_, err = r.Run(t.Context(), mysqlMinimalDef(), "parent-cls-1", nil)
+	require.NoError(t, err)
+
+	// Seed a terminal call link directly (child terminated, parent waiting).
+	_, err = db.ExecContext(t.Context(), `
+		INSERT INTO wrkflw_call_links
+		  (child_instance_id, parent_instance_id, parent_command_id,
+		   parent_def_id, parent_def_version, depth, status, output, error, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, 'completed', '{}', NULL, NOW(6))
+	`, "child-cls-1", "parent-cls-1", "cmd-1", "mysql-minimal", 1, 0)
+	require.NoError(t, err)
+
+	cls := persistence.NewMySQLCallLinkStore(db)
+
+	// ClaimPending must return the link.
+	pending, err := cls.ClaimPending(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 1, "expected 1 pending link")
+	assert.Equal(t, "child-cls-1", pending[0].Link.ChildInstanceID)
+	assert.Equal(t, "parent-cls-1", pending[0].Link.ParentInstanceID)
+	assert.True(t, pending[0].Outcome.Completed)
+
+	// MarkNotified should succeed.
+	err = cls.MarkNotified(t.Context(), "child-cls-1")
+	require.NoError(t, err)
+
+	// Second ClaimPending must return nothing.
+	pending2, err := cls.ClaimPending(t.Context(), 10)
+	require.NoError(t, err)
+	assert.Empty(t, pending2, "no pending after MarkNotified")
+}
+
+// TestNewMySQLChainLinkStore_RecordAndLookup verifies NewMySQLChainLinkStore
+// round-trips a chain link through MySQL.
+func TestNewMySQLChainLinkStore_RecordAndLookup(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	links := persistence.NewMySQLChainLinkStore(db)
+	at := time.Now().UTC().Truncate(time.Millisecond)
+
+	link := runtime.ChainLink{
+		PredecessorID:            "pred-1",
+		Outcome:                  runtime.Outcome("success"),
+		SuccessorID:              "succ-1",
+		PredecessorDefinitionRef: "def-a:1",
+		SuccessorDefinitionRef:   "def-b:2",
+		StartVars:                map[string]any{"k": "v"},
+		CreatedAt:                at,
+	}
+	err := links.Record(t.Context(), link)
+	require.NoError(t, err)
+
+	// LookupBySuccessor round-trip.
+	got, ok, err := links.LookupBySuccessor(t.Context(), "succ-1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "pred-1", got.PredecessorID)
+	assert.Equal(t, runtime.Outcome("success"), got.Outcome)
+	assert.Equal(t, "succ-1", got.SuccessorID)
+
+	// ListByPredecessor.
+	list, err := links.ListByPredecessor(t.Context(), "pred-1")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "succ-1", list[0].SuccessorID)
+}
+
+// TestNewMySQLLister_ListsInstances verifies NewMySQLLister returns an
+// InstanceLister that pages over instances seeded through the store.
+func TestNewMySQLLister_ListsInstances(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	store, err := persistence.OpenMySQL(t.Context(), db)
+	require.NoError(t, err)
+
+	r := runtime.NewRunner(nil, store)
+	for _, id := range []string{"lst-inst-a", "lst-inst-b"} {
+		_, err := r.Run(t.Context(), mysqlMinimalDef(), id, nil)
+		require.NoError(t, err)
+	}
+
+	lister := persistence.NewMySQLLister(db)
+	page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(page.Items), 2)
+}
+
+// TestNewMySQLAdvisoryLockOwnership_AcquireAndClose verifies the facade ctor
+// returns a runtime.Ownership that can Acquire an instance and Close cleanly.
+func TestNewMySQLAdvisoryLockOwnership_AcquireAndClose(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	owner, closer, err := persistence.NewMySQLAdvisoryLockOwnership(t.Context(), db)
+	require.NoError(t, err)
+	require.NotNil(t, owner)
+	require.NotNil(t, closer)
+
+	acquired, err := owner.Acquire(t.Context(), "facade-lock-inst-1")
+	require.NoError(t, err)
+	assert.True(t, acquired, "first Acquire must succeed")
+
+	// Close must release cleanly.
+	err = closer.Close()
+	require.NoError(t, err)
+}
+
+// TestNewMySQLCallNotifier_DeliversViaMySQLStore seeds a terminal call link via
+// the MySQL call-link store, runs DrainOnce on a CallNotifier built through the
+// facade, and asserts the deliver func fired exactly once.
+func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	store, err := persistence.OpenMySQL(t.Context(), db)
+	require.NoError(t, err)
+
+	// Create a parent process instance (the definition "mysql-minimal" id:version 1).
+	def := mysqlMinimalDef()
+	r := runtime.NewRunner(nil, store)
+	_, err = r.Run(t.Context(), def, "notifier-parent-1", nil)
+	require.NoError(t, err)
+
+	// Seed a terminal call link so the notifier has something to deliver.
+	_, err = db.ExecContext(t.Context(), `
+		INSERT INTO wrkflw_call_links
+		  (child_instance_id, parent_instance_id, parent_command_id,
+		   parent_def_id, parent_def_version, depth, status, output, error, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, 'completed', '{}', NULL, NOW(6))
+	`, "notifier-child-1", "notifier-parent-1", "cmd-notifier", "mysql-minimal", 1, 0)
+	require.NoError(t, err)
+
+	// Build a simple in-memory registry wrapping the definition.
+	reg := &staticReg{defs: map[string]*model.ProcessDefinition{
+		"mysql-minimal:1": def,
+	}}
+
+	var deliverCalled int
+	deliverFn := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+		deliverCalled++
+		return nil
+	})
+
+	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
+
+	notified, err := notifier.DrainOnce(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 1, notified, "DrainOnce must report 1 notified link")
+	assert.Equal(t, 1, deliverCalled, "deliver func must be called exactly once")
+
+	// Second DrainOnce is a no-op (link is marked notified).
+	notified2, err := notifier.DrainOnce(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 0, notified2, "second DrainOnce must be a no-op")
+}
