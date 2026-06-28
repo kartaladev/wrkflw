@@ -273,6 +273,12 @@ func (e *MySQLElector) mysqlRevalidate() {
 // stops the heartbeat goroutine, and closes the dedicated connection. Close is
 // idempotent: a second call returns nil without any action. After Close,
 // IsLeader returns ErrNotLeader.
+//
+// RELEASE_ALL_LOCKS() is called unconditionally: a heartbeat step-down can
+// clear isLeader while the session lock is still held, so gating the release
+// on isLeader would leave a stale lock on the connection until MySQL detects
+// the closed connection. RELEASE_ALL_LOCKS() is idempotent in MySQL (returns 0
+// when no locks are held) so calling it when not leader is harmless.
 func (e *MySQLElector) Close() error {
 	e.mu.Lock()
 	if e.closed {
@@ -291,18 +297,12 @@ func (e *MySQLElector) Close() error {
 		e.wg.Wait()
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.isLeader {
-		// RELEASE_ALL_LOCKS() releases every advisory lock held by this session,
-		// ensuring no stale lock lingers regardless of re-entrant depth.
-		// Best-effort: ignore the error on shutdown.
-		_, _ = e.conn.ExecContext(context.Background(), `SELECT RELEASE_ALL_LOCKS()`)
-		e.isLeader = false
-	}
-	// Also release if we've acquired but not tracked (defensive: always call RELEASE
-	// on close to be safe, idempotent in MySQL).
+	// RELEASE_ALL_LOCKS() unconditionally: releases every advisory lock held by
+	// this session regardless of whether isLeader is set. A heartbeat step-down
+	// can clear isLeader while the lock is still held on the session, so we must
+	// not gate this on isLeader. Idempotent in MySQL — safe when no locks held.
+	// Best-effort: ignore the error on shutdown.
+	_, _ = e.conn.ExecContext(context.Background(), `SELECT RELEASE_ALL_LOCKS()`)
 	_ = e.conn.Close()
 	return nil
 }

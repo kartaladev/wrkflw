@@ -83,6 +83,30 @@ func TestMySQLElectorCloseIdempotent(t *testing.T) {
 	require.NoError(t, elector.Close(), "second Close must be a no-op")
 }
 
+// TestMySQLElectorCloseIdempotentAfterLeadership proves Close is idempotent
+// even AFTER leadership has been won and the heartbeat goroutine started.
+// The key scenario: (1) IsLeader succeeds → elector is leader, heartbeat
+// goroutine running; (2) first Close releases the lock and stops the heartbeat;
+// (3) second Close must still return nil without a panic or leak.
+// This exercises the isLeader-independent RELEASE_ALL_LOCKS path: a heartbeat
+// step-down can clear isLeader while the session lock is still held, so we need
+// Close to release locks regardless of the isLeader flag.
+func TestMySQLElectorCloseIdempotentAfterLeadership(t *testing.T) {
+	db := database.RunTestMySQL(t)
+	ctx := t.Context()
+
+	elector, err := sched.NewMySQLElector(ctx, db)
+	require.NoError(t, err)
+
+	// Win leadership — this starts the heartbeat goroutine.
+	require.NoError(t, elector.IsLeader(ctx), "must win leadership before close")
+
+	// First Close: must stop heartbeat, release lock, return nil.
+	require.NoError(t, elector.Close(), "first Close after leadership must return nil")
+	// Second Close: must be a no-op.
+	require.NoError(t, elector.Close(), "second Close after leadership must be a no-op (idempotent)")
+}
+
 // TestMySQLElectorKeyOverride proves WithMySQLElectorKey scopes leadership:
 // two electors contending under DIFFERENT keys can both be leaders, letting
 // multiple independent engines coexist in one database.
