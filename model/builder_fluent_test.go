@@ -660,87 +660,656 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 	})
 }
 
-// TestBuilderFluentEquivalentToAdd proves that AddX is pure forwarding sugar:
-// building via AddX produces structurally identical nodes to Add(NewX(...)).
+// TestBuilderFluentEquivalentToAdd proves that every AddX method is pure
+// forwarding sugar: building via AddX(args...) produces a structurally
+// identical node to Add(NewX(args...)) for all 19 node kinds.
+//
+// For each kind a minimal valid graph is built two ways — once with the
+// fluent AddX method and once with the explicit Add(NewX(...)) form — using
+// the same IDs, args, and options. The node-under-test is located by ID in
+// both definitions and compared via reflect.DeepEqual. Node count and flow
+// count are asserted as a structural backstop.
+//
+// The graph recipes mirror TestBuilderFluentAddMethods exactly so the only
+// difference between the two builds is the call form.
 func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 	t.Parallel()
 
-	sub, err := model.NewDefinition("sub", 1).
-		Add(model.NewStartEvent("ss")).
-		Add(model.NewEndEvent("se")).
-		Connect("ss", "se").
-		Build()
-	if err != nil {
-		t.Fatalf("sub Build: %v", err)
+	sub := minimalSubDef(t)
+
+	type testCase struct {
+		name   string
+		nodeID string
+		// buildFluent builds the minimal valid graph using the AddX fluent method.
+		buildFluent func(t *testing.T) *model.ProcessDefinition
+		// buildAdd builds the same graph using Add(NewX(...)).
+		buildAdd func(t *testing.T) *model.ProcessDefinition
 	}
 
-	buildViaFluent := func(t *testing.T) *model.ProcessDefinition {
-		t.Helper()
-		def, err := model.NewDefinition("p", 1).
-			AddStartEvent("s").
-			AddServiceTask("t1", model.WithActionName("do")).
-			AddUserTask("t2", []string{"manager"}).
-			AddReceiveTask("t3", "msg.in").
-			AddSendTask("t4", "msg.out").
-			AddSubProcess("t5", sub).
-			AddEndEvent("e").
-			Connect("s", "t1").
-			Connect("t1", "t2").
-			Connect("t2", "t3").
-			Connect("t3", "t4").
-			Connect("t4", "t5").
-			Connect("t5", "e").
-			Build()
-		if err != nil {
-			t.Fatalf("fluent Build: %v", err)
-		}
-		return def
+	cases := []testCase{
+		{
+			name:   "AddStartEvent",
+			nodeID: "s",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddEndEvent("e").
+					Connect("s", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddEndEvent",
+			nodeID: "e",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddEndEvent("e").
+					Connect("s", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddTerminateEndEvent",
+			nodeID: "te",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddTerminateEndEvent("te").
+					Connect("s", "te").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewTerminateEndEvent("te")).
+					Connect("s", "te").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddErrorEndEvent",
+			nodeID: "ee",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddErrorEndEvent("ee", "ERR_X").
+					Connect("s", "ee").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewErrorEndEvent("ee", "ERR_X")).
+					Connect("s", "ee").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddExclusiveGateway",
+			nodeID: "gw",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddExclusiveGateway("gw").
+					AddEndEvent("e").
+					Connect("s", "gw").
+					Connect("gw", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewExclusiveGateway("gw")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "gw").
+					Connect("gw", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddParallelGateway",
+			nodeID: "gw",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddParallelGateway("gw").
+					AddEndEvent("e").
+					Connect("s", "gw").
+					Connect("gw", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewParallelGateway("gw")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "gw").
+					Connect("gw", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddInclusiveGateway",
+			nodeID: "gw",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddInclusiveGateway("gw").
+					AddEndEvent("e").
+					Connect("s", "gw").
+					Connect("gw", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewInclusiveGateway("gw")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "gw").
+					Connect("gw", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddEventBasedGateway",
+			nodeID: "gw",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddEventBasedGateway("gw").
+					AddIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H")).
+					AddEndEvent("e").
+					Connect("s", "gw").
+					Connect("gw", "ice").
+					Connect("ice", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewEventBasedGateway("gw")).
+					Add(model.NewIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H"))).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "gw").
+					Connect("gw", "ice").
+					Connect("ice", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddServiceTask",
+			nodeID: "t",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddServiceTask("t").
+					AddEndEvent("e").
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewServiceTask("t")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddUserTask",
+			nodeID: "t",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddUserTask("t", []string{"manager"}).
+					AddEndEvent("e").
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewUserTask("t", []string{"manager"})).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddReceiveTask",
+			nodeID: "t",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddReceiveTask("t", "order.placed").
+					AddEndEvent("e").
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewReceiveTask("t", "order.placed")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddSendTask",
+			nodeID: "t",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddSendTask("t", "order.confirmed").
+					AddEndEvent("e").
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewSendTask("t", "order.confirmed")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddBusinessRuleTask",
+			nodeID: "t",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddBusinessRuleTask("t").
+					AddEndEvent("e").
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewBusinessRuleTask("t")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddSubProcess",
+			nodeID: "t",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddSubProcess("t", sub).
+					AddEndEvent("e").
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewSubProcess("t", sub)).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddCallActivity",
+			nodeID: "t",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddCallActivity("t", "other-def").
+					AddEndEvent("e").
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewCallActivity("t", "other-def")).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "t").
+					Connect("t", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddEventSubProcess",
+			nodeID: "esp",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddEventSubProcess("esp", sub).
+					AddEndEvent("e").
+					Connect("s", "esp").
+					Connect("esp", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewEventSubProcess("esp", sub)).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "esp").
+					Connect("esp", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddIntermediateCatchEvent",
+			nodeID: "ice",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H")).
+					AddEndEvent("e").
+					Connect("s", "ice").
+					Connect("ice", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H"))).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "ice").
+					Connect("ice", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddIntermediateThrowEvent",
+			nodeID: "ite",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddIntermediateThrowEvent("ite", model.WithThrowSignal("sig")).
+					AddEndEvent("e").
+					Connect("s", "ite").
+					Connect("ite", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewIntermediateThrowEvent("ite", model.WithThrowSignal("sig"))).
+					Add(model.NewEndEvent("e")).
+					Connect("s", "ite").
+					Connect("ite", "e").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
+		{
+			name:   "AddBoundaryEvent",
+			nodeID: "be",
+			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					AddStartEvent("s").
+					AddServiceTask("task", model.WithActionName("do")).
+					AddBoundaryEvent("be", "task", model.WithBoundaryTimer("PT30M")).
+					AddEndEvent("e").
+					AddEndEvent("be-end").
+					Connect("s", "task").
+					Connect("task", "e").
+					Connect("be", "be-end").
+					Build()
+				if err != nil {
+					t.Fatalf("fluent Build: %v", err)
+				}
+				return def
+			},
+			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+				t.Helper()
+				def, err := model.NewDefinition("p", 1).
+					Add(model.NewStartEvent("s")).
+					Add(model.NewServiceTask("task", model.WithActionName("do"))).
+					Add(model.NewBoundaryEvent("be", "task", model.WithBoundaryTimer("PT30M"))).
+					Add(model.NewEndEvent("e")).
+					Add(model.NewEndEvent("be-end")).
+					Connect("s", "task").
+					Connect("task", "e").
+					Connect("be", "be-end").
+					Build()
+				if err != nil {
+					t.Fatalf("Add Build: %v", err)
+				}
+				return def
+			},
+		},
 	}
 
-	buildViaAdd := func(t *testing.T) *model.ProcessDefinition {
-		t.Helper()
-		def, err := model.NewDefinition("p", 1).
-			Add(model.NewStartEvent("s")).
-			Add(model.NewServiceTask("t1", model.WithActionName("do"))).
-			Add(model.NewUserTask("t2", []string{"manager"})).
-			Add(model.NewReceiveTask("t3", "msg.in")).
-			Add(model.NewSendTask("t4", "msg.out")).
-			Add(model.NewSubProcess("t5", sub)).
-			Add(model.NewEndEvent("e")).
-			Connect("s", "t1").
-			Connect("t1", "t2").
-			Connect("t2", "t3").
-			Connect("t3", "t4").
-			Connect("t4", "t5").
-			Connect("t5", "e").
-			Build()
-		if err != nil {
-			t.Fatalf("Add Build: %v", err)
-		}
-		return def
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	fluentDef := buildViaFluent(t)
-	addDef := buildViaAdd(t)
+			fluentDef := tc.buildFluent(t)
+			addDef := tc.buildAdd(t)
 
-	if len(fluentDef.Nodes) != len(addDef.Nodes) {
-		t.Fatalf("node count: fluent=%d add=%d", len(fluentDef.Nodes), len(addDef.Nodes))
-	}
-	for i := range fluentDef.Nodes {
-		fn := fluentDef.Nodes[i]
-		an := addDef.Nodes[i]
-		if fn.Kind() != an.Kind() {
-			t.Errorf("node[%d] Kind: fluent=%v add=%v", i, fn.Kind(), an.Kind())
-		}
-		if fn.ID() != an.ID() {
-			t.Errorf("node[%d] ID: fluent=%q add=%q", i, fn.ID(), an.ID())
-		}
-		if !reflect.DeepEqual(fn, an) {
-			t.Errorf("node[%d] %q not deeply equal: fluent=%+v add=%+v", i, fn.ID(), fn, an)
-		}
-	}
+			fluentNode := nodeByID(t, fluentDef, tc.nodeID)
+			addNode := nodeByID(t, addDef, tc.nodeID)
 
-	if len(fluentDef.Flows) != len(addDef.Flows) {
-		t.Fatalf("flow count: fluent=%d add=%d", len(fluentDef.Flows), len(addDef.Flows))
+			if len(fluentDef.Nodes) != len(addDef.Nodes) {
+				t.Errorf("node count: fluent=%d add=%d", len(fluentDef.Nodes), len(addDef.Nodes))
+			}
+			if len(fluentDef.Flows) != len(addDef.Flows) {
+				t.Errorf("flow count: fluent=%d add=%d", len(fluentDef.Flows), len(addDef.Flows))
+			}
+			if !reflect.DeepEqual(fluentNode, addNode) {
+				t.Errorf("node %q not deeply equal:\n  fluent=%+v\n  add=%+v", tc.nodeID, fluentNode, addNode)
+			}
+		})
 	}
 }
