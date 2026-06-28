@@ -89,7 +89,7 @@ func NewStore(db *sql.DB, opts ...StoreOption) *Store {
 
 // filterNilOpts returns only the non-nil observability.Option values from opts.
 func filterNilOpts(opts ...observability.Option) []observability.Option {
-	out := opts[:0]
+	out := make([]observability.Option, 0, len(opts))
 	for _, o := range opts {
 		if o != nil {
 			out = append(out, o)
@@ -154,7 +154,7 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 	}
 
 	if err := mysqlApplyTimerOps(ctx, tx, step); err != nil {
-		return 0, err
+		return 0, mysqlMapConflict(err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -299,8 +299,9 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 	}
 
 	if err := mysqlApplyTimerOps(ctx, tx, step); err != nil {
-		spanErr(err)
-		return 0, err
+		mapped := mysqlMapConflict(err)
+		spanErr(mapped)
+		return 0, mapped
 	}
 
 	if err := tx.Commit(); err != nil {

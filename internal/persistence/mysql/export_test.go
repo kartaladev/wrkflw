@@ -143,5 +143,32 @@ func TestApplyTimerOpsCancelsError(t *testing.T) {
 	require.ErrorContains(t, err, "injected timer ops cancel error")
 }
 
+// TestApplyTimerOpsDeadlockMapsToErrConcurrentUpdate verifies that a MySQL deadlock
+// (1213) from a timer upsert/delete is mapped to runtime.ErrConcurrentUpdate when
+// wrapped with mysqlMapConflict — matching the fix applied at the Create/Commit call sites.
+func TestApplyTimerOpsDeadlockMapsToErrConcurrentUpdate(t *testing.T) {
+	deadlock := &mysqldriver.MySQLError{Number: 1213}
+
+	t.Run("arm deadlock maps via mysqlMapConflict", func(t *testing.T) {
+		step := runtime.AppliedStep{
+			State: engine.InstanceState{InstanceID: "i1"},
+			TimerArms: []runtime.ArmedTimer{
+				{InstanceID: "i1", TimerID: "t1", FireAt: time.Now(), Kind: engine.TimerIntermediate, DefID: "d", DefVersion: 1},
+			},
+		}
+		err := mysqlMapConflict(mysqlApplyTimerOps(context.Background(), errDbtx{err: deadlock}, step))
+		require.ErrorIs(t, err, runtime.ErrConcurrentUpdate, "deadlock from timer arm must map to ErrConcurrentUpdate")
+	})
+
+	t.Run("cancel deadlock maps via mysqlMapConflict", func(t *testing.T) {
+		step := runtime.AppliedStep{
+			State:        engine.InstanceState{InstanceID: "i1"},
+			TimerCancels: []string{"t1"},
+		}
+		err := mysqlMapConflict(mysqlApplyTimerOps(context.Background(), errDbtx{err: deadlock}, step))
+		require.ErrorIs(t, err, runtime.ErrConcurrentUpdate, "deadlock from timer cancel must map to ErrConcurrentUpdate")
+	})
+}
+
 // TxWith re-exports txWith for integration tests that need a real container.
 var TxWith = txWith
