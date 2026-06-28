@@ -388,6 +388,133 @@ func TestNewMySQLAdvisoryLockOwnership_AcquireAndClose(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// ─── MySQL DefinitionStore Facade Tests ────────────────────────────────────
+
+// TestNewMySQLDefinitionStore_RoundTrip verifies that NewMySQLDefinitionStore
+// returns a DefinitionStore (same interface as NewDefinitionStore/Postgres) that
+// PutDefinition-then-Lookup round-trips a definition through MySQL.
+func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	ds := persistence.NewMySQLDefinitionStore(db)
+	require.NotNil(t, ds)
+
+	def := &model.ProcessDefinition{
+		ID:            "facade-def-1",
+		Version:       1,
+		CancelActions: []string{"rollback"},
+	}
+	require.NoError(t, ds.PutDefinition(t.Context(), def))
+
+	// Exact lookup "defID:version".
+	got, err := ds.Lookup(t.Context(), "facade-def-1:1")
+	require.NoError(t, err)
+	require.Equal(t, "facade-def-1", got.ID)
+	require.Equal(t, 1, got.Version)
+	require.Equal(t, []string{"rollback"}, got.CancelActions)
+
+	// Latest-version lookup "defID".
+	got2, err := ds.Lookup(t.Context(), "facade-def-1")
+	require.NoError(t, err)
+	require.Equal(t, "facade-def-1", got2.ID)
+}
+
+// ─── MySQL Pruner Facade Tests ──────────────────────────────────────────────
+
+// TestNewMySQLPruner_PruneOutbox verifies that NewMySQLPruner returns a Pruner
+// (same interface as NewPruner/Postgres) whose PruneOutbox removes only published
+// rows older than the cutoff.
+func TestNewMySQLPruner_PruneOutbox(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	cutoff := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	old := cutoff.Add(-24 * time.Hour) // before cutoff → must be deleted
+	new_ := cutoff.Add(24 * time.Hour) // after cutoff  → must survive
+
+	ctx := t.Context()
+
+	// Seed an OLD published row.
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO wrkflw_outbox
+		 (instance_id, topic, payload, dedup_key, created_at, status, published_at)
+		 VALUES (?, ?, '{}', ?, ?, 'published', ?)`,
+		"pruner-facade-inst-old", "test.prune.topic", "dk-pruner-facade-old", old, old)
+	require.NoError(t, err)
+
+	// Seed a NEW published row.
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO wrkflw_outbox
+		 (instance_id, topic, payload, dedup_key, created_at, status, published_at)
+		 VALUES (?, ?, '{}', ?, ?, 'published', ?)`,
+		"pruner-facade-inst-new", "test.prune.topic", "dk-pruner-facade-new", new_, new_)
+	require.NoError(t, err)
+
+	pr := persistence.NewMySQLPruner(db)
+	require.NotNil(t, pr)
+
+	n, err := pr.PruneOutbox(ctx, cutoff)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, n, int64(1), "at least the seeded old row must be deleted")
+
+	// Old row must be gone.
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wrkflw_outbox WHERE dedup_key = 'dk-pruner-facade-old'`).Scan(&count))
+	assert.Equal(t, 0, count, "old outbox row must be deleted")
+
+	// New row must survive.
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wrkflw_outbox WHERE dedup_key = 'dk-pruner-facade-new'`).Scan(&count))
+	assert.Equal(t, 1, count, "new outbox row must survive")
+}
+
+// TestNewMySQLPruner_PruneProcessedMessages verifies PruneProcessedMessages via
+// the facade Pruner interface, proving full wiring through to the MySQL backend.
+func TestNewMySQLPruner_PruneProcessedMessages(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	cutoff := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	old := cutoff.Add(-24 * time.Hour) // before cutoff → must be deleted
+	new_ := cutoff.Add(24 * time.Hour) // after cutoff  → must survive
+
+	ctx := t.Context()
+
+	// Seed an OLD processed_message row.
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO wrkflw_processed_message (subscriber, message_id, processed_at)
+		 VALUES ('facade-sub', 'facade-msg-old', ?)`,
+		old)
+	require.NoError(t, err)
+
+	// Seed a NEW processed_message row.
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO wrkflw_processed_message (subscriber, message_id, processed_at)
+		 VALUES ('facade-sub', 'facade-msg-new', ?)`,
+		new_)
+	require.NoError(t, err)
+
+	pr := persistence.NewMySQLPruner(db)
+	require.NotNil(t, pr)
+
+	n, err := pr.PruneProcessedMessages(ctx, cutoff)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, n, int64(1), "at least the seeded old row must be deleted")
+
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wrkflw_processed_message WHERE message_id = 'facade-msg-old'`).Scan(&count))
+	assert.Equal(t, 0, count, "old processed_message row must be deleted")
+
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wrkflw_processed_message WHERE message_id = 'facade-msg-new'`).Scan(&count))
+	assert.Equal(t, 1, count, "new processed_message row must survive")
+}
+
+// ─── MySQL CallNotifier Facade Tests ────────────────────────────────────────
+
 // TestNewMySQLCallNotifier_DeliversViaMySQLStore seeds a terminal call link via
 // the MySQL call-link store, runs DrainOnce on a CallNotifier built through the
 // facade, and asserts the deliver func fired exactly once.

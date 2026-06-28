@@ -2,6 +2,7 @@ package persistence_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -91,4 +92,30 @@ func TestPingCheckNilPool(t *testing.T) {
 	err := check.Check(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nil pool")
+}
+
+// TestMySQLPingCheck_Healthy asserts that NewMySQLPingCheck over a live *sql.DB
+// satisfies rest.HealthCheck, reports the default name "mysql", and pings successfully.
+func TestMySQLPingCheck_Healthy(t *testing.T) {
+	t.Parallel()
+
+	db := database.RunTestMySQL(t)
+
+	check := persistence.NewMySQLPingCheck(db)
+
+	// Must satisfy the same rest.HealthCheck contract as the pgx PingCheck.
+	var _ rest.HealthCheck = check
+
+	assert.Equal(t, "mysql", check.Name())
+	require.NoError(t, check.Check(t.Context()))
+}
+
+// TestMySQLPingCheckNilDB asserts a nil *sql.DB fails the probe without panicking.
+func TestMySQLPingCheckNilDB(t *testing.T) {
+	t.Parallel()
+
+	check := persistence.NewMySQLPingCheck((*sql.DB)(nil))
+	err := check.Check(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil db")
 }
