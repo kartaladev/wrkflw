@@ -38,7 +38,7 @@ properties that shape every decision:
 | Concern | Choice | Notes |
 |---|---|---|
 | Language | **Go 1.25** | hard requirement |
-| Database | **PostgreSQL 17**, SQL-based | hot-path data must be cached to avoid overloading the DB |
+| Database | **PostgreSQL 17** (primary) or **MySQL 8.0+**, SQL-based | hot-path data must be cached to avoid overloading the DB (see ADR-0073) |
 | Expressions | `github.com/expr-lang/expr` | all in-definition / in-execution expressions |
 | Eventing | [`watermill`](https://github.com/ThreeDotsLabs/watermill), **outbox publishing** | **never import watermill from workflow code** — go through the eventing abstraction (no vendor lock-in) |
 | Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.21.2** | hard pin; timers, SLA waiters, in-wait actions |

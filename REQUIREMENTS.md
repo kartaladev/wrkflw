@@ -6,7 +6,7 @@ It must adhere to BPMN semantics, expecting it could load from BPMN2 process def
 
 Use token based execution to model how the engine handle transitions between node inside a process definition. Token must be able to carry specific process instance variables, which migh be used on next node for taking decision what to do next (e.g. exclusive fork gateway decision).
 
-Use sql based database, prefer to use postgresql. Consider to cache data to prevent overloading database, choose hot path access.
+Use sql based database, prefer to use postgresql or MySQL 8.0+ (see ADR-0073). Consider to cache data to prevent overloading database, choose hot path access.
 
 For eventing system, please use watermill project (https://github.com/ThreeDotsLabs/watermill), prefer outbox publishing pattern for publishing events. But dont use this directly in workflow related code, need to define an abstraction for eventing system, so we can use other vendor code (no vendor lock in).
 
