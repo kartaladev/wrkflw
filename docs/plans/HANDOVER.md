@@ -5,8 +5,16 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (ADR-0072 Option A + MySQL backend program)
 
-> **State:** `main` HEAD `7b44f10`. Full `go test -race ./...` GREEN (zero failures), `golangci-lint run ./...` 0 issues, `go build ./...` clean. **Next free ADR: 0074.**
-> Ledger: `.superpowers/sdd/progress.md`. Plan: `docs/plans/mysql-persistence-backend.md`. Spec: `docs/specs/2026-06-28-mysql-persistence-backend-design.md`.
+> **State:** `main` HEAD `4802e37` — **pushed to `origin/main`** (in sync). Full `go test -race ./...` GREEN (zero failures), `golangci-lint run ./...` 0 issues, `go build ./...` clean, working tree clean. **Next free ADR: 0074.**
+> Ledger: `.superpowers/sdd/progress.md`. Plan: `docs/plans/mysql-persistence-backend.md`. Spec: `docs/specs/2026-06-28-mysql-persistence-backend-design.md`. Builder-sugar spec/plan: `docs/specs/2026-06-29-builder-fluent-node-methods-design.md` / `docs/plans/builder-fluent-node-methods.md`.
+>
+> **🟢 NEXT SESSION — pending pickups (all non-blocking; nothing in flight):**
+> 1. **Postgres relay `Run` ctx-cancellation bug** (clearest pickup): `internal/persistence/postgres/relay.go` `Run` loop only checks `errors.Is(err, context.Canceled)`, missing `context.DeadlineExceeded`/driver-wrapped cancels — change both guard sites to `if ctx.Err() != nil`. The MySQL relay already does this; Postgres was left untouched per the program's "don't modify postgres" constraint. Small, well-scoped fix (mirror commit `b504250`'s deterministic test approach).
+> 2. Relay span attr `wrkflw.batch_size` records published-count not claimed-count (BOTH backends — fix both or neither to avoid drift).
+> 3. MySQL minors: `TestNewMySQLLister_ListsInstances` facade test asserts `len>=2` not specific IDs; `NewMySQLAdvisoryLockOwnership` facade error path uncovered. Both trivial.
+> 4. Builder-sugar test thoroughness: `TestBuilderFluentEquivalentToAdd` covers 7 of 19 kinds via `reflect.DeepEqual` (rest kind/option-checked; bodies are identical forwarding) — optional widening.
+>
+> Everything below this State block is historical context. The two big efforts of 2026-06-29 (MySQL backend ADR-0073 + ADR-0072 Option A + builder fluent methods + README docs) are DONE & merged & pushed.
 >
 > **✅ ADR-0072 Option A (multi-replica timer failover) — MERGED.** Elector now re-arms persisted timers on leadership *acquisition* (not just startup): internal `WithOnLeadershipAcquired(func(ctx))` on the elector fires async (wg-tracked, coalesced, goleak-clean) at the leadership transition; façade `scheduling.WithOnLeadershipAcquired` threads it through `WithTimerElector`; consumers wire it to `runtime.Runner.RehydrateTimers`. ADR-0072 flipped Proposed→Accepted. Option B (DB-claim scheduler) remains the recorded future target if load-distribution is needed. No engine/model/runtime changes.
 >
