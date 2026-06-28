@@ -11,6 +11,9 @@ CREATE TABLE wrkflw_instances (
     ended_at     DATETIME(6),
     updated_at   DATETIME(6)  NOT NULL
 );
+-- MySQL does not support partial indexes, so this is a full index on status rather
+-- than the partial index used by Postgres (WHERE ended_at IS NULL). It is slightly
+-- less selective but behaviorally correct for all active-instance queries.
 CREATE INDEX wrkflw_instances_status_idx ON wrkflw_instances (status);
 
 CREATE TABLE wrkflw_journal (

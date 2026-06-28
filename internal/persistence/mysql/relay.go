@@ -154,7 +154,7 @@ func NewRelay(db *sql.DB, pub runtime.Publisher, opts ...RelayOption) *Relay {
 
 // filterRelayNilOpts returns only the non-nil observability.Option values.
 func filterRelayNilOpts(opts ...observability.Option) []observability.Option {
-	out := opts[:0]
+	out := make([]observability.Option, 0, len(opts))
 	for _, o := range opts {
 		if o != nil {
 			out = append(out, o)
