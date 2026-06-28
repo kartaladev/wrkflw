@@ -22,6 +22,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"io"
 	"log/slog"
 	"time"
 
@@ -230,11 +231,133 @@ func NewMySQLDeduper(db *sql.DB) MySQLDeduper {
 	return mysqlstore.NewDeduper(db)
 }
 
+// MySQLCallLinkOption configures a CallLinkStore returned by NewMySQLCallLinkStore.
+// It aliases the internal mysql.CallLinkOption.
+type MySQLCallLinkOption = mysqlstore.CallLinkOption
+
+// MySQLWithCallLinkLease configures opt-in lease-based multi-replica exclusivity
+// on the MySQL CallLinkStore. When ttl > 0, ClaimPending stamps claimed_at/claimed_by,
+// hiding each row from concurrent replicas until the lease expires. When ttl <= 0
+// (the default), a plain SELECT is used (backward-compatible).
+// Mirrors WithCallLinkLease for the Postgres facade.
+func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption {
+	return mysqlstore.WithCallLinkLease(owner, ttl)
+}
+
+// MySQLWithCallLinkClock sets the clock the MySQL CallLinkStore uses for lease
+// timestamps. Default: clock.System(). Inject a fake clock in tests for
+// deterministic behaviour (ADR-0003).
+// Mirrors WithCallLinkClock for the Postgres facade.
+func MySQLWithCallLinkClock(clk clock.Clock) MySQLCallLinkOption {
+	return mysqlstore.WithCallLinkClock(clk)
+}
+
+// NewMySQLCallLinkStore constructs the MySQL-backed runtime.CallLinkStore (read/claim
+// side). It provides ClaimPending, MarkNotified, LookupChild, and ListRunningChildren
+// over the wrkflw_call_links table. The write side is fused into Store.Create /
+// Store.Commit (ADR-0025); use OpenMySQL for that.
+//
+// Pass [MySQLWithCallLinkLease] and [MySQLWithCallLinkClock] to opt in to lease-based
+// multi-replica exclusivity. Existing zero-option call sites compile unchanged.
+//
+// MigrateMySQL must have been applied before the first call to any method.
+//
+// Mirrors NewCallLinkStore for the Postgres facade.
+func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) runtime.CallLinkStore {
+	return mysqlstore.NewCallLinkStore(db, opts...)
+}
+
+// NewMySQLAdvisoryLockOwnership constructs a multi-process [runtime.Ownership]
+// backed by MySQL GET_LOCK advisory locks, for use with [runtime.NewCachingStore]
+// across multiple replicas sharing one database.
+//
+// It holds a dedicated *sql.Conn for its lifetime; close the returned [io.Closer]
+// at shutdown to release every held lock and return the connection.
+//
+// Mirrors NewAdvisoryLockOwnership for the Postgres facade.
+//
+// Example:
+//
+//	db, _ := sql.Open("mysql", dsn)
+//	persistence.MigrateMySQL(ctx, db)
+//	owner, closer, _ := persistence.NewMySQLAdvisoryLockOwnership(ctx, db)
+//	defer closer.Close()
+//	store, _ := persistence.OpenMySQL(ctx, db)
+//	cachingStore := runtime.NewCachingStore(store, owner)
+func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Ownership, io.Closer, error) {
+	o, err := mysqlstore.NewAdvisoryLockOwnership(ctx, db)
+	if err != nil {
+		return nil, nil, err
+	}
+	return o, o, nil
+}
+
+// NewMySQLChainLinkStore constructs the MySQL-backed runtime.ChainLinkStore for
+// process-instance chaining lineage (ADR-0045): Record persists one
+// predecessor->successor hop; LookupBySuccessor and ListByPredecessor serve
+// ancestry/audit queries. MigrateMySQL must have been applied before the first call.
+//
+// Mirrors NewChainLinkStore for the Postgres facade.
+//
+// Example:
+//
+//	db, _ := sql.Open("mysql", dsn)
+//	persistence.MigrateMySQL(ctx, db)
+//	links := persistence.NewMySQLChainLinkStore(db)
+//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+func NewMySQLChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
+	return mysqlstore.NewChainLinkStore(db)
+}
+
+// NewMySQLLister constructs the MySQL-backed runtime.InstanceLister for
+// admin-list and monitoring use-cases. It executes a keyset-cursor-paginated
+// query over wrkflw_instances and projects only the columns in
+// runtime.InstanceSummary (no full snapshot read).
+//
+// MigrateMySQL must have been applied before the first call to List.
+//
+// Mirrors NewLister for the Postgres facade.
+//
+// Example:
+//
+//	db, _ := sql.Open("mysql", dsn)
+//	persistence.MigrateMySQL(ctx, db)
+//	lister := persistence.NewMySQLLister(db)
+//	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
+func NewMySQLLister(db *sql.DB) runtime.InstanceLister {
+	return mysqlstore.NewLister(db)
+}
+
+// NewMySQLCallNotifier builds a durable call-activity notifier over db using the
+// MySQL call-link store: it claims terminal call links and resumes parked parents
+// (SubInstanceCompleted/Failed) idempotently. Run it in a goroutine (notifier.Run)
+// or drain manually (DrainOnce).
+//
+// This is the MySQL analog of [NewCallNotifier] (the Postgres facade constructor).
+// The underlying runtime.CallNotifier is dialect-agnostic: this constructor simply
+// builds the MySQL-backed CallLinkStore and passes it to runtime.NewCallNotifier.
+// opts are forwarded to runtime.NewCallNotifier; use runtime.WithCallNotifierClock
+// to inject a fake clock in tests.
+//
+// Example:
+//
+//	db, _ := sql.Open("mysql", dsn)
+//	persistence.MigrateMySQL(ctx, db)
+//	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
+//	go notifier.Run(ctx)
+func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+	return runtime.NewCallNotifier(mysqlstore.NewCallLinkStore(db), deliver, reg, opts...)
+}
+
 // Compile-time checks: MySQL internal concrete types must satisfy the same
 // public interfaces as their Postgres analogs.
 var (
-	_ Store              = (*mysqlstore.Store)(nil)
-	_ runtime.TimerStore = (*mysqlstore.TimerStore)(nil)
-	_ Relay              = (*mysqlstore.Relay)(nil)
-	_ MySQLDeduper       = (*mysqlstore.Deduper)(nil)
+	_ Store                  = (*mysqlstore.Store)(nil)
+	_ runtime.TimerStore     = (*mysqlstore.TimerStore)(nil)
+	_ Relay                  = (*mysqlstore.Relay)(nil)
+	_ MySQLDeduper           = (*mysqlstore.Deduper)(nil)
+	_ runtime.CallLinkStore  = (*mysqlstore.CallLinkStore)(nil)
+	_ runtime.ChainLinkStore = (*mysqlstore.ChainLinkStore)(nil)
+	_ runtime.InstanceLister = (*mysqlstore.Lister)(nil)
+	_ runtime.Ownership      = (*mysqlstore.AdvisoryLockOwnership)(nil)
 )

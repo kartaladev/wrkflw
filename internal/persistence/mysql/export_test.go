@@ -172,3 +172,7 @@ func TestApplyTimerOpsDeadlockMapsToErrConcurrentUpdate(t *testing.T) {
 
 // TxWith re-exports txWith for integration tests that need a real container.
 var TxWith = txWith
+
+// HashKey re-exports the unexported hashKey helper so ownership_test.go can
+// verify the 64-char limit and stability without a real DB.
+var HashKey = hashKey
