@@ -106,6 +106,37 @@ func TestLister_KeysetPagination(t *testing.T) {
 		assert.Empty(t, p2.NextCursor)
 	})
 
+	t.Run("tie boundary same started_at distinct ids", func(t *testing.T) {
+		t.Parallel()
+		lister, store := newMySQLLister(t)
+		// Use a fixed time so all 4 instances share the SAME started_at timestamp
+		tie := time.Date(2026, 6, 28, 9, 0, 0, 0, time.UTC)
+
+		insertMySQLInstance(t, store, "tie-a", engine.StatusRunning, tie)
+		insertMySQLInstance(t, store, "tie-b", engine.StatusRunning, tie)
+		insertMySQLInstance(t, store, "tie-c", engine.StatusRunning, tie)
+		insertMySQLInstance(t, store, "tie-d", engine.StatusRunning, tie)
+
+		// Page through with pageSize=2; expect every instance exactly once, no skips/dups.
+		seen := make(map[string]int)
+		var cursor string
+		for {
+			page, err := lister.List(t.Context(), runtime.InstanceFilter{Limit: 2, Cursor: cursor})
+			require.NoError(t, err)
+			for _, it := range page.Items {
+				seen[it.InstanceID]++
+			}
+			if !page.HasMore {
+				break
+			}
+			cursor = page.NextCursor
+		}
+		assert.Len(t, seen, 4, "all 4 instances must appear across pages")
+		for id, count := range seen {
+			assert.Equal(t, 1, count, "instance %q appeared %d times (want 1)", id, count)
+		}
+	})
+
 	t.Run("default limit 50", func(t *testing.T) {
 		t.Parallel()
 		lister, store := newMySQLLister(t)

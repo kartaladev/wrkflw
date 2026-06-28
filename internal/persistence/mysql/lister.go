@@ -49,7 +49,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 		var err error
 		cursorTime, cursorID, err = runtime.DecodeCursor(filter.Cursor)
 		if err != nil {
-			return runtime.InstancePage{}, fmt.Errorf("mysql lister: decode cursor: %w", err)
+			return runtime.InstancePage{}, fmt.Errorf("workflow-persistence-mysql: lister: decode cursor: %w", err)
 		}
 		hasCursor = true
 	}
@@ -112,7 +112,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 	}
 
 	if queryErr != nil {
-		return runtime.InstancePage{}, fmt.Errorf("mysql lister: query: %w", queryErr)
+		return runtime.InstancePage{}, fmt.Errorf("workflow-persistence-mysql: lister: query: %w", queryErr)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -128,7 +128,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 			incidentCount int
 		)
 		if err := rows.Scan(&instanceID, &defID, &defVersion, &status, &startedAt, &endedAt, &incidentCount); err != nil {
-			return runtime.InstancePage{}, fmt.Errorf("mysql lister: scan: %w", err)
+			return runtime.InstancePage{}, fmt.Errorf("workflow-persistence-mysql: lister: scan: %w", err)
 		}
 		items = append(items, runtime.InstanceSummary{
 			InstanceID:    instanceID,
@@ -141,7 +141,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return runtime.InstancePage{}, fmt.Errorf("mysql lister: rows: %w", err)
+		return runtime.InstancePage{}, fmt.Errorf("workflow-persistence-mysql: lister: rows: %w", err)
 	}
 
 	hasMore := len(items) > limit
@@ -175,7 +175,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 			).Scan(&totalCount)
 		}
 		if countErr != nil {
-			return runtime.InstancePage{}, fmt.Errorf("mysql lister: count: %w", countErr)
+			return runtime.InstancePage{}, fmt.Errorf("workflow-persistence-mysql: lister: count: %w", countErr)
 		}
 		page.TotalCount = totalCount
 	}
