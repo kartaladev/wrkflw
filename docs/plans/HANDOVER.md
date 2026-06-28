@@ -20,7 +20,7 @@ and pick up the next work. Read it top to bottom before starting.
 > - `TestNewMySQLLister_ListsInstances` facade test asserts `len>=2` not specific IDs (internal Lister test is strong; facade is wiring-only).
 > - `NewMySQLAdvisoryLockOwnership` facade error path uncovered (trivial delegation).
 >
-> **Next queued work (user-requested 2026-06-28):** builder fluent per-node-type methods (`AddStartEvent`/`AddServiceTask`/`AddHumanTask`/… instead of only generic `Add`) — brainstorm → spec → plan → TDD. See memory `queued-builder-fluent-node-methods`.
+> **✅ Builder fluent per-node-type methods — DONE (merged `e4e7be5`).** 19 `AddX` methods on `model.DefinitionBuilder` (`AddStartEvent`/`AddServiceTask`/`AddUserTask`/… — named `AddUserTask` to mirror `NewUserTask`/`KindUserTask`, NOT AddHumanTask) forwarding 1:1 to `Add(NewX(...))`; generic `Add` retained; additive-only (no constructor/validation/YAML changes); `model/builder_fluent.go` 100% covered. Spec `docs/specs/2026-06-29-builder-fluent-node-methods-design.md`, plan `docs/plans/builder-fluent-node-methods.md`. Review minors (non-blocking): equivalence test covers 7 of 19 kinds via reflect.DeepEqual (rest are kind/option-checked; bodies are identical forwarding).
 
 ## ⏩ PRIOR RESUME POINT — updated 2026-06-27 (autonomous backlog-completion program)
 
