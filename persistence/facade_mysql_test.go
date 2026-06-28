@@ -365,7 +365,16 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 	lister := persistence.NewMySQLLister(db)
 	page, err := lister.List(t.Context(), runtime.InstanceFilter{})
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, len(page.Items), 2)
+	require.Len(t, page.Items, 2, "isolated DB must contain exactly the two seeded instances")
+
+	// Collect IDs into a set and assert both seeded IDs are present (order is
+	// not guaranteed — keyset pagination orders by StartedAt DESC, InstanceID DESC).
+	gotIDs := make(map[string]struct{}, len(page.Items))
+	for _, item := range page.Items {
+		gotIDs[item.InstanceID] = struct{}{}
+	}
+	assert.Contains(t, gotIDs, "lst-inst-a", "lst-inst-a must appear in the listing")
+	assert.Contains(t, gotIDs, "lst-inst-b", "lst-inst-b must appear in the listing")
 }
 
 // TestNewMySQLAdvisoryLockOwnership_AcquireAndClose verifies the facade ctor
@@ -386,6 +395,23 @@ func TestNewMySQLAdvisoryLockOwnership_AcquireAndClose(t *testing.T) {
 	// Close must release cleanly.
 	err = closer.Close()
 	require.NoError(t, err)
+}
+
+// TestNewMySQLAdvisoryLockOwnership_ClosedDBReturnsError verifies that
+// NewMySQLAdvisoryLockOwnership returns a non-nil error (and nil owner/closer)
+// when the underlying *sql.DB is closed and db.Conn fails. This covers the
+// `if err != nil { return nil, nil, err }` branch in the facade constructor.
+func TestNewMySQLAdvisoryLockOwnership_ClosedDBReturnsError(t *testing.T) {
+	t.Parallel()
+	db := database.RunTestMySQL(t)
+
+	// Close the db so db.Conn() inside mysqlstore.NewAdvisoryLockOwnership fails.
+	require.NoError(t, db.Close())
+
+	owner, closer, err := persistence.NewMySQLAdvisoryLockOwnership(t.Context(), db)
+	require.Error(t, err, "closed db must cause an error")
+	require.Nil(t, owner, "owner must be nil on error")
+	require.Nil(t, closer, "closer must be nil on error")
 }
 
 // ─── MySQL DefinitionStore Facade Tests ────────────────────────────────────

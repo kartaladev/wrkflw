@@ -1,4 +1,4 @@
-package postgres_test
+package mysql_test
 
 import (
 	"bytes"
@@ -14,21 +14,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 )
 
-// TestRelayBatchSpan verifies that DrainOnce records a "wrkflw.relay.batch" span
-// with a "wrkflw.batch_size" attribute when a TracerProvider is injected via
+// TestMySQLRelayBatchSpan verifies that DrainOnce records a "wrkflw.relay.batch"
+// span with a "wrkflw.batch_size" attribute when a TracerProvider is injected via
 // WithRelayTracerProvider.
-func TestRelayBatchSpan(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, pg.Migrate(t.Context(), pool))
+func TestMySQLRelayBatchSpan(t *testing.T) {
+	db := database.RunTestMySQL(t)
 
 	// Seed one pending outbox row so DrainOnce has something to drain.
-	_, err := pool.Exec(t.Context(),
-		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
-		 VALUES ($1, $2, $3::jsonb, $4, $5)`,
-		"obs-test-instance", "obs.event", `{"k":"v"}`, "obs-dedup-1", time.Now().UTC(),
+	now := time.Now().UTC()
+	_, err := db.ExecContext(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+		 VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
+		"mysql-obs-test-instance", "mysql.obs.event", `{"k":"v"}`, "mysql-obs-dedup-1", now, now,
 	)
 	require.NoError(t, err, "seed outbox row")
 
@@ -36,7 +36,7 @@ func TestRelayBatchSpan(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
 
 	pub := &recordingPub{}
-	relay := pg.NewRelay(pool, pub, pg.WithRelayTracerProvider(tp))
+	relay := mypkg.NewRelay(db, pub, mypkg.WithRelayTracerProvider(tp))
 
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err)
@@ -65,19 +65,19 @@ func TestRelayBatchSpan(t *testing.T) {
 	require.True(t, batchSizeFound, "expected wrkflw.batch_size attribute on the batch span")
 }
 
-// TestRelayBatchSpanReflectsClaimedNotPublished verifies that wrkflw.batch_size
+// TestMySQLRelayBatchSpanReflectsClaimedNotPublished verifies that wrkflw.batch_size
 // records the claimed count even when some rows fail to publish (poison-row
 // scenario). With 1 row claimed but 0 successfully published, batch_size must
 // still be 1 and a separate wrkflw.published_count attribute must be 0.
-func TestRelayBatchSpanReflectsClaimedNotPublished(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, pg.Migrate(t.Context(), pool))
+func TestMySQLRelayBatchSpanReflectsClaimedNotPublished(t *testing.T) {
+	db := database.RunTestMySQL(t)
 
 	// Seed one pending outbox row.
-	_, err := pool.Exec(t.Context(),
-		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
-		 VALUES ($1, $2, $3::jsonb, $4, $5)`,
-		"poison-test-instance", "poison.event", `{"p":1}`, "poison-claimed-dedup-1", time.Now().UTC(),
+	now := time.Now().UTC()
+	_, err := db.ExecContext(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+		 VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
+		"mysql-poison-test-instance", "mysql.poison.event", `{"p":1}`, "mysql-poison-claimed-dedup-1", now, now,
 	)
 	require.NoError(t, err, "seed outbox row")
 
@@ -85,7 +85,7 @@ func TestRelayBatchSpanReflectsClaimedNotPublished(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
 
 	// Use a publisher that always fails — 1 row claimed, 0 published.
-	relay := pg.NewRelay(pool, failingPub{}, pg.WithRelayTracerProvider(tp))
+	relay := mypkg.NewRelay(db, failingPub{}, mypkg.WithRelayTracerProvider(tp))
 
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err, "DrainOnce must not propagate publish failures")
@@ -117,16 +117,15 @@ func TestRelayBatchSpanReflectsClaimedNotPublished(t *testing.T) {
 		"published_count must equal the number of rows successfully published (0)")
 }
 
-// TestRelayBatchSpanEmptyOutbox verifies that DrainOnce records a
+// TestMySQLRelayBatchSpanEmptyOutbox verifies that DrainOnce records a
 // "wrkflw.relay.batch" span with batch_size=0 when the outbox is empty.
-func TestRelayBatchSpanEmptyOutbox(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, pg.Migrate(t.Context(), pool))
+func TestMySQLRelayBatchSpanEmptyOutbox(t *testing.T) {
+	db := database.RunTestMySQL(t)
 
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
 
-	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayTracerProvider(tp))
+	relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithRelayTracerProvider(tp))
 
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err)
@@ -152,24 +151,24 @@ func TestRelayBatchSpanEmptyOutbox(t *testing.T) {
 	require.True(t, batchSizeFound, "expected wrkflw.batch_size=0 attribute on empty-drain span")
 }
 
-// TestRelayWithLogger verifies that WithRelayLogger is accepted and that the
+// TestMySQLRelayWithLogger verifies that WithRelayLogger is accepted and that the
 // relay emits a debug log through the injected logger when a batch is drained.
-func TestRelayWithLogger(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, pg.Migrate(t.Context(), pool))
+func TestMySQLRelayWithLogger(t *testing.T) {
+	db := database.RunTestMySQL(t)
 
 	// Seed one row.
-	_, err := pool.Exec(t.Context(),
-		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
-		 VALUES ($1, $2, $3::jsonb, $4, $5)`,
-		"log-test-instance", "log.event", `{"x":1}`, "log-dedup-1", time.Now().UTC(),
+	now := time.Now().UTC()
+	_, err := db.ExecContext(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+		 VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
+		"mysql-log-test-instance", "mysql.log.event", `{"x":1}`, "mysql-log-dedup-1", now, now,
 	)
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayLogger(logger))
+	relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithRelayLogger(logger))
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
@@ -179,17 +178,16 @@ func TestRelayWithLogger(t *testing.T) {
 		"expected drain debug log from injected logger")
 }
 
-// TestRelayWithMeterProvider verifies that WithRelayMeterProvider is accepted
+// TestMySQLRelayWithMeterProvider verifies that WithRelayMeterProvider is accepted
 // without error and that the relay emits metric instruments driven by the
 // injected MeterProvider.
-func TestRelayWithMeterProvider(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, pg.Migrate(t.Context(), pool))
+func TestMySQLRelayWithMeterProvider(t *testing.T) {
+	db := database.RunTestMySQL(t)
 
 	mp := sdkmetric.NewMeterProvider()
 	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayMeterProvider(mp))
+	relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithRelayMeterProvider(mp))
 
 	// Drain an empty outbox — main goal is no panic and no error.
 	n, err := relay.DrainOnce(t.Context())
@@ -197,96 +195,9 @@ func TestRelayWithMeterProvider(t *testing.T) {
 	require.Equal(t, 0, n)
 }
 
-// TestRelayDrainOnceBeginTxErrorSpan verifies that a pool.Begin failure (triggered
-// by closing the pool) causes DrainOnce to record an error span with status Error
-// and return a wrapped error.
-func TestRelayDrainOnceBeginTxErrorSpan(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	// Close the pool before DrainOnce so pool.Begin will fail.
-	pool.Close()
-
-	sr := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
-
-	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayTracerProvider(tp))
-
-	_, err := relay.DrainOnce(t.Context())
-	require.Error(t, err, "DrainOnce on a closed pool must return an error")
-	require.Contains(t, err.Error(), "begin tx", "error must reference the begin-tx step")
-
-	ended := sr.Ended()
-	var batchSpan sdktrace.ReadOnlySpan
-	for _, s := range ended {
-		if s.Name() == "wrkflw.relay.batch" {
-			batchSpan = s
-			break
-		}
-	}
-	require.NotNil(t, batchSpan, "batch span must be emitted even on infra error")
-	require.Equal(t, "Error", batchSpan.Status().Code.String(),
-		"batch span must carry Error status on infra failure")
-}
-
-// TestRelayDrainOnceBeginTxErrorLog verifies that the injected logger receives
-// an error-level record when pool.Begin fails.
-func TestRelayDrainOnceBeginTxErrorLog(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	pool.Close()
-
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayLogger(logger))
-	_, err := relay.DrainOnce(t.Context())
-	require.Error(t, err)
-
-	require.Contains(t, buf.String(), "persistence: relay begin tx failed",
-		"expected begin-tx error log from injected logger")
-}
-
-// TestRelayRunInfraErrorPropagates verifies that Run propagates an infrastructure
-// error (pool closed → pool.Begin fails on the initial DrainOnce) and does NOT
-// silently swallow it.
-func TestRelayRunInfraErrorPropagates(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	pool.Close()
-
-	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithPollInterval(10*time.Millisecond))
-	err := relay.Run(t.Context())
-	require.Error(t, err, "Run must propagate an infra error from DrainOnce")
-	require.Contains(t, err.Error(), "begin tx",
-		"propagated error must reference the begin-tx failure")
-}
-
-// TestRelayListDeadLetteredClosedPoolError verifies that ListDeadLettered
-// propagates a pool-query error (triggered by closing the pool).
-func TestRelayListDeadLetteredClosedPoolError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	pool.Close()
-
-	relay := pg.NewRelay(pool, &recordingPub{})
-	_, err := relay.ListDeadLettered(t.Context(), 10)
-	require.Error(t, err, "ListDeadLettered on a closed pool must return an error")
-	require.Contains(t, err.Error(), "list dead-lettered",
-		"error must reference the list operation")
-}
-
-// TestRelayRedriveClosedPoolError verifies that Redrive propagates a pool-exec
-// error (triggered by closing the pool).
-func TestRelayRedriveClosedPoolError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	pool.Close()
-
-	relay := pg.NewRelay(pool, &recordingPub{})
-	_, err := relay.Redrive(t.Context(), 1)
-	require.Error(t, err, "Redrive on a closed pool must return an error")
-	require.Contains(t, err.Error(), "relay: redrive",
-		"error must reference the redrive operation")
-}
-
-// TestRelayEventsPublishedCounter verifies that wrkflw_relay_events_published_total
+// TestMySQLRelayEventsPublishedCounter verifies that wrkflw_relay_events_published_total
 // is incremented by exactly N when DrainOnce publishes N events.
-func TestRelayEventsPublishedCounter(t *testing.T) {
+func TestMySQLRelayEventsPublishedCounter(t *testing.T) {
 	type testCase struct {
 		name        string
 		seedRows    int
@@ -301,16 +212,16 @@ func TestRelayEventsPublishedCounter(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pool := database.RunTestDatabase(t)
-			require.NoError(t, pg.Migrate(t.Context(), pool))
+			db := database.RunTestMySQL(t)
 
 			// Seed rows into the outbox.
+			now := time.Now().UTC()
 			for i := range tc.seedRows {
-				dedup := "relay-counter-" + tc.name + "-" + string(rune('a'+i))
-				_, err := pool.Exec(t.Context(),
-					`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
-					 VALUES ($1, $2, $3::jsonb, $4, $5)`,
-					"relay-counter-instance", "relay.counter.event", `{"n":1}`, dedup, time.Now().UTC(),
+				dedup := "mysql-relay-counter-" + tc.name + "-" + string(rune('a'+i))
+				_, err := db.ExecContext(t.Context(),
+					`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+					 VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
+					"mysql-relay-counter-instance", "mysql.relay.counter.event", `{"n":1}`, dedup, now, now,
 				)
 				require.NoError(t, err, "seed outbox row")
 			}
@@ -319,7 +230,7 @@ func TestRelayEventsPublishedCounter(t *testing.T) {
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 			t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-			relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayMeterProvider(mp))
+			relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithRelayMeterProvider(mp))
 			n, err := relay.DrainOnce(t.Context())
 			require.NoError(t, err)
 			assert.Equal(t, tc.seedRows, n, "DrainOnce must return the seeded row count")
@@ -351,17 +262,17 @@ func TestRelayEventsPublishedCounter(t *testing.T) {
 	}
 }
 
-// TestRelayBatchDurationHistogram verifies that wrkflw_relay_batch_duration_seconds
+// TestMySQLRelayBatchDurationHistogram verifies that wrkflw_relay_batch_duration_seconds
 // records at least 1 observation after DrainOnce completes.
-func TestRelayBatchDurationHistogram(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	require.NoError(t, pg.Migrate(t.Context(), pool))
+func TestMySQLRelayBatchDurationHistogram(t *testing.T) {
+	db := database.RunTestMySQL(t)
 
 	// Seed one row so the drain does real work.
-	_, err := pool.Exec(t.Context(),
-		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
-		 VALUES ($1, $2, $3::jsonb, $4, $5)`,
-		"relay-hist-instance", "relay.hist.event", `{"h":1}`, "relay-hist-dedup-1", time.Now().UTC(),
+	now := time.Now().UTC()
+	_, err := db.ExecContext(t.Context(),
+		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
+		 VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
+		"mysql-relay-hist-instance", "mysql.relay.hist.event", `{"h":1}`, "mysql-relay-hist-dedup-1", now, now,
 	)
 	require.NoError(t, err)
 
@@ -369,7 +280,7 @@ func TestRelayBatchDurationHistogram(t *testing.T) {
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithRelayMeterProvider(mp))
+	relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithRelayMeterProvider(mp))
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)

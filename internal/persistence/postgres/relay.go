@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -281,7 +280,7 @@ func (r *Relay) Run(ctx context.Context) error {
 
 	// Attempt an immediate drain before waiting for the first signal.
 	if err := r.drainUntilEmpty(ctx); err != nil {
-		if errors.Is(err, context.Canceled) {
+		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return err
@@ -292,14 +291,14 @@ func (r *Relay) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := r.drainUntilEmpty(ctx); err != nil {
-				if errors.Is(err, context.Canceled) {
+				if ctx.Err() != nil {
 					return ctx.Err()
 				}
 				return err
 			}
 		case <-wake:
 			if err := r.drainUntilEmpty(ctx); err != nil {
-				if errors.Is(err, context.Canceled) {
+				if ctx.Err() != nil {
 					return ctx.Err()
 				}
 				return err
@@ -518,7 +517,10 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 		return 0, infraErr
 	}
 
-	span.SetAttributes(attribute.Int("wrkflw.batch_size", published))
+	span.SetAttributes(
+		attribute.Int("wrkflw.batch_size", len(claims)),
+		attribute.Int("wrkflw.published_count", published),
+	)
 	r.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "persistence: relay drained batch",
 		append(r.tel.LogAttrs(ctx), slog.Int("published", published))...)
 
