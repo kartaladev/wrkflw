@@ -3,7 +3,26 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-27 (autonomous backlog-completion program)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (ADR-0072 Option A + MySQL backend program)
+
+> **State:** `main` HEAD `7b44f10`. Full `go test -race ./...` GREEN (zero failures), `golangci-lint run ./...` 0 issues, `go build ./...` clean. **Next free ADR: 0074.**
+> Ledger: `.superpowers/sdd/progress.md`. Plan: `docs/plans/mysql-persistence-backend.md`. Spec: `docs/specs/2026-06-28-mysql-persistence-backend-design.md`.
+>
+> **✅ ADR-0072 Option A (multi-replica timer failover) — MERGED.** Elector now re-arms persisted timers on leadership *acquisition* (not just startup): internal `WithOnLeadershipAcquired(func(ctx))` on the elector fires async (wg-tracked, coalesced, goleak-clean) at the leadership transition; façade `scheduling.WithOnLeadershipAcquired` threads it through `WithTimerElector`; consumers wire it to `runtime.Runner.RehydrateTimers`. ADR-0072 flipped Proposed→Accepted. Option B (DB-claim scheduler) remains the recorded future target if load-distribution is needed. No engine/model/runtime changes.
+>
+> **✅ MySQL 8.0+ persistence backend (ADR-0073) — COMPLETE, all 5 phases merged.** New PARALLEL non-exported `internal/persistence/mysql/` (16 impl files) mirroring `internal/persistence/postgres/` behind the SAME `runtime.*` ports; PostgreSQL stays primary and is **provably zero-diff** (verified `git diff` over `internal/persistence/postgres/` + `internal/scheduling/gocron/elector.go`). Phase merges: P1 `b0ff42e` (deps `go-sql-driver/mysql`, goose MySQL migrations [2 files, 8 tables; journal col is `trigger_`], `database.RunTestMySQL` testcontainers helper [auto-migrates], `DBTX` seam, `Store` w/ optimistic CAS, `TimerStore`, facade `OpenMySQL`/`MigrateMySQL`/`NewMySQLTimerStore`); P2 `c3f22ec` (POLL-ONLY relay [no LISTEN/NOTIFY] + DLQ/redrive, `Deduper`, facade); P3 `47fd456` (`CallLinkStore` [SKIP LOCKED lease, no RETURNING], `Ownership` [GET_LOCK on dedicated `*sql.Conn`, SHA-256 64-char keys], `ChainLinkStore`, `Lister` [keyset + `JSON_LENGTH` incident count], facade + `NewMySQLCallNotifier`); P4 `5557e10` (`DefinitionStore` [rich polymorphic-Node JSON round-trip verified], `Pruner`, MySQL health `PingCheck`, facade); P5 `ddd24d7` (`MySQLElector` [GET_LOCK, heartbeat step-down, Option-A hook, unconditional RELEASE_ALL_LOCKS], `scheduling.WithMySQLTimerElector` [3-way mutual exclusion], `examples/mysql_wiring`). Final hygiene `7b44f10`.
+>
+> **MySQL dialect decisions (for future maintainers):** CAS via `RowsAffected()==0` + deadlock `1213`/lock-wait `1205`→`runtime.ErrConcurrentUpdate`, dup `1062`→`ErrInstanceExists`; `ON DUPLICATE KEY UPDATE` upserts; `SELECT … FOR UPDATE SKIP LOCKED` + follow-up `UPDATE` in place of `RETURNING`; `GET_LOCK`/`RELEASE_ALL_LOCKS` session locks (dedicated conn, never the pool); `JSON`/`DATETIME(6)`/`BIGINT AUTO_INCREMENT`; `LIMIT %d`-of-int (MySQL 8 rejects `?` LIMIT alongside locking clauses) — safe, int-only. `MySQLDeduper` is a SEPARATE facade interface (postgres `Deduper.Seen` takes `pgx.Tx`, incompatible with `*sql.Tx`); all other MySQL ctors return the SAME `runtime.*`/facade interface types as postgres. Facade lives in `persistence/mysql.go` (`MySQL*` ctors + `MySQLOption`/`MySQLRelayOption`/`MySQLCallLinkOption` aliases) — postgres `persistence.go` untouched. Final whole-branch opus review: READY TO MERGE, 0 Critical/Important.
+>
+> **Backlog follow-ups (Minor, non-blocking, from MySQL reviews):**
+> - **Postgres relay `Run` loop shares a latent ctx bug**: it only checks `errors.Is(err, context.Canceled)`, missing `context.DeadlineExceeded`/driver-wrapped cancels. The MySQL relay was fixed (`ctx.Err() != nil`); postgres was left untouched per the program's "don't modify postgres" constraint. **Queue a separate postgres fix.**
+> - Relay span attr `wrkflw.batch_size` records published-count not claimed-count (both backends mirror each other — fixing only mysql would create drift; fix both or neither).
+> - `TestNewMySQLLister_ListsInstances` facade test asserts `len>=2` not specific IDs (internal Lister test is strong; facade is wiring-only).
+> - `NewMySQLAdvisoryLockOwnership` facade error path uncovered (trivial delegation).
+>
+> **Next queued work (user-requested 2026-06-28):** builder fluent per-node-type methods (`AddStartEvent`/`AddServiceTask`/`AddHumanTask`/… instead of only generic `Add`) — brainstorm → spec → plan → TDD. See memory `queued-builder-fluent-node-methods`.
+
+## ⏩ PRIOR RESUME POINT — updated 2026-06-27 (autonomous backlog-completion program)
 
 > **State:** `main` HEAD `e92844f` (pushed to `origin`). Full build/vet/lint/gofmt/config-verify clean.
 > **Next free ADR: 0073.** The autonomous backlog-completion program of 2026-06-27 is **✅ COMPLETE** —
