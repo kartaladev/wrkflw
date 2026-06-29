@@ -13,7 +13,7 @@ type randJitter struct{ r *rand.Rand }
 // from two independent random uint64 values so that each call produces a
 // distinct sequence even within the same process.
 func NewJitterSource() JitterSource {
-	return randJitter{r: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))}
+	return randJitter{r: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))} //nolint:gosec // G404: retry-backoff jitter is not security-sensitive; math/rand is intentional.
 }
 
 func (j randJitter) Fraction() float64 { return j.r.Float64() }

@@ -33,6 +33,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -74,6 +75,16 @@ type BodyValidator func(ctx context.Context, body []byte, vars map[string]any) e
 // Option configures an HTTP call action.
 type Option func(*httpCall)
 
+// defaultMaxResponseSize bounds the response body (and any buffered request
+// body) read into memory, guarding against memory exhaustion from a large or
+// malicious upstream. Overridable via [WithMaxResponseSize]; a non-positive
+// value disables the bound.
+const defaultMaxResponseSize int64 = 10 << 20 // 10 MiB
+
+// ErrBodyTooLarge is returned (non-retryable) when a response or buffered
+// request body exceeds the configured maximum size.
+var ErrBodyTooLarge = errors.New("workflow-httpcall: body exceeds max size")
+
 type httpCall struct {
 	client        *http.Client
 	baseURL       string
@@ -88,6 +99,10 @@ type httpCall struct {
 	statusKey     string
 	bodyOutKey    string
 	hdrOutKey     string
+
+	// maxResponseSize bounds the response body (and buffered request body) read
+	// into memory. A non-positive value disables the bound. See [WithMaxResponseSize].
+	maxResponseSize int64
 }
 
 // WithBaseURL sets the request URL. Required unless WithURLExpr is set (an empty URL
@@ -157,13 +172,36 @@ func WithOutputKeys(status, body, headers string) Option {
 }
 
 // NewHTTPCall returns a service action that performs one HTTP request per Do.
+// WithMaxResponseSize bounds the response body (and any buffered request body)
+// read into memory, to n bytes. A non-positive n disables the bound. The
+// default is 10 MiB. A response exceeding the bound fails with a non-retryable
+// [ErrBodyTooLarge].
+func WithMaxResponseSize(n int64) Option { return func(h *httpCall) { h.maxResponseSize = n } }
+
+// readAllCapped reads r fully, but errors with [ErrBodyTooLarge] once more than
+// max bytes are available. A non-positive max disables the bound.
+func readAllCapped(r io.Reader, max int64) ([]byte, error) {
+	if max <= 0 {
+		return io.ReadAll(r)
+	}
+	b, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, ErrBodyTooLarge
+	}
+	return b, nil
+}
+
 func NewHTTPCall(opts ...Option) action.ServiceAction {
 	h := &httpCall{
-		client:     &http.Client{Timeout: 30 * time.Second},
-		headers:    http.Header{},
-		statusKey:  "httpStatus",
-		bodyOutKey: "httpBody",
-		hdrOutKey:  "httpHeaders",
+		client:          &http.Client{Timeout: 30 * time.Second},
+		headers:         http.Header{},
+		statusKey:       "httpStatus",
+		bodyOutKey:      "httpBody",
+		hdrOutKey:       "httpHeaders",
+		maxResponseSize: defaultMaxResponseSize,
 	}
 	for _, o := range opts {
 		o(h)
@@ -220,8 +258,11 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 				// Buffer so the validator can inspect the bytes, then re-wrap for sending.
 				// A non-nil reader producing zero bytes is still "body present" — the
 				// validator must see it (e.g. to enforce non-empty / required-field rules).
-				raw, err := io.ReadAll(r)
+				raw, err := readAllCapped(r, h.maxResponseSize)
 				if err != nil {
+					if errors.Is(err, ErrBodyTooLarge) {
+						return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: request body: %w", err))
+					}
 					return nil, fmt.Errorf("workflow-httpcall: read body: %w", err)
 				}
 				bodyBytes = raw // non-nil (may be empty) — signals body was produced
@@ -286,8 +327,11 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := readAllCapped(resp.Body, h.maxResponseSize)
 	if err != nil {
+		if errors.Is(err, ErrBodyTooLarge) {
+			return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: response body: %w", err))
+		}
 		return nil, fmt.Errorf("workflow-httpcall: read body: %w", err)
 	}
 	out := map[string]any{

@@ -34,11 +34,11 @@ func EncodeCursor(startedAt time.Time, instanceID string) string {
 func DecodeCursor(cursor string) (time.Time, string, error) {
 	raw, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
-		return time.Time{}, "", fmt.Errorf("%w: %v", ErrBadCursor, err)
+		return time.Time{}, "", fmt.Errorf("%w: %w", ErrBadCursor, err)
 	}
 	var p cursorPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return time.Time{}, "", fmt.Errorf("%w: %v", ErrBadCursor, err)
+		return time.Time{}, "", fmt.Errorf("%w: %w", ErrBadCursor, err)
 	}
 	return p.StartedAt, p.InstanceID, nil
 }

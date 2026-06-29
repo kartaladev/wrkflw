@@ -171,7 +171,7 @@ func (e *Evaluator) EvalDuration(code string, env map[string]any) (time.Duration
 	case int64:
 		return time.Duration(v) * time.Second, nil
 	case uint:
-		return time.Duration(v) * time.Second, nil
+		return time.Duration(v) * time.Second, nil //nolint:gosec // G115: duration seconds from a process variable; magnitudes near math.MaxInt64 (>292y) are not a real threat and a non-positive duration fires immediately.
 	case uint8:
 		return time.Duration(v) * time.Second, nil
 	case uint16:
@@ -179,7 +179,7 @@ func (e *Evaluator) EvalDuration(code string, env map[string]any) (time.Duration
 	case uint32:
 		return time.Duration(v) * time.Second, nil
 	case uint64:
-		return time.Duration(v) * time.Second, nil
+		return time.Duration(v) * time.Second, nil //nolint:gosec // G115: duration seconds from a process variable; magnitudes near math.MaxInt64 (>292y) are not a real threat and a non-positive duration fires immediately.
 	case float64:
 		return time.Duration(v * float64(time.Second)), nil
 	case string:
