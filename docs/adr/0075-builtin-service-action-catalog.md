@@ -1,8 +1,8 @@
 # 0075. Built-in service-action catalog
 
 Status: **Accepted — 2026-06-29.**
-Design doc: `docs/specs/2026-06-29-builtin-service-action-catalog-design.md`.
-Plan: `docs/plans/builtin-service-action-catalog.md`.
+Design doc: `docs/specs/2026-06-29-builtin-actions-design.md`.
+Plan: `docs/plans/2026-06-29-builtin-actions.md`.
 Relates to: ADR-0063 (definition-scoped action catalog), ADR-0074 (retryable-action error contract).
 
 ## Context
@@ -15,37 +15,35 @@ The engine core deliberately stays transport-agnostic and avoids pulling in heav
 
 Ship four public `action/*` subpackages, each providing a configured constructor that returns a `action.ServiceAction`:
 
-1. **`action/httpcall`** — `NewHTTPCall(opts...HTTPCallOption) ServiceAction`
+1. **`action/httpcall`** — `NewHTTPCall(opts ...httpcall.Option) action.ServiceAction`
    - Sends HTTP requests using stdlib `net/http`.
-   - Per-call configuration via options: base URL, method, headers, query/form data, body, TLS client cert (optional).
-   - Values interpolated from process/token variables using key-mapped expressions (`expr-lang` for scalar values; URL from `WithURLExpr` option).
-   - Implements `Retryabler` (ADR-0074): HTTP 4xx (except 408/429) and 5xx (except 503/504) are non-retryable; connection errors and timeouts are retryable.
-   - Response status and body available to downstream nodes via token variables (configurable key mapping).
+   - Per-call configuration via options: `WithBaseURL`, `WithMethod`, `WithHeader`, `WithBodyKey`, `WithHTTPClient` (the tracing/customization seam), `WithOutputKeys`.
+   - The request URL may be computed from instance variables with `WithURLExpr` (an `expr-lang` expression evaluated at execution time); the JSON request body is read from a designated input-variable key.
+   - Retry classification per ADR-0074: HTTP 4xx **except 408 and 429** are non-retryable (`action.NonRetryable`); 408, 429, all 5xx, and transport/timeout errors are retryable.
+   - Response status, decoded body, and headers are written back to instance variables via configurable output keys (`httpStatus`/`httpBody`/`httpHeaders` by default).
 
-2. **`action/email`** — `NewEmail(opts...EmailOption) ServiceAction`
+2. **`action/email`** — `NewEmail(opts ...email.Option) action.ServiceAction`
    - Sends email via stdlib `net/smtp`.
-   - Per-call configuration: recipient/sender (interpolated), subject, body template.
-   - Body rendered via `text/template`, allowing structured token-variable substitution.
-   - Pluggable `Sender` seam (`DefaultSMTPSender` implementation; tests use in-memory stubs).
-   - Implements `Retryabler`: permanent SMTP errors (5xx except 421) are non-retryable.
+   - Per-call configuration: SMTP address, auth, from, recipients, subject and body templates, HTML toggle.
+   - Subject and body are rendered via `text/template` (`missingkey=error`) over the instance variables.
+   - Pluggable sender seam: an unexported `sender` interface with a default `smtp.SendMail`-backed implementation; tests inject a fake via the exported `SenderFunc` adapter and `WithSender`. `WithTLS`/`WithStartTLS` are informational no-ops — TLS transport is wired by supplying a custom `SenderFunc`.
+   - Retry classification: template/render errors are non-retryable (`action.NonRetryable`); send-level (SMTP/transport) errors are retryable.
 
-3. **`action/transform`** — `NewTransform(opts...TransformOption) ServiceAction`
-   - Transforms and enriches token variables using `expr-lang` expressions.
-   - Per-call configuration: key-mapped expressions to compute new/updated variables (result stored back in token).
-   - Pure computation; non-blocking; always succeeds (syntax errors caught at definition parse time).
+3. **`action/transform`** — `NewTransform(opts ...transform.Option) (action.ServiceAction, error)`
+   - Computes output variables from `expr-lang` expressions evaluated against the input variables (`Set(outKey, expr)`); later expressions may reference earlier outputs.
+   - Pure computation, no I/O. Expressions are compiled eagerly, so a malformed expression fails `NewTransform` at wiring time; a runtime evaluation error (e.g. a missing variable) surfaces from `Do`.
    - Replaces ad-hoc inline closures for simple data manipulation.
 
-4. **`action/logaction`** — `NewLog(opts...LogOption) ServiceAction`
-   - Logs structured messages via stdlib `slog`.
-   - Per-call configuration: log level, message template, key-mapped expressions for structured fields.
-   - Non-blocking; always succeeds.
+4. **`action/logaction`** — `NewLog(opts ...logaction.Option) action.ServiceAction`
+   - Emits one structured `slog` record of selected instance variables (`WithLogger`/`WithLevel`/`WithMessage`/`WithKeys`).
+   - Pass-through: returns the input variables unchanged and never errors, making it safe on any path (including fire-and-forget).
    - Aids observability and debugging during process execution.
 
 **Deferred (documented, not shipped):** Slack/Teams/webhook (thin HTTP wrappers over httpcall), shell-exec (security concerns, non-portable), standalone delay/publish (engine timers + outbox SendTask already cover these).
 
 **Tech-stack impact:** The `go.mod` file gains one new **test-only** dependency (`mailpit` container for email integration tests); all action implementations use only the standard library and the already-present `expr-lang/expr`.
 
-**Public surface:** Constructors and option functions live in the `action/<subpackage>` namespace, consistent with the definition-scoped catalog pattern (ADR-0063). Examples in `examples/` demonstrate wiring these actions into a process definition.
+**Public surface:** Constructors and option functions live in the `action/<subpackage>` namespace, consistent with the definition-scoped catalog pattern (ADR-0063). Each subpackage ships a testable `Example`; `examples/` reference wiring for these actions is a documented follow-up, not part of this change.
 
 ## Consequences
 
