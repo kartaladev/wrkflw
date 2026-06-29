@@ -135,6 +135,24 @@ func NewHandler(svc service.Service, opts ...Option) http.Handler {
 			cfg.adminMiddleware(http.HandlerFunc(h.handleRemoveRoleBinding)))
 	}
 
+	// Relay-stats route is registered only when a RelayStatsAdmin is wired.
+	if cfg.relayStats != nil {
+		mux.Handle("GET /admin/relay-stats",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleAdminRelayStats)))
+	}
+
+	// Timer admin route is registered only when a TimerAdmin is wired.
+	if cfg.timerAdmin != nil {
+		mux.Handle("GET /admin/timers",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleAdminTimers)))
+	}
+
+	// Lineage route is registered only when a LineageAdmin is wired.
+	if cfg.lineageAdmin != nil {
+		mux.Handle("GET /admin/instances/{id}/lineage",
+			cfg.adminMiddleware(http.HandlerFunc(h.handleAdminInstanceLineage)))
+	}
+
 	return h.traceMiddleware(mux)
 }
 

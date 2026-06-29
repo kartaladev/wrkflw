@@ -29,6 +29,7 @@ type deadLetterView struct {
 	Topic      string    `json:"topic"`
 	RetryCount int       `json:"retry_count"`
 	LastError  string    `json:"last_error"`
+	Category   string    `json:"category"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 

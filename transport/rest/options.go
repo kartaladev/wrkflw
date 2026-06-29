@@ -26,6 +26,15 @@ type config struct {
 	// policyAdmin, when non-nil, enables the policy-admin routes.
 	policyAdmin service.PolicyAdmin
 
+	// relayStats, when non-nil, enables GET /admin/relay-stats.
+	relayStats service.RelayStatsAdmin
+
+	// timerAdmin, when non-nil, enables GET /admin/timers.
+	timerAdmin service.TimerAdmin
+
+	// lineageAdmin, when non-nil, enables GET /admin/instances/{id}/lineage.
+	lineageAdmin service.LineageAdmin
+
 	// observability options — nil entries are filtered out before calling observability.New.
 	logOpt observability.Option
 	tpOpt  observability.Option
@@ -140,4 +149,49 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 // A nil value is ignored and the OTel global provider is used.
 func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(c *config) { c.mpOpt = observability.WithMeterProvider(mp) }
+}
+
+// WithRelayStatsAdmin enables GET /admin/relay-stats by supplying a
+// [service.RelayStatsAdmin] (e.g. the Postgres Relay). When this option is NOT
+// supplied the route is not registered (a request returns 404). The route sits
+// behind the configured admin middleware (default-deny).
+//
+// Panics immediately if rsa is nil.
+func WithRelayStatsAdmin(rsa service.RelayStatsAdmin) Option {
+	if rsa == nil {
+		panic("rest: WithRelayStatsAdmin: rsa must not be nil")
+	}
+	return func(c *config) {
+		c.relayStats = rsa
+	}
+}
+
+// WithTimerAdmin enables GET /admin/timers by supplying a [service.TimerAdmin]
+// (e.g. the Postgres TimerStore). When this option is NOT supplied the route is
+// not registered (a request returns 404). The route sits behind the configured
+// admin middleware (default-deny).
+//
+// Panics immediately if ta is nil.
+func WithTimerAdmin(ta service.TimerAdmin) Option {
+	if ta == nil {
+		panic("rest: WithTimerAdmin: ta must not be nil")
+	}
+	return func(c *config) {
+		c.timerAdmin = ta
+	}
+}
+
+// WithLineageAdmin enables GET /admin/instances/{id}/lineage by supplying a
+// [service.LineageAdmin] (e.g. *runtime.LineageReader). When this option is NOT
+// supplied the route is not registered (a request returns 404). The route sits
+// behind the configured admin middleware (default-deny).
+//
+// Panics immediately if la is nil.
+func WithLineageAdmin(la service.LineageAdmin) Option {
+	if la == nil {
+		panic("rest: WithLineageAdmin: la must not be nil")
+	}
+	return func(c *config) {
+		c.lineageAdmin = la
+	}
 }
