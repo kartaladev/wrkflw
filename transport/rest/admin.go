@@ -443,5 +443,5 @@ func (h *handler) handleAdminInstanceLineage(w http.ResponseWriter, r *http.Requ
 		WriteHTTPError(w, err)
 		return
 	}
-	h.writeJSON(w, r, http.StatusOK, lineage)
+	h.writeJSON(w, r, http.StatusOK, newLineageView(lineage))
 }

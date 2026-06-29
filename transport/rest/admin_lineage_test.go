@@ -64,18 +64,33 @@ func TestAdminInstanceLineage(t *testing.T) {
 			wantCode: http.StatusOK,
 			check: func(t *testing.T, body map[string]any) {
 				t.Helper()
-				assert.Equal(t, "test-inst-1", body["InstanceID"])
-				parent, ok := body["CallParent"].(map[string]any)
-				require.True(t, ok, "CallParent must be an object, got %T", body["CallParent"])
-				assert.Equal(t, "parent-inst", parent["InstanceID"])
-				assert.Equal(t, "parent-def", parent["DefID"])
+				// Top-level instance_id (snake_case).
+				assert.Equal(t, "test-inst-1", body["instance_id"])
 
-				children, ok := body["CallChildren"].([]any)
-				require.True(t, ok, "CallChildren must be a list")
+				// call_parent must be an object with snake_case keys.
+				parent, ok := body["call_parent"].(map[string]any)
+				require.True(t, ok, "call_parent must be an object, got %T", body["call_parent"])
+				assert.Equal(t, "parent-inst", parent["instance_id"])
+				assert.Equal(t, "parent-def", parent["def_id"])
+				assert.Equal(t, float64(1), parent["def_version"])
+				assert.Equal(t, float64(0), parent["depth"])
+
+				// call_children must be a non-null array (even when empty in other cases).
+				children, ok := body["call_children"].([]any)
+				require.True(t, ok, "call_children must be a list")
 				require.Len(t, children, 1)
 				child, ok := children[0].(map[string]any)
 				require.True(t, ok)
-				assert.Equal(t, "child-inst", child["InstanceID"])
+				assert.Equal(t, "child-inst", child["instance_id"])
+
+				// chain_predecessor must be absent (nil → omitempty).
+				_, hasPred := body["chain_predecessor"]
+				assert.False(t, hasPred, "chain_predecessor must be absent when nil")
+
+				// chain_successors must be an empty array (not null).
+				successors, ok := body["chain_successors"].([]any)
+				require.True(t, ok, "chain_successors must be a list (never null)")
+				assert.Empty(t, successors)
 			},
 		},
 	}
