@@ -18,6 +18,7 @@ Ship four public `action/*` subpackages, each providing a configured constructor
 1. **`action/httpcall`** — `NewHTTPCall(opts ...httpcall.Option) action.ServiceAction`
    - Sends HTTP requests using stdlib `net/http`.
    - Per-call configuration via options: `WithBaseURL`, `WithMethod`, `WithHeader`, `WithBodyKey`, `WithHTTPClient` (the tracing/customization seam), `WithOutputKeys`.
+   - **Programmatic, I/O-capable hooks:** `WithHeaderFunc(func(ctx, http.Header, vars) error)` sets headers at send time (e.g. fetch/sign an auth token; applied after static headers so it can override); `WithBodyFunc(func(ctx, vars) (io.Reader, error))` builds the body from context with I/O (takes precedence over `WithBodyKey`); `WithBodyValidator(func(ctx, []byte, vars map[string]any) error)` validates the request body (with the process variables available) before sending and blocks the send on failure (non-retryable). The validator is **dependency-free** — consumers plug in JSON-schema validation (or any check) with their own library; a streaming `WithBodyFunc` body is buffered into memory only when a validator is set.
    - The request URL may be computed from instance variables with `WithURLExpr` (an `expr-lang` expression evaluated at execution time); the JSON request body is read from a designated input-variable key.
    - Retry classification per ADR-0074: HTTP 4xx **except 408 and 429** are non-retryable (`action.NonRetryable`); 408, 429, all 5xx, and transport/timeout errors are retryable.
    - Response status, decoded body, and headers are written back to instance variables via configurable output keys (`httpStatus`/`httpBody`/`httpHeaders` by default).
@@ -45,6 +46,8 @@ Ship four public `action/*` subpackages, each providing a configured constructor
 **Tech-stack impact:** The `go.mod` file gains one new **test-only** dependency (`mailpit` container for email integration tests); all action implementations use only the standard library and the already-present `expr-lang/expr`.
 
 **Public surface:** Constructors and option functions live in the `action/<subpackage>` namespace, consistent with the definition-scoped catalog pattern (ADR-0063). Each subpackage ships a testable `Example`, and `examples/builtin_actions/` is a runnable reference wiring of all four actions end-to-end.
+
+**Catalog registration:** the `action` package separates the read side (`Catalog.Resolve`) from a write side (`Registrar.Register`/`RegisterFunc`). Alongside the static `MapCatalog`, a thread-safe `Registry` (`NewRegistry`) implements both, allowing actions to be registered **after** catalog construction (sentinel errors `ErrEmptyActionName`/`ErrNilAction`/`ErrActionExists`; duplicate registration retains the first; `MustRegister`/`MustRegisterFunc` panic variants for static wiring). The catalog types live in `action/catalog.go`.
 
 ## Consequences
 
