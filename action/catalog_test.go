@@ -177,7 +177,8 @@ func TestRegistry_Concurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			name := "action-" + string(rune('A'+i%26)) + "-" + string(rune('0'+i%10))
-			// Ignore duplicate errors — concurrent writers may collide.
+			// Each goroutine index produces a unique name, so no duplicate errors are
+			// expected; errors are discarded only to keep the goroutine concise.
 			_ = r.Register(name, action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 				return nil, nil
 			}))

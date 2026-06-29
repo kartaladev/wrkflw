@@ -86,10 +86,10 @@ func NewRegistry() *Registry {
 // The first successful registration is always retained on duplicate attempts.
 func (r *Registry) Register(name string, a ServiceAction) error {
 	if name == "" {
-		return fmt.Errorf("%w", ErrEmptyActionName)
+		return ErrEmptyActionName
 	}
 	if a == nil {
-		return fmt.Errorf("%w", ErrNilAction)
+		return ErrNilAction
 	}
 
 	r.mu.Lock()
@@ -110,7 +110,7 @@ func (r *Registry) RegisterFunc(
 	fn func(context.Context, map[string]any) (map[string]any, error),
 ) error {
 	if fn == nil {
-		return fmt.Errorf("%w", ErrNilAction)
+		return ErrNilAction
 	}
 	return r.Register(name, Func(fn))
 }

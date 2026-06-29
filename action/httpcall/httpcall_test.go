@@ -616,6 +616,93 @@ func TestWithBodyValidator_FailsBlocksSend(t *testing.T) {
 	}
 }
 
+// TestHeaderFuncContentTypePrecedenceOverAutoJSON verifies that on the bodyKey path
+// (where auto Content-Type: application/json would normally be set), a WithHeaderFunc
+// that sets Content-Type to a non-JSON value wins — the server receives that value,
+// NOT "application/json".
+func TestHeaderFuncContentTypePrecedenceOverAutoJSON(t *testing.T) {
+	var gotCT string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithBodyKey("payload"), // triggers auto-JSON CT path
+		httpcall.WithHeaderFunc(func(_ context.Context, h http.Header, _ map[string]any) error {
+			h.Set("Content-Type", "application/x-ndjson") // override before auto-CT runs
+			return nil
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{"payload": map[string]any{"k": "v"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotCT != "application/x-ndjson" {
+		t.Fatalf("Content-Type = %q, want %q (HeaderFunc must win over auto-JSON CT)", gotCT, "application/x-ndjson")
+	}
+}
+
+// TestWithBodyValidator_EmptyBodyFuncBodyIsValidated verifies that a BodyFunc that
+// returns a non-nil but zero-length reader is treated as "body present" and the
+// validator IS invoked (allowing a "non-empty required" assertion to fire). The
+// server must NOT be hit when validation fails.
+func TestWithBodyValidator_EmptyBodyFuncBodyIsValidated(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
+			return strings.NewReader(""), nil // non-nil reader, zero bytes
+		}),
+		httpcall.WithBodyValidator(func(_ context.Context, body []byte) error {
+			if len(body) == 0 {
+				return fmt.Errorf("body must not be empty")
+			}
+			return nil
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected validation error for empty body, got nil")
+	}
+	if action.IsRetryable(err) {
+		t.Fatal("body validation error must be non-retryable")
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("server must NOT be hit when validation fails, got %d hits", hits.Load())
+	}
+}
+
+// TestWithBodyValidator_NoBodySkipsValidator verifies that when there is no body
+// source at all (GET with no bodyKey/BodyFunc), a validator that always errors is
+// NOT called — Do succeeds with the server's 200 response.
+func TestWithBodyValidator_NoBodySkipsValidator(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithMethod(http.MethodGet),
+		httpcall.WithBodyValidator(func(_ context.Context, _ []byte) error {
+			return fmt.Errorf("validator must not be called for no-body request")
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v (validator must not be called when there is no body)", err)
+	}
+}
+
 // TestWithBodyValidator_WithBodyFunc_BuffersAndSendsCorrectly verifies that when a
 // BodyValidator is combined with a BodyFunc, the validator receives the func's bytes
 // and the server also receives the exact same body (buffering preserves the body).

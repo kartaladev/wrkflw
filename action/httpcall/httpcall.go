@@ -212,11 +212,13 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 		if r != nil {
 			if h.bodyValidator != nil {
 				// Buffer so the validator can inspect the bytes, then re-wrap for sending.
+				// A non-nil reader producing zero bytes is still "body present" — the
+				// validator must see it (e.g. to enforce non-empty / required-field rules).
 				raw, err := io.ReadAll(r)
 				if err != nil {
 					return nil, fmt.Errorf("workflow-httpcall: read body: %w", err)
 				}
-				bodyBytes = raw
+				bodyBytes = raw // non-nil (may be empty) — signals body was produced
 				bodyReader = bytes.NewReader(raw)
 			} else {
 				// No validator: stream directly — no buffering.
@@ -237,7 +239,10 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 	}
 
 	// 4. Validate body before sending (only when body is present and validator set).
-	if h.bodyValidator != nil && len(bodyBytes) > 0 {
+	// Gate on bodyBytes != nil, not len > 0: a non-nil BodyFunc returning zero bytes
+	// is "body present" and the validator must run (e.g. to catch empty-body errors).
+	// A nil bodyBytes means no body source was configured at all — skip validation.
+	if h.bodyValidator != nil && bodyBytes != nil {
 		if err := h.bodyValidator(ctx, bodyBytes); err != nil {
 			return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: body validation: %w", err))
 		}
