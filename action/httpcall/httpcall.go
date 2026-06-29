@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/vm"
 	"github.com/zakyalvan/krtlwrkflw/action"
 )
 
@@ -21,18 +23,35 @@ import (
 type Option func(*httpCall)
 
 type httpCall struct {
-	client     *http.Client
-	baseURL    string
-	method     string
-	headers    http.Header
-	bodyKey    string
-	statusKey  string
-	bodyOutKey string
-	hdrOutKey  string
+	client      *http.Client
+	baseURL     string
+	urlExprProg *vm.Program
+	urlExprErr  error
+	method      string
+	headers     http.Header
+	bodyKey     string
+	statusKey   string
+	bodyOutKey  string
+	hdrOutKey   string
 }
 
-// WithBaseURL sets the request URL. Required (an empty URL yields a non-retryable error).
+// WithBaseURL sets the request URL. Required unless WithURLExpr is set (an empty URL
+// with no URL expression yields a non-retryable error).
 func WithBaseURL(u string) Option { return func(h *httpCall) { h.baseURL = u } }
+
+// WithURLExpr sets an expr-lang expression that, evaluated against the input variable
+// map at Do time, yields the request URL string. When set, it takes precedence over
+// WithBaseURL. A compile error is deferred to Do and returned as a non-retryable error.
+func WithURLExpr(exprStr string) Option {
+	return func(h *httpCall) {
+		prog, err := expr.Compile(exprStr)
+		if err != nil {
+			h.urlExprErr = fmt.Errorf("workflow-httpcall: compile url expr: %w", err)
+			return
+		}
+		h.urlExprProg = prog
+	}
+}
 
 // WithMethod sets the HTTP method. Default: POST when a body key is configured, else GET.
 func WithMethod(m string) Option { return func(h *httpCall) { h.method = m } }
@@ -69,9 +88,26 @@ func NewHTTPCall(opts ...Option) action.ServiceAction {
 }
 
 func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, error) {
-	if h.baseURL == "" {
+	// Resolve request URL: url expr takes precedence over baseURL.
+	requestURL := h.baseURL
+	if h.urlExprErr != nil {
+		return nil, action.NonRetryable(h.urlExprErr)
+	}
+	if h.urlExprProg != nil {
+		result, err := expr.Run(h.urlExprProg, in)
+		if err != nil {
+			return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: eval url expr: %w", err))
+		}
+		s, ok := result.(string)
+		if !ok {
+			return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: eval url expr: result is %T, want string", result))
+		}
+		requestURL = s
+	}
+	if requestURL == "" {
 		return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: no base URL configured"))
 	}
+
 	method := h.method
 	if method == "" {
 		if h.bodyKey != "" {
@@ -92,7 +128,7 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, h.baseURL, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, bodyReader)
 	if err != nil {
 		return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: build request: %w", err))
 	}
@@ -112,7 +148,10 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-httpcall: read body: %w", err)
+	}
 	out := map[string]any{
 		h.statusKey:  resp.StatusCode,
 		h.bodyOutKey: decodeBody(resp.Header.Get("Content-Type"), raw),
@@ -120,7 +159,7 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 	}
 
 	if resp.StatusCode >= 400 {
-		err := fmt.Errorf("workflow-httpcall: %s %s -> %d", method, h.baseURL, resp.StatusCode)
+		err := fmt.Errorf("workflow-httpcall: %s %s -> %d", method, requestURL, resp.StatusCode)
 		if resp.StatusCode != http.StatusRequestTimeout &&
 			resp.StatusCode != http.StatusTooManyRequests &&
 			resp.StatusCode < 500 {
@@ -144,6 +183,8 @@ func decodeBody(contentType string, raw []byte) any {
 	return string(raw)
 }
 
+// flattenHeaders converts a multi-value header map to a single-value map.
+// Multi-value headers are collapsed to their first value (map[string]string limitation).
 func flattenHeaders(h http.Header) map[string]string {
 	out := make(map[string]string, len(h))
 	for k := range h {

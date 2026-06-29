@@ -209,13 +209,83 @@ func TestHTTPCall(t *testing.T) {
 				}
 			},
 		},
+		"WithURLExpr builds URL from input variable": {
+			func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/ping" {
+					w.WriteHeader(404)
+					return
+				}
+				w.WriteHeader(200)
+			},
+			func(base string) []httpcall.Option {
+				return []httpcall.Option{
+					httpcall.WithURLExpr(`srvURL + "/ping"`),
+					httpcall.WithMethod(http.MethodGet),
+				}
+			},
+			// srvURL is injected per-test below (see override loop)
+			map[string]any{},
+			func(t *testing.T, out map[string]any, err error) {
+				if err != nil {
+					t.Fatalf("err = %v", err)
+				}
+				if out["httpStatus"] != 200 {
+					t.Fatalf("status = %v, want 200", out["httpStatus"])
+				}
+			},
+		},
+		"WithURLExpr bad expression yields non-retryable error at Do": {
+			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) },
+			func(_ string) []httpcall.Option {
+				return []httpcall.Option{
+					httpcall.WithURLExpr(`!!! not an expr`),
+					httpcall.WithMethod(http.MethodGet),
+				}
+			},
+			map[string]any{},
+			func(t *testing.T, _ map[string]any, err error) {
+				if err == nil {
+					t.Fatal("expected error for bad url expr")
+				}
+				if action.IsRetryable(err) {
+					t.Fatal("bad url expr should be non-retryable")
+				}
+			},
+		},
+		"WithURLExpr non-string result yields non-retryable error": {
+			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) },
+			func(_ string) []httpcall.Option {
+				return []httpcall.Option{
+					httpcall.WithURLExpr(`42`),
+					httpcall.WithMethod(http.MethodGet),
+				}
+			},
+			map[string]any{},
+			func(t *testing.T, _ map[string]any, err error) {
+				if err == nil {
+					t.Fatal("expected error for non-string url expr result")
+				}
+				if action.IsRetryable(err) {
+					t.Fatal("non-string url expr result should be non-retryable")
+				}
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewServer(tc.handler)
 			defer srv.Close()
+			in := tc.in
+			// Inject the test server URL for WithURLExpr cases that need it.
+			if _, needsSrv := in["srvURL"]; !needsSrv {
+				in = make(map[string]any, len(tc.in)+1)
+				for k, v := range tc.in {
+					in[k] = v
+				}
+				in["srvURL"] = srv.URL
+			}
 			a := httpcall.NewHTTPCall(tc.opts(srv.URL)...)
-			out, err := a.Do(t.Context(), tc.in)
+			out, err := a.Do(t.Context(), in)
 			tc.assert(t, out, err)
 		})
 	}
