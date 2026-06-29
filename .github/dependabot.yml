@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      otel:
+        patterns:
+          - "go.opentelemetry.io/*"
+      grpc-protobuf:
+        patterns:
+          - "google.golang.org/grpc"
+          - "google.golang.org/protobuf"
+          - "google.golang.org/genproto*"
+    ignore:
+      # gocron is HARD-PINNED to v2.21.2 per CLAUDE.md / ADR — do not let
+      # Dependabot bump it. Remove this entry only via an ADR.
+      - dependency-name: "github.com/go-co-op/gocron/v2"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"
