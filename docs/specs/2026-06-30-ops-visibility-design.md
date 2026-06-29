@@ -20,10 +20,8 @@ is the DLQ?", "what timers are armed?", or "which actions are failing?" without 
 3. **Admin endpoints** — relay-stats, timers, DLQ failure categorization (REST + gRPC).
 4. **Dashboards / alerts / runbooks** — shipped reference artifacts.
 
-**Deferred (flagged for confirmation):** **parent-child instance lineage** endpoints. Lineage needs new
-query methods on the chain-link and call-link stores (ancestry traversal) and is a self-contained
-sub-project; folding it in roughly doubles the transport surface. Recommend a follow-on track. The rest
-of P1-A is delivered here.
+5. **Instance lineage** — parent-child (call-activity) + predecessor-successor (chaining) relations
+   (maintainer-confirmed: included in this track).
 
 ## Design
 
@@ -140,6 +138,41 @@ errors via the existing `WriteHTTPError` / `mapToGRPCStatus`.
 - `docs/observability.md` — index: every metric name + type + labels, the collector wiring snippet, the
   health-probe recipe, and a pointer to the dashboards/runbooks.
 
+### 6. Instance lineage
+
+Single-hop direct relations (non-recursive; the response gives ids the operator can follow). Both
+tables are already indexed for the reverse lookup (`wrkflw_chain_links_successor_idx`; call-links by PK
+child + a `parent_instance_id` scan).
+
+New value types (`runtime`):
+
+```go
+type CallLinkRef  struct { InstanceID, DefID string; DefVersion int; Status string; Depth int }
+type ChainLinkRef struct { InstanceID, DefinitionRef, Outcome string }
+type InstanceLineage struct {
+    InstanceID       string
+    CallParent       *CallLinkRef   // the instance that called this (nil if top-level)
+    CallChildren     []CallLinkRef  // instances this one called (call activity)
+    ChainPredecessor *ChainLinkRef  // the instance that chained into this (nil if none)
+    ChainSuccessors  []ChainLinkRef // instances chained from this on terminal outcome
+}
+```
+
+New read methods on the existing stores (both backends + the Mem impls):
+- `CallLinkStore.ParentOf(ctx, childID) (*runtime.CallLink, error)` — `WHERE child_instance_id=$1` (PK).
+- `CallLinkStore.ChildrenOf(ctx, parentID) ([]runtime.CallLink, error)` — `WHERE parent_instance_id=$1`.
+- `ChainLinkStore.PredecessorOf(ctx, successorID) (*runtime.ChainLink, error)` — `WHERE successor_instance_id=$1` (indexed).
+- `ChainLinkStore.SuccessorsOf(ctx, predecessorID) ([]runtime.ChainLink, error)` — `WHERE predecessor_instance_id=$1` (PK prefix).
+  A missing single row returns `(nil, nil)` — absence is not an error.
+
+Assembler: `runtime.NewLineageReader(calls CallLinkStore, chains ChainLinkStore)` with
+`Lineage(ctx, instanceID) (InstanceLineage, error)` composing the four reads. Service port
+`service.LineageAdmin` satisfied by it.
+
+**REST:** `GET /admin/instances/{id}/lineage` → `InstanceLineage` JSON (behind `adminMiddleware`,
+registered only when the port is wired). **gRPC:** `GetInstanceLineage(GetInstanceLineageRequest{instance_id})
+returns (InstanceLineage)` with the mirrored proto messages.
+
 ## Testing
 
 - **Stats methods:** testcontainers (postgres + mysql via `RunTestDatabase`/`RunTestMySQL`) — seed
@@ -150,13 +183,16 @@ errors via the existing `WriteHTTPError` / `mapToGRPCStatus`.
   right labels; a fired timer increments `wrkflw_timer_fired_total` (assert via a manual reader).
 - **Health probe:** table test — under/over each threshold; disabled (0) never fails; ctx honoured.
 - **DLQ categorization:** table test over representative `lastError` strings → expected category.
+- **Lineage:** store reads (testcontainers, both backends + Mem) — seed call-links + chain-links, assert
+  ParentOf/ChildrenOf/PredecessorOf/SuccessorsOf; absent relation → `(nil, nil)`. Assembler composes them.
 - **Admin endpoints:** REST httptest + gRPC bufconn, default-deny enforced, JSON/proto shapes, error mapping.
 - Full `go test -race ./...` green; touched packages ≥ 85%; engine/model zero-diff; `golangci-lint` clean
   (incl. the gosec/bodyclose/errorlint added in ADR-0077 — new SQL uses `$n`/`?` placeholders only).
 
 ## Out of scope / deferred
 
-- **Parent-child instance lineage** endpoints (own follow-on track — needs chain/call-link ancestry queries).
+- **Recursive/full ancestry trees** — lineage is single-hop (direct relations only); multi-level
+  traversal is a future enhancement.
 - Per-tenant metric labels (single-tenant; ADR notes it).
 - A scheduler/leadership health probe (documented recipe, not a shipped type).
 - Pushing metrics (the library exposes OTel instruments; the consumer owns the exporter/scrape endpoint).
