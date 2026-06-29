@@ -30,16 +30,23 @@ type pgWatcher struct {
 
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	// listenReady is signalled (once, non-blocking) after LISTEN is established.
+	// Test-only — nil in production, where it is a no-op. It lets a test
+	// synchronise on the actual listen state instead of guessing with a sleep,
+	// closing the NOTIFY-before-LISTEN race.
+	listenReady chan struct{}
 }
 
-func newPGWatcher(pool *pgxpool.Pool, channel, nodeID string) *pgWatcher {
+func newPGWatcher(pool *pgxpool.Pool, channel, nodeID string, listenReady chan struct{}) *pgWatcher {
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &pgWatcher{
-		pool:    pool,
-		channel: channel,
-		nodeID:  nodeID,
-		cancel:  cancel,
-		done:    make(chan struct{}),
+		pool:        pool,
+		channel:     channel,
+		nodeID:      nodeID,
+		cancel:      cancel,
+		done:        make(chan struct{}),
+		listenReady: listenReady,
 	}
 	go w.listen(ctx)
 	return w
@@ -92,6 +99,14 @@ func (w *pgWatcher) listen(ctx context.Context) {
 			}
 			w.backoff(ctx)
 			continue
+		}
+		// LISTEN established: signal readiness once (non-blocking). Test-only;
+		// w.listenReady is nil in production so this is a no-op there.
+		if w.listenReady != nil {
+			select {
+			case w.listenReady <- struct{}{}:
+			default: // already signalled (reconnect) or buffer full — coalesce
+			}
 		}
 		for ctx.Err() == nil {
 			n, err := conn.Conn().WaitForNotification(ctx)

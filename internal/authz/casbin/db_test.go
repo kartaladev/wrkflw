@@ -83,7 +83,7 @@ func TestNewDBEnforcer_InvalidModel(t *testing.T) {
 func TestPGWatcherUpdate_Error(t *testing.T) {
 	pool := database.RunTestDatabase(t)
 
-	w := authzcasbin.NewPGWatcher(pool, "wrkflw_casbin_update_err_test", "node-err")
+	w := authzcasbin.NewPGWatcher(pool, "wrkflw_casbin_update_err_test", "node-err", nil)
 	defer w.Close()
 
 	// Close the underlying pool so that the next Exec inside Update fails.
@@ -106,7 +106,7 @@ func TestPGWatcherListen_AcquireError(t *testing.T) {
 	// Create watcher AFTER the pool is closed. The listen goroutine will
 	// attempt pool.Acquire, get an error, check ctx.Err() == nil (not yet
 	// cancelled), then enter backoff waiting on ctx.Done() or time.After.
-	w := authzcasbin.NewPGWatcher(pool, "wrkflw_casbin_acquire_err_test", "node-acq-err")
+	w := authzcasbin.NewPGWatcher(pool, "wrkflw_casbin_acquire_err_test", "node-acq-err", nil)
 
 	// Give the goroutine time to attempt Acquire and enter backoff.
 	time.Sleep(50 * time.Millisecond)
@@ -128,7 +128,7 @@ func TestPGWatcherListen_ListenExecError(t *testing.T) {
 
 	// "123invalid" starts with a digit: Postgres LISTEN requires a valid identifier,
 	// so "LISTEN 123invalid" will return a syntax error from the server.
-	w := authzcasbin.NewPGWatcher(pool, "123invalid_channel", "node-listen-err")
+	w := authzcasbin.NewPGWatcher(pool, "123invalid_channel", "node-listen-err", nil)
 
 	// Allow the goroutine time to acquire a connection, attempt LISTEN, fail, and
 	// enter backoff.

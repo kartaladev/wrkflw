@@ -29,6 +29,11 @@ type DBConfig struct {
 	// uses it to suppress self-notifications (a node ignores its own echo).
 	// Only relevant when WatcherEnabled is true.
 	NodeID string
+
+	// ListenReady, when non-nil, is signalled once after the watcher's LISTEN is
+	// established. Test-only — nil in production. Lets a test synchronise on the
+	// actual listen state instead of guessing with a sleep.
+	ListenReady chan struct{}
 }
 
 // noopCloser is an io.Closer that does nothing. Used when the watcher is disabled.
@@ -76,7 +81,7 @@ func NewDBEnforcer(ctx context.Context, pool *pgxpool.Pool, cfg DBConfig) (*casb
 		return enforcer, noopCloser{}, nil
 	}
 
-	w := newPGWatcher(pool, cfg.WatcherChannel, cfg.NodeID)
+	w := newPGWatcher(pool, cfg.WatcherChannel, cfg.NodeID, cfg.ListenReady)
 
 	// SetWatcher (on the base Enforcer) internally calls
 	// w.SetUpdateCallback(func(string){ _ = e.LoadPolicy() }) where e is the
