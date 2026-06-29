@@ -2,6 +2,7 @@ package action_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,20 +11,39 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 )
 
-func TestMapCatalogResolveAndRun(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
-			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
-		}),
-	})
+// TestFunc_Do verifies that the Func adapter satisfies ServiceAction correctly.
+func TestFunc_Do(t *testing.T) {
+	sentinel := errors.New("boom")
 
-	a, ok := cat.Resolve("greet")
-	require.True(t, ok)
+	tests := map[string]struct {
+		fn      func(context.Context, map[string]any) (map[string]any, error)
+		in      map[string]any
+		wantOut map[string]any
+		wantErr error
+	}{
+		"happy path returns output": {
+			fn: func(_ context.Context, in map[string]any) (map[string]any, error) {
+				return map[string]any{"echo": in["v"]}, nil
+			},
+			in:      map[string]any{"v": "ping"},
+			wantOut: map[string]any{"echo": "ping"},
+		},
+		"propagates error": {
+			fn:      func(_ context.Context, _ map[string]any) (map[string]any, error) { return nil, sentinel },
+			wantErr: sentinel,
+		},
+	}
 
-	out, err := a.Do(t.Context(), map[string]any{"name": "Ada"})
-	require.NoError(t, err)
-	assert.Equal(t, "hi Ada", out["greeting"])
-
-	_, ok = cat.Resolve("missing")
-	assert.False(t, ok)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var a action.ServiceAction = action.Func(tc.fn)
+			out, err := a.Do(t.Context(), tc.in)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantOut, out)
+		})
+	}
 }

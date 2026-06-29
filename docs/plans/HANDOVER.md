@@ -3,7 +3,30 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (backlog follow-ups: relay + tests)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (built-in service actions)
+
+> **State:** work lives on branch **`feat/builtin-actions`** (HEAD `35f104e`, base `main` `67e2c01`) — **NOT merged, NOT pushed** (maintainer chose "keep branch as-is" for review before integration). `go build ./...` clean, `go test -race ./...` 27 pkgs / 0 failures / 0 races (incl. mailpit testcontainers integration + in-process TLS round-trips + Registry concurrency test), `golangci-lint run ./...` 0 issues. **engine/ + model/ are zero-diff vs main (verified).** **Next free ADR: 0076** (0074 + 0075 consumed). Ledger: `.superpowers/sdd/progress.md`. Spec: `docs/specs/2026-06-29-builtin-actions-design.md`. Plan: `docs/plans/2026-06-29-builtin-actions.md`. THREE final opus whole-branch reviews (original 8-task program + transform/email I/O continuation + httpcall-hooks/catalog-Registry delta) all "Ready to merge", 0 Critical/Important.
+>
+> **✅ Built-in / template service-action catalog + I/O extensions — DONE on branch.** Four public `action/*` subpackages + a retry contract, all on stdlib + the already-present `expr-lang` (NO new runtime dependency; mailpit + crypto/tls stubs are test-only):
+> 1. **`action/retry.go`** (ADR-0074) — `Retryabler` interface, `NonRetryable(err)`, `IsRetryable(err)` (default true; honours `Retryabler` via `errors.As`). `runtime/runner.go:785` passes `action.IsRetryable(err)` into the `ActionFailed` trigger instead of hardcoded `true` — the ONLY core change; engine/model untouched.
+> 2. **`action/httpcall`** — `NewHTTPCall(opts...)`; `net/http`; `WithBaseURL/Method/Header/HTTPClient/BodyKey/OutputKeys/URLExpr`; **+ I/O hooks** `WithHeaderFunc(func(ctx,http.Header,vars)error)` (after static, can override), `WithBodyFunc(func(ctx,vars)(io.Reader,error))` (precedence over BodyKey, no auto-CT), `WithBodyValidator(func(ctx,[]byte,vars)error)` (process vars available; runs before send, blocks on fail = NonRetryable, validates present-but-empty body, dependency-free — consumer brings JSON-schema lib; buffers streaming body only when validator set). retry (4xx exc 408/429 → NonRetryable; 408/429/5xx/transport → retryable); outputs `httpStatus/httpBody/httpHeaders`.
+> 3. **`action/email`** — `NewEmail(opts...)`; `net/smtp` + `text/template` (missingkey=error); CRLF header-injection guard (`validateHeader` on rendered subject + from + each address). **I/O recipients + per-recipient personalization:** `WithRecipientResolver(func(ctx,vars)([]email.Recipient,error))` (each `Recipient{Address,Data}` gets an INDIVIDUAL message; `Data` overlays vars for personalization; best-effort `errors.Join`/retryable, at-least-once; resolver `NonRetryable` honoured; empty list NonRetryable; `recipientCount` output). `WithTo` now sends per-recipient too. **Real TLS:** `WithStartTLS()` (enforced — errors if not advertised, no silent plaintext), `WithTLS()` (implicit `tls.Dial`), `WithTLSConfig(*tls.Config)`. Sender seam `SenderFunc`/`WithSender` overrides TLS modes.
+> 4. **`action/transform`** — `NewTransform(opts...) (ServiceAction, error)`; **I/O enricher**: `WithMapper(func(ctx,vars)(map[string]any,error))` (DB lookups etc.) + `WithExpr(outKey,exprStr)`. **Scratch-vs-persisted invariant:** WithMapper enrichment is action-local scratch, NEVER persisted as process vars; only WithExpr results are returned. Eager expr compile; nil mapper rejected at NewTransform.
+> 5. **`action/logaction`** — `NewLog(opts...)`; pass-through `slog` of selected vars; never errors (fire-and-forget safe).
+> 6. **`action` catalog** (`action/catalog.go`) — read `Catalog.Resolve` + write `Registrar.Register/RegisterFunc`; thread-safe `Registry` (`NewRegistry`, `sync.RWMutex`, `noCopy`) implements both → **post-construction registration**; sentinels `ErrEmptyActionName`/`ErrNilAction`/`ErrActionExists` (errors.Is); duplicate retains first; `MustRegister`/`MustRegisterFunc` panic variants. `MapCatalog` kept (backward compat).
+> Reference wiring: **`examples/builtin_actions/main.go`** runs all four end-to-end. ADRs **0074**/**0075** (0075 updated for the I/O extensions + httpcall hooks + Registry). Action coverage: action 100%, httpcall 93.6%, email 86.4%, transform/logaction 100% (all >85%).
+>
+> **🟢 NEXT SESSION — remaining (non-blocking, all Minor/cosmetic) follow-ups:**
+> 1. email: hardcoded `c.Hello("localhost")` EHLO name in the TLS senders (matches `net/smtp.SendMail` default) — add a `WithEHLOName` option only if a real MTA rejects it.
+> 2. email `Do` godoc could note `recipientCount` is unavailable on partial failure (cosmetic).
+> 3. transform: `stageSpec`/`exprSpec` vs `stage`/`exprBinding` double indirection could be collapsed (cosmetic).
+> 4. httpcall: validator buffers a streaming `WithBodyFunc` body unbounded — optional `io.LimitReader` cap is a future defense-in-depth (documented as consumer's responsibility today).
+>
+> **⚠️ INTEGRATION PENDING:** branch `feat/builtin-actions` is unmerged. Merge with `git checkout main && git merge --no-ff feat/builtin-actions` after review, then push. The backlog-follow-ups block below (local main ahead by 5, push held) is still also pending and independent of this branch.
+>
+> ---
+
+## ⏩ PRIOR RESUME POINT — updated 2026-06-29 (backlog follow-ups: relay + tests)
 
 > **State:** `main` HEAD `38fd3d0` (merge) — **NOT yet pushed to `origin/main`** (local main is ahead by 5 commits; push held for maintainer review). `go build ./...` clean, `golangci-lint run ./...` 0 issues, gofmt clean on touched dirs, working tree clean. **Next free ADR: 0074** (none consumed this run). Ledger: `.superpowers/sdd/progress.md` (section "Backlog follow-ups run — 2026-06-29").
 >
