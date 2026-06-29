@@ -105,11 +105,16 @@ Each item: **what's missing · evidence (file ref) · why it matters**. Severity
 
 ---
 
-### P1-E — Deflake casbinauthz multi-node reload test ⏭️ NEXT (queued 2026-06-30)
+### P1-E — Deflake casbinauthz multi-node reload test ✅ DONE (branch `fix/casbinauthz-multinode-flake`)
 - **Evidence:** `casbinauthz` `TestNewCasbinAuthorizerFromDB_MultiNodeReload` — a LISTEN/NOTIFY
   testcontainers timing flake (surfaced during the action-safety-limits review; passes on retry).
-- **Why:** a flaky test erodes CI signal. Replace the timing assumption with a deterministic
-  ready-signal (mirror the `listenReady` pattern from the P2 fix in ADR-0071-era work), not a sleep.
+- **Root cause:** `newPGWatcher` returned before the listen goroutine issued `LISTEN`; the single
+  `pg_notify` could fire in that window and be lost. The internal watcher test masked it with a 300ms sleep.
+- **Fix:** test-only `listenReady` signal threaded `DBConfig` → `newPGWatcher`, signalled after `LISTEN`
+  (no-op in production); both tests now wait on the actual listen state, no sleep. `-count=5 -race` stable.
+- **Pre-existing follow-up (not this branch):** `casbinauthz` package coverage 84.5% (< 85%) — untested
+  error branches in `policyadmin.go` (AddPolicy/RemovePolicy/List* error paths) and `casbinauthz.go`
+  (ReloadPolicy error). Production code untouched here; queue a small policyadmin error-path test pass.
 
 ## 🟡 P2 — Convenience / developer experience
 

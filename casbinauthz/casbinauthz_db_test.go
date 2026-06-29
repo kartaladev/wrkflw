@@ -42,13 +42,25 @@ func TestNewCasbinAuthorizerFromDB_MultiNodeReload(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = closerA.Close() }()
 
-	// Node B — this is the node we verify receives the reload.
+	// Node B — this is the node we verify receives the reload. Its watcher
+	// signals readyB once LISTEN is established, so we can NOTIFY only after B is
+	// genuinely listening (closing the NOTIFY-before-LISTEN race that made this
+	// test flaky).
+	readyB := make(chan struct{}, 1)
 	authB, closerB, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,
 		casbinauthz.WithNodeID("B"),
 		casbinauthz.WithWatcherChannel(ch),
+		casbinauthz.WithListenReady(readyB),
 	)
 	require.NoError(t, err)
 	defer func() { _ = closerB.Close() }()
+
+	// Wait until node B's LISTEN is established before notifying.
+	select {
+	case <-readyB:
+	case <-time.After(10 * time.Second):
+		t.Fatal("node B did not establish LISTEN within 10s")
+	}
 
 	// Before policy seed: alice should NOT be authorized.
 	assert.False(t, authorizeOK(t, authB, "alice", "process:42", "approve"),
