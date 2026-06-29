@@ -123,6 +123,10 @@ alerts + runbooks + `docs/observability.md`. Deferred: recursive ancestry trees;
   error branches in `policyadmin.go` (AddPolicy/RemovePolicy/List* error paths) and `casbinauthz.go`
   (ReloadPolicy error). Production code untouched here; queue a small policyadmin error-path test pass.
 
+### P1-F — gRPC ListInstances ignores NormalizeLimit ⏭️ QUEUED (from ops-visibility final review)
+- **Evidence:** `transport/grpc/server.go` `ListInstances` sets `Limit: int(req.GetLimit())` raw, while the
+  DLQ RPC and REST clamp via `runtime.NormalizeLimit`. Pre-existing, non-ops RPC. Small fix + bufconn test.
+
 ## 🟡 P2 — Convenience / developer experience
 
 ### Missing capabilities (consumers hit these immediately)
