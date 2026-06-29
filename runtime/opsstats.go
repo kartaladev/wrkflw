@@ -39,3 +39,62 @@ type OutboxStatsReader interface {
 type TimerStatsReader interface {
 	Stats(ctx context.Context) (TimerStats, error)
 }
+
+// CallLinkRef is a compact reference to a call-linked instance — parent or child
+// — returned by the lineage read port. It carries the fields needed to identify
+// the instance and its position in the call chain without returning the full
+// CallLink record (which includes write-side fields like CommandID).
+type CallLinkRef struct {
+	InstanceID string
+	DefID      string
+	DefVersion int
+	Status     string
+	Depth      int
+}
+
+// ChainLinkRef is a compact reference to a chain-linked instance — predecessor
+// or successor — returned by the lineage read port. It carries the definition
+// reference and the chaining outcome that connected the two instances.
+type ChainLinkRef struct {
+	InstanceID    string
+	DefinitionRef string
+	Outcome       string
+}
+
+// InstanceLineage aggregates a single-hop lineage view for one process instance.
+// CallParent is nil when the instance was not started by a call activity
+// (it is a root). ChainPredecessor is nil when the instance was not started by
+// chaining. CallChildren and ChainSuccessors are empty (never nil) when no
+// downstream instances exist.
+type InstanceLineage struct {
+	InstanceID       string
+	CallParent       *CallLinkRef
+	CallChildren     []CallLinkRef
+	ChainPredecessor *ChainLinkRef
+	ChainSuccessors  []ChainLinkRef
+}
+
+// CallLineageReader is the read port for call-activity lineage lookups. It is
+// satisfied by any store that can return the parent and direct children of a
+// given instance via the wrkflw_call_links table.
+type CallLineageReader interface {
+	// ParentOf returns the CallLink describing the parent call relationship for
+	// childID. Returns (nil, nil) when childID is a root instance (no parent).
+	ParentOf(ctx context.Context, childID string) (*CallLink, error)
+	// ChildrenOf returns all CallLinks whose parent_instance_id equals parentID,
+	// ordered by (created_at, child_instance_id). Returns an empty slice (never
+	// nil) when there are no children.
+	ChildrenOf(ctx context.Context, parentID string) ([]CallLink, error)
+}
+
+// ChainLineageReader is the read port for process-chaining lineage lookups. It
+// is satisfied by any store that can return the predecessor and successors of a
+// given instance via the wrkflw_chain_links table.
+type ChainLineageReader interface {
+	// PredecessorOf returns the ChainLink that produced successorID. Returns
+	// (nil, nil) when successorID was not produced by chaining (it is a chain root).
+	PredecessorOf(ctx context.Context, successorID string) (*ChainLink, error)
+	// SuccessorsOf returns all ChainLinks fanned out from predecessorID, ordered
+	// by outcome. Returns an empty slice (never nil) when there are no successors.
+	SuccessorsOf(ctx context.Context, predecessorID string) ([]ChainLink, error)
+}
