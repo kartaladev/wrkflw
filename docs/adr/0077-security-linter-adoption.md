@@ -36,9 +36,9 @@ Two configuration choices:
    - **G115 `int -> int16`** across persistence (Status / timer-Kind enums → smallint columns) —
      path exclusion: these enums are bounded (< 10 values) and cannot overflow int16.
    - **G201/G202** mysql SQL formatting/concat — path exclusion: the only interpolated values are
-     `LIMIT` integers bounded by `NormalizeLimit` (1..201) and generated `?` placeholder lists (a
-     placeholder is impossible for `LIMIT` alongside a `FOR UPDATE`/locking clause in MySQL 8); all
-     row values are bound as query args.
+     `LIMIT` integers (an `int` type — page limits via `NormalizeLimit`, relay batch size, call-link
+     claim count) and generated `?` placeholder lists (a placeholder is impossible for `LIMIT`
+     alongside a `FOR UPDATE`/locking clause in MySQL 8); all row values are bound as query args.
    - **G115 `int -> int32`** (definition version), **uint/uint64 -> int64** (duration variable),
      **G404** (retry-backoff jitter — intentionally `math/rand`, not security-sensitive), **G101**
      (ephemeral testcontainers DSN) — inline `//nolint` with per-site rationale.

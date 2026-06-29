@@ -1,6 +1,8 @@
 package httpcall_test
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -64,6 +66,26 @@ func TestHTTPCall_ResponseSizeCap(t *testing.T) {
 			assert: func(t *testing.T, _ map[string]any, err error) {
 				require.ErrorIs(t, err, httpcall.ErrBodyTooLarge)
 				assert.False(t, action.IsRetryable(err))
+			},
+		},
+		{
+			// The buffered-validator BodyFunc path caps the REQUEST body too: an
+			// over-cap body fails NonRetryable before the request is ever sent.
+			name:     "over-cap buffered request body fails NonRetryable before send",
+			bodySize: 8, // server response is irrelevant; the failure precedes the send
+			opts: []httpcall.Option{
+				httpcall.WithMaxResponseSize(16),
+				httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
+					return strings.NewReader(strings.Repeat("b", 64)), nil
+				}),
+				httpcall.WithBodyValidator(func(_ context.Context, _ []byte, _ map[string]any) error {
+					t.Error("validator must not run: the cap must trip while buffering the body")
+					return nil
+				}),
+			},
+			assert: func(t *testing.T, _ map[string]any, err error) {
+				require.ErrorIs(t, err, httpcall.ErrBodyTooLarge)
+				assert.False(t, action.IsRetryable(err), "over-cap request body must be NonRetryable")
 			},
 		},
 	}

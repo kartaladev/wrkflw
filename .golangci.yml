@@ -23,10 +23,11 @@ linters:
         linters:
           - gosec
       # MySQL persistence: G201/G202 SQL string formatting/concatenation. The
-      # only interpolated values are LIMIT integers (bounded by NormalizeLimit,
-      # 1..201) and generated `?` placeholder lists — a placeholder cannot be
-      # used for LIMIT alongside a FOR UPDATE/locking clause (MySQL 8). All
-      # row values are bound as query args; there is no string-built user input.
+      # only interpolated values are LIMIT integers (an `int` type — page limits
+      # via NormalizeLimit, relay batch size, call-link claim count) and
+      # generated `?` placeholder lists — a placeholder cannot be used for LIMIT
+      # alongside a FOR UPDATE/locking clause (MySQL 8). Every value is an int or
+      # a bound query arg; no string-built user input reaches SQL.
       - path: internal/persistence/mysql/
         linters:
           - gosec
