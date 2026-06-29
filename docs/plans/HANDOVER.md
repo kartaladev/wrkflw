@@ -3,7 +3,28 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (backlog follow-ups: relay + tests)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (built-in service actions)
+
+> **State:** work lives on branch **`feat/builtin-actions`** (HEAD `92c39fc`, base `main` `67e2c01`) — **NOT merged, NOT pushed** (maintainer chose "keep branch as-is" for review before integration). `go build ./...` clean, `go test ./...` 27 pkgs / 0 failures (incl. mailpit testcontainers integration), `golangci-lint run ./...` 0 issues. **engine/ + model/ are zero-diff vs main (verified).** **Next free ADR: 0076** (0074 + 0075 consumed this run). Ledger: `.superpowers/sdd/progress.md` (section "Built-in service actions — SDD progress ledger"). Spec: `docs/specs/2026-06-29-builtin-actions-design.md`. Plan: `docs/plans/2026-06-29-builtin-actions.md`.
+>
+> **✅ Built-in / template service-action catalog — DONE on branch (8 tasks, subagent-driven, each task-reviewed + final opus whole-branch review "Ready to merge", 0 Critical/Important).** Ships four public `action/*` subpackages + a retry contract, all on stdlib + the already-present `expr-lang` (NO new runtime dependency; mailpit is test-only):
+> 1. **`action/retry.go`** (ADR-0074) — `Retryabler` interface, `NonRetryable(err)`, `IsRetryable(err)` (default true; honours `Retryabler` via `errors.As`). `runtime/runner.go:785` now passes `action.IsRetryable(err)` into the `ActionFailed` trigger instead of hardcoded `true` — the ONLY core change; engine/model untouched.
+> 2. **`action/httpcall`** — `NewHTTPCall(opts...)`; `net/http`; options `WithBaseURL/Method/Header/HTTPClient/BodyKey/OutputKeys/URLExpr`; retry classification (4xx exc 408/429 → NonRetryable; 408/429/5xx/transport → retryable); `WithURLExpr` = expr URL interpolation; outputs `httpStatus/httpBody/httpHeaders`.
+> 3. **`action/email`** — `NewEmail(opts...)`; `net/smtp` + `text/template` (missingkey=error); unexported `sender` seam + exported `SenderFunc`/`WithSender`; mailpit integration test. **`WithTLS`/`WithStartTLS` are intentional NO-OPS** (consumer wires TLS via a custom `SenderFunc`). **Security: header CRLF-injection guard** (`validateHeader` rejects `\r`/`\n` in rendered subject + from + each recipient → NonRetryable, sender never called).
+> 4. **`action/transform`** — `NewTransform(opts...) (ServiceAction, error)` (eager expr compile, errors at wiring time); `Set(outKey, expr)`; later Sets can reference earlier OUTPUTS (chaining).
+> 5. **`action/logaction`** — `NewLog(opts...)`; pass-through `slog` of selected vars; never errors (fire-and-forget safe).
+> ADRs: **0074** (retry contract), **0075** (built-in catalog). Action coverage total 94.1% (all pkgs >85%).
+>
+> **🟢 NEXT SESSION — remaining (non-blocking) follow-ups for this feature:**
+> 1. **`examples/` reference wiring** for the four actions into a process definition (ADR-0075 explicitly defers this; it is the main loose end).
+> 2. Optional real-TLS email sender (implicit-TLS/STARTTLS) as a shipped `SenderFunc`, or drop the no-op `WithTLS`/`WithStartTLS` options to avoid the false affordance (maintainer taste call).
+> 3. Cosmetic: transform int-identity test robustness (expr return type); httpcall "missing base URL" test spins an unused `httptest.Server`.
+>
+> **⚠️ INTEGRATION PENDING:** branch `feat/builtin-actions` is unmerged. Merge with `git checkout main && git merge --no-ff feat/builtin-actions` after review, then push. The backlog-follow-ups block below (local main ahead by 5, push held) is still also pending and independent of this branch.
+>
+> ---
+
+## ⏩ PRIOR RESUME POINT — updated 2026-06-29 (backlog follow-ups: relay + tests)
 
 > **State:** `main` HEAD `38fd3d0` (merge) — **NOT yet pushed to `origin/main`** (local main is ahead by 5 commits; push held for maintainer review). `go build ./...` clean, `golangci-lint run ./...` 0 issues, gofmt clean on touched dirs, working tree clean. **Next free ADR: 0074** (none consumed this run). Ledger: `.superpowers/sdd/progress.md` (section "Backlog follow-ups run — 2026-06-29").
 >
