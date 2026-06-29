@@ -80,6 +80,11 @@ type Runner struct {
 	// trigger so that engine replay remains deterministic.
 	jitter JitterSource
 
+	// actionTimeout bounds how long a single service-action invocation may run
+	// before its context is cancelled. Defaults to defaultActionTimeout; a
+	// non-positive value disables the bound. Set via [WithActionTimeout].
+	actionTimeout time.Duration
+
 	// defaultRetryPolicy is the fallback retry policy applied to any action-bearing
 	// node that declares no RetryPolicy of its own. When nil, retry is disabled by
 	// default and a failed action behaves as before (error boundary or instance failure).
@@ -117,6 +122,18 @@ type Runner struct {
 // tasks, scheduler) are configured via options; required core dependencies are
 // positional in NewRunner.
 type Option func(*Runner)
+
+// defaultActionTimeout bounds each service-action invocation unless overridden
+// via [WithActionTimeout]. It guards against a hung action stalling an instance
+// and tying up the goroutine indefinitely.
+const defaultActionTimeout = 30 * time.Second
+
+// WithActionTimeout sets the maximum duration a single service-action invocation
+// may run before its context is cancelled. The default is 30s. A non-positive d
+// disables the bound (no deadline is applied). The action's Do must honour ctx
+// cancellation for the timeout to take effect; a timed-out action surfaces as a
+// retryable failure.
+func WithActionTimeout(d time.Duration) Option { return func(r *Runner) { r.actionTimeout = d } }
 
 // WithHumanTasks wires the human-task capability into the Runner. Without this
 // option, any process that reaches a user-task node will return a descriptive
@@ -297,11 +314,12 @@ func NewRunner(
 	opts ...Option,
 ) *Runner {
 	r := &Runner{
-		cat:        cat,
-		clk:        clock.System(),
-		store:      store,
-		jitter:     NewJitterSource(),
-		msgWaiters: make(map[msgKey]string),
+		cat:           cat,
+		clk:           clock.System(),
+		store:         store,
+		jitter:        NewJitterSource(),
+		actionTimeout: defaultActionTimeout,
+		msgWaiters:    make(map[msgKey]string),
 	}
 	for _, o := range opts {
 		o(r)
@@ -724,6 +742,16 @@ func (r *Runner) propagateCancel(ctx context.Context, parentID string, visited m
 // instance on the replica. A recovered panic is surfaced as an ordinary action
 // error, so callers route it through their normal failure path (a retryable
 // ActionFailed for InvokeAction, a best-effort log for InvokeCancelAction).
+// actionContext derives the context an action runs under. When actionTimeout is
+// positive it applies a deadline; otherwise the parent context passes through
+// unchanged. The caller must always invoke the returned cancel func.
+func (r *Runner) actionContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if r.actionTimeout <= 0 {
+		return parent, func() {}
+	}
+	return context.WithTimeout(parent, r.actionTimeout)
+}
+
 func safeActionDo(ctx context.Context, a action.ServiceAction, in map[string]any) (out map[string]any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -769,7 +797,9 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
 		start := r.clk.Now()
-		out, err := safeActionDo(actx, a, cmd.Input)
+		tctx, cancel := r.actionContext(actx)
+		out, err := safeActionDo(tctx, a, cmd.Input)
+		cancel()
 		elapsed = r.clk.Now().Sub(start).Seconds()
 		if err != nil {
 			aspan.RecordError(err)
@@ -802,7 +832,10 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 				slog.String("action", cmd.Name))
 			return nil, nil
 		}
-		if _, err := safeActionDo(ctx, a, cmd.Input); err != nil {
+		cctx, cancel := r.actionContext(ctx)
+		_, err := safeActionDo(cctx, a, cmd.Input)
+		cancel()
+		if err != nil {
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",
 				slog.String("action", cmd.Name), slog.Any("error", err))
 		}
