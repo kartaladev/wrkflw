@@ -786,6 +786,10 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 			err := errors.New("unknown action: " + cmd.Name)
 			aspan.RecordError(err)
 			aspan.SetStatus(codes.Error, err.Error())
+			r.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
+				attribute.String("action", cmd.Name),
+				attribute.Bool("retryable", false),
+			))
 			if cmd.FireAndForget {
 				// No token awaits a fire-and-forget action's result, so an
 				// ActionFailed would only surface as ErrTokenNotFound. Log and
@@ -804,6 +808,10 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 		if err != nil {
 			aspan.RecordError(err)
 			aspan.SetStatus(codes.Error, err.Error())
+			r.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
+				attribute.String("action", cmd.Name),
+				attribute.Bool("retryable", action.IsRetryable(err)),
+			))
 			if cmd.FireAndForget {
 				// Deadline-breach and reminder actions run for their side effect
 				// only; no token awaits the result. Log the failure rather than
@@ -1094,6 +1102,7 @@ func (r *Runner) armTimer(def *model.ProcessDefinition, instanceID, timerID stri
 		// been cancelled by the time the timer fires.
 		fireCtx := context.Background()
 		trg := engine.NewTimerFired(r.clk.Now(), timerID)
+		r.obs.timerFired.Add(fireCtx, 1)
 		const maxAttempts = 5
 		var err error
 		for range maxAttempts {
