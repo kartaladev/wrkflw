@@ -11,6 +11,20 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
 )
 
+// TestHTTPCallMissingBaseURL verifies that NewHTTPCall with no base URL configured
+// returns a non-retryable error from Do without making any network request.
+// No httptest.Server is started — the action errors before any connection attempt.
+func TestHTTPCallMissingBaseURL(t *testing.T) {
+	a := httpcall.NewHTTPCall(httpcall.WithMethod(http.MethodGet))
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing base URL, got nil")
+	}
+	if action.IsRetryable(err) {
+		t.Fatal("missing base URL error must be non-retryable")
+	}
+}
+
 func TestHTTPCall(t *testing.T) {
 	tests := map[string]struct {
 		handler http.HandlerFunc
@@ -191,21 +205,6 @@ func TestHTTPCall(t *testing.T) {
 				}
 				if out["httpBody"] != "hello world" {
 					t.Fatalf("httpBody = %v, want 'hello world'", out["httpBody"])
-				}
-			},
-		},
-		"missing base URL returns non-retryable error": {
-			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) },
-			func(_ string) []httpcall.Option {
-				return []httpcall.Option{httpcall.WithMethod(http.MethodGet)}
-			},
-			map[string]any{},
-			func(t *testing.T, _ map[string]any, err error) {
-				if err == nil {
-					t.Fatal("expected error for missing base URL")
-				}
-				if action.IsRetryable(err) {
-					t.Fatal("missing base URL should be non-retryable")
 				}
 			},
 		},

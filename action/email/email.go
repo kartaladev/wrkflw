@@ -361,6 +361,8 @@ func NewEmail(opts ...Option) action.ServiceAction {
 // notified recipients — at-least-once is the guarantee.
 //
 // Returns map[string]any{"emailSent":true,"recipientCount":<n>} on full success.
+// On partial failure (any recipient errored) Do returns nil output plus a retryable
+// aggregate error; callers receive no output map when any recipient send failed.
 func (a *emailAction) Do(ctx context.Context, in map[string]any) (map[string]any, error) {
 	// --- Build effective recipient list ---
 	// Start with static addresses converted to Recipient values.

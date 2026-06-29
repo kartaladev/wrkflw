@@ -199,3 +199,14 @@ func TestNewTransform_CompileError(t *testing.T) {
 		t.Fatalf("error does not have expected prefix %q: %v", "workflow-transform:", err)
 	}
 }
+
+// 10. Nil mapper: WithMapper(nil) must be rejected at NewTransform time, not panic at Do.
+func TestNewTransform_NilMapper(t *testing.T) {
+	_, err := transform.NewTransform(transform.WithMapper(nil))
+	if err == nil {
+		t.Fatalf("expected error for nil mapper, got nil (would panic at Do)")
+	}
+	if !strings.HasPrefix(err.Error(), "workflow-transform:") {
+		t.Fatalf("error does not have expected prefix %q: %v", "workflow-transform:", err)
+	}
+}

@@ -109,6 +109,9 @@ func NewTransform(opts ...Option) (action.ServiceAction, error) {
 			})
 		case spec.mapper != nil:
 			t.stages = append(t.stages, stage{mapper: spec.mapper})
+		default:
+			// spec.exprSpec == nil && spec.mapper == nil → nil mapper was passed via WithMapper.
+			return nil, fmt.Errorf("workflow-transform: nil mapper")
 		}
 	}
 	return t, nil

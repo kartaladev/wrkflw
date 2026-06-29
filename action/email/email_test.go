@@ -94,14 +94,14 @@ func TestStartTLSEnforcedWhenServerDoesNotAdvertise(t *testing.T) {
 	}
 }
 
-// TestWithTLSConfigOverrideIsHonored verifies that WithTLSConfig stores a custom
-// tls.Config so that a constructed startTLSSender (or tlsSender) would use it.
-// We verify via a negative check: point WithStartTLS() + WithTLSConfig(cfg) at the
-// no-STARTTLS stub; the error should still be the STARTTLS-not-supported error (the
-// config override is stored and used; the stub never negotiates TLS so the enforcement
-// fires first, proving the code path ran with our config rather than falling through
-// to the default sender).
-func TestWithTLSConfigOverrideIsHonored(t *testing.T) {
+// TestWithTLSConfigDoesNotSuppressEnforcement verifies that supplying a custom
+// tls.Config via WithTLSConfig does NOT suppress the STARTTLS enforcement check.
+// The startTLSSender must still reject the session when the server does not
+// advertise STARTTLS — the custom config is stored and would be used for the TLS
+// handshake, but the enforcement gate fires first and returns the STARTTLS error,
+// proving that the enforcement path is reached with the custom config in place
+// rather than falling through to the plain default sender.
+func TestWithTLSConfigDoesNotSuppressEnforcement(t *testing.T) {
 	addr := startPlaintextSMTPStub(t)
 
 	cfg := &tls.Config{InsecureSkipVerify: true, ServerName: "custom.example.com"} //nolint:gosec // unit test only
@@ -828,6 +828,98 @@ func ExampleWithRecipientResolver() {
 	// recipientCount: 2
 	// sent to: ada@example.com
 	// sent to: bob@example.com
+}
+
+// TestNoRecipientsNeitherWithToNorResolver verifies that when neither WithTo nor a
+// resolver is configured (pure misconfiguration), Do returns a non-retryable error
+// with the "workflow-email:" prefix and never calls the sender.
+func TestNoRecipientsNeitherWithToNorResolver(t *testing.T) {
+	sendCalled := false
+	a := email.NewEmail(
+		email.WithFrom("sender@example.com"),
+		email.WithSubjectTemplate("Hello"),
+		email.WithBodyTemplate("body"),
+		email.WithSender(email.SenderFunc(func(string, smtp.Auth, string, []string, []byte) error {
+			sendCalled = true
+			return nil
+		})),
+		// Intentionally no WithTo and no WithRecipientResolver.
+	)
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected non-retryable error for no recipients configured, got nil")
+	}
+	if action.IsRetryable(err) {
+		t.Fatalf("expected non-retryable error, got retryable: %v", err)
+	}
+	if !strings.Contains(err.Error(), "workflow-email:") {
+		t.Fatalf("error must have workflow-email: prefix, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "no recipients") {
+		t.Fatalf("error should mention 'no recipients', got: %v", err)
+	}
+	if sendCalled {
+		t.Fatal("sender must NOT be called when no recipients are configured")
+	}
+}
+
+// TestStartTLSSenderDialError verifies that startTLSSender.send returns a retryable
+// "workflow-email:" error when the SMTP dial to the configured address fails (e.g.
+// the port is not listening). This exercises the smtp.Dial error branch.
+func TestStartTLSSenderDialError(t *testing.T) {
+	// Find a free port, bind briefly, then close — ensuring nothing is listening.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close() // immediately close so the port is not listening
+
+	a := email.NewEmail(
+		email.WithSMTPAddr(addr),
+		email.WithFrom("a@b.c"),
+		email.WithTo("d@e.f"),
+		email.WithSubjectTemplate("hi"),
+		email.WithBodyTemplate("body"),
+		email.WithStartTLS(),
+		// No WithSender — uses the real startTLSSender so we exercise dial.
+	)
+	_, err = a.Do(t.Context(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected error from dial failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "workflow-email:") {
+		t.Fatalf("error must have workflow-email: prefix, got: %v", err)
+	}
+}
+
+// TestTLSSenderDialError verifies that tlsSender.send returns a "workflow-email:" error
+// when the TLS dial to the configured address fails (port not listening). This exercises
+// the tls.Dial error branch in tlsSender.send.
+func TestTLSSenderDialError(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close() // immediately close so the port is not listening
+
+	a := email.NewEmail(
+		email.WithSMTPAddr(addr),
+		email.WithFrom("a@b.c"),
+		email.WithTo("d@e.f"),
+		email.WithSubjectTemplate("hi"),
+		email.WithBodyTemplate("body"),
+		email.WithTLS(),
+		// No WithSender — uses the real tlsSender so we exercise tls.Dial.
+	)
+	_, err = a.Do(t.Context(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected error from TLS dial failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "workflow-email:") {
+		t.Fatalf("error must have workflow-email: prefix, got: %v", err)
+	}
 }
 
 // TestEmailWithAuthOrderIndependent verifies that WithAuth works correctly regardless
