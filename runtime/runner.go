@@ -782,7 +782,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 					slog.String("action", cmd.Name), slog.Any("error", err))
 				return nil, nil
 			}
-			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), true, r.jitter.Fraction()), nil
+			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), r.jitter.Fraction()), nil
 		}
 		outcome = "ok"
 		if cmd.FireAndForget {
