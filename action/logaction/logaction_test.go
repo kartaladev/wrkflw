@@ -48,6 +48,15 @@ func TestLog(t *testing.T) {
 				}
 			},
 		},
+		"WithLevel emits at the configured level": {
+			[]logaction.Option{logaction.WithLevel(slog.LevelWarn)},
+			map[string]any{"x": "y"},
+			func(t *testing.T, rec map[string]any, _ map[string]any) {
+				if rec["level"] != "WARN" {
+					t.Fatalf("level = %v, want WARN", rec["level"])
+				}
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

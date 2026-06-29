@@ -31,6 +31,8 @@ type setSpec struct {
 
 // Set maps an output variable key to an expr expression evaluated against the
 // input variables. Repeatable; later Sets with the same key overwrite earlier.
+// Later Sets can reference the outputs of earlier Sets — each computed value is
+// merged into the evaluation environment before the next expression runs.
 func Set(outKey, exprStr string) Option {
 	return func(c *config) { c.sets = append(c.sets, setSpec{outKey, exprStr}) }
 }

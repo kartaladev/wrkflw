@@ -62,3 +62,12 @@ func TestNonRetryableUnwraps(t *testing.T) {
 		t.Fatalf("NonRetryable(nil) != nil")
 	}
 }
+
+func TestNonRetryableErrorMessage(t *testing.T) {
+	// Error() on the wrapper must preserve the underlying message so log output
+	// and error displays are unchanged by the NonRetryable wrapping.
+	wrapped := action.NonRetryable(errors.New("boom"))
+	if got := wrapped.Error(); got != "boom" {
+		t.Fatalf("NonRetryable.Error() = %q, want %q", got, "boom")
+	}
+}

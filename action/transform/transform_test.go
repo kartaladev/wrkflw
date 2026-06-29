@@ -1,6 +1,7 @@
 package transform_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/action/transform"
@@ -42,6 +43,9 @@ func TestTransform(t *testing.T) {
 			func(t *testing.T, out map[string]any, err error) {
 				if err == nil {
 					t.Fatalf("expected eval error, got nil")
+				}
+				if !strings.HasPrefix(err.Error(), "workflow-transform:") {
+					t.Fatalf("error does not have expected prefix %q: %v", "workflow-transform:", err)
 				}
 			},
 		},

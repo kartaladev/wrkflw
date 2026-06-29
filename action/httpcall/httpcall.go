@@ -42,6 +42,8 @@ func WithBaseURL(u string) Option { return func(h *httpCall) { h.baseURL = u } }
 // WithURLExpr sets an expr-lang expression that, evaluated against the input variable
 // map at Do time, yields the request URL string. When set, it takes precedence over
 // WithBaseURL. A compile error is deferred to Do and returned as a non-retryable error.
+// The resulting URL is not validated; do not derive it from untrusted input without
+// an allowlist or a restricted *http.Client transport (SSRF risk).
 func WithURLExpr(exprStr string) Option {
 	return func(h *httpCall) {
 		prog, err := expr.Compile(exprStr)

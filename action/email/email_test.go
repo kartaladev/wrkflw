@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/action/email"
 )
 
@@ -150,6 +151,132 @@ func TestEmailMissingKeyError(t *testing.T) {
 	_, err := a.Do(t.Context(), map[string]any{})
 	if err == nil {
 		t.Fatalf("expected error for missing template key, got nil")
+	}
+}
+
+// TestEmailRejectsHeaderInjection verifies that a rendered header value containing
+// carriage return or newline characters is rejected with a non-retryable error and
+// that the underlying sender is never called (no message is transmitted).
+func TestEmailRejectsHeaderInjection(t *testing.T) {
+	tests := map[string]struct {
+		opts func(spy *bool) []email.Option
+	}{
+		"subject with CRLF injection": {
+			func(spy *bool) []email.Option {
+				return []email.Option{
+					email.WithFrom("a@b.c"),
+					email.WithTo("d@e.f"),
+					// The template renders to a value containing a CRLF header injection.
+					email.WithSubjectTemplate("Legit\r\nBcc: evil@x.com"),
+					email.WithBodyTemplate("body"),
+					email.WithSender(email.SenderFunc(func(string, smtp.Auth, string, []string, []byte) error {
+						*spy = true
+						return nil
+					})),
+				}
+			},
+		},
+		"subject via template variable injection": {
+			func(spy *bool) []email.Option {
+				return []email.Option{
+					email.WithFrom("a@b.c"),
+					email.WithTo("d@e.f"),
+					email.WithSubjectTemplate("Order {{.subject}}"),
+					email.WithBodyTemplate("body"),
+					email.WithSender(email.SenderFunc(func(string, smtp.Auth, string, []string, []byte) error {
+						*spy = true
+						return nil
+					})),
+				}
+			},
+		},
+		"from with newline": {
+			func(spy *bool) []email.Option {
+				return []email.Option{
+					email.WithFrom("a@b.c\nX-Extra: injected"),
+					email.WithTo("d@e.f"),
+					email.WithSubjectTemplate("hi"),
+					email.WithBodyTemplate("body"),
+					email.WithSender(email.SenderFunc(func(string, smtp.Auth, string, []string, []byte) error {
+						*spy = true
+						return nil
+					})),
+				}
+			},
+		},
+		"to address with CRLF": {
+			func(spy *bool) []email.Option {
+				return []email.Option{
+					email.WithFrom("a@b.c"),
+					email.WithTo("d@e.f\r\nBcc: evil@x.com"),
+					email.WithSubjectTemplate("hi"),
+					email.WithBodyTemplate("body"),
+					email.WithSender(email.SenderFunc(func(string, smtp.Auth, string, []string, []byte) error {
+						*spy = true
+						return nil
+					})),
+				}
+			},
+		},
+		"clean subject still sends": {
+			func(spy *bool) []email.Option {
+				return []email.Option{
+					email.WithFrom("a@b.c"),
+					email.WithTo("d@e.f"),
+					email.WithSubjectTemplate("Clean subject"),
+					email.WithBodyTemplate("body"),
+					email.WithSender(email.SenderFunc(func(string, smtp.Auth, string, []string, []byte) error {
+						*spy = true
+						return nil
+					})),
+				}
+			},
+		},
+	}
+
+	injectionCases := map[string]bool{
+		"subject with CRLF injection":             true,
+		"subject via template variable injection": true,
+		"from with newline":                       true,
+		"to address with CRLF":                    true,
+		"clean subject still sends":               false,
+	}
+
+	injectionVars := map[string]map[string]any{
+		"subject with CRLF injection":             {},
+		"subject via template variable injection": {"subject": "legit\r\nBcc: evil@x.com"},
+		"from with newline":                       {},
+		"to address with CRLF":                    {},
+		"clean subject still sends":               {},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var senderCalled bool
+			a := email.NewEmail(tc.opts(&senderCalled)...)
+			vars := injectionVars[name]
+			_, err := a.Do(t.Context(), vars)
+
+			expectsInjection := injectionCases[name]
+			if expectsInjection {
+				if err == nil {
+					t.Fatalf("expected non-nil error for injection case, got nil")
+				}
+				if action.IsRetryable(err) {
+					t.Fatalf("expected non-retryable error, got retryable: %v", err)
+				}
+				if senderCalled {
+					t.Fatalf("sender must NOT be called when injection is detected")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("clean case: unexpected error: %v", err)
+				}
+				if !senderCalled {
+					t.Fatalf("clean case: sender was NOT called but should have been")
+				}
+			}
+		})
 	}
 }
 

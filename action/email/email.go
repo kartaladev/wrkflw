@@ -78,6 +78,10 @@ func WithFrom(addr string) Option { return func(a *emailAction) { a.from = addr 
 func WithTo(addrs ...string) Option { return func(a *emailAction) { a.to = addrs } }
 
 // WithSubjectTemplate sets the subject as a text/template over the variables.
+// The template is rendered against the instance variables at send time; if the
+// rendered value contains a carriage return or newline, Do returns a non-retryable
+// error to prevent SMTP header injection (the attacker can embed "\r\n" in a
+// variable and inject arbitrary headers such as Bcc).
 func WithSubjectTemplate(t string) Option { return func(a *emailAction) { a.subjectTmpl = t } }
 
 // WithBodyTemplate sets the body as a text/template over the variables.
@@ -111,6 +115,21 @@ func (a *emailAction) Do(_ context.Context, in map[string]any) (map[string]any, 
 		return nil, action.NonRetryable(fmt.Errorf("workflow-email: body template: %w", err))
 	}
 
+	// Validate header values before assembly to prevent SMTP header injection.
+	// Subject is attacker-influenceable via template variables; from/to are static
+	// config but we guard them too for defense-in-depth.
+	if err := validateHeader("subject", subject); err != nil {
+		return nil, err
+	}
+	if err := validateHeader("from", a.from); err != nil {
+		return nil, err
+	}
+	for _, rcpt := range a.to {
+		if err := validateHeader("to", rcpt); err != nil {
+			return nil, err
+		}
+	}
+
 	contentType := "text/plain"
 	if a.html {
 		contentType = "text/html"
@@ -135,6 +154,16 @@ func (a *emailAction) Do(_ context.Context, in map[string]any) (map[string]any, 
 		return nil, fmt.Errorf("workflow-email: send: %w", err)
 	}
 	return map[string]any{"emailSent": true}, nil
+}
+
+// validateHeader returns a non-retryable error if value contains a carriage return
+// or newline, preventing SMTP header injection. name is included in the error
+// message so callers can identify which header field is affected.
+func validateHeader(name, value string) error {
+	if strings.ContainsAny(value, "\r\n") {
+		return action.NonRetryable(fmt.Errorf("workflow-email: %s contains illegal newline", name))
+	}
+	return nil
 }
 
 func render(tmpl string, vars map[string]any) (string, error) {
