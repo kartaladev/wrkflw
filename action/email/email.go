@@ -5,7 +5,9 @@ package email
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strings"
 	"text/template"
@@ -25,11 +27,159 @@ func (f SenderFunc) send(addr string, auth smtp.Auth, from string, to []string, 
 	return f(addr, auth, from, to, msg)
 }
 
+// smtpSender is the default plain-SMTP sender wrapping smtp.SendMail.
 type smtpSender struct{}
 
 func (smtpSender) send(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
 	return smtp.SendMail(addr, auth, from, to, msg)
 }
+
+// startTLSSender dials plaintext SMTP, performs EHLO, REQUIRES the STARTTLS
+// extension (errors if absent — no silent plaintext fallback), upgrades to TLS
+// via StartTLS, then sends the message.
+type startTLSSender struct {
+	cfg *tls.Config
+}
+
+func (s startTLSSender) send(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// Fallback for bare hostnames without port.
+		host = addr
+	}
+
+	// Derive effective TLS config: clone caller's config (or start from scratch)
+	// and fill in ServerName from the SMTP host if the caller left it blank.
+	cfg := s.cfg
+	if cfg == nil {
+		cfg = &tls.Config{ServerName: host} //nolint:gosec // ServerName set from addr
+	} else if cfg.ServerName == "" {
+		// Clone so we don't mutate the caller's config.
+		c := cfg.Clone()
+		c.ServerName = host
+		cfg = c
+	}
+
+	c, err := smtp.Dial(addr)
+	if err != nil {
+		return fmt.Errorf("workflow-email: dial %s: %w", addr, err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if err := c.Hello("localhost"); err != nil {
+		return fmt.Errorf("workflow-email: EHLO: %w", err)
+	}
+
+	// ENFORCE STARTTLS: reject the session if the server does not advertise it.
+	if ok, _ := c.Extension("STARTTLS"); !ok {
+		return fmt.Errorf("workflow-email: server does not support STARTTLS")
+	}
+
+	if err := c.StartTLS(cfg); err != nil {
+		return fmt.Errorf("workflow-email: STARTTLS: %w", err)
+	}
+
+	if auth != nil {
+		if err := c.Auth(auth); err != nil {
+			return fmt.Errorf("workflow-email: auth: %w", err)
+		}
+	}
+
+	if err := c.Mail(from); err != nil {
+		return fmt.Errorf("workflow-email: MAIL FROM: %w", err)
+	}
+	for _, rcpt := range to {
+		if err := c.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("workflow-email: RCPT TO %s: %w", rcpt, err)
+		}
+	}
+	w, err := c.Data()
+	if err != nil {
+		return fmt.Errorf("workflow-email: DATA: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		_ = w.Close()
+		return fmt.Errorf("workflow-email: write body: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("workflow-email: close DATA: %w", err)
+	}
+	return c.Quit()
+}
+
+// tlsSender dials implicit TLS (e.g. port 465) via tls.Dial, wraps the connection
+// in smtp.NewClient, then sends the message.
+type tlsSender struct {
+	cfg *tls.Config
+}
+
+func (s tlsSender) send(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+
+	cfg := s.cfg
+	if cfg == nil {
+		cfg = &tls.Config{ServerName: host} //nolint:gosec // ServerName set from addr
+	} else if cfg.ServerName == "" {
+		c := cfg.Clone()
+		c.ServerName = host
+		cfg = c
+	}
+
+	conn, err := tls.Dial("tcp", addr, cfg)
+	if err != nil {
+		return fmt.Errorf("workflow-email: TLS dial %s: %w", addr, err)
+	}
+
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("workflow-email: SMTP client: %w", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if err := c.Hello("localhost"); err != nil {
+		return fmt.Errorf("workflow-email: EHLO: %w", err)
+	}
+
+	if auth != nil {
+		if err := c.Auth(auth); err != nil {
+			return fmt.Errorf("workflow-email: auth: %w", err)
+		}
+	}
+
+	if err := c.Mail(from); err != nil {
+		return fmt.Errorf("workflow-email: MAIL FROM: %w", err)
+	}
+	for _, rcpt := range to {
+		if err := c.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("workflow-email: RCPT TO %s: %w", rcpt, err)
+		}
+	}
+	w, err := c.Data()
+	if err != nil {
+		return fmt.Errorf("workflow-email: DATA: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		_ = w.Close()
+		return fmt.Errorf("workflow-email: write body: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("workflow-email: close DATA: %w", err)
+	}
+	return c.Quit()
+}
+
+// tlsMode selects which TLS sender is constructed by NewEmail.
+type tlsMode int
+
+const (
+	tlsModeNone     tlsMode = iota // default: use smtpSender (smtp.SendMail)
+	tlsModeStartTLS                // STARTTLS (ENFORCED) — fails if server does not advertise it
+	tlsModeImplicit                // Implicit TLS (tls.Dial, e.g. port 465)
+)
 
 // Option configures an email action.
 type Option func(*emailAction)
@@ -44,7 +194,10 @@ type emailAction struct {
 	subjectTmpl string
 	bodyTmpl    string
 	html        bool
-	snd         sender
+	snd         sender // nil → auto-selected in NewEmail by tlsMode
+	explicitSnd bool   // true when caller used WithSender (highest precedence)
+	mode        tlsMode
+	tlsCfg      *tls.Config
 }
 
 // WithSMTPAddr sets the SMTP server address ("host:port").
@@ -60,16 +213,32 @@ func WithAuth(user, pass string) Option {
 	}
 }
 
-// WithTLS marks the connection to use implicit TLS (port 465). It is informational
-// in the default sender, which uses net/smtp.SendMail and does NOT open a TLS-wrapped
-// connection. To send over implicit TLS, supply a custom SenderFunc via WithSender that
-// dials tls.Dial and drives the session with smtp.NewClient.
-func WithTLS() Option { return func(_ *emailAction) {} }
+// WithTLS selects implicit-TLS mode (port 465): the sender opens a tls.Dial connection
+// and then uses smtp.NewClient over it. This enforces TLS at the transport layer.
+//
+// WithTLS and WithStartTLS are mutually exclusive. If both are supplied, last-wins: the
+// final option in the call to NewEmail determines the mode. Use WithTLSConfig to supply
+// a custom *tls.Config; the default derives ServerName from the SMTP address.
+func WithTLS() Option { return func(a *emailAction) { a.mode = tlsModeImplicit } }
 
-// WithStartTLS marks the connection to negotiate STARTTLS. It is informational in the
-// default sender. To enforce STARTTLS, supply a custom SenderFunc via WithSender that
-// calls (*smtp.Client).StartTLS after connecting.
-func WithStartTLS() Option { return func(_ *emailAction) {} }
+// WithStartTLS selects STARTTLS mode: the sender dials plaintext SMTP, performs EHLO,
+// and REQUIRES the server to advertise the STARTTLS extension. If the server does NOT
+// advertise STARTTLS, Do returns an error — the sender never falls back to plaintext.
+// Once STARTTLS is confirmed and negotiated, auth (if configured) and the message are
+// sent over the encrypted channel.
+//
+// WithTLS and WithStartTLS are mutually exclusive. Last-wins if both appear. Use
+// WithTLSConfig to override the *tls.Config used during the TLS handshake.
+func WithStartTLS() Option { return func(a *emailAction) { a.mode = tlsModeStartTLS } }
+
+// WithTLSConfig overrides the *tls.Config used by the TLS senders (WithTLS and
+// WithStartTLS). If ServerName is empty in the supplied config, it is derived from
+// the SMTP address at send time. The config is cloned before ServerName is filled in,
+// so the caller's value is never mutated.
+//
+// Typical use: supply &tls.Config{InsecureSkipVerify: true} in tests that use
+// self-signed certificates.
+func WithTLSConfig(cfg *tls.Config) Option { return func(a *emailAction) { a.tlsCfg = cfg } }
 
 // WithFrom sets the envelope/From address.
 func WithFrom(addr string) Option { return func(a *emailAction) { a.from = addr } }
@@ -90,15 +259,40 @@ func WithBodyTemplate(t string) Option { return func(a *emailAction) { a.bodyTmp
 // WithHTML sets the Content-Type to text/html (default text/plain).
 func WithHTML() Option { return func(a *emailAction) { a.html = true } }
 
-// WithSender overrides the SMTP sender (test seam).
-func WithSender(s sender) Option { return func(a *emailAction) { a.snd = s } }
+// WithSender overrides the SMTP sender (test seam). WithSender takes highest
+// precedence: it is always used regardless of WithTLS or WithStartTLS.
+func WithSender(s sender) Option {
+	return func(a *emailAction) {
+		a.snd = s
+		a.explicitSnd = true
+	}
+}
 
 // NewEmail returns a service action that sends one email per Do invocation.
 // It renders the subject and body as text/templates over the instance variables.
+//
+// TLS sender selection (precedence, highest first):
+//  1. WithSender — explicit override, always wins.
+//  2. WithStartTLS — selects startTLSSender (STARTTLS enforced).
+//  3. WithTLS — selects tlsSender (implicit TLS via tls.Dial).
+//  4. Default — smtpSender (smtp.SendMail, plaintext).
+//
+// When both WithTLS and WithStartTLS appear, last-wins determines the mode.
 func NewEmail(opts ...Option) action.ServiceAction {
-	a := &emailAction{snd: smtpSender{}}
+	a := &emailAction{}
 	for _, o := range opts {
 		o(a)
+	}
+	// Resolve sender: explicit WithSender wins; otherwise select by TLS mode.
+	if !a.explicitSnd {
+		switch a.mode {
+		case tlsModeStartTLS:
+			a.snd = startTLSSender{cfg: a.tlsCfg}
+		case tlsModeImplicit:
+			a.snd = tlsSender{cfg: a.tlsCfg}
+		default:
+			a.snd = smtpSender{}
+		}
 	}
 	return a
 }
