@@ -11,7 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 The first tagged release (`v0.1.0`) will be cut from this section. It captures the engine as
-built across ADRs 0001–0075.
+built across ADRs 0001–0077.
+
+### Changed
+- **BREAKING (default behaviour): service actions now time out after 30s by default.** New
+  `runtime.WithActionTimeout(d)` bounds each action invocation; pass a larger `d` for legitimately
+  long actions or `runtime.WithActionTimeout(0)` to disable. A timed-out action surfaces as a
+  retryable failure (ADR-0076).
+- **`action/httpcall` now caps response/request bodies at 10 MiB by default.** New
+  `httpcall.WithMaxResponseSize(n)` raises/lowers the cap; `n <= 0` disables it. Over-cap reads fail
+  non-retryable with the new `httpcall.ErrBodyTooLarge` (ADR-0076).
+
+### Security
+- Enabled `gosec`, `bodyclose`, and `errorlint` in CI; triaged all findings to zero with documented
+  rationale for each suppression (ADR-0077).
 
 ### Added
 - **Token-based BPMN-inspired engine core** — process definitions (19 typed node kinds:

@@ -39,14 +39,17 @@ Each item: **what's missing · evidence (file ref) · why it matters**. Severity
   (or, at minimum, a prominently-documented `eventing.NewPublisher(watermillPub)` wrapping pattern +
   partition-key-by-`instance_id` guidance for ordering).
 
-### P0-4 — Unbounded HTTP response buffering in httpcall
+### P0-4 — Unbounded HTTP response buffering in httpcall ✅ DONE (ADR-0076, branch `feat/action-safety-limits`)
 - **Evidence:** `action/httpcall/httpcall.go:289` — `io.ReadAll(resp.Body)` with no cap.
 - **Why:** a large/malicious upstream OOMs the replica. Add `io.LimitReader` + `WithMaxResponseSize`.
+- **Shipped:** `httpcall.WithMaxResponseSize(n)` (default 10 MiB, `n<=0` unlimited) + `ErrBodyTooLarge`.
 
-### P0-5 — No action-execution timeout
+### P0-5 — No action-execution timeout ✅ DONE (ADR-0076, branch `feat/action-safety-limits`)
 - **Evidence:** `runtime/runner.go:727` `safeActionDo` recovers panics only; action ctx carries no deadline.
 - **Why:** one hung action (blocking HTTP/SMTP) stalls the instance and ties up goroutines/connections
   indefinitely. Add a `WithActionTimeout` option that wraps the action context.
+- **Shipped:** `runtime.WithActionTimeout(d)` (default-on 30s, `d<=0` disables) wrapping both
+  safeActionDo sites via `context.WithTimeout`.
 
 ---
 
@@ -89,9 +92,12 @@ Each item: **what's missing · evidence (file ref) · why it matters**. Severity
 - MySQL `Pruner.PruneTimers` is not in the public `Pruner` interface (`persistence/pruner.go` vs
   `internal/persistence/mysql/pruner.go:115`) — MySQL timer rows leak if consumer relies on the interface.
 
-### P1-D — Lint / security baseline
+### P1-D — Lint / security baseline ✅ DONE (ADR-0077, branch `feat/action-safety-limits`)
 - `.golangci.yml` runs only the `standard` set — **add `gosec`, `bodyclose`, `errorlint`** (then fix the
   findings they surface; this is its own branch because it will not be clean on first run).
+- **Shipped:** three linters enabled, output uncapped, all findings triaged to zero (errorlint `%w`
+  fixes; documented gosec nolints/exclusions). bodyclose 0 findings. Expr-timeout doc + mysql LIMIT
+  validation items below remain open.
 - Expr-eval DoS timeout is opt-in; document that untrusted-definition consumers MUST inject a
   timeout-capable evaluator (`internal/expreval/expreval.go:24`, ADR-0049/0056).
 - Validate `batch`/`limit`/`fetch` > 0 in MySQL constructors that format `LIMIT %d`
