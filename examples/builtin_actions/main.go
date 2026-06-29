@@ -172,10 +172,11 @@ func main() {
 	state, err := r.Run(ctx, def, "demo-001", map[string]any{
 		"orderID":    "ORD-2026-001",
 		"customerID": "cust-42",
-		// region is NOT pre-set; the transform mapper resolves it from customerDB.
-		// It is scratch — used only within the transform action for template rendering
-		// because it flows through process vars before the email step picks it up
-		// via priority (the only WithExpr output).
+		// Neither tier nor region is pre-set. The transform mapper resolves both from
+		// customerDB into scratch; WithExpr("priority", …) derives priority from the
+		// scratch tier, and WithExpr("region", "region") projects region out. Only those
+		// two WithExpr outputs (priority, region) become process variables — the raw tier
+		// stays scratch — and the email step then reads priority + region from process vars.
 	})
 	if err != nil {
 		log.Fatal("run:", err)
