@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	mysqlRootPassword = "wrkflw_root"
+	mysqlRootPassword = "wrkflw_root" //nolint:gosec // G101: ephemeral testcontainers root password, not a production secret.
 	mysqlDefaultDB    = "wrkflw_test"
 	mysqlRootUser     = "root"
 )

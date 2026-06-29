@@ -780,7 +780,7 @@ func instanceToProto(st engine.InstanceState) (*workflowpb.Instance, error) {
 	inst := &workflowpb.Instance{
 		InstanceId: st.InstanceID,
 		DefId:      st.DefID,
-		DefVersion: int32(st.DefVersion),
+		DefVersion: int32(st.DefVersion), //nolint:gosec // G115: definition version is a small sequential int, far within int32.
 		Status:     statusToString(st.Status),
 		StartedAt:  timestamppb.New(st.StartedAt),
 		Variables:  vars,
@@ -796,7 +796,7 @@ func summaryToProto(s runtime.InstanceSummary) *workflowpb.InstanceSummary {
 	sum := &workflowpb.InstanceSummary{
 		InstanceId: s.InstanceID,
 		DefId:      s.DefID,
-		DefVersion: int32(s.DefVersion),
+		DefVersion: int32(s.DefVersion), //nolint:gosec // G115: definition version is a small sequential int, far within int32.
 		Status:     statusToString(s.Status),
 		StartedAt:  timestamppb.New(s.StartedAt),
 	}

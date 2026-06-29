@@ -1,10 +1,43 @@
 version: "2"
 run:
   timeout: 5m
+issues:
+  # Reveal every finding — a security linter must not silently cap output, or a
+  # masked finding surfaces later when unrelated code shifts line attribution.
+  max-issues-per-linter: 0
+  max-same-issues: 0
 linters:
   default: standard   # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    # Security & correctness hardening (ADR-0077).
+    - gosec      # SAST: integer overflow, weak rng, SQL formatting, etc.
+    - bodyclose  # ensure HTTP response bodies are closed
+    - errorlint  # require errors.Is/As and %w-wrapping
   exclusions:
     generated: lax
+    rules:
+      # Test files: gosec flags test-only patterns (subprocess launch in a
+      # build-confinement test, fmt.Fprintf echo in an httptest handler) that
+      # are not production attack surface.
+      - path: _test\.go
+        linters:
+          - gosec
+      # MySQL persistence: G201/G202 SQL string formatting/concatenation. The
+      # only interpolated values are LIMIT integers (bounded by NormalizeLimit,
+      # 1..201) and generated `?` placeholder lists — a placeholder cannot be
+      # used for LIMIT alongside a FOR UPDATE/locking clause (MySQL 8). All
+      # row values are bound as query args; there is no string-built user input.
+      - path: internal/persistence/mysql/
+        linters:
+          - gosec
+        text: "G20[12]"
+      # Persistence stores/listers convert bounded enums to the smallint columns
+      # they back: instance Status (< 10 values) and timer Kind (a handful). The
+      # int -> int16 narrowing cannot overflow for these enums.
+      - path: internal/persistence/
+        linters:
+          - gosec
+        text: "G115: integer overflow conversion int -> int16"
     paths:
       # Generated protobuf/gRPC code — do not lint.
       - transport/grpc/workflowpb

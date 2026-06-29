@@ -250,7 +250,7 @@ func (h *handler) writeJSON(w http.ResponseWriter, r *http.Request, status int, 
 
 func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		WriteHTTPError(w, fmt.Errorf("%w: %v", ErrBadInput, err))
+		WriteHTTPError(w, fmt.Errorf("%w: %w", ErrBadInput, err))
 		return false
 	}
 	return true
