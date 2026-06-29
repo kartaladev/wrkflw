@@ -571,7 +571,7 @@ func TestWithBodyValidator_PassesAndSendsRequest(t *testing.T) {
 	a := httpcall.NewHTTPCall(
 		httpcall.WithBaseURL(srv.URL),
 		httpcall.WithBodyKey("payload"),
-		httpcall.WithBodyValidator(func(_ context.Context, body []byte) error {
+		httpcall.WithBodyValidator(func(_ context.Context, body []byte, _ map[string]any) error {
 			if !json.Valid(body) {
 				return fmt.Errorf("invalid JSON")
 			}
@@ -600,7 +600,7 @@ func TestWithBodyValidator_FailsBlocksSend(t *testing.T) {
 	a := httpcall.NewHTTPCall(
 		httpcall.WithBaseURL(srv.URL),
 		httpcall.WithBodyKey("payload"),
-		httpcall.WithBodyValidator(func(_ context.Context, _ []byte) error {
+		httpcall.WithBodyValidator(func(_ context.Context, _ []byte, _ map[string]any) error {
 			return fmt.Errorf("required field missing")
 		}),
 	)
@@ -662,7 +662,7 @@ func TestWithBodyValidator_EmptyBodyFuncBodyIsValidated(t *testing.T) {
 		httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
 			return strings.NewReader(""), nil // non-nil reader, zero bytes
 		}),
-		httpcall.WithBodyValidator(func(_ context.Context, body []byte) error {
+		httpcall.WithBodyValidator(func(_ context.Context, body []byte, _ map[string]any) error {
 			if len(body) == 0 {
 				return fmt.Errorf("body must not be empty")
 			}
@@ -693,7 +693,7 @@ func TestWithBodyValidator_NoBodySkipsValidator(t *testing.T) {
 	a := httpcall.NewHTTPCall(
 		httpcall.WithBaseURL(srv.URL),
 		httpcall.WithMethod(http.MethodGet),
-		httpcall.WithBodyValidator(func(_ context.Context, _ []byte) error {
+		httpcall.WithBodyValidator(func(_ context.Context, _ []byte, _ map[string]any) error {
 			return fmt.Errorf("validator must not be called for no-body request")
 		}),
 	)
@@ -723,7 +723,7 @@ func TestWithBodyValidator_WithBodyFunc_BuffersAndSendsCorrectly(t *testing.T) {
 		httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
 			return bytes.NewBufferString(funcBody), nil
 		}),
-		httpcall.WithBodyValidator(func(_ context.Context, body []byte) error {
+		httpcall.WithBodyValidator(func(_ context.Context, body []byte, _ map[string]any) error {
 			validatorBody = body
 			return nil // pass
 		}),
@@ -737,5 +737,72 @@ func TestWithBodyValidator_WithBodyFunc_BuffersAndSendsCorrectly(t *testing.T) {
 	}
 	if serverBody != funcBody {
 		t.Fatalf("server got %q, want %q (body must not be dropped after buffering)", serverBody, funcBody)
+	}
+}
+
+// TestWithBodyValidator_ReceivesVars verifies that the BodyValidator receives the
+// process variables passed to Do. The validator checks for an "expectSchema" variable:
+// - when vars["expectSchema"] == "v2" → validation passes, server IS hit.
+// - when the var is absent → NonRetryable error returned, server NOT hit.
+// This property is essential for consumers who select a JSON schema by variable value.
+func TestWithBodyValidator_ReceivesVars(t *testing.T) {
+	type tc struct {
+		name      string
+		vars      map[string]any
+		serverHit bool
+		wantErr   bool
+	}
+	cases := []tc{
+		{
+			name:      "vars contain expectSchema=v2 -> validator passes, server hit",
+			vars:      map[string]any{"payload": map[string]any{"x": 1}, "expectSchema": "v2"},
+			serverHit: true,
+			wantErr:   false,
+		},
+		{
+			name:      "vars missing expectSchema -> validator fails, server not hit",
+			vars:      map[string]any{"payload": map[string]any{"x": 1}},
+			serverHit: false,
+			wantErr:   true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var hits atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			a := httpcall.NewHTTPCall(
+				httpcall.WithBaseURL(srv.URL),
+				httpcall.WithBodyKey("payload"),
+				httpcall.WithBodyValidator(func(_ context.Context, _ []byte, vars map[string]any) error {
+					if vars["expectSchema"] != "v2" {
+						return fmt.Errorf("workflow-httpcall: expectSchema must be v2, got %v", vars["expectSchema"])
+					}
+					return nil
+				}),
+			)
+			_, err := a.Do(t.Context(), c.vars)
+			if c.wantErr && err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if c.wantErr && action.IsRetryable(err) {
+				t.Fatal("body validation error must be non-retryable")
+			}
+			if !c.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			hitCount := hits.Load()
+			if c.serverHit && hitCount != 1 {
+				t.Fatalf("server hit count = %d, want 1", hitCount)
+			}
+			if !c.serverHit && hitCount != 0 {
+				t.Fatalf("server must NOT be hit when validation fails, got %d hits", hitCount)
+			}
+		})
 	}
 }

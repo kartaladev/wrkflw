@@ -20,10 +20,13 @@
 // # Request-body validation
 //
 // Use [WithBodyValidator] to validate the request body bytes before the request is
-// sent. A failing validator returns a non-retryable error and the request is never
-// issued. When a validator is set alongside [WithBodyFunc], the BodyFunc reader is
-// fully buffered into memory (io.ReadAll) so the bytes are available for inspection;
-// document this to callers who otherwise expect streaming.
+// sent. The validator receives both the body bytes and the process variables (the
+// same vars map passed to Do), enabling schema selection by variable value or
+// cross-validation of body content against process state. A failing validator
+// returns a non-retryable error and the request is never issued. When a validator
+// is set alongside [WithBodyFunc], the BodyFunc reader is fully buffered into
+// memory (io.ReadAll) so the bytes are available for inspection; document this to
+// callers who otherwise expect streaming.
 package httpcall
 
 import (
@@ -57,13 +60,16 @@ type HeaderFunc func(ctx context.Context, h http.Header, vars map[string]any) er
 // a streaming body should be aware of this buffering behaviour.
 type BodyFunc func(ctx context.Context, vars map[string]any) (io.Reader, error)
 
-// BodyValidator validates the request body bytes before the HTTP request is
-// sent. A validation failure is always a permanent (non-retryable) error —
-// the library wraps the returned error with [action.NonRetryable] automatically.
-// Use this hook to plug in JSON-schema validation, well-formedness checks, size
-// limits, or required-field assertions without adding a schema-engine dependency
-// to this library.
-type BodyValidator func(ctx context.Context, body []byte) error
+// BodyValidator validates the request body bytes before the request is sent,
+// with access to the process variables. A validation failure is a permanent
+// (non-retryable) error — the library wraps the returned error with
+// [action.NonRetryable] automatically. Dependency-free: consumers plug in
+// JSON-schema validation with their own library. The vars parameter is the
+// same input variable map passed to [action.ServiceAction.Do], enabling
+// schema selection by variable value or cross-validation of the body against
+// process state — consistent with [WithHeaderFunc] and [WithBodyFunc] which
+// also receive vars.
+type BodyValidator func(ctx context.Context, body []byte, vars map[string]any) error
 
 // Option configures an HTTP call action.
 type Option func(*httpCall)
@@ -243,7 +249,7 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 	// is "body present" and the validator must run (e.g. to catch empty-body errors).
 	// A nil bodyBytes means no body source was configured at all — skip validation.
 	if h.bodyValidator != nil && bodyBytes != nil {
-		if err := h.bodyValidator(ctx, bodyBytes); err != nil {
+		if err := h.bodyValidator(ctx, bodyBytes, in); err != nil {
 			return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: body validation: %w", err))
 		}
 	}

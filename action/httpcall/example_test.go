@@ -34,9 +34,10 @@ func ExampleWithBodyValidator() {
 
 	// requiredFields returns an error if any of the named keys are absent from the
 	// JSON object body. This is a self-contained stdlib validator — no schema library
-	// is imported.
+	// is imported. The vars parameter (process variables) is available when you need
+	// to select a schema by variable value or cross-validate body against process state.
 	requiredFields := func(fields ...string) httpcall.BodyValidator {
-		return func(_ context.Context, body []byte) error {
+		return func(_ context.Context, body []byte, _ map[string]any) error {
 			var m map[string]json.RawMessage
 			if err := json.Unmarshal(body, &m); err != nil {
 				return fmt.Errorf("body is not a JSON object: %w", err)
