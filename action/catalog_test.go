@@ -2,6 +2,7 @@ package action_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -218,6 +219,6 @@ func ExampleRegistry() {
 	}
 
 	out, _ := a.Do(context.Background(), map[string]any{"name": "world"})
-	_ = out["msg"] // hello world
-	// Output:
+	fmt.Println(out["msg"])
+	// Output: hello world
 }
