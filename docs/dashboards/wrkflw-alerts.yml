@@ -1,0 +1,135 @@
+groups:
+  - name: wrkflw.outbox
+    interval: 1m
+    rules:
+      - alert: WrkflwOutboxDeadLetters
+        expr: wrkflw_outbox_dead > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: relay
+        annotations:
+          summary: "wrkflw outbox has dead-letter rows ({{ $value }} rows)"
+          description: >
+            One or more outbox events exhausted all delivery attempts and are now
+            quarantined as dead letters. They will not be retried automatically.
+            Inspect via GET /admin/dead-letters?category=outbox and redrive with
+            POST /admin/dead-letters/redrive after root-cause analysis.
+            Runbook: docs/runbooks/high-dlq-depth.md
+
+      - alert: WrkflwOutboxDeadLettersSustained
+        expr: wrkflw_outbox_dead > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: relay
+        annotations:
+          summary: "wrkflw dead-letter backlog sustained for 10 m ({{ $value }} rows)"
+          description: >
+            Dead-letter rows have persisted for at least 10 minutes, suggesting the
+            underlying failure has not been remediated. Escalate immediately.
+            Runbook: docs/runbooks/high-dlq-depth.md
+
+      - alert: WrkflwOutboxOldestPendingHigh
+        expr: wrkflw_outbox_oldest_pending_age_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: relay
+        annotations:
+          summary: "wrkflw outbox oldest pending event is {{ $value | humanizeDuration }} old"
+          description: >
+            The oldest un-delivered outbox row is more than 5 minutes old. The relay
+            may be stalled, overwhelmed, or the broker is unavailable.
+            Check GET /admin/relay-stats for queue depth and last-poll time.
+            Runbook: docs/runbooks/relay-backlog.md
+
+      - alert: WrkflwOutboxOldestPendingCritical
+        expr: wrkflw_outbox_oldest_pending_age_seconds > 1800
+        for: 5m
+        labels:
+          severity: critical
+          component: relay
+        annotations:
+          summary: "wrkflw outbox pending event is {{ $value | humanizeDuration }} old (critical)"
+          description: >
+            The oldest pending outbox row is more than 30 minutes old. Downstream
+            subscribers are not receiving events; process instances may be stuck.
+            Runbook: docs/runbooks/relay-backlog.md
+
+  - name: wrkflw.actions
+    interval: 1m
+    rules:
+      - alert: WrkflwActionFailureRateHigh
+        expr: sum(rate(wrkflw_action_failures_total[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "wrkflw action failure rate is {{ $value | humanize }}/s"
+          description: >
+            More than 0.5 action failures per second over the past 5 minutes.
+            Break down by action label to identify the culprit:
+              sum by (action, retryable) (rate(wrkflw_action_failures_total[5m]))
+            Runbook: docs/runbooks/action-failures.md
+
+      - alert: WrkflwActionFailureRateCritical
+        expr: sum(rate(wrkflw_action_failures_total[5m])) > 2
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "wrkflw action failure rate critical: {{ $value | humanize }}/s"
+          description: >
+            More than 2 action failures per second sustained for 5 minutes.
+            Non-retryable failures are raising incidents and blocking process
+            instances. Investigate immediately.
+            Runbook: docs/runbooks/action-failures.md
+
+      - alert: WrkflwActionNonRetryableFailures
+        expr: sum(rate(wrkflw_action_failures_total{retryable="false"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "wrkflw non-retryable action failures detected ({{ $value | humanize }}/s)"
+          description: >
+            Non-retryable action failures create incidents that require operator
+            intervention to resolve. Check GET /admin/instances/{id}/lineage and
+            open incidents. Runbook: docs/runbooks/action-failures.md
+
+  - name: wrkflw.instances
+    interval: 2m
+    rules:
+      - alert: WrkflwNoInstanceCompletions
+        expr: sum(rate(wrkflw_instances_completed_total[15m])) == 0
+          and sum(wrkflw_instances_active) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "wrkflw: no instances completed in 15 m despite {{ $value }} active"
+          description: >
+            Active instances exist but none have completed in 15 minutes. This may
+            indicate the engine is stalled (e.g. relay backlog, all actions failing,
+            or timer mis-scheduling). Cross-check relay-backlog and action-failure
+            alerts. Runbook: docs/runbooks/relay-backlog.md
+
+      - alert: WrkflwActiveInstancesFlatline
+        expr: changes(wrkflw_instances_active[30m]) == 0
+          and wrkflw_instances_active > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "wrkflw_instances_active has not changed in 30 m ({{ $value }} active)"
+          description: >
+            The active-instance gauge has been completely flat for 30 minutes while
+            showing non-zero active instances. In a live system this is unusual —
+            either no new instances are being started and all existing ones are stuck,
+            or metrics export is broken.
