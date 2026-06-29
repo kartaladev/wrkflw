@@ -105,6 +105,12 @@ Each item: **what's missing · evidence (file ref) · why it matters**. Severity
 
 ---
 
+### P1-E — Deflake casbinauthz multi-node reload test ⏭️ NEXT (queued 2026-06-30)
+- **Evidence:** `casbinauthz` `TestNewCasbinAuthorizerFromDB_MultiNodeReload` — a LISTEN/NOTIFY
+  testcontainers timing flake (surfaced during the action-safety-limits review; passes on retry).
+- **Why:** a flaky test erodes CI signal. Replace the timing assumption with a deterministic
+  ready-signal (mirror the `listenReady` pattern from the P2 fix in ADR-0071-era work), not a sleep.
+
 ## 🟡 P2 — Convenience / developer experience
 
 ### Missing capabilities (consumers hit these immediately)
