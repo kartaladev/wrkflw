@@ -25,14 +25,15 @@ Ship four public `action/*` subpackages, each providing a configured constructor
 2. **`action/email`** — `NewEmail(opts ...email.Option) action.ServiceAction`
    - Sends email via stdlib `net/smtp`.
    - Per-call configuration: SMTP address, auth, from, recipients, subject and body templates, HTML toggle.
-   - Subject and body are rendered via `text/template` (`missingkey=error`) over the instance variables.
-   - Pluggable sender seam: an unexported `sender` interface with a default `smtp.SendMail`-backed implementation; tests inject a fake via the exported `SenderFunc` adapter and `WithSender`. `WithTLS`/`WithStartTLS` are informational no-ops — TLS transport is wired by supplying a custom `SenderFunc`.
-   - Retry classification: template/render errors are non-retryable (`action.NonRetryable`); send-level (SMTP/transport) errors are retryable.
+   - Subject and body are rendered via `text/template` (`missingkey=error`); rendered header values are CRLF-validated to prevent SMTP header injection.
+   - **I/O recipients + per-recipient personalization:** `WithTo(...)` sets static recipients; `WithRecipientResolver(func(ctx, vars) ([]Recipient, error))` resolves recipients at send time (e.g. a DB lookup). Each `Recipient{Address, Data}` gets an **individual** message whose templates render with `Data` overlaid on the instance variables (recipients do not see each other). Sending is best-effort across the list: failures are aggregated (`errors.Join`, retryable — at-least-once, so retries may resend); a resolver may return `action.NonRetryable`; an empty list is non-retryable.
+   - **Real TLS:** `WithStartTLS()` enforces STARTTLS (errors if the server does not advertise it — never silently plaintext); `WithTLS()` uses implicit TLS (`tls.Dial`); `WithTLSConfig(*tls.Config)` customizes either. Pluggable sender seam (unexported `sender` interface; default `smtp.SendMail`-backed; tests/consumers inject via the exported `SenderFunc` + `WithSender`, which overrides the TLS modes).
+   - Retry classification: template/render and header-validation errors are non-retryable; send-level (SMTP/transport) errors are retryable.
 
 3. **`action/transform`** — `NewTransform(opts ...transform.Option) (action.ServiceAction, error)`
-   - Computes output variables from `expr-lang` expressions evaluated against the input variables (`Set(outKey, expr)`); later expressions may reference earlier outputs.
-   - Pure computation, no I/O. Expressions are compiled eagerly, so a malformed expression fails `NewTransform` at wiring time; a runtime evaluation error (e.g. a missing variable) surfaces from `Do`.
-   - Replaces ad-hoc inline closures for simple data manipulation.
+   - An **I/O-capable enricher**, not a pure mapper. `WithMapper(func(ctx, vars) (map[string]any, error))` performs I/O (e.g. a database lookup) to enrich the action's internal working set; `WithExpr(outKey, exprStr)` evaluates an `expr-lang` expression. Stages run in order and chain (later stages see earlier results).
+   - **Scratch-vs-persisted invariant:** `WithMapper` enrichment is action-local scratch — available to later stages but **never returned as process variables**. Only `WithExpr` results are persisted; to persist a fetched value, project it explicitly (`WithExpr("k", "k")`). This keeps bulky/sensitive/transient lookup data out of the persisted instance state.
+   - `WithExpr` expressions compile eagerly (malformed → `NewTransform` error); a nil `WithMapper` is rejected at `NewTransform`; runtime evaluation/mapper errors (which may be `action.NonRetryable`) surface from `Do`.
 
 4. **`action/logaction`** — `NewLog(opts ...logaction.Option) action.ServiceAction`
    - Emits one structured `slog` record of selected instance variables (`WithLogger`/`WithLevel`/`WithMessage`/`WithKeys`).
@@ -43,7 +44,7 @@ Ship four public `action/*` subpackages, each providing a configured constructor
 
 **Tech-stack impact:** The `go.mod` file gains one new **test-only** dependency (`mailpit` container for email integration tests); all action implementations use only the standard library and the already-present `expr-lang/expr`.
 
-**Public surface:** Constructors and option functions live in the `action/<subpackage>` namespace, consistent with the definition-scoped catalog pattern (ADR-0063). Each subpackage ships a testable `Example`; `examples/` reference wiring for these actions is a documented follow-up, not part of this change.
+**Public surface:** Constructors and option functions live in the `action/<subpackage>` namespace, consistent with the definition-scoped catalog pattern (ADR-0063). Each subpackage ships a testable `Example`, and `examples/builtin_actions/` is a runnable reference wiring of all four actions end-to-end.
 
 ## Consequences
 
