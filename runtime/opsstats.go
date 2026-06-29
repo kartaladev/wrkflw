@@ -44,11 +44,17 @@ type TimerStatsReader interface {
 // — returned by the lineage read port. It carries the fields needed to identify
 // the instance and its position in the call chain without returning the full
 // CallLink record (which includes write-side fields like CommandID).
+//
+// The related instance's execution status is NOT carried here; an operator must
+// fetch the instance snapshot (e.g. via InstanceStateReader) to learn it.
+//
+// For a child relation DefID and DefVersion are empty: wrkflw_call_links records
+// only the parent definition, not the child's. The child's definition ref must
+// be retrieved from the child's own instance record.
 type CallLinkRef struct {
 	InstanceID string
 	DefID      string
 	DefVersion int
-	Status     string
 	Depth      int
 }
 

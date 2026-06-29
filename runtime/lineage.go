@@ -77,16 +77,9 @@ func (r *LineageReader) Lineage(ctx context.Context, instanceID string) (Instanc
 	return lin, nil
 }
 
-// callLinkToRef maps a CallLink to a CallLinkRef DTO. The InstanceID and
-// fields are taken from the parent side (ParentInstanceID, ParentDefID, etc.)
-// when the link describes the parent of the queried instance. When describing a
-// child (ChildrenOf), the ChildInstanceID and its fields are used.
-//
-// For ParentOf: the interesting identity is the parent instance.
-// For ChildrenOf: the interesting identity is the child instance.
-//
-// Since we reuse one mapper, the caller chooses which perspective to expose via
-// the dedicated helpers below.
+// callLinkParentToRef maps a CallLink to a CallLinkRef for the parent side.
+// The parent's definition (ParentDefID, ParentDefVersion) is faithfully recorded
+// in wrkflw_call_links, so both identity and definition fields are populated.
 func callLinkParentToRef(cl CallLink) CallLinkRef {
 	return CallLinkRef{
 		InstanceID: cl.ParentInstanceID,
@@ -96,11 +89,14 @@ func callLinkParentToRef(cl CallLink) CallLinkRef {
 	}
 }
 
+// callLinkChildToRef maps a CallLink to a CallLinkRef for the child side.
+// DefID and DefVersion are intentionally left at their zero values: the
+// wrkflw_call_links table only stores the parent's definition — the child's
+// own definition is not recorded there. An operator must fetch the child's
+// instance snapshot to learn its definition ref.
 func callLinkChildToRef(cl CallLink) CallLinkRef {
 	return CallLinkRef{
 		InstanceID: cl.ChildInstanceID,
-		DefID:      cl.ParentDefID,
-		DefVersion: cl.ParentDefVersion,
 		Depth:      cl.Depth,
 	}
 }

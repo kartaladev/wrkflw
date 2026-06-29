@@ -118,10 +118,16 @@ func TestLineageReader_Lineage(t *testing.T) {
 		assert.Equal(t, 2, lin.CallParent.DefVersion)
 		assert.Equal(t, 1, lin.CallParent.Depth)
 
-		// Call children.
+		// Call children: InstanceID and Depth are set; DefID/DefVersion are
+		// intentionally empty because wrkflw_call_links only records the parent
+		// definition — the child's own def is not stored there. An operator must
+		// fetch the child's snapshot to learn its definition.
 		require.Len(t, lin.CallChildren, 1)
 		assert.Equal(t, "inst-child-1", lin.CallChildren[0].InstanceID)
-		assert.Equal(t, "def-A", lin.CallChildren[0].DefID)
+		assert.Empty(t, lin.CallChildren[0].DefID,
+			"child ref DefID must be empty: call_links only records the parent def")
+		assert.Zero(t, lin.CallChildren[0].DefVersion,
+			"child ref DefVersion must be zero: call_links only records the parent def")
 		assert.Equal(t, 2, lin.CallChildren[0].Depth)
 
 		// Chain predecessor.
