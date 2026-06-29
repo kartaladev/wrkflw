@@ -136,3 +136,67 @@ func TestEmailWithTLSAndStartTLS(t *testing.T) {
 		t.Fatalf("Do err = %v", err)
 	}
 }
+
+// TestEmailMissingKeyError locks in the missingkey=error template option: a body
+// template referencing a key absent from the variable map must cause Do to return
+// a non-nil error. This guards against accidental removal of Option("missingkey=error").
+func TestEmailMissingKeyError(t *testing.T) {
+	a := email.NewEmail(
+		email.WithFrom("a@b.c"),
+		email.WithTo("d@e.f"),
+		email.WithBodyTemplate("Hi {{.name}}"),
+		email.WithSender(email.SenderFunc(func(string, smtp.Auth, string, []string, []byte) error { return nil })),
+	)
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err == nil {
+		t.Fatalf("expected error for missing template key, got nil")
+	}
+}
+
+// TestEmailWithAuthOrderIndependent verifies that WithAuth works correctly regardless
+// of whether it is called before or after WithSMTPAddr. The smtp.Auth passed to the
+// sender must be non-nil in both orderings.
+func TestEmailWithAuthOrderIndependent(t *testing.T) {
+	cases := []struct {
+		name string
+		opts []email.Option
+	}{
+		{
+			name: "auth_before_addr",
+			opts: []email.Option{
+				email.WithAuth("user@example.com", "s3cr3t"),
+				email.WithSMTPAddr("smtp.example.com:587"),
+				email.WithFrom("a@b.c"),
+				email.WithTo("d@e.f"),
+				email.WithBodyTemplate("Hi"),
+			},
+		},
+		{
+			name: "addr_before_auth",
+			opts: []email.Option{
+				email.WithSMTPAddr("smtp.example.com:587"),
+				email.WithAuth("user@example.com", "s3cr3t"),
+				email.WithFrom("a@b.c"),
+				email.WithTo("d@e.f"),
+				email.WithBodyTemplate("Hi"),
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotAuth smtp.Auth
+			opts := append(tc.opts, email.WithSender(email.SenderFunc(func(_ string, auth smtp.Auth, _ string, _ []string, _ []byte) error {
+				gotAuth = auth
+				return nil
+			})))
+			a := email.NewEmail(opts...)
+			_, err := a.Do(t.Context(), map[string]any{})
+			if err != nil {
+				t.Fatalf("Do err = %v", err)
+			}
+			if gotAuth == nil {
+				t.Fatalf("expected non-nil smtp.Auth, got nil (auth order dependency bug)")
+			}
+		})
+	}
+}

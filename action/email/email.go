@@ -36,7 +36,9 @@ type Option func(*emailAction)
 
 type emailAction struct {
 	addr        string
-	auth        smtp.Auth
+	authUser    string
+	authPass    string
+	hasAuth     bool
 	from        string
 	to          []string
 	subjectTmpl string
@@ -48,22 +50,25 @@ type emailAction struct {
 // WithSMTPAddr sets the SMTP server address ("host:port").
 func WithSMTPAddr(addr string) Option { return func(a *emailAction) { a.addr = addr } }
 
-// WithAuth sets PLAIN SMTP auth. host is derived from the SMTP address.
+// WithAuth sets PLAIN SMTP auth credentials. The SMTP host is derived from the
+// configured SMTP address at send time (Do), so option order does not matter.
 func WithAuth(user, pass string) Option {
 	return func(a *emailAction) {
-		host := a.addr
-		if i := strings.LastIndex(host, ":"); i >= 0 {
-			host = host[:i]
-		}
-		a.auth = smtp.PlainAuth("", user, pass, host)
+		a.authUser = user
+		a.authPass = pass
+		a.hasAuth = true
 	}
 }
 
-// WithTLS marks the connection to use TLS (informational; the smtp.SendMail call
-// does not enforce TLS by default — consumers should wire a custom sender for mTLS).
+// WithTLS marks the connection to use implicit TLS (port 465). It is informational
+// in the default sender, which uses net/smtp.SendMail and does NOT open a TLS-wrapped
+// connection. To send over implicit TLS, supply a custom SenderFunc via WithSender that
+// dials tls.Dial and drives the session with smtp.NewClient.
 func WithTLS() Option { return func(_ *emailAction) {} }
 
-// WithStartTLS marks the connection to negotiate STARTTLS (informational; see WithTLS).
+// WithStartTLS marks the connection to negotiate STARTTLS. It is informational in the
+// default sender. To enforce STARTTLS, supply a custom SenderFunc via WithSender that
+// calls (*smtp.Client).StartTLS after connecting.
 func WithStartTLS() Option { return func(_ *emailAction) {} }
 
 // WithFrom sets the envelope/From address.
@@ -118,7 +123,15 @@ func (a *emailAction) Do(_ context.Context, in map[string]any) (map[string]any, 
 	fmt.Fprintf(&msg, "Content-Type: %s; charset=UTF-8\r\n\r\n", contentType)
 	msg.WriteString(body)
 
-	if err := a.snd.send(a.addr, a.auth, a.from, a.to, msg.Bytes()); err != nil {
+	var auth smtp.Auth
+	if a.hasAuth {
+		host := a.addr
+		if i := strings.LastIndex(host, ":"); i >= 0 {
+			host = host[:i]
+		}
+		auth = smtp.PlainAuth("", a.authUser, a.authPass, host)
+	}
+	if err := a.snd.send(a.addr, auth, a.from, a.to, msg.Bytes()); err != nil {
 		return nil, fmt.Errorf("workflow-email: send: %w", err)
 	}
 	return map[string]any{"emailSent": true}, nil
