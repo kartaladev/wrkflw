@@ -1,11 +1,29 @@
 // Package email provides a service action that sends an email over SMTP, rendering
 // the subject and body as text/templates over the instance variables.
+//
+// # Recipient resolution
+//
+// Recipients may be configured statically via [WithTo] or resolved at send time via
+// [WithRecipientResolver]. Both sources are combined; each recipient receives an
+// INDIVIDUAL message (they do not see each other's addresses).
+//
+// A [RecipientResolver] may carry per-recipient [Recipient.Data] that is overlaid
+// over the instance variables before template rendering, enabling personalized
+// subject/body per recipient. Recipient.Data takes precedence over instance vars.
+//
+// # Best-effort delivery and at-least-once semantics
+//
+// [Do] iterates recipients in order and continues on per-recipient failures
+// (best-effort). If any recipient fails, the aggregated error is returned as a
+// plain (retryable) error so the runtime can retry the whole action. Retries may
+// resend to already-notified recipients — at-least-once is the guarantee.
 package email
 
 import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
@@ -172,6 +190,22 @@ func (s tlsSender) send(addr string, auth smtp.Auth, from string, to []string, m
 	return c.Quit()
 }
 
+// Recipient is a single destination address together with optional per-recipient
+// template data. When [Recipient.Data] is non-nil its entries are overlaid over
+// the instance variables before rendering the subject and body for THIS recipient,
+// so individual messages can be personalized (e.g. greeting by name). Recipient
+// data wins over instance variables on key conflicts.
+type Recipient struct {
+	Address string
+	Data    map[string]any
+}
+
+// RecipientResolver loads recipients at send time. It may perform I/O (e.g. a DB
+// lookup) and MUST honour ctx — if the context is cancelled, return its error.
+// The returned error is propagated as-is from [Do], so wrapping it with
+// [action.NonRetryable] prevents the runtime from retrying.
+type RecipientResolver func(ctx context.Context, vars map[string]any) ([]Recipient, error)
+
 // tlsMode selects which TLS sender is constructed by NewEmail.
 type tlsMode int
 
@@ -191,6 +225,7 @@ type emailAction struct {
 	hasAuth     bool
 	from        string
 	to          []string
+	resolver    RecipientResolver // optional; called at Do time to append recipients
 	subjectTmpl string
 	bodyTmpl    string
 	html        bool
@@ -243,8 +278,18 @@ func WithTLSConfig(cfg *tls.Config) Option { return func(a *emailAction) { a.tls
 // WithFrom sets the envelope/From address.
 func WithFrom(addr string) Option { return func(a *emailAction) { a.from = addr } }
 
-// WithTo sets recipient addresses.
+// WithTo sets static recipient addresses. Each address receives an INDIVIDUAL
+// message — recipients do not see each other's addresses in the To header.
+// Static addresses are combined with any [WithRecipientResolver] results.
 func WithTo(addrs ...string) Option { return func(a *emailAction) { a.to = addrs } }
+
+// WithRecipientResolver registers a [RecipientResolver] that is called at send time
+// to produce additional recipients. Resolver results are appended after any static
+// [WithTo] addresses. Per-recipient [Recipient.Data] is merged over instance vars
+// (recipient data wins) before rendering the subject and body for that recipient.
+func WithRecipientResolver(r RecipientResolver) Option {
+	return func(a *emailAction) { a.resolver = r }
+}
 
 // WithSubjectTemplate sets the subject as a text/template over the variables.
 // The template is rendered against the instance variables at send time; if the
@@ -268,16 +313,19 @@ func WithSender(s sender) Option {
 	}
 }
 
-// NewEmail returns a service action that sends one email per Do invocation.
-// It renders the subject and body as text/templates over the instance variables.
+// NewEmail returns a service action that sends one email per recipient per Do
+// invocation. Recipients are resolved from [WithTo] static addresses and any
+// [WithRecipientResolver] results (combined, in that order). Each recipient
+// receives an individual message rendered from their own template environment
+// (instance vars overlaid with per-recipient [Recipient.Data]).
 //
 // TLS sender selection (precedence, highest first):
-//  1. WithSender — explicit override, always wins.
-//  2. WithStartTLS — selects startTLSSender (STARTTLS enforced).
-//  3. WithTLS — selects tlsSender (implicit TLS via tls.Dial).
+//  1. [WithSender] — explicit override, always wins.
+//  2. [WithStartTLS] — selects startTLSSender (STARTTLS enforced).
+//  3. [WithTLS] — selects tlsSender (implicit TLS via tls.Dial).
 //  4. Default — smtpSender (smtp.SendMail, plaintext).
 //
-// When both WithTLS and WithStartTLS appear, last-wins determines the mode.
+// When both [WithTLS] and [WithStartTLS] appear, last-wins determines the mode.
 func NewEmail(opts ...Option) action.ServiceAction {
 	a := &emailAction{}
 	for _, o := range opts {
@@ -297,45 +345,48 @@ func NewEmail(opts ...Option) action.ServiceAction {
 	return a
 }
 
-// Do renders the subject and body templates, constructs the MIME message, and
-// sends it via the configured sender. Returns emailSent=true on success.
-func (a *emailAction) Do(_ context.Context, in map[string]any) (map[string]any, error) {
-	subject, err := render(a.subjectTmpl, in)
-	if err != nil {
-		return nil, action.NonRetryable(fmt.Errorf("workflow-email: subject template: %w", err))
+// Do resolves recipients, renders per-recipient templates, and sends an individual
+// message to each recipient. It honours context cancellation between sends.
+//
+// Recipient resolution: static [WithTo] addresses come first, followed by
+// [WithRecipientResolver] results. If the resolver errors, Do returns that error
+// as-is (preserving any [action.NonRetryable] wrapping) without sending.
+//
+// Personalization: per-recipient [Recipient.Data] is shallow-merged over instance
+// vars before rendering subject and body; recipient data wins on key conflicts.
+//
+// Best-effort delivery: send failures are collected and the loop continues to the
+// next recipient. After the loop, any collected errors are joined and returned as a
+// plain (retryable) error so the runtime can retry. Retries may re-send to already-
+// notified recipients — at-least-once is the guarantee.
+//
+// Returns map[string]any{"emailSent":true,"recipientCount":<n>} on full success.
+func (a *emailAction) Do(ctx context.Context, in map[string]any) (map[string]any, error) {
+	// --- Build effective recipient list ---
+	// Start with static addresses converted to Recipient values.
+	recipients := make([]Recipient, 0, len(a.to))
+	for _, addr := range a.to {
+		recipients = append(recipients, Recipient{Address: addr})
 	}
-	body, err := render(a.bodyTmpl, in)
-	if err != nil {
-		return nil, action.NonRetryable(fmt.Errorf("workflow-email: body template: %w", err))
+	// Append resolver results; propagate resolver errors immediately (no sends).
+	if a.resolver != nil {
+		resolved, err := a.resolver(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		recipients = append(recipients, resolved...)
 	}
 
-	// Validate header values before assembly to prevent SMTP header injection.
-	// Subject is attacker-influenceable via template variables; from/to are static
-	// config but we guard them too for defense-in-depth.
-	if err := validateHeader("subject", subject); err != nil {
-		return nil, err
+	if len(recipients) == 0 {
+		return nil, action.NonRetryable(fmt.Errorf("workflow-email: no recipients"))
 	}
+
+	// --- Validate from address (static config — validate once) ---
 	if err := validateHeader("from", a.from); err != nil {
 		return nil, err
 	}
-	for _, rcpt := range a.to {
-		if err := validateHeader("to", rcpt); err != nil {
-			return nil, err
-		}
-	}
 
-	contentType := "text/plain"
-	if a.html {
-		contentType = "text/html"
-	}
-	var msg bytes.Buffer
-	fmt.Fprintf(&msg, "From: %s\r\n", a.from)
-	fmt.Fprintf(&msg, "To: %s\r\n", strings.Join(a.to, ", "))
-	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
-	fmt.Fprintf(&msg, "MIME-Version: 1.0\r\n")
-	fmt.Fprintf(&msg, "Content-Type: %s; charset=UTF-8\r\n\r\n", contentType)
-	msg.WriteString(body)
-
+	// --- Build SMTP auth (unchanged from original) ---
 	var auth smtp.Auth
 	if a.hasAuth {
 		host := a.addr
@@ -344,10 +395,77 @@ func (a *emailAction) Do(_ context.Context, in map[string]any) (map[string]any, 
 		}
 		auth = smtp.PlainAuth("", a.authUser, a.authPass, host)
 	}
-	if err := a.snd.send(a.addr, auth, a.from, a.to, msg.Bytes()); err != nil {
-		return nil, fmt.Errorf("workflow-email: send: %w", err)
+
+	contentType := "text/plain"
+	if a.html {
+		contentType = "text/html"
 	}
-	return map[string]any{"emailSent": true}, nil
+
+	// --- Per-recipient send loop (best-effort) ---
+	var errs []error
+	sent := 0
+
+	for _, rcpt := range recipients {
+		// Check for cancellation between sends.
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
+
+		// Build per-recipient template environment: shallow copy of in, then overlay
+		// recipient.Data so recipient-specific values win over instance vars.
+		env := make(map[string]any, len(in)+len(rcpt.Data))
+		for k, v := range in {
+			env[k] = v
+		}
+		for k, v := range rcpt.Data {
+			env[k] = v
+		}
+
+		// Render subject and body with per-recipient env.
+		subject, err := render(a.subjectTmpl, env)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("workflow-email: recipient %s: subject template: %w", rcpt.Address, err))
+			continue
+		}
+		body, err := render(a.bodyTmpl, env)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("workflow-email: recipient %s: body template: %w", rcpt.Address, err))
+			continue
+		}
+
+		// Validate headers — resolved addresses are untrusted; check all per-send.
+		if err := validateHeader("subject", subject); err != nil {
+			errs = append(errs, fmt.Errorf("workflow-email: recipient %s: %w", rcpt.Address, err))
+			continue
+		}
+		if err := validateHeader("to", rcpt.Address); err != nil {
+			errs = append(errs, fmt.Errorf("workflow-email: recipient %s: %w", rcpt.Address, err))
+			continue
+		}
+
+		// Assemble individual MIME message (To: just this one address).
+		var msg bytes.Buffer
+		fmt.Fprintf(&msg, "From: %s\r\n", a.from)
+		fmt.Fprintf(&msg, "To: %s\r\n", rcpt.Address)
+		fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
+		fmt.Fprintf(&msg, "MIME-Version: 1.0\r\n")
+		fmt.Fprintf(&msg, "Content-Type: %s; charset=UTF-8\r\n\r\n", contentType)
+		msg.WriteString(body)
+
+		if err := a.snd.send(a.addr, auth, a.from, []string{rcpt.Address}, msg.Bytes()); err != nil {
+			errs = append(errs, fmt.Errorf("workflow-email: recipient %s: send: %w", rcpt.Address, err))
+			continue
+		}
+		sent++
+	}
+
+	if len(errs) > 0 {
+		// Return as a plain (retryable) error so transient failures are retried.
+		// Note: retries may re-send to already-notified recipients (at-least-once).
+		return nil, errors.Join(errs...)
+	}
+	return map[string]any{"emailSent": true, "recipientCount": sent}, nil
 }
 
 // validateHeader returns a non-retryable error if value contains a carriage return
