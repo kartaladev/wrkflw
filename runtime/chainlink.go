@@ -73,8 +73,10 @@ type MemChainLinkStore struct {
 	links map[chainKey]ChainLink
 }
 
-// Compile-time check: MemChainLinkStore satisfies ChainLinkStore.
+// Compile-time checks: MemChainLinkStore satisfies ChainLinkStore and
+// ChainLineageReader.
 var _ ChainLinkStore = (*MemChainLinkStore)(nil)
+var _ ChainLineageReader = (*MemChainLinkStore)(nil)
 
 // NewMemChainLinkStore constructs an empty in-memory ChainLinkStore.
 func NewMemChainLinkStore() *MemChainLinkStore {
@@ -96,6 +98,36 @@ func (m *MemChainLinkStore) Record(_ context.Context, link ChainLink) error {
 	}
 	m.links[key] = link
 	return nil
+}
+
+// PredecessorOf returns the ChainLink that produced successorID. Returns
+// (nil, nil) when successorID is a chain root (no link recorded for it).
+func (m *MemChainLinkStore) PredecessorOf(_ context.Context, successorID string) (*ChainLink, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, l := range m.links {
+		if l.SuccessorID == successorID {
+			cp := cloneChainLink(l)
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+// SuccessorsOf returns all ChainLinks fanned out from predecessorID, ordered
+// by Outcome for deterministic results. Returns an empty (never nil) slice
+// when no successors exist.
+func (m *MemChainLinkStore) SuccessorsOf(_ context.Context, predecessorID string) ([]ChainLink, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []ChainLink{}
+	for _, l := range m.links {
+		if l.PredecessorID == predecessorID {
+			out = append(out, cloneChainLink(l))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Outcome < out[j].Outcome })
+	return out, nil
 }
 
 // LookupBySuccessor returns the link whose SuccessorID equals successorID.

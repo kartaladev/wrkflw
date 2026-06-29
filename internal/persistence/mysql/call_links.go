@@ -13,8 +13,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
-// Compile-time check: CallLinkStore satisfies runtime.CallLinkStore.
+// Compile-time checks: CallLinkStore satisfies runtime.CallLinkStore and
+// runtime.CallLineageReader.
 var _ runtime.CallLinkStore = (*CallLinkStore)(nil)
+var _ runtime.CallLineageReader = (*CallLinkStore)(nil)
 
 // CallLinkOption is a functional option for CallLinkStore.
 type CallLinkOption func(*CallLinkStore)
@@ -293,6 +295,85 @@ func (c *CallLinkStore) LookupChild(ctx context.Context, childInstanceID string)
 		ParentDefVersion: defVersion,
 		Depth:            depth,
 	}, true, nil
+}
+
+// ParentOf returns the CallLink for the given childID. It returns (nil, nil)
+// when childID is a root instance (no row in wrkflw_call_links).
+func (c *CallLinkStore) ParentOf(ctx context.Context, childID string) (*runtime.CallLink, error) {
+	var (
+		childInstID string
+		parentID    string
+		commandID   string
+		defID       string
+		defVersion  int
+		depth       int
+	)
+	err := c.db.QueryRowContext(ctx,
+		`SELECT child_instance_id, parent_instance_id, parent_command_id,
+		        parent_def_id, parent_def_version, depth
+		   FROM wrkflw_call_links
+		  WHERE child_instance_id = ?`,
+		childID,
+	).Scan(&childInstID, &parentID, &commandID, &defID, &defVersion, &depth)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("workflow-persistence-mysql: call links: parent of: %w", err)
+	}
+	return &runtime.CallLink{
+		ChildInstanceID:  childInstID,
+		ParentInstanceID: parentID,
+		ParentCommandID:  commandID,
+		ParentDefID:      defID,
+		ParentDefVersion: defVersion,
+		Depth:            depth,
+	}, nil
+}
+
+// ChildrenOf returns all CallLinks whose parent_instance_id equals parentID,
+// ordered by (created_at, child_instance_id). Returns an empty (non-nil) slice
+// when no children exist.
+func (c *CallLinkStore) ChildrenOf(ctx context.Context, parentID string) ([]runtime.CallLink, error) {
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT child_instance_id, parent_instance_id, parent_command_id,
+		        parent_def_id, parent_def_version, depth
+		   FROM wrkflw_call_links
+		  WHERE parent_instance_id = ?
+		  ORDER BY created_at, child_instance_id`,
+		parentID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-persistence-mysql: call links: children of: query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	links := []runtime.CallLink{}
+	for rows.Next() {
+		var (
+			childInstID  string
+			parentInstID string
+			commandID    string
+			defID        string
+			defVersion   int
+			depth        int
+		)
+		if err := rows.Scan(&childInstID, &parentInstID, &commandID, &defID, &defVersion, &depth); err != nil {
+			return nil, fmt.Errorf("workflow-persistence-mysql: call links: children of: scan: %w", err)
+		}
+		links = append(links, runtime.CallLink{
+			ChildInstanceID:  childInstID,
+			ParentInstanceID: parentInstID,
+			ParentCommandID:  commandID,
+			ParentDefID:      defID,
+			ParentDefVersion: defVersion,
+			Depth:            depth,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("workflow-persistence-mysql: call links: children of: rows: %w", err)
+	}
+	return links, nil
 }
 
 // ListRunningChildren returns all non-terminal child links whose
