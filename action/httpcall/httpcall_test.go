@@ -1,10 +1,15 @@
 package httpcall_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
@@ -287,5 +292,363 @@ func TestHTTPCall(t *testing.T) {
 			out, err := a.Do(t.Context(), in)
 			tc.assert(t, out, err)
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WithHeaderFunc tests
+// ---------------------------------------------------------------------------
+
+// TestWithHeaderFunc_SetsHeader verifies that a HeaderFunc can add a request header
+// (e.g. a dynamically fetched auth token) that the server sees.
+func TestWithHeaderFunc_SetsHeader(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fake-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithMethod(http.MethodGet),
+		httpcall.WithHeaderFunc(func(_ context.Context, h http.Header, _ map[string]any) error {
+			h.Set("Authorization", "Bearer fake-token")
+			return nil
+		}),
+	)
+	out, err := a.Do(t.Context(), map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out["httpStatus"] != http.StatusOK {
+		t.Fatalf("status = %v, want 200", out["httpStatus"])
+	}
+}
+
+// TestWithHeaderFunc_OverridesStaticHeader verifies that a HeaderFunc value wins over
+// a same-key static WithHeader value (funcs applied after static headers).
+func TestWithHeaderFunc_OverridesStaticHeader(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Token"); got != "dynamic" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprintf(w, "got X-Token=%q", got)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithMethod(http.MethodGet),
+		httpcall.WithHeader("X-Token", "static"),
+		httpcall.WithHeaderFunc(func(_ context.Context, h http.Header, _ map[string]any) error {
+			h.Set("X-Token", "dynamic") // override the static value
+			return nil
+		}),
+	)
+	out, err := a.Do(t.Context(), map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out["httpStatus"] != http.StatusOK {
+		t.Fatalf("status = %v, want 200; dynamic header did not override static", out["httpStatus"])
+	}
+}
+
+// TestWithHeaderFunc_ErrorRetryability verifies that a NonRetryable error from a HeaderFunc
+// propagates correctly and the server is never hit; a plain error stays retryable.
+func TestWithHeaderFunc_ErrorRetryability(t *testing.T) {
+	type tc struct {
+		name      string
+		fn        httpcall.HeaderFunc
+		wantRetry bool
+	}
+	cases := []tc{
+		{
+			name: "NonRetryable header-func error -> non-retryable",
+			fn: func(_ context.Context, _ http.Header, _ map[string]any) error {
+				return action.NonRetryable(fmt.Errorf("token service unavailable"))
+			},
+			wantRetry: false,
+		},
+		{
+			name: "plain header-func error -> retryable",
+			fn: func(_ context.Context, _ http.Header, _ map[string]any) error {
+				return fmt.Errorf("transient network glitch")
+			},
+			wantRetry: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var hits atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			a := httpcall.NewHTTPCall(
+				httpcall.WithBaseURL(srv.URL),
+				httpcall.WithMethod(http.MethodGet),
+				httpcall.WithHeaderFunc(c.fn),
+			)
+			_, err := a.Do(t.Context(), map[string]any{})
+			if err == nil {
+				t.Fatal("expected error from failing HeaderFunc, got nil")
+			}
+			if action.IsRetryable(err) != c.wantRetry {
+				t.Fatalf("IsRetryable = %v, want %v", action.IsRetryable(err), c.wantRetry)
+			}
+			if hits.Load() != 0 {
+				t.Fatal("server must NOT have been hit when HeaderFunc returns an error")
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WithBodyFunc tests
+// ---------------------------------------------------------------------------
+
+// TestWithBodyFunc_SendsCustomBody verifies that a BodyFunc body is sent to the server
+// verbatim and Content-Type is NOT auto-set to application/json.
+func TestWithBodyFunc_SendsCustomBody(t *testing.T) {
+	want := `{"custom":true}`
+	var gotBody string
+	var gotCT string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		gotCT = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
+			return strings.NewReader(want), nil
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotBody != want {
+		t.Fatalf("body = %q, want %q", gotBody, want)
+	}
+	// Consumer controls Content-Type; we must NOT inject application/json automatically.
+	if gotCT == "application/json" {
+		t.Fatal("Content-Type must NOT be auto-set to application/json for BodyFunc path")
+	}
+}
+
+// TestWithBodyFunc_PrecedenceOverBodyKey verifies that when both WithBodyFunc and WithBodyKey
+// are set, the BodyFunc result is used and the bodyKey value is ignored.
+func TestWithBodyFunc_PrecedenceOverBodyKey(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithBodyKey("payload"),
+		httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
+			return strings.NewReader("from-func"), nil
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{"payload": map[string]any{"key": "value"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotBody != "from-func" {
+		t.Fatalf("body = %q, want %q (BodyFunc must take precedence)", gotBody, "from-func")
+	}
+}
+
+// TestWithBodyFunc_ErrorRetryability verifies that BodyFunc errors propagate correctly
+// (NonRetryable honored) and the server is never hit.
+func TestWithBodyFunc_ErrorRetryability(t *testing.T) {
+	type tc struct {
+		name      string
+		fn        httpcall.BodyFunc
+		wantRetry bool
+	}
+	cases := []tc{
+		{
+			name: "NonRetryable body-func error -> non-retryable",
+			fn: func(_ context.Context, _ map[string]any) (io.Reader, error) {
+				return nil, action.NonRetryable(fmt.Errorf("bad body data"))
+			},
+			wantRetry: false,
+		},
+		{
+			name: "plain body-func error -> retryable",
+			fn: func(_ context.Context, _ map[string]any) (io.Reader, error) {
+				return nil, fmt.Errorf("storage unavailable")
+			},
+			wantRetry: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var hits atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			a := httpcall.NewHTTPCall(
+				httpcall.WithBaseURL(srv.URL),
+				httpcall.WithBodyFunc(c.fn),
+			)
+			_, err := a.Do(t.Context(), map[string]any{})
+			if err == nil {
+				t.Fatal("expected error from failing BodyFunc, got nil")
+			}
+			if action.IsRetryable(err) != c.wantRetry {
+				t.Fatalf("IsRetryable = %v, want %v", action.IsRetryable(err), c.wantRetry)
+			}
+			if hits.Load() != 0 {
+				t.Fatal("server must NOT be hit when BodyFunc returns an error")
+			}
+		})
+	}
+}
+
+// TestWithBodyFunc_DefaultMethodPOST verifies that the HTTP method defaults to POST
+// when WithBodyFunc is set (and no explicit WithMethod is provided).
+func TestWithBodyFunc_DefaultMethodPOST(t *testing.T) {
+	var gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		// No WithMethod — should default to POST because BodyFunc is set.
+		httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
+			return strings.NewReader("body"), nil
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %q, want POST (should default when BodyFunc set)", gotMethod)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WithBodyValidator tests
+// ---------------------------------------------------------------------------
+
+// TestWithBodyValidator_PassesAndSendsRequest verifies that a passing validator allows
+// the request to proceed and the server receives it.
+func TestWithBodyValidator_PassesAndSendsRequest(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithBodyKey("payload"),
+		httpcall.WithBodyValidator(func(_ context.Context, body []byte) error {
+			if !json.Valid(body) {
+				return fmt.Errorf("invalid JSON")
+			}
+			return nil
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{"payload": map[string]any{"name": "ada"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("server hit count = %d, want 1", hits.Load())
+	}
+}
+
+// TestWithBodyValidator_FailsBlocksSend verifies that a failing validator returns a
+// non-retryable error and the server is NOT hit.
+func TestWithBodyValidator_FailsBlocksSend(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithBodyKey("payload"),
+		httpcall.WithBodyValidator(func(_ context.Context, _ []byte) error {
+			return fmt.Errorf("required field missing")
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{"payload": map[string]any{}})
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if action.IsRetryable(err) {
+		t.Fatal("body validation error must be non-retryable")
+	}
+	if hits.Load() != 0 {
+		t.Fatal("server must NOT be hit when validation fails")
+	}
+}
+
+// TestWithBodyValidator_WithBodyFunc_BuffersAndSendsCorrectly verifies that when a
+// BodyValidator is combined with a BodyFunc, the validator receives the func's bytes
+// and the server also receives the exact same body (buffering preserves the body).
+func TestWithBodyValidator_WithBodyFunc_BuffersAndSendsCorrectly(t *testing.T) {
+	funcBody := `{"validated":true}`
+	var serverBody string
+	var validatorBody []byte
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		serverBody = string(raw)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(srv.URL),
+		httpcall.WithBodyFunc(func(_ context.Context, _ map[string]any) (io.Reader, error) {
+			return bytes.NewBufferString(funcBody), nil
+		}),
+		httpcall.WithBodyValidator(func(_ context.Context, body []byte) error {
+			validatorBody = body
+			return nil // pass
+		}),
+	)
+	_, err := a.Do(t.Context(), map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(validatorBody) != funcBody {
+		t.Fatalf("validator got %q, want %q", validatorBody, funcBody)
+	}
+	if serverBody != funcBody {
+		t.Fatalf("server got %q, want %q (body must not be dropped after buffering)", serverBody, funcBody)
 	}
 }
