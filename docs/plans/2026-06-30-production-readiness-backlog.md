@@ -55,7 +55,14 @@ Each item: **what's missing · evidence (file ref) · why it matters**. Severity
 
 ## 🟠 P1 — Required for real operations & scale
 
-### P1-A — Ops visibility (weakest cluster; highest operational ROI)
+### P1-A — Ops visibility ✅ DONE (ADR-0078, branch `feat/ops-visibility`)
+Shipped: SLI observable gauges (outbox pending/dead/oldest-age, timers armed) + timer-fired/action-failure
+counters; `RelayBacklogCheck` health probe; REST+gRPC admin (relay-stats, timers, instance lineage, DLQ
+categorization); single-hop lineage reads (postgres+mysql+mem) + assembler; Grafana dashboard + Prometheus
+alerts + runbooks + `docs/observability.md`. Deferred: recursive ancestry trees; scheduler/leadership probe
+(recipe only). Original gaps for reference:
+
+#### (original audit notes)
 - **Missing SLI metrics:** DLQ depth, outbox pending-backlog, action-failure counter, timer-fire count.
   - Evidence: `runtime/observability.go`, `internal/persistence/postgres/relay.go` emit duration/published
     counts but none of the above.
@@ -115,6 +122,10 @@ Each item: **what's missing · evidence (file ref) · why it matters**. Severity
 - **Pre-existing follow-up (not this branch):** `casbinauthz` package coverage 84.5% (< 85%) — untested
   error branches in `policyadmin.go` (AddPolicy/RemovePolicy/List* error paths) and `casbinauthz.go`
   (ReloadPolicy error). Production code untouched here; queue a small policyadmin error-path test pass.
+
+### P1-F — gRPC ListInstances ignores NormalizeLimit ⏭️ QUEUED (from ops-visibility final review)
+- **Evidence:** `transport/grpc/server.go` `ListInstances` sets `Limit: int(req.GetLimit())` raw, while the
+  DLQ RPC and REST clamp via `runtime.NormalizeLimit`. Pre-existing, non-ops RPC. Small fix + bufconn test.
 
 ## 🟡 P2 — Convenience / developer experience
 

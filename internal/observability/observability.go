@@ -137,3 +137,19 @@ func (t Telemetry) Float64Histogram(name, desc string) metric.Float64Histogram {
 	}
 	return h
 }
+
+// Int64ObservableGauge creates an asynchronous gauge instrument with the given
+// callback. The callback is invoked by the OTel SDK at each collection cycle.
+// A nil callback is accepted (no observation is made). Falls back to a noop
+// instrument on error so callers never receive nil.
+func (t Telemetry) Int64ObservableGauge(name, desc string, cb metric.Int64Callback) metric.Int64ObservableGauge {
+	opts := []metric.Int64ObservableGaugeOption{metric.WithDescription(desc)}
+	if cb != nil {
+		opts = append(opts, metric.WithInt64Callback(cb))
+	}
+	g, err := t.Meter.Int64ObservableGauge(name, opts...)
+	if err != nil {
+		g, _ = metricnoop.NewMeterProvider().Meter(t.name).Int64ObservableGauge(name)
+	}
+	return g
+}

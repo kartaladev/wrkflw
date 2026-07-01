@@ -367,6 +367,33 @@ func (r *Relay) Redrive(ctx context.Context, ids ...int64) (int, error) {
 	return int(tag.RowsAffected()), nil
 }
 
+// OutboxStats returns aggregate statistics about the wrkflw_outbox table:
+// the count of pending rows, the count of dead rows, and the age of the oldest
+// pending row (now − min(created_at) WHERE status='pending'). When there are no
+// pending rows OldestPendingAge is zero.
+//
+// It implements runtime.OutboxStatsReader.
+func (r *Relay) OutboxStats(ctx context.Context) (runtime.OutboxStats, error) {
+	var pending, dead int64
+	var ageSec float64
+	err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FILTER (WHERE status = 'pending'),
+		        count(*) FILTER (WHERE status = 'dead'),
+		        COALESCE(EXTRACT(EPOCH FROM now()-min(created_at) FILTER (WHERE status = 'pending')), 0)
+		   FROM wrkflw_outbox`,
+	).Scan(&pending, &dead, &ageSec)
+	if err != nil {
+		return runtime.OutboxStats{}, fmt.Errorf("workflow-postgres: relay: outbox stats: %w", err)
+	}
+	return runtime.OutboxStats{
+		Pending:          pending,
+		Dead:             dead,
+		OldestPendingAge: time.Duration(ageSec * float64(time.Second)),
+	}, nil
+}
+
+var _ runtime.OutboxStatsReader = (*Relay)(nil)
+
 // DrainOnce claims one batch of due pending outbox rows (status='pending' AND
 // next_attempt_at <= now, ORDER BY id FOR UPDATE SKIP LOCKED), publishes each via
 // the Publisher, and records each row's outcome independently in the same

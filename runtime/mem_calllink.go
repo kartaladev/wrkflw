@@ -54,6 +54,7 @@ type MemCallLinkStore struct {
 }
 
 var _ CallLinkStore = (*MemCallLinkStore)(nil)
+var _ CallLineageReader = (*MemCallLinkStore)(nil)
 
 // NewMemCallLinkStore constructs an empty MemCallLinkStore. Zero-argument call
 // sites continue to compile unchanged; pass MemCallLinkOption values to opt in
@@ -157,6 +158,36 @@ func (m *MemCallLinkStore) LookupChild(_ context.Context, childID string) (CallL
 		return l.link, true, nil
 	}
 	return CallLink{}, false, nil
+}
+
+// ParentOf returns the CallLink for the given childID. Returns (nil, nil) when
+// childID is a root instance (no link recorded for it).
+func (m *MemCallLinkStore) ParentOf(_ context.Context, childID string) (*CallLink, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if l, ok := m.links[childID]; ok {
+		cp := l.link
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+// ChildrenOf returns all CallLinks whose ParentInstanceID equals parentID,
+// ordered by ChildInstanceID for determinism. Returns an empty (never nil)
+// slice when no children exist.
+func (m *MemCallLinkStore) ChildrenOf(_ context.Context, parentID string) ([]CallLink, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []CallLink{}
+	for _, l := range m.links {
+		if l.link.ParentInstanceID == parentID {
+			out = append(out, l.link)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ChildInstanceID < out[j].ChildInstanceID
+	})
+	return out, nil
 }
 
 // ListRunningChildren returns all non-terminal child links whose ParentInstanceID

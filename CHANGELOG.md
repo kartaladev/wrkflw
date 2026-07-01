@@ -27,6 +27,18 @@ built across ADRs 0001–0077.
   rationale for each suppression (ADR-0077).
 
 ### Added
+- **Ops-visibility surface (ADR-0078).**
+  - SLI metrics: observable gauges `wrkflw_outbox_pending`, `wrkflw_outbox_dead`,
+    `wrkflw_outbox_oldest_pending_age_seconds`, `wrkflw_timers_armed` (via consumer-wired
+    `runtime.NewOutboxStatsCollector` / `NewTimerStatsCollector`); counters `wrkflw_timer_fired_total`
+    and `wrkflw_action_failures_total{action,retryable}`.
+  - `persistence.NewRelayBacklogCheck` readiness probe (DLQ/pending thresholds, default-disabled).
+  - Admin endpoints (REST + gRPC) behind the default-deny gate: relay stats, armed timers, instance
+    lineage, and a failure `category` on dead-letters (`runtime.ClassifyDeadLetter`).
+  - `OutboxStats`/`TimerStats` reads and single-hop instance-lineage reads on both the Postgres and
+    MySQL backends; `runtime.NewLineageReader` assembler.
+  - Reference `docs/dashboards/` (Grafana + Prometheus alerts), `docs/runbooks/`, and `docs/observability.md`.
+- The engine as built across ADRs 0001–0078 (inaugural feature set):
 - **Token-based BPMN-inspired engine core** — process definitions (19 typed node kinds:
   start/end events, service/user/business-rule/send/receive tasks, exclusive/parallel/inclusive
   and event-based gateways, sub-process, call activity, boundary and intermediate events,

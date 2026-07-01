@@ -57,6 +57,18 @@ service WorkflowService {
   // human tasks and their allowed next actions derived from the definition.
   rpc GetActionableView(GetInstanceRequest) returns (ActionableViewResponse);
 
+  // GetRelayStats returns aggregate statistics about the outbox relay.
+  // Admin-scoped; requires WithRelayStatsAdmin, else returns Unimplemented.
+  rpc GetRelayStats(GetRelayStatsRequest) returns (RelayStats);
+
+  // ListTimers returns the current set of armed timers with aggregate stats.
+  // Admin-scoped; requires WithTimerAdmin, else returns Unimplemented.
+  rpc ListTimers(ListTimersRequest) returns (ListTimersResponse);
+
+  // GetInstanceLineage returns the single-hop call and chain lineage for an
+  // instance. Admin-scoped; requires WithLineageAdmin, else returns Unimplemented.
+  rpc GetInstanceLineage(GetInstanceLineageRequest) returns (InstanceLineage);
+
   // AddPolicy adds a casbin permission rule. Admin-scoped; requires
   // WithPolicyAdmin, else returns Unimplemented.
   rpc AddPolicy(AddPolicyRequest) returns (MutateAck);
@@ -116,6 +128,9 @@ message DeadLetter {
   int32 retry_count = 4;
   string last_error = 5;
   google.protobuf.Timestamp created_at = 6;
+  // category is a coarse classification of last_error via runtime.ClassifyDeadLetter.
+  // Values: "timeout", "connection", "validation", "unknown".
+  string category = 7;
 }
 
 message ListDeadLettersRequest {
@@ -382,4 +397,77 @@ message ActionableView {
 // ActionableViewResponse wraps ActionableView for forward-compat.
 message ActionableViewResponse {
   ActionableView actionable = 1;
+}
+
+// ---- Ops admin messages ----
+
+// GetRelayStatsRequest is the request for GetRelayStats (currently empty).
+message GetRelayStatsRequest {}
+
+// RelayStats summarises outbox relay health for admin dashboards.
+message RelayStats {
+  // pending is the number of outbox rows with status='pending'.
+  int64 pending = 1;
+  // dead is the number of quarantined rows with status='dead'.
+  int64 dead = 2;
+  // oldest_pending_age_seconds is the age in seconds of the oldest pending row.
+  // Zero when there are no pending rows.
+  int64 oldest_pending_age_seconds = 3;
+}
+
+// ListTimersRequest is the request for ListTimers (currently empty).
+message ListTimersRequest {}
+
+// Timer is the gRPC projection of a single runtime.ArmedTimer.
+message Timer {
+  string instance_id = 1;
+  string def_id = 2;
+  int32 def_version = 3;
+  string timer_id = 4;
+  google.protobuf.Timestamp fire_at = 5;
+  // kind is the string representation of engine.TimerKind
+  // (e.g. "TimerIntermediate", "TimerDeadline", "TimerInWait", "TimerRetry").
+  string kind = 6;
+}
+
+// ListTimersResponse is the result of ListTimers.
+message ListTimersResponse {
+  // count is the total number of armed timers.
+  int64 count = 1;
+  // next_fire_at is the earliest fire_at among all armed timers.
+  // Absent (nil) when count is zero.
+  google.protobuf.Timestamp next_fire_at = 2;
+  // items is the full list of currently armed timers.
+  repeated Timer items = 3;
+}
+
+// GetInstanceLineageRequest is the request for GetInstanceLineage.
+message GetInstanceLineageRequest {
+  string instance_id = 1;
+}
+
+// CallLinkRef is a compact reference to a call-linked process instance.
+message CallLinkRef {
+  string instance_id = 1;
+  string def_id = 2;
+  int32 def_version = 3;
+  int32 depth = 4;
+}
+
+// ChainLinkRef is a compact reference to a chain-linked process instance.
+message ChainLinkRef {
+  string instance_id = 1;
+  string definition_ref = 2;
+  string outcome = 3;
+}
+
+// InstanceLineage aggregates a single-hop lineage view for a process instance.
+message InstanceLineage {
+  string instance_id = 1;
+  // call_parent is nil when the instance is a call-chain root.
+  CallLinkRef call_parent = 2;
+  repeated CallLinkRef call_children = 3;
+  // chain_predecessor is nil when the instance is a chain root.
+  ChainLinkRef chain_predecessor = 4;
+  repeated ChainLinkRef chain_successors = 5;
 }

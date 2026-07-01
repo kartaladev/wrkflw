@@ -190,6 +190,7 @@ func (h *handler) handleListDeadLetters(w http.ResponseWriter, r *http.Request) 
 			Topic:      dl.Topic,
 			RetryCount: dl.RetryCount,
 			LastError:  dl.LastError,
+			Category:   runtime.ClassifyDeadLetter(dl.LastError),
 			CreatedAt:  dl.CreatedAt,
 		}
 	}
@@ -354,4 +355,93 @@ func parseStatus(s string) (engine.Status, error) {
 	default:
 		return 0, fmt.Errorf("%w: unknown status %q", ErrBadInput, s)
 	}
+}
+
+// relayStatsResponse is the JSON body returned by GET /admin/relay-stats.
+type relayStatsResponse struct {
+	Pending                 int64 `json:"pending"`
+	Dead                    int64 `json:"dead"`
+	OldestPendingAgeSeconds int64 `json:"oldest_pending_age_seconds"`
+}
+
+// handleAdminRelayStats handles GET /admin/relay-stats.
+//
+// It is registered only when a RelayStatsAdmin is wired via WithRelayStatsAdmin,
+// so h.cfg.relayStats is guaranteed non-nil here.
+func (h *handler) handleAdminRelayStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.cfg.relayStats.OutboxStats(r.Context())
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.writeJSON(w, r, http.StatusOK, relayStatsResponse{
+		Pending:                 stats.Pending,
+		Dead:                    stats.Dead,
+		OldestPendingAgeSeconds: int64(stats.OldestPendingAge / time.Second),
+	})
+}
+
+// timerItemView is the JSON projection of a single runtime.ArmedTimer.
+type timerItemView struct {
+	InstanceID string `json:"instance_id"`
+	DefID      string `json:"def_id"`
+	DefVersion int    `json:"def_version"`
+	TimerID    string `json:"timer_id"`
+	FireAt     string `json:"fire_at"`
+	Kind       string `json:"kind"`
+}
+
+// timerListResponse is the JSON body returned by GET /admin/timers.
+type timerListResponse struct {
+	Count      int64           `json:"count"`
+	NextFireAt *time.Time      `json:"next_fire_at,omitempty"`
+	Items      []timerItemView `json:"items"`
+}
+
+// handleAdminTimers handles GET /admin/timers.
+//
+// It is registered only when a TimerAdmin is wired via WithTimerAdmin,
+// so h.cfg.timerAdmin is guaranteed non-nil here.
+func (h *handler) handleAdminTimers(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.cfg.timerAdmin.Stats(r.Context())
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	armed, err := h.cfg.timerAdmin.ListArmed(r.Context())
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+
+	items := make([]timerItemView, len(armed))
+	for i, t := range armed {
+		items[i] = timerItemView{
+			InstanceID: t.InstanceID,
+			DefID:      t.DefID,
+			DefVersion: t.DefVersion,
+			TimerID:    t.TimerID,
+			FireAt:     t.FireAt.Format(time.RFC3339),
+			Kind:       t.Kind.String(),
+		}
+	}
+	h.writeJSON(w, r, http.StatusOK, timerListResponse{
+		Count:      stats.Armed,
+		NextFireAt: stats.NextFireAt,
+		Items:      items,
+	})
+}
+
+// handleAdminInstanceLineage handles GET /admin/instances/{id}/lineage.
+//
+// It is registered only when a LineageAdmin is wired via WithLineageAdmin,
+// so h.cfg.lineageAdmin is guaranteed non-nil here.
+func (h *handler) handleAdminInstanceLineage(w http.ResponseWriter, r *http.Request) {
+	instanceID := r.PathValue("id")
+	lineage, err := h.cfg.lineageAdmin.Lineage(r.Context(), instanceID)
+	if err != nil {
+		WriteHTTPError(w, err)
+		return
+	}
+	h.writeJSON(w, r, http.StatusOK, newLineageView(lineage))
 }

@@ -145,3 +145,36 @@ func TestRESTWithDeadLetterAdminNilPanics(t *testing.T) {
 	t.Parallel()
 	assert.Panics(t, func() { rest.WithDeadLetterAdmin(nil) })
 }
+
+// TestRESTDeadLetterViewCategory asserts that the dead-letter list view includes a
+// "category" field populated by runtime.ClassifyDeadLetter for each item.
+func TestRESTDeadLetterViewCategory(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		lastError    string
+		wantCategory string
+	}{
+		{"context deadline exceeded", "timeout"},
+		{"connection refused", "connection"},
+		{"validation failed for field x", "validation"},
+		{"some unknown error", "unknown"},
+	}
+
+	for _, tc := range cases {
+		t.Run("lastError="+tc.lastError, func(t *testing.T) {
+			t.Parallel()
+			created := time.Now()
+			dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
+				return []runtime.DeadLetter{{
+					ID: 1, InstanceID: "p1", Topic: "t", RetryCount: 1,
+					LastError: tc.lastError, CreatedAt: created,
+				}}, nil
+			}}
+			h := rest.NewHandler(&dlqStubService{}, rest.WithAdminMiddleware(allowAdmin), rest.WithDeadLetterAdmin(dla))
+			rec := doReq(t, h, http.MethodGet, "/admin/dead-letters", "")
+			assert.Equal(t, http.StatusOK, rec.Code)
+			assert.Contains(t, rec.Body.String(), `"category":"`+tc.wantCategory+`"`)
+		})
+	}
+}

@@ -10,8 +10,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
-// Compile-time check: ChainLinkStore satisfies runtime.ChainLinkStore.
+// Compile-time checks: ChainLinkStore satisfies runtime.ChainLinkStore and
+// runtime.ChainLineageReader.
 var _ runtime.ChainLinkStore = (*ChainLinkStore)(nil)
+var _ runtime.ChainLineageReader = (*ChainLinkStore)(nil)
 
 // ChainLinkStore is the MySQL-backed runtime.ChainLinkStore (process-instance
 // chaining lineage, ADR-0045). Record persists one predecessor->successor hop;
@@ -54,6 +56,58 @@ func (c *ChainLinkStore) Record(ctx context.Context, link runtime.ChainLink) err
 		return fmt.Errorf("workflow-persistence-mysql: chain links: record: %w", err)
 	}
 	return nil
+}
+
+// PredecessorOf returns the ChainLink that produced successorID. Returns
+// (nil, nil) when successorID was not started by chaining (no row with
+// successor_instance_id=?).
+func (c *ChainLinkStore) PredecessorOf(ctx context.Context, successorID string) (*runtime.ChainLink, error) {
+	row := c.db.QueryRowContext(ctx,
+		`SELECT predecessor_instance_id, outcome, successor_instance_id,
+		        predecessor_definition_ref, successor_definition_ref, start_vars, created_at
+		   FROM wrkflw_chain_links
+		  WHERE successor_instance_id = ?`,
+		successorID,
+	)
+	link, err := scanMySQLChainLink(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("workflow-persistence-mysql: chain links: predecessor of: %w", err)
+	}
+	return &link, nil
+}
+
+// SuccessorsOf returns all ChainLinks fanned out from predecessorID, ordered
+// by outcome for deterministic results. Returns an empty (non-nil) slice when
+// no successors exist.
+func (c *ChainLinkStore) SuccessorsOf(ctx context.Context, predecessorID string) ([]runtime.ChainLink, error) {
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT predecessor_instance_id, outcome, successor_instance_id,
+		        predecessor_definition_ref, successor_definition_ref, start_vars, created_at
+		   FROM wrkflw_chain_links
+		  WHERE predecessor_instance_id = ?
+		  ORDER BY outcome`,
+		predecessorID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-persistence-mysql: chain links: successors of: query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	links := []runtime.ChainLink{}
+	for rows.Next() {
+		link, err := scanMySQLChainLink(rows)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-persistence-mysql: chain links: successors of: scan: %w", err)
+		}
+		links = append(links, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("workflow-persistence-mysql: chain links: successors of: rows: %w", err)
+	}
+	return links, nil
 }
 
 // LookupBySuccessor returns the link whose successor_instance_id equals

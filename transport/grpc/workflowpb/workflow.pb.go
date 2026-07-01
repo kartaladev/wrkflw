@@ -237,13 +237,16 @@ func (x *ResolveIncidentRequest) GetAddAttempts() int32 {
 
 // DeadLetter is the gRPC projection of runtime.DeadLetter.
 type DeadLetter struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	Topic         string                 `protobuf:"bytes,3,opt,name=topic,proto3" json:"topic,omitempty"`
-	RetryCount    int32                  `protobuf:"varint,4,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
-	LastError     string                 `protobuf:"bytes,5,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	InstanceId string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Topic      string                 `protobuf:"bytes,3,opt,name=topic,proto3" json:"topic,omitempty"`
+	RetryCount int32                  `protobuf:"varint,4,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
+	LastError  string                 `protobuf:"bytes,5,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	CreatedAt  *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// category is a coarse classification of last_error via runtime.ClassifyDeadLetter.
+	// Values: "timeout", "connection", "validation", "unknown".
+	Category      string `protobuf:"bytes,7,opt,name=category,proto3" json:"category,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -318,6 +321,13 @@ func (x *DeadLetter) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *DeadLetter) GetCategory() string {
+	if x != nil {
+		return x.Category
+	}
+	return ""
 }
 
 type ListDeadLettersRequest struct {
@@ -2646,6 +2656,551 @@ func (x *ActionableViewResponse) GetActionable() *ActionableView {
 	return nil
 }
 
+// GetRelayStatsRequest is the request for GetRelayStats (currently empty).
+type GetRelayStatsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRelayStatsRequest) Reset() {
+	*x = GetRelayStatsRequest{}
+	mi := &file_workflow_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRelayStatsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRelayStatsRequest) ProtoMessage() {}
+
+func (x *GetRelayStatsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRelayStatsRequest.ProtoReflect.Descriptor instead.
+func (*GetRelayStatsRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{43}
+}
+
+// RelayStats summarises outbox relay health for admin dashboards.
+type RelayStats struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// pending is the number of outbox rows with status='pending'.
+	Pending int64 `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
+	// dead is the number of quarantined rows with status='dead'.
+	Dead int64 `protobuf:"varint,2,opt,name=dead,proto3" json:"dead,omitempty"`
+	// oldest_pending_age_seconds is the age in seconds of the oldest pending row.
+	// Zero when there are no pending rows.
+	OldestPendingAgeSeconds int64 `protobuf:"varint,3,opt,name=oldest_pending_age_seconds,json=oldestPendingAgeSeconds,proto3" json:"oldest_pending_age_seconds,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *RelayStats) Reset() {
+	*x = RelayStats{}
+	mi := &file_workflow_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayStats) ProtoMessage() {}
+
+func (x *RelayStats) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayStats.ProtoReflect.Descriptor instead.
+func (*RelayStats) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *RelayStats) GetPending() int64 {
+	if x != nil {
+		return x.Pending
+	}
+	return 0
+}
+
+func (x *RelayStats) GetDead() int64 {
+	if x != nil {
+		return x.Dead
+	}
+	return 0
+}
+
+func (x *RelayStats) GetOldestPendingAgeSeconds() int64 {
+	if x != nil {
+		return x.OldestPendingAgeSeconds
+	}
+	return 0
+}
+
+// ListTimersRequest is the request for ListTimers (currently empty).
+type ListTimersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTimersRequest) Reset() {
+	*x = ListTimersRequest{}
+	mi := &file_workflow_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTimersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTimersRequest) ProtoMessage() {}
+
+func (x *ListTimersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTimersRequest.ProtoReflect.Descriptor instead.
+func (*ListTimersRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{45}
+}
+
+// Timer is the gRPC projection of a single runtime.ArmedTimer.
+type Timer struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	DefId      string                 `protobuf:"bytes,2,opt,name=def_id,json=defId,proto3" json:"def_id,omitempty"`
+	DefVersion int32                  `protobuf:"varint,3,opt,name=def_version,json=defVersion,proto3" json:"def_version,omitempty"`
+	TimerId    string                 `protobuf:"bytes,4,opt,name=timer_id,json=timerId,proto3" json:"timer_id,omitempty"`
+	FireAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=fire_at,json=fireAt,proto3" json:"fire_at,omitempty"`
+	// kind is the string representation of engine.TimerKind
+	// (e.g. "TimerIntermediate", "TimerDeadline", "TimerInWait", "TimerRetry").
+	Kind          string `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Timer) Reset() {
+	*x = Timer{}
+	mi := &file_workflow_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Timer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Timer) ProtoMessage() {}
+
+func (x *Timer) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Timer.ProtoReflect.Descriptor instead.
+func (*Timer) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *Timer) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *Timer) GetDefId() string {
+	if x != nil {
+		return x.DefId
+	}
+	return ""
+}
+
+func (x *Timer) GetDefVersion() int32 {
+	if x != nil {
+		return x.DefVersion
+	}
+	return 0
+}
+
+func (x *Timer) GetTimerId() string {
+	if x != nil {
+		return x.TimerId
+	}
+	return ""
+}
+
+func (x *Timer) GetFireAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FireAt
+	}
+	return nil
+}
+
+func (x *Timer) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+// ListTimersResponse is the result of ListTimers.
+type ListTimersResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// count is the total number of armed timers.
+	Count int64 `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
+	// next_fire_at is the earliest fire_at among all armed timers.
+	// Absent (nil) when count is zero.
+	NextFireAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=next_fire_at,json=nextFireAt,proto3" json:"next_fire_at,omitempty"`
+	// items is the full list of currently armed timers.
+	Items         []*Timer `protobuf:"bytes,3,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTimersResponse) Reset() {
+	*x = ListTimersResponse{}
+	mi := &file_workflow_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTimersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTimersResponse) ProtoMessage() {}
+
+func (x *ListTimersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTimersResponse.ProtoReflect.Descriptor instead.
+func (*ListTimersResponse) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ListTimersResponse) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *ListTimersResponse) GetNextFireAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextFireAt
+	}
+	return nil
+}
+
+func (x *ListTimersResponse) GetItems() []*Timer {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+// GetInstanceLineageRequest is the request for GetInstanceLineage.
+type GetInstanceLineageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetInstanceLineageRequest) Reset() {
+	*x = GetInstanceLineageRequest{}
+	mi := &file_workflow_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetInstanceLineageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetInstanceLineageRequest) ProtoMessage() {}
+
+func (x *GetInstanceLineageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetInstanceLineageRequest.ProtoReflect.Descriptor instead.
+func (*GetInstanceLineageRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *GetInstanceLineageRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+// CallLinkRef is a compact reference to a call-linked process instance.
+type CallLinkRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	DefId         string                 `protobuf:"bytes,2,opt,name=def_id,json=defId,proto3" json:"def_id,omitempty"`
+	DefVersion    int32                  `protobuf:"varint,3,opt,name=def_version,json=defVersion,proto3" json:"def_version,omitempty"`
+	Depth         int32                  `protobuf:"varint,4,opt,name=depth,proto3" json:"depth,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CallLinkRef) Reset() {
+	*x = CallLinkRef{}
+	mi := &file_workflow_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CallLinkRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CallLinkRef) ProtoMessage() {}
+
+func (x *CallLinkRef) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CallLinkRef.ProtoReflect.Descriptor instead.
+func (*CallLinkRef) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *CallLinkRef) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *CallLinkRef) GetDefId() string {
+	if x != nil {
+		return x.DefId
+	}
+	return ""
+}
+
+func (x *CallLinkRef) GetDefVersion() int32 {
+	if x != nil {
+		return x.DefVersion
+	}
+	return 0
+}
+
+func (x *CallLinkRef) GetDepth() int32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
+}
+
+// ChainLinkRef is a compact reference to a chain-linked process instance.
+type ChainLinkRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	DefinitionRef string                 `protobuf:"bytes,2,opt,name=definition_ref,json=definitionRef,proto3" json:"definition_ref,omitempty"`
+	Outcome       string                 `protobuf:"bytes,3,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChainLinkRef) Reset() {
+	*x = ChainLinkRef{}
+	mi := &file_workflow_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChainLinkRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChainLinkRef) ProtoMessage() {}
+
+func (x *ChainLinkRef) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChainLinkRef.ProtoReflect.Descriptor instead.
+func (*ChainLinkRef) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *ChainLinkRef) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ChainLinkRef) GetDefinitionRef() string {
+	if x != nil {
+		return x.DefinitionRef
+	}
+	return ""
+}
+
+func (x *ChainLinkRef) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+// InstanceLineage aggregates a single-hop lineage view for a process instance.
+type InstanceLineage struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	// call_parent is nil when the instance is a call-chain root.
+	CallParent   *CallLinkRef   `protobuf:"bytes,2,opt,name=call_parent,json=callParent,proto3" json:"call_parent,omitempty"`
+	CallChildren []*CallLinkRef `protobuf:"bytes,3,rep,name=call_children,json=callChildren,proto3" json:"call_children,omitempty"`
+	// chain_predecessor is nil when the instance is a chain root.
+	ChainPredecessor *ChainLinkRef   `protobuf:"bytes,4,opt,name=chain_predecessor,json=chainPredecessor,proto3" json:"chain_predecessor,omitempty"`
+	ChainSuccessors  []*ChainLinkRef `protobuf:"bytes,5,rep,name=chain_successors,json=chainSuccessors,proto3" json:"chain_successors,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *InstanceLineage) Reset() {
+	*x = InstanceLineage{}
+	mi := &file_workflow_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstanceLineage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstanceLineage) ProtoMessage() {}
+
+func (x *InstanceLineage) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstanceLineage.ProtoReflect.Descriptor instead.
+func (*InstanceLineage) Descriptor() ([]byte, []int) {
+	return file_workflow_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *InstanceLineage) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *InstanceLineage) GetCallParent() *CallLinkRef {
+	if x != nil {
+		return x.CallParent
+	}
+	return nil
+}
+
+func (x *InstanceLineage) GetCallChildren() []*CallLinkRef {
+	if x != nil {
+		return x.CallChildren
+	}
+	return nil
+}
+
+func (x *InstanceLineage) GetChainPredecessor() *ChainLinkRef {
+	if x != nil {
+		return x.ChainPredecessor
+	}
+	return nil
+}
+
+func (x *InstanceLineage) GetChainSuccessors() []*ChainLinkRef {
+	if x != nil {
+		return x.ChainSuccessors
+	}
+	return nil
+}
+
 var File_workflow_proto protoreflect.FileDescriptor
 
 const file_workflow_proto_rawDesc = "" +
@@ -2667,7 +3222,7 @@ const file_workflow_proto_rawDesc = "" +
 	"instanceId\x12\x1f\n" +
 	"\vincident_id\x18\x02 \x01(\tR\n" +
 	"incidentId\x12!\n" +
-	"\fadd_attempts\x18\x03 \x01(\x05R\vaddAttempts\"\xce\x01\n" +
+	"\fadd_attempts\x18\x03 \x01(\x05R\vaddAttempts\"\xea\x01\n" +
 	"\n" +
 	"DeadLetter\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
@@ -2679,7 +3234,8 @@ const file_workflow_proto_rawDesc = "" +
 	"\n" +
 	"last_error\x18\x05 \x01(\tR\tlastError\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\".\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1a\n" +
+	"\bcategory\x18\a \x01(\tR\bcategory\".\n" +
 	"\x16ListDeadLettersRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\"F\n" +
 	"\x17ListDeadLettersResponse\x12+\n" +
@@ -2869,7 +3425,51 @@ const file_workflow_proto_rawDesc = "" +
 	"\x16ActionableViewResponse\x129\n" +
 	"\n" +
 	"actionable\x18\x01 \x01(\v2\x19.wrkflw.v1.ActionableViewR\n" +
-	"actionable2\xb6\f\n" +
+	"actionable\"\x16\n" +
+	"\x14GetRelayStatsRequest\"w\n" +
+	"\n" +
+	"RelayStats\x12\x18\n" +
+	"\apending\x18\x01 \x01(\x03R\apending\x12\x12\n" +
+	"\x04dead\x18\x02 \x01(\x03R\x04dead\x12;\n" +
+	"\x1aoldest_pending_age_seconds\x18\x03 \x01(\x03R\x17oldestPendingAgeSeconds\"\x13\n" +
+	"\x11ListTimersRequest\"\xc4\x01\n" +
+	"\x05Timer\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x15\n" +
+	"\x06def_id\x18\x02 \x01(\tR\x05defId\x12\x1f\n" +
+	"\vdef_version\x18\x03 \x01(\x05R\n" +
+	"defVersion\x12\x19\n" +
+	"\btimer_id\x18\x04 \x01(\tR\atimerId\x123\n" +
+	"\afire_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06fireAt\x12\x12\n" +
+	"\x04kind\x18\x06 \x01(\tR\x04kind\"\x90\x01\n" +
+	"\x12ListTimersResponse\x12\x14\n" +
+	"\x05count\x18\x01 \x01(\x03R\x05count\x12<\n" +
+	"\fnext_fire_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"nextFireAt\x12&\n" +
+	"\x05items\x18\x03 \x03(\v2\x10.wrkflw.v1.TimerR\x05items\"<\n" +
+	"\x19GetInstanceLineageRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\"|\n" +
+	"\vCallLinkRef\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x15\n" +
+	"\x06def_id\x18\x02 \x01(\tR\x05defId\x12\x1f\n" +
+	"\vdef_version\x18\x03 \x01(\x05R\n" +
+	"defVersion\x12\x14\n" +
+	"\x05depth\x18\x04 \x01(\x05R\x05depth\"p\n" +
+	"\fChainLinkRef\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12%\n" +
+	"\x0edefinition_ref\x18\x02 \x01(\tR\rdefinitionRef\x12\x18\n" +
+	"\aoutcome\x18\x03 \x01(\tR\aoutcome\"\xb2\x02\n" +
+	"\x0fInstanceLineage\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x127\n" +
+	"\vcall_parent\x18\x02 \x01(\v2\x16.wrkflw.v1.CallLinkRefR\n" +
+	"callParent\x12;\n" +
+	"\rcall_children\x18\x03 \x03(\v2\x16.wrkflw.v1.CallLinkRefR\fcallChildren\x12D\n" +
+	"\x11chain_predecessor\x18\x04 \x01(\v2\x17.wrkflw.v1.ChainLinkRefR\x10chainPredecessor\x12B\n" +
+	"\x10chain_successors\x18\x05 \x03(\v2\x17.wrkflw.v1.ChainLinkRefR\x0fchainSuccessors2\xa2\x0e\n" +
 	"\x0fWorkflowService\x12M\n" +
 	"\rStartInstance\x12\x1f.wrkflw.v1.StartInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12I\n" +
 	"\vGetInstance\x12\x1d.wrkflw.v1.GetInstanceRequest\x1a\x1b.wrkflw.v1.InstanceResponse\x12M\n" +
@@ -2884,7 +3484,11 @@ const file_workflow_proto_rawDesc = "" +
 	"\x0fListDeadLetters\x12!.wrkflw.v1.ListDeadLettersRequest\x1a\".wrkflw.v1.ListDeadLettersResponse\x12a\n" +
 	"\x12RedriveDeadLetters\x12$.wrkflw.v1.RedriveDeadLettersRequest\x1a%.wrkflw.v1.RedriveDeadLettersResponse\x12Y\n" +
 	"\x13GetInstanceSnapshot\x12\x1d.wrkflw.v1.GetInstanceRequest\x1a#.wrkflw.v1.InstanceSnapshotResponse\x12U\n" +
-	"\x11GetActionableView\x12\x1d.wrkflw.v1.GetInstanceRequest\x1a!.wrkflw.v1.ActionableViewResponse\x12>\n" +
+	"\x11GetActionableView\x12\x1d.wrkflw.v1.GetInstanceRequest\x1a!.wrkflw.v1.ActionableViewResponse\x12G\n" +
+	"\rGetRelayStats\x12\x1f.wrkflw.v1.GetRelayStatsRequest\x1a\x15.wrkflw.v1.RelayStats\x12I\n" +
+	"\n" +
+	"ListTimers\x12\x1c.wrkflw.v1.ListTimersRequest\x1a\x1d.wrkflw.v1.ListTimersResponse\x12V\n" +
+	"\x12GetInstanceLineage\x12$.wrkflw.v1.GetInstanceLineageRequest\x1a\x1a.wrkflw.v1.InstanceLineage\x12>\n" +
 	"\tAddPolicy\x12\x1b.wrkflw.v1.AddPolicyRequest\x1a\x14.wrkflw.v1.MutateAck\x12D\n" +
 	"\fRemovePolicy\x12\x1e.wrkflw.v1.RemovePolicyRequest\x1a\x14.wrkflw.v1.MutateAck\x12O\n" +
 	"\fListPolicies\x12\x1e.wrkflw.v1.ListPoliciesRequest\x1a\x1f.wrkflw.v1.ListPoliciesResponse\x12:\n" +
@@ -2905,7 +3509,7 @@ func file_workflow_proto_rawDescGZIP() []byte {
 	return file_workflow_proto_rawDescData
 }
 
-var file_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_workflow_proto_goTypes = []any{
 	(*StartInstanceRequest)(nil),       // 0: wrkflw.v1.StartInstanceRequest
 	(*GetInstanceRequest)(nil),         // 1: wrkflw.v1.GetInstanceRequest
@@ -2950,12 +3554,21 @@ var file_workflow_proto_goTypes = []any{
 	(*ActionableTask)(nil),             // 40: wrkflw.v1.ActionableTask
 	(*ActionableView)(nil),             // 41: wrkflw.v1.ActionableView
 	(*ActionableViewResponse)(nil),     // 42: wrkflw.v1.ActionableViewResponse
-	(*structpb.Struct)(nil),            // 43: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),      // 44: google.protobuf.Timestamp
+	(*GetRelayStatsRequest)(nil),       // 43: wrkflw.v1.GetRelayStatsRequest
+	(*RelayStats)(nil),                 // 44: wrkflw.v1.RelayStats
+	(*ListTimersRequest)(nil),          // 45: wrkflw.v1.ListTimersRequest
+	(*Timer)(nil),                      // 46: wrkflw.v1.Timer
+	(*ListTimersResponse)(nil),         // 47: wrkflw.v1.ListTimersResponse
+	(*GetInstanceLineageRequest)(nil),  // 48: wrkflw.v1.GetInstanceLineageRequest
+	(*CallLinkRef)(nil),                // 49: wrkflw.v1.CallLinkRef
+	(*ChainLinkRef)(nil),               // 50: wrkflw.v1.ChainLinkRef
+	(*InstanceLineage)(nil),            // 51: wrkflw.v1.InstanceLineage
+	(*structpb.Struct)(nil),            // 52: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),      // 53: google.protobuf.Timestamp
 }
 var file_workflow_proto_depIdxs = []int32{
-	43, // 0: wrkflw.v1.StartInstanceRequest.vars:type_name -> google.protobuf.Struct
-	44, // 1: wrkflw.v1.DeadLetter.created_at:type_name -> google.protobuf.Timestamp
+	52, // 0: wrkflw.v1.StartInstanceRequest.vars:type_name -> google.protobuf.Struct
+	53, // 1: wrkflw.v1.DeadLetter.created_at:type_name -> google.protobuf.Timestamp
 	4,  // 2: wrkflw.v1.ListDeadLettersResponse.items:type_name -> wrkflw.v1.DeadLetter
 	9,  // 3: wrkflw.v1.AddPolicyRequest.rule:type_name -> wrkflw.v1.PolicyRule
 	9,  // 4: wrkflw.v1.RemovePolicyRequest.rule:type_name -> wrkflw.v1.PolicyRule
@@ -2963,84 +3576,97 @@ var file_workflow_proto_depIdxs = []int32{
 	10, // 6: wrkflw.v1.AddRoleRequest.binding:type_name -> wrkflw.v1.RoleBinding
 	10, // 7: wrkflw.v1.RemoveRoleRequest.binding:type_name -> wrkflw.v1.RoleBinding
 	10, // 8: wrkflw.v1.ListRolesResponse.role_bindings:type_name -> wrkflw.v1.RoleBinding
-	43, // 9: wrkflw.v1.DeliverSignalRequest.payload:type_name -> google.protobuf.Struct
-	43, // 10: wrkflw.v1.DeliverMessageRequest.payload:type_name -> google.protobuf.Struct
-	43, // 11: wrkflw.v1.Actor.attributes:type_name -> google.protobuf.Struct
+	52, // 9: wrkflw.v1.DeliverSignalRequest.payload:type_name -> google.protobuf.Struct
+	52, // 10: wrkflw.v1.DeliverMessageRequest.payload:type_name -> google.protobuf.Struct
+	52, // 11: wrkflw.v1.Actor.attributes:type_name -> google.protobuf.Struct
 	22, // 12: wrkflw.v1.ClaimTaskRequest.actor:type_name -> wrkflw.v1.Actor
 	22, // 13: wrkflw.v1.CompleteTaskRequest.actor:type_name -> wrkflw.v1.Actor
-	43, // 14: wrkflw.v1.CompleteTaskRequest.output:type_name -> google.protobuf.Struct
+	52, // 14: wrkflw.v1.CompleteTaskRequest.output:type_name -> google.protobuf.Struct
 	22, // 15: wrkflw.v1.ReassignTaskRequest.by:type_name -> wrkflw.v1.Actor
-	44, // 16: wrkflw.v1.Instance.started_at:type_name -> google.protobuf.Timestamp
-	44, // 17: wrkflw.v1.Instance.ended_at:type_name -> google.protobuf.Timestamp
-	43, // 18: wrkflw.v1.Instance.variables:type_name -> google.protobuf.Struct
+	53, // 16: wrkflw.v1.Instance.started_at:type_name -> google.protobuf.Timestamp
+	53, // 17: wrkflw.v1.Instance.ended_at:type_name -> google.protobuf.Timestamp
+	52, // 18: wrkflw.v1.Instance.variables:type_name -> google.protobuf.Struct
 	27, // 19: wrkflw.v1.InstanceResponse.instance:type_name -> wrkflw.v1.Instance
-	44, // 20: wrkflw.v1.InstanceSummary.started_at:type_name -> google.protobuf.Timestamp
-	44, // 21: wrkflw.v1.InstanceSummary.ended_at:type_name -> google.protobuf.Timestamp
+	53, // 20: wrkflw.v1.InstanceSummary.started_at:type_name -> google.protobuf.Timestamp
+	53, // 21: wrkflw.v1.InstanceSummary.ended_at:type_name -> google.protobuf.Timestamp
 	30, // 22: wrkflw.v1.ListInstancesResponse.items:type_name -> wrkflw.v1.InstanceSummary
-	43, // 23: wrkflw.v1.TokenView.payload:type_name -> google.protobuf.Struct
-	44, // 24: wrkflw.v1.TokenView.entered_at:type_name -> google.protobuf.Timestamp
-	44, // 25: wrkflw.v1.NodeVisitView.entered_at:type_name -> google.protobuf.Timestamp
-	44, // 26: wrkflw.v1.NodeVisitView.left_at:type_name -> google.protobuf.Timestamp
-	44, // 27: wrkflw.v1.TaskView.created_at:type_name -> google.protobuf.Timestamp
-	44, // 28: wrkflw.v1.TaskView.due_at:type_name -> google.protobuf.Timestamp
-	44, // 29: wrkflw.v1.IncidentView.created_at:type_name -> google.protobuf.Timestamp
-	43, // 30: wrkflw.v1.InstanceSnapshot.variables:type_name -> google.protobuf.Struct
+	52, // 23: wrkflw.v1.TokenView.payload:type_name -> google.protobuf.Struct
+	53, // 24: wrkflw.v1.TokenView.entered_at:type_name -> google.protobuf.Timestamp
+	53, // 25: wrkflw.v1.NodeVisitView.entered_at:type_name -> google.protobuf.Timestamp
+	53, // 26: wrkflw.v1.NodeVisitView.left_at:type_name -> google.protobuf.Timestamp
+	53, // 27: wrkflw.v1.TaskView.created_at:type_name -> google.protobuf.Timestamp
+	53, // 28: wrkflw.v1.TaskView.due_at:type_name -> google.protobuf.Timestamp
+	53, // 29: wrkflw.v1.IncidentView.created_at:type_name -> google.protobuf.Timestamp
+	52, // 30: wrkflw.v1.InstanceSnapshot.variables:type_name -> google.protobuf.Struct
 	32, // 31: wrkflw.v1.InstanceSnapshot.tokens:type_name -> wrkflw.v1.TokenView
 	33, // 32: wrkflw.v1.InstanceSnapshot.history:type_name -> wrkflw.v1.NodeVisitView
 	34, // 33: wrkflw.v1.InstanceSnapshot.tasks:type_name -> wrkflw.v1.TaskView
 	35, // 34: wrkflw.v1.InstanceSnapshot.incidents:type_name -> wrkflw.v1.IncidentView
-	44, // 35: wrkflw.v1.InstanceSnapshot.started_at:type_name -> google.protobuf.Timestamp
-	44, // 36: wrkflw.v1.InstanceSnapshot.ended_at:type_name -> google.protobuf.Timestamp
+	53, // 35: wrkflw.v1.InstanceSnapshot.started_at:type_name -> google.protobuf.Timestamp
+	53, // 36: wrkflw.v1.InstanceSnapshot.ended_at:type_name -> google.protobuf.Timestamp
 	36, // 37: wrkflw.v1.InstanceSnapshot.action_bindings:type_name -> wrkflw.v1.ActionBindingView
 	37, // 38: wrkflw.v1.InstanceSnapshotResponse.snapshot:type_name -> wrkflw.v1.InstanceSnapshot
 	39, // 39: wrkflw.v1.ActionableTask.allowed_actions:type_name -> wrkflw.v1.NextAction
 	40, // 40: wrkflw.v1.ActionableView.open_tasks:type_name -> wrkflw.v1.ActionableTask
 	41, // 41: wrkflw.v1.ActionableViewResponse.actionable:type_name -> wrkflw.v1.ActionableView
-	0,  // 42: wrkflw.v1.WorkflowService.StartInstance:input_type -> wrkflw.v1.StartInstanceRequest
-	1,  // 43: wrkflw.v1.WorkflowService.GetInstance:input_type -> wrkflw.v1.GetInstanceRequest
-	20, // 44: wrkflw.v1.WorkflowService.DeliverSignal:input_type -> wrkflw.v1.DeliverSignalRequest
-	21, // 45: wrkflw.v1.WorkflowService.DeliverMessage:input_type -> wrkflw.v1.DeliverMessageRequest
-	23, // 46: wrkflw.v1.WorkflowService.ClaimTask:input_type -> wrkflw.v1.ClaimTaskRequest
-	24, // 47: wrkflw.v1.WorkflowService.CompleteTask:input_type -> wrkflw.v1.CompleteTaskRequest
-	25, // 48: wrkflw.v1.WorkflowService.ReassignTask:input_type -> wrkflw.v1.ReassignTaskRequest
-	26, // 49: wrkflw.v1.WorkflowService.ListInstances:input_type -> wrkflw.v1.ListInstancesRequest
-	2,  // 50: wrkflw.v1.WorkflowService.CancelInstance:input_type -> wrkflw.v1.CancelInstanceRequest
-	3,  // 51: wrkflw.v1.WorkflowService.ResolveIncident:input_type -> wrkflw.v1.ResolveIncidentRequest
-	5,  // 52: wrkflw.v1.WorkflowService.ListDeadLetters:input_type -> wrkflw.v1.ListDeadLettersRequest
-	7,  // 53: wrkflw.v1.WorkflowService.RedriveDeadLetters:input_type -> wrkflw.v1.RedriveDeadLettersRequest
-	1,  // 54: wrkflw.v1.WorkflowService.GetInstanceSnapshot:input_type -> wrkflw.v1.GetInstanceRequest
-	1,  // 55: wrkflw.v1.WorkflowService.GetActionableView:input_type -> wrkflw.v1.GetInstanceRequest
-	11, // 56: wrkflw.v1.WorkflowService.AddPolicy:input_type -> wrkflw.v1.AddPolicyRequest
-	12, // 57: wrkflw.v1.WorkflowService.RemovePolicy:input_type -> wrkflw.v1.RemovePolicyRequest
-	13, // 58: wrkflw.v1.WorkflowService.ListPolicies:input_type -> wrkflw.v1.ListPoliciesRequest
-	15, // 59: wrkflw.v1.WorkflowService.AddRole:input_type -> wrkflw.v1.AddRoleRequest
-	16, // 60: wrkflw.v1.WorkflowService.RemoveRole:input_type -> wrkflw.v1.RemoveRoleRequest
-	17, // 61: wrkflw.v1.WorkflowService.ListRoles:input_type -> wrkflw.v1.ListRolesRequest
-	28, // 62: wrkflw.v1.WorkflowService.StartInstance:output_type -> wrkflw.v1.InstanceResponse
-	28, // 63: wrkflw.v1.WorkflowService.GetInstance:output_type -> wrkflw.v1.InstanceResponse
-	28, // 64: wrkflw.v1.WorkflowService.DeliverSignal:output_type -> wrkflw.v1.InstanceResponse
-	29, // 65: wrkflw.v1.WorkflowService.DeliverMessage:output_type -> wrkflw.v1.DeliverMessageResponse
-	28, // 66: wrkflw.v1.WorkflowService.ClaimTask:output_type -> wrkflw.v1.InstanceResponse
-	28, // 67: wrkflw.v1.WorkflowService.CompleteTask:output_type -> wrkflw.v1.InstanceResponse
-	28, // 68: wrkflw.v1.WorkflowService.ReassignTask:output_type -> wrkflw.v1.InstanceResponse
-	31, // 69: wrkflw.v1.WorkflowService.ListInstances:output_type -> wrkflw.v1.ListInstancesResponse
-	28, // 70: wrkflw.v1.WorkflowService.CancelInstance:output_type -> wrkflw.v1.InstanceResponse
-	28, // 71: wrkflw.v1.WorkflowService.ResolveIncident:output_type -> wrkflw.v1.InstanceResponse
-	6,  // 72: wrkflw.v1.WorkflowService.ListDeadLetters:output_type -> wrkflw.v1.ListDeadLettersResponse
-	8,  // 73: wrkflw.v1.WorkflowService.RedriveDeadLetters:output_type -> wrkflw.v1.RedriveDeadLettersResponse
-	38, // 74: wrkflw.v1.WorkflowService.GetInstanceSnapshot:output_type -> wrkflw.v1.InstanceSnapshotResponse
-	42, // 75: wrkflw.v1.WorkflowService.GetActionableView:output_type -> wrkflw.v1.ActionableViewResponse
-	19, // 76: wrkflw.v1.WorkflowService.AddPolicy:output_type -> wrkflw.v1.MutateAck
-	19, // 77: wrkflw.v1.WorkflowService.RemovePolicy:output_type -> wrkflw.v1.MutateAck
-	14, // 78: wrkflw.v1.WorkflowService.ListPolicies:output_type -> wrkflw.v1.ListPoliciesResponse
-	19, // 79: wrkflw.v1.WorkflowService.AddRole:output_type -> wrkflw.v1.MutateAck
-	19, // 80: wrkflw.v1.WorkflowService.RemoveRole:output_type -> wrkflw.v1.MutateAck
-	18, // 81: wrkflw.v1.WorkflowService.ListRoles:output_type -> wrkflw.v1.ListRolesResponse
-	62, // [62:82] is the sub-list for method output_type
-	42, // [42:62] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	53, // 42: wrkflw.v1.Timer.fire_at:type_name -> google.protobuf.Timestamp
+	53, // 43: wrkflw.v1.ListTimersResponse.next_fire_at:type_name -> google.protobuf.Timestamp
+	46, // 44: wrkflw.v1.ListTimersResponse.items:type_name -> wrkflw.v1.Timer
+	49, // 45: wrkflw.v1.InstanceLineage.call_parent:type_name -> wrkflw.v1.CallLinkRef
+	49, // 46: wrkflw.v1.InstanceLineage.call_children:type_name -> wrkflw.v1.CallLinkRef
+	50, // 47: wrkflw.v1.InstanceLineage.chain_predecessor:type_name -> wrkflw.v1.ChainLinkRef
+	50, // 48: wrkflw.v1.InstanceLineage.chain_successors:type_name -> wrkflw.v1.ChainLinkRef
+	0,  // 49: wrkflw.v1.WorkflowService.StartInstance:input_type -> wrkflw.v1.StartInstanceRequest
+	1,  // 50: wrkflw.v1.WorkflowService.GetInstance:input_type -> wrkflw.v1.GetInstanceRequest
+	20, // 51: wrkflw.v1.WorkflowService.DeliverSignal:input_type -> wrkflw.v1.DeliverSignalRequest
+	21, // 52: wrkflw.v1.WorkflowService.DeliverMessage:input_type -> wrkflw.v1.DeliverMessageRequest
+	23, // 53: wrkflw.v1.WorkflowService.ClaimTask:input_type -> wrkflw.v1.ClaimTaskRequest
+	24, // 54: wrkflw.v1.WorkflowService.CompleteTask:input_type -> wrkflw.v1.CompleteTaskRequest
+	25, // 55: wrkflw.v1.WorkflowService.ReassignTask:input_type -> wrkflw.v1.ReassignTaskRequest
+	26, // 56: wrkflw.v1.WorkflowService.ListInstances:input_type -> wrkflw.v1.ListInstancesRequest
+	2,  // 57: wrkflw.v1.WorkflowService.CancelInstance:input_type -> wrkflw.v1.CancelInstanceRequest
+	3,  // 58: wrkflw.v1.WorkflowService.ResolveIncident:input_type -> wrkflw.v1.ResolveIncidentRequest
+	5,  // 59: wrkflw.v1.WorkflowService.ListDeadLetters:input_type -> wrkflw.v1.ListDeadLettersRequest
+	7,  // 60: wrkflw.v1.WorkflowService.RedriveDeadLetters:input_type -> wrkflw.v1.RedriveDeadLettersRequest
+	1,  // 61: wrkflw.v1.WorkflowService.GetInstanceSnapshot:input_type -> wrkflw.v1.GetInstanceRequest
+	1,  // 62: wrkflw.v1.WorkflowService.GetActionableView:input_type -> wrkflw.v1.GetInstanceRequest
+	43, // 63: wrkflw.v1.WorkflowService.GetRelayStats:input_type -> wrkflw.v1.GetRelayStatsRequest
+	45, // 64: wrkflw.v1.WorkflowService.ListTimers:input_type -> wrkflw.v1.ListTimersRequest
+	48, // 65: wrkflw.v1.WorkflowService.GetInstanceLineage:input_type -> wrkflw.v1.GetInstanceLineageRequest
+	11, // 66: wrkflw.v1.WorkflowService.AddPolicy:input_type -> wrkflw.v1.AddPolicyRequest
+	12, // 67: wrkflw.v1.WorkflowService.RemovePolicy:input_type -> wrkflw.v1.RemovePolicyRequest
+	13, // 68: wrkflw.v1.WorkflowService.ListPolicies:input_type -> wrkflw.v1.ListPoliciesRequest
+	15, // 69: wrkflw.v1.WorkflowService.AddRole:input_type -> wrkflw.v1.AddRoleRequest
+	16, // 70: wrkflw.v1.WorkflowService.RemoveRole:input_type -> wrkflw.v1.RemoveRoleRequest
+	17, // 71: wrkflw.v1.WorkflowService.ListRoles:input_type -> wrkflw.v1.ListRolesRequest
+	28, // 72: wrkflw.v1.WorkflowService.StartInstance:output_type -> wrkflw.v1.InstanceResponse
+	28, // 73: wrkflw.v1.WorkflowService.GetInstance:output_type -> wrkflw.v1.InstanceResponse
+	28, // 74: wrkflw.v1.WorkflowService.DeliverSignal:output_type -> wrkflw.v1.InstanceResponse
+	29, // 75: wrkflw.v1.WorkflowService.DeliverMessage:output_type -> wrkflw.v1.DeliverMessageResponse
+	28, // 76: wrkflw.v1.WorkflowService.ClaimTask:output_type -> wrkflw.v1.InstanceResponse
+	28, // 77: wrkflw.v1.WorkflowService.CompleteTask:output_type -> wrkflw.v1.InstanceResponse
+	28, // 78: wrkflw.v1.WorkflowService.ReassignTask:output_type -> wrkflw.v1.InstanceResponse
+	31, // 79: wrkflw.v1.WorkflowService.ListInstances:output_type -> wrkflw.v1.ListInstancesResponse
+	28, // 80: wrkflw.v1.WorkflowService.CancelInstance:output_type -> wrkflw.v1.InstanceResponse
+	28, // 81: wrkflw.v1.WorkflowService.ResolveIncident:output_type -> wrkflw.v1.InstanceResponse
+	6,  // 82: wrkflw.v1.WorkflowService.ListDeadLetters:output_type -> wrkflw.v1.ListDeadLettersResponse
+	8,  // 83: wrkflw.v1.WorkflowService.RedriveDeadLetters:output_type -> wrkflw.v1.RedriveDeadLettersResponse
+	38, // 84: wrkflw.v1.WorkflowService.GetInstanceSnapshot:output_type -> wrkflw.v1.InstanceSnapshotResponse
+	42, // 85: wrkflw.v1.WorkflowService.GetActionableView:output_type -> wrkflw.v1.ActionableViewResponse
+	44, // 86: wrkflw.v1.WorkflowService.GetRelayStats:output_type -> wrkflw.v1.RelayStats
+	47, // 87: wrkflw.v1.WorkflowService.ListTimers:output_type -> wrkflw.v1.ListTimersResponse
+	51, // 88: wrkflw.v1.WorkflowService.GetInstanceLineage:output_type -> wrkflw.v1.InstanceLineage
+	19, // 89: wrkflw.v1.WorkflowService.AddPolicy:output_type -> wrkflw.v1.MutateAck
+	19, // 90: wrkflw.v1.WorkflowService.RemovePolicy:output_type -> wrkflw.v1.MutateAck
+	14, // 91: wrkflw.v1.WorkflowService.ListPolicies:output_type -> wrkflw.v1.ListPoliciesResponse
+	19, // 92: wrkflw.v1.WorkflowService.AddRole:output_type -> wrkflw.v1.MutateAck
+	19, // 93: wrkflw.v1.WorkflowService.RemoveRole:output_type -> wrkflw.v1.MutateAck
+	18, // 94: wrkflw.v1.WorkflowService.ListRoles:output_type -> wrkflw.v1.ListRolesResponse
+	72, // [72:95] is the sub-list for method output_type
+	49, // [49:72] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_workflow_proto_init() }
@@ -3054,7 +3680,7 @@ func file_workflow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workflow_proto_rawDesc), len(file_workflow_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   43,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

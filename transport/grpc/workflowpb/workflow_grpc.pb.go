@@ -33,6 +33,9 @@ const (
 	WorkflowService_RedriveDeadLetters_FullMethodName  = "/wrkflw.v1.WorkflowService/RedriveDeadLetters"
 	WorkflowService_GetInstanceSnapshot_FullMethodName = "/wrkflw.v1.WorkflowService/GetInstanceSnapshot"
 	WorkflowService_GetActionableView_FullMethodName   = "/wrkflw.v1.WorkflowService/GetActionableView"
+	WorkflowService_GetRelayStats_FullMethodName       = "/wrkflw.v1.WorkflowService/GetRelayStats"
+	WorkflowService_ListTimers_FullMethodName          = "/wrkflw.v1.WorkflowService/ListTimers"
+	WorkflowService_GetInstanceLineage_FullMethodName  = "/wrkflw.v1.WorkflowService/GetInstanceLineage"
 	WorkflowService_AddPolicy_FullMethodName           = "/wrkflw.v1.WorkflowService/AddPolicy"
 	WorkflowService_RemovePolicy_FullMethodName        = "/wrkflw.v1.WorkflowService/RemovePolicy"
 	WorkflowService_ListPolicies_FullMethodName        = "/wrkflw.v1.WorkflowService/ListPolicies"
@@ -81,6 +84,15 @@ type WorkflowServiceClient interface {
 	// GetActionableView returns the actionable projection of an instance: open
 	// human tasks and their allowed next actions derived from the definition.
 	GetActionableView(ctx context.Context, in *GetInstanceRequest, opts ...grpc.CallOption) (*ActionableViewResponse, error)
+	// GetRelayStats returns aggregate statistics about the outbox relay.
+	// Admin-scoped; requires WithRelayStatsAdmin, else returns Unimplemented.
+	GetRelayStats(ctx context.Context, in *GetRelayStatsRequest, opts ...grpc.CallOption) (*RelayStats, error)
+	// ListTimers returns the current set of armed timers with aggregate stats.
+	// Admin-scoped; requires WithTimerAdmin, else returns Unimplemented.
+	ListTimers(ctx context.Context, in *ListTimersRequest, opts ...grpc.CallOption) (*ListTimersResponse, error)
+	// GetInstanceLineage returns the single-hop call and chain lineage for an
+	// instance. Admin-scoped; requires WithLineageAdmin, else returns Unimplemented.
+	GetInstanceLineage(ctx context.Context, in *GetInstanceLineageRequest, opts ...grpc.CallOption) (*InstanceLineage, error)
 	// AddPolicy adds a casbin permission rule. Admin-scoped; requires
 	// WithPolicyAdmin, else returns Unimplemented.
 	AddPolicy(ctx context.Context, in *AddPolicyRequest, opts ...grpc.CallOption) (*MutateAck, error)
@@ -249,6 +261,36 @@ func (c *workflowServiceClient) GetActionableView(ctx context.Context, in *GetIn
 	return out, nil
 }
 
+func (c *workflowServiceClient) GetRelayStats(ctx context.Context, in *GetRelayStatsRequest, opts ...grpc.CallOption) (*RelayStats, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RelayStats)
+	err := c.cc.Invoke(ctx, WorkflowService_GetRelayStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListTimers(ctx context.Context, in *ListTimersRequest, opts ...grpc.CallOption) (*ListTimersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTimersResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_ListTimers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) GetInstanceLineage(ctx context.Context, in *GetInstanceLineageRequest, opts ...grpc.CallOption) (*InstanceLineage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstanceLineage)
+	err := c.cc.Invoke(ctx, WorkflowService_GetInstanceLineage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *workflowServiceClient) AddPolicy(ctx context.Context, in *AddPolicyRequest, opts ...grpc.CallOption) (*MutateAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MutateAck)
@@ -349,6 +391,15 @@ type WorkflowServiceServer interface {
 	// GetActionableView returns the actionable projection of an instance: open
 	// human tasks and their allowed next actions derived from the definition.
 	GetActionableView(context.Context, *GetInstanceRequest) (*ActionableViewResponse, error)
+	// GetRelayStats returns aggregate statistics about the outbox relay.
+	// Admin-scoped; requires WithRelayStatsAdmin, else returns Unimplemented.
+	GetRelayStats(context.Context, *GetRelayStatsRequest) (*RelayStats, error)
+	// ListTimers returns the current set of armed timers with aggregate stats.
+	// Admin-scoped; requires WithTimerAdmin, else returns Unimplemented.
+	ListTimers(context.Context, *ListTimersRequest) (*ListTimersResponse, error)
+	// GetInstanceLineage returns the single-hop call and chain lineage for an
+	// instance. Admin-scoped; requires WithLineageAdmin, else returns Unimplemented.
+	GetInstanceLineage(context.Context, *GetInstanceLineageRequest) (*InstanceLineage, error)
 	// AddPolicy adds a casbin permission rule. Admin-scoped; requires
 	// WithPolicyAdmin, else returns Unimplemented.
 	AddPolicy(context.Context, *AddPolicyRequest) (*MutateAck, error)
@@ -418,6 +469,15 @@ func (UnimplementedWorkflowServiceServer) GetInstanceSnapshot(context.Context, *
 }
 func (UnimplementedWorkflowServiceServer) GetActionableView(context.Context, *GetInstanceRequest) (*ActionableViewResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetActionableView not implemented")
+}
+func (UnimplementedWorkflowServiceServer) GetRelayStats(context.Context, *GetRelayStatsRequest) (*RelayStats, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRelayStats not implemented")
+}
+func (UnimplementedWorkflowServiceServer) ListTimers(context.Context, *ListTimersRequest) (*ListTimersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTimers not implemented")
+}
+func (UnimplementedWorkflowServiceServer) GetInstanceLineage(context.Context, *GetInstanceLineageRequest) (*InstanceLineage, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInstanceLineage not implemented")
 }
 func (UnimplementedWorkflowServiceServer) AddPolicy(context.Context, *AddPolicyRequest) (*MutateAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddPolicy not implemented")
@@ -710,6 +770,60 @@ func _WorkflowService_GetActionableView_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowService_GetRelayStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRelayStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).GetRelayStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_GetRelayStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).GetRelayStats(ctx, req.(*GetRelayStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListTimers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTimersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListTimers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_ListTimers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListTimers(ctx, req.(*ListTimersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_GetInstanceLineage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInstanceLineageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).GetInstanceLineage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_GetInstanceLineage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).GetInstanceLineage(ctx, req.(*GetInstanceLineageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WorkflowService_AddPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AddPolicyRequest)
 	if err := dec(in); err != nil {
@@ -880,6 +994,18 @@ var WorkflowService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetActionableView",
 			Handler:    _WorkflowService_GetActionableView_Handler,
+		},
+		{
+			MethodName: "GetRelayStats",
+			Handler:    _WorkflowService_GetRelayStats_Handler,
+		},
+		{
+			MethodName: "ListTimers",
+			Handler:    _WorkflowService_ListTimers_Handler,
+		},
+		{
+			MethodName: "GetInstanceLineage",
+			Handler:    _WorkflowService_GetInstanceLineage_Handler,
 		},
 		{
 			MethodName: "AddPolicy",

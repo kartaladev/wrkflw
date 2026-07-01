@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -48,5 +49,27 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error
 	}
 	return out, nil
 }
+
+// Stats returns aggregate statistics about the wrkflw_timers table: the total
+// count of armed timers and the earliest fire_at timestamp among them.
+// NextFireAt is nil when the table is empty.
+//
+// It implements runtime.TimerStatsReader.
+func (s *TimerStore) Stats(ctx context.Context) (runtime.TimerStats, error) {
+	var armed int64
+	var nextFireAt *time.Time
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*), min(fire_at) FROM wrkflw_timers`,
+	).Scan(&armed, &nextFireAt)
+	if err != nil {
+		return runtime.TimerStats{}, fmt.Errorf("workflow-postgres: timer store: stats: %w", err)
+	}
+	return runtime.TimerStats{
+		Armed:      armed,
+		NextFireAt: nextFireAt,
+	}, nil
+}
+
+var _ runtime.TimerStatsReader = (*TimerStore)(nil)
 
 var _ runtime.TimerStore = (*TimerStore)(nil)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -25,10 +26,13 @@ import (
 // service.Service facade and converts between proto and service types.
 type server struct {
 	workflowpb.UnimplementedWorkflowServiceServer
-	svc         service.Service
-	tel         observability.Telemetry
-	deadLetters service.DeadLetterAdmin
-	policyAdmin service.PolicyAdmin
+	svc          service.Service
+	tel          observability.Telemetry
+	deadLetters  service.DeadLetterAdmin
+	policyAdmin  service.PolicyAdmin
+	relayStats   service.RelayStatsAdmin
+	timerAdmin   service.TimerAdmin
+	lineageAdmin service.LineageAdmin
 }
 
 // RegisterWorkflowServiceServer constructs a WorkflowService gRPC implementation
@@ -68,7 +72,15 @@ func RegisterWorkflowServiceServer(reg grpc.ServiceRegistrar, svc service.Servic
 		"github.com/zakyalvan/krtlwrkflw/transport/grpc",
 		nonNilOpts(cfg.logOpt, cfg.tpOpt, cfg.mpOpt)...,
 	)
-	workflowpb.RegisterWorkflowServiceServer(reg, &server{svc: svc, tel: tel, deadLetters: cfg.deadLetters, policyAdmin: cfg.policyAdmin})
+	workflowpb.RegisterWorkflowServiceServer(reg, &server{
+		svc:          svc,
+		tel:          tel,
+		deadLetters:  cfg.deadLetters,
+		policyAdmin:  cfg.policyAdmin,
+		relayStats:   cfg.relayStats,
+		timerAdmin:   cfg.timerAdmin,
+		lineageAdmin: cfg.lineageAdmin,
+	})
 }
 
 // ---- RPC implementations ----
@@ -656,6 +668,130 @@ func (s *server) ListRoles(ctx context.Context, _ *workflowpb.ListRolesRequest) 
 	return &workflowpb.ListRolesResponse{RoleBindings: items}, nil
 }
 
+// GetRelayStats returns aggregate statistics about the outbox relay. It requires
+// the server to be registered with WithRelayStatsAdmin; otherwise it returns
+// codes.Unimplemented.
+func (s *server) GetRelayStats(ctx context.Context, _ *workflowpb.GetRelayStatsRequest) (*workflowpb.RelayStats, error) {
+	ctx, span := s.startSpan(ctx, "GetRelayStats")
+	defer span.End()
+
+	if s.relayStats == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: relay-stats admin not configured")
+	}
+	stats, err := s.relayStats.OutboxStats(ctx)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	return &workflowpb.RelayStats{
+		Pending:                 stats.Pending,
+		Dead:                    stats.Dead,
+		OldestPendingAgeSeconds: int64(stats.OldestPendingAge / time.Second),
+	}, nil
+}
+
+// ListTimers returns the current set of armed timers together with aggregate
+// timer stats. It requires the server to be registered with WithTimerAdmin;
+// otherwise it returns codes.Unimplemented.
+func (s *server) ListTimers(ctx context.Context, _ *workflowpb.ListTimersRequest) (*workflowpb.ListTimersResponse, error) {
+	ctx, span := s.startSpan(ctx, "ListTimers")
+	defer span.End()
+
+	if s.timerAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: timer admin not configured")
+	}
+	stats, err := s.timerAdmin.Stats(ctx)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	armed, err := s.timerAdmin.ListArmed(ctx)
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+
+	items := make([]*workflowpb.Timer, len(armed))
+	for i, t := range armed {
+		items[i] = &workflowpb.Timer{
+			InstanceId: t.InstanceID,
+			DefId:      t.DefID,
+			DefVersion: int32(t.DefVersion), //nolint:gosec // version is a small sequential int
+			TimerId:    t.TimerID,
+			FireAt:     timestamppb.New(t.FireAt),
+			Kind:       t.Kind.String(),
+		}
+	}
+
+	resp := &workflowpb.ListTimersResponse{
+		Count: stats.Armed,
+		Items: items,
+	}
+	if stats.NextFireAt != nil {
+		resp.NextFireAt = timestamppb.New(*stats.NextFireAt)
+	}
+	return resp, nil
+}
+
+// GetInstanceLineage returns the single-hop call and chain lineage for an
+// instance. It requires the server to be registered with WithLineageAdmin;
+// otherwise it returns codes.Unimplemented.
+func (s *server) GetInstanceLineage(ctx context.Context, req *workflowpb.GetInstanceLineageRequest) (*workflowpb.InstanceLineage, error) {
+	ctx, span := s.startSpan(ctx, "GetInstanceLineage")
+	defer span.End()
+
+	if s.lineageAdmin == nil {
+		return nil, status.Error(codes.Unimplemented, "workflow-grpc: lineage admin not configured")
+	}
+	lin, err := s.lineageAdmin.Lineage(ctx, req.GetInstanceId())
+	if err != nil {
+		recordSpanErr(span, err)
+		return nil, mapToGRPCStatus(err)
+	}
+	return instanceLineageToProto(lin), nil
+}
+
+// instanceLineageToProto converts a runtime.InstanceLineage to its proto representation.
+func instanceLineageToProto(lin runtime.InstanceLineage) *workflowpb.InstanceLineage {
+	pb := &workflowpb.InstanceLineage{
+		InstanceId: lin.InstanceID,
+	}
+	if lin.CallParent != nil {
+		pb.CallParent = callLinkRefToProto(*lin.CallParent)
+	}
+	pb.CallChildren = make([]*workflowpb.CallLinkRef, len(lin.CallChildren))
+	for i, c := range lin.CallChildren {
+		pb.CallChildren[i] = callLinkRefToProto(c)
+	}
+	if lin.ChainPredecessor != nil {
+		pb.ChainPredecessor = chainLinkRefToProto(*lin.ChainPredecessor)
+	}
+	pb.ChainSuccessors = make([]*workflowpb.ChainLinkRef, len(lin.ChainSuccessors))
+	for i, s := range lin.ChainSuccessors {
+		pb.ChainSuccessors[i] = chainLinkRefToProto(s)
+	}
+	return pb
+}
+
+// callLinkRefToProto converts a runtime.CallLinkRef to its proto representation.
+func callLinkRefToProto(r runtime.CallLinkRef) *workflowpb.CallLinkRef {
+	return &workflowpb.CallLinkRef{
+		InstanceId: r.InstanceID,
+		DefId:      r.DefID,
+		DefVersion: int32(r.DefVersion), //nolint:gosec // version is a small sequential int
+		Depth:      int32(r.Depth),      //nolint:gosec // depth is a small bounded int
+	}
+}
+
+// chainLinkRefToProto converts a runtime.ChainLinkRef to its proto representation.
+func chainLinkRefToProto(r runtime.ChainLinkRef) *workflowpb.ChainLinkRef {
+	return &workflowpb.ChainLinkRef{
+		InstanceId:    r.InstanceID,
+		DefinitionRef: r.DefinitionRef,
+		Outcome:       r.Outcome,
+	}
+}
+
 // validatePolicyRule rejects a policy rule whose subject, object, or action is
 // empty with codes.InvalidArgument at the transport boundary. A nil rule fails
 // the same way (all three components are empty).
@@ -702,6 +838,7 @@ func protoToRoleBinding(p *workflowpb.RoleBinding) service.RoleBinding {
 }
 
 // deadLetterToProto projects a runtime.DeadLetter onto its gRPC message.
+// The category field is populated via runtime.ClassifyDeadLetter.
 func deadLetterToProto(dl runtime.DeadLetter) *workflowpb.DeadLetter {
 	return &workflowpb.DeadLetter{
 		Id:         dl.ID,
@@ -710,6 +847,7 @@ func deadLetterToProto(dl runtime.DeadLetter) *workflowpb.DeadLetter {
 		RetryCount: int32(dl.RetryCount), //nolint:gosec // bounded retry count
 		LastError:  dl.LastError,
 		CreatedAt:  timestamppb.New(dl.CreatedAt),
+		Category:   runtime.ClassifyDeadLetter(dl.LastError),
 	}
 }
 

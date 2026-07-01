@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 // InstanceView is the stable JSON projection of an engine.InstanceState.
@@ -29,6 +30,7 @@ type deadLetterView struct {
 	Topic      string    `json:"topic"`
 	RetryCount int       `json:"retry_count"`
 	LastError  string    `json:"last_error"`
+	Category   string    `json:"category"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -78,6 +80,76 @@ func NewInstanceView(st engine.InstanceState) InstanceView {
 		EndedAt:    st.EndedAt,
 		Variables:  st.Variables,
 	}
+}
+
+// callLinkRefView is the snake_case REST projection of a runtime.CallLinkRef.
+type callLinkRefView struct {
+	InstanceID string `json:"instance_id"`
+	DefID      string `json:"def_id"`
+	DefVersion int    `json:"def_version"`
+	Depth      int    `json:"depth"`
+}
+
+// chainLinkRefView is the snake_case REST projection of a runtime.ChainLinkRef.
+type chainLinkRefView struct {
+	InstanceID    string `json:"instance_id"`
+	DefinitionRef string `json:"definition_ref"`
+	Outcome       string `json:"outcome"`
+}
+
+// lineageView is the snake_case REST projection of a runtime.InstanceLineage.
+// call_parent and chain_predecessor are omitted when nil; call_children and
+// chain_successors are always serialized as arrays (never null).
+type lineageView struct {
+	InstanceID       string             `json:"instance_id"`
+	CallParent       *callLinkRefView   `json:"call_parent,omitempty"`
+	CallChildren     []callLinkRefView  `json:"call_children"`
+	ChainPredecessor *chainLinkRefView  `json:"chain_predecessor,omitempty"`
+	ChainSuccessors  []chainLinkRefView `json:"chain_successors"`
+}
+
+// newLineageView maps a runtime.InstanceLineage to the snake_case lineageView
+// DTO. call_children and chain_successors are initialized to empty slices so
+// they serialize as [] rather than null.
+func newLineageView(l runtime.InstanceLineage) lineageView {
+	v := lineageView{
+		InstanceID:      l.InstanceID,
+		CallChildren:    make([]callLinkRefView, len(l.CallChildren)),
+		ChainSuccessors: make([]chainLinkRefView, len(l.ChainSuccessors)),
+	}
+	if l.CallParent != nil {
+		r := callLinkRefView{
+			InstanceID: l.CallParent.InstanceID,
+			DefID:      l.CallParent.DefID,
+			DefVersion: l.CallParent.DefVersion,
+			Depth:      l.CallParent.Depth,
+		}
+		v.CallParent = &r
+	}
+	for i, c := range l.CallChildren {
+		v.CallChildren[i] = callLinkRefView{
+			InstanceID: c.InstanceID,
+			DefID:      c.DefID,
+			DefVersion: c.DefVersion,
+			Depth:      c.Depth,
+		}
+	}
+	if l.ChainPredecessor != nil {
+		r := chainLinkRefView{
+			InstanceID:    l.ChainPredecessor.InstanceID,
+			DefinitionRef: l.ChainPredecessor.DefinitionRef,
+			Outcome:       l.ChainPredecessor.Outcome,
+		}
+		v.ChainPredecessor = &r
+	}
+	for i, s := range l.ChainSuccessors {
+		v.ChainSuccessors[i] = chainLinkRefView{
+			InstanceID:    s.InstanceID,
+			DefinitionRef: s.DefinitionRef,
+			Outcome:       s.Outcome,
+		}
+	}
+	return v
 }
 
 func statusString(s engine.Status) string {

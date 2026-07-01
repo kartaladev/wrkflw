@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
@@ -27,6 +29,9 @@ func (errMeter) Int64UpDownCounter(string, ...metric.Int64UpDownCounterOption) (
 	return nil, errors.New("injected error")
 }
 func (errMeter) Float64Histogram(string, ...metric.Float64HistogramOption) (metric.Float64Histogram, error) {
+	return nil, errors.New("injected error")
+}
+func (errMeter) Int64ObservableGauge(string, ...metric.Int64ObservableGaugeOption) (metric.Int64ObservableGauge, error) {
 	return nil, errors.New("injected error")
 }
 
@@ -150,6 +155,7 @@ func TestInstruments_NeverFail(t *testing.T) {
 	assert.NotNil(t, tel.Int64Counter("req.count", "total requests"), "Int64Counter must never return nil")
 	assert.NotNil(t, tel.Int64UpDownCounter("queue.depth", "current queue depth"), "Int64UpDownCounter must never return nil")
 	assert.NotNil(t, tel.Float64Histogram("req.duration", "request latency"), "Float64Histogram must never return nil")
+	assert.NotNil(t, tel.Int64ObservableGauge("active.sessions", "active sessions", nil), "Int64ObservableGauge must never return nil")
 }
 
 // TestInstruments_NoopFallback exercises the error-fallback branches by
@@ -162,4 +168,60 @@ func TestInstruments_NoopFallback(t *testing.T) {
 	assert.NotNil(t, tel.Int64Counter("c", "d"), "Int64Counter noop fallback must not return nil")
 	assert.NotNil(t, tel.Int64UpDownCounter("g", "d"), "Int64UpDownCounter noop fallback must not return nil")
 	assert.NotNil(t, tel.Float64Histogram("h", "d"), "Float64Histogram noop fallback must not return nil")
+	assert.NotNil(t, tel.Int64ObservableGauge("g2", "gauge", nil), "Int64ObservableGauge noop fallback must not return nil")
+}
+
+// TestInt64ObservableGauge_CollectsValue verifies that a gauge registered via
+// Int64ObservableGauge produces datapoints with the expected value when the
+// manual reader is collected.
+func TestInt64ObservableGauge_CollectsValue(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name      string
+		observed  int64
+		wantValue int64
+	}
+
+	cases := []testCase{
+		{name: "positive value", observed: 42, wantValue: 42},
+		{name: "zero value", observed: 0, wantValue: 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rdr := sdkmetric.NewManualReader()
+			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
+
+			cb := func(_ context.Context, o metric.Int64Observer) error {
+				o.Observe(tc.observed)
+				return nil
+			}
+
+			tel := observability.New("test/scope", observability.WithMeterProvider(mp))
+			g := tel.Int64ObservableGauge("test.gauge", "a test gauge", cb)
+			require.NotNil(t, g, "Int64ObservableGauge must not return nil")
+
+			var rm metricdata.ResourceMetrics
+			require.NoError(t, rdr.Collect(context.Background(), &rm))
+
+			var found bool
+			for _, sm := range rm.ScopeMetrics {
+				for _, m := range sm.Metrics {
+					if m.Name != "test.gauge" {
+						continue
+					}
+					found = true
+					gauge, ok := m.Data.(metricdata.Gauge[int64])
+					require.True(t, ok, "metric data must be a Gauge[int64]")
+					require.Len(t, gauge.DataPoints, 1, "expected exactly one datapoint")
+					assert.Equal(t, tc.wantValue, gauge.DataPoints[0].Value,
+						"gauge datapoint value must match observed value")
+				}
+			}
+			assert.True(t, found, "gauge metric 'test.gauge' must be present in collected metrics")
+		})
+	}
 }

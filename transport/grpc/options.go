@@ -21,6 +21,15 @@ type serverConfig struct {
 
 	// policyAdmin, when non-nil, enables the policy-admin RPCs.
 	policyAdmin service.PolicyAdmin
+
+	// relayStats, when non-nil, enables the GetRelayStats RPC.
+	relayStats service.RelayStatsAdmin
+
+	// timerAdmin, when non-nil, enables the ListTimers RPC.
+	timerAdmin service.TimerAdmin
+
+	// lineageAdmin, when non-nil, enables the GetInstanceLineage RPC.
+	lineageAdmin service.LineageAdmin
 }
 
 // Option is a functional option for [RegisterWorkflowServiceServer].
@@ -79,6 +88,57 @@ func WithPolicyAdmin(pa service.PolicyAdmin) Option {
 	}
 	return func(c *serverConfig) {
 		c.policyAdmin = pa
+	}
+}
+
+// WithRelayStatsAdmin enables the GetRelayStats RPC by supplying a
+// [service.RelayStatsAdmin] (e.g. the Postgres Relay). When this option is NOT
+// supplied, GetRelayStats returns codes.Unimplemented.
+//
+// SECURITY: like the other admin RPCs, GetRelayStats has no built-in per-method
+// authorization; the consumer MUST gate it with a grpc interceptor.
+//
+// Panics immediately if rsa is nil.
+func WithRelayStatsAdmin(rsa service.RelayStatsAdmin) Option {
+	if rsa == nil {
+		panic("grpc: WithRelayStatsAdmin: rsa must not be nil")
+	}
+	return func(c *serverConfig) {
+		c.relayStats = rsa
+	}
+}
+
+// WithTimerAdmin enables the ListTimers RPC by supplying a [service.TimerAdmin]
+// (e.g. the Postgres TimerStore). When this option is NOT supplied, ListTimers
+// returns codes.Unimplemented.
+//
+// SECURITY: like the other admin RPCs, ListTimers has no built-in per-method
+// authorization; the consumer MUST gate it with a grpc interceptor.
+//
+// Panics immediately if ta is nil.
+func WithTimerAdmin(ta service.TimerAdmin) Option {
+	if ta == nil {
+		panic("grpc: WithTimerAdmin: ta must not be nil")
+	}
+	return func(c *serverConfig) {
+		c.timerAdmin = ta
+	}
+}
+
+// WithLineageAdmin enables the GetInstanceLineage RPC by supplying a
+// [service.LineageAdmin] (e.g. *runtime.LineageReader). When this option is NOT
+// supplied, GetInstanceLineage returns codes.Unimplemented.
+//
+// SECURITY: like the other admin RPCs, GetInstanceLineage has no built-in
+// per-method authorization; the consumer MUST gate it with a grpc interceptor.
+//
+// Panics immediately if la is nil.
+func WithLineageAdmin(la service.LineageAdmin) Option {
+	if la == nil {
+		panic("grpc: WithLineageAdmin: la must not be nil")
+	}
+	return func(c *serverConfig) {
+		c.lineageAdmin = la
 	}
 }
 
