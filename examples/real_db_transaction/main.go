@@ -82,7 +82,7 @@ func runPostgres(ctx context.Context, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	ph := func(int) string { return "$1" }
+	ph := func(n int) string { return fmt.Sprintf("$%d", n) }
 	return run(ctx, logger, pool, ph, database.Postgres, "postgres")
 }
 
@@ -93,6 +93,10 @@ func runMySQL(ctx context.Context, logger *slog.Logger) error {
 		tcmysql.WithDatabase("demo"),
 		tcmysql.WithUsername("demo"),
 		tcmysql.WithPassword("demo"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("port: 3306  MySQL Community Server").
+				WithStartupTimeout(60*time.Second),
+		),
 	)
 	if err != nil {
 		return fmt.Errorf("start mysql container: %w", err)
