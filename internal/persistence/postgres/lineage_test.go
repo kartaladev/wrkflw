@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -57,7 +57,7 @@ func TestCallLinkStoreParentOf(t *testing.T) {
 	}{
 		"returns the parent link for a known child": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				store := pg.NewStore(pool)
 				cls := pg.NewCallLinkStore(pool)
@@ -77,7 +77,7 @@ func TestCallLinkStoreParentOf(t *testing.T) {
 		},
 		"returns nil, nil for unknown child instance (root)": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewCallLinkStore(pool)
 
@@ -101,7 +101,7 @@ func TestCallLinkStoreChildrenOf(t *testing.T) {
 	}{
 		"returns all children ordered by created_at then child_instance_id": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				store := pg.NewStore(pool)
 				cls := pg.NewCallLinkStore(pool)
@@ -127,7 +127,7 @@ func TestCallLinkStoreChildrenOf(t *testing.T) {
 		},
 		"returns empty slice for a parent with no children": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewCallLinkStore(pool)
 
@@ -151,7 +151,7 @@ func TestChainLinkStorePredecessorOf(t *testing.T) {
 	}{
 		"returns the predecessor link for a known successor": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewChainLinkStore(pool)
 
@@ -169,7 +169,7 @@ func TestChainLinkStorePredecessorOf(t *testing.T) {
 		},
 		"returns nil, nil for a successor with no predecessor (root chain)": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewChainLinkStore(pool)
 
@@ -193,7 +193,7 @@ func TestChainLinkStoreSuccessorsOf(t *testing.T) {
 	}{
 		"returns all successors ordered by outcome": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewChainLinkStore(pool)
 
@@ -214,7 +214,7 @@ func TestChainLinkStoreSuccessorsOf(t *testing.T) {
 		},
 		"returns empty slice for a predecessor with no successors": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewChainLinkStore(pool)
 

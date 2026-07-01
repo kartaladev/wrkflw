@@ -5,13 +5,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 // TestSQLBatcherEmulates verifies that a Querier backed by *sql.DB implements
 // [database.Batcher] and emulates batching by executing queued statements
 // sequentially — identical observable results, no round-trip savings.
 func TestSQLBatcherEmulates(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	q, err := database.From(db)
 	require.NoError(t, err)

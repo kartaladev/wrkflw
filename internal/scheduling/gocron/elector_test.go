@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
 
@@ -21,7 +21,7 @@ import (
 // so it skips jobs; and after the leader Closes, the follower wins leadership on
 // its next attempt (natural failover, no lease loop).
 func TestPostgresElectorLeadership(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	electorA, err := sched.NewPostgresElector(ctx, pool)
@@ -54,7 +54,7 @@ func TestPostgresElectorLeadership(t *testing.T) {
 // the window where runtime-armed timers would otherwise be lost until restart.
 // The callback runs asynchronously so it never blocks gocron's IsLeader hot path.
 func TestPostgresElectorInvokesOnLeadershipAcquired(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	acquired := make(chan struct{}, 1)
@@ -78,7 +78,7 @@ func TestPostgresElectorInvokesOnLeadershipAcquired(t *testing.T) {
 // TestPostgresElectorCloseIdempotent proves Close is idempotent (mirrors the
 // AdvisoryLockOwnership contract): a second Close returns nil without acting.
 func TestPostgresElectorCloseIdempotent(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	elector, err := sched.NewPostgresElector(ctx, pool)
@@ -98,7 +98,7 @@ func TestPostgresElectorCloseIdempotent(t *testing.T) {
 // pooled backend. Close must use pg_advisory_unlock_all so a fresh session acquires
 // the key immediately after Close.
 func TestPostgresElectorCloseReleasesReentrantLockStack(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	electorA, err := sched.NewPostgresElector(ctx, pool, sched.WithElectorKey("reentrant-key"))
@@ -143,7 +143,7 @@ func TestPostgresElectorCloseReleasesReentrantLockStack(t *testing.T) {
 // electors contending under DIFFERENT keys can both be leaders, letting multiple
 // independent engines coexist in one database.
 func TestPostgresElectorKeyOverride(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	electorA, err := sched.NewPostgresElector(ctx, pool, sched.WithElectorKey("engine-a"))

@@ -19,7 +19,7 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -62,7 +62,7 @@ func mysqlMinimalDef() *model.ProcessDefinition {
 // Create and Load a process instance through the Store interface.
 func TestOpenMySQL_RoundTrip(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t) // auto-migrates
+	db := dbtest.RunTestMySQL(t) // auto-migrates
 
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestOpenMySQL_RoundTrip(t *testing.T) {
 // times without error (goose's versioning makes re-runs a no-op).
 func TestMigrateMySQL_Idempotent(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t) // auto-migrates once already
+	db := dbtest.RunTestMySQL(t) // auto-migrates once already
 
 	// Second call must be idempotent.
 	err := persistence.MigrateMySQL(t.Context(), db)
@@ -102,7 +102,7 @@ func TestMigrateMySQL_Idempotent(t *testing.T) {
 // NewMySQLTimerStore(db).ListArmed returns it.
 func TestNewMySQLTimerStore_ListArmed(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)
@@ -146,7 +146,7 @@ func TestNewMySQLTimerStore_ListArmed(t *testing.T) {
 // is accepted by OpenMySQL and threads through to the underlying store.
 func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	store, err := persistence.OpenMySQL(t.Context(), db, persistence.MySQLWithHistoryCap(5))
 	require.NoError(t, err)
@@ -168,7 +168,7 @@ func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 // observability options (logger, tracer, meter) are accepted by OpenMySQL.
 func TestOpenMySQL_WithStoreObservabilityOptions(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	store, err := persistence.OpenMySQL(t.Context(), db,
 		persistence.MySQLWithStoreLogger(slog.Default()),
@@ -205,7 +205,7 @@ func seedOutboxForFacadeTest(t *testing.T, db *sql.DB, n int, base time.Time) {
 // whose DrainOnce publishes seeded outbox rows via the supplied publisher.
 func TestNewMySQLRelay_DrainsViaFacade(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	base := time.Now().UTC().Truncate(time.Second)
 	seedOutboxForFacadeTest(t, db, 3, base)
@@ -227,7 +227,7 @@ func TestNewMySQLRelay_DrainsViaFacade(t *testing.T) {
 // a repeat within a MySQL transaction.
 func TestNewMySQLDeduper_FirstThenDup(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	d := persistence.NewMySQLDeduper(db)
 
@@ -272,7 +272,7 @@ func (r *staticReg) Lookup(_ context.Context, defRef string) (*model.ProcessDefi
 // and MarkNotified marks it so a second ClaimPending returns nothing.
 func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 // round-trips a chain link through MySQL.
 func TestNewMySQLChainLinkStore_RecordAndLookup(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	links := persistence.NewMySQLChainLinkStore(db)
 	at := time.Now().UTC().Truncate(time.Millisecond)
@@ -351,7 +351,7 @@ func TestNewMySQLChainLinkStore_RecordAndLookup(t *testing.T) {
 // InstanceLister that pages over instances seeded through the store.
 func TestNewMySQLLister_ListsInstances(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 // returns a runtime.Ownership that can Acquire an instance and Close cleanly.
 func TestNewMySQLAdvisoryLockOwnership_AcquireAndClose(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	owner, closer, err := persistence.NewMySQLAdvisoryLockOwnership(t.Context(), db)
 	require.NoError(t, err)
@@ -403,7 +403,7 @@ func TestNewMySQLAdvisoryLockOwnership_AcquireAndClose(t *testing.T) {
 // `if err != nil { return nil, nil, err }` branch in the facade constructor.
 func TestNewMySQLAdvisoryLockOwnership_ClosedDBReturnsError(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	// Close the db so db.Conn() inside mysqlstore.NewAdvisoryLockOwnership fails.
 	require.NoError(t, db.Close())
@@ -421,7 +421,7 @@ func TestNewMySQLAdvisoryLockOwnership_ClosedDBReturnsError(t *testing.T) {
 // PutDefinition-then-Lookup round-trips a definition through MySQL.
 func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	ds := persistence.NewMySQLDefinitionStore(db)
 	require.NotNil(t, ds)
@@ -453,7 +453,7 @@ func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
 // rows older than the cutoff.
 func TestNewMySQLPruner_PruneOutbox(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	cutoff := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
 	old := cutoff.Add(-24 * time.Hour) // before cutoff → must be deleted
@@ -500,7 +500,7 @@ func TestNewMySQLPruner_PruneOutbox(t *testing.T) {
 // the facade Pruner interface, proving full wiring through to the MySQL backend.
 func TestNewMySQLPruner_PruneProcessedMessages(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	cutoff := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
 	old := cutoff.Add(-24 * time.Hour) // before cutoff → must be deleted
@@ -546,7 +546,7 @@ func TestNewMySQLPruner_PruneProcessedMessages(t *testing.T) {
 // facade, and asserts the deliver func fired exactly once.
 func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)

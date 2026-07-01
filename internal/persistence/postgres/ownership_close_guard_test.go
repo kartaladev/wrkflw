@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 )
 
@@ -15,7 +15,7 @@ import (
 //   - Release returns ErrOwnershipClosed.
 //   - A second Close call is idempotent (returns nil).
 func TestAdvisoryLockOwnershipCloseGuard(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	o, err := pg.NewAdvisoryLockOwnership(t.Context(), pool)
 	require.NoError(t, err)

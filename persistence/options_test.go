@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -36,7 +36,7 @@ func TestWithHistoryCapReturnsOption(t *testing.T) {
 	opt := persistence.WithHistoryCap(50)
 	assert.NotNil(t, opt, "WithHistoryCap must return a non-nil Option")
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	store, err := persistence.OpenPostgres(t.Context(), pool, opt)
@@ -59,7 +59,7 @@ func TestWithOutboxNotifyReturnsOption(t *testing.T) {
 	opt := persistence.WithOutboxNotify()
 	assert.NotNil(t, opt, "WithOutboxNotify must return a non-nil Option")
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	store, err := persistence.OpenPostgres(t.Context(), pool, opt)
@@ -87,7 +87,7 @@ func TestWithListenNotifyReturnsOption(t *testing.T) {
 	opt := persistence.WithListenNotify()
 	assert.NotNil(t, opt, "WithListenNotify must return a non-nil RelayOption")
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}
@@ -103,7 +103,7 @@ func TestWithListenNotifyReturnsOption(t *testing.T) {
 func TestNewAdvisoryLockOwnershipFacade(t *testing.T) {
 	t.Parallel()
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	owner, closer, err := persistence.NewAdvisoryLockOwnership(t.Context(), pool)
@@ -131,7 +131,7 @@ func TestNewAdvisoryLockOwnershipFacade(t *testing.T) {
 func TestNewAdvisoryLockOwnershipFacadeClosedPool(t *testing.T) {
 	t.Parallel()
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	// Close the pool so Acquire of a session connection fails.
 	pool.Close()
 

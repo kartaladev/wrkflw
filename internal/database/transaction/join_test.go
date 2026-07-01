@@ -5,10 +5,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestJoinInnerCommitIsNoopOuterControls(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	base, _ := database.From(pool)
 	_, _ = base.Exec(t.Context(), `CREATE TABLE tj (id int)`)
 
@@ -34,7 +35,7 @@ func TestJoinInnerCommitIsNoopOuterControls(t *testing.T) {
 }
 
 func TestJoinInnerRollbackMarksWholeUnit(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	base, _ := database.From(pool)
 	_, _ = base.Exec(t.Context(), `CREATE TABLE tjr (id int)`)
 

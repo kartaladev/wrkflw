@@ -5,10 +5,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestBeginCommitPersists(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	base, _ := database.From(pool)
 	_, _ = base.Exec(t.Context(), `CREATE TABLE tb (id int)`)
 
@@ -30,7 +31,7 @@ func TestBeginCommitPersists(t *testing.T) {
 }
 
 func TestBeginMarkRollbackRollsBack(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	base, _ := database.From(pool)
 	_, _ = base.Exec(t.Context(), `CREATE TABLE tr (id int)`)
 

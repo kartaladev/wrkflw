@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestUTCNormalizes(t *testing.T) {
@@ -20,7 +21,7 @@ func TestUTCNormalizes(t *testing.T) {
 }
 
 func TestProbeUTCPassesOnPostgres(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	q, _ := database.From(pool)
 	if err := database.ProbeUTC(t.Context(), q, database.Postgres); err != nil {
 		t.Fatalf("probe: %v", err)

@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestPgxQuerierRoundTrip(t *testing.T) {
-	pool := database.RunTestDatabase(t) // testcontainers PG; returns *pgxpool.Pool
+	pool := dbtest.RunTestDatabase(t) // testcontainers PG; returns *pgxpool.Pool
 	q, err := database.From(pool)
 	if err != nil {
 		t.Fatalf("From: %v", err)

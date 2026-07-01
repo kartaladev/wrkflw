@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestPgxBatcher(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	q, _ := database.From(pool)
 	_, _ = q.Exec(t.Context(), `CREATE TABLE b_t (id int)`)
 	b, ok := q.(database.Batcher)

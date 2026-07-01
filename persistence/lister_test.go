@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -17,7 +17,7 @@ import (
 // runtime.InstanceLister and never exposes the internal *postgres.Lister type.
 func TestNewListerReturnsInterface(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	lister := persistence.NewLister(pool)
@@ -53,7 +53,7 @@ func seedInstances(t *testing.T, store runtime.Store, ids []string, base time.Ti
 // keyset walk through the facade.
 func TestListerEndToEnd(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	store, err := persistence.OpenPostgres(t.Context(), pool)

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -20,7 +20,7 @@ import (
 // "wrkflw.store.load" and "wrkflw.store.commit" spans when a TracerProvider
 // is injected via WithStoreTracerProvider.
 func TestStoreLoadCommitSpans(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	sr := tracetest.NewSpanRecorder()
@@ -93,7 +93,7 @@ func TestStoreLoadCommitSpans(t *testing.T) {
 // TestStoreLoadErrorSpan verifies that a Load of a missing instance records the
 // error on the wrkflw.store.load span and sets the span status to Error.
 func TestStoreLoadErrorSpan(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	sr := tracetest.NewSpanRecorder()
@@ -118,7 +118,7 @@ func TestStoreLoadErrorSpan(t *testing.T) {
 // conflict on Commit is recorded as a contention attribute and does NOT mark the
 // span as Error (it is expected, retryable control flow).
 func TestStoreCommitConcurrentUpdateNotSpanError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	sr := tracetest.NewSpanRecorder()
@@ -153,7 +153,7 @@ func TestStoreCommitConcurrentUpdateNotSpanError(t *testing.T) {
 // TestStoreNoOptionsNoPanic verifies that a Store built with no options (noop
 // tracer/meter) still executes Load and Commit without panicking.
 func TestStoreNoOptionsNoPanic(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	store := pg.NewStore(pool)

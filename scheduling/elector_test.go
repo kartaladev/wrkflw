@@ -8,7 +8,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -18,7 +18,7 @@ import (
 // when uncontended it is the leader and timers fire. Cases share one pool and run
 // sequentially, so they are not parallel.
 func TestSchedulerWithTimerElector(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	type testCase struct {
 		name      string
@@ -85,7 +85,7 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 // fake clock past one heartbeat interval makes the elector step down — closing the
 // split-brain window through the public façade.
 func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	const leaderKey = "facade-heartbeat"
@@ -137,7 +137,7 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 // instance wins leadership the registered callback fires. Wiring it to
 // Runner.RehydrateTimers re-arms persisted timers on a new leader after failover.
 func TestSchedulerElectorOnLeadershipAcquired(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	acquired := make(chan struct{}, 1)
@@ -166,7 +166,7 @@ func TestSchedulerElectorOnLeadershipAcquired(t *testing.T) {
 // TestSchedulerLockAndElectorConflict proves the façade rejects requesting both
 // distributed modes at once with a clear error.
 func TestSchedulerLockAndElectorConflict(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	clk := clockwork.NewFakeClock()
 	_, err := scheduling.NewScheduler(

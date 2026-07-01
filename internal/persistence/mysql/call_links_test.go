@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -15,7 +15,7 @@ import (
 // newMySQLCallLinkStore returns a freshly migrated CallLinkStore + Store for tests.
 func newMySQLCallLinkStore(t *testing.T) (*mypkg.CallLinkStore, *mypkg.Store) {
 	t.Helper()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	return mypkg.NewCallLinkStore(db), mypkg.NewStore(db)
 }
 
@@ -210,7 +210,7 @@ func TestCallLinkStore_MarkNotified(t *testing.T) {
 		{
 			name: "MarkNotified stamps notified_at and sets status to notified",
 			assert: func(t *testing.T) {
-				db := database.RunTestMySQL(t)
+				db := dbtest.RunTestMySQL(t)
 				cls := mypkg.NewCallLinkStore(db)
 				store := mypkg.NewStore(db)
 

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -17,7 +17,7 @@ import (
 // façade must expose stable port/interface types, never internal concrete types.
 func TestOpenPostgresReturnsInterface(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	// OpenPostgres must compile with exactly 2 arguments (no variadic).
@@ -38,7 +38,7 @@ func TestOpenPostgresReturnsInterface(t *testing.T) {
 // Callers must only use the interface methods (Lookup, PutDefinition).
 func TestNewDefinitionStoreReturnsInterface(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	ds := persistence.NewDefinitionStore(pool)
@@ -53,7 +53,7 @@ func TestNewDefinitionStoreReturnsInterface(t *testing.T) {
 // interface.
 func TestNewRelayReturnsInterface(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}
@@ -69,7 +69,7 @@ func TestNewRelayReturnsInterface(t *testing.T) {
 // call through the interface works end-to-end (ADR-0008, ADR-0018).
 func TestNewDeduperReturnsInterface(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	d := persistence.NewDeduper(pool)
@@ -98,7 +98,7 @@ func TestNewDeduperReturnsInterface(t *testing.T) {
 // interface returned by persistence.NewRelay (ADR-0008).
 func TestNewRelayDLQAdminViaFacade(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}

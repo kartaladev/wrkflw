@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -45,7 +45,7 @@ func TestRelayOutboxStats(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := database.RunTestMySQL(t)
+			db := dbtest.RunTestMySQL(t)
 
 			if tc.seed {
 				now := time.Now().UTC().Add(-2 * time.Second) // ensure age > 0
@@ -107,7 +107,7 @@ func TestTimerStoreStats(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := database.RunTestMySQL(t)
+			db := dbtest.RunTestMySQL(t)
 
 			if tc.seed {
 				now := time.Now().UTC()

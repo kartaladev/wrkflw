@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -17,7 +17,7 @@ import (
 // when notify=true but the step produced no outbox events. The early return is
 // !s.notify || len(events) == 0, so this covers the len==0 branch with notify on.
 func TestStoreCreateWithNotifyButNoEvents(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), pool))
 
 	st := postgres.NewStore(pool, postgres.WithOutboxNotify())
@@ -42,7 +42,7 @@ func TestStoreCreateWithNotifyButNoEvents(t *testing.T) {
 // when the outbox event payload cannot be marshaled to JSON. Covers writeOutbox
 // error path in Commit (store.go lines 197-199).
 func TestStoreCommitOutboxPayloadMarshalError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), pool))
 
 	st := postgres.NewStore(pool)
@@ -83,7 +83,7 @@ func TestStoreCommitOutboxPayloadMarshalError(t *testing.T) {
 // TestStoreCommitWithNotifyButNoEvents exercises the maybeNotify early-return
 // in Commit when notify=true but the commit step has no outbox events.
 func TestStoreCommitWithNotifyButNoEvents(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), pool))
 
 	st := postgres.NewStore(pool, postgres.WithOutboxNotify())
@@ -122,7 +122,7 @@ func TestStoreCommitWithNotifyButNoEvents(t *testing.T) {
 // TestStoreCreateWithoutNotify exercises the maybeNotify path where notify=false.
 // Even if events are non-empty, the !s.notify branch short-circuits without issuing NOTIFY.
 func TestStoreCreateWithoutNotify(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), pool))
 
 	// No WithOutboxNotify — notify is false.
@@ -149,7 +149,7 @@ func TestStoreCreateWithoutNotify(t *testing.T) {
 // when the outbox event payload cannot be marshaled to JSON. This covers the
 // json.Marshal error path in writeOutbox (line 259-261 in store.go).
 func TestStoreCreateOutboxPayloadMarshalError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), pool))
 
 	st := postgres.NewStore(pool)

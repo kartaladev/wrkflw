@@ -7,16 +7,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 // newMySQLLister returns a freshly migrated Lister + Store backed by a MySQL
-// testcontainer database (auto-migrated via database.RunTestMySQL).
+// testcontainer database (auto-migrated via dbtest.RunTestMySQL).
 func newMySQLLister(t *testing.T) (*mypkg.Lister, *mypkg.Store) {
 	t.Helper()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	return mypkg.NewLister(db), mypkg.NewStore(db)
 }
 

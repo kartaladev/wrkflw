@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 )
 
@@ -25,7 +25,7 @@ func TestPruner_DeletesOlderThanCutoff(t *testing.T) {
 	// --- PruneOutbox ---
 	t.Run("outbox", func(t *testing.T) {
 		t.Parallel()
-		db := database.RunTestMySQL(t)
+		db := dbtest.RunTestMySQL(t)
 		ctx := t.Context()
 
 		// Seed OLD row: status='published', published_at=old
@@ -64,7 +64,7 @@ func TestPruner_DeletesOlderThanCutoff(t *testing.T) {
 	// --- PruneCallLinks ---
 	t.Run("call_links", func(t *testing.T) {
 		t.Parallel()
-		db := database.RunTestMySQL(t)
+		db := dbtest.RunTestMySQL(t)
 		ctx := t.Context()
 
 		// Seed OLD row: status='notified', notified_at=old
@@ -103,7 +103,7 @@ func TestPruner_DeletesOlderThanCutoff(t *testing.T) {
 	// --- PruneChainLinks ---
 	t.Run("chain_links", func(t *testing.T) {
 		t.Parallel()
-		db := database.RunTestMySQL(t)
+		db := dbtest.RunTestMySQL(t)
 		ctx := t.Context()
 
 		// Seed OLD row: created_at=old
@@ -140,7 +140,7 @@ func TestPruner_DeletesOlderThanCutoff(t *testing.T) {
 	// --- PruneProcessedMessages ---
 	t.Run("processed_messages", func(t *testing.T) {
 		t.Parallel()
-		db := database.RunTestMySQL(t)
+		db := dbtest.RunTestMySQL(t)
 		ctx := t.Context()
 
 		// Seed OLD row: processed_at=old
@@ -175,7 +175,7 @@ func TestPruner_DeletesOlderThanCutoff(t *testing.T) {
 	// --- PruneTimers ---
 	t.Run("timers", func(t *testing.T) {
 		t.Parallel()
-		db := database.RunTestMySQL(t)
+		db := dbtest.RunTestMySQL(t)
 		ctx := t.Context()
 
 		// Seed OLD row: fire_at=old; kind=1 (arbitrary SMALLINT), def_id, def_version required.

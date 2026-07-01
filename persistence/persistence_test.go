@@ -17,7 +17,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -63,7 +63,7 @@ func (c *capturingPublisher) Publish(_ context.Context, ev runtime.OutboxEvent) 
 // options; the option loop is exercised here via the store's normal operation.
 func TestOpenPostgresEndToEnd(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	store, err := persistence.OpenPostgres(t.Context(), pool)
@@ -100,7 +100,7 @@ func TestOpenPostgresEndToEnd(t *testing.T) {
 // (goose's versioning makes it a safe no-op on re-run).
 func TestMigrateIsIdempotent(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 	require.NoError(t, persistence.Migrate(t.Context(), pool), "second Migrate call must be a no-op")
 }
@@ -109,7 +109,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 // sentinel is reachable and works with errors.Is through the façade.
 func TestOpenPostgresNotFoundSentinel(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	store, err := persistence.OpenPostgres(t.Context(), pool)
@@ -125,7 +125,7 @@ func TestOpenPostgresNotFoundSentinel(t *testing.T) {
 // NewCachingDefinitionRegistry constructor façades.
 func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	// NewDefinitionStore must return a non-nil *postgres.DefinitionStore that
@@ -157,7 +157,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 // option constructors through the façade.
 func TestRelayOptionsConstructors(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}
@@ -179,7 +179,7 @@ func TestRelayOptionsConstructors(t *testing.T) {
 // TestNewRelayDrainsOutbox proves the Relay façade drains the outbox end-to-end.
 func TestNewRelayDrainsOutbox(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	store, err := persistence.OpenPostgres(t.Context(), pool)
@@ -207,7 +207,7 @@ func TestNewRelayDrainsOutbox(t *testing.T) {
 // TracerProvider when DrainOnce is called.
 func TestRelayTelemetryOptions(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	sr := tracetest.NewSpanRecorder()

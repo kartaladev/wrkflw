@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -15,7 +15,7 @@ import (
 // ChainLinkStore for lineage read tests.
 func newMySQLLineageStores(t *testing.T) (*mypkg.CallLinkStore, *mypkg.Store, *mypkg.ChainLinkStore) {
 	t.Helper()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	return mypkg.NewCallLinkStore(db), mypkg.NewStore(db), mypkg.NewChainLinkStore(db)
 }
 

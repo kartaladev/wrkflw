@@ -7,7 +7,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -20,7 +20,7 @@ var fixedMarkNotifiedTime = time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
 // point in time is injected; after MarkNotified the row's notified_at must equal
 // exactly that fixed time (not an approximate wall-clock window).
 func TestMarkNotifiedUsesClock(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	fc := clockwork.NewFakeClockAt(fixedMarkNotifiedTime)
@@ -52,7 +52,7 @@ func TestMarkNotifiedUsesClock(t *testing.T) {
 // The guard is verified via MarkNotified — it calls c.clk.Now() to stamp
 // notified_at. A nil clock would panic there.
 func TestWithCallLinkClockNilFallsBackToSystem(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	// Build the store with an explicit nil clock — must be ignored.

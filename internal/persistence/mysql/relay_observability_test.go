@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 )
 
@@ -21,7 +21,7 @@ import (
 // span with a "wrkflw.batch_size" attribute when a TracerProvider is injected via
 // WithRelayTracerProvider.
 func TestMySQLRelayBatchSpan(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	// Seed one pending outbox row so DrainOnce has something to drain.
 	now := time.Now().UTC()
@@ -70,7 +70,7 @@ func TestMySQLRelayBatchSpan(t *testing.T) {
 // scenario). With 1 row claimed but 0 successfully published, batch_size must
 // still be 1 and a separate wrkflw.published_count attribute must be 0.
 func TestMySQLRelayBatchSpanReflectsClaimedNotPublished(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	// Seed one pending outbox row.
 	now := time.Now().UTC()
@@ -120,7 +120,7 @@ func TestMySQLRelayBatchSpanReflectsClaimedNotPublished(t *testing.T) {
 // TestMySQLRelayBatchSpanEmptyOutbox verifies that DrainOnce records a
 // "wrkflw.relay.batch" span with batch_size=0 when the outbox is empty.
 func TestMySQLRelayBatchSpanEmptyOutbox(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
@@ -154,7 +154,7 @@ func TestMySQLRelayBatchSpanEmptyOutbox(t *testing.T) {
 // TestMySQLRelayWithLogger verifies that WithRelayLogger is accepted and that the
 // relay emits a debug log through the injected logger when a batch is drained.
 func TestMySQLRelayWithLogger(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	// Seed one row.
 	now := time.Now().UTC()
@@ -182,7 +182,7 @@ func TestMySQLRelayWithLogger(t *testing.T) {
 // without error and that the relay emits metric instruments driven by the
 // injected MeterProvider.
 func TestMySQLRelayWithMeterProvider(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	mp := sdkmetric.NewMeterProvider()
 	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
@@ -212,7 +212,7 @@ func TestMySQLRelayEventsPublishedCounter(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := database.RunTestMySQL(t)
+			db := dbtest.RunTestMySQL(t)
 
 			// Seed rows into the outbox.
 			now := time.Now().UTC()
@@ -265,7 +265,7 @@ func TestMySQLRelayEventsPublishedCounter(t *testing.T) {
 // TestMySQLRelayBatchDurationHistogram verifies that wrkflw_relay_batch_duration_seconds
 // records at least 1 observation after DrainOnce completes.
 func TestMySQLRelayBatchDurationHistogram(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	// Seed one row so the drain does real work.
 	now := time.Now().UTC()

@@ -6,14 +6,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 func newMySQLStore(t *testing.T) *mypkg.Store {
 	t.Helper()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	return mypkg.NewStore(db)
 }
 
@@ -205,7 +205,7 @@ func TestStore_Create_WithTimerArm(t *testing.T) {
 
 // TestStore_WithOptions verifies that option constructors do not panic.
 func TestStore_WithOptions(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	s := mypkg.NewStore(db,
 		mypkg.WithHistoryCap(5),
 		mypkg.WithStoreLogger(nil),
@@ -310,7 +310,7 @@ func TestStore_Commit_MultipleOutboxEvents(t *testing.T) {
 // when the DB is closed (simulates connection failures).
 func TestStore_ErrorOnClosedDB(t *testing.T) {
 	// Use a fresh db just to get a valid connection string, then close it.
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	// Close immediately so all subsequent operations fail.
 	require.NoError(t, db.Close())
 

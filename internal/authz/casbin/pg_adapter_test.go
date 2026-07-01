@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 // rbacModel is a minimal RBAC model for adapter round-trip tests.
@@ -26,7 +26,7 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
 `
 
 func TestPGAdapterAutoSaveMutations(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, authzcasbin.MigrateCasbin(t.Context(), pool))
 	a := authzcasbin.NewPGAdapter(pool)
 
@@ -75,7 +75,7 @@ func TestPGAdapterAutoSaveMutations(t *testing.T) {
 }
 
 func TestPGAdapterSaveLoadRoundTrip(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, authzcasbin.MigrateCasbin(t.Context(), pool))
 
 	a := authzcasbin.NewPGAdapter(pool)

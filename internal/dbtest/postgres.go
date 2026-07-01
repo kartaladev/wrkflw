@@ -1,4 +1,4 @@
-// Package database provides the shared testcontainers helper for PostgreSQL tests.
+// Package dbtest provides the shared testcontainers helper for PostgreSQL tests.
 //
 // [RunTestDatabase] is the single entry point for all tests that need a real
 // PostgreSQL instance. It returns a connected [pgxpool.Pool] to a database that
@@ -15,7 +15,7 @@
 //
 // The database is never named "postgres" because the Snapshot/Restore mechanism
 // drops the connected database by name.
-package database
+package dbtest
 
 import (
 	"context"

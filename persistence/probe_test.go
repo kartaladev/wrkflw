@@ -7,7 +7,7 @@ import (
 
 	gomysql "github.com/go-sql-driver/mysql"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 )
 
@@ -32,7 +32,7 @@ func TestOpenMySQLRejectsNonUTC(t *testing.T) {
 		t.Skip("host TZ is UTC; loc=Local is indistinguishable from loc=UTC — skipping negative probe test")
 	}
 
-	dsn := database.RunTestMySQLDSN(t)
+	dsn := dbtest.RunTestMySQLDSN(t)
 	bad, err := sql.Open("mysql", forceLocalLoc(dsn))
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)

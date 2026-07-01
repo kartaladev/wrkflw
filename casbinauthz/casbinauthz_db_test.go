@@ -9,7 +9,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 // authorizeOK is a helper that calls authB.Authorize with a privilege-based AuthzSpec
@@ -29,7 +29,7 @@ func authorizeOK(t *testing.T, a authz.Authorizer, actorID, obj, act string) boo
 // policy is written via raw SQL (simulating another node), a NOTIFY is sent on the
 // shared channel, and node B must see the updated policy after reload.
 func TestNewCasbinAuthorizerFromDB_MultiNodeReload(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, casbinauthz.MigrateCasbin(t.Context(), pool))
 
 	const ch = "wrkflw_casbin_policy_db_test"
@@ -90,7 +90,7 @@ func TestNewCasbinAuthorizerFromDB_MultiNodeReload(t *testing.T) {
 // TestNewCasbinAuthorizerFromDB_WithoutWatcher validates that the constructor
 // works and returns a functional authorizer even when the watcher is disabled.
 func TestNewCasbinAuthorizerFromDB_WithoutWatcher(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, casbinauthz.MigrateCasbin(t.Context(), pool))
 
 	// Seed policy before building the authorizer (no watcher means no reload, so
@@ -119,7 +119,7 @@ func TestNewCasbinAuthorizerFromDB_WithoutWatcher(t *testing.T) {
 // TestNewCasbinAuthorizerFromDB_ReturnsInterface asserts the returned type satisfies
 // authz.Authorizer and that closer is non-nil.
 func TestNewCasbinAuthorizerFromDB_ReturnsInterface(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, casbinauthz.MigrateCasbin(t.Context(), pool))
 
 	a, closer, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,
@@ -136,7 +136,7 @@ func TestNewCasbinAuthorizerFromDB_ReturnsInterface(t *testing.T) {
 // default model. We pass the same model text as DefaultModel to confirm the
 // option wiring path works (a different model would need careful policy setup).
 func TestNewCasbinAuthorizerFromDB_WithModel(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, casbinauthz.MigrateCasbin(t.Context(), pool))
 
 	a, closer, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,

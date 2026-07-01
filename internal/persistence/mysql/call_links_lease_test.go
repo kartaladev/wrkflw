@@ -7,7 +7,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -21,7 +21,7 @@ func mysqlLeaseClockBase() time.Time {
 // newMySQLLeaseCallLinkStore returns a CallLinkStore with the given options and a freshly migrated db.
 func newMySQLLeaseCallLinkStore(t *testing.T, opts ...mypkg.CallLinkOption) (*mypkg.CallLinkStore, *mypkg.Store) {
 	t.Helper()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	cls := mypkg.NewCallLinkStore(db, opts...)
 	store := mypkg.NewStore(db)
 	return cls, store
@@ -38,7 +38,7 @@ func TestCallLinkStore_Lease_HidesClaimedRows(t *testing.T) {
 			name: "leased first claim stamps claimed_at/claimed_by",
 			assert: func(t *testing.T) {
 				fc := clockwork.NewFakeClockAt(mysqlLeaseClockBase())
-				db := database.RunTestMySQL(t)
+				db := dbtest.RunTestMySQL(t)
 				cls := mypkg.NewCallLinkStore(db,
 					mypkg.WithCallLinkLease("replica-A", mysqlCallLinkLeaseTTL),
 					mypkg.WithCallLinkClock(fc),
@@ -69,7 +69,7 @@ func TestCallLinkStore_Lease_HidesClaimedRows(t *testing.T) {
 			name: "immediate second claim by owner B returns nothing while lease is live",
 			assert: func(t *testing.T) {
 				fc := clockwork.NewFakeClockAt(mysqlLeaseClockBase())
-				db := database.RunTestMySQL(t)
+				db := dbtest.RunTestMySQL(t)
 				clsA := mypkg.NewCallLinkStore(db,
 					mypkg.WithCallLinkLease("replica-A", mysqlCallLinkLeaseTTL),
 					mypkg.WithCallLinkClock(fc),
@@ -97,7 +97,7 @@ func TestCallLinkStore_Lease_HidesClaimedRows(t *testing.T) {
 			name: "after fake-clock advance past TTL owner B reclaims",
 			assert: func(t *testing.T) {
 				fc := clockwork.NewFakeClockAt(mysqlLeaseClockBase())
-				db := database.RunTestMySQL(t)
+				db := dbtest.RunTestMySQL(t)
 				clsA := mypkg.NewCallLinkStore(db,
 					mypkg.WithCallLinkLease("replica-A", mysqlCallLinkLeaseTTL),
 					mypkg.WithCallLinkClock(fc),
@@ -129,7 +129,7 @@ func TestCallLinkStore_Lease_HidesClaimedRows(t *testing.T) {
 			name: "notified row is never returned by leased ClaimPending",
 			assert: func(t *testing.T) {
 				fc := clockwork.NewFakeClockAt(mysqlLeaseClockBase())
-				db := database.RunTestMySQL(t)
+				db := dbtest.RunTestMySQL(t)
 				cls := mypkg.NewCallLinkStore(db,
 					mypkg.WithCallLinkLease("replica-A", mysqlCallLinkLeaseTTL),
 					mypkg.WithCallLinkClock(fc),

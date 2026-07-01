@@ -8,14 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 // TestNewDBEnforcer_WithWatcher exercises NewDBEnforcer when WatcherEnabled=true.
 // It covers: NewDBEnforcer, the watcher-enabled branch, the SetWatcher path, the
 // post-SetWatcher callback override, and watcherCloser.Close.
 func TestNewDBEnforcer_WithWatcher(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, authzcasbin.MigrateCasbin(t.Context(), pool))
 
 	enforcer, closer, err := authzcasbin.NewDBEnforcer(t.Context(), pool, authzcasbin.DBConfig{
@@ -44,7 +44,7 @@ func TestNewDBEnforcer_WithWatcher(t *testing.T) {
 // TestNewDBEnforcer_WithoutWatcher exercises NewDBEnforcer when WatcherEnabled=false.
 // It covers: the watcher-disabled branch and noopCloser.Close.
 func TestNewDBEnforcer_WithoutWatcher(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, authzcasbin.MigrateCasbin(t.Context(), pool))
 
 	enforcer, closer, err := authzcasbin.NewDBEnforcer(t.Context(), pool, authzcasbin.DBConfig{
@@ -65,7 +65,7 @@ func TestNewDBEnforcer_WithoutWatcher(t *testing.T) {
 // TestNewDBEnforcer_InvalidModel exercises the model-parse error path in NewDBEnforcer.
 // It covers the early-return error branch when the model text is invalid.
 func TestNewDBEnforcer_InvalidModel(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	// No migration needed — we expect to fail before the adapter is used.
 
 	enforcer, closer, err := authzcasbin.NewDBEnforcer(t.Context(), pool, authzcasbin.DBConfig{
@@ -81,7 +81,7 @@ func TestNewDBEnforcer_InvalidModel(t *testing.T) {
 // is closed, which causes pg_notify to fail and returns a wrapped error.
 // This covers the error branch in pgWatcher.Update (pg_watcher.go:60-62).
 func TestPGWatcherUpdate_Error(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	w := authzcasbin.NewPGWatcher(pool, "wrkflw_casbin_update_err_test", "node-err", nil)
 	defer w.Close()
@@ -98,7 +98,7 @@ func TestPGWatcherUpdate_Error(t *testing.T) {
 // Closing the watcher immediately after creation causes the listen goroutine to exit
 // via the ctx-done fast path inside backoff, covering backoff's <-ctx.Done() branch.
 func TestPGWatcherListen_AcquireError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	// Close pool so that pool.Acquire will fail inside the listen goroutine.
 	pool.Close()
@@ -124,7 +124,7 @@ func TestPGWatcherListen_AcquireError(t *testing.T) {
 // Covered: conn.Release(), the if-ctx.Err check after the LISTEN exec error,
 // and the backoff+continue path (pg_watcher.go:88-94 minus the return branch).
 func TestPGWatcherListen_ListenExecError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	// "123invalid" starts with a digit: Postgres LISTEN requires a valid identifier,
 	// so "LISTEN 123invalid" will return a syntax error from the server.

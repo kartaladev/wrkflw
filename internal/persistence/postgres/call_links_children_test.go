@@ -5,7 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -70,7 +70,7 @@ func TestListRunningChildren(t *testing.T) {
 	}{
 		"returns running children of P ordered by child_instance_id, excludes completed and Q's child": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				store := pg.NewStore(pool)
 				cls := pg.NewCallLinkStore(pool)
@@ -93,7 +93,7 @@ func TestListRunningChildren(t *testing.T) {
 		},
 		"returns single running child of Q": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				store := pg.NewStore(pool)
 				cls := pg.NewCallLinkStore(pool)
@@ -112,7 +112,7 @@ func TestListRunningChildren(t *testing.T) {
 		},
 		"returns empty slice for unknown parent": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewCallLinkStore(pool)
 
@@ -124,7 +124,7 @@ func TestListRunningChildren(t *testing.T) {
 		},
 		"call link fields are populated correctly": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				store := pg.NewStore(pool)
 				cls := pg.NewCallLinkStore(pool)

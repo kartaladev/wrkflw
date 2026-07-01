@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 )
 
@@ -20,7 +20,7 @@ import (
 // After the fix (ctx.Err() != nil) Run returns context.DeadlineExceeded exactly.
 func TestRelayRunReturnsDeadlineExceededOnAlreadyExpiredCtx(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	relay := pg.NewRelay(pool, &recordingPub{})
 
@@ -44,7 +44,7 @@ func TestRelayRunReturnsDeadlineExceededOnAlreadyExpiredCtx(t *testing.T) {
 // specifically context.DeadlineExceeded here.
 func TestRelayRunReturnsDeadlineExceededOnTimeout(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	// Migrate so that drainUntilEmpty reaches the Postgres driver and receives the
 	// driver-level deadline error when the context fires — without this, the claim
 	// query returns "relation does not exist" (an infra error, not a ctx error).

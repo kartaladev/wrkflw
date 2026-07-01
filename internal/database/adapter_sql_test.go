@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestSQLQuerierRoundTrip(t *testing.T) {
-	db := database.RunTestMySQL(t) // testcontainers MySQL; *sql.DB with parseTime=true&loc=UTC
+	db := dbtest.RunTestMySQL(t) // testcontainers MySQL; *sql.DB with parseTime=true&loc=UTC
 	q, err := database.From(db)
 	if err != nil {
 		t.Fatalf("From: %v", err)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 )
 
@@ -26,7 +26,7 @@ func openTx(t *testing.T, db *sql.DB, fn func(*sql.Tx) error) {
 // with the same pair (idempotent-consumer pattern via INSERT IGNORE).
 func TestDeduper_FirstSeenThenDuplicate(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	d := mypkg.NewDeduper(db)
 
@@ -67,7 +67,7 @@ func TestDeduper_FirstSeenThenDuplicate(t *testing.T) {
 // by using a cancelled context so the underlying query fails.
 func TestDeduper_SeenErrorPath(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	d := mypkg.NewDeduper(db)
 
 	tx, err := db.BeginTx(t.Context(), nil)
@@ -85,7 +85,7 @@ func TestDeduper_SeenErrorPath(t *testing.T) {
 // TestDeduper_PruneOnClosedDB verifies that Prune propagates a DB error.
 func TestDeduper_PruneOnClosedDB(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	d := mypkg.NewDeduper(db)
 	require.NoError(t, db.Close())
 
@@ -97,7 +97,7 @@ func TestDeduper_PruneOnClosedDB(t *testing.T) {
 // TestDeduper_Prune deletes processed messages strictly older than a cutoff.
 func TestDeduper_Prune(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	d := mypkg.NewDeduper(db)
 

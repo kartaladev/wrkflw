@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -24,7 +24,7 @@ func makeTestDefinition(id string, version int) *model.ProcessDefinition {
 // Lookup (latest) → GetDefinition round-trip against a real MySQL database.
 func TestDefinitionStore_PutLookupGet(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewDefinitionStore(db)
 	ctx := t.Context()
 
@@ -54,7 +54,7 @@ func TestDefinitionStore_PutLookupGet(t *testing.T) {
 // the definition with the highest version when multiple versions exist.
 func TestDefinitionStore_LatestVersionResolution(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewDefinitionStore(db)
 	ctx := t.Context()
 
@@ -73,7 +73,7 @@ func TestDefinitionStore_LatestVersionResolution(t *testing.T) {
 // We distinguish the two puts by different CancelActions slices.
 func TestDefinitionStore_UpsertOverwrite(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewDefinitionStore(db)
 	ctx := t.Context()
 
@@ -93,7 +93,7 @@ func TestDefinitionStore_UpsertOverwrite(t *testing.T) {
 // when no matching definition exists (both exact and latest forms).
 func TestDefinitionStore_LookupNotFound(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewDefinitionStore(db)
 	ctx := t.Context()
 
@@ -114,7 +114,7 @@ func TestDefinitionStore_LookupNotFound(t *testing.T) {
 // ErrDefinitionNotFound when no row matches (defID, version).
 func TestDefinitionStore_GetDefinitionNotFound(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewDefinitionStore(db)
 	ctx := t.Context()
 
@@ -129,7 +129,7 @@ func TestDefinitionStore_GetDefinitionNotFound(t *testing.T) {
 // and that the error message contains "bad version segment".
 func TestDefinitionStore_LookupBadVersion(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewDefinitionStore(db)
 	ctx := t.Context()
 
@@ -207,7 +207,7 @@ func richMySQLDefinition() *model.ProcessDefinition {
 // round-trip through MySQL faithfully.
 func TestDefinitionStore_RichRoundTrip(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewDefinitionStore(db)
 	ctx := t.Context()
 

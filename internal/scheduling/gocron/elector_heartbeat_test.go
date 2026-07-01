@@ -7,7 +7,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
 
@@ -20,7 +20,7 @@ import (
 // keep returning nil from the in-memory flag, leaving a two-leader window. The
 // heartbeat is what catches the silent loss.
 func TestPostgresElectorHeartbeatStepsDownOnConnLoss(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	clk := clockwork.NewFakeClock()
@@ -63,7 +63,7 @@ func TestPostgresElectorHeartbeatStepsDownOnConnLoss(t *testing.T) {
 // Closed leaves no goroutine behind (the package's goleak VerifyTestMain enforces
 // this across the suite; this test exercises the start+stop path explicitly).
 func TestPostgresElectorHeartbeatNoLeakAfterClose(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	clk := clockwork.NewFakeClock()

@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 )
 
 // TestAdvisoryLockOwnershipClosedPoolError verifies that NewAdvisoryLockOwnership
 // propagates the error when the pool cannot acquire a session connection.
 func TestAdvisoryLockOwnershipClosedPoolError(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	pool.Close() // closed pool → Acquire fails
 
 	_, err := postgres.NewAdvisoryLockOwnership(t.Context(), pool)
@@ -26,7 +26,7 @@ func TestAdvisoryLockOwnershipClosedPoolError(t *testing.T) {
 // that was never acquired is a no-op (returns nil). This covers the
 // !o.held[instanceID] early-return branch in Release.
 func TestAdvisoryLockReleaseNotHeldIsNoop(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	owner, err := postgres.NewAdvisoryLockOwnership(t.Context(), pool)
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestAdvisoryLockReleaseNotHeldIsNoop(t *testing.T) {
 // TestAdvisoryLockCloseUnlocksHeld verifies that Close releases every held
 // advisory lock, so another ownership can immediately acquire the same instance.
 func TestAdvisoryLockCloseUnlocksHeld(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	// Process A acquires the lock.
 	procA, err := postgres.NewAdvisoryLockOwnership(t.Context(), pool)

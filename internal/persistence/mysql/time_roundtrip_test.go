@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -21,7 +21,7 @@ import (
 // applied after the fix.
 func TestTimerFireAtRehydratesUTC(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	store := mypkg.NewStore(db)
 	ts := mypkg.NewTimerStore(db)
 

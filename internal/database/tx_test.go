@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 // mustExec executes a SQL statement via database.From and fails the test on error.
@@ -51,7 +52,7 @@ func TestBeginTxCommitRollback(t *testing.T) {
 	}
 
 	pgx := dialect{
-		newConn: func(t *testing.T) any { return database.RunTestDatabase(t) },
+		newConn: func(t *testing.T) any { return dbtest.RunTestDatabase(t) },
 		createDDL: func(tbl string) string {
 			return fmt.Sprintf(`CREATE TABLE %s (id int)`, tbl)
 		},
@@ -64,7 +65,7 @@ func TestBeginTxCommitRollback(t *testing.T) {
 	}
 
 	sql := dialect{
-		newConn: func(t *testing.T) any { return database.RunTestMySQL(t) },
+		newConn: func(t *testing.T) any { return dbtest.RunTestMySQL(t) },
 		createDDL: func(tbl string) string {
 			return fmt.Sprintf("CREATE TABLE `%s` (id int)", tbl)
 		},

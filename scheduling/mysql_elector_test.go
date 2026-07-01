@@ -8,7 +8,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -18,7 +18,7 @@ import (
 // skipped; when uncontended it is the leader and timers fire. Mirrors
 // TestSchedulerWithTimerElector for the Postgres elector.
 func TestSchedulerWithMySQLTimerElector(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	type testCase struct {
 		name      string
@@ -85,7 +85,7 @@ func TestSchedulerWithMySQLTimerElector(t *testing.T) {
 // on-leadership-acquired hook (Option A, ADR-0072) down to the MySQL elector:
 // when this instance wins leadership the registered callback fires.
 func TestSchedulerMySQLElectorOnLeadershipAcquired(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	acquired := make(chan struct{}, 1)
@@ -115,8 +115,8 @@ func TestSchedulerMySQLElectorOnLeadershipAcquired(t *testing.T) {
 // both distributed modes at once with a clear error — MySQL elector is mutually
 // exclusive with WithDistributedTimerLock and with WithTimerElector.
 func TestSchedulerMySQLElectorLockConflict(t *testing.T) {
-	pool := database.RunTestDatabase(t)
-	db := database.RunTestMySQL(t)
+	pool := dbtest.RunTestDatabase(t)
+	db := dbtest.RunTestMySQL(t)
 
 	t.Run("mysql elector + distributed lock", func(t *testing.T) {
 		clk := clockwork.NewFakeClock()
