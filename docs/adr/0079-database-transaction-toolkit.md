@@ -115,7 +115,8 @@ github.com/zakyalvan/krtlwrkflw/internal/database
 github.com/zakyalvan/krtlwrkflw/internal/database/transaction
 ```
 
-This is enforced in CI. Any `wrkflw` import added to these packages is a failing check.
+This invariant should be guarded by a CI check (not yet wired): any `wrkflw` import
+added to these packages beyond the two listed above must fail the build.
 
 ## Consequences
 
