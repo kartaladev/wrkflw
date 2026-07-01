@@ -3,6 +3,9 @@ package database
 import (
 	"context"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Tx is a Querier that can additionally be committed or rolled back. It is the
@@ -18,8 +21,11 @@ type Tx interface {
 // *sql.DB, *sql.Tx, *sql.Conn. Any other type yields ErrUnsupportedConn.
 func From(conn any) (Querier, error) {
 	switch c := conn.(type) {
+	case *pgxpool.Pool:
+		return pgxQuerier{c}, nil
+	case pgx.Tx:
+		return pgxQuerier{c}, nil
 	default:
-		_ = c
 		return nil, fmt.Errorf("%w: %T", ErrUnsupportedConn, conn)
 	}
 }
