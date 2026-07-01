@@ -5,6 +5,18 @@ import (
 	"database/sql"
 )
 
+// sqlTx wraps a *sql.Tx as a database.Tx, delegating query methods to the
+// embedded sqlQuerier and providing Commit/Rollback via the underlying tx.
+// Note: database/sql's Commit and Rollback do not accept a context; ctx is
+// accepted for interface conformance but is ignored.
+type sqlTx struct {
+	sqlQuerier
+	tx *sql.Tx
+}
+
+func (t sqlTx) Commit(_ context.Context) error   { return t.tx.Commit() }
+func (t sqlTx) Rollback(_ context.Context) error { return t.tx.Rollback() }
+
 // sqlDBTX is the minimal database/sql querier satisfied by *sql.DB, *sql.Tx, *sql.Conn.
 type sqlDBTX interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)

@@ -42,8 +42,19 @@ func From(conn any) (Querier, error) {
 // ErrUnsupportedConn.
 func BeginTx(ctx context.Context, conn any) (Tx, error) {
 	switch c := conn.(type) {
+	case *pgxpool.Pool:
+		tx, err := c.Begin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-database: begin pgx tx: %w", err)
+		}
+		return pgxTx{pgxQuerier{tx}, tx}, nil
+	case *sql.DB:
+		tx, err := c.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-database: begin sql tx: %w", err)
+		}
+		return sqlTx{sqlQuerier{tx}, tx}, nil
 	default:
-		_ = c
 		return nil, fmt.Errorf("%w: %T", ErrUnsupportedConn, conn)
 	}
 }

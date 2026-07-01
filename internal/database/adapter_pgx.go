@@ -8,6 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// pgxTx wraps a pgx.Tx as a database.Tx, delegating query methods to the
+// embedded pgxQuerier and providing Commit/Rollback via the underlying tx.
+type pgxTx struct {
+	pgxQuerier
+	tx pgx.Tx
+}
+
+func (t pgxTx) Commit(ctx context.Context) error   { return t.tx.Commit(ctx) }
+func (t pgxTx) Rollback(ctx context.Context) error { return t.tx.Rollback(ctx) }
+
 // pgxDBTX is the minimal pgx querier satisfied by *pgxpool.Pool and pgx.Tx.
 type pgxDBTX interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
