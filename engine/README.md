@@ -70,48 +70,51 @@ sequence flow to the next node.
 ### Signature
 
 ```go
-result, err := engine.Step(def, state, trigger, engine.StepOptions{})
+func Step(
+    def *model.ProcessDefinition, // 1. the process definition (template)
+    st  InstanceState,            // 2. the current instance state
+    trg Trigger,                  // 3. the external event to apply
+    opt StepOptions,              // 4. optional behaviour
+) (StepResult, error)
 ```
 
-`Step` returns a `StepResult`:
+`Step` maps `(def, st, trg, opt) → (StepResult, error)`. It is pure: same inputs
+always produce the same outputs, and the input `st` is never mutated. The
+subsections below follow the signature left-to-right — the four inputs in
+positional order, then the output.
 
-```go
-type StepResult struct {
-    State    InstanceState // new state (never mutates the input)
-    Commands []Command     // side effects the runtime must perform, in order
-}
-```
+### Input 1 — `def *model.ProcessDefinition`
 
-If `Commands` is nil (e.g. a stale `TimerFired` with no matching token), the
-step is a clean no-op. Use `len(result.Commands)` to test for work.
+The process definition the instance executes against (the immutable template).
+`Step` assumes it has already passed `model.Validate`; in particular, an
+exclusive gateway is assumed to have at most one unconditional non-default
+outgoing flow — the engine takes the first matching flow in definition order and
+does not detect ambiguous multi-unconditional configurations. For a token inside
+a sub-process scope, the effective definition is resolved from this top-level one.
 
-### StepOptions and StepMode
+### Input 2 — `st InstanceState`
 
-```go
-type StepOptions struct {
-    Mode               StepMode           // Macro (default) or Micro
-    DefaultRetryPolicy *model.RetryPolicy // fallback when a node carries none
-}
-```
+The current state of the instance (see §6). `Step` treats it as immutable: it
+clones internally and never mutates the argument. The **first** `Step` of an
+instance's life receives a seed state with only `InstanceID`, `DefID`, and
+`DefVersion` set (paired with a `StartInstance` trigger); every later `Step`
+receives the `State` returned by the previous call.
 
-| `StepMode` | Behaviour |
-|------------|-----------|
-| `Macro` (default) | `drive` loops until **all** active tokens are parked or consumed. One `Step` call fully advances the instance past any chain of auto-advancing nodes (start events, gateways, etc.) until every token parks at a wait node or the instance is terminal. |
-| `Micro` | `drive` stops after the **first** token park or terminal event. Useful for single-step debugging or test cases that need to inspect intermediate states. Auto-advancing nodes (start events, gateway routing that produces new active tokens) do not count as stops; execution passes through them within the same call until a park or terminal is reached. |
+### Input 3 — `trg Trigger`
 
-### Triggers (input)
-
-Every trigger carries a timestamp (`OccurredAt() time.Time`) — the engine's
-only source of time. Construct triggers with the provided constructors; never
-construct the struct literals directly.
+The single external event being applied this step. Every trigger carries a
+timestamp (`OccurredAt() time.Time`) — the engine's **only** source of time (it
+never reads the wall clock). Construct triggers with the provided constructors;
+never build the struct literals directly.
 
 | Constructor | Purpose |
 |---|---|
 | `engine.NewStartInstance(at, vars)` | Begin a new process instance with initial variables. |
 | `engine.NewActionCompleted(at, commandID, output)` | A service action finished successfully. |
-| `engine.NewActionFailed(at, commandID, errMsg, retryable)` | A service action failed (optionally retryable). |
+| `engine.NewActionFailed(at, commandID, errMsg, retryable)` | A service action failed (optionally retryable). `NewActionFailedJittered(..., jitter)` additionally records the backoff jitter fraction. |
 | `engine.NewHumanClaimed(at, taskToken, actor)` | A human task was claimed. |
 | `engine.NewHumanCompleted(at, taskToken, output, actor)` | A human task was completed. |
+| `engine.NewHumanReassigned(at, taskToken, from, to, by)` | A human task was reassigned from one actor to another (e.g. by an admin). |
 | `engine.NewTimerFired(at, timerID)` | A previously scheduled timer fired. |
 | `engine.NewSignalReceived(at, name, payload)` | A named signal was broadcast (resumes all tokens awaiting it). |
 | `engine.NewMessageReceived(at, name, correlationKey, payload)` | A named message arrived (resumes the single matching token). |
@@ -121,14 +124,41 @@ construct the struct literals directly.
 | `engine.NewCompensateRequested(at, toNode)` | Admin: roll back completed activities in reverse order (empty `toNode` = full rollback). |
 | `engine.NewResolveIncident(at, incidentID, addAttempts)` | Admin: clear a parked incident and optionally grant extra retry budget. |
 
-### Commands (output)
+### Input 4 — `opt StepOptions`
 
-Commands are returned in the order the engine emitted them. The runtime executes
-them all before persisting the new state.
+`StepOptions` controls optional behaviour of the call. The zero value is valid
+(Macro mode, no default retry, pure evaluator).
+
+| Field | Type | Description |
+|---|---|---|
+| `Mode` | `StepMode` | Step granularity: `Macro` (default) or `Micro` — see the table below. |
+| `DefaultRetryPolicy` | `*model.RetryPolicy` | Fallback retry policy applied when a node carries no `RetryPolicy` of its own. `nil` = retry disabled by default. |
+| `Evaluator` | `ConditionEvaluator` | Overrides the expression evaluator used for gateway conditions, timer/deadline durations, and correlation keys. `nil` (default) uses the pure, wall-clock-free package-global evaluator, keeping `Step` deterministic for replay. A consumer evaluating **untrusted** definitions can supply a timeout-capable evaluator (e.g. `expreval.New(expreval.WithTimeout(d))`) to bound evaluation latency and guard against expression-DoS — trading the replay-determinism guarantee for that protection (ADR-0049, ADR-0056). |
+
+| `StepMode` | Behaviour |
+|------------|-----------|
+| `Macro` (default) | `drive` loops until **all** active tokens are parked or consumed. One `Step` call fully advances the instance past any chain of auto-advancing nodes (start events, gateways, etc.) until every token parks at a wait node or the instance is terminal. |
+| `Micro` | `drive` stops after the **first** token park or terminal event. Useful for single-step debugging or test cases that need to inspect intermediate states. Auto-advancing nodes (start events, gateway routing that produces new active tokens) do not count as stops; execution passes through them within the same call until a park or terminal is reached. |
+
+### Output — `(StepResult, error)`
+
+`Step` returns a `StepResult` and an error. The error is non-nil only for
+wrong-state, gateway-no-match, or unknown-trigger conditions — see the error
+sentinels in §6.
+
+`StepResult`:
+
+| Field | Type | Description |
+|---|---|---|
+| `State` | `InstanceState` | The new instance state. `Step` never mutates its input — this is a fresh clone. |
+| `Commands` | `[]Command` | Side effects the runtime must perform, in order, before persisting `State`. May be nil on a no-op step (e.g. a stale `TimerFired` with no matching token) — use `len(result.Commands)`, not `Commands != nil`, to test for work. |
+
+`StepResult.Commands` are returned in the order the engine emitted them; the
+runtime executes them all before persisting the new state.
 
 | Command | What the runtime must do |
 |---|---|
-| `InvokeAction{CommandID, Name, Inline, Scoped, Input}` | Run a `ServiceAction`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. |
+| `InvokeAction{CommandID, Name, Inline, Scoped, Input, FireAndForget}` | Run a `ServiceAction`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. When `FireAndForget` is true (deadline-breach and reminder actions) the runtime runs the action for its side effect only and feeds **no** `ActionCompleted`/`ActionFailed` back. |
 | `ScheduleTimer{TimerID, Token, FireAt, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` at `FireAt`. `Kind` is `TimerIntermediate`, `TimerDeadline`, `TimerInWait`, or `TimerRetry`. |
 | `CancelTimer{TimerID}` | Cancel a previously scheduled timer. |
 | `AwaitHuman{TaskToken, Eligibility}` | Create a human-task record; park until `HumanCompleted`. |
@@ -136,6 +166,7 @@ them all before persisting the new state.
 | `CompleteInstance{Result}` | Mark the instance completed with a result variable map. |
 | `FailInstance{Err}` | Mark the instance failed. |
 | `ThrowSignal{Name, Payload}` | Broadcast a named signal to interested subscribers. |
+| `SendMessage{Name, CorrelationKey, Payload}` | Emit an outbound message (from a `SendTask`) through the runtime's message sink. Fire-and-forget: the token auto-advances past the send node in the same `Step`; the sink routes it (intra-engine `DeliverMessage`, an external broker / the eventing outbox, or both). |
 | `StartSubInstance{CommandID, DefRef, Input}` | Start a child process instance; return result as `SubInstanceCompleted`/`SubInstanceFailed` carrying the same `CommandID`. |
 | `InvokeCancelAction{Name, Input}` | Run a best-effort cancel side-effect action (no result fed back; the instance is already terminal). |
 | `Compensate{ScopeID, FromNode}` | Reserved — not yet emitted. Future scope-targeted compensation for BPMN compensation boundary/throw producers. |
@@ -187,7 +218,7 @@ The engine's file layout after the ADR-0044 decomposition:
 |---|---|
 | `step.go` | `Step` (thin trigger type-switch) + `drive` (token loop + strategy dispatch) + `stepCtx`. |
 | `step_triggers.go` | One `handle<Trigger>` function per trigger type; called by `Step`'s type-switch. |
-| `step_nodes.go` | `nodeStrategy` interface + `nodeStrategies` registry (13 registered kinds) + one stateless strategy struct per kind. |
+| `step_nodes.go` | `nodeStrategy` interface + `nodeStrategies` registry (16 registered kinds) + one stateless strategy struct per kind. |
 | `step_gateways.go` | XOR/AND/OR fork/join algorithms. |
 | `step_boundaries.go` | Boundary-event arming and firing. |
 | `step_eventsubprocess.go` | Event-subprocess arming, scope open/close. |
@@ -207,17 +238,17 @@ The engine's file layout after the ADR-0044 decomposition:
 var nodeStrategies = map[model.NodeKind]nodeStrategy{ ... }
 ```
 
-Thirteen arm-bearing kinds are registered: `KindServiceTask`, `KindStartEvent`,
+Sixteen kinds are registered: `KindServiceTask`, `KindStartEvent`,
 `KindEndEvent`, `KindSubProcess`, `KindUserTask`, `KindIntermediateCatchEvent`,
 `KindErrorEndEvent`, `KindExclusiveGateway`, `KindParallelGateway`,
 `KindInclusiveGateway`, `KindEventBasedGateway`, `KindCallActivity`,
-`KindIntermediateThrowEvent`.
+`KindIntermediateThrowEvent`, `KindBusinessRuleTask`, `KindReceiveTask`,
+`KindSendTask`.
 
-Seven kinds intentionally fall through to the post-dispatch parking logic (token
-is set `TokenWaitingCommand`): `KindTerminateEndEvent`, `KindBusinessRuleTask`,
-`KindReceiveTask`, `KindSendTask`, `KindBoundaryEvent`, `KindEventSubProcess`,
-`KindUnspecified`. `step_nodes_test.go` pins both sets as a completeness check
-(replaces the compiler's switch-exhaustiveness guarantee).
+Four kinds intentionally fall through to the post-dispatch parking logic (token
+is set `TokenWaitingCommand`): `KindTerminateEndEvent`, `KindBoundaryEvent`,
+`KindEventSubProcess`, `KindUnspecified`. `step_nodes_test.go` pins both sets as
+a completeness check (replaces the compiler's switch-exhaustiveness guarantee).
 
 ### The `halt` signal
 
@@ -233,28 +264,27 @@ terminal/failed.
 
 ## 6. State model
 
-### `InstanceState` (consumer-relevant fields)
+### `InstanceState`
 
-```go
-type InstanceState struct {
-    InstanceID string
-    DefID      string
-    DefVersion int
-    Status     Status
-    Variables  map[string]any
-    Tokens     []Token
-    StartedAt  time.Time
-    EndedAt    *time.Time
-    History    []NodeVisit
-    Tasks      []humantask.HumanTask
-    Incidents  []Incident
-    // ... internal bookkeeping (Timers, Scopes, ArmedEvents, Boundaries,
-    //     EventSubprocesses, RootCompensations, ArchivedCompensations,
-    //     Compensating, PendingCancel, sequence counters)
-}
-```
+The full execution state of one process instance. Consumer-relevant fields:
 
-Use `st.Clone()` to take a deep copy before feeding into the next `Step`.
+| Field | Type | Description |
+|---|---|---|
+| `InstanceID` | `string` | Unique instance identifier. |
+| `DefID` | `string` | Process definition ID this instance executes. |
+| `DefVersion` | `int` | Process definition version. |
+| `Status` | `Status` | Lifecycle status (see the `Status` table below). |
+| `Variables` | `map[string]any` | Flat process variables; `expr` conditions evaluate against these by bare key name. |
+| `Tokens` | `[]Token` | Live execution tokens (see the `Token` table below). |
+| `StartedAt` | `time.Time` | When the instance started (from the `StartInstance` trigger). |
+| `EndedAt` | `*time.Time` | When the instance reached a terminal status; `nil` while running. |
+| `History` | `[]NodeVisit` | Ordered record of node visits, for audit/snapshot projections. |
+| `Tasks` | `[]humantask.HumanTask` | Human-task records created for user-task nodes. |
+| `Incidents` | `[]Incident` | Open incident records (see the `Incident` table below). |
+
+The remaining fields are **internal bookkeeping** (not part of the consumer contract; may change): `Timers`, `Scopes`, `ArmedEvents`, `Boundaries`, `EventSubprocesses`, `RootCompensations`, `ArchivedCompensations`, `Compensating`, `PendingCancel`, `DeferredCompensationThrows` (the ADR-0071 serialized-throw queue), and the sequence counters (`TokenSeq`, `CmdSeq`, `IncidentSeq`, …).
+
+Use `st.Clone()` to take a deep copy when you need to retain a state snapshot; note that `Step` already clones its input internally and never mutates it.
 
 ### `Status`
 
@@ -268,16 +298,37 @@ Use `st.Clone()` to take a deep copy before feeding into the next `Step`.
 
 ### `Token`
 
-Key fields: `ID`, `NodeID`, `ScopeID`, `State` (`TokenState`),
-`AwaitCommand` (CommandID or task token the token is parked on),
-`AwaitSignal`, `AwaitMessage`/`AwaitMessageKey`, `Payload`, `EnteredAt`,
-`RetryAttempts`, `RetryStartedAt`.
+A token marks one point of execution within the instance.
+
+| Field | Type | Description |
+|---|---|---|
+| `ID` | `string` | Unique token identifier within the instance. |
+| `NodeID` | `string` | The node the token currently sits at. |
+| `ScopeID` | `string` | The execution scope (empty = root; non-empty = a sub-process scope). |
+| `State` | `TokenState` | Active / parked / at-join / incident (see the `TokenState` table in §2). |
+| `AwaitCommand` | `string` | The `CommandID` or human-task token the parked token is waiting on. |
+| `AwaitSignal` | `string` | The signal name the token is waiting for (signal catch). |
+| `AwaitMessage` | `string` | The message name the token is waiting for (message catch/receive). |
+| `AwaitMessageKey` | `string` | The resolved correlation key that must match an incoming message. |
+| `Payload` | `map[string]any` | Token-local variables carried across a transition (e.g. gateway branch data). |
+| `EnteredAt` | `time.Time` | When the token entered its current node. |
+| `RetryAttempts` | `int` | Number of retry attempts consumed at the current node. |
+| `RetryStartedAt` | `time.Time` | When the current retry sequence began (for backoff bookkeeping). |
 
 ### `Incident`
 
-Created when a token's retry budget is exhausted (or a non-retryable error
-occurs). Fields: `ID`, `TokenID`, `NodeID`, `ScopeID`, `CommandID`, `Error`,
-`Attempts`, `CreatedAt`. Resolved via `NewResolveIncident`.
+Created when a token's retry budget is exhausted (or a non-retryable error occurs). Resolved via `NewResolveIncident`.
+
+| Field | Type | Description |
+|---|---|---|
+| `ID` | `string` | Unique incident identifier within the instance. |
+| `TokenID` | `string` | The token parked in the `TokenIncident` state. |
+| `NodeID` | `string` | The node whose action failed. |
+| `ScopeID` | `string` | The execution scope of the failed token. |
+| `CommandID` | `string` | The `InvokeAction` command that failed (used to re-invoke on resolution). |
+| `Error` | `string` | The failure message from the last attempt. |
+| `Attempts` | `int` | Number of attempts made before the incident was raised. |
+| `CreatedAt` | `time.Time` | When the incident was raised. |
 
 ### Error sentinels
 

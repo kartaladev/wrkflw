@@ -26,8 +26,8 @@ adapters are mountable handlers a consumer registers in their own server.
 - **BPMN-inspired, not BPMN-compatible.** The domain vocabulary — gateways, sequence
   flows, boundary events, compensation, error codes — is inspired by BPMN, but this
   is **not** a BPMN-compatible implementation and does not aim to load or round-trip
-  arbitrary BPMN2 documents. Definitions are authored in Go or YAML; BPMN2 XML can be
-  loaded but is not the preferred form.
+  arbitrary BPMN2 documents. Definitions are authored in Go or YAML only; there is no
+  BPMN2 XML loader.
 - **Expression evaluation** via [`expr-lang/expr`](https://github.com/expr-lang/expr):
   gateway conditions, attribute predicates, timer durations.
 
@@ -184,7 +184,7 @@ func main() {
 		}),
 	})
 
-	r := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore())
+	r := runtime.NewRunner(cat, runtime.NewMemStore())
 
 	state, err := r.Run(ctx, def, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {
@@ -207,7 +207,6 @@ For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
 |---|---|---|
 | Go builder | `model.NewDefinition(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Fluent `Add<Kind>` methods (one per node kind) mirror the `New<Kind>` constructors; the generic `.Add(node)` remains for dynamic nodes. |
 | YAML | `model.ParseYAML(data)` / `model.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator |
-| BPMN2 XML | loadable | Not the preferred form; see `model` package for details |
 
 ---
 
@@ -304,7 +303,7 @@ Implement it to integrate any authorization backend.
 
 ```go
 type Authorizer interface {
-    Authorize(ctx context.Context, actor Actor, spec AuthzSpec, vars map[string]any) error
+    Authorize(ctx context.Context, spec AuthzSpec, actor Actor, vars map[string]any) error
 }
 ```
 
@@ -327,7 +326,8 @@ a, closer, err := casbinauthz.NewCasbinAuthorizerFromDB(ctx, pool)
 defer closer.Close()
 ```
 
-Pass the authorizer to `runtime.NewRunner` via `runtime.WithAuthorizer(a)`.
+Pass the authorizer to `runtime.NewRunner` via `runtime.WithHumanTasks(resolver, taskStore, a)`
+(the authorizer is the third argument).
 
 ---
 
@@ -335,7 +335,7 @@ Pass the authorizer to `runtime.NewRunner` via `runtime.WithAuthorizer(a)`.
 
 Timers and deadlines are driven by gocron (behind the `scheduling` abstraction).
 
-- **Intermediate timer events** — pause execution for an ISO-8601 duration before continuing.
+- **Intermediate timer events** — pause execution for a Go-duration interval (e.g. `"1h"`) before continuing.
 - **Deadlines** — if a human task (or any wait node) is not resolved within the deadline
   duration, the engine takes an alternative sequence flow and/or runs a recovery action.
 - **In-wait reminder actions** — service actions executed on a repeating interval _during_
@@ -391,7 +391,7 @@ around every engine step and service-action invocation:
 
 ```go
 r := runtime.NewRunner(
-    cat, clock.System(), store,
+    cat, store,
     runtime.WithTracerProvider(tp),
     runtime.WithMeterProvider(mp),
     runtime.WithLogger(slog.Default()),
@@ -903,13 +903,14 @@ start → approve[UserTask, roles: manager] → end
 ```
 
 ```go
-r := runtime.NewRunner(nil, clk, runtime.NewMemStore(),
+r := runtime.NewRunner(nil, runtime.NewMemStore(),
+    runtime.WithRunnerClock(clk),
     runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 
 parked, _ := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
 
 claimable, _ := taskStore.ClaimableBy(ctx, manager)        // discover tasks
-svc := runtime.NewTaskService(taskStore, az, clk)
+svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
 
 claimTrg, _ := svc.Claim(ctx, claimable[0].TaskToken, manager)
 r.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed
@@ -948,7 +949,7 @@ def, _  := model.NewDefinition("travel-booking", 1).
 
 // Call activity (separate definition resolved by name):
 reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
-r   := runtime.NewRunner(cat, clock.System(), runtime.NewMemStore(), runtime.WithDefinitions(reg))
+r   := runtime.NewRunner(cat, runtime.NewMemStore(), runtime.WithDefinitions(reg))
 ```
 
 **At runtime:** the SubProcess example books a room inside the nested scope and merges

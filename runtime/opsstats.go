@@ -43,10 +43,10 @@ type TimerStatsReader interface {
 // CallLinkRef is a compact reference to a call-linked instance — parent or child
 // — returned by the lineage read port. It carries the fields needed to identify
 // the instance and its position in the call chain without returning the full
-// CallLink record (which includes write-side fields like CommandID).
+// CallLink record (which includes write-side fields like ParentCommandID).
 //
 // The related instance's execution status is NOT carried here; an operator must
-// fetch the instance snapshot (e.g. via InstanceStateReader) to learn it.
+// fetch the instance's snapshot to learn it.
 //
 // For a child relation DefID and DefVersion are empty: wrkflw_call_links records
 // only the parent definition, not the child's. The child's definition ref must

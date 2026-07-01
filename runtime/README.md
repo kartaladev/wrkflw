@@ -35,14 +35,13 @@ The package also provides:
 
 ## Quickstart
 
-Wire a `MapCatalog`, a clock, an in-memory store, and a runner; call `Run`.
+Wire a `MapCatalog`, an in-memory store, and a runner; call `Run`.
 
 ```go
 import (
     "context"
 
     "github.com/zakyalvan/krtlwrkflw/action"
-    "github.com/zakyalvan/krtlwrkflw/clock"
     "github.com/zakyalvan/krtlwrkflw/engine"
     "github.com/zakyalvan/krtlwrkflw/model"
     "github.com/zakyalvan/krtlwrkflw/runtime"
@@ -54,7 +53,7 @@ cat := action.NewMapCatalog(map[string]action.ServiceAction{
     }),
 })
 store := runtime.NewMemStore()
-r := runtime.NewRunner(cat, clock.System(), store)
+r := runtime.NewRunner(cat, store) // clock defaults to clock.System()
 
 def := &model.ProcessDefinition{
     ID: "greeting", Version: 1,
@@ -79,18 +78,28 @@ Pass `nil` for `cat` when the process has no service tasks.
 ## Runner construction and options
 
 ```go
-r := runtime.NewRunner(cat action.Catalog, clk clock.Clock, store runtime.Store, opts ...runtime.Option)
+func NewRunner(
+    cat   action.Catalog, // 1. required — service-action catalog
+    store Store,          // 2. required — transactional persistence port
+    opts  ...Option,      //    optional capabilities (functional options)
+) *Runner
 ```
 
-**Required:**
-- `cat` — service-action catalog; may be `nil` if the process has no service or
-  business-rule tasks.
-- `clk` — time source. Use `clock.System()` in production; inject a fake clock
-  (`clockwork.NewFakeClockAt(...)`) in tests so timers are deterministic.
-- `store` — transactional persistence port. `NewMemStore()` for dev/tests;
-  the Postgres store from `internal/persistence/postgres` for production.
+**Positional argument 1 — `cat action.Catalog`.** The service-action catalog
+resolving action names to `ServiceAction` implementations. May be `nil` if the
+process has no service or business-rule tasks.
 
-**Optional capabilities (functional options):**
+**Positional argument 2 — `store Store`.** The transactional persistence port
+(snapshot + journal + outbox committed atomically per applied trigger). Use
+`NewMemStore()` for dev/tests; wire the Postgres/MySQL store via the
+`persistence` package for production.
+
+> The **clock is no longer positional** — it defaults to `clock.System()` and is
+> overridden with the `WithRunnerClock` option (inject a fake clock in tests for
+> deterministic timers).
+
+**Optional capabilities (functional options).** The complete set of `With*`
+functions accepted by `NewRunner`:
 
 | Option | What it enables |
 |---|---|
@@ -101,10 +110,14 @@ r := runtime.NewRunner(cat action.Catalog, clk clock.Clock, store runtime.Store,
 | `WithCallLinks(store)` | Enables the async (non-blocking) call-activity path. Without this, call activities run the child synchronously to completion in-process. |
 | `WithTimerStore(store)` | Persists armed timers so `RehydrateTimers` can re-arm them after a restart. Without this, timers are in-memory only. |
 | `WithDefaultRetryPolicy(p)` | Fallback `model.RetryPolicy` for action-bearing nodes that declare none. Without this, a failed action goes straight to incident or error-boundary. |
+| `WithActionTimeout(d)` | Per-invocation timeout applied to every service action (default **30s**; `0` disables). A hung action that honours ctx is cancelled and surfaces as a retryable failure. |
+| `WithExpressionTimeout(d)` | Wraps the engine's expression evaluator with a per-eval timeout (guards against expression-DoS from untrusted definitions). |
+| `WithConditionEvaluator(eval)` | Replaces the engine's expression evaluator entirely (advanced; supersedes `WithExpressionTimeout`). |
+| `WithJitterSource(src)` | Custom jitter for retry-backoff de-synchronization; inject a deterministic source in tests. |
+| `WithRunnerClock(clk)` | Overrides the time source (default `clock.System()`); inject a fake clock in tests. |
 | `WithLogger(l)` | Structured logger (`*slog.Logger`); defaults to `slog.Default()`. |
 | `WithTracerProvider(tp)` | OTel tracer provider; defaults to the OTel global. |
 | `WithMeterProvider(mp)` | OTel meter provider; defaults to the OTel global. |
-| `WithJitterSource(src)` | Custom jitter for retry-backoff de-synchronization; inject a deterministic source in tests. |
 
 ## Driving an instance
 
@@ -198,11 +211,9 @@ resolver  := humantask.NewStaticActorResolver(map[string][]authz.Actor{
     "manager": {manager},
 })
 az  := authz.RoleAuthorizer{}
-clk := clock.System()
 
 r := runtime.NewRunner(
     nil, // no service actions for this example
-    clk,
     runtime.NewMemStore(),
     runtime.WithHumanTasks(resolver, taskStore, az),
 )
@@ -229,7 +240,7 @@ claimable, err := taskStore.ClaimableBy(ctx, manager)
 taskToken := claimable[0].TaskToken
 
 // Authorize and produce a HumanClaimed trigger.
-svc := runtime.NewTaskService(taskStore, az, clk)
+svc := runtime.NewTaskService(taskStore, az)
 
 claimTrg, err := svc.Claim(ctx, taskToken, manager)
 r.Deliver(ctx, def, "inst-1", claimTrg)
@@ -255,11 +266,11 @@ Wire `WithSignalBus` to enable `ThrowSignal` commands and signal-catch events.
 Construct the bus with a delivery function that routes to the right runner:
 
 ```go
-bus := runtime.NewSignalBus(clk, func(ctx context.Context, id string, trg engine.Trigger) error {
+bus := runtime.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
     _, err := r.Deliver(ctx, def, id, trg)
     return err
 })
-r2 := runtime.NewRunner(cat, clk, store, runtime.WithSignalBus(bus))
+r2 := runtime.NewRunner(cat, store, runtime.WithSignalBus(bus))
 ```
 
 After each `Run`/`Deliver` iteration the runner calls `SignalBus.Sync` to
@@ -280,8 +291,10 @@ Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
 
 ```go
 fc   := clockwork.NewFakeClockAt(startAt)
-sched := runtime.NewMemScheduler(fc)
-r     := runtime.NewRunner(cat, fc, store, runtime.WithScheduler(sched))
+sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+r     := runtime.NewRunner(cat, store,
+    runtime.WithScheduler(sched),
+    runtime.WithRunnerClock(fc)) // share the fake clock for deterministic timers
 
 // After Run parks at a timer node, advance the fake clock and call Tick.
 fc.Advance(1*time.Hour + 1*time.Second)
@@ -306,7 +319,7 @@ p := model.RetryPolicy{
     BackoffCoef:     2.0,
     MaxInterval:     30 * time.Second,
 }
-r := runtime.NewRunner(cat, clk, store, runtime.WithDefaultRetryPolicy(p))
+r := runtime.NewRunner(cat, store, runtime.WithDefaultRetryPolicy(p))
 ```
 
 When retries are exhausted the engine creates an `engine.Incident` on the token.
@@ -329,14 +342,50 @@ view := runtime.NewActionableView(st, def)
 s := runtime.StatusString(st.Status)
 ```
 
-`InstanceSnapshot` omits engine bookkeeping fields (timers, scopes, internal
-sequences) so it is safe to JSON-encode and return to API consumers without
-leaking implementation details.
+#### `InstanceSnapshot`
 
-`ActionableView` is purpose-built for UI rendering: it exposes only open human
-tasks together with the `AllowedActions` (outgoing sequence flows) derived from
-the definition, so a frontend can offer contextual action buttons without
-knowing the BPMN graph.
+The full JSON-safe projection. It omits engine bookkeeping fields (timers,
+scopes, internal sequences) so it is safe to JSON-encode and return to API
+consumers without leaking implementation details.
+
+| Field | JSON key | Type | Description |
+|---|---|---|---|
+| `InstanceID` | `instance_id` | `string` | Unique process instance identifier. |
+| `DefID` | `def_id` | `string` | Process-definition ID. |
+| `DefVersion` | `def_version` | `int` | Process-definition version. |
+| `Status` | `status` | `string` | Instance lifecycle state (see `StatusString`). |
+| `Variables` | `variables` | `map[string]any` | Current process variables. |
+| `Tokens` | `tokens` | `[]TokenView` | Current token positions. |
+| `History` | `history` | `[]NodeVisitView` | Ordered audit trail of node visits. |
+| `Tasks` | `tasks` | `[]TaskView` | In-flight human-task records. |
+| `Incidents` | `incidents` | `[]IncidentView` | Open incident records. |
+| `StartedAt` | `started_at` | `time.Time` | When the instance was created. |
+| `EndedAt` | `ended_at` | `*time.Time` | When the instance reached a terminal state; `nil` while running. |
+| `ScopedActions` | `scoped_actions` | `[]string` | Sorted names in the definition-scoped action catalog; `nil` when none are registered or no definition is available. |
+| `ActionBindings` | `action_bindings` | `[]ActionBindingView` | Action wiring for each `ServiceTask`/`BusinessRuleTask`, sorted by node ID. Each `ActionBindingView` is `{NodeID, NodeKind, Action, Inline}`. |
+
+#### `ActionableView`
+
+Purpose-built for UI rendering: it exposes only open human tasks together with
+the outgoing flows derived from the definition, so a frontend can offer
+contextual action buttons without knowing the BPMN graph.
+
+| Field | JSON key | Type | Description |
+|---|---|---|---|
+| `InstanceID` | `instance_id` | `string` | Unique process instance identifier. |
+| `Status` | `status` | `string` | Instance lifecycle state. |
+| `OpenTasks` | `open_tasks` | `[]ActionableTask` | Tasks currently open (Unclaimed or Claimed). |
+
+Each `ActionableTask` (note: `AllowedActions` lives here, **per task**, not on the view):
+
+| Field | JSON key | Type | Description |
+|---|---|---|---|
+| `TaskToken` | `task_token` | `string` | Unique task instance identifier. |
+| `NodeID` | `node_id` | `string` | BPMN node that generated the task. |
+| `State` | `state` | `string` | Task lifecycle state. |
+| `ClaimedBy` | `claimed_by` | `string` | Actor ID that claimed the task; empty when unclaimed. |
+| `Candidates` | `candidates` | `[]string` | Resolved actor IDs eligible to act on the task. |
+| `AllowedActions` | `allowed_actions` | `[]NextAction` | Outgoing sequence flows from this task's node; `nil` when no definition is available. Each `NextAction` is `{FlowID, Target, Condition, IsDefault}`. |
 
 Both DTOs are also exposed over the REST transport (`transport/rest`) at
 `GET /instances/{id}/snapshot` and `GET /instances/{id}/actionable`.
@@ -351,7 +400,7 @@ concurrency-safe and does not require a database.
 
 ```go
 store := runtime.NewMemStore()
-r     := runtime.NewRunner(cat, clock.System(), store)
+r     := runtime.NewRunner(cat, store)
 ```
 
 Access the trigger history for audit assertions in tests:
@@ -371,11 +420,11 @@ single-process embedding; multi-replica deployments need a real lease
 store := runtime.NewCachingStore(
     pgStore,           // backing Store (e.g. the Postgres store from persistence)
     runtime.AlwaysOwn{},
-    clock.System(),
     runtime.WithCacheTTL(5*time.Minute),
     runtime.WithCacheMaxEntries(1024),
+    // clock defaults to clock.System(); override with runtime.WithCachingStoreClock(...)
 )
-r := runtime.NewRunner(cat, clock.System(), store)
+r := runtime.NewRunner(cat, store)
 ```
 
 ### `CachingDefinitionRegistry`
@@ -384,8 +433,10 @@ For hot-path definition resolution, wrap any `DefinitionRegistry` with
 `NewCachingDefinitionRegistry` to avoid repeated unmarshalling:
 
 ```go
-reg := runtime.NewCachingDefinitionRegistry(pgDefRegistry, clock.System())
-r   := runtime.NewRunner(cat, clock.System(), store, runtime.WithDefinitions(reg))
+// Second arg is the cache TTL (time.Duration); the clock defaults to
+// clock.System() and is overridden with WithCachingDefinitionRegistryClock(...).
+reg := runtime.NewCachingDefinitionRegistry(pgDefRegistry, 5*time.Minute)
+r   := runtime.NewRunner(cat, store, runtime.WithDefinitions(reg))
 ```
 
 ### Postgres store (production)
@@ -403,6 +454,25 @@ The predecessor fully ends and releases its resources; the successor is a fresh
 root instance that outlives it. This is *not* the parent→child nesting of an
 async call activity (`StartSubInstance`); it is sequential chaining of
 independent instances, driven off the durable terminal outbox events.
+
+The `SuccessorPolicy` callback receives a `ChainEvent` (the terminal predecessor)
+and returns a `SuccessorDecision`:
+
+**`ChainEvent`** (input to the policy):
+
+| Field | Type | Description |
+|---|---|---|
+| `PredecessorID` | `string` | The instance that reached a terminal state. |
+| `PredecessorDefinitionRef` | `string` | The `"defID:version"` of the predecessor, carried end-to-end through the outbox (ADR-0047) so a policy can route on the predecessor's definition. Empty only for pre-ADR-0047 events. |
+| `Outcome` | `Outcome` | The terminal outcome that fired the event (`OutcomeCompleted` / `OutcomeFailed` / `OutcomeTerminated`). |
+| `Result` | `map[string]any` | The event payload: terminal variables (completed) or `{"error": …}` (failed/terminated). |
+
+**`SuccessorDecision`** (returned by the policy):
+
+| Field | Type | Description |
+|---|---|---|
+| `Def` | `*model.ProcessDefinition` | The successor definition to start. A `nil` `Def` (or returning `ok=false`) ends the chain. |
+| `Vars` | `map[string]any` | Seed variables for the successor instance. |
 
 Three pieces:
 

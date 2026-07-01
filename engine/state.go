@@ -215,7 +215,8 @@ const (
 	TokenAtJoin
 	// TokenIncident marks a token that has exhausted its retry budget (or hit a
 	// non-retryable error) and is now parked as an incident. The token remains in
-	// this state until an operator resolves the incident (e.g. via retry or skip).
+	// this state until an operator resolves the incident (re-invoking the action
+	// via ResolveIncident).
 	TokenIncident
 )
 
@@ -449,7 +450,7 @@ type InstanceState struct {
 	// Incidents holds all open incident records for this instance. An incident is
 	// created when a token transitions to [TokenIncident] (retry budget exhausted
 	// or non-retryable error). Incidents are resolved (removed) when an operator
-	// retries or skips the failed node.
+	// resolves the incident (re-invoking the failed action via ResolveIncident).
 	Incidents []Incident
 
 	// PendingCancel is set when a CancelRequested arrives while a compensation
@@ -560,12 +561,12 @@ func (s *InstanceState) cancelAllTimers() []Command {
 //
 // This is called alongside cancelAllTimers on ALL terminal paths to prevent
 // gateway and boundary timer arms from leaking as orphaned scheduled tasks in
-// the runtime scheduler. Callers include:
-//   - ActionFailed (unhandled error → StatusFailed)
-//   - CancelRequested (admin cancel → StatusTerminated)
-//   - SubInstanceFailed (child instance failed → parent StatusFailed)
-//   - propagateError's unhandled-error terminal path
-//   - stepCompensateRequested (cancels all in-flight tokens before compensating)
+// the runtime scheduler. Callers:
+//   - handleCancelRequested (admin cancel → StatusTerminated)
+//   - handleSubInstanceFailed (child instance failed → parent StatusFailed)
+//   - propagateError (unhandled-error terminal path)
+//   - beginCompensation and stepCompensationFinish (cancel in-flight tokens
+//     before/while compensating)
 //
 // EventSubprocesses arms are also drained on the terminal and compensation paths
 // via removeEventSubprocessArmsForScope — this function does NOT drain them, so

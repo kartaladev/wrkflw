@@ -33,7 +33,35 @@ Key design properties:
   own struct (`ServiceTask`, `UserTask`, `ExclusiveGateway`, …). Construct them
   with the `New*` constructors — never construct the structs directly.
 - **Three authoring forms.** Go constructors + `DefinitionBuilder` (preferred),
-  YAML, or JSON. All three paths call `Validate` before returning a definition.
+  YAML, or JSON. The builder and YAML paths call `Validate` automatically; the
+  JSON path (`json.Unmarshal`) does **not** — call `model.Validate` yourself after
+  decoding.
+
+### Container types
+
+`ProcessDefinition` is the top-level template:
+
+| Field | Type | Description |
+|---|---|---|
+| `ID` | `string` | Definition identifier. |
+| `Version` | `int` | Definition version — a definition is keyed by `ID:Version`. |
+| `Nodes` | `[]Node` | The process nodes (built via the `New*` constructors / builder). |
+| `Flows` | `[]SequenceFlow` | Directed sequence flows connecting the nodes. |
+| `CancelActions` | `[]string` | Best-effort service-action names run when an instance is cancelled. |
+
+(Two unexported fields, `scoped`/`scopedNames`, hold the definition-scoped action
+catalog; they are populated by `Build()` from `RegisterAction` and read via
+`ScopedActionNames()`.)
+
+`SequenceFlow` is a directed edge between two nodes:
+
+| Field | Type | Description |
+|---|---|---|
+| `ID` | `string` | Flow identifier (defaults to `"fromID->toID"`). |
+| `Source` | `string` | Source node ID. |
+| `Target` | `string` | Target node ID. |
+| `Condition` | `string` | expr-lang routing expression; empty = unconditional. Only valid on the outgoing flows of an exclusive/inclusive gateway. |
+| `IsDefault` | `bool` | Marks the exclusive/inclusive-gateway default flow. |
 
 ---
 
@@ -66,7 +94,7 @@ Every node satisfies this interface. The 19 concrete kinds are grouped below.
 | `KindUserTask` | `UserTask` | `NewUserTask(id, roles, opts...)` |
 | `KindReceiveTask` | `ReceiveTask` | `NewReceiveTask(id, messageName, opts...)` |
 | `KindSendTask` | `SendTask` | `NewSendTask(id, messageName, opts...)` |
-| `KindBusinessRuleTask` | `BusinessRuleTask` | `NewBusinessRuleTask(id, action, opts...)` |
+| `KindBusinessRuleTask` | `BusinessRuleTask` | `NewBusinessRuleTask(id, opts...)` |
 | `KindSubProcess` | `SubProcess` | `NewSubProcess(id, *ProcessDefinition, opts...)` |
 | `KindCallActivity` | `CallActivity` | `NewCallActivity(id, defRef, opts...)` |
 | `KindEventSubProcess` | `EventSubProcess` | `NewEventSubProcess(id, *ProcessDefinition, opts...)` |
@@ -108,8 +136,8 @@ The following options work on **all** activity constructors (`NewServiceTask`,
 | `WithRecoveryFlow(flowID string)` | Flow to take when retries are exhausted |
 | `WithCompensation(actionName string)` | Service-action name invoked during rollback |
 | `WithCancelHandler(actionName string)` | Service-action invoked when the node is interrupted |
-| `WithDeadline(dur, flowID, actionName string)` | Deadline (ISO-8601 duration), escape flow, and/or action on breach |
-| `WithReminder(every, actionName string)` | Periodic reminder action (ISO-8601 interval) fired while the node is active |
+| `WithDeadline(dur, flowID, actionName string)` | Deadline (Go-duration string, e.g. `72h`), escape flow, and/or action on breach |
+| `WithReminder(every, actionName string)` | Periodic reminder action (Go-duration interval, e.g. `24h`) fired while the node is active |
 
 ### Kind-specific options (compile-enforced)
 
@@ -133,7 +161,7 @@ WithCorrelationKey(key string) // expr evaluated at runtime to derive the correl
 ```go
 WithStartSignal(name string)
 WithStartMessage(msg, key string)
-WithStartTimer(durISO8601 string)
+WithStartTimer(dur string) // Go-duration string, e.g. "1h"
 ```
 
 **`NewEventSubProcess` only:**
@@ -172,9 +200,9 @@ BoundaryNonInterrupting()          // default is interrupting
 WithName(name string)
 ```
 
-> **Note:** Message boundary events are not yet armed by the engine. Timer,
-> signal, and error boundary events work. Message is accepted by the model but
-> has no runtime effect in the current release.
+> **Note:** Timer, signal, error, and message boundary events are all armed and
+> fired by the engine (message boundaries since ADR-0053). The one exception is a
+> message boundary attached to a `ReceiveTask` host, which is not yet armed.
 
 ### Example — service task with compensation and deadline
 
@@ -300,26 +328,20 @@ model.NewDefinition("loan", 1).
 
 ## RetryPolicy
 
-```go
-type RetryPolicy struct {
-    MaxAttempts        int           // total attempts including first; 0 = unlimited; default 3
-    InitialInterval    time.Duration // delay before first retry; default 1s
-    BackoffCoef        float64       // exponential multiplier per attempt; default 2.0
-    MaxInterval        time.Duration // per-attempt cap; 0 = no cap; default 100s
-    MaxElapsed         time.Duration // total time budget; 0 = no cap
-    NonRetryableErrors []string      // error-message substrings that abort retrying immediately
-}
-```
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `MaxAttempts` | `int` | `3` | Total attempts including the first; `0` = unlimited. |
+| `InitialInterval` | `time.Duration` | `1s` | Delay before the first retry. |
+| `BackoffCoef` | `float64` | `2.0` | Exponential multiplier per attempt. Must be ≥ 1.0 when `InitialInterval > 0` (a value below 1.0 is rejected by `Validate`). |
+| `MaxInterval` | `time.Duration` | `100s` | Per-attempt delay cap; `0` = no cap. |
+| `MaxElapsed` | `time.Duration` | `0` (no cap) | Total time budget across all attempts; `0` = no cap. Enforced by the engine retry executor (anchored at the token's first retry). |
+| `NonRetryableErrors` | `[]string` | `nil` | Error-message substrings that abort retrying immediately. |
 
-- `MaxAttempts` includes the original attempt. Set to `0` for unlimited retries.
-- `BackoffCoef` must be ≥ 1.0 when `InitialInterval > 0`; a value below 1.0
-  would shrink delays and is rejected by `Validate`.
-- `model.DefaultRetryPolicy()` returns safe defaults (MaxAttempts=3,
-  InitialInterval=1s, BackoffCoef=2.0, MaxInterval=100s).
-- `RetryPolicy.Normalize()` fills zero fields from the defaults (preserves
+- `model.DefaultRetryPolicy()` returns the defaults above.
+- `RetryPolicy.Normalize()` fills zero fields from the defaults (preserving
   `MaxAttempts == 0` as unlimited).
-- Attach to any activity with `model.WithRetryPolicy(&p)`.
-- A runtime-wide default is set with `runtime.WithDefaultRetryPolicy(p)`.
+- Attach to any activity with `model.WithRetryPolicy(&p)`; set a runtime-wide
+  fallback with `runtime.WithDefaultRetryPolicy(p)`.
 
 ---
 
@@ -408,9 +430,9 @@ nodes:
     kind: userTask
     name: Approve Order
     candidateRoles: [manager]
-    slaDuration: 48h
-    slaFlow: sla-breach->notify
-    slaAction: notify-ops
+    deadlineDuration: 48h
+    deadlineFlow: sla-breach->notify
+    deadlineAction: notify-ops
 
   - id: gw
     kind: exclusiveGateway
@@ -457,7 +479,7 @@ flows:
 | `recoveryFlow` | all activity kinds |
 | `compensationAction` | all activity kinds |
 | `cancelHandler` | all activity kinds |
-| `slaDuration`, `slaFlow`, `slaAction` | all activity kinds, `intermediateCatchEvent` |
+| `deadlineDuration`, `deadlineFlow`, `deadlineAction` | all activity kinds, `intermediateCatchEvent` |
 | `reminderEvery`, `reminderAction` | all activity kinds, `intermediateCatchEvent` |
 
 ---

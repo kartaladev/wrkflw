@@ -12,8 +12,8 @@ import (
 
 // DeliverFunc is the function the SignalBus uses to deliver a trigger to a
 // specific process instance. The caller wires this to Runner.Deliver (with the
-// definition already captured in a closure). It is also used by MessageBus for
-// message correlation delivery.
+// definition already captured in a closure). Message correlation is handled
+// separately by Runner.DeliverMessage and does not go through a DeliverFunc.
 type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger) error
 
 // SignalBus fans out a named signal to every instance that is currently

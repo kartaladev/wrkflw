@@ -18,8 +18,8 @@ var ErrActionInlineAndNameConflict = errors.New("workflow-model: node has both a
 var ErrDuplicateScopedAction = errors.New("workflow-model: duplicate scoped action name")
 
 // DefinitionBuilder is a fluent builder for ProcessDefinition. Construct one
-// with NewDefinition, chain Add/Connect/CancelActions calls, then call Build to
-// assemble and validate the definition.
+// with NewDefinition, chain Add/AddX/Connect/RegisterAction/CancelActions calls,
+// then call Build to assemble and validate the definition.
 type DefinitionBuilder struct {
 	id            string
 	version       int

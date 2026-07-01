@@ -156,8 +156,8 @@ func NewMessageReceived(at time.Time, name, correlationKey string, payload map[s
 // this result back to the StartSubInstance command that spawned the child.
 // Output carries any variables the child exported on completion.
 //
-// Task 3+ implements the engine's handling of this trigger (resume the parked
-// parent token and merge Output into the parent instance variables).
+// The engine resumes the parked parent token and merges Output into the parent
+// instance variables.
 type SubInstanceCompleted struct {
 	baseTrigger
 	// CommandID matches the StartSubInstance.CommandID that started the child.
@@ -177,8 +177,9 @@ func NewSubInstanceCompleted(at time.Time, commandID string, output map[string]a
 // this result back to the StartSubInstance command. Err is a human-readable
 // description of the failure reason.
 //
-// Task 3+ implements the engine's handling of this trigger (mark the parent
-// token/instance failed or route to an error boundary if one is configured).
+// The engine marks the instance failed (StatusFailed) with a FailInstance
+// command. Routing a child failure to a parent error boundary is not yet
+// implemented.
 type SubInstanceFailed struct {
 	baseTrigger
 	// CommandID matches the StartSubInstance.CommandID that started the child.

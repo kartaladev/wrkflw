@@ -106,7 +106,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 }
 
 // definitionFromYAML converts a decoded definitionYAML into a ProcessDefinition
-// with concrete node types and runs Validate.
+// with concrete node types. It does NOT validate — the caller (ParseYAML) runs Validate.
 func definitionFromYAML(dy *definitionYAML) (*ProcessDefinition, error) {
 	def := ProcessDefinition{
 		ID:            dy.ID,

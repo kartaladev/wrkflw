@@ -117,7 +117,10 @@ func withActivity(fn func(*activityFields)) activityOnlyOption {
 	return activityOnlyOption{fn}
 }
 
-// nameOpt sets the name on a baseNode; implements activityOption, catchOption, boundaryOption, startEventOption, eventSubProcessOption, userTaskOption, and receiveTaskOption.
+// nameOpt sets the name on a baseNode; it implements every node option interface
+// (activity, catch, boundary, startEvent, eventSubProcess, userTask, receiveTask,
+// sendTask, serviceTask, businessRule), so WithName is accepted by every
+// option-taking constructor.
 type nameOpt struct{ name string }
 
 func (o nameOpt) applyActivity(_ *activityFields)         {}
@@ -132,8 +135,9 @@ func (o nameOpt) applySendTask(s *SendTask)               { s.name = o.name }
 func (o nameOpt) applyServiceTask(s *ServiceTask)         { s.name = o.name }
 func (o nameOpt) applyBusinessRule(b *BusinessRuleTask)   { b.name = o.name }
 
-// WithName returns an option that sets the Name field on any node that accepts it.
-// It implements activityOption, catchOption, boundaryOption, userTaskOption, and receiveTaskOption.
+// WithName returns an option that sets the Name field. It is accepted by every
+// option-taking node constructor EXCEPT NewIntermediateThrowEvent, which sets its
+// name via the dedicated WithThrowName instead.
 func WithName(name string) nameOpt { return nameOpt{name} }
 
 // WithRetryPolicy returns an activity option that sets RetryPolicy.

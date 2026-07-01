@@ -38,7 +38,9 @@ type sender interface {
 	send(addr string, auth smtp.Auth, from string, to []string, msg []byte) error
 }
 
-// SenderFunc adapts a function to the sender seam (exported for tests).
+// SenderFunc adapts a function to the (unexported) sender seam. It is usable
+// only from within this package's own tests, since [WithSender] takes the
+// unexported sender type.
 type SenderFunc func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error
 
 func (f SenderFunc) send(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
@@ -363,6 +365,9 @@ func NewEmail(opts ...Option) action.ServiceAction {
 // Returns map[string]any{"emailSent":true,"recipientCount":<n>} on full success.
 // On partial failure (any recipient errored) Do returns nil output plus a retryable
 // aggregate error; callers receive no output map when any recipient send failed.
+//
+// The From address is validated once up front; a CRLF in it returns a
+// non-retryable error before any send is attempted.
 func (a *emailAction) Do(ctx context.Context, in map[string]any) (map[string]any, error) {
 	// --- Build effective recipient list ---
 	// Start with static addresses converted to Recipient values.

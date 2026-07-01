@@ -12,9 +12,9 @@ import (
 // consumer without the Postgres outbox relay (e.g. MemStore-only) simply never
 // wires it.
 //
-// Its method set is identical to persistence.Relay's, so persistence.Relay
-// satisfies DeadLetterAdmin directly — pass the relay straight to a transport's
-// WithDeadLetterAdmin option with no adapter.
+// Its methods are a subset of persistence.Relay's (which also has Run and
+// DrainOnce), so persistence.Relay satisfies DeadLetterAdmin directly — pass the
+// relay straight to a transport's WithDeadLetterAdmin option with no adapter.
 type DeadLetterAdmin interface {
 	// ListDeadLettered returns up to limit dead-lettered outbox rows, oldest first.
 	ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error)

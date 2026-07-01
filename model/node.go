@@ -35,7 +35,8 @@ type StartEvent struct {
 	MessageName string
 	// CorrelationKey is an expr expression for message correlation.
 	CorrelationKey string
-	// TimerDuration is an ISO-8601 duration for a timer-triggered EventSubProcess.
+	// TimerDuration is an expr-lang duration expression for a timer-triggered
+	// EventSubProcess (a string result → time.ParseDuration, e.g. "1h"; a number → seconds; not ISO-8601).
 	TimerDuration string
 }
 
@@ -79,13 +80,13 @@ type activityFields struct {
 	CompensationAction string
 	// CancelHandler is the optional ServiceAction to run when this node is interrupted.
 	CancelHandler string
-	// DeadlineDuration is an ISO-8601 duration string for the deadline.
+	// DeadlineDuration is an expr-lang duration expression for the deadline (string → time.ParseDuration, e.g. "72h"; number → seconds; not ISO-8601).
 	DeadlineDuration string
 	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
 	DeadlineFlow string
 	// DeadlineAction is the name of the ServiceAction to invoke on deadline breach.
 	DeadlineAction string
-	// ReminderEvery is an ISO-8601 duration string for the reminder interval.
+	// ReminderEvery is an expr-lang duration expression for the reminder interval (string → time.ParseDuration, e.g. "24h"; number → seconds; not ISO-8601).
 	ReminderEvery string
 	// ReminderAction is the name of the ServiceAction to invoke for each reminder.
 	ReminderAction string
@@ -200,7 +201,7 @@ func (EventSubProcess) Kind() NodeKind { return KindEventSubProcess }
 // IntermediateCatchEvent waits for a timer, signal, or message.
 type IntermediateCatchEvent struct {
 	baseNode
-	// TimerDuration is an ISO-8601 duration string for a timer trigger.
+	// TimerDuration is an expr-lang duration expression for a timer trigger (string → time.ParseDuration, e.g. "1h"; number → seconds; not ISO-8601).
 	TimerDuration string
 	// SignalName is the signal reference for a signal catch.
 	SignalName string
@@ -208,13 +209,13 @@ type IntermediateCatchEvent struct {
 	MessageName string
 	// CorrelationKey is an expr expression for message correlation.
 	CorrelationKey string
-	// DeadlineDuration is an ISO-8601 duration string for the deadline.
+	// DeadlineDuration is an expr-lang duration expression for the deadline (string → time.ParseDuration, e.g. "72h"; number → seconds; not ISO-8601).
 	DeadlineDuration string
 	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
 	DeadlineFlow string
 	// DeadlineAction is the name of the ServiceAction to invoke on deadline breach.
 	DeadlineAction string
-	// ReminderEvery is an ISO-8601 duration string for the reminder interval.
+	// ReminderEvery is an expr-lang duration expression for the reminder interval (string → time.ParseDuration, e.g. "24h"; number → seconds; not ISO-8601).
 	ReminderEvery string
 	// ReminderAction is the name of the ServiceAction to invoke for each reminder.
 	ReminderAction string
@@ -250,7 +251,7 @@ type BoundaryEvent struct {
 	MessageName string
 	// CorrelationKey is an expr expression for message correlation.
 	CorrelationKey string
-	// TimerDuration is an ISO-8601 duration string for a timer boundary.
+	// TimerDuration is an expr-lang duration expression for a timer boundary (string → time.ParseDuration, e.g. "1h"; number → seconds; not ISO-8601).
 	TimerDuration string
 }
 

@@ -8,6 +8,13 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
+// defForScope returns the ProcessDefinition that a token in the given scope
+// executes against. An empty scopeID (root) returns top. Otherwise the scope's
+// NodeID is a sub-process activity node in the PARENT scope's definition; this
+// function resolves that node and returns its Subprocess definition recursively.
+//
+// Returns an error if the scope or its subprocess definition cannot be resolved
+// (defensive; unreachable for a well-formed state that was built by Step).
 func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string) (*model.ProcessDefinition, error) {
 	if scopeID == "" {
 		return top, nil

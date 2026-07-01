@@ -28,7 +28,6 @@ type TimerAdmin interface {
 	ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error)
 }
 
-// Compile-time assertion: *runtime.MemTimerStore satisfies the ListArmed half of
-// TimerAdmin (MemTimerStore has no Stats method — the interface is only fully
-// satisfied by the Postgres TimerStore). This assertion is omitted intentionally:
-// MemTimerStore is a test helper, not a full TimerAdmin implementation.
+// Note: runtime.MemTimerStore implements only ListArmed (it has no Stats method),
+// so it does NOT satisfy the full TimerAdmin — only the Postgres/MySQL TimerStore
+// does. MemTimerStore is a test helper, not a full TimerAdmin implementation.

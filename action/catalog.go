@@ -79,9 +79,9 @@ func NewRegistry() *Registry {
 }
 
 // Register adds a to the catalog under name. It returns:
-//   - ErrEmptyActionName (wrapped) if name is empty
-//   - ErrNilAction (wrapped) if a is nil
-//   - ErrActionExists (wrapped) if name was already registered
+//   - ErrEmptyActionName if name is empty
+//   - ErrNilAction if a is nil
+//   - ErrActionExists (wrapped, with the name) if name was already registered
 //
 // The first successful registration is always retained on duplicate attempts.
 func (r *Registry) Register(name string, a ServiceAction) error {

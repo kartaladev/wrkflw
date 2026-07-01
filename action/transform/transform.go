@@ -59,7 +59,6 @@ type exprSpec struct {
 // WithExpr maps an output key to an expr-lang expression evaluated against the
 // current variables (input merged with all prior stage outputs). The expression
 // is compiled eagerly: a malformed expression fails NewTransform, not Do.
-// This is the concise, pure heir of the old Set option.
 func WithExpr(outKey, exprStr string) Option {
 	return func(c *config) {
 		c.stages = append(c.stages, stageSpec{exprSpec: &exprSpec{outKey: outKey, src: exprStr}})

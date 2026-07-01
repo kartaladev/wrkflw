@@ -46,7 +46,7 @@ type TaskServiceOption func(*taskServiceConfig)
 // provider). A nil value is ignored.
 //
 // TaskService accepts only a meter provider (not logger/tracer) because it
-// emits solely the [wrkflw_human_tasks_total] counter and has no spans or
+// emits solely the wrkflw_human_tasks_total counter and has no spans or
 // structured-log calls of its own. The full three-option idiom
 // (WithLogger/WithTracerProvider/WithMeterProvider) applies to components that
 // own spans or log output; TaskService is intentionally meter-only.

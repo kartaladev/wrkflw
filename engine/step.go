@@ -92,13 +92,6 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 	}
 }
 
-// defForScope returns the ProcessDefinition that a token in the given scope
-// executes against. An empty scopeID (root) returns top. Otherwise the scope's
-// NodeID is a sub-process activity node in the PARENT scope's definition; this
-// function resolves that node and returns its Subprocess definition recursively.
-//
-// Returns an error if the scope or its subprocess definition cannot be resolved
-// (defensive; unreachable for a well-formed state that was built by Step).
 // drive advances active tokens until each is parked or consumed.
 //
 // In Macro mode (default) drive loops until no active tokens remain.

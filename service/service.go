@@ -30,7 +30,8 @@ type Service interface {
 	GetInstance(ctx context.Context, instanceID string) (engine.InstanceState, error)
 
 	// DeliverSignal resolves the definition for the instance, then delivers a
-	// SignalReceived trigger to it, returning the new state.
+	// SignalReceived trigger to it, returning the new state. Returns ErrConflict
+	// when the instance has already reached a terminal state.
 	DeliverSignal(ctx context.Context, req DeliverSignalRequest) (engine.InstanceState, error)
 
 	// DeliverMessage routes a message to the waiting instance via the runner's
@@ -79,7 +80,7 @@ type Service interface {
 
 // Engine is the concrete implementation of Service. It wires together the
 // runtime.Runner, runtime.TaskService, runtime.DefinitionRegistry,
-// runtime.Store, and runtime.InstanceLister.
+// runtime.Store, runtime.InstanceLister, and humantask.TaskStore.
 //
 // The constructor requires all collaborators as interface/concrete parameters;
 // no DI container is used so consumers can wire this by hand.

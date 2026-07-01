@@ -303,11 +303,14 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 // one transactional Store, so snapshot, journal, and outbox commit atomically
 // per applied trigger.
 //
-// Optional capabilities (via Option):
-//   - [WithRunnerClock]: override the time source (default: clock.System()).
-//   - [WithHumanTasks]: human-task support (resolver, task store, authorizer).
-//   - [WithScheduler]: timer scheduling support.
-//   - [WithSignalBus]: signal broadcast support (ThrowSignal).
+// Optional capabilities are supplied via functional options; the full set of
+// With* functions returning [Option] is (see each for details):
+//   - Node-kind capabilities: [WithHumanTasks], [WithScheduler], [WithSignalBus],
+//     [WithDefinitions], [WithCallLinks], [WithTimerStore].
+//   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
+//     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
+//   - Time source: [WithRunnerClock] (default [clock.System]).
+//   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
 func NewRunner(
 	cat action.Catalog,
 	store Store,

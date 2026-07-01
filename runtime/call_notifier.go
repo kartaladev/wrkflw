@@ -107,7 +107,7 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 // SubInstanceCompleted / SubInstanceFailed trigger via deliver.
 //
 //   - cl: the CallLinkStore to claim pending notifications from.
-//   - deliver: wraps Runner.Deliver (the parent def is pre-resolved by NewCallNotifier).
+//   - deliver: wraps Runner.Deliver (the parent def is pre-resolved by DrainOnce via reg).
 //   - reg: resolves parent definition references (format "defID:version").
 //   - opts: optional configuration overrides (use [WithCallNotifierClock] to set the
 //     time source; default is clock.System() per ADR-0003).

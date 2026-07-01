@@ -27,6 +27,14 @@
 // is set alongside [WithBodyFunc], the BodyFunc reader is fully buffered into
 // memory (io.ReadAll) so the bytes are available for inspection; document this to
 // callers who otherwise expect streaming.
+//
+// # Response size limit
+//
+// The response body — and any buffered request body — is capped at a maximum
+// number of bytes read into memory (default 10 MiB) to guard against memory
+// exhaustion from a large or malicious upstream. Override the cap with
+// [WithMaxResponseSize]; a non-positive value disables it. A body exceeding the
+// cap fails with a non-retryable [ErrBodyTooLarge].
 package httpcall
 
 import (
@@ -171,7 +179,6 @@ func WithOutputKeys(status, body, headers string) Option {
 	return func(h *httpCall) { h.statusKey, h.bodyOutKey, h.hdrOutKey = status, body, headers }
 }
 
-// NewHTTPCall returns a service action that performs one HTTP request per Do.
 // WithMaxResponseSize bounds the response body (and any buffered request body)
 // read into memory, to n bytes. A non-positive n disables the bound. The
 // default is 10 MiB. A response exceeding the bound fails with a non-retryable
@@ -194,6 +201,9 @@ func readAllCapped(r io.Reader, max int64) ([]byte, error) {
 	return b, nil
 }
 
+// NewHTTPCall returns a service action that performs one HTTP request per Do,
+// mapping the response status, body, and headers into output variables. See the
+// package doc for the retry classification and response size limit.
 func NewHTTPCall(opts ...Option) action.ServiceAction {
 	h := &httpCall{
 		client:          &http.Client{Timeout: 30 * time.Second},
@@ -209,6 +219,12 @@ func NewHTTPCall(opts ...Option) action.ServiceAction {
 	return h
 }
 
+// Do resolves the request URL, builds and (optionally) validates the request
+// body, sends the request, and maps the response into the output keys. The
+// response body — and any buffered request body — is capped at maxResponseSize;
+// exceeding it returns a non-retryable [ErrBodyTooLarge]. Retry classification:
+// 4xx except 408/429 are non-retryable; 5xx, 408, 429, and transport errors are
+// retryable.
 func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, error) {
 	// 1. Resolve request URL: urlExpr takes precedence over baseURL.
 	requestURL := h.baseURL

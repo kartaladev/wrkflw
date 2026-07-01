@@ -33,7 +33,7 @@ type cacheEntry struct {
 //     may pass a fake clock in tests to advance time deterministically.
 //
 // Definitions are immutable per (defID, version), so caching them without
-// invalidation is safe (spec §6). The only eviction mechanism is TTL expiry.
+// invalidation is safe. The only eviction mechanism is TTL expiry.
 type CachingDefinitionRegistry struct {
 	backing DefinitionRegistry
 	ttl     time.Duration
