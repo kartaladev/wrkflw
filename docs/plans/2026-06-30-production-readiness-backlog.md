@@ -127,6 +127,22 @@ alerts + runbooks + `docs/observability.md`. Deferred: recursive ancestry trees;
 - **Evidence:** `transport/grpc/server.go` `ListInstances` sets `Limit: int(req.GetLimit())` raw, while the
   DLQ RPC and REST clamp via `runtime.NormalizeLimit`. Pre-existing, non-ops RPC. Small fix + bufconn test.
 
+### P1-G — Recursive instance lineage ⏭️ QUEUED (deferred from P1-A ops-visibility, 2026-07-01)
+Extend the single-hop lineage (ADR-0078) to full ancestry trees. The single-hop infrastructure already
+exists: ports `CallLineageReader{ParentOf,ChildrenOf}` / `ChainLineageReader{PredecessorOf,SuccessorsOf}`
+(pg+mysql+mem) and `runtime.NewLineageReader` assembler in `runtime/lineage.go`.
+- **Design leaning (pre-analyzed):** iterative app-level BFS **over the existing single-hop ports** (not a
+  recursive SQL CTE) — backend-agnostic (works identically for Postgres, MySQL, and Mem), no new
+  per-backend SQL, and cycle/depth guarding lives in one place (visited-set + maxDepth/maxNodes cap).
+- **Open design decisions to confirm before building:**
+  1. **Shape:** flat nodes + edges (cycle-safe, clean JSON/proto — recommended) vs nested tree.
+  2. **Scope:** ancestors only / descendants only / both directions.
+  3. **Relations:** call-activity (parent/child) only, chaining (predecessor/successor) only, or both combined.
+  4. **Cap behaviour:** on hitting maxDepth/maxNodes — truncate + set a `truncated` flag (recommended) vs error.
+  5. **Primary consumer:** human ops console (favors readable tree) vs programmatic graph tooling (favors flat).
+- **Transport:** new REST `GET /admin/instances/{id}/ancestry` (or extend the lineage endpoint with a
+  `?depth=` param) + a mirrored gRPC RPC; behind the existing default-deny admin gate.
+
 ## 🟡 P2 — Convenience / developer experience
 
 ### Missing capabilities (consumers hit these immediately)
