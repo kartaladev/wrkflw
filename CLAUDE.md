@@ -5,9 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 `wrkflw` is a **Go workflow engine, shipped as a library** — not an executable backend. The
-deliverable is an **importable Go module**; there is no daemon we own and run. The full
-intent lives in `REQUIREMENTS.md` — read it before any design work. The load-bearing
-properties that shape every decision:
+deliverable is an **importable Go module**; there is no daemon we own and run. It can be
+embedded directly in a consumer's Go application or assembled by the consumer into a
+standalone deployment (e.g. sidecar / container) reachable through the library's REST or gRPC
+surfaces. Read the load-bearing properties below before any design work — they shape every
+decision, and the Architecture section expands the rest:
 
 - **Library-first, always**. The product is the **module-root public API** (the exported
   packages at the repo root — e.g. `engine/`, `model/`, `runtime/`; **no `pkg/` prefix**, see
@@ -118,8 +120,8 @@ These are the seams to understand before touching code; they span multiple packa
   implemented as middleware and/or a set of HTTP handlers.
 
 **Before designing any of these for the first time**, run `superpowers:brainstorming`,
-do the "comprehensive research about workflow-management best practices" the requirements
-ask for, and record the decision as an ADR.
+do comprehensive research about workflow-management best practices (a standing project
+requirement), and record the decision as an ADR.
 
 ## Common Commands
 

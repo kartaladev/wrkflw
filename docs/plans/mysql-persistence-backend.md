@@ -27,12 +27,12 @@
 
 **Files:**
 - Modify: `go.mod`, `go.sum`
-- Modify: `CLAUDE.md` (Tech Stack table Database row), `REQUIREMENTS.md` (if it states the DB lock)
+- Modify: `CLAUDE.md` (Tech Stack table Database row)
 
 **Interfaces:** Produces: the `github.com/go-sql-driver/mysql` import availability.
 
 - [ ] **Step 1:** `go get github.com/go-sql-driver/mysql@latest`
-- [ ] **Step 2:** Update the Database row of the Tech Stack table to: `**PostgreSQL 17** (primary) or **MySQL 8.0+**, SQL-based` with a note pointing to ADR-0073. Make the same edit in `REQUIREMENTS.md` if it pins the DB.
+- [ ] **Step 2:** Update the Database row of the Tech Stack table to: `**PostgreSQL 17** (primary) or **MySQL 8.0+**, SQL-based` with a note pointing to ADR-0073.
 - [ ] **Step 3:** `go build ./...` — expect success.
 - [ ] **Step 4:** Commit `chore(mysql): add go-sql-driver/mysql dep; tech-stack table → Postgres|MySQL (ADR-0073)`.
 

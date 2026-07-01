@@ -48,7 +48,7 @@ modified**.
   the poll interval.
 - **Public surface:** parallel `*MySQL*` constructors on the root `persistence` package (taking
   `*sql.DB`, returning the same interface types) and `scheduling.WithMySQLTimerElector`. The tech-stack
-  table in `CLAUDE.md`/`REQUIREMENTS.md` is updated to read "PostgreSQL 17 (primary) or MySQL 8.0+".
+  table in `CLAUDE.md` is updated to read "PostgreSQL 17 (primary) or MySQL 8.0+".
 - **Delivery:** 5 TDD phases (Foundation → Relay → Correlation → Definitions/ops → Scheduling), each
   branched and merged green, tested against a MySQL 8.0 testcontainer via a new
   `database.RunTestMySQL` helper.

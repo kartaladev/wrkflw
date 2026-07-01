@@ -15,7 +15,7 @@ distinct decision with real product consequences:
 - **Route to an alternative path** (AWS Step Functions "Catch": after `Retry` exhausts, a matching
   `Catch` sends the token to an alternative state with the error injected) lets a definition author
   declare automatic recovery. This matches the existing engine feature set (`SLAFlow` already
-  routes a token down a named flow on SLA breach) and the REQUIREMENTS phrase "on breach, run
+  routes a token down a named flow on SLA breach) and the project requirement "on breach, run
   alternative action(s) then take an alternative path".
 - **Raise an incident** (Camunda: retries hit zero → a blocking incident; the token is *retained
   in place*, the instance keeps running, an admin diagnoses and bumps retries to resume) is the

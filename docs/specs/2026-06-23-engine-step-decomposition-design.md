@@ -2,9 +2,9 @@
 
 - Status: Approved (brainstorming), implementation deferred
 - Date: 2026-06-23
-- Relation: a late addition to the FOLLOWUPS resolution wave
+- Relation: a late addition to the follow-up resolution wave
   (`docs/specs/2026-06-23-followups-resolution-design.md`). Not one of the
-  original six FOLLOWUPS.md items; raised separately ("forgot to mention").
+  original six follow-up items; raised separately ("forgot to mention").
   Executes as a sub-project **between layout hygiene (①) and the Node-interface
   redesign (②)**.
 

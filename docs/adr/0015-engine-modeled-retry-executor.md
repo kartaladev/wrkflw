@@ -5,7 +5,7 @@
 
 ## Context
 
-REQUIREMENTS line 25 — *"A process error must be able to be retried. Consider also other
+A load-bearing project requirement — *"A process error must be able to be retried. Consider also other
 resilient aspect."* — is unimplemented. `engine.ActionFailed` carries a `Retryable bool` flag,
 but nothing acts on it: a failed `ServiceAction` goes straight to `propagateError`
 (error-boundary routing, else `StatusFailed`). There is no backoff, no attempt cap, no

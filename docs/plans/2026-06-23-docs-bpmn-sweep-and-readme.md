@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Go 1.25.7; module `github.com/zakyalvan/krtlwrkflw`; PostgreSQL 17; flat root layout (ADR-0004).
-- ⑤ scope is **Go code doc comments only**. `REQUIREMENTS.md` and `CLAUDE.md` deliberately document the BPMN inspiration as design intent and are **out of scope** — do not edit them.
+- ⑤ scope is **Go code doc comments only**. `CLAUDE.md` deliberately documents the BPMN inspiration as design intent and is **out of scope** — do not edit it.
 - Keep domain vocabulary: "gateway", "sequence flow", "compensation", "boundary event", "error code", "node". Remove only phrasing that asserts conformance/compatibility ("BPMN-flavored", "the BPMN default", "implements BPMN error propagation", "per the BPMN spec").
 - Conventional Commits `docs(model)` / `docs(readme)`. Ask before committing.
 - This sub-project executes **last** — the README must reflect the post-1/2/3 API (front-door `doc.go`, 14 public packages, `model.NewDefinition`/constructors/`ParseYAML`, `runtime.InstanceSnapshot`/`ActionableView`).
@@ -96,7 +96,7 @@ Read these Example tests for accurate, compiling usage to adapt into the README 
 - [ ] **Step 2: Write the README with these sections (each must be concrete, no TODOs):**
 
 1. **Title + one-line tagline** — "wrkflw — an embeddable Go workflow engine (library, not a daemon)."
-2. **What it is** — library-first: a single importable module (`github.com/zakyalvan/krtlwrkflw`) a consumer embeds in their own app; transports (REST/gRPC) are *mountable*, not shipped binaries; no owned `main`. Token-based execution over process definitions; concepts inspired by BPMN but not BPMN-compatible. (Pull the elevator pitch from REQUIREMENTS.md §1.)
+2. **What it is** — library-first: a single importable module (`github.com/zakyalvan/krtlwrkflw`) a consumer embeds in their own app; transports (REST/gRPC) are *mountable*, not shipped binaries; no owned `main`. Token-based execution over process definitions; concepts inspired by BPMN but not BPMN-compatible. (Pull the elevator pitch from CLAUDE.md's Project section.)
 3. **Requirements** — Go 1.25, PostgreSQL 17, Docker (only for running the testcontainers-based tests).
 4. **Install** — `go get github.com/zakyalvan/krtlwrkflw`.
 5. **Quickstart** — two sub-sections:
@@ -131,7 +131,7 @@ Expected: clean.
 
 - [ ] `grep -rin "bpmn-flavored\|bpmn compatible\|fully bpmn" --include="*.go" .` returns nothing.
 - [ ] Domain vocabulary ("gateway", "compensation", "boundary event", "BPMN node id" attributions) is intact — only conformance claims were removed.
-- [ ] `REQUIREMENTS.md` and `CLAUDE.md` are unedited.
+- [ ] `CLAUDE.md` is unedited.
 - [ ] `README.md` exists, covers all 15 sections, and its quickstart compiles against the real API.
 - [ ] `go build ./...` clean; `golangci-lint run ./...` clean.
 
@@ -141,6 +141,6 @@ Executes **last**: the README documents the front-door `doc.go` (sub-project 1),
 
 ## Out of scope
 
-- Editing `REQUIREMENTS.md`/`CLAUDE.md` (intentional design-intent docs).
+- Editing `CLAUDE.md` (intentional design-intent doc).
 - Renaming BPMN-derived concept names (vocabulary stays).
 - A `docs/` site or `llms.txt` (not requested).

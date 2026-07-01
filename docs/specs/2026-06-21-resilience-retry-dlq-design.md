@@ -2,7 +2,7 @@
 
 Status: **Approved** (design forks decided 2026-06-21) · Date: 2026-06-21
 Sub-project: **Resilience** — second track of the deferred-backlog run.
-Drives REQUIREMENTS.md line 25: *"A process error must be able to be retried. Consider also
+Drives the project requirement: *"A process error must be able to be retried. Consider also
 other resilient aspect."*
 
 This spec is the contract. When a plan and this spec disagree, **the spec wins** — except where

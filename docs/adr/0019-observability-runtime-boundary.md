@@ -5,7 +5,7 @@
 
 ## Context
 
-REQUIREMENTS line 17 — *"This library must be able to expose process metrics, enable traces,
+A load-bearing project requirement — *"This library must be able to expose process metrics, enable traces,
 using slog golang logger."* — is unimplemented across the codebase except for a single OTel span
 emitted by the watermill eventing adapter (`eventing.publish`).
 

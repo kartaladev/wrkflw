@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the engine expose process metrics, emit OpenTelemetry traces, and log via `slog` across every layer **outside** the pure engine core, fulfilling the REQUIREMENTS line *"This library must be able to expose process metrics, enable traces, using slog golang logger."*
+**Goal:** Make the engine expose process metrics, emit OpenTelemetry traces, and log via `slog` across every layer **outside** the pure engine core, fulfilling the project requirement *"This library must be able to expose process metrics, enable traces, using slog golang logger."*
 
 **Architecture:** The **runtime is the observability boundary**. `engine/` and `model/` stay pure (zero OTel imports, enforced by a new guard test). The runtime owns a `logger`/`tracer`/`meter` and instruments *around* the pure `engine.Step` call and the side-effecting `perform`. Transports own request spans with manual W3C propagation (no contrib deps). All wiring uses per-component functional options (`WithLogger`/`WithTracerProvider`/`WithMeterProvider`) mirroring the merged **eventing** adapter, defaulting to `slog.Default()` + the OTel global providers + noop fallback.
 
@@ -1194,7 +1194,7 @@ Expected: PASS.
 
 - [ ] **Step 3: Write ADR-0019 (Nygard template)**
 
-Create `docs/adr/0019-observability-runtime-boundary.md` with Status/Date, Context (REQUIREMENTS line; the purity constraint; why OTel-direct over an in-repo port; why manual transport spans over contrib), Decision (the runtime is the boundary; the span tree; the full metric catalog; slog conventions; per-component options + globals default), Consequences (engine stays pure & guarded; consumer configures via OTel globals or per-component; deferred follow-ups from spec §10).
+Create `docs/adr/0019-observability-runtime-boundary.md` with Status/Date, Context (the project requirement; the purity constraint; why OTel-direct over an in-repo port; why manual transport spans over contrib), Decision (the runtime is the boundary; the span tree; the full metric catalog; slog conventions; per-component options + globals default), Consequences (engine stays pure & guarded; consumer configures via OTel globals or per-component; deferred follow-ups from spec §10).
 
 - [ ] **Step 4: Update HANDOVER.md**
 

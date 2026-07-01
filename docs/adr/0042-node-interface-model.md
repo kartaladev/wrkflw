@@ -5,7 +5,7 @@
 
 ## Context
 
-FOLLOWUPS.md item ② observed that `model.Node` was a flat ~35-field god-struct
+A design follow-up observed that `model.Node` was a flat ~35-field god-struct
 where most fields are meaningful for only one `NodeKind` (e.g. `DefRef` only on
 a call activity, `AttachedTo` only on a boundary event). This invites invalid
 states (any field settable on any kind) and obscures each kind's real shape.
@@ -58,7 +58,7 @@ its valid fields.
   and `kind` discriminator, then `Validate`. One validation path, three
   authoring front-ends (Go constructors/builder, YAML, existing JSON/XML).
   Adopts `gopkg.in/yaml.v3` (v3.0.1) — the de-facto standard, recorded here per
-  the locked-tech-stack rule because YAML authoring is an explicit REQUIREMENTS
+  the locked-tech-stack rule because YAML authoring is an explicit project
   goal.
 - Per-kind validation replaces the old single field-switch in `model/validate.go`
   with type-asserts; every existing sentinel error and message is preserved.

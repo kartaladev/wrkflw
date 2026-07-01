@@ -18,7 +18,7 @@
 - `NodeKind` already marshals to lowerCamelCase strings (`model/nodekind_json.go`): `startEvent`, `serviceTask`, `userTask`, `receiveTask`, `sendTask`, `businessRuleTask`, `subProcess`, `callActivity`, `eventSubProcess`, `intermediateCatchEvent`, `intermediateThrowEvent`, `boundaryEvent`, `exclusiveGateway`, `parallelGateway`, `inclusiveGateway`, `eventBasedGateway`, `startEvent`, `endEvent`, `terminateEndEvent`, `errorEndEvent`. Reuse this as the JSON `kind` discriminator.
 - Conventional Commits scoped `feat(model)`, `refactor(engine)`, `feat(model)` for builder/yaml. Ask before committing (executor handles approval).
 - New ADR required: **ADR-0042** (Node-as-interface model). Author it in Task 7.
-- A new third-party dependency (`gopkg.in/yaml.v3`) is introduced in Task 6. Per CLAUDE.md the tech stack is locked, but YAML authoring is an explicit REQUIREMENTS goal; record the dependency choice in ADR-0042's consequences (or a short note) — `yaml.v3` is the de-facto standard and already transitively present in most Go trees.
+- A new third-party dependency (`gopkg.in/yaml.v3`) is introduced in Task 6. Per CLAUDE.md the tech stack is locked, but YAML authoring is an explicit project goal; record the dependency choice in ADR-0042's consequences (or a short note) — `yaml.v3` is the de-facto standard and already transitively present in most Go trees.
 
 ## The per-kind field map (authoritative for Tasks 1 & 3)
 
