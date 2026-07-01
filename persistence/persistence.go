@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -158,7 +159,14 @@ var ErrInstanceExists = runtime.ErrInstanceExists
 //	persistence.Migrate(ctx, pool)
 //	store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
 //	runner := runtime.NewRunner(nil, store)
-func OpenPostgres(_ context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
+func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
+	q, err := database.From(pool)
+	if err != nil {
+		return nil, err
+	}
+	if err := database.ProbeUTC(ctx, q, database.Postgres); err != nil {
+		return nil, err
+	}
 	return postgres.NewStore(pool, opts...), nil
 }
 

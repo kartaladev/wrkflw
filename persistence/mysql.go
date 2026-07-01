@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	mysqlstore "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -94,7 +95,14 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 //	persistence.MigrateMySQL(ctx, db)
 //	store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
 //	runner := runtime.NewRunner(nil, store)
-func OpenMySQL(_ context.Context, db *sql.DB, opts ...MySQLOption) (Store, error) {
+func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, error) {
+	q, err := database.From(db)
+	if err != nil {
+		return nil, err
+	}
+	if err := database.ProbeUTC(ctx, q, database.MySQL); err != nil {
+		return nil, err
+	}
 	return mysqlstore.NewStore(db, opts...), nil
 }
 
