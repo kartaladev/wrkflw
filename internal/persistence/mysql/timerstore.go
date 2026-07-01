@@ -40,6 +40,7 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error
 		if err := rows.Scan(&a.InstanceID, &a.DefID, &a.DefVersion, &a.TimerID, &a.FireAt, &kind); err != nil {
 			return nil, fmt.Errorf("workflow-persistence-mysql: scan armed timer: %w", err)
 		}
+		a.FireAt = a.FireAt.UTC() // normalize DATETIME(6) to UTC-located (guard against non-UTC loc)
 		a.Kind = engine.TimerKind(kind)
 		out = append(out, a)
 	}
@@ -62,6 +63,10 @@ func (s *TimerStore) Stats(ctx context.Context) (runtime.TimerStats, error) {
 	).Scan(&armed, &nextFireAt)
 	if err != nil {
 		return runtime.TimerStats{}, fmt.Errorf("workflow-persistence-mysql: timer store: stats: %w", err)
+	}
+	if nextFireAt != nil {
+		t := nextFireAt.UTC() // normalize DATETIME(6) to UTC-located (guard against non-UTC loc)
+		nextFireAt = &t
 	}
 	return runtime.TimerStats{
 		Armed:      armed,
