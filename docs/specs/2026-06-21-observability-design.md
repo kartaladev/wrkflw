@@ -2,7 +2,7 @@
 
 Status: **Approved** (design forks decided 2026-06-21) · Date: 2026-06-21
 Sub-project: **Observability** — third track of the deferred-backlog run.
-Drives REQUIREMENTS.md: *"This library must be able to expose process metrics, enable traces,
+Drives the project requirement: *"This library must be able to expose process metrics, enable traces,
 using slog golang logger."*
 
 This spec is the contract. When a plan and this spec disagree, **the spec wins** — except where

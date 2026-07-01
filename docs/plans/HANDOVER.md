@@ -376,7 +376,7 @@ and pick up the next work. Read it top to bottom before starting.
 > - **Deferred by plan:** gRPC `GetInstanceSnapshot` RPC (mirror the REST task); consolidate the
 >   duplicated status-string mapping (`runtime.StatusString` vs `transport/rest`'s private one).
 >
-> Next free ADR after the two reserved for chaining: **0047**. `FOLLOWUPS.md` is committed on `main`.
+> Next free ADR after the two reserved for chaining: **0047**.
 
 ---
 
@@ -485,12 +485,12 @@ SDD → opus whole-branch review → merge to main → push`. Confirm scope with
 
 1. **Correctness & tests** — ✅ COMPLETE, merged `314358c` (2026-06-21). See the
    "Correctness & tests hardening sub-project" section below.
-2. **Resilience (retry/backoff/DLQ)** — ✅ COMPLETE, merged (2026-06-21). The named REQUIREMENTS
-   feature ("A process error must be able to be retried"). Engine-modeled retry executor,
+2. **Resilience (retry/backoff/DLQ)** — ✅ COMPLETE, merged (2026-06-21). The named project
+   requirement ("A process error must be able to be retried"). Engine-modeled retry executor,
    catch-flow→incident exhaustion, outbox relay poison isolation + DLQ, idempotency. ADRs
    0015–0018. See the "Resilience (retry/backoff/DLQ) sub-project" section below.
 3. **Observability** — ✅ COMPLETE, merged (2026-06-22). Metrics + traces + slog across
-   runtime/transports/scheduling/eventing/persistence-relay (REQUIREMENTS line 17). ADR-0019.
+   runtime/transports/scheduling/eventing/persistence-relay (the observability requirement). ADR-0019.
    See the "Observability (metrics/traces/slog) sub-project" section below.
 4. **Performance/caching** — ✅ COMPLETE, branch `feat/performance-caching` (2026-06-22).
    Owned-instance write-through cache (`CachingStore`), history/snapshot cap (`WithHistoryCap`),
@@ -1072,9 +1072,8 @@ in `docs/adr/`. The design spec `docs/specs/2026-06-20-engine-core-design.md` is
 A library-first, BPMN-flavored Go workflow engine (Go 1.25), shipped as an importable module (no
 daemon we own). Authoritative references — **read these first**:
 
-- `REQUIREMENTS.md` — original loose requirements.
-- `CLAUDE.md` — project rules (TDD discipline, root-package layout, locked tech stack, required Go
-  skills). **Binding.**
+- `CLAUDE.md` — project rules and intent (the load-bearing library-first properties, TDD
+  discipline, root-package layout, locked tech stack, required Go skills). **Binding.**
 - `docs/specs/2026-06-20-engine-core-design.md` — the engine-core design **spec** (the contract).
   When a plan and the spec disagree, the spec wins.
 - ADRs: `0002` (pure stepper returning **Commands** driven by **Triggers**), `0003` (time via

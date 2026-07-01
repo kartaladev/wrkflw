@@ -5,7 +5,7 @@
 
 ## Context
 
-FOLLOWUPS.md item ③ asked that a process instance be serializable to JSON with
+A design follow-up asked that a process instance be serializable to JSON with
 "complete information," so a front end can render process history and decide what
 to do next (especially for human-task nodes).
 

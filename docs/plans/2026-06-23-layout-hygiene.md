@@ -57,7 +57,7 @@ Create `docs/adr/0041-evict-internal-packages-from-public-root.md` with exactly 
 
 ## Context
 
-FOLLOWUPS.md item ① proposed introducing a `pkg/` directory and moving
+A design follow-up proposed introducing a `pkg/` directory and moving
 "plumbing" out of the module root so the root holds "only workflow code". A
 review (docs/specs/2026-06-23-followups-resolution-design.md) found:
 
@@ -264,7 +264,8 @@ The root package is named `wrkflw` (the product name used throughout the codebas
 // Package wrkflw is the documentation landing for the wrkflw workflow engine —
 // an importable Go library (not a daemon) that a consumer embeds in their own
 // application. This package exports nothing; it exists only as a "start here"
-// map of the public packages. See REQUIREMENTS.md for the full intent.
+// map of the public packages. See CLAUDE.md for the project intent and the
+// locked architectural properties.
 //
 // # Start here
 //

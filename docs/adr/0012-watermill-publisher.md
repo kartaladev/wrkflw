@@ -12,7 +12,7 @@ snapshot, and a broker-agnostic `Relay` drains the table (`FOR UPDATE SKIP
 LOCKED`, at-least-once) by calling a `runtime.Publisher` once per claimed row.
 That `Publisher` port is the eventing abstraction; no broker is wired yet.
 
-The locked tech stack (CLAUDE.md, REQUIREMENTS.md §11) mandates
+The locked tech stack (CLAUDE.md) mandates
 [`ThreeDotsLabs/watermill`](https://github.com/ThreeDotsLabs/watermill) with the
 **outbox publishing pattern**, behind an in-repo abstraction so the broker stays
 swappable — watermill must **never** be imported from engine/workflow code. Two

@@ -146,7 +146,7 @@ exists: ports `CallLineageReader{ParentOf,ChildrenOf}` / `ChainLineageReader{Pre
 ## 🟡 P2 — Convenience / developer experience
 
 ### Missing capabilities (consumers hit these immediately)
-- **No BPMN2 XML loader** — REQUIREMENTS §1 expects it; only YAML + Go builder exist. Either implement a
+- **No BPMN2 XML loader** — the project's BPMN2-inspired design intent expects it; only YAML + Go builder exist. Either implement a
   basic loader or fix the contradictory README table row (line 210).
 - **Thin built-in action catalog** — only http/email/transform/log. Realistic consumers need:
   **delay/sleep, DB query, gRPC call, Kafka/webhook publish, Slack, sub-workflow start-and-wait,
@@ -158,7 +158,7 @@ exists: ports `CallLineageReader{ParentOf,ChildrenOf}` / `ChainLineageReader{Pre
   CI can't consume it cleanly. Add `ValidationResult{severity, node, message}` + a `validate` CLI.
 - **No YAML serialization** — `model/yaml.go` `ParseYAML` is read-only; can't round-trip a Go-built
   definition back to YAML for review / source control.
-- **No definition versioning / hot-redeploy / instance-migration** story (REQUIREMENTS §21 "minimize
+- **No definition versioning / hot-redeploy / instance-migration** story (the project requirement "minimize
   migration effort" from the v1 engine), and **no v1 migration guide**.
 - **No admin UI** — REST/gRPC admin routes only; operators use curl.
 

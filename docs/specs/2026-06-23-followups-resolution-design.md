@@ -1,14 +1,14 @@
-# FOLLOWUPS.md Resolution — Design & Decisions
+# Follow-Up Items Resolution — Design & Decisions
 
 - Status: Approved (brainstorming), implementation deferred
 - Date: 2026-06-23
-- Source: `FOLLOWUPS.md` (uncommitted discussion doc)
+- Source: a follow-up discussion doc (uncommitted; not retained in the repo)
 - Method: senior-architect devil's-advocate review of each item against the
   existing codebase and ADRs, then collaborative decision per item.
 
 ## Purpose
 
-`FOLLOWUPS.md` is a discussion doc that bundles six follow-up items of very
+The source was a discussion doc that bundled six follow-up items of very
 different risk classes under one flat list. This spec records the analysis,
 the **decisions** (including two outright rejections), and a dependency-ordered
 **decomposition** into sub-projects. Each sub-project gets its own
@@ -158,8 +158,8 @@ spec → plan → implement cycle:
 1. **Layout hygiene (①)** — move `database` + `expreval` to `internal/`, add
    root `doc.go`, ADR reaffirming flat layout. Low risk; derisks the repo map
    before the README. *First.*
-1.5. **engine/step.go decomposition** — a late addition (not a FOLLOWUPS.md
-   item; full design in `docs/specs/2026-06-23-engine-step-decomposition-design.md`,
+1.5. **engine/step.go decomposition** — a late addition (not an original
+   follow-up item; full design in `docs/specs/2026-06-23-engine-step-decomposition-design.md`,
    ADR-0044). Pure refactor of the 3251-line god file into a node-kind strategy
    registry + extracted trigger handlers + collaborator files. Inserted **between
    ① and ②** so ②'s engine migration edits small per-kind files, not the monolith.

@@ -5,7 +5,7 @@
 
 ## Context
 
-FOLLOWUPS.md item ① proposed introducing a `pkg/` directory and moving
+A design follow-up proposed introducing a `pkg/` directory and moving
 "plumbing" out of the module root so the root holds "only workflow code". A
 review (docs/specs/2026-06-23-followups-resolution-design.md) found:
 
