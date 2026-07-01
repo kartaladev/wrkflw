@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -25,6 +26,12 @@ func From(conn any) (Querier, error) {
 		return pgxQuerier{c}, nil
 	case pgx.Tx:
 		return pgxQuerier{c}, nil
+	case *sql.DB:
+		return sqlQuerier{c}, nil
+	case *sql.Tx:
+		return sqlQuerier{c}, nil
+	case *sql.Conn:
+		return sqlQuerier{c}, nil
 	default:
 		return nil, fmt.Errorf("%w: %T", ErrUnsupportedConn, conn)
 	}
