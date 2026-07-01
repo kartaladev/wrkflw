@@ -1,7 +1,7 @@
 # 0079. Neutral database transaction toolkit (internal/database + internal/database/transaction)
 
 Status: **Accepted — 2026-07-02.**
-Plan: `docs/plans/2026-07-02-database-transaction-toolkit.md`.
+Plan: `docs/plans/2026-07-02-database-toolkit-transactions-time-correctness.md`.
 Relates to: ADR-0073 (MySQL persistence backend), ADR-0067 (transactional outbox).
 
 ## Context
@@ -52,8 +52,9 @@ type Querier interface {
 
 ### 2. From(conn any) type-switch dispatcher
 
-We provide a `From(conn any) Querier` function that accepts any of the following and
-returns a `Querier` wrapping it:
+We provide a `From(conn any) (Querier, error)` function that accepts any of the
+following and returns a `Querier` wrapping it, or an `ErrUnsupportedConn` error for
+unknown types:
 
 - `*pgxpool.Pool` — Postgres connection pool (pgx)
 - `pgx.Tx` — Postgres transaction (pgx)
@@ -71,22 +72,30 @@ sites clean while isolating driver-specific wrapping to one function.
 ### 3. Tx interface and BeginTx
 
 `database.Tx` extends `Querier` with `Commit` and `Rollback`. `database.BeginTx(ctx,
-conn, opts)` begins a transaction against a `Querier`, returning a `database.Tx`. This
-provides a uniform transaction-begin API across both drivers.
+conn)` begins a transaction on the given connection pool (`*pgxpool.Pool` or `*sql.DB`),
+returning a `database.Tx`. This provides a uniform transaction-begin API across both
+drivers. Any other conn type returns `ErrUnsupportedConn`.
 
 ### 4. Ambient context-propagated transaction (internal/database/transaction)
 
-The `transaction` package implements a flat-join ambient transaction pattern:
+The `transaction` package implements a flat-join ambient transaction pattern with an
+explicit, callback-free API:
 
-- **`Begin(ctx, querier, fn)`** — opens a new transaction, stores it in `ctx`, runs
-  `fn`, and commits or rolls back based on `fn`'s return value. The caller is the
-  *owner*.
-- **`JoinOrBegin(ctx, querier, fn)`** — if a transaction is already stored in `ctx`,
-  joins it (inner participant); otherwise behaves as `Begin` (new owner).
+- **`Begin(ctx, conn) (Querier, context.Context, error)`** — opens a new transaction
+  on `conn`, stores it in a derived context, and returns the owner `Querier` plus the
+  derived context. The owner calls `Commit` or `Rollback` manually; there is no
+  callback. `Commit` honors a rollback-only mark (rolls back instead of committing if
+  any participant has called `MarkRollback`).
+- **`JoinOrBegin(ctx, conn) (Querier, error)`** — if an ambient transaction is already
+  stored in `ctx`, returns a joined `Querier` (its `Commit` is a no-op; its `Rollback`
+  marks the whole unit rollback-only); otherwise starts a fresh leaf transaction via
+  `Begin`. The fresh leaf is **not** propagated into a new derived context — callers
+  who need deeper nesting must use `Begin` directly.
 - **`MarkRollback(ctx)`** — marks the ambient transaction rollback-only. Inner
-  participants call this instead of rolling back directly.
-- **`IsRollbackMarked(ctx) bool`** — lets the owner check whether any inner
-  participant requested rollback before deciding to commit.
+  participants call this instead of rolling back directly; no-op if no ambient
+  transaction exists.
+- **`IsRollbackMarked(ctx) bool`** — reports whether the ambient transaction is
+  rollback-only. Returns `false` if no ambient transaction exists in `ctx`.
 
 **Flat-join semantics.** An inner `JoinOrBegin` commit is a no-op; only the outermost
 owner commits. An inner call to `MarkRollback` sets a flag that the owner observes
