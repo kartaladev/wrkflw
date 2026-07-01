@@ -19,10 +19,13 @@ func (t pgxTx) Commit(ctx context.Context) error   { return t.tx.Commit(ctx) }
 func (t pgxTx) Rollback(ctx context.Context) error { return t.tx.Rollback(ctx) }
 
 // pgxDBTX is the minimal pgx querier satisfied by *pgxpool.Pool and pgx.Tx.
+// Both types also provide SendBatch, so it is included here for clarity instead
+// of being asserted inline inside SendBatch.
 type pgxDBTX interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
 type pgxQuerier struct{ db pgxDBTX }
@@ -58,6 +61,33 @@ func (r pgxRows) Close() error           { r.rows.Close(); return nil } // pgx C
 type pgxRow struct{ row pgx.Row }
 
 func (r pgxRow) Scan(dest ...any) error { return r.row.Scan(dest...) }
+
+// SendBatch implements [Batcher] by forwarding to the underlying pgx native batch
+// pipeline. It panics if b is not the concrete *batch type returned by [NewBatch].
+func (q pgxQuerier) SendBatch(ctx context.Context, b Batch) BatchResults {
+	pb := &pgx.Batch{}
+	for _, it := range b.(*batch).items {
+		pb.Queue(it.query, it.args...)
+	}
+	return pgxBatchResults{q.db.SendBatch(ctx, pb)}
+}
+
+type pgxBatchResults struct{ br pgx.BatchResults }
+
+func (r pgxBatchResults) Exec() (Result, error) {
+	ct, err := r.br.Exec()
+	return pgxResult{ct}, err
+}
+
+func (r pgxBatchResults) Query() (Rows, error) {
+	rows, err := r.br.Query()
+	if err != nil {
+		return nil, err
+	}
+	return pgxRows{rows}, nil
+}
+
+func (r pgxBatchResults) Close() error { return r.br.Close() }
 
 // compile-time checks that the concrete pgx types satisfy the internal interface.
 var (
