@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
@@ -26,4 +28,26 @@ func TestProbeUTCPassesOnPostgres(t *testing.T) {
 	if err := database.ProbeUTC(t.Context(), q, database.Postgres); err != nil {
 		t.Fatalf("probe: %v", err)
 	}
+}
+
+// TestProbeUTCPassesOnMySQL verifies the MySQL probe path (loc=UTC DSN) passes.
+// The shared RunTestMySQL helper configures parseTime=true&loc=UTC, so the
+// TIMESTAMP literal is read back as UTC and the instant matches.
+func TestProbeUTCPassesOnMySQL(t *testing.T) {
+	db := dbtest.RunTestMySQL(t)
+	q, err := database.From(db)
+	require.NoError(t, err)
+	require.NoError(t, database.ProbeUTC(t.Context(), q, database.MySQL))
+}
+
+// TestProbeUTCUnknownDialect verifies that an unknown Dialect constant is
+// rejected with a descriptive error (covers the default branch in ProbeUTC).
+func TestProbeUTCUnknownDialect(t *testing.T) {
+	pool := dbtest.RunTestDatabase(t)
+	q, err := database.From(pool)
+	require.NoError(t, err)
+
+	err = database.ProbeUTC(t.Context(), q, database.Dialect(99))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown dialect")
 }
