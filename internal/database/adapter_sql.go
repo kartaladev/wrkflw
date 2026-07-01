@@ -61,6 +61,41 @@ type sqlRow struct{ row *sql.Row }
 
 func (r sqlRow) Scan(dest ...any) error { return r.row.Scan(dest...) }
 
+// SendBatch emulates batching for database/sql drivers by executing each queued
+// statement sequentially. The results are identical to a native batch — every
+// queued statement is executed in order — but there are no round-trip savings.
+func (q sqlQuerier) SendBatch(ctx context.Context, b Batch) BatchResults {
+	return &sqlBatchResults{ctx: ctx, q: q, items: b.(*batch).items}
+}
+
+// sqlBatchResults steps through queued statements one by one, delegating to the
+// underlying sqlQuerier. It satisfies [BatchResults].
+type sqlBatchResults struct {
+	ctx   context.Context
+	q     sqlQuerier
+	items []queued
+	i     int
+}
+
+func (r *sqlBatchResults) Exec() (Result, error) {
+	it := r.items[r.i]
+	r.i++
+	return r.q.Exec(r.ctx, it.query, it.args...)
+}
+
+func (r *sqlBatchResults) Query() (Rows, error) {
+	it := r.items[r.i]
+	r.i++
+	return r.q.Query(r.ctx, it.query, it.args...)
+}
+
+// Close is a no-op for the sql emulation path — there is no server-side cursor
+// or pipeline to release.
+func (r *sqlBatchResults) Close() error { return nil }
+
+// Compile-time assertion: sqlQuerier implements Batcher.
+var _ Batcher = sqlQuerier{}
+
 // Compile-time assertions: all three driver types satisfy sqlDBTX.
 var (
 	_ sqlDBTX = (*sql.DB)(nil)
