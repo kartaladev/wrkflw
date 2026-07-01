@@ -30,7 +30,7 @@ func TestSQLBatcherEmulates(t *testing.T) {
 	batch.Queue(`INSERT INTO batcher_emulate_t VALUES (?)`, 2)
 
 	br := b.SendBatch(t.Context(), batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 
 	for i := range 2 {
 		_, execErr := br.Exec()

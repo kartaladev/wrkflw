@@ -3,7 +3,9 @@ package database
 import "context"
 
 // Batch accumulates queued statements to run together.
-type Batch interface{ Queue(query string, args ...any) }
+type Batch interface {
+	Queue(query string, args ...any)
+}
 
 // Batcher sends a Batch. A Querier obtained from [From] implements Batcher when
 // the underlying driver supports batching. The pgx adapter pipelines natively;

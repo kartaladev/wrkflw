@@ -19,7 +19,7 @@ func TestPgxBatcher(t *testing.T) {
 	batch.Queue(`INSERT INTO b_t VALUES ($1)`, 1)
 	batch.Queue(`INSERT INTO b_t VALUES ($1)`, 2)
 	br := b.SendBatch(t.Context(), batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 	for range 2 {
 		if _, err := br.Exec(); err != nil {
 			t.Fatalf("batch exec: %v", err)
