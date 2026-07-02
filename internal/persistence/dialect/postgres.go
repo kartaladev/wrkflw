@@ -97,3 +97,23 @@ func (postgres) IsRetryableConflict(err error) bool {
 	var pg *pgconn.PgError
 	return errors.As(err, &pg) && pg.Code == "40001"
 }
+
+// IncidentCountExpr returns the Postgres JSONB expression that counts incidents
+// stored in the snapshot column. jsonb_typeof guards against a missing or non-array
+// Incidents key; jsonb_array_length yields the count when the key is present.
+func (postgres) IncidentCountExpr() string {
+	return `CASE WHEN jsonb_typeof(snapshot->'Incidents') = 'array'
+	             THEN jsonb_array_length(snapshot->'Incidents')
+	             ELSE 0 END AS incident_count`
+}
+
+// KeysetCursorPredicate returns the Postgres row-value keyset predicate.
+// Postgres evaluates (col1, col2) < ($n, $m) correctly for TIMESTAMPTZ
+// and VARCHAR comparisons, matching the MemStore skip logic exactly.
+func (postgres) KeysetCursorPredicate() string {
+	return "AND (started_at, instance_id) < (?, ?) "
+}
+
+// KeysetCursorArgCount returns 2 because Postgres row-value comparison
+// binds cursorTime once and cursorID once.
+func (postgres) KeysetCursorArgCount() int { return 2 }

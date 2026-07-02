@@ -105,3 +105,25 @@ func (sqliteDialect) IsRetryableConflict(err error) bool {
 	var se *sqlitedriver.Error
 	return errors.As(err, &se) && (se.Code() == sqlitelib.SQLITE_BUSY || se.Code() == sqlitelib.SQLITE_LOCKED)
 }
+
+// IncidentCountExpr returns the SQLite JSON1 expression that counts incidents
+// stored in the snapshot TEXT column. json_type returns NULL when the path is
+// absent; the CASE guard evaluates to 0 in that case.
+func (sqliteDialect) IncidentCountExpr() string {
+	return `CASE WHEN json_type(snapshot, '$.Incidents') = 'array'
+	             THEN json_array_length(snapshot, '$.Incidents')
+	             ELSE 0 END AS incident_count`
+}
+
+// KeysetCursorPredicate returns the SQLite keyset cursor predicate. SQLite does
+// not guarantee correct row-value comparison semantics for mixed-type columns,
+// so the predicate uses the same explicit OR decomposition as MySQL.
+// Note: started_at is stored as RFC3339Nano TEXT, so lexicographic < and =
+// comparisons work correctly when timestamps are normalised to UTC (ADR-0080).
+func (sqliteDialect) KeysetCursorPredicate() string {
+	return "AND (started_at < ? OR (started_at = ? AND instance_id < ?)) "
+}
+
+// KeysetCursorArgCount returns 3 because the SQLite predicate binds cursorTime
+// twice (once for < and once for =) then cursorID.
+func (sqliteDialect) KeysetCursorArgCount() int { return 3 }

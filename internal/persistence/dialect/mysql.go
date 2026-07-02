@@ -91,3 +91,24 @@ func (mysql) IsRetryableConflict(err error) bool {
 	var me *mysqldriver.MySQLError
 	return errors.As(err, &me) && (me.Number == 1213 || me.Number == 1205)
 }
+
+// IncidentCountExpr returns the MySQL JSON expression that counts incidents
+// stored in the snapshot column. JSON_TYPE returns NULL when the path is
+// absent, so the CASE guard covers missing or null Incidents keys.
+func (mysql) IncidentCountExpr() string {
+	return `CASE WHEN JSON_TYPE(JSON_EXTRACT(snapshot, '$.Incidents')) = 'ARRAY'
+	             THEN JSON_LENGTH(JSON_EXTRACT(snapshot, '$.Incidents'))
+	             ELSE 0 END AS incident_count`
+}
+
+// KeysetCursorPredicate returns the MySQL keyset cursor predicate using an
+// explicit OR decomposition. MySQL has no cross-type row-value comparison
+// nullability guarantees for DESC cursors, so the condition is spelled out:
+// started_at < ? OR (started_at = ? AND instance_id < ?).
+func (mysql) KeysetCursorPredicate() string {
+	return "AND (started_at < ? OR (started_at = ? AND instance_id < ?)) "
+}
+
+// KeysetCursorArgCount returns 3 because the MySQL predicate binds cursorTime
+// twice (once for < and once for =) then cursorID.
+func (mysql) KeysetCursorArgCount() int { return 3 }

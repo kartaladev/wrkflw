@@ -95,6 +95,50 @@ type Dialect interface {
 	// IsRetryableConflict reports whether err represents a transient
 	// serialization or deadlock error that the caller should retry.
 	IsRetryableConflict(err error) bool
+
+	// IncidentCountExpr returns a dialect-specific SQL expression that computes
+	// the number of incidents stored in the snapshot JSON column. The expression
+	// must alias itself as incident_count and evaluate to an integer (0 when the
+	// Incidents key is absent or not an array). It is embedded directly into the
+	// SELECT column list of the instance-lister query.
+	//
+	// Example outputs:
+	//   Postgres: "CASE WHEN jsonb_typeof(snapshot->'Incidents') = 'array'
+	//                   THEN jsonb_array_length(snapshot->'Incidents')
+	//                   ELSE 0 END AS incident_count"
+	//   MySQL:    "CASE WHEN JSON_TYPE(JSON_EXTRACT(snapshot, '$.Incidents')) = 'ARRAY'
+	//                   THEN JSON_LENGTH(JSON_EXTRACT(snapshot, '$.Incidents'))
+	//                   ELSE 0 END AS incident_count"
+	//   SQLite:   "CASE WHEN json_type(snapshot, '$.Incidents') = 'array'
+	//                   THEN json_array_length(snapshot, '$.Incidents')
+	//                   ELSE 0 END AS incident_count"
+	IncidentCountExpr() string
+
+	// KeysetCursorPredicate returns the WHERE clause fragment (including the
+	// leading AND keyword and the trailing space) used for keyset pagination in
+	// the instance-lister query when a cursor is present.
+	//
+	// The predicate binds two values in this order: cursorTime (time.Time or
+	// RFC3339Nano string for SQLite) and cursorID (string). Postgres uses a
+	// row-value comparison; MySQL and SQLite use an explicit OR decomposition.
+	//
+	// Callers append this to the rest of the WHERE clause when hasCursor is true:
+	//
+	//	"AND (started_at, instance_id) < (?, ?)"          // Postgres (after Rebind → $1,$2)
+	//	"AND (started_at < ? OR (started_at = ? AND instance_id < ?))"  // MySQL/SQLite
+	//
+	// The ? placeholders in the returned string are in ? style and are converted
+	// to the backend's native form via [Dialect.Rebind].
+	//
+	// IMPORTANT: MySQL/SQLite bind cursorTime TWICE (once for the < branch and
+	// once for the = branch). Use [Dialect.KeysetCursorArgCount] to determine
+	// how many times cursorTime must be repeated in the args slice.
+	KeysetCursorPredicate() string
+
+	// KeysetCursorArgCount returns the number of bind arguments consumed by
+	// [KeysetCursorPredicate]: 2 for Postgres (cursorTime, cursorID), 3 for
+	// MySQL and SQLite (cursorTime, cursorTime, cursorID).
+	KeysetCursorArgCount() int
 }
 
 // Notifier is the receive side of a database-level pub/sub channel. Only the
