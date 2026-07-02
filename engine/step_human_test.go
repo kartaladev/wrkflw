@@ -86,6 +86,44 @@ func TestUserTaskEmitsAwaitHumanAndParks(t *testing.T) {
 	assert.Equal(t, at, ht.CreatedAt)
 }
 
+// TestUserTaskPrivilegesFlowToAwaitHuman verifies that EligibilityPrivileges set
+// via model.WithEligibilityPrivileges flow through to the AwaitHuman command's
+// Eligibility.Privileges field and the HumanTask stored in engine state.
+func TestUserTaskPrivilegesFlowToAwaitHuman(t *testing.T) {
+	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
+	privs := []string{"finance-task claim"}
+	def := &model.ProcessDefinition{
+		ID: "p-priv", Version: 1,
+		Nodes: []model.Node{
+			model.NewStartEvent("start"),
+			model.NewUserTask("approve", nil,
+				model.WithEligibilityPrivileges(privs...),
+			),
+			model.NewEndEvent("end"),
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "approve"},
+			{ID: "f2", Source: "approve", Target: "end"},
+		},
+	}
+
+	res, err := engine.Step(def, engine.InstanceState{InstanceID: "i-priv"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	require.Len(t, res.Commands, 1)
+	ah, ok := res.Commands[0].(engine.AwaitHuman)
+	require.True(t, ok, "expected AwaitHuman, got %T", res.Commands[0])
+
+	// Privileges must be carried in the AwaitHuman eligibility spec.
+	assert.Equal(t, privs, ah.Eligibility.Privileges, "Eligibility.Privileges mismatch")
+	assert.Empty(t, ah.Eligibility.Roles, "Roles should be empty (none set)")
+
+	// HumanTask in state must also carry the Privileges.
+	require.Len(t, res.State.Tasks, 1)
+	assert.Equal(t, privs, res.State.Tasks[0].Eligibility.Privileges)
+}
+
 // TestUserTaskEmitsAwaitHumanAndParks_SecondTask verifies that a second user-task
 // on the same instance gets TaskToken "i1-h2" (TaskSeq increments).
 func TestUserTaskTaskSeqIncrements(t *testing.T) {

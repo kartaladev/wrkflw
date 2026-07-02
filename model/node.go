@@ -112,6 +112,11 @@ type UserTask struct {
 	activityFields
 	// CandidateRoles are the roles eligible to claim and complete this task.
 	CandidateRoles []string
+	// EligibilityPrivileges is a list of resource-privilege tokens (e.g. "finance-task claim")
+	// evaluated by a casbin-backed Authorizer. Each token is split on the first space
+	// into (object, action); a single-token value uses "*" as the action.
+	// Set via [WithEligibilityPrivileges].
+	EligibilityPrivileges []string
 	// EligibilityExpr is an optional attribute predicate (expr) for fine-grained eligibility.
 	EligibilityExpr string
 }

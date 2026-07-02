@@ -9,31 +9,32 @@ import (
 // serialization shape; previously stored definitions decode through it
 // unchanged. Field names/order mirror the pre-interface Node struct.
 type nodeWire struct {
-	ID                 string             `json:"id"`
-	Kind               NodeKind           `json:"kind"`
-	Name               string             `json:"name,omitempty"`
-	Action             string             `json:"action,omitempty"`
-	CandidateRoles     []string           `json:"candidateRoles,omitempty"`
-	EligibilityExpr    string             `json:"eligibilityExpr,omitempty"`
-	TimerDuration      string             `json:"timerDuration,omitempty"`
-	DeadlineDuration   string             `json:"deadlineDuration,omitempty"`
-	DeadlineFlow       string             `json:"deadlineFlow,omitempty"`
-	DeadlineAction     string             `json:"deadlineAction,omitempty"`
-	ReminderEvery      string             `json:"reminderEvery,omitempty"`
-	ReminderAction     string             `json:"reminderAction,omitempty"`
-	RetryPolicy        *RetryPolicy       `json:"retryPolicy,omitempty"`
-	RecoveryFlow       string             `json:"recoveryFlow,omitempty"`
-	CompensationAction string             `json:"compensationAction,omitempty"`
-	CompensateRef      string             `json:"compensateRef,omitempty"`
-	CancelHandler      string             `json:"cancelHandler,omitempty"`
-	SignalName         string             `json:"signalName,omitempty"`
-	MessageName        string             `json:"messageName,omitempty"`
-	CorrelationKey     string             `json:"correlationKey,omitempty"`
-	ErrorCode          string             `json:"errorCode,omitempty"`
-	AttachedTo         string             `json:"attachedTo,omitempty"`
-	NonInterrupting    bool               `json:"nonInterrupting,omitempty"`
-	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
-	DefRef             string             `json:"defRef,omitempty"`
+	ID                    string             `json:"id"`
+	Kind                  NodeKind           `json:"kind"`
+	Name                  string             `json:"name,omitempty"`
+	Action                string             `json:"action,omitempty"`
+	CandidateRoles        []string           `json:"candidateRoles,omitempty"`
+	EligibilityPrivileges []string           `json:"eligibilityPrivileges,omitempty"`
+	EligibilityExpr       string             `json:"eligibilityExpr,omitempty"`
+	TimerDuration         string             `json:"timerDuration,omitempty"`
+	DeadlineDuration      string             `json:"deadlineDuration,omitempty"`
+	DeadlineFlow          string             `json:"deadlineFlow,omitempty"`
+	DeadlineAction        string             `json:"deadlineAction,omitempty"`
+	ReminderEvery         string             `json:"reminderEvery,omitempty"`
+	ReminderAction        string             `json:"reminderAction,omitempty"`
+	RetryPolicy           *RetryPolicy       `json:"retryPolicy,omitempty"`
+	RecoveryFlow          string             `json:"recoveryFlow,omitempty"`
+	CompensationAction    string             `json:"compensationAction,omitempty"`
+	CompensateRef         string             `json:"compensateRef,omitempty"`
+	CancelHandler         string             `json:"cancelHandler,omitempty"`
+	SignalName            string             `json:"signalName,omitempty"`
+	MessageName           string             `json:"messageName,omitempty"`
+	CorrelationKey        string             `json:"correlationKey,omitempty"`
+	ErrorCode             string             `json:"errorCode,omitempty"`
+	AttachedTo            string             `json:"attachedTo,omitempty"`
+	NonInterrupting       bool               `json:"nonInterrupting,omitempty"`
+	Subprocess            *ProcessDefinition `json:"subprocess,omitempty"`
+	DefRef                string             `json:"defRef,omitempty"`
 }
 
 // toWire flattens a Node into its wire form.
@@ -48,7 +49,7 @@ func toWire(n Node) nodeWire {
 		w.Action = v.Action
 		applyActivityWire(&w, v.activityFields)
 	case UserTask:
-		w.CandidateRoles, w.EligibilityExpr = v.CandidateRoles, v.EligibilityExpr
+		w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
 		applyActivityWire(&w, v.activityFields)
 	case ReceiveTask:
 		w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
@@ -117,7 +118,7 @@ func fromWire(w nodeWire) (Node, error) {
 	case KindServiceTask:
 		return ServiceTask{baseNode: b, activityFields: w.activity(), Action: w.Action}, nil
 	case KindUserTask:
-		return UserTask{baseNode: b, activityFields: w.activity(), CandidateRoles: w.CandidateRoles, EligibilityExpr: w.EligibilityExpr}, nil
+		return UserTask{baseNode: b, activityFields: w.activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr}, nil
 	case KindReceiveTask:
 		return ReceiveTask{baseNode: b, activityFields: w.activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}, nil
 	case KindSendTask:

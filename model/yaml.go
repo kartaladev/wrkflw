@@ -11,31 +11,32 @@ import (
 // but uses a plain string for Kind so that yaml.v3 decodes the lowerCamelCase
 // discriminator without invoking NodeKind's JSON un/marshalers.
 type nodeYAML struct {
-	ID                 string          `yaml:"id"`
-	Kind               string          `yaml:"kind"`
-	Name               string          `yaml:"name,omitempty"`
-	Action             string          `yaml:"action,omitempty"`
-	CandidateRoles     []string        `yaml:"candidateRoles,omitempty"`
-	EligibilityExpr    string          `yaml:"eligibilityExpr,omitempty"`
-	TimerDuration      string          `yaml:"timerDuration,omitempty"`
-	DeadlineDuration   string          `yaml:"deadlineDuration,omitempty"`
-	DeadlineFlow       string          `yaml:"deadlineFlow,omitempty"`
-	DeadlineAction     string          `yaml:"deadlineAction,omitempty"`
-	ReminderEvery      string          `yaml:"reminderEvery,omitempty"`
-	ReminderAction     string          `yaml:"reminderAction,omitempty"`
-	RetryPolicy        *RetryPolicy    `yaml:"retryPolicy,omitempty"`
-	RecoveryFlow       string          `yaml:"recoveryFlow,omitempty"`
-	CompensationAction string          `yaml:"compensationAction,omitempty"`
-	CompensateRef      string          `yaml:"compensateRef,omitempty"`
-	CancelHandler      string          `yaml:"cancelHandler,omitempty"`
-	SignalName         string          `yaml:"signalName,omitempty"`
-	MessageName        string          `yaml:"messageName,omitempty"`
-	CorrelationKey     string          `yaml:"correlationKey,omitempty"`
-	ErrorCode          string          `yaml:"errorCode,omitempty"`
-	AttachedTo         string          `yaml:"attachedTo,omitempty"`
-	NonInterrupting    bool            `yaml:"nonInterrupting,omitempty"`
-	Subprocess         *definitionYAML `yaml:"subprocess,omitempty"`
-	DefRef             string          `yaml:"defRef,omitempty"`
+	ID                    string          `yaml:"id"`
+	Kind                  string          `yaml:"kind"`
+	Name                  string          `yaml:"name,omitempty"`
+	Action                string          `yaml:"action,omitempty"`
+	CandidateRoles        []string        `yaml:"candidateRoles,omitempty"`
+	EligibilityPrivileges []string        `yaml:"eligibilityPrivileges,omitempty"`
+	EligibilityExpr       string          `yaml:"eligibilityExpr,omitempty"`
+	TimerDuration         string          `yaml:"timerDuration,omitempty"`
+	DeadlineDuration      string          `yaml:"deadlineDuration,omitempty"`
+	DeadlineFlow          string          `yaml:"deadlineFlow,omitempty"`
+	DeadlineAction        string          `yaml:"deadlineAction,omitempty"`
+	ReminderEvery         string          `yaml:"reminderEvery,omitempty"`
+	ReminderAction        string          `yaml:"reminderAction,omitempty"`
+	RetryPolicy           *RetryPolicy    `yaml:"retryPolicy,omitempty"`
+	RecoveryFlow          string          `yaml:"recoveryFlow,omitempty"`
+	CompensationAction    string          `yaml:"compensationAction,omitempty"`
+	CompensateRef         string          `yaml:"compensateRef,omitempty"`
+	CancelHandler         string          `yaml:"cancelHandler,omitempty"`
+	SignalName            string          `yaml:"signalName,omitempty"`
+	MessageName           string          `yaml:"messageName,omitempty"`
+	CorrelationKey        string          `yaml:"correlationKey,omitempty"`
+	ErrorCode             string          `yaml:"errorCode,omitempty"`
+	AttachedTo            string          `yaml:"attachedTo,omitempty"`
+	NonInterrupting       bool            `yaml:"nonInterrupting,omitempty"`
+	Subprocess            *definitionYAML `yaml:"subprocess,omitempty"`
+	DefRef                string          `yaml:"defRef,omitempty"`
 }
 
 // sequenceFlowYAML decodes a SequenceFlow from YAML. Field names match the
@@ -76,31 +77,32 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 	}
 
 	w := nodeWire{
-		ID:                 ny.ID,
-		Kind:               kind,
-		Name:               ny.Name,
-		Action:             ny.Action,
-		CandidateRoles:     ny.CandidateRoles,
-		EligibilityExpr:    ny.EligibilityExpr,
-		TimerDuration:      ny.TimerDuration,
-		DeadlineDuration:   ny.DeadlineDuration,
-		DeadlineFlow:       ny.DeadlineFlow,
-		DeadlineAction:     ny.DeadlineAction,
-		ReminderEvery:      ny.ReminderEvery,
-		ReminderAction:     ny.ReminderAction,
-		RetryPolicy:        ny.RetryPolicy,
-		RecoveryFlow:       ny.RecoveryFlow,
-		CompensationAction: ny.CompensationAction,
-		CompensateRef:      ny.CompensateRef,
-		CancelHandler:      ny.CancelHandler,
-		SignalName:         ny.SignalName,
-		MessageName:        ny.MessageName,
-		CorrelationKey:     ny.CorrelationKey,
-		ErrorCode:          ny.ErrorCode,
-		AttachedTo:         ny.AttachedTo,
-		NonInterrupting:    ny.NonInterrupting,
-		Subprocess:         subDef,
-		DefRef:             ny.DefRef,
+		ID:                    ny.ID,
+		Kind:                  kind,
+		Name:                  ny.Name,
+		Action:                ny.Action,
+		CandidateRoles:        ny.CandidateRoles,
+		EligibilityPrivileges: ny.EligibilityPrivileges,
+		EligibilityExpr:       ny.EligibilityExpr,
+		TimerDuration:         ny.TimerDuration,
+		DeadlineDuration:      ny.DeadlineDuration,
+		DeadlineFlow:          ny.DeadlineFlow,
+		DeadlineAction:        ny.DeadlineAction,
+		ReminderEvery:         ny.ReminderEvery,
+		ReminderAction:        ny.ReminderAction,
+		RetryPolicy:           ny.RetryPolicy,
+		RecoveryFlow:          ny.RecoveryFlow,
+		CompensationAction:    ny.CompensationAction,
+		CompensateRef:         ny.CompensateRef,
+		CancelHandler:         ny.CancelHandler,
+		SignalName:            ny.SignalName,
+		MessageName:           ny.MessageName,
+		CorrelationKey:        ny.CorrelationKey,
+		ErrorCode:             ny.ErrorCode,
+		AttachedTo:            ny.AttachedTo,
+		NonInterrupting:       ny.NonInterrupting,
+		Subprocess:            subDef,
+		DefRef:                ny.DefRef,
 	}
 	return fromWire(w)
 }
