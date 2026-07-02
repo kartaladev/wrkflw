@@ -20,7 +20,7 @@ type policyAdmin struct {
 var _ service.PolicyAdmin = (*policyAdmin)(nil)
 
 // PolicyAdminFor returns (service.PolicyAdmin, true) when a is a *casbinauthz.Authorizer
-// (i.e. was created via NewCasbinAuthorizer or NewCasbinAuthorizerFromDB), backed by that
+// (i.e. was created via NewCasbinAuthorizer with any source option), backed by that
 // authorizer's shared casbin enforcer. Returns (nil, false) for any other
 // authz.Authorizer implementation.
 func PolicyAdminFor(a authz.Authorizer) (service.PolicyAdmin, bool) {
