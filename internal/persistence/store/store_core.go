@@ -366,9 +366,9 @@ func (s *Store) writeOutbox(ctx context.Context, q database.Querier, instanceID 
 		}
 		dedup := fmt.Sprintf("%s:%d:%d", instanceID, seq, i)
 		if _, err := q.Exec(ctx, s.dialect.Rebind(
-			`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, definition_ref)
-			 VALUES (?,?,?,?,?,?)`),
-			instanceID, ev.Topic, payload, dedup, timeArg(s.dialect, createdAt), ev.DefinitionRef,
+			`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, next_attempt_at, definition_ref)
+			 VALUES (?,?,?,?,?,?,?)`),
+			instanceID, ev.Topic, payload, dedup, timeArg(s.dialect, createdAt), timeArg(s.dialect, createdAt), ev.DefinitionRef,
 		); err != nil {
 			return fmt.Errorf("workflow-store: write outbox: %w", err)
 		}
