@@ -52,10 +52,10 @@ var _ runtime.ChainLineageReader = (*ChainLinkStore)(nil)
 //	db := dbtest.RunTestSQLite(t)
 //	cls, err := store.NewChainLinkStore(db, dialect.NewSQLite())
 func NewChainLinkStore(conn any, d dialect.Dialect) (*ChainLinkStore, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	return &ChainLinkStore{conn: conn, dialect: d}, nil

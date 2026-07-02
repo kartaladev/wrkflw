@@ -49,10 +49,10 @@ var _ runtime.InstanceLister = (*Lister)(nil)
 //	db := dbtest.RunTestSQLite(t)
 //	lister, err := store.NewLister(db, dialect.NewSQLite())
 func NewLister(conn any, d dialect.Dialect) (*Lister, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	return &Lister{conn: conn, dialect: d}, nil

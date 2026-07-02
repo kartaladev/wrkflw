@@ -90,10 +90,10 @@ type CallLinkStore struct {
 //	db := dbtest.RunTestSQLite(t)
 //	cls, err := store.NewCallLinkStore(db, dialect.NewSQLite())
 func NewCallLinkStore(conn any, d dialect.Dialect, opts ...CallLinkOption) (*CallLinkStore, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	s := &CallLinkStore{conn: conn, dialect: d, clk: clock.System()}

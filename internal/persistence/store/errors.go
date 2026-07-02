@@ -1,6 +1,25 @@
 package store
 
-import "errors"
+import (
+	"errors"
+	"reflect"
+)
 
 // ErrNilDependency is returned by store constructors when conn or dialect is nil.
 var ErrNilDependency = errors.New("workflow-store: nil required dependency")
+
+// isNilDep reports whether v is a nil dependency. It catches both an untyped nil
+// (v == nil) and a typed nil boxed in an interface — e.g. a nil *sql.DB or
+// *pgxpool.Pool passed as the `conn any` parameter, which a plain `v == nil`
+// comparison does NOT detect. Non-nilable kinds (structs, etc.) are never nil.
+func isNilDep(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch rv := reflect.ValueOf(v); rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}

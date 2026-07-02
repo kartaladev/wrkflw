@@ -30,10 +30,10 @@ type Deduper struct {
 // conn must be either a *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite).
 // Returns [ErrNilDependency] when conn is nil or d is nil.
 func NewDeduper(conn any, d dialect.Dialect) (*Deduper, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	return &Deduper{conn: conn, dialect: d}, nil

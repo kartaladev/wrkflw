@@ -103,10 +103,10 @@ func WithStoreMeterProvider(mp metric.MeterProvider) Option {
 //	db := dbtest.RunTestSQLite(t)
 //	s, err := store.New(db, dialect.NewSQLite())
 func New(conn any, d dialect.Dialect, opts ...Option) (*Store, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	s := &Store{conn: conn, dialect: d}
