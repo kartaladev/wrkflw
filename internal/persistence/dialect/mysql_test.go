@@ -215,8 +215,6 @@ func TestMySQLUpsertClauses(t *testing.T) {
 
 	cases := []testCase{
 		{
-			// Copied verbatim from internal/persistence/mysql/store.go mysqlUpsertTimer
-			// (the conflict clause that follows the base INSERT … VALUES line).
 			name: "UpsertTimer matches real MySQL store",
 			assert: func(t *testing.T) {
 				t.Helper()
@@ -226,8 +224,6 @@ func TestMySQLUpsertClauses(t *testing.T) {
 			},
 		},
 		{
-			// Copied verbatim from internal/persistence/mysql/definitions.go PutDefinition
-			// (the conflict clause that follows the base INSERT … VALUES line).
 			name: "UpsertDefinition matches real MySQL store",
 			assert: func(t *testing.T) {
 				t.Helper()
@@ -245,15 +241,14 @@ func TestMySQLUpsertClauses(t *testing.T) {
 	}
 }
 
-// TestMySQLOutboxStatsQuery verifies that OutboxStatsQuery returns the exact
-// SQL used by internal/persistence/mysql/relay.go OutboxStats.
+// TestMySQLOutboxStatsQuery verifies that OutboxStatsQuery returns the correct
+// SQL for MySQL outbox stats.
 func TestMySQLOutboxStatsQuery(t *testing.T) {
 	t.Parallel()
 
 	d := dialect.NewMySQL()
 	got := d.OutboxStatsQuery()
 
-	// Copied verbatim from internal/persistence/mysql/relay.go OutboxStats.
 	// Note: uses status='pending'/'dead' — NOT dead_lettered_at IS NULL/NOT NULL.
 	const want = `SELECT COALESCE(SUM(status='pending'), 0),
 		        COALESCE(SUM(status='dead'), 0),

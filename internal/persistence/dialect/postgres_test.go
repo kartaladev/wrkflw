@@ -208,7 +208,6 @@ func TestPostgresUpsertClauses(t *testing.T) {
 
 	cases := []testCase{
 		{
-			// Exact conflict clause from internal/persistence/postgres/store.go upsertTimer.
 			name: "UpsertTimer conflict target matches real store",
 			assert: func(t *testing.T, got string) {
 				t.Helper()
@@ -219,7 +218,6 @@ func TestPostgresUpsertClauses(t *testing.T) {
 			},
 		},
 		{
-			// Exact conflict clause from internal/persistence/postgres/definitions.go PutDefinition.
 			name: "UpsertDefinition conflict target matches real store",
 			assert: func(t *testing.T, got string) {
 				t.Helper()
@@ -238,8 +236,8 @@ func TestPostgresUpsertClauses(t *testing.T) {
 	}
 }
 
-// TestPostgresOutboxStatsQuery verifies that OutboxStatsQuery returns the exact
-// SQL used by internal/persistence/postgres/relay.go OutboxStats.
+// TestPostgresOutboxStatsQuery verifies that OutboxStatsQuery returns the correct
+// SQL for Postgres outbox stats.
 func TestPostgresOutboxStatsQuery(t *testing.T) {
 	t.Parallel()
 

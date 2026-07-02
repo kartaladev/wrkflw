@@ -12,10 +12,8 @@ import (
 
 // Deduper records processed message IDs in wrkflw_processed_message so an
 // at-least-once consumer can achieve exactly-once effect (idempotent-consumer
-// pattern, ADR-0018). Unlike the per-driver implementations in
-// internal/persistence/postgres and internal/persistence/mysql, this type is
-// dialect-neutral and operates on any backend that provides the
-// wrkflw_processed_message table.
+// pattern, ADR-0018). This type is dialect-neutral and operates on any backend
+// that provides the wrkflw_processed_message table.
 //
 // The dedup record joins the caller's ambient transaction (via
 // [transaction.JoinOrBegin]) so it commits or rolls back atomically with the

@@ -1,7 +1,7 @@
-// Package persistence is the consumer-facing façade over the internal
-// Postgres-backed persistence implementation (ADR-0008). It exposes
-// constructors, stable port/interface types, options, and re-exported sentinels
-// so library consumers never have to import internal/persistence/postgres directly.
+// Package persistence is the consumer-facing façade over the neutral
+// persistence store (ADR-0008). It exposes constructors, stable port/interface
+// types, options, and re-exported sentinels so library consumers never have to
+// import internal persistence packages directly.
 //
 // # Usage
 //
@@ -30,7 +30,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -202,7 +201,7 @@ func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Stor
 // Migrate is intended to be called explicitly by the consumer during application
 // startup — it is never auto-invoked on import.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	return postgres.Migrate(ctx, pool)
+	return store.MigratePostgres(ctx, pool)
 }
 
 // NewDefinitionStore constructs the durable Postgres-backed definition store.

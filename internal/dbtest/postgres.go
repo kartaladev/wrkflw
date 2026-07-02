@@ -11,8 +11,7 @@
 //
 // These helpers live in their own package (not in internal/database) so that
 // the internal/database and internal/database/transaction toolkit packages stay
-// free of any wrkflw imports (the extraction constraint — see ADR-0079);
-// this package may depend on internal/persistence/mysql for auto-migration.
+// free of any wrkflw imports (the extraction constraint — see ADR-0079).
 //
 // The PostgreSQL helper below:
 //

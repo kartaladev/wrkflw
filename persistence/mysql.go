@@ -32,7 +32,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	mysqlstore "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -94,9 +93,7 @@ func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, err
 // MigrateMySQL is intended to be called explicitly by the consumer during
 // application startup — it is never auto-invoked on import.
 func MigrateMySQL(ctx context.Context, db *sql.DB) error {
-	// Migrations are unchanged in this task (store-unification Decision 5): keep
-	// delegating to the internal mysql package. Task 22 relocates them to store/.
-	return mysqlstore.Migrate(ctx, db)
+	return store.MigrateMySQL(ctx, db)
 }
 
 // NewMySQLTimerStore returns a runtime.TimerStore backed by MySQL, for

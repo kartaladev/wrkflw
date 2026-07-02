@@ -26,7 +26,6 @@ func (mysql) Rebind(query string) string { return query }
 
 // UpsertTimer returns the ON DUPLICATE KEY UPDATE clause for the timer upsert
 // site.
-// Copied verbatim from internal/persistence/mysql/store.go mysqlUpsertTimer.
 func (mysql) UpsertTimer() string {
 	return "\n\t\t\tON DUPLICATE KEY UPDATE fire_at=VALUES(fire_at), kind=VALUES(kind)," +
 		"\n\t\t\t                        def_id=VALUES(def_id), def_version=VALUES(def_version)"
@@ -34,7 +33,6 @@ func (mysql) UpsertTimer() string {
 
 // UpsertDefinition returns the ON DUPLICATE KEY UPDATE clause for the
 // process-definition upsert site.
-// Copied verbatim from internal/persistence/mysql/definitions.go PutDefinition.
 func (mysql) UpsertDefinition() string {
 	return "\n\t\t\t ON DUPLICATE KEY UPDATE definition = VALUES(definition)"
 }
@@ -42,7 +40,6 @@ func (mysql) UpsertDefinition() string {
 // InsertIgnorePrefix returns the INSERT keyword prefix for the dedup
 // idempotency check. MySQL uses INSERT IGNORE as a prefix; the suffix
 // ([InsertIgnoreDedup]) is empty.
-// Copied from internal/persistence/mysql/dedup.go Seen.
 func (mysql) InsertIgnorePrefix() string { return "INSERT IGNORE" }
 
 // InsertIgnoreDedup returns an empty string. MySQL uses the INSERT IGNORE
@@ -55,7 +52,6 @@ func (mysql) InsertIgnoreDedup() string { return "" }
 func (mysql) JournalTriggerColumn() string { return "trigger_" }
 
 // OutboxStatsQuery returns the aggregate query for the wrkflw_outbox table.
-// Copied verbatim from internal/persistence/mysql/relay.go OutboxStats.
 // Uses status='pending'/'dead' column values — not dead_lettered_at IS NULL.
 func (mysql) OutboxStatsQuery() string {
 	return `SELECT COALESCE(SUM(status='pending'), 0),

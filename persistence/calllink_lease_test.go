@@ -2,9 +2,8 @@ package persistence_test
 
 // calllink_lease_test.go tests the façade-level WithCallLinkLease and
 // WithCallLinkClock options on persistence.NewCallLinkStore (ADR-0031).
-// It mirrors the Postgres-layer lease tests in internal/persistence/postgres
-// but exercises only the public façade constructors, verifying the thin
-// delegation wires through to the underlying postgres store options.
+// It exercises only the public façade constructors, verifying the thin
+// delegation wires through to the underlying store options.
 
 import (
 	"testing"
@@ -17,7 +16,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -27,7 +27,7 @@ const facadeLeaseTTL = 30 * time.Second
 // seedFacadeTerminalLink inserts a terminal call link via the internal
 // postgres.Store (the write side), so the read-side façade lease tests have a
 // seeded row without duplicating the write path in the public API.
-func seedFacadeTerminalLink(t *testing.T, pgStore *pg.Store, pool *pgxpool.Pool, childID string, outcome runtime.CallOutcome) {
+func seedFacadeTerminalLink(t *testing.T, pgStore *store.Store, pool *pgxpool.Pool, childID string, outcome runtime.CallOutcome) {
 	t.Helper()
 	_ = pool // accepted to mirror the internal test helper signature
 
@@ -104,8 +104,8 @@ func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 			persistence.WithCallLinkClock(fc),
 		)
 
-		// Seed a terminal link via the internal postgres write path.
-		pgStore := pg.NewStore(pool)
+		// Seed a terminal link via the internal store write path.
+		pgStore := store.New(pool, dialect.NewPostgres())
 		seedFacadeTerminalLink(t, pgStore, pool, "facade-lease-child-1",
 			runtime.CallOutcome{Completed: true})
 

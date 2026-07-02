@@ -36,7 +36,6 @@ func (postgres) Rebind(query string) string {
 }
 
 // UpsertTimer returns the ON CONFLICT clause for the timer upsert site.
-// Copied verbatim from internal/persistence/postgres/store.go upsertTimer.
 func (postgres) UpsertTimer() string {
 	return " ON CONFLICT (instance_id, timer_id)" +
 		" DO UPDATE SET fire_at = EXCLUDED.fire_at, kind = EXCLUDED.kind," +
@@ -45,7 +44,6 @@ func (postgres) UpsertTimer() string {
 
 // UpsertDefinition returns the ON CONFLICT clause for the process-definition
 // upsert site.
-// Copied verbatim from internal/persistence/postgres/definitions.go PutDefinition.
 func (postgres) UpsertDefinition() string {
 	return " ON CONFLICT (def_id, version) DO UPDATE SET definition = EXCLUDED.definition"
 }
@@ -56,12 +54,9 @@ func (postgres) UpsertDefinition() string {
 func (postgres) InsertIgnorePrefix() string { return "INSERT" }
 
 // InsertIgnoreDedup returns the conflict suffix for the dedup INSERT.
-// Copied verbatim from internal/persistence/postgres/dedup.go Seen.
 func (postgres) InsertIgnoreDedup() string { return " ON CONFLICT DO NOTHING" }
 
 // JournalTriggerColumn returns the journal payload column name used by Postgres.
-// Copied from the wrkflw_journal INSERT in internal/persistence/postgres/store.go
-// writeJournal ("trigger").
 func (postgres) JournalTriggerColumn() string { return "trigger" }
 
 // NotifyStatement returns a bare NOTIFY statement for the given channel.
@@ -76,7 +71,6 @@ func (postgres) SupportsReturning() bool { return true }
 func (postgres) SupportsSkipLocked() bool { return true }
 
 // OutboxStatsQuery returns the aggregate query for the wrkflw_outbox table.
-// Copied verbatim from internal/persistence/postgres/relay.go OutboxStats.
 func (postgres) OutboxStatsQuery() string {
 	return `SELECT count(*) FILTER (WHERE status = 'pending'),
 	        count(*) FILTER (WHERE status = 'dead'),
