@@ -418,7 +418,7 @@ single-process embedding; multi-replica deployments need a real lease
 
 ```go
 store := runtime.NewCachingStore(
-    pgStore,           // backing Store (e.g. the Postgres store from persistence)
+    pgStore,           // backing Store (e.g. a Postgres/MySQL/SQLite store from persistence; note: SQLite provides only the fail-loud persistence.NewSQLiteAdvisoryLockOwnership, so CachingStore on SQLite is single-process only)
     runtime.AlwaysOwn{},
     runtime.WithCacheTTL(5*time.Minute),
     runtime.WithCacheMaxEntries(1024),
@@ -439,12 +439,20 @@ reg := runtime.NewCachingDefinitionRegistry(pgDefRegistry, 5*time.Minute)
 r   := runtime.NewRunner(cat, store, runtime.WithDefinitions(reg))
 ```
 
-### Postgres store (production)
+### SQL store (production)
 
-The production `Store` implementation lives in
-`internal/persistence/postgres` and satisfies the `runtime.Store` interface.
-Wire it via the `persistence` package's exported constructors — consumers do
-not import `internal/` directly.
+The production `Store` implementation lives in the neutral `internal/persistence/store`
+parametrized by an `internal/persistence/dialect` (Postgres, MySQL, or SQLite — ADR-0081/0082).
+It satisfies the `runtime.Store` interface. Wire it via the `persistence` package's exported
+constructors — consumers do not import `internal/` directly:
+
+- `persistence.OpenPostgres(ctx, pool, opts...)` — Postgres 17 (LISTEN/NOTIFY relay, advisory-lock ownership).
+- `persistence.OpenMySQL(ctx, db, opts...)` — MySQL 8.0+ (poll-only relay, advisory-lock ownership).
+- `persistence.OpenSQLite(ctx, db, opts...)` — SQLite (WAL, single-writer, single-node/test/embedded).
+  `persistence.NewSQLiteAdvisoryLockOwnership` is fail-loud (every acquire returns `dialect.ErrUnsupported`),
+  so `CachingStore` on SQLite is single-process only. Use Postgres or MySQL for multi-replica.
+
+All three backends expose relay/lister/store constructors (`NewSQLite*`, `NewMySQL*`, `NewPostgres*`).
 
 ## Process-instance chaining
 

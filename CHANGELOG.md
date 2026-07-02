@@ -11,9 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 The first tagged release (`v0.1.0`) will be cut from this section. It captures the engine as
-built across ADRs 0001–0077.
+built across ADRs 0001–0082.
 
 ### Changed
+- **BREAKING: `Deduper.Seen` dropped its explicit driver-transaction parameter.** The new
+  signature is `Seen(ctx, subscriber, messageID)` — it joins the ambient transaction from
+  ctx, or commits its own leaf tx when none is present. The separate `MySQLDeduper` interface
+  was REMOVED; `NewMySQLDeduper` is retained but now returns the unified `persistence.Deduper`
+  (ADR-0081). Migration: drop the `tx` argument at every `Seen` call site.
 - **BREAKING (default behaviour): service actions now time out after 30s by default.** New
   `runtime.WithActionTimeout(d)` bounds each action invocation; pass a larger `d` for legitimately
   long actions or `runtime.WithActionTimeout(0)` to disable. A timed-out action surfaces as a
@@ -27,6 +32,17 @@ built across ADRs 0001–0077.
   rationale for each suppression (ADR-0077).
 
 ### Added
+- **SQLite backend (ADR-0082).** `persistence.OpenSQLite(ctx, db *sql.DB, opts ...Option) (Store, error)`,
+  `persistence.MigrateSQLite(ctx, db)`, and `persistence.NewSQLiteAdvisoryLockOwnership()` (fail-loud —
+  every acquire returns `dialect.ErrUnsupported`). Backend uses `modernc.org/sqlite` (pure-Go), WAL mode,
+  single-writer serialisation (`db.SetMaxOpenConns(1)` required), and poll-only relay (no LISTEN/NOTIFY).
+  Single-node/test/embedded use only; use Postgres or MySQL for multi-replica.
+  The facade also exposes `NewSQLite*` constructors (relay/timer/lister/call-link/chain-link/call-notifier/definition/pruner).
+- **Store unification + dialect abstraction (ADR-0081).** The former `internal/persistence/{postgres,mysql}`
+  packages are replaced by ONE neutral `internal/persistence/store` parametrized by
+  `internal/persistence/dialect` (Postgres/MySQL/SQLite). Capability interfaces `Notifier` (LISTEN/NOTIFY)
+  and `Locker` (distributed advisory lock) are opt-in so each dialect declares only what it supports.
+  Two-axis model: access mechanism (pgx vs database/sql) × SQL dialect.
 - **Ops-visibility surface (ADR-0078).**
   - SLI metrics: observable gauges `wrkflw_outbox_pending`, `wrkflw_outbox_dead`,
     `wrkflw_outbox_oldest_pending_age_seconds`, `wrkflw_timers_armed` (via consumer-wired
@@ -44,7 +60,7 @@ built across ADRs 0001–0077.
   and event-based gateways, sub-process, call activity, boundary and intermediate events,
   event sub-processes), token execution, and `expr-lang`-driven gateway routing.
 - **Authoring** — Go `DefinitionBuilder` (with per-kind `AddX` fluent methods) and a YAML loader.
-- **Persistence** — SQL backends for **PostgreSQL 17** and **MySQL 8.0+** behind shared ports,
+- **Persistence** — SQL backends for **PostgreSQL 17**, **MySQL 8.0+**, and **SQLite** (`modernc.org/sqlite`, single-node/test/embedded) behind shared ports via the neutral store + dialect abstraction (ADR-0081/0082),
   optimistic-concurrency (CAS) writes, transactional **outbox** relay with poison isolation + DLQ +
   redrive, hot-path caching (`CachingStore`, `CachingDefinitionRegistry`), and data-retention pruners.
 - **Scheduling** — `gocron`-driven timers, deadlines (SLA), and in-wait actions; multi-replica timer

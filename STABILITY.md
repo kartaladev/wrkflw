@@ -45,8 +45,8 @@ importable surface a consumer embeds (see the README "Package map"). It does **n
 - The `examples/` reference wiring — illustrative `main` packages, not a supported API.
 - Behaviour explicitly documented as reserved, experimental, or "not yet emitted".
 - The on-disk database schema and migration files as a *direct* contract — they are an
-  implementation detail of the Postgres adapter, evolved via the migration mechanism, not
-  a hand-editable surface.
+  implementation detail of each backend adapter (Postgres, MySQL, SQLite), evolved via
+  the migration mechanism, not a hand-editable surface.
 
 ## Deprecation taxonomy
 
@@ -77,6 +77,11 @@ an existing symbol is treated as breaking and follows the same MAJOR/`v0`-MINOR 
 
 - **Go 1.25** is the minimum supported toolchain (a hard requirement; see the README
   "Locked tech stack").
-- Locked dependencies (PostgreSQL 17, `expr-lang/expr`, `watermill`, `gocron` pinned to
-  v2.21.2, `clockwork`, `casbin`, `samber/do` v2) are changed only via an ADR. A change to
-  the minimum Go version or a locked dependency major is treated as a breaking change.
+- Locked dependencies (PostgreSQL 17, MySQL 8.0+, SQLite (`modernc.org/sqlite`), `expr-lang/expr`,
+  `watermill`, `gocron` pinned to v2.21.2, `clockwork`, `casbin`, `samber/do` v2) are changed only
+  via an ADR. A change to the minimum Go version or a locked dependency major is treated as a
+  breaking change.
+
+The SQLite backend is test/single-node-oriented — it is not supported for multi-replica deployments
+(`persistence.NewSQLiteAdvisoryLockOwnership` is fail-loud). The `Deduper.Seen` signature change
+(driver-tx param dropped) is one of the pre-1.0 breaking changes flagged in the CHANGELOG (ADR-0081).
