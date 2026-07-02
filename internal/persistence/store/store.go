@@ -2,8 +2,13 @@ package store
 
 import (
 	"context"
+	"log/slog"
+
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 )
 
@@ -27,6 +32,15 @@ type Store struct {
 	// inside the committing transaction when the step produced outbox events and
 	// the dialect supports native pub/sub (Postgres only). Default: false.
 	emitNotify bool
+
+	// staged telemetry option values; assembled into tel after all Options have
+	// been applied in New.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	tel           observability.Telemetry
+	storeDuration metric.Float64Histogram
 }
 
 // Option is a functional option that configures a [Store] built by [New].
@@ -53,6 +67,26 @@ func WithHistoryCap(n int) Option { return func(s *Store) { s.historyCap = n } }
 // that produce no events emit no notification.
 func WithOutboxNotify() Option { return func(s *Store) { s.emitNotify = true } }
 
+// WithStoreLogger sets the structured logger used by the store for operation
+// logs. A nil value is ignored and the default (slog.Default()) is kept.
+func WithStoreLogger(l *slog.Logger) Option {
+	return func(s *Store) { s.logOpt = observability.WithLogger(l) }
+}
+
+// WithStoreTracerProvider sets the OTel TracerProvider for store operation
+// spans. A nil value is ignored and the OTel global provider is used. Use this
+// to inject a test recorder or a real SDK provider from consumer wiring.
+func WithStoreTracerProvider(tp trace.TracerProvider) Option {
+	return func(s *Store) { s.tpOpt = observability.WithTracerProvider(tp) }
+}
+
+// WithStoreMeterProvider sets the OTel MeterProvider for the
+// wrkflw_store_duration_seconds histogram and any future store metrics. A nil
+// value is ignored and the OTel global provider is used.
+func WithStoreMeterProvider(mp metric.MeterProvider) Option {
+	return func(s *Store) { s.mpOpt = observability.WithMeterProvider(mp) }
+}
+
 // New constructs a [Store] over conn using dialect d. conn must be either a
 // *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite); any other type will
 // cause [database.From] to return an error when the first query is issued.
@@ -71,7 +105,27 @@ func New(conn any, d dialect.Dialect, opts ...Option) *Store {
 	for _, o := range opts {
 		o(s)
 	}
+	s.tel = observability.New(
+		"github.com/zakyalvan/krtlwrkflw/persistence",
+		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
+	)
+	s.storeDuration = s.tel.Float64Histogram(
+		"wrkflw_store_duration_seconds",
+		"Duration of persistence Store operations in seconds",
+	)
 	return s
+}
+
+// filterNilOpts strips nil [observability.Option] values so New does not pass
+// nils into [observability.New].
+func filterNilOpts(opts ...observability.Option) []observability.Option {
+	out := make([]observability.Option, 0, len(opts))
+	for _, o := range opts {
+		if o != nil {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // querier returns a pool-backed [database.Querier] over s.conn. It is used by
