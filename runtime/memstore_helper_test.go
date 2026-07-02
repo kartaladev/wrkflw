@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/action"
@@ -45,4 +46,12 @@ func mustCachingStore(t *testing.T, backing runtime.Store, owner runtime.Ownersh
 	s, err := runtime.NewCachingStore(backing, owner, opts...)
 	require.NoError(t, err)
 	return s
+}
+
+// mustCachingDefinitionRegistry builds a CachingDefinitionRegistry or fails the test.
+func mustCachingDefinitionRegistry(t *testing.T, backing runtime.DefinitionRegistry, ttl time.Duration, opts ...runtime.CachingDefinitionRegistryOption) *runtime.CachingDefinitionRegistry {
+	t.Helper()
+	c, err := runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)
+	require.NoError(t, err)
+	return c
 }

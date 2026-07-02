@@ -234,7 +234,7 @@ func NewDefinitionStore(pool *pgxpool.Pool) DefinitionStore {
 //	// inject a fake clock in tests:
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute,
 //	    runtime.WithCachingDefinitionRegistryClock(fakeClock))
-func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.Duration, opts ...runtime.CachingDefinitionRegistryOption) *runtime.CachingDefinitionRegistry {
+func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.Duration, opts ...runtime.CachingDefinitionRegistryOption) (*runtime.CachingDefinitionRegistry, error) {
 	return runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)
 }
 
