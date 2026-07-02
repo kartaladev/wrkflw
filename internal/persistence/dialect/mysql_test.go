@@ -288,9 +288,10 @@ func TestMySQLTimestampsCapabilities(t *testing.T) {
 			assert: func(t *testing.T) {
 				t.Helper()
 				got := d.IncidentCountExpr()
-				assert.Contains(t, got, "JSON_TYPE")
-				assert.Contains(t, got, "JSON_LENGTH")
-				assert.Contains(t, got, "incident_count")
+				const want = `CASE WHEN JSON_TYPE(JSON_EXTRACT(snapshot, '$.Incidents')) = 'ARRAY'
+	             THEN JSON_LENGTH(JSON_EXTRACT(snapshot, '$.Incidents'))
+	             ELSE 0 END AS incident_count`
+				assert.Equal(t, want, got)
 			},
 		},
 		{
@@ -298,9 +299,8 @@ func TestMySQLTimestampsCapabilities(t *testing.T) {
 			assert: func(t *testing.T) {
 				t.Helper()
 				got := d.KeysetCursorPredicate()
-				assert.Contains(t, got, "started_at < ?")
-				assert.Contains(t, got, "started_at = ?")
-				assert.Contains(t, got, "AND ")
+				const want = "AND (started_at < ? OR (started_at = ? AND instance_id < ?)) "
+				assert.Equal(t, want, got)
 			},
 		},
 		{

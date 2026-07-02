@@ -279,9 +279,10 @@ func TestPostgresTimestampsCapabilities(t *testing.T) {
 			assert: func(t *testing.T) {
 				t.Helper()
 				got := d.IncidentCountExpr()
-				assert.Contains(t, got, "jsonb_typeof")
-				assert.Contains(t, got, "jsonb_array_length")
-				assert.Contains(t, got, "incident_count")
+				const want = `CASE WHEN jsonb_typeof(snapshot->'Incidents') = 'array'
+	             THEN jsonb_array_length(snapshot->'Incidents')
+	             ELSE 0 END AS incident_count`
+				assert.Equal(t, want, got)
 			},
 		},
 		{
@@ -289,8 +290,8 @@ func TestPostgresTimestampsCapabilities(t *testing.T) {
 			assert: func(t *testing.T) {
 				t.Helper()
 				got := d.KeysetCursorPredicate()
-				assert.Contains(t, got, "(started_at, instance_id)")
-				assert.Contains(t, got, "AND ")
+				const want = "AND (started_at, instance_id) < (?, ?) "
+				assert.Equal(t, want, got)
 			},
 		},
 		{

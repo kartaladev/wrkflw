@@ -220,9 +220,10 @@ func TestSQLiteTimestampsCapabilities(t *testing.T) {
 			assert: func(t *testing.T) {
 				t.Helper()
 				got := d.IncidentCountExpr()
-				assert.Contains(t, got, "json_type")
-				assert.Contains(t, got, "json_array_length")
-				assert.Contains(t, got, "incident_count")
+				const want = `CASE WHEN json_type(snapshot, '$.Incidents') = 'array'
+	             THEN json_array_length(snapshot, '$.Incidents')
+	             ELSE 0 END AS incident_count`
+				assert.Equal(t, want, got)
 			},
 		},
 		{
@@ -230,9 +231,8 @@ func TestSQLiteTimestampsCapabilities(t *testing.T) {
 			assert: func(t *testing.T) {
 				t.Helper()
 				got := d.KeysetCursorPredicate()
-				assert.Contains(t, got, "started_at < ?")
-				assert.Contains(t, got, "started_at = ?")
-				assert.Contains(t, got, "AND ")
+				const want = "AND (started_at < ? OR (started_at = ? AND instance_id < ?)) "
+				assert.Equal(t, want, got)
 			},
 		},
 		{
