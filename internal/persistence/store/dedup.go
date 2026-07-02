@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 )
@@ -107,16 +108,10 @@ func (d *Deduper) Seen(ctx context.Context, subscriber, messageID string) (first
 // processing. The cutoff is converted via [timeArg] to guarantee format parity
 // with the values written by [Seen] on every backend.
 func (d *Deduper) Prune(ctx context.Context, before time.Time) (int64, error) {
-	q, err := transaction.JoinOrBegin(ctx, d.conn)
+	q, err := database.From(d.conn)
 	if err != nil {
-		return 0, fmt.Errorf("workflow-store: deduper: prune: begin: %w", err)
+		return 0, fmt.Errorf("workflow-store: deduper: prune: from: %w", err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = q.Rollback(ctx)
-		}
-	}()
 
 	res, err := q.Exec(ctx,
 		d.dialect.Rebind(`DELETE FROM wrkflw_processed_message WHERE processed_at < ?`),
@@ -131,9 +126,5 @@ func (d *Deduper) Prune(ctx context.Context, before time.Time) (int64, error) {
 		return 0, fmt.Errorf("workflow-store: deduper: prune: rows affected: %w", err)
 	}
 
-	if err := q.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("workflow-store: deduper: prune: commit: %w", err)
-	}
-	committed = true
 	return n, nil
 }
