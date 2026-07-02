@@ -147,3 +147,16 @@ removed.
   eliminated.** The two column types carry different semantics (zoneless vs. zone-aware).
   The three-layer discipline bridges the gap at the driver boundary; the application code
   above the seam sees only UTC `time.Time` instants.
+- **SQLite TEXT timestamp columns must be written by the application, never left to a
+  `strftime` column default.** SQLite stores instants as RFC3339Nano text and the store
+  writes and compares them via `timeArg`/`parseTimeText`. A column `DEFAULT
+  (strftime('%Y-%m-%dT%H:%M:%SZ','now'))` produces a *second-precision* value (trailing
+  `Z`, no fractional part), which does not sort lexicographically against the RFC3339Nano
+  text the code binds: for two instants in the same wall-clock second, `...00Z` sorts
+  *after* `...00.123456Z` because `Z` (0x5A) > `.` (0x2E). The outbox relay's claim
+  predicate `next_attempt_at <= ?` therefore failed to claim same-second rows until the
+  clock advanced past the second boundary. The store's `writeOutbox` consequently sets
+  `next_attempt_at` explicitly via `timeArg(dialect, createdAt)` rather than relying on the
+  SQLite default; Postgres and MySQL bind a native `time.Time` and are unaffected. The
+  general rule: any SQLite TEXT timestamp compared against application-bound text must be
+  written by the application in the same RFC3339Nano format, not by a `strftime` default.
