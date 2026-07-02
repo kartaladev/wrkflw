@@ -25,3 +25,14 @@ go.work.sum
 
 # Subagent-driven-development scratch (briefs, reports, ledger, review packages)
 .superpowers/
+
+# Compiled example binaries dropped at repo root by `go build ./examples/<name>/`
+# (leading slash anchors to root so the examples/<name>/ source dirs stay tracked)
+/builtin_actions
+/chaining_wiring
+/mysql_wiring
+/production_wiring
+/readme_quickstart
+/real_db_transaction
+/scenarios
+/sqlite_wiring
