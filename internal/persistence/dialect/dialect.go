@@ -139,6 +139,19 @@ type Dialect interface {
 	// [KeysetCursorPredicate]: 2 for Postgres (cursorTime, cursorID), 3 for
 	// MySQL and SQLite (cursorTime, cursorTime, cursorID).
 	KeysetCursorArgCount() int
+
+	// TimestampsAsText reports whether this dialect stores timestamp columns as
+	// RFC3339Nano TEXT strings rather than native time.Time values.
+	//
+	// When true (SQLite only), the store must format time.Time values with
+	// time.RFC3339Nano before binding them as query arguments, and must parse
+	// the raw string back into time.Time when scanning results. Postgres and
+	// MySQL bind and scan time.Time natively, so both return false.
+	//
+	// This flag is the single decision point for time (de)serialization across
+	// all store and lister sites; callers must not compare [Dialect.Name] to
+	// "sqlite" directly.
+	TimestampsAsText() bool
 }
 
 // Notifier is the receive side of a database-level pub/sub channel. Only the

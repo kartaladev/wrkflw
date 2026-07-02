@@ -37,8 +37,11 @@ const outboxNotifyChannel = "wrkflw_outbox"
 // NOT ISO8601 (julianday() returns NULL for it) and cannot be scanned back.
 // For SQLite the value is therefore formatted as an RFC3339Nano UTC string,
 // which is julianday-compatible and round-trips exactly (ADR-0080).
+//
+// The TEXT path is activated by [dialect.Dialect.TimestampsAsText]; callers
+// must not compare [dialect.Dialect.Name] to "sqlite" directly.
 func (s *Store) timeArg(t time.Time) any {
-	if s.dialect.Name() == "sqlite" {
+	if s.dialect.TimestampsAsText() {
 		return t.UTC().Format(time.RFC3339Nano)
 	}
 	return t

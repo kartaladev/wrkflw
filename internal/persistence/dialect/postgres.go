@@ -117,3 +117,8 @@ func (postgres) KeysetCursorPredicate() string {
 // KeysetCursorArgCount returns 2 because Postgres row-value comparison
 // binds cursorTime once and cursorID once.
 func (postgres) KeysetCursorArgCount() int { return 2 }
+
+// TimestampsAsText reports that Postgres stores timestamps as native
+// TIMESTAMPTZ values. The pgx driver binds and scans time.Time directly;
+// no RFC3339Nano text encoding is needed.
+func (postgres) TimestampsAsText() bool { return false }

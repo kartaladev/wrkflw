@@ -195,6 +195,63 @@ func TestSQLiteOutboxStatsQuery(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+// TestSQLiteTimestampsCapabilities verifies the timestamp-codec flag and the
+// three lister-query methods added in Task 9.
+func TestSQLiteTimestampsCapabilities(t *testing.T) {
+	t.Parallel()
+
+	d := dialect.NewSQLite()
+
+	type testCase struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []testCase{
+		{
+			name: "TimestampsAsText is true (SQLite stores timestamps as RFC3339Nano TEXT)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				assert.True(t, d.TimestampsAsText())
+			},
+		},
+		{
+			name: "IncidentCountExpr uses json_type/json_array_length and aliases as incident_count",
+			assert: func(t *testing.T) {
+				t.Helper()
+				got := d.IncidentCountExpr()
+				assert.Contains(t, got, "json_type")
+				assert.Contains(t, got, "json_array_length")
+				assert.Contains(t, got, "incident_count")
+			},
+		},
+		{
+			name: "KeysetCursorPredicate uses explicit OR decomposition (same as MySQL)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				got := d.KeysetCursorPredicate()
+				assert.Contains(t, got, "started_at < ?")
+				assert.Contains(t, got, "started_at = ?")
+				assert.Contains(t, got, "AND ")
+			},
+		},
+		{
+			name: "KeysetCursorArgCount is 3 (cursorTime bound twice plus cursorID)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				assert.Equal(t, 3, d.KeysetCursorArgCount())
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t)
+		})
+	}
+}
+
 // TestSQLiteErrorClassification_NilAndNonSQLite verifies that nil and
 // non-sqlite errors are not classified as unique violations or retryable
 // conflicts. Positive classification (real *sqlite.Error with a known code)

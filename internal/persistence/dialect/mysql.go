@@ -112,3 +112,8 @@ func (mysql) KeysetCursorPredicate() string {
 // KeysetCursorArgCount returns 3 because the MySQL predicate binds cursorTime
 // twice (once for < and once for =) then cursorID.
 func (mysql) KeysetCursorArgCount() int { return 3 }
+
+// TimestampsAsText reports that MySQL stores timestamps as native DATETIME
+// values (with loc=UTC in the DSN). The database/sql driver binds and scans
+// time.Time directly; no RFC3339Nano text encoding is needed.
+func (mysql) TimestampsAsText() bool { return false }

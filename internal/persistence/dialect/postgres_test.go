@@ -253,3 +253,59 @@ func TestPostgresOutboxStatsQuery(t *testing.T) {
 
 	assert.Equal(t, want, got)
 }
+
+// TestPostgresTimestampsCapabilities verifies the timestamp-codec flag and the
+// three lister-query methods added in Task 9.
+func TestPostgresTimestampsCapabilities(t *testing.T) {
+	t.Parallel()
+
+	d := dialect.NewPostgres()
+
+	type testCase struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []testCase{
+		{
+			name: "TimestampsAsText is false (Postgres uses native time.Time)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				assert.False(t, d.TimestampsAsText())
+			},
+		},
+		{
+			name: "IncidentCountExpr uses JSONB functions and aliases as incident_count",
+			assert: func(t *testing.T) {
+				t.Helper()
+				got := d.IncidentCountExpr()
+				assert.Contains(t, got, "jsonb_typeof")
+				assert.Contains(t, got, "jsonb_array_length")
+				assert.Contains(t, got, "incident_count")
+			},
+		},
+		{
+			name: "KeysetCursorPredicate uses row-value comparison (Postgres-only syntax)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				got := d.KeysetCursorPredicate()
+				assert.Contains(t, got, "(started_at, instance_id)")
+				assert.Contains(t, got, "AND ")
+			},
+		},
+		{
+			name: "KeysetCursorArgCount is 2 for Postgres row-value predicate",
+			assert: func(t *testing.T) {
+				t.Helper()
+				assert.Equal(t, 2, d.KeysetCursorArgCount())
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t)
+		})
+	}
+}

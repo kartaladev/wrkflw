@@ -58,11 +58,8 @@ func (l *Lister) querier() database.Querier {
 	return q
 }
 
-// isSQLite reports whether the configured dialect is SQLite.
-func (l *Lister) isSQLite() bool { return l.dialect.Name() == "sqlite" }
-
 // parseTimeText parses an RFC3339Nano UTC string as written by [timeArg] on the
-// SQLite path (ADR-0080). Returns the instant UTC-normalised.
+// TEXT-timestamp path (ADR-0080). Returns the instant UTC-normalised.
 func parseTimeText(s string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {
@@ -72,10 +69,10 @@ func parseTimeText(s string) (time.Time, error) {
 }
 
 // cursorTimeArg converts cursorTime to the correct bind value for the configured
-// dialect. SQLite stores timestamps as RFC3339Nano TEXT; Postgres/MySQL accept
-// time.Time natively.
+// dialect. When [dialect.Dialect.TimestampsAsText] is true (SQLite), the value
+// is formatted as RFC3339Nano TEXT; Postgres and MySQL accept time.Time natively.
 func (l *Lister) cursorTimeArg(t time.Time) any {
-	if l.isSQLite() {
+	if l.dialect.TimestampsAsText() {
 		return t.UTC().Format(time.RFC3339Nano)
 	}
 	return t
@@ -194,9 +191,9 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 }
 
 // scanSummaryRow reads one row from the query result set into an InstanceSummary.
-// It handles the dialect split for time columns: on SQLite, started_at / ended_at
-// are stored as RFC3339Nano TEXT strings and must be parsed; on Postgres / MySQL
-// the driver returns time.Time values natively.
+// It handles the dialect split for time columns: when [dialect.Dialect.TimestampsAsText]
+// is true (SQLite), started_at / ended_at are stored as RFC3339Nano TEXT strings
+// and must be parsed; on Postgres / MySQL the driver returns time.Time natively.
 func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, error) {
 	var (
 		instanceID    string
@@ -209,9 +206,9 @@ func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, er
 	var startedAt time.Time
 	var endedAt *time.Time
 
-	if l.isSQLite() {
-		// SQLite stores timestamps as TEXT (RFC3339Nano). Scan into strings and
-		// parse manually (ADR-0080).
+	if l.dialect.TimestampsAsText() {
+		// TEXT-timestamp path (SQLite): timestamps are RFC3339Nano strings.
+		// Scan into strings and parse manually (ADR-0080).
 		var startedAtStr string
 		var endedAtStr *string
 
@@ -220,7 +217,7 @@ func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, er
 			&startedAtStr, &endedAtStr,
 			&incidentCount,
 		); err != nil {
-			return runtime.InstanceSummary{}, fmt.Errorf("workflow-store: lister: scan (sqlite): %w", err)
+			return runtime.InstanceSummary{}, fmt.Errorf("workflow-store: lister: scan (text-timestamp): %w", err)
 		}
 
 		t, err := parseTimeText(startedAtStr)
@@ -237,7 +234,7 @@ func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, er
 			endedAt = &t2
 		}
 	} else {
-		// Postgres / MySQL: driver provides time.Time natively.
+		// Native time.Time path (Postgres / MySQL): driver provides time.Time.
 		if err := rows.Scan(
 			&instanceID, &defID, &defVersion, &status,
 			&startedAt, &endedAt,

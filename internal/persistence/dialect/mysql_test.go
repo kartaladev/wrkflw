@@ -262,3 +262,60 @@ func TestMySQLOutboxStatsQuery(t *testing.T) {
 
 	assert.Equal(t, want, got)
 }
+
+// TestMySQLTimestampsCapabilities verifies the timestamp-codec flag and the
+// three lister-query methods added in Task 9.
+func TestMySQLTimestampsCapabilities(t *testing.T) {
+	t.Parallel()
+
+	d := dialect.NewMySQL()
+
+	type testCase struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []testCase{
+		{
+			name: "TimestampsAsText is false (MySQL uses native time.Time via database/sql)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				assert.False(t, d.TimestampsAsText())
+			},
+		},
+		{
+			name: "IncidentCountExpr uses JSON_TYPE/JSON_LENGTH and aliases as incident_count",
+			assert: func(t *testing.T) {
+				t.Helper()
+				got := d.IncidentCountExpr()
+				assert.Contains(t, got, "JSON_TYPE")
+				assert.Contains(t, got, "JSON_LENGTH")
+				assert.Contains(t, got, "incident_count")
+			},
+		},
+		{
+			name: "KeysetCursorPredicate uses explicit OR decomposition (MySQL syntax)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				got := d.KeysetCursorPredicate()
+				assert.Contains(t, got, "started_at < ?")
+				assert.Contains(t, got, "started_at = ?")
+				assert.Contains(t, got, "AND ")
+			},
+		},
+		{
+			name: "KeysetCursorArgCount is 3 (cursorTime bound twice plus cursorID)",
+			assert: func(t *testing.T) {
+				t.Helper()
+				assert.Equal(t, 3, d.KeysetCursorArgCount())
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t)
+		})
+	}
+}

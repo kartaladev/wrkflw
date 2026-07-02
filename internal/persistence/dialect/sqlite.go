@@ -127,3 +127,9 @@ func (sqliteDialect) KeysetCursorPredicate() string {
 // KeysetCursorArgCount returns 3 because the SQLite predicate binds cursorTime
 // twice (once for < and once for =) then cursorID.
 func (sqliteDialect) KeysetCursorArgCount() int { return 3 }
+
+// TimestampsAsText reports that SQLite stores timestamp columns as RFC3339Nano
+// TEXT strings (ADR-0080). The modernc.org/sqlite driver does not natively
+// encode time.Time to ISO8601; callers must format values with
+// time.RFC3339Nano before binding and parse them back when scanning.
+func (sqliteDialect) TimestampsAsText() bool { return true }
