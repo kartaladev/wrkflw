@@ -69,11 +69,17 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 
 	var subDef *ProcessDefinition
 	if ny.Subprocess != nil {
-		d, err := definitionFromYAML(ny.Subprocess)
+		core, err := coreFromYAML(ny.Subprocess)
 		if err != nil {
 			return nil, fmt.Errorf("workflow-model: subprocess %q: %w", ny.ID, err)
 		}
-		subDef = d
+		// Subprocess definitions are fully declared inline: build immediately so
+		// the parent node holds a *ProcessDefinition rather than a loader handle.
+		built, err := core.build()
+		if err != nil {
+			return nil, fmt.Errorf("workflow-model: subprocess %q: %w", ny.ID, err)
+		}
+		subDef = built
 	}
 
 	w := nodeWire{
@@ -107,52 +113,44 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 	return fromWire(w)
 }
 
-// definitionFromYAML converts a decoded definitionYAML into a ProcessDefinition
-// with concrete node types. It does NOT validate — the caller (ParseYAML) runs Validate.
-func definitionFromYAML(dy *definitionYAML) (*ProcessDefinition, error) {
-	def := ProcessDefinition{
-		ID:            dy.ID,
-		Version:       dy.Version,
-		CancelActions: dy.CancelActions,
-	}
-
-	def.Nodes = make([]Node, len(dy.Nodes))
+// coreFromYAML converts a decoded definitionYAML into a *definitionCore with
+// concrete node types. Validation is deferred to Build so callers can register
+// definition-scoped actions before validation runs.
+func coreFromYAML(dy *definitionYAML) (*definitionCore, error) {
+	c := &definitionCore{id: dy.ID, version: dy.Version, cancelActions: dy.CancelActions}
+	c.nodes = make([]Node, len(dy.Nodes))
 	for i, ny := range dy.Nodes {
 		n, err := fromNodeYAML(ny)
 		if err != nil {
 			return nil, err
 		}
-		def.Nodes[i] = n
+		c.nodes[i] = n
 	}
-
-	def.Flows = make([]SequenceFlow, len(dy.Flows))
+	c.flows = make([]SequenceFlow, len(dy.Flows))
 	for i, fy := range dy.Flows {
-		def.Flows[i] = SequenceFlow(fy)
+		c.flows[i] = SequenceFlow(fy)
 	}
-
-	return &def, nil
+	return c, nil
 }
 
-// ParseYAML decodes a YAML process-definition from data, reconstructs concrete
-// node types via the lowerCamelCase kind discriminator, and validates the
-// resulting definition. Returns the validated *ProcessDefinition or an error.
-func ParseYAML(data []byte) (*ProcessDefinition, error) {
+// ParseYAML decodes a YAML process-definition and returns a DefinitionLoader
+// whose structure (nodes, flows) is already declared. Register any
+// definition-scoped actions via RegisterAction/RegisterActionFunc, then call
+// Build to validate and obtain the *ProcessDefinition.
+func ParseYAML(data []byte) (DefinitionLoader, error) {
 	var dy definitionYAML
 	if err := yaml.Unmarshal(data, &dy); err != nil {
 		return nil, fmt.Errorf("workflow-model: parse YAML: %w", err)
 	}
-	def, err := definitionFromYAML(&dy)
+	core, err := coreFromYAML(&dy)
 	if err != nil {
 		return nil, err
 	}
-	if err := Validate(def); err != nil {
-		return nil, err
-	}
-	return def, nil
+	return &definitionLoader{core}, nil
 }
 
 // LoadYAML reads all bytes from r and calls ParseYAML.
-func LoadYAML(r io.Reader) (*ProcessDefinition, error) {
+func LoadYAML(r io.Reader) (DefinitionLoader, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-model: read YAML: %w", err)
