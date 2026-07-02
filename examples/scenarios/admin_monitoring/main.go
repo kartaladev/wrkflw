@@ -322,7 +322,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store)
 	// Build a relay with the failing publisher and MaxDeliveryAttempts=1 so a
 	// single DrainOnce call quarantines every row it touches.
 	relay := persistence.NewSQLiteRelay(db, failPublisher{},
-		persistence.MySQLWithMaxDeliveryAttempts(1),
+		persistence.WithMaxDeliveryAttempts(1),
 	)
 
 	// DrainOnce → publish fails → retry_count reaches maxDel(1) → status='dead'.
