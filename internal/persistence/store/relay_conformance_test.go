@@ -686,11 +686,14 @@ func TestRelayDrainOnce_NilConn(t *testing.T) {
 // TestRelayDrainOnce_ClaimQueryFails verifies that a claim-query failure
 // (cancelled context after tx begin) is reported as an infra error from
 // DrainOnce and does NOT panic or leak. Only exercised on SupportsSkipLocked
-// backends; SQLite single-writer is covered by TestRelayRun_InfraErrorPropagates.
+// backends. FOLLOW-UP: the SQLite (non-SkipLocked) DrainOnce infra-error path is
+// not independently covered at runtime here — the former nil-conn probe now
+// fails fast at construction (ErrNilDependency). A dropped-table style test
+// (cf. TestStoreWriteErrors) would restore that coverage.
 func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		if !b.dialect.SupportsSkipLocked() {
-			t.Skipf("skip SQLite — nil conn test covers the non-locking path")
+			t.Skipf("skip SQLite — non-SkipLocked DrainOnce infra path not covered here (see FOLLOW-UP above)")
 		}
 		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
 		require.NoError(t, err)
