@@ -161,10 +161,10 @@ func TestTimerFiredFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNewActionFailedJitteredCarriesFraction asserts that NewActionFailed with
+// TestNewActionFailedWithJitterCarriesFraction asserts that NewActionFailed with
 // WithJitter stores JitterFraction and all other ActionFailed fields faithfully,
 // and that the result satisfies the Trigger interface.
-func TestNewActionFailedJitteredCarriesFraction(t *testing.T) {
+func TestNewActionFailedWithJitterCarriesFraction(t *testing.T) {
 	at := time.Unix(0, 0)
 	f := engine.NewActionFailed(at, "c-1", "boom", true, engine.WithJitter(0.5))
 	if f.JitterFraction != 0.5 || !f.Retryable || f.CommandID != "c-1" {

@@ -111,7 +111,7 @@ never build the struct literals directly.
 |---|---|
 | `engine.NewStartInstance(at, vars)` | Begin a new process instance with initial variables. |
 | `engine.NewActionCompleted(at, commandID, output)` | A service action finished successfully. |
-| `engine.NewActionFailed(at, commandID, errMsg, retryable)` | A service action failed (optionally retryable). `NewActionFailedJittered(..., jitter)` additionally records the backoff jitter fraction. |
+| `engine.NewActionFailed(at, commandID, errMsg, retryable, opts...)` | A service action failed (optionally retryable). Pass `engine.WithJitter(fraction)` to record a backoff jitter fraction. |
 | `engine.NewHumanClaimed(at, taskToken, actor)` | A human task was claimed. |
 | `engine.NewHumanCompleted(at, taskToken, output, actor)` | A human task was completed. |
 | `engine.NewHumanReassigned(at, taskToken, from, to, by)` | A human task was reassigned from one actor to another (e.g. by an admin). |
