@@ -30,30 +30,14 @@ var (
 // non-empty NotifyStatement (Postgres) emit it.
 const outboxNotifyChannel = "wrkflw_outbox"
 
-// timeArg converts a time.Time into the correct bind argument for the store's
-// dialect. Postgres (TIMESTAMPTZ) and MySQL (DATETIME, DSN loc=UTC) bind
-// time.Time natively. SQLite timestamp columns are TEXT: the modernc.org/sqlite
-// driver stringifies a bound time.Time via its default String() form, which is
-// NOT ISO8601 (julianday() returns NULL for it) and cannot be scanned back.
-// For SQLite the value is therefore formatted as an RFC3339Nano UTC string,
-// which is julianday-compatible and round-trips exactly (ADR-0080).
-//
-// The TEXT path is activated by [dialect.Dialect.TimestampsAsText]; callers
-// must not compare [dialect.Dialect.Name] to "sqlite" directly.
-func (s *Store) timeArg(t time.Time) any {
-	if s.dialect.TimestampsAsText() {
-		return t.UTC().Format(time.RFC3339Nano)
-	}
-	return t
-}
-
 // timeArgP converts an optional time.Time (nil-safe) for a dialect-correct bind.
 // A nil pointer stays nil so the column is written NULL on every backend.
+// Non-nil values are forwarded to the package-level [timeArg] free function.
 func (s *Store) timeArgP(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
-	return s.timeArg(*t)
+	return timeArg(s.dialect, *t)
 }
 
 // Create inserts a brand-new process instance from its first applied step.
@@ -90,9 +74,9 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 		int16(step.State.Status),
 		snap,
 		version,
-		s.timeArg(step.State.StartedAt),
+		timeArg(s.dialect, step.State.StartedAt),
 		s.timeArgP(step.State.EndedAt),
-		s.timeArg(now),
+		timeArg(s.dialect, now),
 	); err != nil {
 		if s.dialect.IsUniqueViolation(err) {
 			return 0, runtime.ErrInstanceExists
@@ -231,7 +215,7 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		snap,
 		int16(step.State.Status),
 		s.timeArgP(step.State.EndedAt),
-		s.timeArg(now),
+		timeArg(s.dialect, now),
 		step.State.InstanceID,
 		int64(expected),
 	)
@@ -364,7 +348,7 @@ func (s *Store) writeJournal(ctx context.Context, q database.Querier, step runti
 		`INSERT INTO wrkflw_journal (instance_id, seq, kind, `+col+`, occurred_at, applied_at)
 		 VALUES (?,?,?,?,?,?)`),
 		step.State.InstanceID, seq, kind, data,
-		s.timeArg(step.Trigger.OccurredAt()), s.timeArg(appliedAt),
+		timeArg(s.dialect, step.Trigger.OccurredAt()), timeArg(s.dialect, appliedAt),
 	); err != nil {
 		return fmt.Errorf("workflow-store: write journal: %w", err)
 	}
@@ -384,7 +368,7 @@ func (s *Store) writeOutbox(ctx context.Context, q database.Querier, instanceID 
 		if _, err := q.Exec(ctx, s.dialect.Rebind(
 			`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, definition_ref)
 			 VALUES (?,?,?,?,?,?)`),
-			instanceID, ev.Topic, payload, dedup, s.timeArg(createdAt), ev.DefinitionRef,
+			instanceID, ev.Topic, payload, dedup, timeArg(s.dialect, createdAt), ev.DefinitionRef,
 		); err != nil {
 			return fmt.Errorf("workflow-store: write outbox: %w", err)
 		}
@@ -406,7 +390,7 @@ func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link run
 		link.ParentDefID,
 		link.ParentDefVersion,
 		link.Depth,
-		s.timeArg(createdAt),
+		timeArg(s.dialect, createdAt),
 	); err != nil {
 		return fmt.Errorf("workflow-store: create: call link: %w", err)
 	}
@@ -420,7 +404,7 @@ func (s *Store) upsertTimer(ctx context.Context, q database.Querier, tm runtime.
 	_, err := q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
 		 VALUES (?,?,?,?,?,?)`+s.dialect.UpsertTimer()),
-		tm.InstanceID, tm.TimerID, s.timeArg(tm.FireAt), int16(tm.Kind), tm.DefID, tm.DefVersion)
+		tm.InstanceID, tm.TimerID, timeArg(s.dialect, tm.FireAt), int16(tm.Kind), tm.DefID, tm.DefVersion)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert timer %q/%q: %w", tm.InstanceID, tm.TimerID, err)
 	}

@@ -9,8 +9,15 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
+
+// Compile-time assertion: *store.DefinitionStore must satisfy the public facade
+// interface persistence.DefinitionStore (PutDefinition + Lookup). This guard
+// lives in the external test package so the assertion can import both
+// internal/persistence/store and persistence without creating an import cycle.
+var _ persistence.DefinitionStore = (*store.DefinitionStore)(nil)
 
 // richConformanceDefinition builds a realistic ProcessDefinition with multiple
 // typed nodes and sequence flows to exercise the JSON round-trip on all dialects.

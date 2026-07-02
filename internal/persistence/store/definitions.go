@@ -87,7 +87,7 @@ func (ds *DefinitionStore) PutDefinition(ctx context.Context, def *model.Process
 		return fmt.Errorf("workflow-store: put definition %s:%d: marshal: %w", def.ID, def.Version, err)
 	}
 
-	createdAt := ds.timeArg(time.Now().UTC())
+	createdAt := timeArg(ds.dialect, time.Now().UTC())
 
 	q := ds.querier(ctx)
 	_, err = q.Exec(ctx, ds.dialect.Rebind(
@@ -163,17 +163,4 @@ func (ds *DefinitionStore) Lookup(ctx context.Context, defRef string) (*model.Pr
 		return nil, fmt.Errorf("workflow-store: lookup %q: unmarshal: %w", defRef, err)
 	}
 	return &def, nil
-}
-
-// timeArg converts a time.Time into the correct bind argument for the store's
-// dialect, mirroring the pattern used in [Store.timeArg] (store_core.go).
-// Postgres (TIMESTAMPTZ) and MySQL (DATETIME, DSN loc=UTC) accept time.Time
-// natively. SQLite timestamps are TEXT: formatted as RFC3339Nano UTC strings
-// (ADR-0080). The TEXT path is activated by [dialect.Dialect.TimestampsAsText];
-// callers must not compare [dialect.Dialect.Name] to "sqlite" directly.
-func (ds *DefinitionStore) timeArg(t time.Time) any {
-	if ds.dialect.TimestampsAsText() {
-		return t.UTC().Format(time.RFC3339Nano)
-	}
-	return t
 }

@@ -58,26 +58,6 @@ func (l *Lister) querier() database.Querier {
 	return q
 }
 
-// parseTimeText parses an RFC3339Nano UTC string as written by [timeArg] on the
-// TEXT-timestamp path (ADR-0080). Returns the instant UTC-normalised.
-func parseTimeText(s string) (time.Time, error) {
-	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("workflow-store: lister: parse timestamp %q: %w", s, err)
-	}
-	return t.UTC(), nil
-}
-
-// cursorTimeArg converts cursorTime to the correct bind value for the configured
-// dialect. When [dialect.Dialect.TimestampsAsText] is true (SQLite), the value
-// is formatted as RFC3339Nano TEXT; Postgres and MySQL accept time.Time natively.
-func (l *Lister) cursorTimeArg(t time.Time) any {
-	if l.dialect.TimestampsAsText() {
-		return t.UTC().Format(time.RFC3339Nano)
-	}
-	return t
-}
-
 // List returns a keyset-cursor-paginated page of instance summaries.
 //
 // Items are ordered by (started_at DESC, instance_id DESC). When filter.Status
@@ -113,7 +93,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 		queryArgs []any
 	)
 
-	ct := l.cursorTimeArg(cursorTime)
+	ct := timeArg(l.dialect, cursorTime)
 
 	switch {
 	case filter.Status != nil && hasCursor:

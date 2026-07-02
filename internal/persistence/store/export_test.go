@@ -25,4 +25,4 @@ var CapHistory = capHistory
 func (s *Store) MapConflictForTest(err error) error { return s.mapConflict(err) }
 
 // TimeArgForTest exposes the unexported timeArg helper for black-box tests.
-func (s *Store) TimeArgForTest(t time.Time) any { return s.timeArg(t) }
+func (s *Store) TimeArgForTest(t time.Time) any { return timeArg(s.dialect, t) }
