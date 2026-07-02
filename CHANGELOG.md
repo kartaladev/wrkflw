@@ -32,6 +32,10 @@ built across ADRs 0001–0082.
   rationale for each suppression (ADR-0077).
 
 ### Added
+- **`persistence.Relay` now exposes `OutboxStats`.** The method
+  `OutboxStats(ctx context.Context) (runtime.OutboxStats, error)` is part of the
+  `persistence.Relay` interface; callers no longer need a `runtime.OutboxStatsReader`
+  type assertion to read pending/dead/age stats from a relay obtained through the facade.
 - **SQLite backend (ADR-0082).** `persistence.OpenSQLite(ctx, db *sql.DB, opts ...Option) (Store, error)`,
   `persistence.MigrateSQLite(ctx, db)`, and `persistence.NewSQLiteAdvisoryLockOwnership()` (fail-loud —
   every acquire returns `dialect.ErrUnsupported`). Backend uses `modernc.org/sqlite` (pure-Go), WAL mode,

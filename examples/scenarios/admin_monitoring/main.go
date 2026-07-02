@@ -14,7 +14,7 @@
 //     quarantines terminal-event rows to status='dead' after one publish
 //     attempt; then call [persistence.Relay.ListDeadLettered] to inspect
 //     them, [persistence.Relay.Redrive] to re-queue them, and verify the
-//     dead count returns to zero via [runtime.OutboxStatsReader.OutboxStats].
+//     dead count returns to zero via [persistence.Relay.OutboxStats].
 //
 // All three sections are self-contained: the program starts, exercises each
 // surface, prints clearly labelled operator observations, and exits 0.
@@ -332,13 +332,9 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store)
 	}
 	fmt.Printf("  DrainOnce: published=%d (expected 0 — publisher always fails)\n", published)
 
-	// OutboxStats via runtime.OutboxStatsReader (the concrete *store.Relay
-	// implements this; obtained through type assertion).
-	statsReader, ok := relay.(runtime.OutboxStatsReader)
-	if !ok {
-		return errors.New("relay does not implement runtime.OutboxStatsReader")
-	}
-	stats, err := statsReader.OutboxStats(ctx)
+	// OutboxStats is now part of the persistence.Relay interface — no type
+	// assertion needed.
+	stats, err := relay.OutboxStats(ctx)
 	if err != nil {
 		return fmt.Errorf("outbox stats: %w", err)
 	}
@@ -374,7 +370,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store)
 	fmt.Printf("  Redrive(%v): %d row(s) re-queued\n", ids, redriven)
 
 	// OutboxStats after redrive: Dead should now be 0.
-	statsAfter, err := statsReader.OutboxStats(ctx)
+	statsAfter, err := relay.OutboxStats(ctx)
 	if err != nil {
 		return fmt.Errorf("outbox stats (after redrive): %w", err)
 	}

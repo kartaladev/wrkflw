@@ -80,6 +80,14 @@ type Relay interface {
 	// Returns the number of rows successfully re-queued. Passing no ids is a
 	// no-op (returns 0, nil).
 	Redrive(ctx context.Context, ids ...int64) (int, error)
+	// OutboxStats returns aggregate statistics about the wrkflw_outbox table:
+	// the count of pending rows (awaiting publication), the count of dead rows
+	// (quarantined after exhausting MaxDeliveryAttempts), and the age of the
+	// oldest pending row (zero when there are no pending rows).
+	//
+	// Implements [runtime.OutboxStatsReader] — callers that previously
+	// type-asserted to that interface can call this method directly.
+	OutboxStats(ctx context.Context) (runtime.OutboxStats, error)
 }
 
 // Publisher is the broker-agnostic outbox publisher alias (same as runtime.Publisher).
