@@ -30,3 +30,8 @@ func (s *Store) TimeArgForTest(t time.Time) any { return timeArg(s.dialect, t) }
 // TimeArgForDialect exposes timeArg as a free function keyed on a Store's dialect,
 // for use by black-box tests that do not hold a *Store (e.g. relay conformance helpers).
 func TimeArgForDialect(s *Store, t time.Time) any { return timeArg(s.dialect, t) }
+
+// WithRelayListenReady exposes the test-only withRelayListenReady relay option
+// to black-box tests so they can synchronize on the listen loop's actual LISTEN
+// establishment instead of sleeping.
+func WithRelayListenReady(ch chan struct{}) RelayOption { return withRelayListenReady(ch) }

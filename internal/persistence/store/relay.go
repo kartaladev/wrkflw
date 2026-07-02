@@ -50,9 +50,22 @@ type Relay struct {
 	maxDel  int
 	backoff struct{ base, max time.Duration }
 
-	// wake is an optional channel a LISTEN notifier (Task 18) can signal to
-	// trigger an immediate drain. It is nil in the current poll-only mode.
+	// notifier is the optional LISTEN receive-side capability injected via
+	// WithRelayNotifier. When non-nil, Run starts a listenLoop goroutine that
+	// calls notifier.Listen and forwards wakeups to the internal wake channel.
+	// When nil, Run polls on the ticker only (MySQL, SQLite, or unset Postgres).
+	notifier dialect.Notifier
+
+	// wake is an optional channel the listenLoop signals to trigger an immediate
+	// drain without waiting for the next poll tick. It is nil when no notifier is
+	// present (poll-only mode); listenLoop assigns it once Run starts.
 	wake <-chan struct{}
+
+	// listenReady is a test-only channel signalled (non-blocking) once the first
+	// LISTEN subscription is established. It is nil in production; tests inject it
+	// via WithRelayListenReady (or the package-internal withRelayListenReady) so
+	// they can synchronize on the actual LISTEN state without sleeping.
+	listenReady chan struct{}
 
 	// staged telemetry options
 	logOpt observability.Option
@@ -114,6 +127,33 @@ func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
 			r.backoff.max = maxInterval
 		}
 	}
+}
+
+// WithRelayNotifier injects a [dialect.Notifier] so [Relay.Run] wakes on
+// database notifications (Postgres LISTEN/NOTIFY) in addition to the poll
+// ticker. The poll interval remains active as a fallback for missed
+// notifications, restarts, and multi-worker fan-out (ADR-0022).
+//
+// Only the (pgx, Postgres) combination provides a meaningful implementation
+// ([NewPgxNotifier]). For MySQL and SQLite, omit this option or pass nil;
+// the Relay falls back to pure polling.
+//
+// A nil value is a no-op (poll-only mode is kept).
+func WithRelayNotifier(n dialect.Notifier) RelayOption {
+	return func(r *Relay) {
+		if n != nil {
+			r.notifier = n
+		}
+	}
+}
+
+// withRelayListenReady sets a test-only channel that the listen loop signals
+// (once, non-blocking) when its first LISTEN is established. Production callers
+// never set it; it exists so tests can synchronize deterministically on the
+// loop's established state without sleeping. Exposed to black-box tests via
+// export_test.go's WithRelayListenReady.
+func withRelayListenReady(ch chan struct{}) RelayOption {
+	return func(r *Relay) { r.listenReady = ch }
 }
 
 // WithRelayLogger sets the structured logger used by the relay for drain logs.
@@ -411,17 +451,33 @@ func (r *Relay) drainUntilEmpty(ctx context.Context) error {
 // Run drains the outbox on each poll interval tick until ctx is cancelled.
 // It returns ctx.Err() when the context is done.
 //
+// When a [dialect.Notifier] is injected via [WithRelayNotifier], Run also
+// starts a listenLoop goroutine that calls notifier.Listen and forwards each
+// database notification as an immediate drain trigger. The poll ticker remains
+// active as a fallback for missed notifications, restarts, and multi-worker
+// fan-out (ADR-0022).
+//
+// When no Notifier is present (MySQL, SQLite, or poll-only Postgres), the wake
+// channel is nil and the select falls through to the ticker only — behaviour is
+// identical to the pre-Task-18 poll-only mode.
+//
 // Publish failures no longer terminate Run: with per-row isolation they are
 // recorded against the failing row (retry / quarantine) and the loop keeps
 // polling. Only infrastructure errors (claim / commit failures) propagate and
 // terminate the loop.
-//
-// Task 18 hook: populate r.wake before Run to add notifier-driven drain.
-// The poll ticker stays as a fallback; Run's select is already structured to
-// accept the wake case once Task 18 wires the channel.
 func (r *Relay) Run(ctx context.Context) error {
 	ticker := time.NewTicker(r.poll)
 	defer ticker.Stop()
+
+	// When a Notifier is present, start the listenLoop in a background goroutine.
+	// The loop signals the internal wake channel on each notification; the select
+	// below drains immediately when the channel fires. The wake channel is nil when
+	// no notifier is present (poll-only mode), so the select case is never selected.
+	if r.notifier != nil {
+		wakeCh := make(chan struct{}, 1)
+		r.wake = wakeCh
+		go r.listenLoop(ctx, r.notifier, wakeCh)
+	}
 
 	// Attempt an immediate drain before the first tick.
 	if err := r.drainUntilEmpty(ctx); err != nil {
@@ -442,7 +498,7 @@ func (r *Relay) Run(ctx context.Context) error {
 				}
 				return err
 			}
-		case <-r.wake: // nil in poll-only mode; Task 18 wires this channel
+		case <-r.wake: // nil when poll-only; listenLoop signals here when notifier is set
 			if err := r.drainUntilEmpty(ctx); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
