@@ -130,6 +130,11 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 		if err := rows.Scan(&instanceID, &defID, &defVersion, &status, &startedAt, &endedAt, &incidentCount); err != nil {
 			return runtime.InstancePage{}, fmt.Errorf("workflow-persistence-mysql: lister: scan: %w", err)
 		}
+		startedAt = startedAt.UTC() // normalize DATETIME(6) to UTC-located (guard against non-UTC loc)
+		if endedAt != nil {
+			t := endedAt.UTC() // normalize DATETIME(6) to UTC-located (guard against non-UTC loc)
+			endedAt = &t
+		}
 		items = append(items, runtime.InstanceSummary{
 			InstanceID:    instanceID,
 			DefID:         defID,

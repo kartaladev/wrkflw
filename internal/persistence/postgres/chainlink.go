@@ -177,6 +177,7 @@ func scanChainLink(row pgx.Row) (runtime.ChainLink, error) {
 		return runtime.ChainLink{}, err
 	}
 	link.Outcome = runtime.Outcome(outcome)
+	link.CreatedAt = link.CreatedAt.UTC() // normalize TIMESTAMPTZ to UTC-located (pgx may return host zone)
 	if len(startVarsJSON) > 0 {
 		if err := json.Unmarshal(startVarsJSON, &link.StartVars); err != nil {
 			return runtime.ChainLink{}, fmt.Errorf("workflow-postgres: chain links: unmarshal start vars: %w", err)
