@@ -18,6 +18,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -686,14 +687,12 @@ func TestRelayDrainOnce_NilConn(t *testing.T) {
 // TestRelayDrainOnce_ClaimQueryFails verifies that a claim-query failure
 // (cancelled context after tx begin) is reported as an infra error from
 // DrainOnce and does NOT panic or leak. Only exercised on SupportsSkipLocked
-// backends. FOLLOW-UP: the SQLite (non-SkipLocked) DrainOnce infra-error path is
-// not independently covered at runtime here — the former nil-conn probe now
-// fails fast at construction (ErrNilDependency). A dropped-table style test
-// (cf. TestStoreWriteErrors) would restore that coverage.
+// backends; the SQLite (non-SkipLocked) DrainOnce infra-error path is covered
+// separately by TestRelayDrainOnce_SQLiteInfraError below.
 func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		if !b.dialect.SupportsSkipLocked() {
-			t.Skipf("skip SQLite — non-SkipLocked DrainOnce infra path not covered here (see FOLLOW-UP above)")
+			t.Skipf("skip SQLite — non-SkipLocked path covered by TestRelayDrainOnce_SQLiteInfraError")
 		}
 		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
 		require.NoError(t, err)
@@ -707,6 +706,29 @@ func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
 		_, err = relay.DrainOnce(ctx)
 		require.Error(t, err, "DrainOnce must propagate query error on %s", b.name)
 	})
+}
+
+// TestRelayDrainOnce_SQLiteInfraError exercises the SQLite (non-SkipLocked)
+// DrainOnce claim-path infra-error branch on the in-process backend: with the
+// outbox table dropped mid-flight, DrainOnce must surface the driver error (not
+// panic or leak) and publish nothing. This restores the runtime error-path
+// coverage that the removed nil-conn probe used to provide (dropped-table style,
+// cf. TestStoreWriteErrors).
+func TestRelayDrainOnce_SQLiteInfraError(t *testing.T) {
+	db := dbtest.RunTestSQLite(t)
+	b := backend{name: "sqlite", conn: db, dialect: dialect.NewSQLite()}
+	seedRelayOutbox(t, b, 1)
+
+	_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_outbox")
+	require.NoError(t, err, "drop wrkflw_outbox")
+
+	pub := &recordingRelayPub{}
+	relay, err := store.NewRelay(b.conn, b.dialect, pub)
+	require.NoError(t, err)
+
+	_, err = relay.DrainOnce(t.Context())
+	require.Error(t, err, "DrainOnce must surface the dropped-table claim-query error")
+	require.Empty(t, pub.topics, "nothing must be published when the claim query fails")
 }
 
 // TestRelayRun_InfraErrorPropagates verifies NewRelay returns ErrNilDependency
