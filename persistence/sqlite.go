@@ -114,7 +114,7 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 //	owner, closer, _ := persistence.NewSQLiteAdvisoryLockOwnership()
 //	defer closer.Close()
 //	store, _ := persistence.OpenSQLite(ctx, db)
-//	cachingStore := runtime.NewCachingStore(store, owner)
+//	cachingStore, err := runtime.NewCachingStore(store, owner)
 //	// Acquire will return (false, dialect.ErrUnsupported) — guard accordingly.
 func NewSQLiteAdvisoryLockOwnership() (runtime.Ownership, io.Closer, error) {
 	o, err := store.NewSQLiteOwnership()
@@ -215,7 +215,7 @@ func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (runtime.C
 //	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
 //	persistence.MigrateSQLite(ctx, db)
 //	links := persistence.NewSQLiteChainLinkStore(db)
-//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
 func NewSQLiteChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewSQLite())
 }

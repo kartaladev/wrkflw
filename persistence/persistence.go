@@ -431,7 +431,7 @@ func NewTimerStore(pool *pgxpool.Pool) (runtime.TimerStore, error) {
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
 //	links := persistence.NewChainLinkStore(pool)
-//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
 func NewChainLinkStore(pool *pgxpool.Pool) (runtime.ChainLinkStore, error) {
 	return store.NewChainLinkStore(pool, dialect.NewPostgres())
 }

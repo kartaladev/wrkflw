@@ -258,7 +258,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (runtime.Cal
 //	owner, closer, _ := persistence.NewMySQLAdvisoryLockOwnership(ctx, db)
 //	defer closer.Close()
 //	store, _ := persistence.OpenMySQL(ctx, db)
-//	cachingStore := runtime.NewCachingStore(store, owner)
+//	cachingStore, err := runtime.NewCachingStore(store, owner)
 func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Ownership, io.Closer, error) {
 	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {
@@ -279,7 +279,7 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Own
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	links := persistence.NewMySQLChainLinkStore(db)
-//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
 func NewMySQLChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewMySQL())
 }
