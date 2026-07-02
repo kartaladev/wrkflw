@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 )
 
 // QuerierForTest exposes the internal querier(ctx) accessor for use by
@@ -39,3 +40,8 @@ var MySQLHashKeyForTest = mysqlHashKey
 // to black-box tests so they can synchronize on the listen loop's actual LISTEN
 // establishment instead of sleeping.
 func WithRelayListenReady(ch chan struct{}) RelayOption { return withRelayListenReady(ch) }
+
+// NotifyForTest returns the Store's internal notify field (a [dialect.Notifier])
+// so black-box tests can assert that WithNotifier wires the value correctly.
+// It MUST NOT be called from non-test code.
+func (s *Store) NotifyForTest() dialect.Notifier { return s.notify }
