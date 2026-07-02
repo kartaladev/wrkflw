@@ -9,7 +9,9 @@
 //	if err := persistence.Migrate(ctx, pool); err != nil { ... }
 //
 //	store, err := persistence.OpenPostgres(ctx, pool)
-//	runner := runtime.NewRunner(cat, store)
+//	if err != nil { log.Fatal(err) }
+//	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+//	if err != nil { log.Fatal(err) }
 //
 // # Relay (transactional outbox drain)
 //
@@ -192,7 +194,8 @@ var ErrInstanceExists = runtime.ErrInstanceExists
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
 //	store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
-//	runner := runtime.NewRunner(nil, store)
+//	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+//	if err != nil { log.Fatal(err) }
 func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
 	q, err := database.From(pool)
 	if err != nil {
@@ -350,7 +353,8 @@ func NewLister(pool *pgxpool.Pool) (runtime.InstanceLister, error) {
 //	owner, closer, _ := persistence.NewAdvisoryLockOwnership(ctx, pool)
 //	defer closer.Close()
 //	store, _ := persistence.OpenPostgres(ctx, pool)
-//	cachingStore := runtime.NewCachingStore(store, owner)
+//	cachingStore, err := runtime.NewCachingStore(store, owner)
+//	if err != nil { log.Fatal(err) }
 func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.Ownership, io.Closer, error) {
 	o, err := store.NewPostgresOwnership(ctx, pool)
 	if err != nil {
