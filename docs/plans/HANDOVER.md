@@ -3,7 +3,28 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-06-29 (built-in service actions)
+## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-07-03 (constructor conventions + builder/loader unification)
+
+> **State:** ✅ **MERGED to `main` locally — NOT pushed** (merge commit `0aafc2c`, `--no-ff`; `main` is **27 commits ahead of `origin/main`** — the user pushes `main`). Feature branch `feat/constructor-conventions-builder-loader` and its `backup-before-filter` safety branch were deleted after merge. `go build ./...` clean; `go test ./... -count=1` **29 pkgs / 0 failures**; `go test -race ./...` 0 failures; `golangci-lint run ./...` **0 issues**; per-package coverage all ≥85% (engine 85.0, model 90.7, runtime 91.2, casbinauthz 86.5, internal/persistence/store 87.0). **Next free ADR: 0085** (0083 + 0084 consumed). Ledger: `.superpowers/sdd/progress.md`. Spec: `docs/specs/2026-07-03-constructor-conventions-and-builder-loader.md`. Plan: `docs/plans/2026-07-03-constructor-conventions-builder-loader.md`. Final opus whole-branch review: **READY** (0 Critical/Important after the committed-binaries fix).
+>
+> **What shipped (9 SDD tasks, per-constructor TDD commits):**
+> 1. **Fail-fast constructors (ADR-0083).** Stateful/service constructors that take a required non-nilable dependency now return `(T, error)` and reject nil with a wrapped `ErrNilDependency`. `runtime`: `NewRunner`, `NewTaskService`, `NewCachingStore`, `NewCachingDefinitionRegistry`, `NewSignalBus`, `NewCallNotifier`, `NewChainer` (**was panic→now error**), `NewLineageReader`. `internal/persistence/store`: all 9 (`New`, `NewCallLinkStore`, `NewChainLinkStore`, `NewDeduper`, `NewDefinitionStore`, `NewLister`, `NewPruner`, `NewTimerStore`, `NewRelay`) reject nil `conn`/`dialect`; `persistence` facade wrappers propagate. **Two sentinels:** `runtime.ErrNilDependency` (`"workflow-runtime: nil required dependency"`) + `internal/persistence/store.ErrNilDependency` (`"workflow-store: …"`). Value/DTO/trigger/node constructors + `model.NewDefinition` intentionally unchanged.
+> 2. **Options-collapse (ADR-0083).** `runtime.NewMemStore(opts ...MemStoreOption) (*MemStore, error)` with `WithCallLinks`/`WithTimers` (old `NewMemStoreWith*` GONE, closes can't-set-both). `engine.NewActionFailed(…, opts ...ActionFailedOption)` + `WithJitter` (old `NewActionFailedJittered` GONE; still a value type, no error). Single `casbinauthz.NewCasbinAuthorizer(opts...) (authz.Authorizer, io.Closer, error)` with `FromEnforcer`/`FromStrings`/`FromDB` — errors on 0 or >1 source (`ErrNoAuthorizerSource`/`ErrMultipleAuthorizerSources`); old 3 ctors GONE.
+> 3. **Builder/Loader (ADR-0084).** `model.DefinitionBuilder` and `DefinitionLoader` are now **interfaces** over one unexported `*definitionCore` (two wrappers, NOT Go-embedding, so any-order/actions-first chaining still compiles). `NewDefinition → DefinitionBuilder`; `ParseYAML`/`LoadYAML → (DefinitionLoader, error)` with **validation deferred to `Build()`**. `DefinitionBuilder.Loader()` gives the reduced view (shared state).
+> 4. **Docs:** comprehensive accuracy sweep + INTERACTIONS.md/README/doc.go elaboration; CHANGELOG breaking-change entries.
+>
+> **Accepted design decisions (controller-approved; user may revisit):**
+> - Runner functional-option **`WithCallLinks` renamed to `WithCallLinkStore`** (parallels `WithTimerStore`) to free `WithCallLinks` for the new MemStore option. BREAKING; in CHANGELOG.
+> - casbinauthz **merged into one** source-options constructor (not kept as three).
+>
+> **Follow-ups (deferred, non-blocking):**
+> - Store constructors catch **untyped-nil `conn` only**; a typed `(*sql.DB)(nil)` boxed in `any` slips the `conn == nil` guard (within spec §4.2; real query still errors downstream). Consider `reflect`-based typed-nil detection.
+> - SQLite non-SkipLocked `Relay.DrainOnce` infra-error runtime path lost independent coverage (former nil-conn probe now fails at construction); comment corrected, gate still ≥85%. Add a dropped-table test (cf. `TestStoreWriteErrors`).
+> - `TestNewRunnerFailsFast`/`TestNewTaskServiceFailsFast` lack `t.Parallel()` (cosmetic).
+> - **Disclosed TDD lapse:** `NewRunner` + the two caching constructors landed test+impl in one commit (red state not separately observable) due to a mid-task agent handoff; tests exist and pass, coverage sound.
+> - **Git hygiene:** ~68 MB of accidentally-committed example binaries were purged from branch history via `filter-branch` BEFORE merge, so `main` is clean — but confirm before pushing.
+
+## ⏩ PREVIOUS RESUME POINT — updated 2026-06-29 (built-in service actions)
 
 > **State:** ✅ **MERGED to `main` and PUSHED** — merge commit `ae79bc4`, `origin/main == ae79bc4` (in sync; the 6 previously-held backlog commits were pushed in the same push). `feat/builtin-actions` (tip `8db51f2`) is fully contained in `main` and may be deleted. `go build ./...` clean, `go test -race ./...` 27 pkgs / 0 failures / 0 races (incl. mailpit testcontainers integration + in-process TLS round-trips + Registry concurrency test), `golangci-lint run ./...` 0 issues. **engine/ + model/ production code zero-diff (verified).** **Next free ADR: 0076** (0074 + 0075 consumed). Ledger: `.superpowers/sdd/progress.md`. Spec: `docs/specs/2026-06-29-builtin-actions-design.md`. Plan: `docs/plans/2026-06-29-builtin-actions.md`. THREE final opus whole-branch reviews (original 8-task program + transform/email I/O continuation + httpcall-hooks/catalog-Registry delta) all "Ready to merge", 0 Critical/Important.
 >
