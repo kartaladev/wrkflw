@@ -83,10 +83,18 @@ func (sqliteDialect) OutboxStatsQuery() string {
 }
 
 // IsUniqueViolation reports whether err is (or wraps) a SQLite
-// unique-constraint violation (SQLITE_CONSTRAINT_UNIQUE, code 2067).
+// unique-constraint violation. Both a UNIQUE index/constraint
+// (SQLITE_CONSTRAINT_UNIQUE, code 2067) and a PRIMARY KEY collision
+// (SQLITE_CONSTRAINT_PRIMARYKEY, code 1555) count: a duplicate insert on a
+// PRIMARY KEY column (e.g. wrkflw_instances.instance_id) is a unique violation,
+// matching the Postgres/MySQL behaviour that maps it to ErrInstanceExists.
 func (sqliteDialect) IsUniqueViolation(err error) bool {
 	var se *sqlitedriver.Error
-	return errors.As(err, &se) && se.Code() == sqlitelib.SQLITE_CONSTRAINT_UNIQUE
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Code() == sqlitelib.SQLITE_CONSTRAINT_UNIQUE ||
+		se.Code() == sqlitelib.SQLITE_CONSTRAINT_PRIMARYKEY
 }
 
 // IsRetryableConflict reports whether err is (or wraps) a transient SQLite

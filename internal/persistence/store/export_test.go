@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 )
@@ -15,3 +16,13 @@ import (
 func (s *Store) QuerierForTest(ctx context.Context) database.Querier {
 	return s.querier(ctx)
 }
+
+// CapHistory exposes the unexported capHistory helper for black-box tests.
+var CapHistory = capHistory
+
+// MapConflictForTest exposes the unexported mapConflict method for black-box
+// tests. It MUST NOT be called from non-test code.
+func (s *Store) MapConflictForTest(err error) error { return s.mapConflict(err) }
+
+// TimeArgForTest exposes the unexported timeArg helper for black-box tests.
+func (s *Store) TimeArgForTest(t time.Time) any { return s.timeArg(t) }

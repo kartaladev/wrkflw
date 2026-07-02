@@ -18,7 +18,15 @@ import (
 type Store struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
-	notify  dialect.Notifier // optional; nil by default
+	notify  dialect.Notifier // optional LISTEN receive-side; nil by default
+
+	// historyCap bounds the inline snapshot History (ADR-0021). <= 0 (default)
+	// keeps full inline history; the wrkflw_journal table is always complete.
+	historyCap int
+	// emitNotify makes Create/Commit emit the dialect's NOTIFY wake statement
+	// inside the committing transaction when the step produced outbox events and
+	// the dialect supports native pub/sub (Postgres only). Default: false.
+	emitNotify bool
 }
 
 // Option is a functional option that configures a [Store] built by [New].
@@ -30,6 +38,20 @@ type Option func(*Store)
 func WithNotifier(n dialect.Notifier) Option {
 	return func(s *Store) { s.notify = n }
 }
+
+// WithHistoryCap bounds the inline History retained in the snapshot to every
+// open visit plus at most n most-recent closed visits (ADR-0021). n <= 0 (the
+// default) keeps full inline history. The wrkflw_journal table is unaffected
+// and remains the complete audit source.
+func WithHistoryCap(n int) Option { return func(s *Store) { s.historyCap = n } }
+
+// WithOutboxNotify makes Create/Commit emit the dialect's NOTIFY wake statement
+// inside the committing transaction whenever the step inserted at least one
+// outbox row, so a listening relay wakes immediately instead of waiting for its
+// next poll tick. Only Postgres emits a statement (via
+// [dialect.Dialect.NotifyStatement]); MySQL and SQLite silently skip it. Steps
+// that produce no events emit no notification.
+func WithOutboxNotify() Option { return func(s *Store) { s.emitNotify = true } }
 
 // New constructs a [Store] over conn using dialect d. conn must be either a
 // *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite); any other type will
