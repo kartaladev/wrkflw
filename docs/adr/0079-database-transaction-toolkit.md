@@ -124,8 +124,9 @@ github.com/zakyalvan/krtlwrkflw/internal/database
 github.com/zakyalvan/krtlwrkflw/internal/database/transaction
 ```
 
-This invariant should be guarded by a CI check (not yet wired): any `wrkflw` import
-added to these packages beyond the two listed above must fail the build.
+This invariant is guarded in CI by the `extraction` job (`.github/workflows/ci.yml`),
+which runs `scripts/check-extraction.sh`: any `wrkflw` import added to these packages
+beyond the two listed above fails the build.
 
 ## Consequences
 
