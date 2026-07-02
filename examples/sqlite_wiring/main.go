@@ -235,10 +235,7 @@ func run(logger *slog.Logger) error {
 	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)
 
 	// --- Health probe (SQLite *sql.DB ping) ---
-	// There is no NewSQLitePingCheck; NewMySQLPingCheck accepts any *sql.DB and
-	// is dialect-agnostic at the Ping level. We override the probe name to
-	// "sqlite" for clarity in the /readyz body.
-	readyChecks := []rest.HealthCheck{persistence.NewMySQLPingCheck(db, persistence.WithPingName("sqlite"))}
+	readyChecks := []rest.HealthCheck{persistence.NewSQLitePingCheck(db)}
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---
 	mux := http.NewServeMux()

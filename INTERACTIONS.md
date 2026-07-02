@@ -363,7 +363,7 @@ sequenceDiagram
     Note over OB: → OutboxEvent{Topic:"message."+Name, Payload:{messageName, correlationKey, variables}}
     OB-->>R: message events
     R->>SC: Store.Commit(expected Token, AppliedStep{State, Trigger, Events:[…], TimerArms, TimerCancels, …})
-    Note over SC: ATOMIC: snapshot + journal + outbox rows<br/>(all dialects: the store's Commit INSERTs each event into wrkflw_outbox<br/>in the same tx; the Postgres dialect additionally emits<br/>NOTIFY wrkflw_outbox on commit — ADR-0022)
+    Note over SC: ATOMIC: snapshot + journal + outbox rows<br/>(all dialects: the store's Commit INSERTs each event into wrkflw_outbox<br/>in the same tx; the Postgres dialect additionally emits<br/>NOTIFY wrkflw_outbox on commit when built with WithOutboxNotify() (opt-in — ADR-0022))
 ```
 
 Key points:

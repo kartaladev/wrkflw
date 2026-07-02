@@ -119,3 +119,42 @@ func TestMySQLPingCheckNilDB(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nil db")
 }
+
+// TestSQLitePingCheck_Healthy asserts that NewSQLitePingCheck over a live *sql.DB
+// (SQLite) satisfies rest.HealthCheck, reports the default name "sqlite", and pings
+// successfully.
+func TestSQLitePingCheck_Healthy(t *testing.T) {
+	t.Parallel()
+
+	db := dbtest.RunTestSQLite(t)
+
+	check := persistence.NewSQLitePingCheck(db)
+
+	// Must satisfy the same rest.HealthCheck contract as the pgx PingCheck.
+	var _ rest.HealthCheck = check
+
+	assert.Equal(t, "sqlite", check.Name())
+	require.NoError(t, check.Check(t.Context()))
+}
+
+// TestSQLitePingCheck_OverriddenName asserts WithPingName overrides the "sqlite"
+// default for NewSQLitePingCheck.
+func TestSQLitePingCheck_OverriddenName(t *testing.T) {
+	t.Parallel()
+
+	db := dbtest.RunTestSQLite(t)
+
+	check := persistence.NewSQLitePingCheck(db, persistence.WithPingName("primary-sqlite"))
+	assert.Equal(t, "primary-sqlite", check.Name())
+	require.NoError(t, check.Check(t.Context()))
+}
+
+// TestSQLitePingCheckNilDB asserts a nil *sql.DB fails the probe without panicking.
+func TestSQLitePingCheckNilDB(t *testing.T) {
+	t.Parallel()
+
+	check := persistence.NewSQLitePingCheck((*sql.DB)(nil))
+	err := check.Check(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil db")
+}

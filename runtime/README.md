@@ -452,7 +452,7 @@ constructors — consumers do not import `internal/` directly:
   `persistence.NewSQLiteAdvisoryLockOwnership` is fail-loud (every acquire returns `dialect.ErrUnsupported`),
   so `CachingStore` on SQLite is single-process only. Use Postgres or MySQL for multi-replica.
 
-All three backends expose relay/lister/store constructors (`NewSQLite*`, `NewMySQL*`, `NewPostgres*`).
+All three backends expose relay/lister/store constructors: `New*` (unprefixed) for Postgres (e.g. `NewRelay`, `NewTimerStore`, `NewCallLinkStore`, `NewLister`, `NewChainLinkStore`, `NewCallNotifier`, `NewDefinitionStore`, `NewPruner`), `NewMySQL*` for MySQL, and `NewSQLite*` for SQLite.
 
 ## Process-instance chaining
 

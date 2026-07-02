@@ -94,6 +94,27 @@ func NewMySQLPingCheck(db *sql.DB, opts ...PingOption) PingCheck {
 	return c
 }
 
+// NewSQLitePingCheck returns a [PingCheck] over a *sql.DB (SQLite). The default
+// probe name is "sqlite"; override it with [WithPingName].
+//
+// SQLite is accessed via *sql.DB (the standard database/sql interface), so the
+// check is structurally identical to NewMySQLPingCheck — only the default probe
+// name differs. A nil *sql.DB is accepted; [PingCheck.Check] will return an error
+// containing "nil db" so callers can detect a mis-configured probe at startup.
+func NewSQLitePingCheck(db *sql.DB, opts ...PingOption) PingCheck {
+	c := PingCheck{name: "sqlite"}
+	if db == nil {
+		c.nilSource = true
+		c.nilMsg = "nil db"
+	} else {
+		c.ping = sqlDBPinger{db: db}
+	}
+	for _, o := range opts {
+		o(&c)
+	}
+	return c
+}
+
 // Name returns the probe's name as it appears in the readiness response.
 func (c PingCheck) Name() string { return c.name }
 

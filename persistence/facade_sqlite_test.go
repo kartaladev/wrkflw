@@ -351,7 +351,7 @@ func TestNewSQLitePruner_PruneOutbox(t *testing.T) {
 
 	n, err := pr.PruneOutbox(ctx, cutoff)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, n, int64(1), "at least the seeded old row must be deleted")
+	require.Equal(t, int64(1), n, "exactly the one seeded old row must be deleted")
 
 	// Old row must be gone.
 	var count int
@@ -395,7 +395,7 @@ func TestNewSQLitePruner_PruneProcessedMessages(t *testing.T) {
 
 	n, err := pr.PruneProcessedMessages(ctx, cutoff)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, n, int64(1), "at least the seeded old row must be deleted")
+	require.Equal(t, int64(1), n, "exactly the one seeded old row must be deleted")
 
 	var count int
 	require.NoError(t, db.QueryRowContext(ctx,
