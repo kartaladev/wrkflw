@@ -57,10 +57,10 @@ var (
 //	db := dbtest.RunTestSQLite(t)
 //	ts, err := store.NewTimerStore(db, dialect.NewSQLite())
 func NewTimerStore(conn any, d dialect.Dialect) (*TimerStore, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	return &TimerStore{conn: conn, dialect: d}, nil

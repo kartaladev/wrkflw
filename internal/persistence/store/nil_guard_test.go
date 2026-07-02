@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -17,6 +18,18 @@ func TestNewStoreNilArgs(t *testing.T) {
 	}
 	if _, err := store.New(struct{}{}, nil); !errors.Is(err, store.ErrNilDependency) {
 		t.Fatalf("nil dialect: err = %v, want ErrNilDependency", err)
+	}
+}
+
+// TestNewStoreTypedNilConn verifies that a typed-nil conn (a nil *sql.DB boxed in
+// the any parameter, which `conn == nil` does NOT catch) is still rejected with
+// ErrNilDependency rather than silently accepted and panicking on first use.
+func TestNewStoreTypedNilConn(t *testing.T) {
+	d := dialect.NewSQLite()
+	var typedNil *sql.DB // nil pointer; a non-nil interface once boxed in `any`
+
+	if _, err := store.New(typedNil, d); !errors.Is(err, store.ErrNilDependency) {
+		t.Fatalf("typed-nil *sql.DB conn: err = %v, want ErrNilDependency", err)
 	}
 }
 

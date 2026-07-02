@@ -181,10 +181,10 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 // (MySQL / SQLite); d is the matching [dialect.Dialect].
 // Returns [ErrNilDependency] when conn is nil or d is nil.
 func NewRelay(conn any, d dialect.Dialect, pub runtime.Publisher, opts ...RelayOption) (*Relay, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	r := &Relay{

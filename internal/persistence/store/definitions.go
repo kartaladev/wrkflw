@@ -58,10 +58,10 @@ var (
 //	db := dbtest.RunTestSQLite(t)
 //	ds, err := store.NewDefinitionStore(db, dialect.NewSQLite())
 func NewDefinitionStore(conn any, d dialect.Dialect) (*DefinitionStore, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	return &DefinitionStore{conn: conn, dialect: d}, nil

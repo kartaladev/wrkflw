@@ -51,10 +51,10 @@ type Pruner struct {
 //	db := dbtest.RunTestSQLite(t)
 //	p, err := store.NewPruner(db, dialect.NewSQLite())
 func NewPruner(conn any, d dialect.Dialect) (*Pruner, error) {
-	if conn == nil {
+	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
-	if d == nil {
+	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
 	return &Pruner{conn: conn, dialect: d}, nil
