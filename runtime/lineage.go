@@ -14,9 +14,16 @@ type LineageReader struct {
 }
 
 // NewLineageReader constructs a LineageReader from the provided call and chain
-// lineage reader ports. Both arguments are required.
-func NewLineageReader(calls CallLineageReader, chains ChainLineageReader) *LineageReader {
-	return &LineageReader{calls: calls, chains: chains}
+// lineage reader ports. Both arguments are required; it returns ErrNilDependency
+// if either is nil.
+func NewLineageReader(calls CallLineageReader, chains ChainLineageReader) (*LineageReader, error) {
+	if calls == nil {
+		return nil, fmt.Errorf("%w: calls", ErrNilDependency)
+	}
+	if chains == nil {
+		return nil, fmt.Errorf("%w: chains", ErrNilDependency)
+	}
+	return &LineageReader{calls: calls, chains: chains}, nil
 }
 
 // Lineage returns the single-hop lineage for instanceID: call parent (nil when

@@ -70,7 +70,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	// ── wiring ───────────────────────────────────────────────────────────────
 	clk := clock.System()
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	worker := authz.Actor{ID: "bob", Roles: []string{"worker"}}
 	child := notifierChildDef()
@@ -89,9 +89,9 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
 	)
@@ -117,7 +117,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	taskToken := claimable[0].TaskToken
 
 	// ── Step 2: complete the human task → child completes, link flips ────────
-	svc := runtime.NewTaskService(tasks, az)
+	svc := mustTaskService(t, tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"childResult": "done"})
 	require.NoError(t, err)
 
@@ -137,7 +137,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 		return err2
 	})
 
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
+	notifier := mustCallNotifier(t, cl, deliverFn, reg)
 
 	notified, err := notifier.DrainOnce(ctx)
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	})
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
 
-	n := runtime.NewCallNotifier(cl, deliver, reg)
+	n := mustCallNotifier(t, cl, deliver, reg)
 	assert.NotNil(t, n)
 }
 
@@ -189,7 +189,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 		"opt-parent:1": parentDef,
 	})
 
-	n := runtime.NewCallNotifier(cl, deliver, reg, runtime.WithCallNotifierClock(fake))
+	n := mustCallNotifier(t, cl, deliver, reg, runtime.WithCallNotifierClock(fake))
 	require.NotNil(t, n)
 
 	// Seed a terminal call link so DrainOnce delivers a trigger.
@@ -214,4 +214,71 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 	// The trigger timestamp must equal the fake clock's time.
 	assert.Equal(t, fakeTime, capturedTrigger.OccurredAt(),
 		"trigger timestamp must reflect the injected fake clock time")
+}
+
+func TestNewCallNotifierFailsFast(t *testing.T) {
+	t.Parallel()
+
+	cl := runtime.NewMemCallLinkStore()
+	var deliver runtime.CallDeliverFunc = func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+		return nil
+	}
+	reg := runtime.NewMapDefinitionRegistry(nil)
+
+	type testCase struct {
+		name    string
+		cl      runtime.CallLinkStore
+		deliver runtime.CallDeliverFunc
+		reg     runtime.DefinitionRegistry
+		assert  func(t *testing.T, n *runtime.CallNotifier, err error)
+	}
+	cases := []testCase{
+		{
+			name:    "nil call link store",
+			cl:      nil,
+			deliver: deliver,
+			reg:     reg,
+			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, n)
+			},
+		},
+		{
+			name:    "nil deliver func",
+			cl:      cl,
+			deliver: nil,
+			reg:     reg,
+			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, n)
+			},
+		},
+		{
+			name:    "nil registry",
+			cl:      cl,
+			deliver: deliver,
+			reg:     nil,
+			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, n)
+			},
+		},
+		{
+			name:    "valid args",
+			cl:      cl,
+			deliver: deliver,
+			reg:     reg,
+			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, n)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			n, err := runtime.NewCallNotifier(tc.cl, tc.deliver, tc.reg)
+			tc.assert(t, n, err)
+		})
+	}
 }

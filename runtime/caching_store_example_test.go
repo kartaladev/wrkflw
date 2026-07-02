@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -25,14 +26,24 @@ func ExampleNewCachingStore() {
 
 	// Wrap an in-memory backing store with the write-through cache.
 	// AlwaysOwn is appropriate for a single-process embedding.
-	store := runtime.NewCachingStore(
-		runtime.NewMemStore(),
+	backing, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
+	store, err := runtime.NewCachingStore(
+		backing,
 		runtime.AlwaysOwn{},
 	)
+	if err != nil {
+		panic(err)
+	}
 
 	def := signalCatchDef("approved")
 
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	if err != nil {
+		panic(err)
+	}
 
 	// Run parks at the signal-catch node.
 	parked, err := r.Run(ctx, def, "cache-demo-1", nil)

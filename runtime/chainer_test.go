@@ -156,7 +156,7 @@ func TestChainerHandle(t *testing.T) {
 			if !tc.noLinks {
 				opts = append(opts, runtime.WithChainLinks(links))
 			}
-			c := runtime.NewChainer(starter, tc.policy, opts...)
+			c := mustChainer(t, starter, tc.policy, opts...)
 			err := c.Handle(t.Context(), tc.ev)
 			tc.assert(t, err, starter, links)
 		})
@@ -175,7 +175,7 @@ func TestChainerHandleRetriesStartAfterTransientFailure(t *testing.T) {
 	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
 		return runtime.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
 	}
-	c := runtime.NewChainer(starter, policy, runtime.WithChainLinks(links))
+	c := mustChainer(t, starter, policy, runtime.WithChainLinks(links))
 	ev := runtime.ChainEvent{PredecessorID: "p1", Outcome: runtime.OutcomeCompleted}
 
 	// First delivery: the link is recorded, then the start fails transiently.
@@ -195,15 +195,19 @@ func TestChainerSatisfiedByRunner(t *testing.T) {
 	var _ runtime.InstanceStarter = (*runtime.Runner)(nil)
 }
 
-// TestNewChainerNilGuards asserts the constructor fails fast on a nil starter or
-// policy — a Chainer is unusable without both.
+// TestNewChainerNilGuards asserts the constructor returns ErrNilDependency on a
+// nil starter or policy — a Chainer is unusable without both.
 func TestNewChainerNilGuards(t *testing.T) {
-	policy := func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+	policy := runtime.SuccessorPolicy(func(_ context.Context, _ runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
 		return runtime.SuccessorDecision{}, false
-	}
-	assert.Panics(t, func() { runtime.NewChainer(nil, policy) }, "nil starter must panic")
-	assert.Panics(t, func() { runtime.NewChainer(&recordingStarter{}, nil) }, "nil policy must panic")
-	assert.NotPanics(t, func() { runtime.NewChainer(&recordingStarter{}, policy) }, "both set must construct")
+	})
+	_, err := runtime.NewChainer(nil, policy)
+	require.ErrorIs(t, err, runtime.ErrNilDependency, "nil starter must return ErrNilDependency")
+	_, err = runtime.NewChainer(&recordingStarter{}, nil)
+	require.ErrorIs(t, err, runtime.ErrNilDependency, "nil policy must return ErrNilDependency")
+	c, err := runtime.NewChainer(&recordingStarter{}, policy)
+	require.NoError(t, err, "valid args must succeed")
+	require.NotNil(t, c, "valid args must return a non-nil Chainer")
 }
 
 // TestWithChainClockNilFallsBackToSystem asserts that passing a nil clock to
@@ -216,7 +220,7 @@ func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
 	}
 	links := runtime.NewMemChainLinkStore()
 	starter := &recordingStarter{}
-	c := runtime.NewChainer(starter, policy,
+	c := mustChainer(t, starter, policy,
 		runtime.WithChainLinks(links),
 		runtime.WithChainClock(nil), // must be ignored — default clock.System() must survive
 	)
@@ -229,4 +233,55 @@ func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
 	assert.NotPanics(t, func() {
 		_ = c.Handle(t.Context(), ev)
 	}, "WithChainClock(nil) must be ignored; clk.Now() must not panic")
+}
+
+func TestNewChainerFailsFast(t *testing.T) {
+	t.Parallel()
+
+	policy := runtime.SuccessorPolicy(func(_ context.Context, _ runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+		return runtime.SuccessorDecision{}, false
+	})
+	starter := &recordingStarter{}
+	type testCase struct {
+		name    string
+		starter runtime.InstanceStarter
+		policy  runtime.SuccessorPolicy
+		assert  func(t *testing.T, c *runtime.Chainer, err error)
+	}
+	cases := []testCase{
+		{
+			name:    "nil starter",
+			starter: nil,
+			policy:  policy,
+			assert: func(t *testing.T, c *runtime.Chainer, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, c)
+			},
+		},
+		{
+			name:    "nil policy",
+			starter: starter,
+			policy:  nil,
+			assert: func(t *testing.T, c *runtime.Chainer, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, c)
+			},
+		},
+		{
+			name:    "valid args",
+			starter: starter,
+			policy:  policy,
+			assert: func(t *testing.T, c *runtime.Chainer, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, c)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := runtime.NewChainer(tc.starter, tc.policy)
+			tc.assert(t, c, err)
+		})
+	}
 }

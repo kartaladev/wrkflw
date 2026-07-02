@@ -52,8 +52,10 @@ cat := action.NewMapCatalog(map[string]action.ServiceAction{
         return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
     }),
 })
-store := runtime.NewMemStore()
-r := runtime.NewRunner(cat, store) // clock defaults to clock.System()
+store, err := runtime.NewMemStore()
+if err != nil { log.Fatal(err) }
+r, err := runtime.NewRunner(cat, store) // clock defaults to clock.System()
+if err != nil { log.Fatal(err) }
 
 def := &model.ProcessDefinition{
     ID: "greeting", Version: 1,
@@ -73,7 +75,7 @@ st, err := r.Run(context.Background(), def, "inst-1", map[string]any{"name": "Ad
 // st.Variables["greeting"] == "hi Ada"
 ```
 
-Pass `nil` for `cat` when the process has no service tasks.
+Use `action.NewMapCatalog(nil)` for `cat` when the process has no service tasks (nil is rejected with `ErrNilDependency`).
 
 ## Runner construction and options
 
@@ -82,12 +84,12 @@ func NewRunner(
     cat   action.Catalog, // 1. required — service-action catalog
     store Store,          // 2. required — transactional persistence port
     opts  ...Option,      //    optional capabilities (functional options)
-) *Runner
+) (*Runner, error)
 ```
 
 **Positional argument 1 — `cat action.Catalog`.** The service-action catalog
-resolving action names to `ServiceAction` implementations. May be `nil` if the
-process has no service or business-rule tasks.
+resolving action names to `ServiceAction` implementations. Required non-nil; pass
+`action.NewMapCatalog(nil)` when the process has no service or business-rule tasks.
 
 **Positional argument 2 — `store Store`.** The transactional persistence port
 (snapshot + journal + outbox committed atomically per applied trigger). Use
@@ -107,7 +109,7 @@ functions accepted by `NewRunner`:
 | `WithScheduler(sched)` | Timer support: `ScheduleTimer`/`CancelTimer` commands are armed. Without this, any timer node returns an error. |
 | `WithSignalBus(bus)` | Signal throw support: `ThrowSignal` commands are broadcast. Without this, any signal-throw node returns an error. |
 | `WithDefinitions(reg)` | Definition registry for resolving call-activity `DefRef` strings. Required when any `CallActivity` node is present. |
-| `WithCallLinks(store)` | Enables the async (non-blocking) call-activity path. Without this, call activities run the child synchronously to completion in-process. |
+| `WithCallLinkStore(store)` | Enables the async (non-blocking) call-activity path. Without this, call activities run the child synchronously to completion in-process. |
 | `WithTimerStore(store)` | Persists armed timers so `RehydrateTimers` can re-arm them after a restart. Without this, timers are in-memory only. |
 | `WithDefaultRetryPolicy(p)` | Fallback `model.RetryPolicy` for action-bearing nodes that declare none. Without this, a failed action goes straight to incident or error-boundary. |
 | `WithActionTimeout(d)` | Per-invocation timeout applied to every service action (default **30s**; `0` disables). A hung action that honours ctx is cancelled and surfaces as a retryable failure. |
@@ -118,6 +120,27 @@ functions accepted by `NewRunner`:
 | `WithLogger(l)` | Structured logger (`*slog.Logger`); defaults to `slog.Default()`. |
 | `WithTracerProvider(tp)` | OTel tracer provider; defaults to the OTel global. |
 | `WithMeterProvider(mp)` | OTel meter provider; defaults to the OTel global. |
+
+## Constructor error contract
+
+All stateful `runtime` constructors return `(T, error)`. The error is non-nil when
+a required, non-nilable dependency is nil. The sentinel is `runtime.ErrNilDependency`
+(`"workflow-runtime: nil required dependency"`), wrapped with the argument name:
+
+```go
+r, err := runtime.NewRunner(cat, store)
+// err wraps ErrNilDependency if cat==nil ("catalog") or store==nil ("store")
+if errors.Is(err, runtime.ErrNilDependency) { ... }
+```
+
+The same rule applies to `NewTaskService`, `NewCachingStore`,
+`NewCachingDefinitionRegistry`, `NewSignalBus`, `NewCallNotifier`, `NewChainer`,
+`NewLineageReader`, and `NewMemStore` (whose options validate eagerly). Value types
+(`engine.NewStartInstance`, `humantask.NewMemTaskStore`,
+`action.NewMapCatalog`) are zero-dep or all-optional and do not return errors.
+
+This design front-loads wiring errors to application startup: a misconfigured
+dependency surfaces at construction time, not mid-execution.
 
 ## Driving an instance
 
@@ -180,7 +203,7 @@ st, err := r.CancelInstance(ctx, def, instanceID)
 ```
 
 Delivers a `CancelRequested` trigger. Any definition-level cancel actions (see
-`model.CancelActions`) run best-effort inside the same loop. When `WithCallLinks`
+`model.CancelActions`) run best-effort inside the same loop. When `WithCallLinkStore`
 and `WithDefinitions` are both configured, running async child instances are
 cancelled recursively (best-effort; errors are logged, never returned). Returns
 the terminated `InstanceState`.
@@ -212,9 +235,10 @@ resolver  := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 })
 az  := authz.RoleAuthorizer{}
 
-r := runtime.NewRunner(
-    nil, // no service actions for this example
-    runtime.NewMemStore(),
+memSt, _ := runtime.NewMemStore()
+r, _ := runtime.NewRunner(
+    action.NewMapCatalog(nil), // no service actions for this example
+    memSt,
     runtime.WithHumanTasks(resolver, taskStore, az),
 )
 
@@ -240,7 +264,7 @@ claimable, err := taskStore.ClaimableBy(ctx, manager)
 taskToken := claimable[0].TaskToken
 
 // Authorize and produce a HumanClaimed trigger.
-svc := runtime.NewTaskService(taskStore, az)
+svc, _ := runtime.NewTaskService(taskStore, az)
 
 claimTrg, err := svc.Claim(ctx, taskToken, manager)
 r.Deliver(ctx, def, "inst-1", claimTrg)
@@ -266,11 +290,11 @@ Wire `WithSignalBus` to enable `ThrowSignal` commands and signal-catch events.
 Construct the bus with a delivery function that routes to the right runner:
 
 ```go
-bus := runtime.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
+bus, _ := runtime.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
     _, err := r.Deliver(ctx, def, id, trg)
     return err
 })
-r2 := runtime.NewRunner(cat, store, runtime.WithSignalBus(bus))
+r2, _ := runtime.NewRunner(cat, store, runtime.WithSignalBus(bus))
 ```
 
 After each `Run`/`Deliver` iteration the runner calls `SignalBus.Sync` to
@@ -290,11 +314,14 @@ Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
 (`WithReminder`). Use `NewMemScheduler` for tests:
 
 ```go
-fc   := clockwork.NewFakeClockAt(startAt)
+fc    := clockwork.NewFakeClockAt(startAt)
 sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-r     := runtime.NewRunner(cat, store,
+r, err := runtime.NewRunner(cat, store,
     runtime.WithScheduler(sched),
     runtime.WithRunnerClock(fc)) // share the fake clock for deterministic timers
+if err != nil {
+    log.Fatal(err)
+}
 
 // After Run parks at a timer node, advance the fake clock and call Tick.
 fc.Advance(1*time.Hour + 1*time.Second)
@@ -319,7 +346,10 @@ p := model.RetryPolicy{
     BackoffCoef:     2.0,
     MaxInterval:     30 * time.Second,
 }
-r := runtime.NewRunner(cat, store, runtime.WithDefaultRetryPolicy(p))
+r, err := runtime.NewRunner(cat, store, runtime.WithDefaultRetryPolicy(p))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 When retries are exhausted the engine creates an `engine.Incident` on the token.
@@ -394,14 +424,44 @@ Both DTOs are also exposed over the REST transport (`transport/rest`) at
 
 ### `MemStore` (development and tests)
 
-`NewMemStore()` is an in-memory `Store` + `JournalReader` + `InstanceLister`
-backed by a plain map with per-instance optimistic-CAS versioning. It is
-concurrency-safe and does not require a database.
+`NewMemStore(opts ...MemStoreOption) (*MemStore, error)` is an in-memory `Store`
++ `JournalReader` + `InstanceLister` backed by a plain map with per-instance
+optimistic-CAS versioning. It is concurrency-safe and does not require a database.
 
 ```go
-store := runtime.NewMemStore()
-r     := runtime.NewRunner(cat, store)
+store, err := runtime.NewMemStore()
+if err != nil { log.Fatal(err) }
+r, err := runtime.NewRunner(cat, store)
+if err != nil { log.Fatal(err) }
 ```
+
+**For call activities (async path):** share a `MemCallLinkStore` between the store
+and the runner so the link is visible to both sides:
+
+```go
+cl    := runtime.NewMemCallLinkStore()
+store, err := runtime.NewMemStore(runtime.WithCallLinks(cl))
+if err != nil { log.Fatal(err) }
+r, err := runtime.NewRunner(cat, store,
+    runtime.WithCallLinkStore(cl),
+    runtime.WithDefinitions(reg),
+)
+```
+
+**For timers (restart recovery in tests):** share a `MemTimerStore`:
+
+```go
+mts   := runtime.NewMemTimerStore()
+store, err := runtime.NewMemStore(runtime.WithTimers(mts))
+if err != nil { log.Fatal(err) }
+r, err := runtime.NewRunner(cat, store,
+    runtime.WithTimerStore(mts),
+    runtime.WithScheduler(sched),
+)
+```
+
+`MemStore` options `WithCallLinks` and `WithTimers` may both be passed together or
+independently; neither is required for a basic store.
 
 Access the trigger history for audit assertions in tests:
 ```go
@@ -417,14 +477,16 @@ single-process embedding; multi-replica deployments need a real lease
 (`persistence.NewAdvisoryLockOwnership`).
 
 ```go
-store := runtime.NewCachingStore(
+cachingStore, err := runtime.NewCachingStore(
     pgStore,           // backing Store (e.g. a Postgres/MySQL/SQLite store from persistence; note: SQLite provides only the fail-loud persistence.NewSQLiteAdvisoryLockOwnership, so CachingStore on SQLite is single-process only)
     runtime.AlwaysOwn{},
     runtime.WithCacheTTL(5*time.Minute),
     runtime.WithCacheMaxEntries(1024),
     // clock defaults to clock.System(); override with runtime.WithCachingStoreClock(...)
 )
-r := runtime.NewRunner(cat, store)
+if err != nil { log.Fatal(err) }
+r, err := runtime.NewRunner(cat, cachingStore)
+if err != nil { log.Fatal(err) }
 ```
 
 ### `CachingDefinitionRegistry`
@@ -435,8 +497,10 @@ For hot-path definition resolution, wrap any `DefinitionRegistry` with
 ```go
 // Second arg is the cache TTL (time.Duration); the clock defaults to
 // clock.System() and is overridden with WithCachingDefinitionRegistryClock(...).
-reg := runtime.NewCachingDefinitionRegistry(pgDefRegistry, 5*time.Minute)
-r   := runtime.NewRunner(cat, store, runtime.WithDefinitions(reg))
+reg, err := runtime.NewCachingDefinitionRegistry(pgDefRegistry, 5*time.Minute)
+if err != nil { log.Fatal(err) }
+r, err   := runtime.NewRunner(cat, store, runtime.WithDefinitions(reg))
+if err != nil { log.Fatal(err) }
 ```
 
 ### SQL store (production)
@@ -502,7 +566,8 @@ policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecis
     }
     return runtime.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
 }
-chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+if err != nil { log.Fatal(err) }
 ```
 
 The terminal event reaches the `Chainer` over the broker: mount

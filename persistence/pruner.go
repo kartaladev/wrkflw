@@ -52,6 +52,6 @@ var _ Pruner = (*store.Pruner)(nil)
 //	pruner := persistence.NewPruner(pool)
 //	// every hour, drop outbox events published more than 7 days ago:
 //	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
-func NewPruner(pool *pgxpool.Pool) Pruner {
+func NewPruner(pool *pgxpool.Pool) (Pruner, error) {
 	return store.NewPruner(pool, dialect.NewPostgres())
 }

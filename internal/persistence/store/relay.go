@@ -179,7 +179,14 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 // NewRelay constructs a Relay that drains the outbox via conn and publishes
 // each event via pub. conn must be a *pgxpool.Pool (Postgres) or *sql.DB
 // (MySQL / SQLite); d is the matching [dialect.Dialect].
-func NewRelay(conn any, d dialect.Dialect, pub runtime.Publisher, opts ...RelayOption) *Relay {
+// Returns [ErrNilDependency] when conn is nil or d is nil.
+func NewRelay(conn any, d dialect.Dialect, pub runtime.Publisher, opts ...RelayOption) (*Relay, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
 	r := &Relay{
 		conn:   conn,
 		d:      d,
@@ -206,7 +213,7 @@ func NewRelay(conn any, d dialect.Dialect, pub runtime.Publisher, opts ...RelayO
 		"wrkflw_relay_batch_duration_seconds",
 		"Wall-clock duration of each DrainOnce call in seconds.",
 	)
-	return r
+	return r, nil
 }
 
 // DrainOnce claims one batch of due pending outbox rows (status='pending' AND

@@ -153,7 +153,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 			t.Parallel()
 			clk := newFakeClock(baseTime)
 			backing := &countingRegistry{def: baseDef}
-			c := runtime.NewCachingDefinitionRegistry(backing, ttl, runtime.WithCachingDefinitionRegistryClock(clk))
+			c := mustCachingDefinitionRegistry(t, backing, ttl, runtime.WithCachingDefinitionRegistryClock(clk))
 			tc.assert(t, backing, clk, c)
 		})
 	}
@@ -171,7 +171,7 @@ func TestCachingDefinitionRegistry_NonErrNotCached(t *testing.T) {
 	t.Parallel()
 	sentinel := errors.New("transient error")
 	backing := &countingRegistry{err: sentinel}
-	c := runtime.NewCachingDefinitionRegistry(backing, time.Minute)
+	c := mustCachingDefinitionRegistry(t, backing, time.Minute)
 
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.ErrorIs(t, err, sentinel)
@@ -186,7 +186,7 @@ func TestCachingDefinitionRegistry_NonErrNotCached(t *testing.T) {
 func TestNewCachingDefinitionRegistryDefaultUsesSystemClock(t *testing.T) {
 	t.Parallel()
 	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
-	c := runtime.NewCachingDefinitionRegistry(backing, time.Minute) // no clock option
+	c := mustCachingDefinitionRegistry(t, backing, time.Minute) // no clock option
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
 	_, err = c.Lookup(t.Context(), "d:1") // within TTL → cache hit, no second backing call
@@ -200,11 +200,50 @@ func TestNewCachingDefinitionRegistryWithClockOption(t *testing.T) {
 	t.Parallel()
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
 	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
-	c := runtime.NewCachingDefinitionRegistry(backing, time.Minute, runtime.WithCachingDefinitionRegistryClock(fake))
+	c := mustCachingDefinitionRegistry(t, backing, time.Minute, runtime.WithCachingDefinitionRegistryClock(fake))
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
 	fake.Advance(2 * time.Minute) // past TTL → next lookup re-hits backing
 	_, err = c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), backing.calls.Load(), "lookup after TTL expiry on the fake clock should re-call backing")
+}
+
+func TestNewCachingDefinitionRegistryFailsFast(t *testing.T) {
+	t.Parallel()
+
+	goodBacking := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
+	type testCase struct {
+		name    string
+		backing runtime.DefinitionRegistry
+		ttl     time.Duration
+		assert  func(t *testing.T, c *runtime.CachingDefinitionRegistry, err error)
+	}
+	cases := []testCase{
+		{
+			name:    "nil backing",
+			backing: nil,
+			ttl:     time.Minute,
+			assert: func(t *testing.T, c *runtime.CachingDefinitionRegistry, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, c)
+			},
+		},
+		{
+			name:    "valid args",
+			backing: goodBacking,
+			ttl:     time.Minute,
+			assert: func(t *testing.T, c *runtime.CachingDefinitionRegistry, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, c)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := runtime.NewCachingDefinitionRegistry(tc.backing, tc.ttl)
+			tc.assert(t, c, err)
+		})
+	}
 }

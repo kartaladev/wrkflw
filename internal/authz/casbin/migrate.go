@@ -21,7 +21,7 @@ const casbinVersionTable = "casbin_goose_db_version"
 
 // MigrateCasbin applies the embedded casbin_rule migration to the database
 // reachable through pool. It is idempotent and tracked in casbin_goose_db_version.
-// It must be called explicitly before NewCasbinAuthorizerFromDB; it is never
+// It must be called explicitly before NewCasbinAuthorizer(FromDB(...)); it is never
 // auto-run on import.
 func MigrateCasbin(ctx context.Context, pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)

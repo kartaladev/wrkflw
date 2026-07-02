@@ -114,15 +114,15 @@ func WithChainMeterProvider(mp metric.MeterProvider) ChainerOption {
 	return func(c *chainerConfig) { c.obsOpts = append(c.obsOpts, observability.WithMeterProvider(mp)) }
 }
 
-// NewChainer constructs a Chainer over starter and policy. It panics if either
-// is nil — a Chainer is unusable without both. Pass WithChainLinks to enable
-// durable lineage + the DB-level exactly-once backstop.
-func NewChainer(starter InstanceStarter, policy SuccessorPolicy, opts ...ChainerOption) *Chainer {
+// NewChainer constructs a Chainer over starter and policy. It returns an error
+// if either is nil — a Chainer is unusable without both. Pass WithChainLinks to
+// enable durable lineage + the DB-level exactly-once backstop.
+func NewChainer(starter InstanceStarter, policy SuccessorPolicy, opts ...ChainerOption) (*Chainer, error) {
 	if starter == nil {
-		panic("workflow-runtime: NewChainer: starter must not be nil")
+		return nil, fmt.Errorf("%w: starter", ErrNilDependency)
 	}
 	if policy == nil {
-		panic("workflow-runtime: NewChainer: policy must not be nil")
+		return nil, fmt.Errorf("%w: policy", ErrNilDependency)
 	}
 	cfg := chainerConfig{clk: clock.System()}
 	for _, o := range opts {
@@ -136,7 +136,7 @@ func NewChainer(starter InstanceStarter, policy SuccessorPolicy, opts ...Chainer
 		clk:     cfg.clk,
 		tel:     tel,
 		started: tel.Int64Counter("wrkflw_chain_started_total", "Successor process instances started by chaining."),
-	}
+	}, nil
 }
 
 const chainerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/chainer"

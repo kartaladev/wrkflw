@@ -80,10 +80,11 @@ func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 
 		fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
 
-		cls := persistence.NewCallLinkStore(pool,
+		cls, err := persistence.NewCallLinkStore(pool,
 			persistence.WithCallLinkLease("facade-A", facadeLeaseTTL),
 			persistence.WithCallLinkClock(fc),
 		)
+		require.NoError(t, err)
 		require.NotNil(t, cls, "NewCallLinkStore with lease options must return a non-nil store")
 	})
 
@@ -94,18 +95,21 @@ func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 		fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
 
 		// Owner A: leased store via the public façade.
-		storeA := persistence.NewCallLinkStore(pool,
+		storeA, err := persistence.NewCallLinkStore(pool,
 			persistence.WithCallLinkLease("facade-owner-A", facadeLeaseTTL),
 			persistence.WithCallLinkClock(fc),
 		)
+		require.NoError(t, err)
 		// Owner B: different owner, same pool, same lease TTL.
-		storeB := persistence.NewCallLinkStore(pool,
+		storeB, err := persistence.NewCallLinkStore(pool,
 			persistence.WithCallLinkLease("facade-owner-B", facadeLeaseTTL),
 			persistence.WithCallLinkClock(fc),
 		)
+		require.NoError(t, err)
 
 		// Seed a terminal link via the internal store write path.
-		pgStore := store.New(pool, dialect.NewPostgres())
+		pgStore, err := store.New(pool, dialect.NewPostgres())
+		require.NoError(t, err)
 		seedFacadeTerminalLink(t, pgStore, pool, "facade-lease-child-1",
 			runtime.CallOutcome{Completed: true})
 
@@ -126,7 +130,8 @@ func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 		pool := dbtest.RunTestDatabase(t)
 		require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-		cls := persistence.NewCallLinkStore(pool)
+		cls, err := persistence.NewCallLinkStore(pool)
+		require.NoError(t, err)
 		require.NotNil(t, cls, "zero-option NewCallLinkStore must still return a non-nil store")
 	})
 }

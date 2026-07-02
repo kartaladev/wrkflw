@@ -13,9 +13,13 @@ func TestParseYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	def, err := model.ParseYAML(data)
+	ld, err := model.ParseYAML(data)
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
+	}
+	def, err := ld.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
 	}
 	if def.ID != "order" || len(def.Nodes) != 3 {
 		t.Fatalf("def = %+v", def)
@@ -31,9 +35,13 @@ func TestParseYAMLFlows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	def, err := model.ParseYAML(data)
+	ld, err := model.ParseYAML(data)
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
+	}
+	def, err := ld.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
 	}
 	if len(def.Flows) != 2 {
 		t.Fatalf("got %d flows, want 2", len(def.Flows))
@@ -50,9 +58,13 @@ func TestLoadYAML(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = f.Close() })
 
-	def, err := model.LoadYAML(f)
+	ld, err := model.LoadYAML(f)
 	if err != nil {
 		t.Fatalf("LoadYAML: %v", err)
+	}
+	def, err := ld.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
 	}
 	if def.ID != "order" {
 		t.Fatalf("ID = %q, want order", def.ID)
@@ -60,7 +72,7 @@ func TestLoadYAML(t *testing.T) {
 }
 
 func TestParseYAMLRejectsInvalid(t *testing.T) {
-	// A definition with no start event must produce a validation error.
+	// A definition with no start event must produce a validation error at Build time.
 	yamlInput := `
 id: bad
 version: 1
@@ -70,7 +82,11 @@ nodes:
     action: do-something
 flows: []
 `
-	_, err := model.ParseYAML([]byte(yamlInput))
+	ld, err := model.ParseYAML([]byte(yamlInput))
+	if err != nil {
+		t.Fatalf("ParseYAML: unexpected parse error: %v", err)
+	}
+	_, err = ld.Build()
 	if err == nil {
 		t.Fatal("expected validation error (no start event)")
 	}
@@ -91,9 +107,13 @@ cancelActions:
   - cleanup-a
   - cleanup-b
 `
-	def, err := model.ParseYAML([]byte(yamlInput))
+	ld, err := model.ParseYAML([]byte(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
+	}
+	def, err := ld.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
 	}
 	if len(def.CancelActions) != 2 || def.CancelActions[0] != "cleanup-a" {
 		t.Fatalf("CancelActions = %v", def.CancelActions)
@@ -124,9 +144,13 @@ flows:
   - { id: f4, source: a, target: e }
   - { id: f5, source: b, target: e }
 `
-	def, err := model.ParseYAML([]byte(yamlInput))
+	ld, err := model.ParseYAML([]byte(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
+	}
+	def, err := ld.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
 	}
 	for _, f := range def.Flows {
 		if f.ID == "f2" && f.Condition != "vars.x == 1" {
@@ -165,10 +189,14 @@ flows:
   - { id: f2, source: approve, target: end }
 `
 
-	// Parse the YAML.
-	parsed, err := model.ParseYAML([]byte(yamlInput))
+	// Parse the YAML and build.
+	ld, err := model.ParseYAML([]byte(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
+	}
+	parsed, err := ld.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
 	}
 
 	// Verify the parsed UserTask has the correct eligibilityPrivileges.

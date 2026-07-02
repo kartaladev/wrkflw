@@ -57,13 +57,17 @@ Two implementations ship:
 
 | Function / method | Signature | Notes |
 |---|---|---|
-| `NewMapCatalog` | `NewMapCatalog(m map[string]ServiceAction) MapCatalog` | Wraps `m`; the caller must not mutate `m` afterward. |
+| `NewMapCatalog` | `NewMapCatalog(m map[string]ServiceAction) MapCatalog` | Wraps `m`; the caller must not mutate `m` afterward. `nil` map is allowed (empty catalog). |
 | `MapCatalog.Resolve` | `Resolve(name) (ServiceAction, bool)` | Map lookup. Safe for concurrent reads. |
+
+Use `action.NewMapCatalog(nil)` (not Go `nil`) when constructing a runner for
+processes with no service tasks — `runtime.NewRunner` requires a non-nil catalog.
 
 ### `Registry` — concurrency-safe, satisfies both `Catalog` and `Registrar`
 
 Post-construction registration guarded by a `sync.RWMutex` (contains a `noCopy` —
-never copy a `Registry`; pass `*Registry`).
+never copy a `Registry`; pass `*Registry`). Suitable for dynamic wiring where
+actions are registered incrementally after startup.
 
 | Method | Signature | Notes |
 |---|---|---|
@@ -83,15 +87,27 @@ never copy a `Registry`; pass `*Registry`).
 
 (A resolution *miss* is reported by the `bool` return, not an error — there is no `ErrActionNotFound`.)
 
-### `Resolve` — scoped → global precedence
+### `Resolve` — three-tier precedence
 
 ```go
 func Resolve(scoped, global Catalog, name string) (ServiceAction, bool)
 ```
 
-Two-tier lookup: the **scoped** (definition-local) catalog first, then the
-**global** catalog (either may be nil). Node-local *inline* actions are a higher
-tier resolved by the caller, not by this function.
+The runtime resolves actions in three tiers, outermost first:
+
+1. **Inline action** — a `ServiceAction` embedded directly in the node via
+   `model.WithInlineAction` or `model.WithInlineActionFunc`. The engine sets
+   `InvokeAction.Inline` when present; the runner calls it directly, bypassing both
+   catalogs. No `name` is involved.
+2. **Scoped (definition-local) catalog** — a `Catalog` registered on the
+   `ProcessDefinition` via `DefinitionBuilder.RegisterAction`. The engine sets
+   `InvokeAction.Scoped` when available. Checked first in `action.Resolve`.
+3. **Global catalog** — the `action.Catalog` passed to `runtime.NewRunner`. The
+   fallback when neither inline nor scoped resolves the name.
+
+`action.Resolve(scoped, global, name)` implements tiers 2 and 3. Either catalog
+may be nil (treated as an empty catalog). A total miss across all tiers causes the
+runner to surface an action-not-found error as a non-retryable `ActionFailed`.
 
 ---
 

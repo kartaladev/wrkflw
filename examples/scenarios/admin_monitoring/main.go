@@ -150,7 +150,10 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 		}),
 	})
 
-	runner := runtime.NewRunner(cat, store)
+	runner, err := runtime.NewRunner(cat, store)
+	if err != nil {
+		return fmt.Errorf("build runner: %w", err)
+	}
 
 	ids := []string{"greet-001", "greet-002", "greet-003"}
 	for _, id := range ids {
@@ -161,7 +164,10 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 		fmt.Printf("  started %s → %s\n", id, statusName(st.Status))
 	}
 
-	lister := persistence.NewSQLiteLister(db)
+	lister, err := persistence.NewSQLiteLister(db)
+	if err != nil {
+		return fmt.Errorf("new sqlite lister: %w", err)
+	}
 
 	// First page: limit 2.
 	page1, err := lister.List(ctx, runtime.InstanceFilter{Limit: 2, IncludeTotal: true})
@@ -229,13 +235,16 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store runtime.Store) er
 
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
-	runner := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewRunner(cat, store,
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: 0,
 			BackoffCoef:     1,
 		}),
 	)
+	if err != nil {
+		return fmt.Errorf("build runner: %w", err)
+	}
 
 	instanceID := "incident-inst-001"
 	parked, err := runner.Run(ctx, def, instanceID, nil)
@@ -311,7 +320,10 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store)
 		}),
 	})
 
-	runner := runtime.NewRunner(cat, store)
+	runner, err := runtime.NewRunner(cat, store)
+	if err != nil {
+		return fmt.Errorf("build runner: %w", err)
+	}
 
 	st, err := runner.Run(ctx, def, "dl-inst-001", nil)
 	if err != nil {
@@ -321,9 +333,12 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store)
 
 	// Build a relay with the failing publisher and MaxDeliveryAttempts=1 so a
 	// single DrainOnce call quarantines every row it touches.
-	relay := persistence.NewSQLiteRelay(db, failPublisher{},
+	relay, err := persistence.NewSQLiteRelay(db, failPublisher{},
 		persistence.WithMaxDeliveryAttempts(1),
 	)
+	if err != nil {
+		return fmt.Errorf("new sqlite relay: %w", err)
+	}
 
 	// DrainOnce → publish fails → retry_count reaches maxDel(1) → status='dead'.
 	published, drainErr := relay.DrainOnce(ctx)

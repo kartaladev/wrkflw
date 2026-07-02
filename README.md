@@ -147,7 +147,9 @@ flows:
 
 ```go
 data, _ := os.ReadFile("order.yaml")
-def, err := model.ParseYAML(data)
+ld, err := model.ParseYAML(data)
+if err != nil { log.Fatal(err) }
+def, err := ld.Build()
 ```
 
 ### Run it
@@ -184,7 +186,10 @@ func main() {
 		}),
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	store, err := runtime.NewMemStore()
+	if err != nil { log.Fatal(err) }
+	r, err := runtime.NewRunner(cat, store)
+	if err != nil { log.Fatal(err) }
 
 	state, err := r.Run(ctx, def, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {
@@ -206,7 +211,7 @@ For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
 | Form | Function | Notes |
 |---|---|---|
 | Go builder | `model.NewDefinition(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Fluent `Add<Kind>` methods (one per node kind) mirror the `New<Kind>` constructors; the generic `.Add(node)` remains for dynamic nodes. |
-| YAML | `model.ParseYAML(data)` / `model.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator |
+| YAML | `model.ParseYAML(data)` / `model.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator; returns `DefinitionLoader` — call `.Build()` (optionally after `.RegisterAction(...)`) to obtain `*ProcessDefinition` |
 
 ---
 
@@ -316,13 +321,13 @@ The baseline implementation is in `casbinauthz`:
 
 ```go
 // From a pre-built enforcer:
-a := casbinauthz.NewCasbinAuthorizer(syncedEnforcer)
+a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromEnforcer(syncedEnforcer))
 
 // Or from model + policy strings (testing / simple cases):
-a, err := casbinauthz.NewCasbinAuthorizerFromStrings(modelText, policyText)
+a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(modelText, policyText))
 
 // Or from a live PostgreSQL pool (production):
-a, closer, err := casbinauthz.NewCasbinAuthorizerFromDB(ctx, pool)
+a, closer, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromDB(ctx, pool))
 defer closer.Close()
 ```
 
@@ -390,12 +395,13 @@ The `runtime.Runner` emits OpenTelemetry spans, metrics, and `slog`-structured l
 around every engine step and service-action invocation:
 
 ```go
-r := runtime.NewRunner(
+r, err := runtime.NewRunner(
     cat, store,
     runtime.WithTracerProvider(tp),
     runtime.WithMeterProvider(mp),
     runtime.WithLogger(slog.Default()),
 )
+if err != nil { log.Fatal(err) }
 ```
 
 When a `With*` option is omitted, the runner defaults to the OTel global provider
@@ -424,7 +430,10 @@ policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecis
     }
     return runtime.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
 }
-chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+if err != nil {
+    log.Fatal(err) // NewChainer rejects a nil starter/policy with ErrNilDependency
+}
 
 // Drive it from the broker: mount eventing.NewChainHandler(chainer) on your own
 // message.Router, or run the turnkey wrapper that subscribes the terminal topics:
@@ -903,14 +912,22 @@ start → approve[UserTask, roles: manager] → end
 ```
 
 ```go
-r := runtime.NewRunner(nil, runtime.NewMemStore(),
+memSt, err := runtime.NewMemStore()
+if err != nil {
+    log.Fatal(err)
+}
+// This process has no service tasks, so pass an empty catalog (nil is rejected).
+r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
     runtime.WithRunnerClock(clk),
     runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
+if err != nil {
+    log.Fatal(err)
+}
 
 parked, _ := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
 
 claimable, _ := taskStore.ClaimableBy(ctx, manager)        // discover tasks
-svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+svc, _ := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
 
 claimTrg, _ := svc.Claim(ctx, claimable[0].TaskToken, manager)
 r.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed
@@ -949,7 +966,8 @@ def, _  := model.NewDefinition("travel-booking", 1).
 
 // Call activity (separate definition resolved by name):
 reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
-r   := runtime.NewRunner(cat, runtime.NewMemStore(), runtime.WithDefinitions(reg))
+memSt, _ := runtime.NewMemStore()
+r, _   := runtime.NewRunner(cat, memSt, runtime.WithDefinitions(reg))
 ```
 
 **At runtime:** the SubProcess example books a room inside the nested scope and merges
@@ -1006,7 +1024,7 @@ db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=forei
 db.SetMaxOpenConns(1) // single-writer serialisation (required)
 persistence.MigrateSQLite(ctx, db)
 store, _ := persistence.OpenSQLite(ctx, db)
-runner := runtime.NewRunner(cat, store)
+runner, _ := runtime.NewRunner(cat, store)
 ```
 
 See [`examples/sqlite_wiring/`](examples/sqlite_wiring/) for the complete reference wiring.

@@ -74,9 +74,8 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 		}),
 	})
 
-	store := runtime.NewMemStore()
-	runner := runtime.NewRunner(
-		cat, store,
+	store := mustMemStore(t)
+	runner := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(jitter),

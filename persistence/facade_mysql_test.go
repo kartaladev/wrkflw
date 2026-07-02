@@ -18,6 +18,7 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
@@ -70,7 +71,8 @@ func TestOpenMySQL_RoundTrip(t *testing.T) {
 	require.NotNil(t, store)
 
 	def := mysqlMinimalDef()
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "mysql-rt-1", map[string]any{"key": "val"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, st.Status)
@@ -134,7 +136,8 @@ func TestNewMySQLTimerStore_ListArmed(t *testing.T) {
 	_, err = store.Create(t.Context(), step)
 	require.NoError(t, err)
 
-	ts := persistence.NewMySQLTimerStore(db)
+	ts, err := persistence.NewMySQLTimerStore(db)
+	require.NoError(t, err)
 	armed, err := ts.ListArmed(t.Context())
 	require.NoError(t, err)
 	require.Len(t, armed, 1, "exactly one armed timer expected")
@@ -154,7 +157,8 @@ func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	require.NotNil(t, store)
 
 	// Drive a minimal process to confirm the option is wired through.
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	st, err := r.Run(t.Context(), &model.ProcessDefinition{
 		ID:      "hist-mysql-1",
 		Version: 1,
@@ -212,10 +216,11 @@ func TestNewMySQLRelay_DrainsViaFacade(t *testing.T) {
 	seedOutboxForFacadeTest(t, db, 3, base)
 
 	pub := &facadePub{}
-	relay := persistence.NewMySQLRelay(db, pub,
+	relay, err := persistence.NewMySQLRelay(db, pub,
 		persistence.MySQLWithPollInterval(10*time.Millisecond),
 		persistence.MySQLWithBatchSize(10),
 	)
+	require.NoError(t, err)
 
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err)
@@ -230,7 +235,8 @@ func TestNewMySQLDeduper_FirstThenDup(t *testing.T) {
 	t.Parallel()
 	db := dbtest.RunTestMySQL(t)
 
-	d := persistence.NewMySQLDeduper(db)
+	d, err := persistence.NewMySQLDeduper(db)
+	require.NoError(t, err)
 
 	// Helper to call Seen inside a committed tx. Seen joins the ambient
 	// transaction stashed in ctx by transaction.Begin, so the dedup record
@@ -281,7 +287,8 @@ func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seed a parent instance.
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	_, err = r.Run(t.Context(), mysqlMinimalDef(), "parent-cls-1", nil)
 	require.NoError(t, err)
 
@@ -294,7 +301,8 @@ func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	`, "child-cls-1", "parent-cls-1", "cmd-1", "mysql-minimal", 1, 0)
 	require.NoError(t, err)
 
-	cls := persistence.NewMySQLCallLinkStore(db)
+	cls, err := persistence.NewMySQLCallLinkStore(db)
+	require.NoError(t, err)
 
 	// ClaimPending must return the link.
 	pending, err := cls.ClaimPending(t.Context(), 10)
@@ -320,7 +328,8 @@ func TestNewMySQLChainLinkStore_RecordAndLookup(t *testing.T) {
 	t.Parallel()
 	db := dbtest.RunTestMySQL(t)
 
-	links := persistence.NewMySQLChainLinkStore(db)
+	links, err := persistence.NewMySQLChainLinkStore(db)
+	require.NoError(t, err)
 	at := time.Now().UTC().Truncate(time.Millisecond)
 
 	link := runtime.ChainLink{
@@ -332,7 +341,7 @@ func TestNewMySQLChainLinkStore_RecordAndLookup(t *testing.T) {
 		StartVars:                map[string]any{"k": "v"},
 		CreatedAt:                at,
 	}
-	err := links.Record(t.Context(), link)
+	err = links.Record(t.Context(), link)
 	require.NoError(t, err)
 
 	// LookupBySuccessor round-trip.
@@ -359,13 +368,15 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)
 
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	for _, id := range []string{"lst-inst-a", "lst-inst-b"} {
 		_, err := r.Run(t.Context(), mysqlMinimalDef(), id, nil)
 		require.NoError(t, err)
 	}
 
-	lister := persistence.NewMySQLLister(db)
+	lister, err := persistence.NewMySQLLister(db)
+	require.NoError(t, err)
 	page, err := lister.List(t.Context(), runtime.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 2, "isolated DB must contain exactly the two seeded instances")
@@ -426,7 +437,8 @@ func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
 	t.Parallel()
 	db := dbtest.RunTestMySQL(t)
 
-	ds := persistence.NewMySQLDefinitionStore(db)
+	ds, err := persistence.NewMySQLDefinitionStore(db)
+	require.NoError(t, err)
 	require.NotNil(t, ds)
 
 	def := &model.ProcessDefinition{
@@ -480,7 +492,8 @@ func TestNewMySQLPruner_PruneOutbox(t *testing.T) {
 		"pruner-facade-inst-new", "test.prune.topic", "dk-pruner-facade-new", new_, new_)
 	require.NoError(t, err)
 
-	pr := persistence.NewMySQLPruner(db)
+	pr, err := persistence.NewMySQLPruner(db)
+	require.NoError(t, err)
 	require.NotNil(t, pr)
 
 	n, err := pr.PruneOutbox(ctx, cutoff)
@@ -525,7 +538,8 @@ func TestNewMySQLPruner_PruneProcessedMessages(t *testing.T) {
 		new_)
 	require.NoError(t, err)
 
-	pr := persistence.NewMySQLPruner(db)
+	pr, err := persistence.NewMySQLPruner(db)
+	require.NoError(t, err)
 	require.NotNil(t, pr)
 
 	n, err := pr.PruneProcessedMessages(ctx, cutoff)
@@ -556,7 +570,8 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 
 	// Create a parent process instance (the definition "mysql-minimal" id:version 1).
 	def := mysqlMinimalDef()
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	_, err = r.Run(t.Context(), def, "notifier-parent-1", nil)
 	require.NoError(t, err)
 
@@ -580,7 +595,8 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 		return nil
 	})
 
-	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
+	notifier, err := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
+	require.NoError(t, err)
 
 	notified, err := notifier.DrainOnce(t.Context())
 	require.NoError(t, err)

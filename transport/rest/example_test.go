@@ -38,17 +38,23 @@ func Example_responseShapes() {
 	// ── 1. In-memory wiring ──────────────────────────────────────────────────
 
 	fc := clockwork.NewFakeClock()
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
 	az := authz.RoleAuthorizer{}
 	cat := action.NewMapCatalog(nil)
-	runner := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewRunner(cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
+	if err != nil {
+		panic(err)
+	}
 
 	// approval: start → approve (UserTask, candidates: ["manager"]) → end
 	def := &model.ProcessDefinition{
@@ -68,7 +74,10 @@ func Example_responseShapes() {
 		"approval:1": def,
 		"approval":   def,
 	})
-	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	if err != nil {
+		panic(err)
+	}
 	svc := service.New(runner, taskSvc, reg, store, store, taskStore,
 		service.WithEngineClock(fc),
 	)
@@ -86,7 +95,7 @@ func Example_responseShapes() {
 
 	// Use runner.Run directly so the instance parks at the human task before
 	// service.StartInstance (which also uses runner) — same observable state.
-	_, err := runner.Run(context.Background(), def, "demo-instance-1", nil)
+	_, err = runner.Run(context.Background(), def, "demo-instance-1", nil)
 	if err != nil {
 		fmt.Printf("runner.Run error: %v\n", err)
 		return

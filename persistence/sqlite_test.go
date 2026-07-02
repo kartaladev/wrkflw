@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
@@ -41,7 +42,8 @@ func TestOpenSQLite(t *testing.T) {
 		},
 	}
 
-	r := runtime.NewRunner(nil, s)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), s)
+	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "i-sqlite-e2e", map[string]any{"backend": "sqlite"})
 	require.NoError(t, err, "Runner.Run must succeed on SQLite store")
 	require.Equal(t, engine.StatusCompleted, st.Status)

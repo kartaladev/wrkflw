@@ -20,7 +20,8 @@ func TestNewListerReturnsInterface(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-	lister := persistence.NewLister(pool)
+	lister, err := persistence.NewLister(pool)
+	require.NoError(t, err)
 	require.NotNil(t, lister)
 
 	// Compile-time proof: the static return type is runtime.InstanceLister.
@@ -58,7 +59,8 @@ func TestListerEndToEnd(t *testing.T) {
 
 	store, err := persistence.OpenPostgres(t.Context(), pool)
 	require.NoError(t, err)
-	lister := persistence.NewLister(pool)
+	lister, err := persistence.NewLister(pool)
+	require.NoError(t, err)
 
 	base := time.Date(2026, 6, 21, 7, 0, 0, 0, time.UTC)
 	running := engine.StatusRunning

@@ -60,7 +60,8 @@ type SQLiteCallLinkOption = store.CallLinkOption
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	store, _ := persistence.OpenSQLite(ctx, db, persistence.WithHistoryCap(50))
-//	runner := runtime.NewRunner(nil, store)
+//	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+//	if err != nil { log.Fatal(err) }
 func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (Store, error) {
 	q, err := database.From(db)
 	if err != nil {
@@ -69,7 +70,11 @@ func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (Store, error) 
 	if err := database.ProbeUTC(ctx, q, database.SQLite); err != nil {
 		return nil, err
 	}
-	return store.New(db, dialect.NewSQLite(), opts...), nil
+	s, err := store.New(db, dialect.NewSQLite(), opts...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // MigrateSQLite applies the embedded SQLite schema migrations to db. It is
@@ -109,7 +114,7 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 //	owner, closer, _ := persistence.NewSQLiteAdvisoryLockOwnership()
 //	defer closer.Close()
 //	store, _ := persistence.OpenSQLite(ctx, db)
-//	cachingStore := runtime.NewCachingStore(store, owner)
+//	cachingStore, err := runtime.NewCachingStore(store, owner)
 //	// Acquire will return (false, dialect.ErrUnsupported) — guard accordingly.
 func NewSQLiteAdvisoryLockOwnership() (runtime.Ownership, io.Closer, error) {
 	o, err := store.NewSQLiteOwnership()
@@ -132,7 +137,7 @@ func NewSQLiteAdvisoryLockOwnership() (runtime.Ownership, io.Closer, error) {
 //	persistence.MigrateSQLite(ctx, db)
 //	ts := persistence.NewSQLiteTimerStore(db)
 //	armed, err := ts.ListArmed(ctx)
-func NewSQLiteTimerStore(db *sql.DB) runtime.TimerStore {
+func NewSQLiteTimerStore(db *sql.DB) (runtime.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewSQLite())
 }
 
@@ -164,7 +169,7 @@ func NewSQLiteTimerStore(db *sql.DB) runtime.TimerStore {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewSQLiteRelay(db *sql.DB, pub runtime.Publisher, opts ...SQLiteRelayOption) Relay {
+func NewSQLiteRelay(db *sql.DB, pub runtime.Publisher, opts ...SQLiteRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -194,7 +199,7 @@ func NewSQLiteRelay(db *sql.DB, pub runtime.Publisher, opts ...SQLiteRelayOption
 //	persistence.MigrateSQLite(ctx, db)
 //	cls := persistence.NewSQLiteCallLinkStore(db)
 //	pending, err := cls.ClaimPending(ctx, 100)
-func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) runtime.CallLinkStore {
+func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (runtime.CallLinkStore, error) {
 	return store.NewCallLinkStore(db, dialect.NewSQLite(), opts...)
 }
 
@@ -210,8 +215,8 @@ func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) runtime.Ca
 //	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
 //	persistence.MigrateSQLite(ctx, db)
 //	links := persistence.NewSQLiteChainLinkStore(db)
-//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
-func NewSQLiteChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
+//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+func NewSQLiteChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewSQLite())
 }
 
@@ -230,7 +235,7 @@ func NewSQLiteChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
 //	persistence.MigrateSQLite(ctx, db)
 //	lister := persistence.NewSQLiteLister(db)
 //	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
-func NewSQLiteLister(db *sql.DB) runtime.InstanceLister {
+func NewSQLiteLister(db *sql.DB) (runtime.InstanceLister, error) {
 	return store.NewLister(db, dialect.NewSQLite())
 }
 
@@ -255,8 +260,12 @@ func NewSQLiteLister(db *sql.DB) runtime.InstanceLister {
 //	persistence.MigrateSQLite(ctx, db)
 //	notifier := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
-	return runtime.NewCallNotifier(store.NewCallLinkStore(db, dialect.NewSQLite()), deliver, reg, opts...)
+func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+	cls, err := store.NewCallLinkStore(db, dialect.NewSQLite())
+	if err != nil {
+		return nil, err
+	}
+	return runtime.NewCallNotifier(cls, deliver, reg, opts...)
 }
 
 // NewSQLiteDefinitionStore constructs the durable SQLite-backed definition store.
@@ -276,7 +285,7 @@ func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runt
 //	persistence.MigrateSQLite(ctx, db)
 //	ds := persistence.NewSQLiteDefinitionStore(db)
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
-func NewSQLiteDefinitionStore(db *sql.DB) DefinitionStore {
+func NewSQLiteDefinitionStore(db *sql.DB) (DefinitionStore, error) {
 	return store.NewDefinitionStore(db, dialect.NewSQLite())
 }
 
@@ -293,6 +302,6 @@ func NewSQLiteDefinitionStore(db *sql.DB) DefinitionStore {
 //	pruner := persistence.NewSQLitePruner(db)
 //	// every hour, drop outbox events published more than 7 days ago:
 //	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
-func NewSQLitePruner(db *sql.DB) Pruner {
+func NewSQLitePruner(db *sql.DB) (Pruner, error) {
 	return store.NewPruner(db, dialect.NewSQLite())
 }

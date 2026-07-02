@@ -19,7 +19,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 13, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := runtime.NewMemTimerStore()
-	store := runtime.NewMemStoreWithTimers(mts)
+	store := mustMemStore(t, runtime.WithTimers(mts))
 	def := timerIntermediateDef()
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		def.ID + ":1": def, // key format "DefID:DefVersion" — match def.ID/def.Version
@@ -34,7 +34,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	// Original process: arm the timer, then it "crashes" — discard runner + scheduler.
 	{
 		sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-		r := runtime.NewRunner(cat, store,
+		r := mustRunner(t, cat, store,
 			runtime.WithRunnerClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
 		_, err := r.Run(t.Context(), def, "rh-1", nil)
@@ -43,7 +43,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 	// New process: fresh runner + fresh scheduler, same store + timer store.
 	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	r2 := runtime.NewRunner(cat, store,
+	r2 := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched2), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
 
@@ -59,8 +59,8 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 }
 
 func TestRehydrateTimersRequiresWiring(t *testing.T) {
-	store := runtime.NewMemStore()
-	r := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	store := mustMemStore(t)
+	r := mustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	err := r.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")
 }

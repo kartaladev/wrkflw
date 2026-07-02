@@ -4,9 +4,9 @@
 //
 // Consumers wire this package directly:
 //
-//	a, err := casbinauthz.NewCasbinAuthorizerFromStrings("", policyCSV)
+//	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", policyCSV))
 //	// or
-//	a := casbinauthz.NewCasbinAuthorizer(syncedEnforcer)
+//	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromEnforcer(syncedEnforcer))
 //
 // The returned authz.Authorizer is the stable port type; no internal types are
 // exposed. The [Authorizer] concrete type additionally implements ReloadPolicy
@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 
@@ -29,8 +30,103 @@ import (
 	internalcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
 )
 
+// Sentinel errors returned by [NewCasbinAuthorizer] when the caller supplies an
+// invalid number of source options.
+var (
+	ErrNoAuthorizerSource        = errors.New("workflow-casbinauthz: no source configured")
+	ErrMultipleAuthorizerSources = errors.New("workflow-casbinauthz: multiple sources configured")
+)
+
+// errNilSource is an unexported sentinel used inside source options to signal a
+// nil argument. It is not exported because the wrapping fmt.Errorf adds context.
+var errNilSource = errors.New("nil source")
+
+// builderConfig accumulates the result of applying [Option]s. Exactly one
+// source may be registered; the build func is set by the winning source option.
+type builderConfig struct {
+	build func() (authz.Authorizer, io.Closer, error)
+	count int
+}
+
+// Option is a functional option for [NewCasbinAuthorizer]. Supply exactly one
+// source option ([FromEnforcer], [FromStrings], or [FromDB]); zero or multiple
+// sources are errors.
+type Option func(*builderConfig) error
+
+// FromEnforcer returns an [Option] that wraps a consumer-built
+// [*casbinv2.SyncedEnforcer]. The returned closer is nil because the enforcer is
+// managed by the caller.
+func FromEnforcer(e *casbinv2.SyncedEnforcer) Option {
+	return func(c *builderConfig) error {
+		if e == nil {
+			return fmt.Errorf("workflow-casbinauthz: %w: enforcer", errNilSource)
+		}
+		c.count++
+		c.build = func() (authz.Authorizer, io.Closer, error) {
+			return newFromEnforcer(e), nil, nil
+		}
+		return nil
+	}
+}
+
+// FromStrings returns an [Option] that builds a [*casbinv2.SyncedEnforcer] from
+// plain model and policy strings (using casbin's bundled string adapter). An
+// empty modelText defaults to [DefaultModel]. The returned closer is nil.
+func FromStrings(modelText, policyText string) Option {
+	return func(c *builderConfig) error {
+		c.count++
+		c.build = func() (authz.Authorizer, io.Closer, error) {
+			return newFromStrings(modelText, policyText)
+		}
+		return nil
+	}
+}
+
+// FromDB returns an [Option] that builds a hybrid casbin [authz.Authorizer]
+// whose policy is loaded from the casbin_rule table in pool, with an optional
+// LISTEN/NOTIFY watcher that reloads policy when another node changes it.
+//
+// Call [MigrateCasbin] before using this option to ensure the schema exists.
+//
+// The returned [io.Closer] stops the watcher goroutine at shutdown.
+func FromDB(ctx context.Context, pool *pgxpool.Pool, opts ...DBOption) Option {
+	return func(c *builderConfig) error {
+		c.count++
+		c.build = func() (authz.Authorizer, io.Closer, error) {
+			return newFromDB(ctx, pool, opts...)
+		}
+		return nil
+	}
+}
+
+// NewCasbinAuthorizer builds a casbin-backed [authz.Authorizer] from the
+// supplied source options. Exactly one source option ([FromEnforcer],
+// [FromStrings], or [FromDB]) must be supplied.
+//
+// Returns [ErrNoAuthorizerSource] when no source is given and
+// [ErrMultipleAuthorizerSources] when more than one is given.
+//
+// The second return value is an [io.Closer] that must be closed at shutdown
+// when using [FromDB] (the watcher goroutine). For [FromEnforcer] and
+// [FromStrings] it is nil.
+func NewCasbinAuthorizer(opts ...Option) (authz.Authorizer, io.Closer, error) {
+	var cfg builderConfig
+	for _, o := range opts {
+		if err := o(&cfg); err != nil {
+			return nil, nil, err
+		}
+	}
+	switch {
+	case cfg.count == 0:
+		return nil, nil, ErrNoAuthorizerSource
+	case cfg.count > 1:
+		return nil, nil, ErrMultipleAuthorizerSources
+	}
+	return cfg.build()
+}
+
 // DefaultModel is a combined RBAC (g) + resource-privilege (p) casbin model used
-// when [NewCasbinAuthorizerFromStrings] receives an empty model text.
+// when [FromStrings] receives an empty model text.
 //
 // The matcher uses g(r.sub, p.sub) so that inherited roles (via g lines) are
 // taken into account, and accepts wildcard "*" on both obj and act so that
@@ -54,8 +150,7 @@ m = g(r.sub, p.sub) && (r.obj == p.obj || p.obj == "*") && (r.act == p.act || p.
 // additionally exposes [Authorizer.ReloadPolicy] for consumers that want to
 // hot-reload after a policy change without restarting the application.
 //
-// Obtain one via [NewCasbinAuthorizer] or [NewCasbinAuthorizerFromStrings];
-// never construct it directly.
+// Obtain one via [NewCasbinAuthorizer]; never construct it directly.
 type Authorizer struct {
 	inner    *internalcasbin.Authorizer
 	enforcer *casbinv2.SyncedEnforcer
@@ -77,42 +172,72 @@ func (a *Authorizer) ReloadPolicy() error {
 	return nil
 }
 
-// NewCasbinAuthorizer wraps a consumer-built [*casbin.SyncedEnforcer] and
-// returns an [authz.Authorizer]. The returned value also implements
-// ReloadPolicy (accessible via type assertion).
-func NewCasbinAuthorizer(e *casbinv2.SyncedEnforcer) authz.Authorizer {
+// newFromEnforcer is the shared implementation for [FromEnforcer]. It wraps a
+// pre-built enforcer into the facade type.
+func newFromEnforcer(e *casbinv2.SyncedEnforcer) authz.Authorizer {
 	return &Authorizer{inner: internalcasbin.New(e), enforcer: e}
 }
 
-// NewCasbinAuthorizerFromStrings builds a [*casbin.SyncedEnforcer] from plain
-// model and policy strings (using casbin's bundled string adapter) and returns
-// the authorizer. An empty modelText defaults to [DefaultModel].
+// newFromStrings builds a [*casbinv2.SyncedEnforcer] from plain model and policy
+// strings (using casbin's bundled string adapter) and returns the authorizer. An
+// empty modelText defaults to [DefaultModel].
 //
 // Returns an error if the model string is malformed or the enforcer cannot be
 // initialised; never panics.
-func NewCasbinAuthorizerFromStrings(modelText, policyText string) (authz.Authorizer, error) {
+func newFromStrings(modelText, policyText string) (authz.Authorizer, io.Closer, error) {
 	if modelText == "" {
 		modelText = DefaultModel
 	}
 	m, err := casbinmodel.NewModelFromString(modelText)
 	if err != nil {
-		return nil, fmt.Errorf("workflow-casbinauthz: parse model: %w", err)
+		return nil, nil, fmt.Errorf("workflow-casbinauthz: parse model: %w", err)
 	}
 	e, err := casbinv2.NewSyncedEnforcer(m, stringadapter.NewAdapter(policyText))
 	if err != nil {
-		return nil, fmt.Errorf("workflow-casbinauthz: build enforcer: %w", err)
+		return nil, nil, fmt.Errorf("workflow-casbinauthz: build enforcer: %w", err)
 	}
-	return NewCasbinAuthorizer(e), nil
+	return newFromEnforcer(e), nil, nil
+}
+
+// newFromDB builds a hybrid casbin [authz.Authorizer] whose policy is loaded
+// from (and saved to) the casbin_rule table in pool, with an optional
+// LISTEN/NOTIFY watcher that reloads policy when another node changes it.
+//
+// Call [MigrateCasbin] before this function to ensure the schema exists.
+//
+// The returned [io.Closer] stops the watcher goroutine at shutdown. Always close
+// it, even when the watcher is disabled (the no-op closer is safe to call). On
+// error, any partially started watcher is closed before returning.
+//
+// Default configuration:
+//   - Model: [DefaultModel] (combined RBAC + resource-privilege)
+//   - Watcher: enabled on channel "wrkflw_casbin_policy"
+//   - NodeID: random process-unique value
+func newFromDB(ctx context.Context, pool *pgxpool.Pool, opts ...DBOption) (authz.Authorizer, io.Closer, error) {
+	cfg := internalcasbin.DBConfig{
+		ModelText:      DefaultModel,
+		WatcherEnabled: true,
+		WatcherChannel: "wrkflw_casbin_policy",
+		NodeID:         defaultNodeID(),
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	enforcer, closer, err := internalcasbin.NewDBEnforcer(ctx, pool, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return newFromEnforcer(enforcer), closer, nil
 }
 
 // MigrateCasbin applies the casbin_rule schema to pool (tracked in its own
 // casbin_goose_db_version table, independent of persistence.Migrate). Call it
-// before NewCasbinAuthorizerFromDB. Never auto-run on import.
+// before [FromDB]. Never auto-run on import.
 func MigrateCasbin(ctx context.Context, pool *pgxpool.Pool) error {
 	return internalcasbin.MigrateCasbin(ctx, pool)
 }
 
-// DBOption is a functional option for [NewCasbinAuthorizerFromDB].
+// DBOption is a functional option for [FromDB].
 type DBOption func(*internalcasbin.DBConfig)
 
 // WithModel overrides the casbin model text. Defaults to [DefaultModel].
@@ -145,36 +270,4 @@ func defaultNodeID() string {
 	var b [8]byte
 	_, _ = rand.Read(b[:])
 	return "node-" + hex.EncodeToString(b[:])
-}
-
-// NewCasbinAuthorizerFromDB builds a hybrid casbin [authz.Authorizer] whose
-// policy is loaded from (and saved to) the casbin_rule table in pool, with an
-// optional LISTEN/NOTIFY watcher that reloads policy when another node changes it.
-//
-// Call [MigrateCasbin] before this function to ensure the schema exists.
-//
-// The returned [io.Closer] stops the watcher goroutine at shutdown. Always close
-// it, even when the watcher is disabled (the no-op closer is safe to call). On
-// error, any partially started watcher is closed before returning.
-//
-// Default configuration:
-//   - Model: [DefaultModel] (combined RBAC + resource-privilege)
-//   - Watcher: enabled on channel "wrkflw_casbin_policy"
-//   - NodeID: random process-unique value
-func NewCasbinAuthorizerFromDB(ctx context.Context, pool *pgxpool.Pool, opts ...DBOption) (authz.Authorizer, io.Closer, error) {
-	cfg := internalcasbin.DBConfig{
-		ModelText:      DefaultModel,
-		WatcherEnabled: true,
-		WatcherChannel: "wrkflw_casbin_policy",
-		NodeID:         defaultNodeID(),
-	}
-	for _, o := range opts {
-		o(&cfg)
-	}
-	enforcer, closer, err := internalcasbin.NewDBEnforcer(ctx, pool, cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	// Reuse the existing single wrapping path: NewCasbinAuthorizer(enforcer).
-	return NewCasbinAuthorizer(enforcer), closer, nil
 }

@@ -72,7 +72,8 @@ func countRows(t *testing.T, b backend, query string, args ...any) int {
 // test assertions so nothing regresses in the port.
 func TestStoreCreateLoadCommit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
 		var _ runtime.Store = s         // compile-time interface check
 		var _ runtime.JournalReader = s // compile-time JournalReader check
 
@@ -148,11 +149,12 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 // asserts the resulting rows through the neutral Querier.
 func TestStoreSideEffects(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect, store.WithHistoryCap(4), store.WithOutboxNotify())
+		s, err := store.New(b.conn, b.dialect, store.WithHistoryCap(4), store.WithOutboxNotify())
+		require.NoError(t, err)
 		now := time.Unix(1700000000, 0).UTC()
 
 		// Create a parent + a child that carries a NewCallLink and an armed timer.
-		_, err := s.Create(t.Context(), appliedStep("parent", "p"))
+		_, err = s.Create(t.Context(), appliedStep("parent", "p"))
 		require.NoError(t, err, "%s: create parent", b.name)
 
 		child := appliedStep("child", "c")

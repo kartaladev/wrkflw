@@ -20,7 +20,7 @@ func step(id, topic string) runtime.AppliedStep {
 }
 
 func TestMemStoreCreateLoadRoundTrip(t *testing.T) {
-	ms := runtime.NewMemStore()
+	ms := mustMemStore(t)
 	tok, err := ms.Create(t.Context(), step("i1", "instance.completed"))
 	require.NoError(t, err)
 
@@ -31,7 +31,7 @@ func TestMemStoreCreateLoadRoundTrip(t *testing.T) {
 }
 
 func TestMemStoreCreateDuplicate(t *testing.T) {
-	ms := runtime.NewMemStore()
+	ms := mustMemStore(t)
 	_, err := ms.Create(t.Context(), step("dup", "a"))
 	require.NoError(t, err)
 
@@ -48,7 +48,7 @@ func TestMemStoreCreateDuplicate(t *testing.T) {
 }
 
 func TestMemStoreLoadMissing(t *testing.T) {
-	ms := runtime.NewMemStore()
+	ms := mustMemStore(t)
 	_, _, err := ms.Load(t.Context(), "nope")
 	require.ErrorIs(t, err, runtime.ErrInstanceNotFound)
 }
@@ -109,7 +109,45 @@ func TestMemStoreCommit(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			tc.assert(t, runtime.NewMemStore())
+			tc.assert(t, mustMemStore(t))
+		})
+	}
+}
+
+func TestNewMemStoreOptions(t *testing.T) {
+	cl := runtime.NewMemCallLinkStore()
+	mts := runtime.NewMemTimerStore()
+	tests := map[string]struct {
+		opts   []runtime.MemStoreOption
+		assert func(t *testing.T, m *runtime.MemStore, err error)
+	}{
+		"no options": {
+			opts:   nil,
+			assert: func(t *testing.T, m *runtime.MemStore, err error) { require.NoError(t, err); require.NotNil(t, m) },
+		},
+		"both set": {
+			opts:   []runtime.MemStoreOption{runtime.WithCallLinks(cl), runtime.WithTimers(mts)},
+			assert: func(t *testing.T, m *runtime.MemStore, err error) { require.NoError(t, err); require.NotNil(t, m) },
+		},
+		"nil call-links": {
+			opts: []runtime.MemStoreOption{runtime.WithCallLinks(nil)},
+			assert: func(t *testing.T, m *runtime.MemStore, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, m)
+			},
+		},
+		"nil timers": {
+			opts: []runtime.MemStoreOption{runtime.WithTimers(nil)},
+			assert: func(t *testing.T, m *runtime.MemStore, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, m)
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := runtime.NewMemStore(tc.opts...)
+			tc.assert(t, m, err)
 		})
 	}
 }
@@ -123,7 +161,7 @@ func TestMemStoreConcurrentSafe(t *testing.T) {
 		numCommits = 10
 	)
 
-	ms := runtime.NewMemStore()
+	ms := mustMemStore(t)
 	ctx := t.Context()
 
 	var wg sync.WaitGroup

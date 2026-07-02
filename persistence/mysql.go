@@ -74,7 +74,8 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
-//	runner := runtime.NewRunner(nil, store)
+//	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+//	if err != nil { log.Fatal(err) }
 func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, error) {
 	q, err := database.From(db)
 	if err != nil {
@@ -83,7 +84,11 @@ func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, err
 	if err := database.ProbeUTC(ctx, q, database.MySQL); err != nil {
 		return nil, err
 	}
-	return store.New(db, dialect.NewMySQL(), opts...), nil
+	s, err := store.New(db, dialect.NewMySQL(), opts...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // MigrateMySQL applies the embedded schema migrations to the MySQL database
@@ -106,7 +111,7 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 //	persistence.MigrateMySQL(ctx, db)
 //	ts := persistence.NewMySQLTimerStore(db)
 //	armed, err := ts.ListArmed(ctx)
-func NewMySQLTimerStore(db *sql.DB) runtime.TimerStore {
+func NewMySQLTimerStore(db *sql.DB) (runtime.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewMySQL())
 }
 
@@ -191,7 +196,7 @@ func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewMySQLRelay(db *sql.DB, pub runtime.Publisher, opts ...MySQLRelayOption) Relay {
+func NewMySQLRelay(db *sql.DB, pub runtime.Publisher, opts ...MySQLRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -233,7 +238,7 @@ func MySQLWithCallLinkClock(clk clock.Clock) MySQLCallLinkOption {
 // MigrateMySQL must have been applied before the first call to any method.
 //
 // Mirrors NewCallLinkStore for the Postgres facade.
-func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) runtime.CallLinkStore {
+func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (runtime.CallLinkStore, error) {
 	return store.NewCallLinkStore(db, dialect.NewMySQL(), opts...)
 }
 
@@ -253,7 +258,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) runtime.Call
 //	owner, closer, _ := persistence.NewMySQLAdvisoryLockOwnership(ctx, db)
 //	defer closer.Close()
 //	store, _ := persistence.OpenMySQL(ctx, db)
-//	cachingStore := runtime.NewCachingStore(store, owner)
+//	cachingStore, err := runtime.NewCachingStore(store, owner)
 func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Ownership, io.Closer, error) {
 	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {
@@ -274,8 +279,8 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Own
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	links := persistence.NewMySQLChainLinkStore(db)
-//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
-func NewMySQLChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
+//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+func NewMySQLChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewMySQL())
 }
 
@@ -294,7 +299,7 @@ func NewMySQLChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
 //	persistence.MigrateMySQL(ctx, db)
 //	lister := persistence.NewMySQLLister(db)
 //	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
-func NewMySQLLister(db *sql.DB) runtime.InstanceLister {
+func NewMySQLLister(db *sql.DB) (runtime.InstanceLister, error) {
 	return store.NewLister(db, dialect.NewMySQL())
 }
 
@@ -315,8 +320,12 @@ func NewMySQLLister(db *sql.DB) runtime.InstanceLister {
 //	persistence.MigrateMySQL(ctx, db)
 //	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
-	return runtime.NewCallNotifier(store.NewCallLinkStore(db, dialect.NewMySQL()), deliver, reg, opts...)
+func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+	cls, err := store.NewCallLinkStore(db, dialect.NewMySQL())
+	if err != nil {
+		return nil, err
+	}
+	return runtime.NewCallNotifier(cls, deliver, reg, opts...)
 }
 
 // NewMySQLDefinitionStore constructs the durable MySQL-backed definition store.
@@ -333,7 +342,7 @@ func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runti
 //	persistence.MigrateMySQL(ctx, db)
 //	ds := persistence.NewMySQLDefinitionStore(db)
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
-func NewMySQLDefinitionStore(db *sql.DB) DefinitionStore {
+func NewMySQLDefinitionStore(db *sql.DB) (DefinitionStore, error) {
 	return store.NewDefinitionStore(db, dialect.NewMySQL())
 }
 
@@ -350,7 +359,7 @@ func NewMySQLDefinitionStore(db *sql.DB) DefinitionStore {
 //	pruner := persistence.NewMySQLPruner(db)
 //	// every hour, drop outbox events published more than 7 days ago:
 //	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
-func NewMySQLPruner(db *sql.DB) Pruner {
+func NewMySQLPruner(db *sql.DB) (Pruner, error) {
 	return store.NewPruner(db, dialect.NewMySQL())
 }
 

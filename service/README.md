@@ -5,6 +5,18 @@ adapters (REST, gRPC) and the workflow engine. Every operation is
 transport-neutral — request and result types carry no HTTP/gRPC concerns — so the
 REST and gRPC handlers are thin translators over this one interface.
 
+The package plays three roles:
+1. **Operation façade** — `Service` exposes the full consumer-facing operation
+   surface in one typed interface, making it easy to mock or test transports
+   without a real engine.
+2. **Error normalization** — domain errors from `runtime`, `humantask`, `authz`,
+   and `engine` are propagated as-is; `service.ErrConflict` is the only locally
+   defined sentinel. Transport layers classify them to HTTP status codes / gRPC
+   codes without needing to import every sub-package.
+3. **Admin port composition** — optional administrative capabilities (dead-letter
+   management, timer inspection, lineage queries, policy management) are wired
+   separately via `With*Admin` options so a minimal deployment omits the overhead.
+
 Import path: `github.com/zakyalvan/krtlwrkflw/service`
 
 ## Contents
@@ -68,6 +80,34 @@ The six required collaborators must be wired by hand (no DI container is imposed
 > **Registry key contract:** the `DefinitionRegistry` must be keyed by
 > `"DefID:DefVersion"` so an existing instance can be resolved by its state. Short
 > aliases (e.g. the bare definition ID) may also be registered for `StartInstance`.
+
+**Typical wiring (no DI container):**
+
+```go
+// 1. Build persistence:
+pgStore, _ := persistence.OpenPostgres(ctx, pool)
+taskStore  := humantask.NewMemTaskStore()   // or a SQL-backed one
+lister, _  := persistence.NewLister(pool)
+
+// 2. Build authorization:
+az, _, _ := casbinauthz.NewCasbinAuthorizer(
+    casbinauthz.FromStrings(modelText, policyText))
+
+// 3. Build the runner:
+reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{...})
+cat := action.NewMapCatalog(map[string]action.ServiceAction{...})
+runner, _ := runtime.NewRunner(cat, pgStore, runtime.WithDefinitions(reg))
+
+// 4. Build TaskService:
+tasks, _ := runtime.NewTaskService(taskStore, az)
+
+// 5. Assemble the service:
+svc := service.New(runner, tasks, reg, pgStore, lister, taskStore)
+```
+
+Assembling this once at startup and injecting `svc` into the transport adapters is
+all that is needed. The service layer holds no goroutines and no persistent
+connections of its own — those belong to the collaborators.
 
 **Options** (`type EngineOption func(*Engine)`):
 

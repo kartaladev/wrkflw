@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
@@ -88,7 +89,8 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 3. Runner (shared by receiver and sender) ────────────────────────────
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 
 	// ── 4. Park the receiver instance ────────────────────────────────────────
 	recvDef := receiverDef()
@@ -114,7 +116,8 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.Equal(t, 1, n, "exactly one message.OrderPlaced outbox row expected")
 
 	// ── 6. Relay drains the outbox → publishes to GoChannel ─────────────────
-	relay := persistence.NewRelay(pool, pub)
+	relay, err := persistence.NewRelay(pool, pub)
+	require.NoError(t, err)
 	drained, err := relay.DrainOnce(ctx)
 	require.NoError(t, err)
 	// At least the message.OrderPlaced row must have been drained.

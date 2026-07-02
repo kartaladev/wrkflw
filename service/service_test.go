@@ -116,19 +116,21 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	})
 	az := authz.RoleAuthorizer{}
 
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
 
 	// Build the action catalog with a simple "greet" action.
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": greetAction{},
 	})
 
-	r := runtime.NewRunner(
+	r, err := runtime.NewRunner(
 		cat,
 		store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
+	require.NoError(t, err)
 
 	// Build the definition registry with all provided definitions.
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs))
@@ -139,8 +141,9 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
 
-	svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 
+	require.NoError(t, err)
 	return &harness{
 		runner:    r,
 		tasks:     svc,

@@ -57,13 +57,20 @@ func ExampleRunner_observability() {
 		}),
 	})
 
-	r := runtime.NewRunner(
+	mem, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
+	r, err := runtime.NewRunner(
 		cat,
-		runtime.NewMemStore(),
+		mem,
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 		runtime.WithLogger(slog.Default()),
 	)
+	if err != nil {
+		panic(err)
+	}
 
 	_, _ = r.Run(context.Background(), def, "demo-1", map[string]any{})
 	// Output:

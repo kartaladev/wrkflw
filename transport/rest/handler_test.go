@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
@@ -39,18 +40,21 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
 	az := authz.RoleAuthorizer{}
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": greetServiceAction{},
 	})
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	require.NoError(t, err)
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {
 		defsMap[fmt.Sprintf("%s:%d", d.ID, d.Version)] = d
 		defsMap[d.ID] = d
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	require.NoError(t, err)
 	facade := service.New(r, svc, reg, store, store, taskStore, service.WithEngineClock(fc))
 	return &testHarness{runner: r, store: store, taskStore: taskStore, clk: fc}, facade
 }

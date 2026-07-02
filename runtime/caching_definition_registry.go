@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -61,7 +62,10 @@ func WithCachingDefinitionRegistryClock(clk clock.Clock) CachingDefinitionRegist
 // read-through cache. ttl is the maximum age of a cached definition. The time
 // source used to evaluate TTL defaults to [clock.System]; override it with
 // [WithCachingDefinitionRegistryClock] (a fake clock in tests).
-func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration, opts ...CachingDefinitionRegistryOption) *CachingDefinitionRegistry {
+func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration, opts ...CachingDefinitionRegistryOption) (*CachingDefinitionRegistry, error) {
+	if backing == nil {
+		return nil, fmt.Errorf("%w: backing registry", ErrNilDependency)
+	}
 	c := &CachingDefinitionRegistry{
 		backing: backing,
 		ttl:     ttl,
@@ -71,7 +75,7 @@ func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration,
 	for _, o := range opts {
 		o(c)
 	}
-	return c
+	return c, nil
 }
 
 // Lookup returns the ProcessDefinition for defRef. On a cache miss (or after

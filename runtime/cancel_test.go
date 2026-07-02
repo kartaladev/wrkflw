@@ -37,10 +37,10 @@ func cancelDef(cancelActions []string) *model.ProcessDefinition {
 
 func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime.Runner {
 	t.Helper()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	return runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	return mustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 }
 
 // TestRunnerCancelInstanceRunsCancelActions verifies that:

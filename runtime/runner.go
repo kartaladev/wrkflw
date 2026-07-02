@@ -181,14 +181,14 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 	return func(r *Runner) { r.defsReg = reg }
 }
 
-// WithCallLinks wires a [CallLinkStore] into the Runner, enabling the
+// WithCallLinkStore wires a [CallLinkStore] into the Runner, enabling the
 // non-blocking (async) path for [engine.StartSubInstance] commands (call
 // activities). When this option is set, [perform] records the parent↔child link
 // and starts the child's first burst without waiting for the child to complete —
 // the parent parks at the call node until a notifier delivers the outcome. When
 // this option is NOT set, the synchronous behavior (run child to completion
 // in-process) is preserved verbatim.
-func WithCallLinks(store CallLinkStore) Option {
+func WithCallLinkStore(store CallLinkStore) Option {
 	return func(r *Runner) { r.callLinks = store }
 }
 
@@ -306,7 +306,7 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 // Optional capabilities are supplied via functional options; the full set of
 // With* functions returning [Option] is (see each for details):
 //   - Node-kind capabilities: [WithHumanTasks], [WithScheduler], [WithSignalBus],
-//     [WithDefinitions], [WithCallLinks], [WithTimerStore].
+//     [WithDefinitions], [WithCallLinkStore], [WithTimerStore].
 //   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
 //     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
 //   - Time source: [WithRunnerClock] (default [clock.System]).
@@ -315,7 +315,13 @@ func NewRunner(
 	cat action.Catalog,
 	store Store,
 	opts ...Option,
-) *Runner {
+) (*Runner, error) {
+	if cat == nil {
+		return nil, fmt.Errorf("%w: catalog", ErrNilDependency)
+	}
+	if store == nil {
+		return nil, fmt.Errorf("%w: store", ErrNilDependency)
+	}
 	r := &Runner{
 		cat:           cat,
 		clk:           clock.System(),
@@ -328,7 +334,7 @@ func NewRunner(
 		o(r)
 	}
 	r.obs = newRunnerObs(r.logOpt, r.tpOpt, r.mpOpt)
-	return r
+	return r, nil
 }
 
 // Run starts an instance and drives it to a terminal state or until the engine
@@ -823,7 +829,7 @@ func (r *Runner) perform(ctx context.Context, def *model.ProcessDefinition, st e
 					slog.String("action", cmd.Name), slog.Any("error", err))
 				return nil, nil
 			}
-			return engine.NewActionFailedJittered(r.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), r.jitter.Fraction()), nil
+			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), engine.WithJitter(r.jitter.Fraction())), nil
 		}
 		outcome = "ok"
 		if cmd.FireAndForget {

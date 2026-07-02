@@ -34,12 +34,21 @@ func verifyToken(token string) (string, error) {
 // buildService constructs a minimal service.Service for the example.
 func buildService() service.Service {
 	fc := clockwork.NewFakeClock()
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
-	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	runner, err := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	if err != nil {
+		panic(err)
+	}
 	reg := runtime.NewMapDefinitionRegistry(nil)
-	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	tasks, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	if err != nil {
+		panic(err)
+	}
 	return service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 }
 

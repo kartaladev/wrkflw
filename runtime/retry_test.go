@@ -104,7 +104,7 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 				}))
 			}
 
-			runner := runtime.NewRunner(cat, runtime.NewMemStore(), append([]runtime.Option{runtime.WithRunnerClock(clk)}, opts...)...)
+			runner := mustRunner(t, cat, mustMemStore(t), append([]runtime.Option{runtime.WithRunnerClock(clk)}, opts...)...)
 			def := noRetryServiceTaskDef()
 
 			st, err := runner.Run(t.Context(), def, "p", nil)
@@ -161,8 +161,8 @@ func TestRunnerResolveIncident(t *testing.T) {
 		}),
 	})
 
-	store := runtime.NewMemStore()
-	runner := runtime.NewRunner(cat, store,
+	store := mustMemStore(t)
+	runner := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(clk),
 		// MaxAttempts=1: first failure parks as incident, no retry timer scheduled.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{

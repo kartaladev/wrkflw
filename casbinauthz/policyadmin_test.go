@@ -26,7 +26,8 @@ func newTestEnforcer(t *testing.T) *casbinv2.SyncedEnforcer {
 
 func TestPolicyAdminFor_CasbinAuthorizer(t *testing.T) {
 	e := newTestEnforcer(t)
-	a := casbinauthz.NewCasbinAuthorizer(e)
+	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromEnforcer(e))
+	require.NoError(t, err)
 	pa, ok := casbinauthz.PolicyAdminFor(a)
 	require.True(t, ok)
 	require.NotNil(t, pa)
@@ -40,7 +41,8 @@ func TestPolicyAdminFor_NonCasbinAuthorizer(t *testing.T) {
 
 func TestPolicyAdmin_AddListRemovePolicy(t *testing.T) {
 	e := newTestEnforcer(t)
-	a := casbinauthz.NewCasbinAuthorizer(e)
+	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromEnforcer(e))
+	require.NoError(t, err)
 	pa, ok := casbinauthz.PolicyAdminFor(a)
 	require.True(t, ok)
 
@@ -75,7 +77,8 @@ func TestPolicyAdmin_AddListRemovePolicy(t *testing.T) {
 
 func TestPolicyAdmin_AddListRemoveRole(t *testing.T) {
 	e := newTestEnforcer(t)
-	a := casbinauthz.NewCasbinAuthorizer(e)
+	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromEnforcer(e))
+	require.NoError(t, err)
 	pa, ok := casbinauthz.PolicyAdminFor(a)
 	require.True(t, ok)
 

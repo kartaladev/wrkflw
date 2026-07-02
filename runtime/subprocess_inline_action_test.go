@@ -67,8 +67,8 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 
 	// Empty global catalog: the inline action is the ONLY way "inner-svc" resolves.
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{})
-	store := runtime.NewMemStore()
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc))
+	store := mustMemStore(t)
+	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc))
 
 	st, err := r.Run(t.Context(), def, "inline-sub-i1", nil)
 	require.NoError(t, err)

@@ -36,8 +36,10 @@ func TestPruner(t *testing.T) {
 
 	t.Run("PruneOutbox", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			p := store.NewPruner(b.conn, b.dialect)
-			s := store.New(b.conn, b.dialect)
+			p, err := store.NewPruner(b.conn, b.dialect)
+			require.NoError(t, err)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			// Seed rows: published+old (eligible), published+recent (survives),
@@ -78,8 +80,10 @@ func TestPruner(t *testing.T) {
 
 	t.Run("PruneCallLinks", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			p := store.NewPruner(b.conn, b.dialect)
-			s := store.New(b.conn, b.dialect)
+			p, err := store.NewPruner(b.conn, b.dialect)
+			require.NoError(t, err)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			// Seed rows per the conservative eligibility rule:
@@ -124,8 +128,10 @@ func TestPruner(t *testing.T) {
 
 	t.Run("PruneChainLinks", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			p := store.NewPruner(b.conn, b.dialect)
-			s := store.New(b.conn, b.dialect)
+			p, err := store.NewPruner(b.conn, b.dialect)
+			require.NoError(t, err)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			prunerExec(t, ctx, b, s,
@@ -156,8 +162,10 @@ func TestPruner(t *testing.T) {
 
 	t.Run("PruneProcessedMessages", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			p := store.NewPruner(b.conn, b.dialect)
-			s := store.New(b.conn, b.dialect)
+			p, err := store.NewPruner(b.conn, b.dialect)
+			require.NoError(t, err)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err)
 
 			// Seed rows via the shared insertDedupRow helper (uses timeArg encoding,
 			// same as Deduper.Seen — guarantees format parity on SQLite TEXT path).
@@ -177,8 +185,10 @@ func TestPruner(t *testing.T) {
 
 	t.Run("PruneTimers", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			p := store.NewPruner(b.conn, b.dialect)
-			s := store.New(b.conn, b.dialect)
+			p, err := store.NewPruner(b.conn, b.dialect)
+			require.NoError(t, err)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			prunerExec(t, ctx, b, s,

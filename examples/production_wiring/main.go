@@ -89,9 +89,13 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(scheduler) // *Scheduler is an io.Closer
 
 	// --- Store, relay, and readiness probe (Postgres when DATABASE_URL is set) ---
+	memStore, merr := runtime.NewMemStore()
+	if merr != nil {
+		return merr
+	}
 	var (
-		store       runtime.Store = runtime.NewMemStore()
-		lister                    = store.(*runtime.MemStore)
+		store       runtime.Store = memStore
+		lister                    = memStore
 		readyChecks []rest.HealthCheck
 	)
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
@@ -112,7 +116,10 @@ func run(logger *slog.Logger) error {
 		store = pgStore
 
 		// Relay drains the transactional outbox; the consumer owns its goroutine.
-		relay := persistence.NewRelay(pool, publisher, persistence.WithRelayLogger(logger))
+		relay, rerr := persistence.NewRelay(pool, publisher, persistence.WithRelayLogger(logger))
+		if rerr != nil {
+			return rerr
+		}
 		go func() {
 			if rerr := relay.Run(workerCtx); rerr != nil && !errors.Is(rerr, context.Canceled) {
 				logger.Error("relay run", "err", rerr)
@@ -151,10 +158,16 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewRunner(cat, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
-	tasks := runtime.NewTaskService(taskStore, az)
+	if err != nil {
+		return err
+	}
+	tasks, err := runtime.NewTaskService(taskStore, az)
+	if err != nil {
+		return err
+	}
 	svc := service.New(runner, tasks, reg, store, lister, taskStore)
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---

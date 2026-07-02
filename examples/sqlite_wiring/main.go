@@ -126,7 +126,10 @@ func run(logger *slog.Logger) error {
 	// SQLite has no LISTEN/NOTIFY; NewSQLiteRelay is poll-only — do NOT pass
 	// any ListenNotify option. The poll interval defaults to 500 ms which is
 	// suitable for local/embedded deployments.
-	relay := persistence.NewSQLiteRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	relay, err := persistence.NewSQLiteRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	if err != nil {
+		return err
+	}
 	go func() {
 		if rerr := relay.Run(workerCtx); rerr != nil && !errors.Is(rerr, context.Canceled) {
 			logger.Error("sqlite relay run", "err", rerr)
@@ -148,8 +151,14 @@ func run(logger *slog.Logger) error {
 		return err
 	})
 	// The definition store resolves parent-process definitions during notification.
-	defStore := persistence.NewSQLiteDefinitionStore(db)
-	notifier := persistence.NewSQLiteCallNotifier(db, deliver, defStore)
+	defStore, err := persistence.NewSQLiteDefinitionStore(db)
+	if err != nil {
+		return err
+	}
+	notifier, err := persistence.NewSQLiteCallNotifier(db, deliver, defStore)
+	if err != nil {
+		return err
+	}
 	go func() {
 		if nerr := notifier.Run(workerCtx); nerr != nil && !errors.Is(nerr, context.Canceled) {
 			logger.Error("sqlite call notifier run", "err", nerr)
@@ -178,7 +187,10 @@ func run(logger *slog.Logger) error {
 
 	// Use AlwaysOwn for single-process caching — the fail-loud SQLite ownership
 	// value is not passed to NewCachingStore.
-	cachingStore := runtime.NewCachingStore(store, runtime.AlwaysOwn{})
+	cachingStore, err := runtime.NewCachingStore(store, runtime.AlwaysOwn{})
+	if err != nil {
+		return err
+	}
 
 	// --- Scheduler (no elector — SQLite is single-process) ---
 	// SQLite is inherently single-process; there is no multi-replica timer leader
@@ -219,19 +231,31 @@ func run(logger *slog.Logger) error {
 	})
 
 	// --- Timer store for rehydration ---
-	timerStore := persistence.NewSQLiteTimerStore(db)
+	timerStore, err := persistence.NewSQLiteTimerStore(db)
+	if err != nil {
+		return err
+	}
 
 	// --- Engine + human-task plumbing + Service facade ---
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner = runtime.NewRunner(cat, cachingStore,
+	runner, err = runtime.NewRunner(cat, cachingStore,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(scheduler),
 		runtime.WithTimerStore(timerStore),
 	)
-	tasks := runtime.NewTaskService(taskStore, az)
-	lister := persistence.NewSQLiteLister(db)
+	if err != nil {
+		return err
+	}
+	tasks, err := runtime.NewTaskService(taskStore, az)
+	if err != nil {
+		return err
+	}
+	lister, err := persistence.NewSQLiteLister(db)
+	if err != nil {
+		return err
+	}
 	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)
 
 	// --- Health probe (SQLite *sql.DB ping) ---

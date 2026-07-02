@@ -78,14 +78,19 @@ func (p *poisonRelayPub) publishCount(dedup string) int {
 
 // relayTimeArg converts t using b's dialect (via a temporary Store).
 func relayTimeArg(b backend, t time.Time) any {
-	return store.TimeArgForDialect(store.New(b.conn, b.dialect), t)
+	s, err := store.New(b.conn, b.dialect)
+	if err != nil {
+		panic("relayTimeArg: store.New: " + err.Error())
+	}
+	return store.TimeArgForDialect(s, t)
 }
 
 // seedRelayOutbox inserts n pending outbox rows using the store's generic querier.
 // next_attempt_at is set to now so the relay claims them immediately.
 func seedRelayOutbox(t *testing.T, b backend, n int) {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
 	now := time.Now().UTC()
 	for i := range n {
@@ -104,9 +109,10 @@ func seedRelayOutbox(t *testing.T, b backend, n int) {
 // seedRelayOutboxRow inserts a single pending outbox row with a specific next_attempt_at.
 func seedRelayOutboxRow(t *testing.T, b backend, dedup string, nextAttempt time.Time) {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
-	_, err := q.Exec(t.Context(), b.dialect.Rebind(
+	_, err = q.Exec(t.Context(), b.dialect.Rebind(
 		`INSERT INTO wrkflw_outbox
 		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
 		 VALUES (?,?,?,?,?,'pending',0,?)`),
@@ -120,9 +126,10 @@ func seedRelayOutboxRow(t *testing.T, b backend, dedup string, nextAttempt time.
 // Returns the inserted ID (retrieved via SELECT after INSERT for all dialects).
 func seedRelayDeadRow(t *testing.T, b backend, dedup, lastErr string, at time.Time) int64 {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
-	_, err := q.Exec(t.Context(), b.dialect.Rebind(
+	_, err = q.Exec(t.Context(), b.dialect.Rebind(
 		`INSERT INTO wrkflw_outbox
 		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at, last_error)
 		 VALUES (?,?,?,?,?,'dead',5,?,?)`),
@@ -136,9 +143,10 @@ func seedRelayDeadRow(t *testing.T, b backend, dedup, lastErr string, at time.Ti
 // seedRelayPendingRow inserts a status='pending' outbox row and returns its id.
 func seedRelayPendingRow(t *testing.T, b backend, dedup string, at time.Time) int64 {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
-	_, err := q.Exec(t.Context(), b.dialect.Rebind(
+	_, err = q.Exec(t.Context(), b.dialect.Rebind(
 		`INSERT INTO wrkflw_outbox
 		   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
 		 VALUES (?,?,?,?,?,'pending',0,?)`),
@@ -152,10 +160,11 @@ func seedRelayPendingRow(t *testing.T, b backend, dedup string, at time.Time) in
 // relayLastInsertedID fetches the id of the outbox row with the given dedup_key.
 func relayLastInsertedID(t *testing.T, b backend, dedup string) int64 {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
 	var id int64
-	err := q.QueryRow(t.Context(), b.dialect.Rebind(
+	err = q.QueryRow(t.Context(), b.dialect.Rebind(
 		`SELECT id FROM wrkflw_outbox WHERE dedup_key = ?`), dedup,
 	).Scan(&id)
 	require.NoError(t, err)
@@ -165,9 +174,10 @@ func relayLastInsertedID(t *testing.T, b backend, dedup string) int64 {
 // outboxStatusAndRetry reads the status and retry_count of the single outbox row with given dedup.
 func outboxStatusAndRetry(t *testing.T, b backend, dedup string) (status string, retry int) {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
-	err := q.QueryRow(t.Context(), b.dialect.Rebind(
+	err = q.QueryRow(t.Context(), b.dialect.Rebind(
 		`SELECT status, retry_count FROM wrkflw_outbox WHERE dedup_key = ?`), dedup,
 	).Scan(&status, &retry)
 	require.NoError(t, err)
@@ -177,10 +187,11 @@ func outboxStatusAndRetry(t *testing.T, b backend, dedup string) (status string,
 // countOutboxByStatus returns the count of rows with the given status.
 func countOutboxByStatus(t *testing.T, b backend, status string) int {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
 	var n int
-	err := q.QueryRow(t.Context(), b.dialect.Rebind(
+	err = q.QueryRow(t.Context(), b.dialect.Rebind(
 		`SELECT COUNT(*) FROM wrkflw_outbox WHERE status = ?`), status,
 	).Scan(&n)
 	require.NoError(t, err)
@@ -190,10 +201,11 @@ func countOutboxByStatus(t *testing.T, b backend, status string) int {
 // outboxStatusByID reads the status of the row with the given id.
 func outboxStatusByID(t *testing.T, b backend, id int64) string {
 	t.Helper()
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
 	q := s.QuerierForTest(t.Context())
 	var status string
-	err := q.QueryRow(t.Context(), b.dialect.Rebind(
+	err = q.QueryRow(t.Context(), b.dialect.Rebind(
 		`SELECT status FROM wrkflw_outbox WHERE id = ?`), id,
 	).Scan(&status)
 	require.NoError(t, err)
@@ -209,7 +221,8 @@ func TestRelayDrainOnce_PublishesAndMarks(t *testing.T) {
 		seedRelayOutbox(t, b, 3)
 
 		pub := &recordingRelayPub{}
-		relay := store.NewRelay(b.conn, b.dialect, pub)
+		relay, err := store.NewRelay(b.conn, b.dialect, pub)
+		require.NoError(t, err)
 
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
@@ -228,7 +241,8 @@ func TestRelayDrainOnce_PublishesAndMarks(t *testing.T) {
 // TestRelayDrainOnce_EmptyOutbox verifies DrainOnce on empty table returns 0, nil.
 func TestRelayDrainOnce_EmptyOutbox(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		require.NoError(t, err)
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, 0, n)
@@ -241,7 +255,8 @@ func TestRelayDrainOnce_PublishError_Retry(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		seedRelayOutbox(t, b, 1)
 
-		relay := store.NewRelay(b.conn, b.dialect, failingRelayPub{})
+		relay, err := store.NewRelay(b.conn, b.dialect, failingRelayPub{})
+		require.NoError(t, err)
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err, "publish failure must be absorbed, not propagated")
 		assert.Equal(t, 0, n)
@@ -262,11 +277,12 @@ func TestRelayPoisonIsolation(t *testing.T) {
 
 		const maxDelivery = 3
 		pub := newPoisonRelayPub("poison")
-		relay := store.NewRelay(b.conn, b.dialect, pub,
+		relay, err := store.NewRelay(b.conn, b.dialect, pub,
 			store.WithRelayClock(fc),
 			store.WithRelayMaxDeliveryAttempts(maxDelivery),
 			store.WithRelayBackoff(time.Second, 30*time.Second),
 		)
+		require.NoError(t, err)
 
 		// Drain #1: healthy published despite poison failing.
 		n, err := relay.DrainOnce(t.Context())
@@ -312,7 +328,8 @@ func TestRelayListDeadLettered(t *testing.T) {
 		deadID := seedRelayDeadRow(t, b, "dead-dedup-1", "boom", at)
 		_ = seedRelayPendingRow(t, b, "pending-dedup-1", at)
 
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		require.NoError(t, err)
 		dead, err := relay.ListDeadLettered(t.Context(), 10)
 		require.NoError(t, err)
 		require.Len(t, dead, 1, "only dead row on %s", b.name)
@@ -333,9 +350,10 @@ func TestRelayRedrive(t *testing.T) {
 		deadID := seedRelayDeadRow(t, b, "redrive-dead-1", "oops", at)
 		pendingID := seedRelayPendingRow(t, b, "redrive-pending-1", at)
 
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayClock(fc),
 		)
+		require.NoError(t, err)
 
 		// No-op with zero ids.
 		n, err := relay.Redrive(t.Context())
@@ -358,7 +376,8 @@ func TestRelayRedrive(t *testing.T) {
 
 		// DrainOnce publishes the redriven row.
 		pub := &recordingRelayPub{}
-		relay2 := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayClock(fc))
+		relay2, err := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayClock(fc))
+		require.NoError(t, err)
 		n, err = relay2.DrainOnce(t.Context())
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, n, 1, "redriven row published on %s", b.name)
@@ -378,7 +397,8 @@ func TestRelayOutboxStats(t *testing.T) {
 		seedRelayOutboxRow(t, b, "stats-pending-2", at)
 		_ = seedRelayDeadRow(t, b, "stats-dead-1", "err", at)
 
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		require.NoError(t, err)
 		stats, err := relay.OutboxStats(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), stats.Pending, "pending count on %s", b.name)
@@ -399,9 +419,10 @@ func TestRelayRun_ExitsOnCtxCancel(t *testing.T) {
 		// goroutines.
 		opt := goleak.IgnoreCurrent()
 
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayPollInterval(10*time.Millisecond),
 		)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
@@ -425,14 +446,15 @@ func TestRelayRun_ExitsOnCtxCancel(t *testing.T) {
 // TestRelayRun_DeadlineExceeded verifies Run returns ctx.Err() on deadline expiry.
 func TestRelayRun_DeadlineExceeded(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayPollInterval(10*time.Millisecond),
 		)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(t.Context(), 40*time.Millisecond)
 		defer cancel()
 
-		err := relay.Run(ctx)
+		err = relay.Run(ctx)
 		assert.ErrorIs(t, err, context.DeadlineExceeded, "Run must return DeadlineExceeded on %s", b.name)
 		assert.Equal(t, context.DeadlineExceeded, err, "must be ctx.Err() exactly on %s", b.name)
 	})
@@ -443,9 +465,10 @@ func TestRelayRun_AbsorbsPublishFailures(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		seedRelayOutbox(t, b, 1)
 
-		relay := store.NewRelay(b.conn, b.dialect, failingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, failingRelayPub{},
 			store.WithRelayPollInterval(10*time.Millisecond),
 		)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
@@ -459,7 +482,8 @@ func TestRelayRun_AbsorbsPublishFailures(t *testing.T) {
 				return true
 			default:
 			}
-			s := store.New(b.conn, b.dialect)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err)
 			q := s.QuerierForTest(t.Context())
 			var retry int
 			_ = q.QueryRow(t.Context(), b.dialect.Rebind(
@@ -490,9 +514,10 @@ func TestRelayBatchSpan(t *testing.T) {
 		tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
 
 		pub := &recordingRelayPub{}
-		relay := store.NewRelay(b.conn, b.dialect, pub,
+		relay, err := store.NewRelay(b.conn, b.dialect, pub,
 			store.WithRelayTracerProvider(tp),
 		)
+		require.NoError(t, err)
 
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
@@ -525,9 +550,10 @@ func TestRelayBatchSpan_EmptyOutbox(t *testing.T) {
 		sr := tracetest.NewSpanRecorder()
 		tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
 
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayTracerProvider(tp),
 		)
+		require.NoError(t, err)
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, 0, n)
@@ -561,9 +587,10 @@ func TestRelayEventsPublishedCounter(t *testing.T) {
 		mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 		t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayMeterProvider(mp),
 		)
+		require.NoError(t, err)
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, 2, n)
@@ -599,9 +626,10 @@ func TestRelayBatchDurationHistogram(t *testing.T) {
 		mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 		t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayMeterProvider(mp),
 		)
+		require.NoError(t, err)
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
@@ -635,9 +663,10 @@ func TestRelayWithLogger(t *testing.T) {
 
 		var buf logBuffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayLogger(logger),
 		)
+		require.NoError(t, err)
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
@@ -645,27 +674,29 @@ func TestRelayWithLogger(t *testing.T) {
 	})
 }
 
-// TestRelayDrainOnce_NilConn verifies DrainOnce returns an error (begin tx
-// failure) when the connection is nil. This exercises the beginDrainTx error
-// path and the accompanying span/log instrumentation in DrainOnce.
+// TestRelayDrainOnce_NilConn verifies that NewRelay returns ErrNilDependency
+// when the connection is nil. The nil guard is enforced at construction time.
 func TestRelayDrainOnce_NilConn(t *testing.T) {
 	t.Parallel()
-	relay := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
-	_, err := relay.DrainOnce(t.Context())
+	_, err := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "relay: begin tx")
+	require.ErrorIs(t, err, store.ErrNilDependency)
 }
 
 // TestRelayDrainOnce_ClaimQueryFails verifies that a claim-query failure
 // (cancelled context after tx begin) is reported as an infra error from
 // DrainOnce and does NOT panic or leak. Only exercised on SupportsSkipLocked
-// backends; SQLite single-writer is covered by TestRelayRun_InfraErrorPropagates.
+// backends. FOLLOW-UP: the SQLite (non-SkipLocked) DrainOnce infra-error path is
+// not independently covered at runtime here — the former nil-conn probe now
+// fails fast at construction (ErrNilDependency). A dropped-table style test
+// (cf. TestStoreWriteErrors) would restore that coverage.
 func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		if !b.dialect.SupportsSkipLocked() {
-			t.Skipf("skip SQLite — nil conn test covers the non-locking path")
+			t.Skipf("skip SQLite — non-SkipLocked DrainOnce infra path not covered here (see FOLLOW-UP above)")
 		}
-		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+		require.NoError(t, err)
 
 		// A pre-cancelled context causes the claim query to fail immediately
 		// after transaction.Begin succeeds (begin uses a background context under
@@ -673,52 +704,50 @@ func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel() // cancel before DrainOnce
 
-		_, err := relay.DrainOnce(ctx)
+		_, err = relay.DrainOnce(ctx)
 		require.Error(t, err, "DrainOnce must propagate query error on %s", b.name)
 	})
 }
 
-// TestRelayRun_InfraErrorPropagates verifies Run returns an infra error when
-// the initial drain fails (e.g. a nil/bad connection).
+// TestRelayRun_InfraErrorPropagates verifies NewRelay returns ErrNilDependency
+// when the connection is nil (nil guard enforced at construction time).
 func TestRelayRun_InfraErrorPropagates(t *testing.T) {
 	t.Run("sqlite_nil_conn", func(t *testing.T) {
 		t.Parallel()
 		d := newSQLiteDialectForTest()
-		relay := store.NewRelay(nil, d, &recordingRelayPub{},
+		_, err := store.NewRelay(nil, d, &recordingRelayPub{},
 			store.WithRelayPollInterval(10*time.Millisecond),
 		)
-		err := relay.Run(t.Context())
 		require.Error(t, err)
-		require.NotEqual(t, context.Canceled, err)
+		require.ErrorIs(t, err, store.ErrNilDependency)
 	})
 }
 
-// TestRelayListDeadLettered_NilConn verifies ListDeadLettered returns an error
-// on a bad connection.
+// TestRelayListDeadLettered_NilConn verifies NewRelay returns ErrNilDependency
+// when the connection is nil (nil guard at construction time).
 func TestRelayListDeadLettered_NilConn(t *testing.T) {
 	t.Parallel()
-	relay := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
-	_, err := relay.ListDeadLettered(t.Context(), 10)
+	_, err := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "list dead-lettered")
+	require.ErrorIs(t, err, store.ErrNilDependency)
 }
 
-// TestRelayRedrive_NilConn verifies Redrive returns an error on a bad connection.
+// TestRelayRedrive_NilConn verifies NewRelay returns ErrNilDependency
+// when the connection is nil (nil guard at construction time).
 func TestRelayRedrive_NilConn(t *testing.T) {
 	t.Parallel()
-	relay := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
-	_, err := relay.Redrive(t.Context(), 1)
+	_, err := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "relay: redrive")
+	require.ErrorIs(t, err, store.ErrNilDependency)
 }
 
-// TestRelayOutboxStats_NilConn verifies OutboxStats returns an error on a bad connection.
+// TestRelayOutboxStats_NilConn verifies NewRelay returns ErrNilDependency
+// when the connection is nil (nil guard at construction time).
 func TestRelayOutboxStats_NilConn(t *testing.T) {
 	t.Parallel()
-	relay := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
-	_, err := relay.OutboxStats(t.Context())
+	_, err := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "outbox stats")
+	require.ErrorIs(t, err, store.ErrNilDependency)
 }
 
 // TestRelayBatchSize verifies WithRelayBatchSize limits rows per DrainOnce.
@@ -727,9 +756,10 @@ func TestRelayBatchSize(t *testing.T) {
 		seedRelayOutbox(t, b, 5)
 
 		pub := &recordingRelayPub{}
-		relay := store.NewRelay(b.conn, b.dialect, pub,
+		relay, err := store.NewRelay(b.conn, b.dialect, pub,
 			store.WithRelayBatchSize(2),
 		)
+		require.NoError(t, err)
 
 		n, err := relay.DrainOnce(t.Context())
 		require.NoError(t, err)
@@ -811,8 +841,10 @@ func TestRelayDrainOnce_NoConcurrentDoublePublish(t *testing.T) {
 		// two goroutines' Publish phases overlap, maximising double-publish odds.
 		pub := newBlockingRelayPub(20 * time.Millisecond)
 
-		relay1 := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayBatchSize(N))
-		relay2 := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayBatchSize(N))
+		relay1, err := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayBatchSize(N))
+		require.NoError(t, err)
+		relay2, err := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayBatchSize(N))
+		require.NoError(t, err)
 
 		var wg sync.WaitGroup
 		wg.Add(2)

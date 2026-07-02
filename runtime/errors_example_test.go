@@ -131,9 +131,9 @@ func TestSagaCompensationRollback(t *testing.T) {
 	// structurally satisfies clock.Clock (it implements Now() time.Time).
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC))
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
-	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fakeClock))
+	runner := mustRunner(t, cat, store, runtime.WithRunnerClock(fakeClock))
 
 	def := sagaDef()
 
@@ -216,9 +216,9 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 		"recover-action": &recordingAction{name: "recover-action", rec: rec},
 	})
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
-	runner := runtime.NewRunner(cat, store)
+	runner := mustRunner(t, cat, store)
 
 	def := boundaryErrorDef()
 

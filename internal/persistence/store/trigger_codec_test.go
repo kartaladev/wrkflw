@@ -152,7 +152,7 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 // MarshalTrigger→UnmarshalTrigger round-trip.
 func TestActionFailedJitterRoundTrip(t *testing.T) {
 	at := time.Unix(1700000000, 0).UTC()
-	in := engine.NewActionFailedJittered(at, "c-jit", "boom-jit", true, 0.375)
+	in := engine.NewActionFailed(at, "c-jit", "boom-jit", true, engine.WithJitter(0.375))
 
 	data, kind, err := st.MarshalTrigger(in)
 	require.NoError(t, err)

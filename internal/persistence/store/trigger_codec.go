@@ -134,7 +134,7 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 	case kindActionCompleted:
 		return engine.NewActionCompleted(env.At, env.CommandID, env.Output), nil
 	case kindActionFailed:
-		return engine.NewActionFailedJittered(env.At, env.CommandID, env.Err, env.Retryable, env.Jitter), nil
+		return engine.NewActionFailed(env.At, env.CommandID, env.Err, env.Retryable, engine.WithJitter(env.Jitter)), nil
 	case kindHumanCompleted:
 		return engine.NewHumanCompleted(env.At, env.TaskToken, env.Output, env.Actor), nil
 	case kindHumanClaimed:

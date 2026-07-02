@@ -42,6 +42,7 @@ var (
 // NewTimerStore constructs a TimerStore over conn using dialect d. conn must be
 // either a *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite); any other
 // type causes [database.From] to return an error when the first query is issued.
+// Returns [ErrNilDependency] when conn is nil or d is nil.
 //
 // NewTimerStore mirrors the [New] and [NewLister] constructor shape so callers
 // can pair a TimerStore alongside a Store with the same conn and dialect value.
@@ -49,14 +50,20 @@ var (
 // Example (Postgres):
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
-//	ts := store.NewTimerStore(pool, dialect.NewPostgres())
+//	ts, err := store.NewTimerStore(pool, dialect.NewPostgres())
 //
 // Example (SQLite, tests):
 //
 //	db := dbtest.RunTestSQLite(t)
-//	ts := store.NewTimerStore(db, dialect.NewSQLite())
-func NewTimerStore(conn any, d dialect.Dialect) *TimerStore {
-	return &TimerStore{conn: conn, dialect: d}
+//	ts, err := store.NewTimerStore(db, dialect.NewSQLite())
+func NewTimerStore(conn any, d dialect.Dialect) (*TimerStore, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
+	return &TimerStore{conn: conn, dialect: d}, nil
 }
 
 // ListArmed implements [runtime.TimerStore]. It returns all timers currently

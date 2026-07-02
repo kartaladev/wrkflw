@@ -56,17 +56,23 @@ func NewActionCompleted(at time.Time, commandID string, output map[string]any) A
 	return ActionCompleted{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Output: output}
 }
 
-// NewActionFailed builds an ActionFailed trigger reporting a service-action error
-// and whether it is retryable. JitterFraction defaults to 0 (no jitter).
-func NewActionFailed(at time.Time, commandID, errMsg string, retryable bool) ActionFailed {
-	return NewActionFailedJittered(at, commandID, errMsg, retryable, 0)
+// ActionFailedOption configures an ActionFailed trigger.
+type ActionFailedOption func(*ActionFailed)
+
+// WithJitter sets the backoff jitter fraction (fraction >= 0; the runtime samples
+// it to spread concurrent retries across workers). Values <= 0 mean no jitter.
+func WithJitter(fraction float64) ActionFailedOption {
+	return func(a *ActionFailed) { a.JitterFraction = fraction }
 }
 
-// NewActionFailedJittered builds an ActionFailed trigger with an explicit
-// jitter fraction in [0,1). The runtime samples jitter and applies it to the
-// backoff duration so that concurrent retries spread their load across workers.
-func NewActionFailedJittered(at time.Time, commandID, errMsg string, retryable bool, jitter float64) ActionFailed {
-	return ActionFailed{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Err: errMsg, Retryable: retryable, JitterFraction: jitter}
+// NewActionFailed builds an ActionFailed trigger reporting a service-action error
+// and whether it is retryable. JitterFraction defaults to 0; use WithJitter to set it.
+func NewActionFailed(at time.Time, commandID, errMsg string, retryable bool, opts ...ActionFailedOption) ActionFailed {
+	af := ActionFailed{baseTrigger: baseTrigger{at: at}, CommandID: commandID, Err: errMsg, Retryable: retryable}
+	for _, o := range opts {
+		o(&af)
+	}
+	return af
 }
 
 // HumanCompleted reports that a human-task node was completed by an actor.

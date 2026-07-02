@@ -21,9 +21,15 @@ import (
 // this example drives Chainer.Handle directly so the output is deterministic.
 func ExampleChainer() {
 	ctx := context.Background()
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
 	links := runtime.NewMemChainLinkStore()
-	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	runner, err := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	if err != nil {
+		panic(err)
+	}
 
 	fulfillment := &model.ProcessDefinition{
 		ID: "fulfillment", Version: 1,
@@ -41,7 +47,10 @@ func ExampleChainer() {
 		return runtime.SuccessorDecision{Def: fulfillment, Vars: ev.Result}, true
 	}
 
-	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+	if err != nil {
+		panic(err)
+	}
 
 	// Simulate the "approval-1" instance completing.
 	_ = chainer.Handle(ctx, runtime.ChainEvent{

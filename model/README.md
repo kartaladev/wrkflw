@@ -14,7 +14,8 @@ workflow; the `runtime` and `engine` packages execute it.
 5. [RetryPolicy](#retrypolicy)
 6. [Validation](#validation)
 7. [Serialization / YAML](#serialization--yaml)
-8. [Authoring forms](#authoring-forms)
+8. [DefinitionBuilder vs DefinitionLoader](#definitionbuilder-vs-definitionloader)
+9. [Authoring forms](#authoring-forms)
 
 ---
 
@@ -266,16 +267,16 @@ nodes (and is what YAML loading uses internally); the two forms are equivalent �
 
 | Method | Description |
 |---|---|
-| `NewDefinition(id string, version int) *DefinitionBuilder` | Start a new builder |
-| `.Add<Kind>(…) *DefinitionBuilder` | **Fluent per-kind node adder** — one per node kind (see table below); mirrors `New<Kind>` and appends the node |
-| `.Add(n Node) *DefinitionBuilder` | Append a pre-built node (programmatic / dynamic; YAML uses this) |
-| `.Connect(fromID, toID string, opts ...FlowOption) *DefinitionBuilder` | Add a directed sequence flow |
-| `.CancelActions(names ...string) *DefinitionBuilder` | Best-effort actions on instance cancel |
-| `.RegisterAction(name string, a action.ServiceAction) *DefinitionBuilder` | Register a definition-scoped action |
-| `.RegisterActionFunc(name string, fn …) *DefinitionBuilder` | Register a scoped action from a plain func |
+| `NewDefinition(id string, version int) DefinitionBuilder` | Start a new builder |
+| `.Add<Kind>(…) DefinitionBuilder` | **Fluent per-kind node adder** — one per node kind (see table below); mirrors `New<Kind>` and appends the node |
+| `.Add(n Node) DefinitionBuilder` | Append a pre-built node (programmatic / dynamic; YAML uses this) |
+| `.Connect(fromID, toID string, opts ...FlowOption) DefinitionBuilder` | Add a directed sequence flow |
+| `.CancelActions(names ...string) DefinitionBuilder` | Best-effort actions on instance cancel |
+| `.RegisterAction(name string, a action.ServiceAction) DefinitionBuilder` | Register a definition-scoped action |
+| `.RegisterActionFunc(name string, fn …) DefinitionBuilder` | Register a scoped action from a plain func |
 | `.Build() (*ProcessDefinition, error)` | Assemble and validate |
 
-**Fluent node adders** (each takes the same arguments as its `New<Kind>` constructor and returns `*DefinitionBuilder`):
+**Fluent node adders** (each takes the same arguments as its `New<Kind>` constructor and returns `DefinitionBuilder`):
 
 | Group | Methods |
 |---|---|
@@ -388,14 +389,23 @@ Errors from nested definitions are wrapped with the host node ID.
 standard `encoding/json`. For YAML authoring there are two entry points:
 
 ```go
-// Parse a YAML byte slice.
-def, err := model.ParseYAML(data []byte) (*ProcessDefinition, error)
+// Parse a YAML byte slice — returns a DefinitionLoader, not the definition directly.
+ld, err := model.ParseYAML(data)
+if err != nil { log.Fatal(err) }
+// Optionally register definition-scoped actions before building:
+ld.RegisterAction("my-action", myAction)
+def, err := ld.Build()
 
-// Parse from any io.Reader.
-def, err := model.LoadYAML(r io.Reader) (*ProcessDefinition, error)
+// Parse from any io.Reader (delegates to ParseYAML internally).
+ld, err := model.LoadYAML(r)
+if err != nil { log.Fatal(err) }
+def, err := ld.Build()
 ```
 
-Both functions validate before returning.
+Both functions validate the YAML structure before returning. Validation of the
+assembled definition runs inside `Build()`. YAML cannot carry `RegisterAction`
+calls — those require Go code — so the load → register-actions → `Build()`
+sequence is the correct idiom for YAML-loaded definitions that need scoped actions.
 
 ### Kind discriminator
 
@@ -484,12 +494,98 @@ flows:
 
 ---
 
+## DefinitionBuilder vs DefinitionLoader
+
+`model` exposes two interface types for assembling a `*ProcessDefinition`. They
+share one underlying `definitionCore` and differ only in their method set.
+
+### `DefinitionBuilder` — full authoring surface
+
+Returned by `NewDefinition(id, version)`. Lets you add nodes, connect flows, and
+register definition-scoped actions in any order (both idioms below compile):
+
+```go
+// Actions-first idiom (useful when actions are wired before nodes are known):
+b := model.NewDefinition("order", 1).
+    RegisterAction("charge-card", myAction)
+def, err := b.AddServiceTask("charge", model.WithActionName("charge-card")).
+    AddEndEvent("end").
+    Connect("charge", "end").
+    Build()
+if err != nil {
+    log.Fatal(err) // Build validates the assembled definition
+}
+_ = def
+
+// Structure-first idiom (most common):
+def, err := model.NewDefinition("order", 1).
+    AddStartEvent("start").
+    AddServiceTask("charge", model.WithActionName("charge-card"),
+        model.WithCompensation("refund-card")).
+    AddEndEvent("end").
+    Connect("start", "charge").
+    Connect("charge", "end").
+    RegisterAction("charge-card", myChargeAction).
+    RegisterAction("refund-card", myRefundAction).
+    Build()
+```
+
+`Build()` validates the assembled definition, compiles the scoped action catalog,
+and returns a `*ProcessDefinition`. It returns an error if validation fails (e.g.
+missing start event, dangling flow) or if the same action name was registered twice
+(`model.ErrDuplicateScopedAction`).
+
+`DefinitionBuilder` also exposes `.Loader()` which returns a `DefinitionLoader`
+backed by the same core — useful when handing off a builder to a function that
+only needs to register actions.
+
+### `DefinitionLoader` — post-parse, actions only
+
+Returned by `ParseYAML` and `LoadYAML`. Exposes only:
+- `RegisterAction(name, a)` / `RegisterActionFunc(name, fn)` — attach Go function
+  values that the YAML cannot serialize.
+- `CancelActions(names...)` — override or supplement the cancel-action list.
+- `Build()` — assemble, validate, and return the `*ProcessDefinition`.
+
+The structural elements (nodes, flows, kind, options) are already decoded from
+the YAML byte stream. The `DefinitionLoader` has no `Add*` or `Connect` methods
+because the structure is pre-declared.
+
+### Why YAML can't carry `RegisterAction`
+
+A YAML node can name an action (`action: charge-card`) but it cannot embed a Go
+function. Any `serviceTask` or `businessRuleTask` that needs a definition-scoped
+action must be registered in Go code after loading:
+
+```go
+ld, err := model.ParseYAML(yamlBytes)
+if err != nil {
+    return err
+}
+ld.RegisterAction("charge-card", myChargeAction)
+ld.RegisterAction("refund-card", myRefundAction)
+def, err := ld.Build()
+```
+
+If the definition uses only global-catalog actions (not scoped), calling
+`Build()` without any `RegisterAction` is correct — the global catalog is
+resolved at execution time, not at definition time.
+
+### Duplicate scoped-action detection
+
+Registering the same name twice overwrites the first value in the accumulator but
+sets an internal flag; `Build()` returns `model.ErrDuplicateScopedAction` naming
+the duplicate. This catches accidental re-registration at wiring time rather than
+producing a silent override.
+
+---
+
 ## Authoring forms
 
 | Form | Entry point | When to use |
 |---|---|---|
 | **Go constructors + DefinitionBuilder** | `model.NewDefinition(...).Add(...).Connect(...).Build()` | Preferred. Type-safe, IDE-navigable, no external files. |
-| **YAML** | `model.ParseYAML(data)` / `model.LoadYAML(r)` | Configuration-driven pipelines; definitions stored outside the binary. |
+| **YAML** | `model.ParseYAML(data)` / `model.LoadYAML(r)` → returns `DefinitionLoader`; call `.RegisterAction(...)` then `.Build()` | Configuration-driven pipelines; definitions stored outside the binary. |
 | **JSON** | `json.Unmarshal` into `ProcessDefinition` then `model.Validate` | Programmatic interchange, REST payloads, persistence round-trips. |
 
 In all cases `Validate` runs before the definition is returned to the caller.

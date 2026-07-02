@@ -55,7 +55,7 @@ func asyncParentDef() *model.ProcessDefinition {
 	}
 }
 
-// TestAsyncCallActivityParentParks verifies that when WithCallLinks is configured:
+// TestAsyncCallActivityParentParks verifies that when WithCallLinkStore is configured:
 //   - runner.Run(parent) returns StatusRunning (the parent parks, NOT errors)
 //   - the child instance exists in the store and is StatusRunning
 //   - cl.LookupChild(childID) returns the link with ParentCommandID == parent's call command ID
@@ -63,7 +63,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	ctx := t.Context()
 
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	child := asyncChildDef()
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
@@ -74,8 +74,8 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	runner := runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(cl),
+	runner := mustRunner(t, nil, store,
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -228,7 +228,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		ctx := t.Context()
 
 		cl := runtime.NewMemCallLinkStore()
-		store := runtime.NewMemStoreWithCallLinks(cl)
+		store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 		childOutput := map[string]any{"result": "ok", "score": 42}
 		cat := action.NewMapCatalog(map[string]action.ServiceAction{
@@ -241,8 +241,8 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-imm-child": child,
 		})
 
-		runner := runtime.NewRunner(cat, store,
-			runtime.WithCallLinks(cl),
+		runner := mustRunner(t, cat, store,
+			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)
 
@@ -270,7 +270,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		ctx := t.Context()
 
 		cl := runtime.NewMemCallLinkStore()
-		store := runtime.NewMemStoreWithCallLinks(cl)
+		store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 		cat := action.NewMapCatalog(map[string]action.ServiceAction{
 			"fail-action": &failAction{msg: "child service error"},
@@ -282,8 +282,8 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-fail-child": child,
 		})
 
-		runner := runtime.NewRunner(cat, store,
-			runtime.WithCallLinks(cl),
+		runner := mustRunner(t, cat, store,
+			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)
 

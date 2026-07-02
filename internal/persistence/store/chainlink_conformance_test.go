@@ -21,7 +21,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("record and lookup by successor", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			link := runtime.ChainLink{
@@ -50,7 +51,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("lookup unknown successor returns ok=false no error", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 
 			_, ok, err := cls.LookupBySuccessor(t.Context(), "does-not-exist")
 			require.NoError(t, err, "%s: LookupBySuccessor", b.name)
@@ -60,7 +62,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("duplicate predecessor+outcome returns ErrChainLinkExists first successor wins", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			first := runtime.ChainLink{
@@ -72,7 +75,7 @@ func TestChainLinkStore(t *testing.T) {
 			require.NoError(t, cls.Record(ctx, first), "%s: Record first", b.name)
 
 			// Second insert for the same (PredecessorID, Outcome) must be rejected.
-			err := cls.Record(ctx, runtime.ChainLink{
+			err = cls.Record(ctx, runtime.ChainLink{
 				PredecessorID: "dup-pred",
 				Outcome:       runtime.OutcomeFailed,
 				SuccessorID:   "dup-succ-second",
@@ -90,7 +93,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("list by predecessor returns all hops ordered by outcome", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			require.NoError(t, cls.Record(ctx, runtime.ChainLink{
@@ -123,7 +127,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("list by predecessor returns empty slice when no hops exist", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 
 			hops, err := cls.ListByPredecessor(t.Context(), "ghost-pred")
 			require.NoError(t, err, "%s: ListByPredecessor", b.name)
@@ -133,7 +138,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("created_at UTC round-trip", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			// Use a known UTC timestamp with sub-second precision to exercise the
@@ -160,7 +166,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("nil start vars round-trip", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			link := runtime.ChainLink{
@@ -183,7 +190,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("PredecessorOf returns the predecessor link", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			link := runtime.ChainLink{
@@ -214,7 +222,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("PredecessorOf returns nil nil for chain root", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 
 			got, err := cls.PredecessorOf(t.Context(), "not-a-successor")
 			require.NoError(t, err, "%s: PredecessorOf", b.name)
@@ -224,7 +233,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("SuccessorsOf returns successor links ordered by outcome", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			ctx := t.Context()
 
 			require.NoError(t, cls.Record(ctx, runtime.ChainLink{
@@ -265,7 +275,8 @@ func TestChainLinkStore(t *testing.T) {
 
 	t.Run("SuccessorsOf returns non-nil empty slice when no successors exist", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewChainLinkStore(b.conn, b.dialect)
+			cls, err := store.NewChainLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 
 			links, err := cls.SuccessorsOf(t.Context(), "ghost-predecessor")
 			require.NoError(t, err, "%s: SuccessorsOf", b.name)

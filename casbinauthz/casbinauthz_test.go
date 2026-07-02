@@ -22,7 +22,7 @@ g, alice, manager
 `
 
 func TestEndToEnd_AllowDeny(t *testing.T) {
-	a, err := casbinauthz.NewCasbinAuthorizerFromStrings("", policy) // "" ⇒ DefaultModel
+	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", policy)) // "" ⇒ DefaultModel
 	require.NoError(t, err)
 
 	alice := authz.Actor{ID: "alice"}
@@ -34,7 +34,7 @@ func TestEndToEnd_AllowDeny(t *testing.T) {
 }
 
 func TestNewCasbinAuthorizerFromStrings_ExplicitDefaultModel(t *testing.T) {
-	a, err := casbinauthz.NewCasbinAuthorizerFromStrings(casbinauthz.DefaultModel, policy)
+	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(casbinauthz.DefaultModel, policy))
 	require.NoError(t, err)
 	require.NotNil(t, a)
 
@@ -44,7 +44,7 @@ func TestNewCasbinAuthorizerFromStrings_ExplicitDefaultModel(t *testing.T) {
 }
 
 func TestReloadPolicy_ViaTypeAssertion(t *testing.T) {
-	a, err := casbinauthz.NewCasbinAuthorizerFromStrings(casbinauthz.DefaultModel, policy)
+	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(casbinauthz.DefaultModel, policy))
 	require.NoError(t, err)
 
 	reloader, ok := a.(interface{ ReloadPolicy() error })
@@ -59,7 +59,8 @@ func TestNewCasbinAuthorizer_PrebuiltEnforcer(t *testing.T) {
 	e, err := casbinv2.NewSyncedEnforcer(m, stringadapter.NewAdapter(policy))
 	require.NoError(t, err)
 
-	a := casbinauthz.NewCasbinAuthorizer(e)
+	a, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromEnforcer(e))
+	require.NoError(t, err)
 	require.NotNil(t, a)
 
 	alice := authz.Actor{ID: "alice"}
@@ -68,6 +69,64 @@ func TestNewCasbinAuthorizer_PrebuiltEnforcer(t *testing.T) {
 }
 
 func TestNewCasbinAuthorizerFromStrings_MalformedModel(t *testing.T) {
-	_, err := casbinauthz.NewCasbinAuthorizerFromStrings("not a valid casbin model", "")
+	_, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("not a valid casbin model", ""))
 	assert.Error(t, err)
+}
+
+func TestNewCasbinAuthorizerSourceValidation(t *testing.T) {
+	t.Parallel()
+
+	// modelText / policyText are identical to the const used above so we don't
+	// duplicate knowledge; we re-declare them here so the sub-tests are
+	// self-contained and this function doesn't depend on the file-level const.
+	const modelText = "" // empty ⇒ DefaultModel
+	const policyText = `
+p, manager, approve, *
+g, alice, manager
+`
+
+	type testCase struct {
+		name   string
+		opts   []casbinauthz.Option
+		assert func(t *testing.T, az authz.Authorizer, closer interface{ Close() error }, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "no source",
+			opts: nil,
+			assert: func(t *testing.T, _ authz.Authorizer, _ interface{ Close() error }, err error) {
+				require.ErrorIs(t, err, casbinauthz.ErrNoAuthorizerSource)
+			},
+		},
+		{
+			name: "multiple sources",
+			opts: []casbinauthz.Option{
+				casbinauthz.FromStrings(modelText, policyText),
+				casbinauthz.FromStrings(modelText, policyText),
+			},
+			assert: func(t *testing.T, _ authz.Authorizer, _ interface{ Close() error }, err error) {
+				require.ErrorIs(t, err, casbinauthz.ErrMultipleAuthorizerSources)
+			},
+		},
+		{
+			name: "from strings ok",
+			opts: []casbinauthz.Option{casbinauthz.FromStrings(modelText, policyText)},
+			assert: func(t *testing.T, az authz.Authorizer, closer interface{ Close() error }, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, az)
+				if closer != nil {
+					t.Cleanup(func() { _ = closer.Close() })
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			az, closer, err := casbinauthz.NewCasbinAuthorizer(tc.opts...)
+			tc.assert(t, az, closer, err)
+		})
+	}
 }

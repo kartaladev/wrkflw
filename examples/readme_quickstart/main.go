@@ -51,9 +51,14 @@ flows:
   - { id: f1, source: s, target: charge }
   - { id: f2, source: charge, target: e }
 `
-	yamlDef, err := model.ParseYAML([]byte(yamlSrc))
+	yamlLd, err := model.ParseYAML([]byte(yamlSrc))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "yaml parse:", err)
+		os.Exit(1)
+	}
+	yamlDef, err := yamlLd.Build()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "yaml build:", err)
 		os.Exit(1)
 	}
 	fmt.Printf("yaml def %q v%d with %d nodes\n", yamlDef.ID, yamlDef.Version, len(yamlDef.Nodes))
@@ -73,7 +78,14 @@ flows:
 		}),
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r, err := runtime.NewRunner(cat, memSt)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	state, err := r.Run(ctx, simpleDef, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {

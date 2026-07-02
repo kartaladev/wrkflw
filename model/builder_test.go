@@ -199,6 +199,45 @@ func TestScopedActionNames(t *testing.T) {
 	}
 }
 
+func TestDefinitionBuilderActionsFirstAndStructureFirstBothBuild(t *testing.T) {
+	assert := func(t *testing.T, b model.DefinitionBuilder) {
+		def, err := b.Build()
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		if def.ID != "d" || len(def.Nodes) != 2 || len(def.Flows) != 1 {
+			t.Fatalf("unexpected def: %+v", def)
+		}
+	}
+	// actions-first (the established idiom)
+	assert(t, model.NewDefinition("d", 1).
+		RegisterActionFunc("a", func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }).
+		Add(model.NewStartEvent("s")).
+		Add(model.NewEndEvent("e")).
+		Connect("s", "e"))
+	// structure-first
+	assert(t, model.NewDefinition("d", 1).
+		Add(model.NewStartEvent("s")).
+		Add(model.NewEndEvent("e")).
+		Connect("s", "e").
+		RegisterActionFunc("a", func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }))
+}
+
+func TestDefinitionLoaderFromBuilderCanRegisterThenBuild(t *testing.T) {
+	l := model.NewDefinition("d", 1).
+		Add(model.NewStartEvent("s")).
+		Add(model.NewEndEvent("e")).
+		Connect("s", "e").
+		Loader()
+	def, err := l.RegisterActionFunc("a", func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if def.ScopedActionNames() == nil {
+		t.Fatalf("expected scoped action registered via loader")
+	}
+}
+
 func TestDefinitionBuilderCancelActions(t *testing.T) {
 	def, err := model.NewDefinition("p", 1).
 		Add(model.NewStartEvent("s")).

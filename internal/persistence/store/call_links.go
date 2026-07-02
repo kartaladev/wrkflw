@@ -78,22 +78,29 @@ type CallLinkStore struct {
 // must be either a *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite).
 // Pass [CallLinkOption] values to opt in to lease-based multi-replica
 // exclusivity; existing zero-option call sites compile unchanged.
+// Returns [ErrNilDependency] when conn is nil or d is nil.
 //
 // Example (Postgres):
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
-//	cls := store.NewCallLinkStore(pool, dialect.NewPostgres())
+//	cls, err := store.NewCallLinkStore(pool, dialect.NewPostgres())
 //
 // Example (SQLite, tests):
 //
 //	db := dbtest.RunTestSQLite(t)
-//	cls := store.NewCallLinkStore(db, dialect.NewSQLite())
-func NewCallLinkStore(conn any, d dialect.Dialect, opts ...CallLinkOption) *CallLinkStore {
+//	cls, err := store.NewCallLinkStore(db, dialect.NewSQLite())
+func NewCallLinkStore(conn any, d dialect.Dialect, opts ...CallLinkOption) (*CallLinkStore, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
 	s := &CallLinkStore{conn: conn, dialect: d, clk: clock.System()}
 	for _, o := range opts {
 		o(s)
 	}
-	return s
+	return s, nil
 }
 
 // ClaimPending returns up to limit terminal-but-unnotified call links.

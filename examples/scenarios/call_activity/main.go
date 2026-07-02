@@ -68,9 +68,16 @@ func main() {
 		"credit-check": child,
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore(),
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r, err := runtime.NewRunner(cat, memSt,
 		runtime.WithDefinitions(reg),
 	)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	fmt.Println("--- Loan Origination: Call Activity ---")
 	state, err := r.Run(ctx, parent, "loan-001", map[string]any{"applicant": "Ada"})

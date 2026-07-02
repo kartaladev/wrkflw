@@ -17,7 +17,7 @@ func runningChild(id string) engine.InstanceState {
 
 func TestMemStoreRecordsCallLinkOnCreate(t *testing.T) {
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	link := &runtime.CallLink{
 		ChildInstanceID:  "p-sub-c1",
@@ -52,7 +52,7 @@ func TestWithMemCallLinkClockNilFallsBackToSystem(t *testing.T) {
 	)
 
 	// Insert a terminal-but-unnotified link to exercise the clock path.
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 	link := &runtime.CallLink{
 		ChildInstanceID:  "nil-clk-child",
 		ParentInstanceID: "nil-clk-parent",
@@ -85,7 +85,7 @@ func TestWithMemCallLinkClockNilFallsBackToSystem(t *testing.T) {
 
 func TestMemStoreFlipsCallLinkOnTerminalCommit(t *testing.T) {
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	tok, err := store.Create(t.Context(), runtime.AppliedStep{
 		State:       runningChild("p-sub-c1"),

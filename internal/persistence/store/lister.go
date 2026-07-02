@@ -34,6 +34,7 @@ var _ runtime.InstanceLister = (*Lister)(nil)
 // NewLister constructs a Lister over conn using dialect d. conn must be either a
 // *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite); any other type will
 // cause [database.From] to return an error when the first query is issued.
+// Returns [ErrNilDependency] when conn is nil or d is nil.
 //
 // NewLister mirrors the [New] constructor shape so callers can pair a Lister
 // alongside a Store with the same conn and dialect value.
@@ -41,14 +42,20 @@ var _ runtime.InstanceLister = (*Lister)(nil)
 // Example (Postgres):
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
-//	lister := store.NewLister(pool, dialect.NewPostgres())
+//	lister, err := store.NewLister(pool, dialect.NewPostgres())
 //
 // Example (SQLite, tests):
 //
 //	db := dbtest.RunTestSQLite(t)
-//	lister := store.NewLister(db, dialect.NewSQLite())
-func NewLister(conn any, d dialect.Dialect) *Lister {
-	return &Lister{conn: conn, dialect: d}
+//	lister, err := store.NewLister(db, dialect.NewSQLite())
+func NewLister(conn any, d dialect.Dialect) (*Lister, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
+	return &Lister{conn: conn, dialect: d}, nil
 }
 
 // querier returns a pool-backed [database.Querier] over l.conn. The Lister is

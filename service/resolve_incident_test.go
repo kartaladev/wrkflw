@@ -55,12 +55,13 @@ func TestEngineResolveIncident(t *testing.T) {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"failing": failingAction,
 	})
 
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		// MaxAttempts=1 → first failure becomes an incident.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -70,6 +71,7 @@ func TestEngineResolveIncident(t *testing.T) {
 			MaxInterval:     time.Minute,
 		}),
 	)
+	require.NoError(t, err)
 
 	def := incidentDef()
 	defsMap := map[string]*model.ProcessDefinition{
@@ -77,7 +79,8 @@ func TestEngineResolveIncident(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	// Start the instance — parks with an incident after the first failure.
@@ -117,12 +120,13 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"failing": failingAction,
 	})
 
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
@@ -131,6 +135,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 			MaxInterval:     time.Minute,
 		}),
 	)
+	require.NoError(t, err)
 
 	def := incidentDef()
 	defsMap := map[string]*model.ProcessDefinition{
@@ -138,7 +143,8 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	ctx := t.Context()

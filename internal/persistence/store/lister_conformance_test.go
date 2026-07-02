@@ -48,8 +48,10 @@ func seedInstanceWithIncidents(t *testing.T, s *store.Store, id string, at time.
 // (started_at DESC, instance_id DESC) across all three dialects.
 func TestListerOrdering(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 		var _ runtime.InstanceLister = lister // compile-time interface check
 
 		base := time.Date(2026, 6, 21, 8, 0, 0, 0, time.UTC)
@@ -71,8 +73,10 @@ func TestListerOrdering(t *testing.T) {
 // TestListerStatusFilter verifies that the Status filter restricts results.
 func TestListerStatusFilter(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		base := time.Date(2026, 6, 21, 8, 0, 0, 0, time.UTC)
 		completed := engine.StatusCompleted
@@ -94,8 +98,10 @@ func TestListerStatusFilter(t *testing.T) {
 // TestListerKeyset_TwoPageWalk verifies two-page keyset pagination across dialects.
 func TestListerKeyset_TwoPageWalk(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		base := time.Date(2026, 6, 21, 8, 0, 0, 0, time.UTC)
 		running := engine.StatusRunning
@@ -126,8 +132,10 @@ func TestListerKeyset_TwoPageWalk(t *testing.T) {
 // pages through them in pages of 2, asserting each instance appears exactly once.
 func TestListerKeyset_TieBoundary(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		tie := time.Date(2026, 6, 28, 9, 0, 0, 0, time.UTC)
 		seedInstance(t, s, "tie-a", engine.StatusRunning, tie)
@@ -158,8 +166,10 @@ func TestListerKeyset_TieBoundary(t *testing.T) {
 // TestListerDefaultLimit verifies that Limit=0 defaults to 50 (returns all 3 items when <50).
 func TestListerDefaultLimit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		base := time.Date(2026, 6, 21, 8, 0, 0, 0, time.UTC)
 		for i := range 3 {
@@ -177,11 +187,13 @@ func TestListerDefaultLimit(t *testing.T) {
 // TestListerProjectsFields verifies that all summary fields are correctly projected.
 func TestListerProjectsFields(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
-		_, err := s.Create(t.Context(), runtime.AppliedStep{
+		_, err = s.Create(t.Context(), runtime.AppliedStep{
 			State: engine.InstanceState{
 				InstanceID: "proj-1",
 				DefID:      "mydef",
@@ -210,8 +222,10 @@ func TestListerProjectsFields(t *testing.T) {
 // on all dialects (ADR-0080). Uses a non-UTC timezone for the test.
 func TestListerStartedAtUTC(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		// Use second-precision to avoid sub-second SQLite truncation
 		at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
@@ -233,8 +247,10 @@ func TestListerStartedAtUTC(t *testing.T) {
 // from the snapshot JSON column for each dialect.
 func TestListerIncidentCount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		base := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 
@@ -263,8 +279,10 @@ func TestListerIncidentCount(t *testing.T) {
 // TestListerIncludeTotal verifies opt-in total-count via COUNT(*) on all dialects.
 func TestListerIncludeTotal(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		lister := store.NewLister(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		lister, err := store.NewLister(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		base := time.Date(2026, 6, 23, 8, 0, 0, 0, time.UTC)
 		completed := engine.StatusCompleted

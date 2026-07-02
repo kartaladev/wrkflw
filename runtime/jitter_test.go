@@ -78,7 +78,7 @@ func retryOnceTaskDef() *model.ProcessDefinition {
 // RED→GREEN proof:
 //   - BEFORE the WithJitterSource change, perform calls engine.NewActionFailed(…, true)
 //     which internally sets jitter=0, so fireAt == T (zero delay).
-//   - AFTER the change, perform calls engine.NewActionFailedJittered(…, true, 0.5)
+//   - AFTER the change, perform calls engine.NewActionFailed(…, true, engine.WithJitter(0.5))
 //     so fireAt == T + 0.5×1s = T+500ms.
 func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 	T := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -91,8 +91,7 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 	})
 
 	sched := &recordingScheduler{}
-	runner := runtime.NewRunner(
-		cat, runtime.NewMemStore(),
+	runner := mustRunner(t, cat, mustMemStore(t),
 		runtime.WithRunnerClock(clk),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(fixedJitter{0.5}),

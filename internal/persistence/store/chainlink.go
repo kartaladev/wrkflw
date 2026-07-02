@@ -40,18 +40,25 @@ var _ runtime.ChainLineageReader = (*ChainLinkStore)(nil)
 // dialect d. conn must be either a *pgxpool.Pool (Postgres) or a *sql.DB
 // (MySQL, SQLite); any other type causes [database.From] to return an error
 // when the first query is issued.
+// Returns [ErrNilDependency] when conn is nil or d is nil.
 //
 // Example (Postgres):
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
-//	cls := store.NewChainLinkStore(pool, dialect.NewPostgres())
+//	cls, err := store.NewChainLinkStore(pool, dialect.NewPostgres())
 //
 // Example (SQLite, tests):
 //
 //	db := dbtest.RunTestSQLite(t)
-//	cls := store.NewChainLinkStore(db, dialect.NewSQLite())
-func NewChainLinkStore(conn any, d dialect.Dialect) *ChainLinkStore {
-	return &ChainLinkStore{conn: conn, dialect: d}
+//	cls, err := store.NewChainLinkStore(db, dialect.NewSQLite())
+func NewChainLinkStore(conn any, d dialect.Dialect) (*ChainLinkStore, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
+	return &ChainLinkStore{conn: conn, dialect: d}, nil
 }
 
 // Record durably stores one predecessor→successor hop. A unique-constraint

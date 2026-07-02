@@ -117,7 +117,16 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 // up). If a parent def cannot be resolved, DrainOnce SKIPS that link (it stays
 // claimable for a later drain) — so a registry missing the "id:version" key leaves
 // the parked parent unresumed until the registration is fixed.
-func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRegistry, opts ...CallNotifierOption) *CallNotifier {
+func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRegistry, opts ...CallNotifierOption) (*CallNotifier, error) {
+	if cl == nil {
+		return nil, fmt.Errorf("%w: call link store", ErrNilDependency)
+	}
+	if deliver == nil {
+		return nil, fmt.Errorf("%w: deliver", ErrNilDependency)
+	}
+	if reg == nil {
+		return nil, fmt.Errorf("%w: definition registry", ErrNilDependency)
+	}
 	n := &CallNotifier{
 		cl:      cl,
 		deliver: deliver,
@@ -139,7 +148,7 @@ func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRe
 		"wrkflw_callnotifier_links_notified_total",
 		"Total number of call-link notifications delivered by the CallNotifier.",
 	)
-	return n
+	return n, nil
 }
 
 // filterCallNotifierNilOpts returns only the non-nil observability.Option values.

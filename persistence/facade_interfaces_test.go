@@ -42,7 +42,8 @@ func TestNewDefinitionStoreReturnsInterface(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-	ds := persistence.NewDefinitionStore(pool)
+	ds, err := persistence.NewDefinitionStore(pool)
+	require.NoError(t, err)
 
 	// The static type of ds is persistence.DefinitionStore — the function signature
 	// is the compile-time proof. Assert non-nil as a runtime sanity check.
@@ -58,7 +59,8 @@ func TestNewRelayReturnsInterface(t *testing.T) {
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}
-	relay := persistence.NewRelay(pool, pub)
+	relay, err := persistence.NewRelay(pool, pub)
+	require.NoError(t, err)
 
 	// The static type of relay is persistence.Relay — the function signature is the
 	// compile-time proof. Assert non-nil as a runtime sanity check.
@@ -73,7 +75,8 @@ func TestNewDeduperReturnsInterface(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-	d := persistence.NewDeduper(pool)
+	d, err := persistence.NewDeduper(pool)
+	require.NoError(t, err)
 
 	// The static type is persistence.Deduper — compile-time proof.
 	assert.NotNil(t, d)
@@ -104,7 +107,8 @@ func TestNewRelayDLQAdminViaFacade(t *testing.T) {
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}
-	relay := persistence.NewRelay(pool, pub)
+	relay, err := persistence.NewRelay(pool, pub)
+	require.NoError(t, err)
 
 	// ListDeadLettered on an empty outbox must return an empty (nil) slice.
 	dead, err := relay.ListDeadLettered(t.Context(), 10)

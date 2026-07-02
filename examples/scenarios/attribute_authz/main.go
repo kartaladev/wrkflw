@@ -8,7 +8,7 @@
 //     path with no Docker required.
 //
 //  2. Casbin RBAC / resource-privilege: a casbin-backed authz.Authorizer wired
-//     via casbinauthz.NewCasbinAuthorizerFromStrings. A small inline policy CSV
+//     via casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(...)). A small inline policy CSV
 //     grants the "approver" role the "finance-task claim" privilege. An actor
 //     with that role is allowed; an actor without it is denied. The UserTask is
 //     defined using model.WithEligibilityPrivileges so the privilege authz flows
@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -39,6 +40,22 @@ import (
 const casbinPolicy = `
 p, approver, finance-task, claim
 `
+
+func mustMemStore() *runtime.MemStore {
+	m, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	return m
+}
+
+func mustRunner(cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.Runner {
+	r, err := runtime.NewRunner(cat, store, opts...)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
+	return r
+}
 
 func main() {
 	ctx := context.Background()
@@ -89,9 +106,12 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- EU instance: should be ALLOWED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
+		if err != nil {
+			log.Fatal("new runner EU:", err)
+		}
 
 		parked, err := r.Run(ctx, def, "region-eu-001", map[string]any{"region": "EU"})
 		if err != nil {
@@ -99,7 +119,10 @@ func demoAttributeAuthz(ctx context.Context) {
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
 
-		svc := runtime.NewTaskService(taskStore, az)
+		svc, err := runtime.NewTaskService(taskStore, az)
+		if err != nil {
+			log.Fatal("task service:", err)
+		}
 		claimTrg, err := svc.Claim(ctx, taskToken, approver)
 		if err != nil {
 			fmt.Printf("  EU instance Claim: UNEXPECTED DENY — %v\n", err)
@@ -126,9 +149,12 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- US instance: should be DENIED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
+		if err != nil {
+			log.Fatal("new runner US:", err)
+		}
 
 		parked, err := r.Run(ctx, def, "region-us-001", map[string]any{"region": "US"})
 		if err != nil {
@@ -136,7 +162,10 @@ func demoAttributeAuthz(ctx context.Context) {
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
 
-		svc := runtime.NewTaskService(taskStore, az)
+		svc, err := runtime.NewTaskService(taskStore, az)
+		if err != nil {
+			log.Fatal("task service:", err)
+		}
 		_, err = svc.Claim(ctx, taskToken, approver)
 		if errors.Is(err, authz.ErrNotAuthorized) {
 			fmt.Println("  US instance Claim: DENY (expected) — authz.ErrNotAuthorized")
@@ -148,7 +177,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	}
 }
 
-// demoCasbinRBAC wires casbinauthz.NewCasbinAuthorizerFromStrings with an inline
+// demoCasbinRBAC wires casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(...)) with an inline
 // policy CSV granting the "approver" role the "finance-task claim" privilege. Two
 // actors are tested through TaskService.Claim: one with the "approver" role
 // (ALLOW) and one without (DENY).
@@ -159,7 +188,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// Build a casbin-backed authorizer from the inline policy CSV.
 	// The default model (casbinauthz.DefaultModel) supports RBAC via g lines and
 	// resource-privilege via p lines; no custom model text needed here.
-	casbinAz, err := casbinauthz.NewCasbinAuthorizerFromStrings("", casbinPolicy)
+	casbinAz, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", casbinPolicy))
 	if err != nil {
 		log.Fatal("build casbin authorizer:", err)
 	}
@@ -195,7 +224,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITH the "approver" role → casbin policy grants finance-task claim.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := r.Run(ctx, def, "finance-allow-001", nil)
@@ -203,7 +232,10 @@ func demoCasbinRBAC(ctx context.Context) {
 			log.Fatal("run (allow):", runErr)
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
-		svc := runtime.NewTaskService(taskStore, casbinAz)
+		svc, err := runtime.NewTaskService(taskStore, casbinAz)
+		if err != nil {
+			log.Fatal("task service:", err)
+		}
 		_, claimErr := svc.Claim(ctx, taskToken, withRole)
 		if claimErr == nil {
 			fmt.Println("  Actor with 'approver' role: ALLOW (expected)")
@@ -215,7 +247,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITHOUT the "approver" role → casbin denies.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := r.Run(ctx, def, "finance-deny-001", nil)
@@ -223,7 +255,10 @@ func demoCasbinRBAC(ctx context.Context) {
 			log.Fatal("run (deny):", runErr)
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
-		svc := runtime.NewTaskService(taskStore, casbinAz)
+		svc, err := runtime.NewTaskService(taskStore, casbinAz)
+		if err != nil {
+			log.Fatal("task service:", err)
+		}
 		_, claimErr := svc.Claim(ctx, taskToken, withoutRole)
 		if errors.Is(claimErr, authz.ErrNotAuthorized) {
 			fmt.Println("  Actor without 'approver' role: DENY (expected) — authz.ErrNotAuthorized")

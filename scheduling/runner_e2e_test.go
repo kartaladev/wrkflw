@@ -68,8 +68,10 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched.Close() })
 
-	store := runtime.NewMemStore()
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
+	require.NoError(t, err)
 
 	def := timerIntermediateE2EDef()
 	const instanceID = "gocron-e2e-1"

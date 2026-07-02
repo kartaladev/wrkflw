@@ -62,11 +62,12 @@ func TestPgxNotifierListenDrainsBeforePollInterval(t *testing.T) {
 	pub := &notifyCountingPublisher{}
 	listenReady := make(chan struct{}, 1)
 
-	relay := store.NewRelay(pool, dialect.NewPostgres(), pub,
+	relay, err := store.NewRelay(pool, dialect.NewPostgres(), pub,
 		store.WithRelayPollInterval(30*time.Second), // so only NOTIFY can wake in time
 		store.WithRelayNotifier(notifier),
 		store.WithRelayListenReady(listenReady),
 	)
+	require.NoError(t, err)
 
 	runCtx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -81,8 +82,9 @@ func TestPgxNotifierListenDrainsBeforePollInterval(t *testing.T) {
 	}
 
 	// Write an outbox event with NOTIFY so the relay wakes immediately.
-	st := store.New(pool, dialect.NewPostgres(), store.WithOutboxNotify())
-	_, err := st.Create(t.Context(), runtime.AppliedStep{
+	st, err := store.New(pool, dialect.NewPostgres(), store.WithOutboxNotify())
+	require.NoError(t, err)
+	_, err = st.Create(t.Context(), runtime.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: "pn-lr1", DefID: "d", DefVersion: 1,
 			Status: engine.StatusRunning, StartedAt: time.Now().UTC(),
@@ -154,7 +156,8 @@ func TestPgxNotifierCoalescesBurst(t *testing.T) {
 	defer cancelListen()
 
 	// Issue multiple NOTIFYs — the wake channel buffer is 1, so at most 1 lands.
-	q := store.New(pool, dialect.NewPostgres())
+	q, err := store.New(pool, dialect.NewPostgres())
+	require.NoError(t, err)
 	for range 5 {
 		_, execErr := q.QuerierForTest(t.Context()).Exec(t.Context(), "NOTIFY wrkflw_outbox")
 		require.NoError(t, execErr)
@@ -486,10 +489,11 @@ func TestRelayRun_MySQL_SQLite_StillPoll(t *testing.T) {
 		d := dialect.NewMySQL()
 
 		// Insert a pending outbox row directly.
-		s := store.New(db, d)
+		s, err := store.New(db, d)
+		require.NoError(t, err)
 		q := s.QuerierForTest(t.Context())
 		now := time.Now().UTC()
-		_, err := q.Exec(t.Context(), d.Rebind(
+		_, err = q.Exec(t.Context(), d.Rebind(
 			`INSERT INTO wrkflw_outbox
 			   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
 			 VALUES (?,?,?,?,?,'pending',0,?)`),
@@ -500,9 +504,10 @@ func TestRelayRun_MySQL_SQLite_StillPoll(t *testing.T) {
 
 		pub := &notifyCountingPublisher{}
 		// Short poll interval — no notifier, pure poll.
-		relay := store.NewRelay(db, d, pub,
+		relay, err := store.NewRelay(db, d, pub,
 			store.WithRelayPollInterval(50*time.Millisecond),
 		)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
@@ -518,10 +523,11 @@ func TestRelayRun_MySQL_SQLite_StillPoll(t *testing.T) {
 		db := dbtest.RunTestSQLite(t)
 		d := dialect.NewSQLite()
 
-		s := store.New(db, d)
+		s, err := store.New(db, d)
+		require.NoError(t, err)
 		q := s.QuerierForTest(t.Context())
 		now := time.Now().UTC()
-		_, err := q.Exec(t.Context(), d.Rebind(
+		_, err = q.Exec(t.Context(), d.Rebind(
 			`INSERT INTO wrkflw_outbox
 			   (instance_id, topic, payload, dedup_key, created_at, status, retry_count, next_attempt_at)
 			 VALUES (?,?,?,?,?,'pending',0,?)`),
@@ -531,9 +537,10 @@ func TestRelayRun_MySQL_SQLite_StillPoll(t *testing.T) {
 		require.NoError(t, err)
 
 		pub := &notifyCountingPublisher{}
-		relay := store.NewRelay(db, d, pub,
+		relay, err := store.NewRelay(db, d, pub,
 			store.WithRelayPollInterval(50*time.Millisecond),
 		)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()

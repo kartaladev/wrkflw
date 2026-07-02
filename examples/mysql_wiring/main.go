@@ -22,6 +22,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -104,7 +105,10 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(evClose)
 
 	// --- Outbox relay: drains wrkflw_outbox and publishes events ---
-	relay := persistence.NewMySQLRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	relay, err := persistence.NewMySQLRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	if err != nil {
+		return fmt.Errorf("new mysql relay: %w", err)
+	}
 	go func() {
 		if rerr := relay.Run(workerCtx); rerr != nil && !errors.Is(rerr, context.Canceled) {
 			logger.Error("mysql relay run", "err", rerr)
@@ -126,8 +130,14 @@ func run(logger *slog.Logger) error {
 		return err
 	})
 	// The definition store resolves parent-process definitions during notification.
-	defStore := persistence.NewMySQLDefinitionStore(db)
-	notifier := persistence.NewMySQLCallNotifier(db, deliver, defStore)
+	defStore, err := persistence.NewMySQLDefinitionStore(db)
+	if err != nil {
+		return fmt.Errorf("new mysql definition store: %w", err)
+	}
+	notifier, err := persistence.NewMySQLCallNotifier(db, deliver, defStore)
+	if err != nil {
+		return fmt.Errorf("call notifier: %w", err)
+	}
 	go func() {
 		if nerr := notifier.Run(workerCtx); nerr != nil && !errors.Is(nerr, context.Canceled) {
 			logger.Error("mysql call notifier run", "err", nerr)
@@ -144,7 +154,10 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(ownerCloser)
 
 	// Wrap the store in the caching store so hot instances are served from memory.
-	cachingStore := runtime.NewCachingStore(store, ownership)
+	cachingStore, err := runtime.NewCachingStore(store, ownership)
+	if err != nil {
+		return fmt.Errorf("caching store: %w", err)
+	}
 
 	// --- Scheduler with MySQL leader elector (single-leader timer firing) ---
 	// We capture runner in a closure; it is assigned after scheduler construction.
@@ -192,19 +205,31 @@ func run(logger *slog.Logger) error {
 	})
 
 	// --- Timer store for rehydration ---
-	timerStore := persistence.NewMySQLTimerStore(db)
+	timerStore, err := persistence.NewMySQLTimerStore(db)
+	if err != nil {
+		return fmt.Errorf("new mysql timer store: %w", err)
+	}
 
 	// --- Engine + human-task plumbing + Service facade ---
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner = runtime.NewRunner(cat, cachingStore,
+	runner, err = runtime.NewRunner(cat, cachingStore,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(scheduler),
 		runtime.WithTimerStore(timerStore),
 	)
-	tasks := runtime.NewTaskService(taskStore, az)
-	lister := persistence.NewMySQLLister(db)
+	if err != nil {
+		return err
+	}
+	tasks, err := runtime.NewTaskService(taskStore, az)
+	if err != nil {
+		return err
+	}
+	lister, err := persistence.NewMySQLLister(db)
+	if err != nil {
+		return fmt.Errorf("new mysql lister: %w", err)
+	}
 	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)
 
 	// --- Health probe (MySQL ping) ---

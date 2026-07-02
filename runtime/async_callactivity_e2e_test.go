@@ -11,7 +11,7 @@ package runtime_test
 //     parent reaches StatusFailed; Err non-empty.
 //  3. Runaway guard: self-calling definition is bounded at maxCallDepth (64);
 //     chain terminates via SubInstanceFailed, not infinitely.
-//  4. Opt-out preserved: runner WITHOUT WithCallLinks whose child parks returns
+//  4. Opt-out preserved: runner WITHOUT WithCallLinkStore whose child parks returns
 //     the synchronous "does not support parked children" error.
 
 import (
@@ -102,7 +102,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	// ── wiring ───────────────────────────────────────────────────────────────
 	clk := clock.System()
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	gcDef := e2eGrandchildDef()
 	cDef := e2eChildDef()
@@ -126,9 +126,9 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		"e2e-parent:1":     pDef,
 	})
 
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
 	)
@@ -137,7 +137,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
+	notifier := mustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; parks because grandchild parks at human task ─────
 	const parentID = "e2e-nested-parent-i1"
@@ -173,7 +173,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	require.Len(t, claimable, 1, "exactly one human task must be pending (grandchild's task)")
 	taskToken := claimable[0].TaskToken
 
-	svc := runtime.NewTaskService(tasks, az)
+	svc := mustTaskService(t, tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"gcResult": "done"})
 	require.NoError(t, err)
 
@@ -224,7 +224,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 
 	clk := clock.System()
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"fail-action": &failAction{msg: "e2e child service error"},
@@ -241,9 +241,9 @@ func TestFailurePathCallActivity(t *testing.T) {
 		"async-fail-parent:1": parent,
 	})
 
-	runner := runtime.NewRunner(cat, store,
+	runner := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(clk),
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 	)
 
@@ -251,7 +251,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
+	notifier := mustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; child fails immediately during its first burst ────
 	const parentID = "e2e-fail-parent-i1"
@@ -327,7 +327,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 
 	clk := clock.System()
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	def := selfCallDef()
 
@@ -339,9 +339,9 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		"self-call:1": def,
 	})
 
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 	)
 
@@ -349,7 +349,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def2, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
+	notifier := mustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run the self-calling root ─────────────────────────────────────
 	// During Run, each child synchronously spawns its own child (via runChild
@@ -451,7 +451,7 @@ func countCallLinks(ctx context.Context, t *testing.T, cl *runtime.MemCallLinkSt
 // ── scenario 4: opt-out preserved ────────────────────────────────────────────
 
 // TestOptOutCallActivityPreservesError verifies that a runner configured WITHOUT
-// WithCallLinks (the opt-out / synchronous path) returns a descriptive error
+// WithCallLinkStore (the opt-out / synchronous path) returns a descriptive error
 // when its child parks at a human task, rather than succeeding silently.
 //
 // The synchronous path (engine/step.go → runner.go perform StartSubInstance
@@ -460,14 +460,14 @@ func countCallLinks(ctx context.Context, t *testing.T, cl *runtime.MemCallLinkSt
 // on human tasks, timers, or events". The parent then receives SubInstanceFailed
 // and reaches StatusFailed.
 //
-// This test asserts behavior-preserving opt-out: the default (no WithCallLinks)
+// This test asserts behavior-preserving opt-out: the default (no WithCallLinkStore)
 // is unchanged by the async track.
 func TestOptOutCallActivityPreservesError(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
 	// Standard MemStore — NO call-link tracking.
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	// Child that parks at a human task; parent calls it via a call activity.
 	child := asyncChildDef()
@@ -480,8 +480,8 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	// Runner built WITHOUT WithCallLinks → synchronous call-activity path.
-	runner := runtime.NewRunner(nil, store,
+	// Runner built WITHOUT WithCallLinkStore → synchronous call-activity path.
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),

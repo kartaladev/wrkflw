@@ -52,7 +52,7 @@ func financePrivilegeDef() *model.ProcessDefinition {
 func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	ctx := t.Context()
 
-	casbinAz, err := casbinauthz.NewCasbinAuthorizerFromStrings("", casbinFinancePolicy)
+	casbinAz, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", casbinFinancePolicy))
 	require.NoError(t, err, "build casbin authorizer")
 
 	approver := authz.Actor{ID: "bob", Roles: []string{"approver"}}
@@ -61,7 +61,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	r := runtime.NewRunner(nil, runtime.NewMemStore(),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 
@@ -80,7 +80,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 		"task.Eligibility.Privileges must carry the builder-set privilege")
 
 	// Claim must succeed for the approver.
-	svc := runtime.NewTaskService(taskStore, casbinAz)
+	svc := mustTaskService(t, taskStore, casbinAz)
 	_, claimErr := svc.Claim(ctx, taskToken, approver)
 	assert.NoError(t, claimErr, "approver with matching casbin policy should be ALLOWED")
 }
@@ -90,7 +90,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	ctx := t.Context()
 
-	casbinAz, err := casbinauthz.NewCasbinAuthorizerFromStrings("", casbinFinancePolicy)
+	casbinAz, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", casbinFinancePolicy))
 	require.NoError(t, err, "build casbin authorizer")
 
 	approver := authz.Actor{ID: "bob", Roles: []string{"approver"}}
@@ -100,7 +100,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	r := runtime.NewRunner(nil, runtime.NewMemStore(),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 
@@ -111,7 +111,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	taskToken := parked.Tokens[0].AwaitCommand
 
 	// Claim must be denied for the viewer.
-	svc := runtime.NewTaskService(taskStore, casbinAz)
+	svc := mustTaskService(t, taskStore, casbinAz)
 	_, claimErr := svc.Claim(ctx, taskToken, viewer)
 	require.Error(t, claimErr, "viewer without matching casbin policy should be DENIED")
 	assert.True(t, errors.Is(claimErr, authz.ErrNotAuthorized),

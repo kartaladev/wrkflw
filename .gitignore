@@ -36,3 +36,14 @@ go.work.sum
 /real_db_transaction
 /scenarios
 /sqlite_wiring
+# examples/scenarios/<name> build outputs (basename == scenario dir name)
+/admin_monitoring
+/attribute_authz
+/boundary_timer
+/call_activity
+/compensation_saga
+/exclusive_routing
+/human_task_approval
+/inclusive_gateway
+/parallel_fork_join
+/subprocess_embedded

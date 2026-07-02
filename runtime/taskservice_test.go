@@ -28,9 +28,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		runtime.NewMemStore(),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -42,7 +40,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claimable, 1)
 
-	svc := runtime.NewTaskService(taskStore, az)
+	svc := mustTaskService(t, taskStore, az)
 	_, err = svc.Claim(ctx, claimable[0].TaskToken, stranger)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
@@ -67,9 +65,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		runtime.NewMemStore(),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -82,7 +78,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	require.Len(t, claimable, 1)
 	taskToken := claimable[0].TaskToken
 
-	svc := runtime.NewTaskService(taskStore, az)
+	svc := mustTaskService(t, taskStore, az)
 
 	// The task must be CLAIMED by the from actor before reassignment is allowed.
 	// Claim it first so ClaimedBy == manager.ID, then reassign from manager to admin.
@@ -127,9 +123,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		runtime.NewMemStore(),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -141,7 +135,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	require.Len(t, claimable, 1)
 	taskToken := claimable[0].TaskToken
 
-	svc := runtime.NewTaskService(taskStore, az)
+	svc := mustTaskService(t, taskStore, az)
 
 	// Claim the task first so ClaimedBy == manager.ID; only then does the
 	// authorization check become the failing gate (from == ClaimedBy passes,
@@ -172,9 +166,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		runtime.NewMemStore(),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -186,7 +178,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 	require.Len(t, claimable, 1)
 	taskToken := claimable[0].TaskToken
 
-	svc := runtime.NewTaskService(taskStore, az)
+	svc := mustTaskService(t, taskStore, az)
 	trg, err := svc.Complete(ctx, taskToken, stranger, map[string]any{"approved": false})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
@@ -199,7 +191,7 @@ func TestTaskServiceGetNotFound(t *testing.T) {
 	ctx := t.Context()
 	store := humantask.NewMemTaskStore()
 	az := authz.AllowAll{}
-	svc := runtime.NewTaskService(store, az)
+	svc := mustTaskService(t, store, az)
 
 	actor := authz.Actor{ID: "alice"}
 	_, err := svc.Claim(ctx, "no-such-token", actor)
@@ -245,7 +237,7 @@ func TestTaskService_Claim_AttributeOverVars(t *testing.T) {
 				Vars:        tc.vars,
 				State:       humantask.Unclaimed,
 			}))
-			svc := runtime.NewTaskService(store, authz.RoleAuthorizer{})
+			svc := mustTaskService(t, store, authz.RoleAuthorizer{})
 			_, err := svc.Claim(t.Context(), "tok-attr-1", authz.Actor{ID: "alice"})
 			tc.assert(t, err)
 		})
@@ -257,7 +249,7 @@ func TestTaskService_Claim_AttributeOverVars(t *testing.T) {
 func TestNewTaskServiceDefaultClockNoPanic(t *testing.T) {
 	store := humantask.NewMemTaskStore()
 	az := authz.AllowAll{}
-	svc := runtime.NewTaskService(store, az)
+	svc := mustTaskService(t, store, az)
 	assert.NotNil(t, svc)
 }
 
@@ -277,7 +269,7 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 	}))
 
 	az := authz.AllowAll{}
-	svc := runtime.NewTaskService(store, az, runtime.WithTaskServiceClock(fake))
+	svc := mustTaskService(t, store, az, runtime.WithTaskServiceClock(fake))
 	assert.NotNil(t, svc)
 
 	// Claim stamps the trigger's At field from the clock; verify fake time flows through.
@@ -286,4 +278,49 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 	claimed, ok := trg.(engine.HumanClaimed)
 	require.True(t, ok)
 	assert.Equal(t, fakeTime, claimed.OccurredAt())
+}
+
+func TestNewTaskServiceFailsFast(t *testing.T) {
+	store := humantask.NewMemTaskStore()
+	az := authz.RoleAuthorizer{}
+	cases := []struct {
+		name   string
+		store  humantask.TaskStore
+		az     authz.Authorizer
+		assert func(t *testing.T, svc *runtime.TaskService, err error)
+	}{
+		{
+			name:  "nil store",
+			store: nil,
+			az:    az,
+			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, svc)
+			},
+		},
+		{
+			name:  "nil authorizer",
+			store: store,
+			az:    nil,
+			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, svc)
+			},
+		},
+		{
+			name:  "valid args",
+			store: store,
+			az:    az,
+			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, svc)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, err := runtime.NewTaskService(tc.store, tc.az)
+			tc.assert(t, svc, err)
+		})
+	}
 }

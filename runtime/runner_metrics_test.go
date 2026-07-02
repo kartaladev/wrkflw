@@ -137,7 +137,7 @@ func TestActionFailuresCounter(t *testing.T) {
 				}),
 			})
 
-			r := runtime.NewRunner(cat, runtime.NewMemStore(),
+			r := mustRunner(t, cat, mustMemStore(t),
 				runtime.WithMeterProvider(mp),
 			)
 
@@ -170,9 +170,9 @@ func TestTimerFiredCounter(t *testing.T) {
 
 	cat := action.NewMapCatalog(nil)
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
-	r := runtime.NewRunner(cat, store,
+	r := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithMeterProvider(mp),

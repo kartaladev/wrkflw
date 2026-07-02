@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -56,10 +57,17 @@ func main() {
 	az := authz.RoleAuthorizer{}
 	clk := clock.System()
 
-	// No service-action catalog is needed for this process, so pass nil.
-	r := runtime.NewRunner(nil, runtime.NewMemStore(),
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	// No service-action catalog needed; pass an empty catalog.
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	const instanceID = "expense-001"
 
@@ -84,7 +92,10 @@ func main() {
 	taskToken := claimable[0].TaskToken
 	fmt.Printf("manager %q sees %d claimable task(s)\n", manager.ID, len(claimable))
 
-	svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	if err != nil {
+		log.Fatal("task service:", err)
+	}
 
 	// 3. Claim the task and deliver the trigger.
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)

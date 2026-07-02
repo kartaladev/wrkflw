@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -107,7 +108,13 @@ func WithCachingStoreClock(clk clock.Clock) CachingStoreOption {
 // NewCachingStore wraps backing with a single-writer, write-through cache gated
 // by owner. The clock defaults to clock.System(); inject a fake clock in tests
 // via [WithCachingStoreClock].
-func NewCachingStore(backing Store, owner Ownership, opts ...CachingStoreOption) *CachingStore {
+func NewCachingStore(backing Store, owner Ownership, opts ...CachingStoreOption) (*CachingStore, error) {
+	if backing == nil {
+		return nil, fmt.Errorf("%w: backing store", ErrNilDependency)
+	}
+	if owner == nil {
+		return nil, fmt.Errorf("%w: owner", ErrNilDependency)
+	}
 	c := &CachingStore{
 		backing:    backing,
 		owner:      owner,
@@ -131,7 +138,7 @@ func NewCachingStore(backing Store, owner Ownership, opts ...CachingStoreOption)
 		c.logger.Warn("runtime: CachingStore paired with AlwaysOwn is single-replica only; " +
 			"use persistence.NewAdvisoryLockOwnership for multi-replica deployments to avoid stale cached reads")
 	}
-	return c
+	return c, nil
 }
 
 // lockFor returns an unlock func after taking a refcounted per-instance lock.

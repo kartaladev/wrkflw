@@ -70,7 +70,14 @@ func main() {
 		}),
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r, err := runtime.NewRunner(cat, memSt)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	fmt.Println("--- Travel Booking: Embedded Sub-process ---")
 	state, err := r.Run(ctx, def, "trip-001", map[string]any{"city": "Lisbon"})

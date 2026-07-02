@@ -58,9 +58,9 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	})
 
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
+	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
 
 	def := timerIntermediateDef()
 	const instanceID = "timer-e2e-1"
@@ -136,10 +136,9 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
-	r := runtime.NewRunner(
-		cat, store,
+	r := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
@@ -44,7 +45,8 @@ func TestWithHistoryCapReturnsOption(t *testing.T) {
 	require.NotNil(t, store)
 
 	// Drive a minimal process through the store to confirm the option is wired.
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	st, err := r.Run(t.Context(), minimalDef(), "hist-cap-1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
@@ -66,7 +68,8 @@ func TestWithOutboxNotifyReturnsOption(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, store)
 
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	st, err := r.Run(t.Context(), minimalDef(), "notify-opt-1", map[string]any{"x": 1})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
@@ -91,10 +94,11 @@ func TestWithListenNotifyReturnsOption(t *testing.T) {
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}
-	relay := persistence.NewRelay(pool, pub,
+	relay, err := persistence.NewRelay(pool, pub,
 		opt,
 		persistence.WithPollInterval(50*time.Millisecond),
 	)
+	require.NoError(t, err)
 	require.NotNil(t, relay, "NewRelay with WithListenNotify must return a non-nil Relay")
 }
 

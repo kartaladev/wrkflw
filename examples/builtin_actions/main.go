@@ -165,7 +165,14 @@ func main() {
 		"audit":    auditAction,
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	store, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r, err := runtime.NewRunner(cat, store)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	// --- 5. Run ————————————————————————————————————————————————————————————
 	fmt.Println("\n--- Running instance demo-001 ---")

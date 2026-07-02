@@ -89,7 +89,7 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 
 	// Deliver ActionFailed: retryable, jitter=0.5, at t=10s.
 	failAt := time.Unix(10, 0)
-	fail := engine.NewActionFailedJittered(failAt, cmdID, "boom", true, 0.5)
+	fail := engine.NewActionFailed(failAt, cmdID, "boom", true, engine.WithJitter(0.5))
 	r2, err := engine.Step(def, r1.State, fail, engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -131,7 +131,7 @@ func TestStepRetryTimerReinvokesAction(t *testing.T) {
 
 	// Deliver ActionFailed: retryable, jitter=0.5, at t=10s.
 	r2, err := engine.Step(def, r1.State,
-		engine.NewActionFailedJittered(time.Unix(10, 0), cmdID, "boom", true, 0.5),
+		engine.NewActionFailed(time.Unix(10, 0), cmdID, "boom", true, engine.WithJitter(0.5)),
 		engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -361,7 +361,7 @@ func TestInvokeActionCarriesStableIdempotencyKey(t *testing.T) {
 
 	// Deliver retryable failure → retry timer scheduled.
 	r2, err := engine.Step(def, r1.State,
-		engine.NewActionFailedJittered(time.Unix(10, 0), inv1.CommandID, "boom", true, 0.5),
+		engine.NewActionFailed(time.Unix(10, 0), inv1.CommandID, "boom", true, engine.WithJitter(0.5)),
 		engine.StepOptions{})
 	require.NoError(t, err)
 

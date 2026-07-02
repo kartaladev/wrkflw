@@ -47,7 +47,8 @@ func (testNotifier) Listen(_ context.Context, _ string) (<-chan struct{}, func()
 func TestWithNotifier(t *testing.T) {
 	t.Run("notifier is wired", func(t *testing.T) {
 		n := testNotifier{}
-		s := store.New(struct{}{}, dialect.NewSQLite(), store.WithNotifier(n))
+		s, err := store.New(struct{}{}, dialect.NewSQLite(), store.WithNotifier(n))
+		require.NoError(t, err)
 		// The notifier must be stored even though the connection is unusable —
 		// wiring is independent of the connection.
 		require.Equal(t, n, s.NotifyForTest(),
@@ -55,14 +56,16 @@ func TestWithNotifier(t *testing.T) {
 	})
 
 	t.Run("nil notifier is accepted without panic", func(t *testing.T) {
-		s := store.New(struct{}{}, dialect.NewSQLite(), store.WithNotifier(nil))
+		s, err := store.New(struct{}{}, dialect.NewSQLite(), store.WithNotifier(nil))
+		require.NoError(t, err)
 		assert.Nil(t, s.NotifyForTest(), "nil notifier must be stored as nil")
 	})
 
 	t.Run("store with notifier can Create/Load/Commit on SQLite", func(t *testing.T) {
 		db := dbtest.RunTestSQLite(t)
 		n := testNotifier{}
-		s := store.New(db, dialect.NewSQLite(), store.WithNotifier(n))
+		s, err := store.New(db, dialect.NewSQLite(), store.WithNotifier(n))
+		require.NoError(t, err)
 
 		step := appliedStep("notifier-inst-1", "notifier.topic")
 		tok, err := s.Create(t.Context(), step)
@@ -89,7 +92,8 @@ func TestWithStoreLogger(t *testing.T) {
 	t.Run("structured logger is accepted and operations succeed", func(t *testing.T) {
 		db := dbtest.RunTestSQLite(t)
 		logger := slog.Default()
-		s := store.New(db, dialect.NewSQLite(), store.WithStoreLogger(logger))
+		s, err := store.New(db, dialect.NewSQLite(), store.WithStoreLogger(logger))
+		require.NoError(t, err)
 
 		step := appliedStep("logger-inst-1", "logger.topic")
 		tok, err := s.Create(t.Context(), step)
@@ -107,11 +111,12 @@ func TestWithStoreLogger(t *testing.T) {
 		// path that assembles the triple of logger+tracer+meter options together.
 		db := dbtest.RunTestSQLite(t)
 		logger := slog.Default()
-		s := store.New(db, dialect.NewSQLite(),
+		s, err := store.New(db, dialect.NewSQLite(),
 			store.WithStoreLogger(logger),
 			// TracerProvider and MeterProvider already covered by the obs test;
 			// combining with a logger exercises the filterNilOpts three-way branch.
 		)
+		require.NoError(t, err)
 		tok, err := s.Create(t.Context(), appliedStep("obs-all-1", "all.topic"))
 		require.NoError(t, err)
 		_, err = s.Commit(t.Context(), tok, appliedStep("obs-all-1", "all.topic2"))
@@ -127,7 +132,8 @@ func TestWithStoreLogger(t *testing.T) {
 // each Pruner method by passing a struct{} connection that database.From rejects.
 // These branches are only reachable when the caller wires an invalid conn.
 func TestPrunerUnsupportedConn(t *testing.T) {
-	p := store.NewPruner(struct{}{}, dialect.NewSQLite())
+	p, err := store.NewPruner(struct{}{}, dialect.NewSQLite())
+	require.NoError(t, err)
 	cutoff := time.Now().UTC()
 
 	tests := []struct {
@@ -194,7 +200,8 @@ func TestPrunerDroppedTables(t *testing.T) {
 			_, err := db.ExecContext(t.Context(), "DROP TABLE "+tc.table)
 			require.NoError(t, err, "drop %s", tc.table)
 
-			p := store.NewPruner(db, dialect.NewSQLite())
+			p, err := store.NewPruner(db, dialect.NewSQLite())
+			require.NoError(t, err)
 			n, err := tc.fn(p, t.Context())
 			require.Error(t, err, "must return error after table dropped")
 			assert.Equal(t, int64(0), n, "must return 0 rows on error")
@@ -210,7 +217,8 @@ func TestPrunerDroppedTables(t *testing.T) {
 // "from: %w" error branch of Prune by passing a struct{} connection that the
 // transaction layer and database.From both reject.
 func TestDeduperUnsupportedConn(t *testing.T) {
-	d := store.NewDeduper(struct{}{}, dialect.NewSQLite())
+	d, err := store.NewDeduper(struct{}{}, dialect.NewSQLite())
+	require.NoError(t, err)
 
 	t.Run("Seen returns error on unsupported conn", func(t *testing.T) {
 		first, err := d.Seen(t.Context(), "sub", "msg")
@@ -233,7 +241,8 @@ func TestDeduperDroppedTable(t *testing.T) {
 		_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_processed_message")
 		require.NoError(t, err)
 
-		d := store.NewDeduper(db, dialect.NewSQLite())
+		d, err := store.NewDeduper(db, dialect.NewSQLite())
+		require.NoError(t, err)
 		first, err := d.Seen(t.Context(), "sub", "msg")
 		require.Error(t, err, "Seen must error after table dropped")
 		assert.False(t, first)
@@ -244,7 +253,8 @@ func TestDeduperDroppedTable(t *testing.T) {
 		_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_processed_message")
 		require.NoError(t, err)
 
-		d := store.NewDeduper(db, dialect.NewSQLite())
+		d, err := store.NewDeduper(db, dialect.NewSQLite())
+		require.NoError(t, err)
 		n, err := d.Prune(t.Context(), time.Now().UTC())
 		require.Error(t, err, "Prune must error after table dropped")
 		assert.Equal(t, int64(0), n)
@@ -259,7 +269,8 @@ func TestDeduperDroppedTable(t *testing.T) {
 // in Record, LookupBySuccessor, ListByPredecessor, PredecessorOf, and
 // SuccessorsOf by passing a struct{} connection.
 func TestChainLinkStoreUnsupportedConn(t *testing.T) {
-	cls := store.NewChainLinkStore(struct{}{}, dialect.NewSQLite())
+	cls, err := store.NewChainLinkStore(struct{}{}, dialect.NewSQLite())
+	require.NoError(t, err)
 	link := runtime.ChainLink{
 		PredecessorID: "p", Outcome: runtime.OutcomeCompleted, SuccessorID: "s",
 	}
@@ -338,7 +349,8 @@ func TestChainLinkStoreDroppedTable(t *testing.T) {
 			_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_chain_links")
 			require.NoError(t, err)
 
-			cls := store.NewChainLinkStore(db, dialect.NewSQLite())
+			cls, err := store.NewChainLinkStore(db, dialect.NewSQLite())
+			require.NoError(t, err)
 			require.Error(t, tc.fn(cls), "must error after chain_links table dropped")
 		})
 	}
@@ -356,7 +368,8 @@ func TestDefinitionStoreDroppedTable(t *testing.T) {
 		_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_definitions")
 		require.NoError(t, err)
 
-		ds := store.NewDefinitionStore(db, dialect.NewSQLite())
+		ds, err := store.NewDefinitionStore(db, dialect.NewSQLite())
+		require.NoError(t, err)
 		err = ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d1", Version: 1})
 		require.Error(t, err, "PutDefinition must error after table dropped")
 	})
@@ -366,7 +379,8 @@ func TestDefinitionStoreDroppedTable(t *testing.T) {
 		_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_definitions")
 		require.NoError(t, err)
 
-		ds := store.NewDefinitionStore(db, dialect.NewSQLite())
+		ds, err := store.NewDefinitionStore(db, dialect.NewSQLite())
+		require.NoError(t, err)
 		_, err = ds.GetDefinition(t.Context(), "d1", 1)
 		require.Error(t, err, "GetDefinition must error after table dropped")
 	})
