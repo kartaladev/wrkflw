@@ -12,46 +12,48 @@ import (
 
 func TestJoinInnerCommitIsNoopOuterControls(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
-	base, _ := database.From(pool)
-	_, _ = base.Exec(t.Context(), `CREATE TABLE tj (id int)`)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE tj (id int)`)
+	require.NoError(t, err)
 
-	outer, ctx, _ := transaction.Begin(t.Context(), pool)
+	outer, ctx, err := transaction.Begin(t.Context(), pool)
+	require.NoError(t, err)
 
 	inner, err := transaction.JoinOrBegin(ctx, pool) // joins ambient
-	if err != nil {
-		t.Fatalf("joinorbegin: %v", err)
-	}
-	_, _ = inner.Exec(ctx, `INSERT INTO tj VALUES (1)`)
-	_ = inner.Commit(ctx) // no-op; must NOT commit the real tx
+	require.NoError(t, err)
+	_, err = inner.Exec(ctx, `INSERT INTO tj VALUES (1)`)
+	require.NoError(t, err)
+	require.NoError(t, inner.Commit(ctx)) // no-op; must NOT commit the real tx
 
 	var n int
-	_ = base.QueryRow(t.Context(), `SELECT count(*) FROM tj`).Scan(&n)
-	if n != 0 {
-		t.Fatalf("row visible before outer commit: %d", n)
-	}
-	_ = outer.Commit(ctx) // real commit
-	_ = base.QueryRow(t.Context(), `SELECT count(*) FROM tj`).Scan(&n)
-	if n != 1 {
-		t.Fatalf("count after outer commit = %d, want 1", n)
-	}
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM tj`).Scan(&n))
+	assert.Equal(t, 0, n, "row must not be visible before outer commit")
+
+	require.NoError(t, outer.Commit(ctx)) // real commit
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM tj`).Scan(&n))
+	assert.Equal(t, 1, n, "count after outer commit")
 }
 
 func TestJoinInnerRollbackMarksWholeUnit(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
-	base, _ := database.From(pool)
-	_, _ = base.Exec(t.Context(), `CREATE TABLE tjr (id int)`)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE tjr (id int)`)
+	require.NoError(t, err)
 
-	outer, ctx, _ := transaction.Begin(t.Context(), pool)
-	inner, _ := transaction.JoinOrBegin(ctx, pool)
-	_, _ = inner.Exec(ctx, `INSERT INTO tjr VALUES (1)`)
-	_ = inner.Rollback(ctx) // marks rollback-only; does not touch the real tx yet
+	outer, ctx, err := transaction.Begin(t.Context(), pool)
+	require.NoError(t, err)
+	inner, err := transaction.JoinOrBegin(ctx, pool)
+	require.NoError(t, err)
+	_, err = inner.Exec(ctx, `INSERT INTO tjr VALUES (1)`)
+	require.NoError(t, err)
+	require.NoError(t, inner.Rollback(ctx)) // marks rollback-only; does not touch the real tx yet
 
-	_ = outer.Commit(ctx) // honors mark -> rolls back
+	require.NoError(t, outer.Commit(ctx)) // honors mark -> rolls back
 	var n int
-	_ = base.QueryRow(t.Context(), `SELECT count(*) FROM tjr`).Scan(&n)
-	if n != 0 {
-		t.Fatalf("count = %d, want 0", n)
-	}
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM tjr`).Scan(&n))
+	assert.Equal(t, 0, n)
 }
 
 // TestJoinOrBeginFallsBackToBegin verifies that JoinOrBegin starts a fresh
@@ -59,8 +61,9 @@ func TestJoinInnerRollbackMarksWholeUnit(t *testing.T) {
 // previously at 50% coverage).
 func TestJoinOrBeginFallsBackToBegin(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
-	base, _ := database.From(pool)
-	_, err := base.Exec(t.Context(), `CREATE TABLE jfb (id int)`)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE jfb (id int)`)
 	require.NoError(t, err)
 
 	// No prior Begin — JoinOrBegin must start its own leaf transaction.
@@ -74,7 +77,7 @@ func TestJoinOrBeginFallsBackToBegin(t *testing.T) {
 	require.NoError(t, q.Commit(t.Context()))
 
 	var n int
-	_ = base.QueryRow(t.Context(), `SELECT count(*) FROM jfb`).Scan(&n)
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM jfb`).Scan(&n))
 	assert.Equal(t, 1, n, "leaf-owner commit must persist the row")
 }
 
@@ -82,8 +85,9 @@ func TestJoinOrBeginFallsBackToBegin(t *testing.T) {
 // which were at 0% coverage.
 func TestJoinedQuerierQueryAndQueryRow(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
-	base, _ := database.From(pool)
-	_, err := base.Exec(t.Context(), `CREATE TABLE jqr (id int, val text)`)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE jqr (id int, val text)`)
 	require.NoError(t, err)
 	_, err = base.Exec(t.Context(), `INSERT INTO jqr VALUES (1,'one'),(2,'two')`)
 	require.NoError(t, err)
