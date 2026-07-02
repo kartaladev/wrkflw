@@ -314,11 +314,14 @@ Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
 (`WithReminder`). Use `NewMemScheduler` for tests:
 
 ```go
-fc   := clockwork.NewFakeClockAt(startAt)
+fc    := clockwork.NewFakeClockAt(startAt)
 sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-r     := runtime.NewRunner(cat, store,
+r, err := runtime.NewRunner(cat, store,
     runtime.WithScheduler(sched),
     runtime.WithRunnerClock(fc)) // share the fake clock for deterministic timers
+if err != nil {
+    log.Fatal(err)
+}
 
 // After Run parks at a timer node, advance the fake clock and call Tick.
 fc.Advance(1*time.Hour + 1*time.Second)
@@ -343,7 +346,10 @@ p := model.RetryPolicy{
     BackoffCoef:     2.0,
     MaxInterval:     30 * time.Second,
 }
-r := runtime.NewRunner(cat, store, runtime.WithDefaultRetryPolicy(p))
+r, err := runtime.NewRunner(cat, store, runtime.WithDefaultRetryPolicy(p))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 When retries are exhausted the engine creates an `engine.Incident` on the token.

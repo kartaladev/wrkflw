@@ -725,7 +725,7 @@ type DefinitionBuilder interface {
     // ... one AddX per node kind ...
     Connect(fromID, toID string, opts ...FlowOption) DefinitionBuilder
     RegisterAction(name string, a action.ServiceAction) DefinitionBuilder
-    RegisterActionFunc(name, fn ...) DefinitionBuilder
+    RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionBuilder
     CancelActions(names ...string) DefinitionBuilder
     Build() (*ProcessDefinition, error)
     Loader() DefinitionLoader

@@ -430,7 +430,10 @@ policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecis
     }
     return runtime.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
 }
-chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+if err != nil {
+    log.Fatal(err) // NewChainer rejects a nil starter/policy with ErrNilDependency
+}
 
 // Drive it from the broker: mount eventing.NewChainHandler(chainer) on your own
 // message.Router, or run the turnkey wrapper that subscribes the terminal topics:
@@ -909,10 +912,17 @@ start → approve[UserTask, roles: manager] → end
 ```
 
 ```go
-memSt, _ := runtime.NewMemStore()
-r, _ := runtime.NewRunner(nil, memSt,
+memSt, err := runtime.NewMemStore()
+if err != nil {
+    log.Fatal(err)
+}
+// This process has no service tasks, so pass an empty catalog (nil is rejected).
+r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
     runtime.WithRunnerClock(clk),
     runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
+if err != nil {
+    log.Fatal(err)
+}
 
 parked, _ := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
 

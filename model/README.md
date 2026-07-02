@@ -508,10 +508,14 @@ register definition-scoped actions in any order (both idioms below compile):
 // Actions-first idiom (useful when actions are wired before nodes are known):
 b := model.NewDefinition("order", 1).
     RegisterAction("charge-card", myAction)
-b.AddServiceTask("charge", model.WithActionName("charge-card")).
+def, err := b.AddServiceTask("charge", model.WithActionName("charge-card")).
     AddEndEvent("end").
     Connect("charge", "end").
     Build()
+if err != nil {
+    log.Fatal(err) // Build validates the assembled definition
+}
+_ = def
 
 // Structure-first idiom (most common):
 def, err := model.NewDefinition("order", 1).
