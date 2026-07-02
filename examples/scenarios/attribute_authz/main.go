@@ -10,8 +10,9 @@
 //  2. Casbin RBAC / resource-privilege: a casbin-backed authz.Authorizer wired
 //     via casbinauthz.NewCasbinAuthorizerFromStrings. A small inline policy CSV
 //     grants the "approver" role the "finance-task claim" privilege. An actor
-//     with that role is allowed; an actor without it is denied. Driven through
-//     TaskService.Claim for realism.
+//     with that role is allowed; an actor without it is denied. The UserTask is
+//     defined using model.WithEligibilityPrivileges so the privilege authz flows
+//     through the normal definition→engine→TaskService.Claim path.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -151,6 +152,9 @@ func demoAttributeAuthz(ctx context.Context) {
 // policy CSV granting the "approver" role the "finance-task claim" privilege. Two
 // actors are tested through TaskService.Claim: one with the "approver" role
 // (ALLOW) and one without (DENY).
+//
+// The UserTask is now defined via model.WithEligibilityPrivileges so the privilege
+// flows through the normal definition→engine→runner→TaskService.Claim path.
 func demoCasbinRBAC(ctx context.Context) {
 	// Build a casbin-backed authorizer from the inline policy CSV.
 	// The default model (casbinauthz.DefaultModel) supports RBAC via g lines and
@@ -160,59 +164,73 @@ func demoCasbinRBAC(ctx context.Context) {
 		log.Fatal("build casbin authorizer:", err)
 	}
 
-	// AuthzSpec using Privileges: "finance-task claim" means obj="finance-task",
-	// act="claim" in casbin's (sub, obj, act) model.
-	spec := authz.AuthzSpec{
-		Privileges: []string{"finance-task claim"},
+	// Process definition: start → finance-review[UserTask, privilege "finance-task claim"] → end.
+	// WithEligibilityPrivileges wires the privilege into AuthzSpec.Privileges so
+	// the casbin Authorizer evaluates it at Claim time.
+	def := &model.ProcessDefinition{
+		ID:      "finance-approval",
+		Version: 1,
+		Nodes: []model.Node{
+			model.NewStartEvent("start"),
+			model.NewUserTask("finance-review", nil,
+				model.WithEligibilityPrivileges("finance-task claim"),
+			),
+			model.NewEndEvent("end"),
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "finance-review"},
+			{ID: "f2", Source: "finance-review", Target: "end"},
+		},
 	}
 
-	// Process definition: start → finance-review[UserTask, no candidate roles but
-	// Privileges check done by casbin] → end.
-	//
-	// We embed the privilege directly into the task via a pre-built HumanTask in the
-	// in-memory store, bypassing the model builder — the engine maps CandidateRoles to
-	// AuthzSpec.Roles but not Privileges (which is reserved for casbin-style checks).
-	// The cleanest path is to drive TaskService.Claim directly with a pre-stored task.
-	taskStore := humantask.NewMemTaskStore()
-	const financeTaskID = "finance-task-001" // opaque task identifier (not a credential)
-	if uErr := taskStore.Upsert(ctx, humantask.HumanTask{
-		TaskToken:   financeTaskID,
-		Eligibility: spec,
-		Vars:        map[string]any{},
-		State:       humantask.Unclaimed,
-	}); uErr != nil {
-		log.Fatal("upsert task:", uErr)
-	}
-
-	svc := runtime.NewTaskService(taskStore, casbinAz)
-
-	// Actor WITH the "approver" role → casbin policy grants finance-task claim.
 	withRole := authz.Actor{ID: "bob", Roles: []string{"approver"}}
-	_, err = svc.Claim(ctx, financeTaskID, withRole)
-	if err == nil {
-		fmt.Println("  Actor with 'approver' role: ALLOW (expected)")
-	} else {
-		fmt.Printf("  Actor with 'approver' role: UNEXPECTED DENY — %v\n", err)
-	}
-
-	// Reset task state so the second claim attempt is on an unclaimed task.
-	if uErr := taskStore.Upsert(ctx, humantask.HumanTask{
-		TaskToken:   financeTaskID,
-		Eligibility: spec,
-		Vars:        map[string]any{},
-		State:       humantask.Unclaimed,
-	}); uErr != nil {
-		log.Fatal("reset task:", uErr)
-	}
-
-	// Actor WITHOUT the "approver" role → casbin denies.
 	withoutRole := authz.Actor{ID: "carol", Roles: []string{"viewer"}}
-	_, err = svc.Claim(ctx, financeTaskID, withoutRole)
-	if errors.Is(err, authz.ErrNotAuthorized) {
-		fmt.Println("  Actor without 'approver' role: DENY (expected) — authz.ErrNotAuthorized")
-	} else if err != nil {
-		fmt.Printf("  Actor without 'approver' role: unexpected error — %v\n", err)
-	} else {
-		fmt.Println("  Actor without 'approver' role: UNEXPECTED ALLOW")
+
+	// resolver maps the "approver" role to the actor (used by AwaitHuman to
+	// resolve candidates; only actors with that role are listed as candidates).
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
+		"approver": {withRole},
+	})
+
+	// --- Actor WITH the "approver" role → casbin policy grants finance-task claim.
+	{
+		taskStore := humantask.NewMemTaskStore()
+		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
+		)
+		parked, runErr := r.Run(ctx, def, "finance-allow-001", nil)
+		if runErr != nil {
+			log.Fatal("run (allow):", runErr)
+		}
+		taskToken := parked.Tokens[0].AwaitCommand
+		svc := runtime.NewTaskService(taskStore, casbinAz)
+		_, claimErr := svc.Claim(ctx, taskToken, withRole)
+		if claimErr == nil {
+			fmt.Println("  Actor with 'approver' role: ALLOW (expected)")
+		} else {
+			fmt.Printf("  Actor with 'approver' role: UNEXPECTED DENY — %v\n", claimErr)
+		}
+	}
+
+	// --- Actor WITHOUT the "approver" role → casbin denies.
+	{
+		taskStore := humantask.NewMemTaskStore()
+		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
+		)
+		parked, runErr := r.Run(ctx, def, "finance-deny-001", nil)
+		if runErr != nil {
+			log.Fatal("run (deny):", runErr)
+		}
+		taskToken := parked.Tokens[0].AwaitCommand
+		svc := runtime.NewTaskService(taskStore, casbinAz)
+		_, claimErr := svc.Claim(ctx, taskToken, withoutRole)
+		if errors.Is(claimErr, authz.ErrNotAuthorized) {
+			fmt.Println("  Actor without 'approver' role: DENY (expected) — authz.ErrNotAuthorized")
+		} else if claimErr != nil {
+			fmt.Printf("  Actor without 'approver' role: unexpected error — %v\n", claimErr)
+		} else {
+			fmt.Println("  Actor without 'approver' role: UNEXPECTED ALLOW")
+		}
 	}
 }

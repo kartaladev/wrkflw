@@ -126,6 +126,31 @@ func TestNewSQLiteRelay_DrainsViaFacade(t *testing.T) {
 	require.Equal(t, 3, pub.count(), "publisher must have received 3 events")
 }
 
+// TestNewSQLiteRelay_OutboxStatsViaFacadeInterface verifies that a persistence.Relay
+// assigned to the interface variable exposes OutboxStats without a type assertion.
+// Seeding N pending rows then calling relay.OutboxStats(ctx) must return Pending==N
+// and Dead==0.
+func TestNewSQLiteRelay_OutboxStatsViaFacadeInterface(t *testing.T) {
+	db := dbtest.RunTestSQLite(t)
+
+	base := time.Now().UTC().Truncate(time.Second)
+	const pending = 4
+	seedSQLiteOutbox(t, db, pending, base)
+
+	pub := &facadePub{} // no-op publisher — rows stay pending
+
+	// callViaInterface drives the relay through the persistence.Relay interface
+	// to confirm OutboxStats is reachable without a type assertion.
+	callViaInterface := func(r persistence.Relay) (runtime.OutboxStats, error) {
+		return r.OutboxStats(t.Context())
+	}
+
+	stats, err := callViaInterface(persistence.NewSQLiteRelay(db, pub))
+	require.NoError(t, err)
+	assert.Equal(t, int64(pending), stats.Pending, "Pending must equal seeded row count")
+	assert.Equal(t, int64(0), stats.Dead, "Dead must be 0 when no rows have been quarantined")
+}
+
 // ─── CallLinkStore ──────────────────────────────────────────────────────────
 
 // TestNewSQLiteCallLinkStore_ClaimAndMarkNotified seeds a terminal call link via

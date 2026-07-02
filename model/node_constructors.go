@@ -187,6 +187,28 @@ func (o eligibilityExprOpt) applyUserTask(u *UserTask) { u.EligibilityExpr = o.e
 // is a compile-time error.
 func WithEligibilityExpr(expr string) userTaskOption { return eligibilityExprOpt{expr} }
 
+// eligibilityPrivilegesOpt satisfies only userTaskOption — passing it to any
+// other constructor (NewServiceTask, NewSendTask, etc.) is a compile-time error.
+type eligibilityPrivilegesOpt struct{ privs []string }
+
+func (o eligibilityPrivilegesOpt) applyUserTask(u *UserTask) {
+	u.EligibilityPrivileges = append(u.EligibilityPrivileges, o.privs...)
+}
+
+// WithEligibilityPrivileges returns a userTaskOption that sets resource-privilege
+// tokens on a UserTask. Each token is a space-separated "object action" pair (e.g.
+// "finance-task claim") that a casbin-backed [authz.Authorizer] evaluates via
+// enforcer.Enforce(subject, object, action). A single-token value without a space
+// uses "*" as the action (casbin convention).
+//
+// Multiple calls are additive; the privileges are appended in order.
+//
+// It may only be passed to NewUserTask; passing it to any other constructor
+// is a compile-time error.
+func WithEligibilityPrivileges(privs ...string) userTaskOption {
+	return eligibilityPrivilegesOpt{privs: privs}
+}
+
 // correlationKeyOpt satisfies receiveTaskOption and sendTaskOption — passing it to
 // any other constructor is a compile-time error.
 type correlationKeyOpt struct{ key string }

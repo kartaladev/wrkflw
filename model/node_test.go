@@ -418,6 +418,54 @@ func TestReceiveTaskCombinedOptions(t *testing.T) {
 	}
 }
 
+// TestWithEligibilityPrivileges verifies that WithEligibilityPrivileges sets
+// EligibilityPrivileges on the UserTask node, and that attempting to pass it to
+// a non-UserTask constructor is a compile-time error (not tested here, by design).
+func TestWithEligibilityPrivileges(t *testing.T) {
+	privs := []string{"finance-task claim", "finance-task read"}
+	n := model.NewUserTask("approve", []string{"approver"},
+		model.WithEligibilityPrivileges(privs...),
+	)
+	ut, ok := n.(model.UserTask)
+	if !ok {
+		t.Fatalf("node is %T, want model.UserTask", n)
+	}
+	if len(ut.EligibilityPrivileges) != 2 {
+		t.Fatalf("EligibilityPrivileges len = %d, want 2; got %v", len(ut.EligibilityPrivileges), ut.EligibilityPrivileges)
+	}
+	if ut.EligibilityPrivileges[0] != "finance-task claim" {
+		t.Fatalf("EligibilityPrivileges[0] = %q, want %q", ut.EligibilityPrivileges[0], "finance-task claim")
+	}
+}
+
+// TestWithEligibilityPrivilegesRoundTrip verifies that EligibilityPrivileges survives
+// a JSON marshal/unmarshal round-trip (via nodeWire).
+func TestWithEligibilityPrivilegesRoundTrip(t *testing.T) {
+	privs := []string{"doc read"}
+	n := model.NewUserTask("u2", nil, model.WithEligibilityPrivileges(privs...))
+	def := &model.ProcessDefinition{
+		ID:      "p",
+		Version: 1,
+		Nodes:   []model.Node{n},
+		Flows:   []model.SequenceFlow{},
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var decoded model.ProcessDefinition
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	ut, ok := decoded.Nodes[0].(model.UserTask)
+	if !ok {
+		t.Fatalf("decoded node is %T, want model.UserTask", decoded.Nodes[0])
+	}
+	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "doc read" {
+		t.Fatalf("EligibilityPrivileges = %v, want [doc read]", ut.EligibilityPrivileges)
+	}
+}
+
 func TestEventSubProcessNonInterruptingRoundTrip(t *testing.T) {
 	inner := &model.ProcessDefinition{
 		ID:      "inner",

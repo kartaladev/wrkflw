@@ -32,6 +32,16 @@ built across ADRs 0001–0082.
   rationale for each suppression (ADR-0077).
 
 ### Added
+- **model builder: `WithEligibilityPrivileges` sets casbin resource-privilege authz on UserTasks.**
+  `model.WithEligibilityPrivileges(privs ...string)` is a new `userTaskOption` that populates
+  `AuthzSpec.Privileges` on the `AwaitHuman` command. Previously this field was only settable by
+  bypassing the builder (hand-inserting a `humantask.HumanTask`). Privilege tokens are space-separated
+  "object action" pairs (e.g. `"finance-task claim"`) evaluated by a casbin-backed `Authorizer` at
+  `TaskService.Claim` time. YAML authoring uses the `eligibilityPrivileges` key.
+- **`persistence.Relay` now exposes `OutboxStats`.** The method
+  `OutboxStats(ctx context.Context) (runtime.OutboxStats, error)` is part of the
+  `persistence.Relay` interface; callers no longer need a `runtime.OutboxStatsReader`
+  type assertion to read pending/dead/age stats from a relay obtained through the facade.
 - **SQLite backend (ADR-0082).** `persistence.OpenSQLite(ctx, db *sql.DB, opts ...Option) (Store, error)`,
   `persistence.MigrateSQLite(ctx, db)`, and `persistence.NewSQLiteAdvisoryLockOwnership()` (fail-loud —
   every acquire returns `dialect.ErrUnsupported`). Backend uses `modernc.org/sqlite` (pure-Go), WAL mode,

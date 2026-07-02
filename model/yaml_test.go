@@ -145,3 +145,42 @@ func TestParseYAMLBadYAML(t *testing.T) {
 	}
 	_ = strings.Contains(err.Error(), "yaml")
 }
+
+func TestParseYAMLEligibilityPrivilegesRoundTrip(t *testing.T) {
+	// Hand-written YAML with eligibilityPrivileges on a UserTask.
+	yamlInput := `
+id: approval-process
+version: 1
+nodes:
+  - id: start
+    kind: startEvent
+  - id: approve
+    kind: userTask
+    candidateRoles: ["manager"]
+    eligibilityPrivileges: ["finance-task claim"]
+  - id: end
+    kind: endEvent
+flows:
+  - { id: f1, source: start, target: approve }
+  - { id: f2, source: approve, target: end }
+`
+
+	// Parse the YAML.
+	parsed, err := model.ParseYAML([]byte(yamlInput))
+	if err != nil {
+		t.Fatalf("ParseYAML: %v", err)
+	}
+
+	// Verify the parsed UserTask has the correct eligibilityPrivileges.
+	approveNode := parsed.Nodes[1]
+	ut, ok := approveNode.(model.UserTask)
+	if !ok {
+		t.Fatalf("node[1] is %T, want model.UserTask", approveNode)
+	}
+	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "finance-task claim" {
+		t.Fatalf("EligibilityPrivileges = %v, want [finance-task claim]", ut.EligibilityPrivileges)
+	}
+	if len(ut.CandidateRoles) != 1 || ut.CandidateRoles[0] != "manager" {
+		t.Fatalf("CandidateRoles = %v, want [manager]", ut.CandidateRoles)
+	}
+}

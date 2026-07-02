@@ -45,3 +45,8 @@ func WithRelayListenReady(ch chan struct{}) RelayOption { return withRelayListen
 // so black-box tests can assert that WithNotifier wires the value correctly.
 // It MUST NOT be called from non-test code.
 func (s *Store) NotifyForTest() dialect.Notifier { return s.notify }
+
+// PgxNotifierReconnectBackoffForTest exposes the internal
+// pgxNotifierReconnectBackoff constant so tests can calculate the minimum wait
+// needed before asserting that a reconnect attempt has occurred.
+const PgxNotifierReconnectBackoffForTest = pgxNotifierReconnectBackoff

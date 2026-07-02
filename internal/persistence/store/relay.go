@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -473,11 +474,20 @@ func (r *Relay) Run(ctx context.Context) error {
 	// The loop signals the internal wake channel on each notification; the select
 	// below drains immediately when the channel fires. The wake channel is nil when
 	// no notifier is present (poll-only mode), so the select case is never selected.
+	//
+	// A sync.WaitGroup ensures Run blocks until the listenLoop goroutine has fully
+	// exited before returning, so callers (and goleak checks) see a clean shutdown.
+	var wg sync.WaitGroup
 	if r.notifier != nil {
 		wakeCh := make(chan struct{}, 1)
 		r.wake = wakeCh
-		go r.listenLoop(ctx, r.notifier, wakeCh)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.listenLoop(ctx, r.notifier, wakeCh)
+		}()
 	}
+	defer wg.Wait()
 
 	// Attempt an immediate drain before the first tick.
 	if err := r.drainUntilEmpty(ctx); err != nil {

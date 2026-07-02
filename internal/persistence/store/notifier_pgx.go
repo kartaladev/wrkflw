@@ -28,6 +28,22 @@ import (
 // to poll-only mode when no Notifier is present.
 type pgxNotifier struct {
 	pool *pgxpool.Pool
+	log  *slog.Logger
+}
+
+// PgxNotifierOption configures a [pgxNotifier] built by [NewPgxNotifier].
+type PgxNotifierOption func(*pgxNotifier)
+
+// WithPgxNotifierLogger sets the structured logger used by the notifier for
+// reconnect warnings. When a connection is lost and Acquire or LISTEN fails
+// during the reconnect loop, a slog.LevelWarn record is emitted to this logger.
+// Default: slog.Default().
+func WithPgxNotifierLogger(l *slog.Logger) PgxNotifierOption {
+	return func(n *pgxNotifier) {
+		if l != nil {
+			n.log = l
+		}
+	}
 }
 
 // NewPgxNotifier returns a [dialect.Notifier] backed by pool. It acquires a
@@ -37,15 +53,40 @@ type pgxNotifier struct {
 // The channel name passed to [Listen] must be a static constant — do NOT
 // pass untrusted or user-supplied input. The implementation issues a bare
 // "LISTEN <channel>" statement validated against the known constant
-// [outboxNotifyChannel].
-func NewPgxNotifier(pool *pgxpool.Pool) dialect.Notifier {
-	return &pgxNotifier{pool: pool}
+// "wrkflw_outbox".
+//
+// Pass [WithPgxNotifierLogger] to receive structured warnings when the
+// reconnect loop's Acquire or LISTEN calls fail transiently. Defaults to
+// slog.Default() so existing zero-option callers compile unchanged.
+func NewPgxNotifier(pool *pgxpool.Pool, opts ...PgxNotifierOption) dialect.Notifier {
+	n := &pgxNotifier{
+		pool: pool,
+		log:  slog.Default(),
+	}
+	for _, o := range opts {
+		o(n)
+	}
+	return n
 }
 
-// pgxNotifierReconnectBackoff is the fixed delay between a connection loss
-// and a re-acquire attempt inside the Listen goroutine. It is bounded and
-// ctx-cancellable; the Relay's poll ticker covers any notification gap during
-// the reconnect window.
+// pgxNotifierReconnectBackoff is the fixed (not exponential) delay between a
+// connection loss and a re-acquire attempt inside the Listen goroutine.
+//
+// Design rationale:
+//   - Fixed, not exponential: the window is deliberately short and bounded to one
+//     half-second. Exponential backoff would extend the period during which the
+//     relay cannot receive push wakeups, negating the low-latency benefit of
+//     LISTEN/NOTIFY. Polling remains active as the fallback throughout.
+//   - Context-cancellable: the sleep is implemented as a select on
+//     cancelCtx.Done() and time.After, so cancellation is never delayed by the
+//     backoff window.
+//   - Notification gap is safe: any NOTIFY emitted while the notifier is
+//     reconnecting is covered by the Relay's poll ticker (ADR-0022). The notifier
+//     never needs to "catch up" missed notifications; the outbox query re-reads
+//     all due pending rows on each drain.
+//
+// This value is intentionally NOT configurable — introducing a seam here would
+// add API surface without meaningful benefit given the poll-fallback guarantee.
 const pgxNotifierReconnectBackoff = 500 * time.Millisecond
 
 // Listen subscribes to channel on a dedicated pool connection and returns:
@@ -63,8 +104,8 @@ const pgxNotifierReconnectBackoff = 500 * time.Millisecond
 // since the notifier never closes wake on loss — it self-heals instead).
 //
 // The background goroutine exits cleanly when ctx is cancelled OR cancel is
-// called; goleak-safe. The channel name must be [outboxNotifyChannel]
-// ("wrkflw_outbox") — a constant never derived from external input.
+// called; goleak-safe. The channel name must be "wrkflw_outbox" — a constant
+// never derived from external input.
 //
 // On transient connection loss (WaitForNotification returns a non-cancellation
 // error), the goroutine releases the bad connection, sleeps a bounded backoff,
@@ -120,7 +161,9 @@ func (n *pgxNotifier) Listen(ctx context.Context, channel string) (<-chan struct
 					if cancelCtx.Err() != nil {
 						return
 					}
-					// Pool still unavailable; retry next loop iteration.
+					// Pool still unavailable; warn and retry next loop iteration.
+					n.log.WarnContext(cancelCtx, "workflow-store: pgx notifier: reconnect acquire failed",
+						"error", acquireErr, "channel", channel)
 					continue
 				}
 
@@ -130,6 +173,9 @@ func (n *pgxNotifier) Listen(ctx context.Context, channel string) (<-chan struct
 					if cancelCtx.Err() != nil {
 						return
 					}
+					// LISTEN rejected; warn and retry next loop iteration.
+					n.log.WarnContext(cancelCtx, "workflow-store: pgx notifier: reconnect listen failed",
+						"error", listenErr, "channel", channel)
 					continue
 				}
 

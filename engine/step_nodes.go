@@ -492,8 +492,9 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	var cmds []Command
 	taskToken := c.s.nextTaskToken()
 	spec := authz.AuthzSpec{
-		Roles:     ut.CandidateRoles,
-		Attribute: ut.EligibilityExpr,
+		Roles:      ut.CandidateRoles,
+		Privileges: ut.EligibilityPrivileges,
+		Attribute:  ut.EligibilityExpr,
 	}
 	ht := humantask.HumanTask{
 		TaskToken:   taskToken,
