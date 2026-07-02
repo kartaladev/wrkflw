@@ -139,7 +139,8 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 		}
 	}
 
-	core := runtime.NewChainer(runner, policy, runtime.WithChainLinks(d.links))
+	core, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(d.links))
+	require.NoError(t, err)
 	cr := eventing.NewChainerRunner(core)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)

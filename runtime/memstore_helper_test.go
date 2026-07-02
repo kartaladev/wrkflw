@@ -71,3 +71,11 @@ func mustCallNotifier(t *testing.T, cl runtime.CallLinkStore, deliver runtime.Ca
 	require.NoError(t, err)
 	return n
 }
+
+// mustChainer builds a Chainer or fails the test.
+func mustChainer(t *testing.T, starter runtime.InstanceStarter, policy runtime.SuccessorPolicy, opts ...runtime.ChainerOption) *runtime.Chainer {
+	t.Helper()
+	c, err := runtime.NewChainer(starter, policy, opts...)
+	require.NoError(t, err)
+	return c
+}

@@ -47,7 +47,10 @@ func ExampleChainer() {
 		return runtime.SuccessorDecision{Def: fulfillment, Vars: ev.Result}, true
 	}
 
-	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+	if err != nil {
+		panic(err)
+	}
 
 	// Simulate the "approval-1" instance completing.
 	_ = chainer.Handle(ctx, runtime.ChainEvent{

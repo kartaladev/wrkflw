@@ -49,7 +49,9 @@ func chainCore(t *testing.T, starter runtime.InstanceStarter, capture *[]runtime
 		mu.Unlock()
 		return runtime.SuccessorDecision{Def: &model.ProcessDefinition{ID: "succ", Version: 1}, Vars: ev.Result}, true
 	}
-	return runtime.NewChainer(starter, policy)
+	c, err := runtime.NewChainer(starter, policy)
+	require.NoError(t, err)
+	return c
 }
 
 func TestChainHandlerProjection(t *testing.T) {
@@ -159,11 +161,12 @@ func TestChainerRunSubscribeError(t *testing.T) {
 	policy := func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
 		return runtime.SuccessorDecision{}, false
 	}
-	core := runtime.NewChainer(&capturingStarter{}, policy)
+	core, err := runtime.NewChainer(&capturingStarter{}, policy)
+	require.NoError(t, err)
 	cr := eventing.NewChainerRunner(core)
 
 	sentinel := errors.New("broker unavailable")
-	err := cr.Run(t.Context(), errSubscriber{err: sentinel})
+	err = cr.Run(t.Context(), errSubscriber{err: sentinel})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinel)
 }
@@ -190,7 +193,8 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
 		return runtime.SuccessorDecision{Def: succ, Vars: ev.Result}, true
 	}
-	core := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links), runtime.WithChainClock(clk))
+	core, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links), runtime.WithChainClock(clk))
+	require.NoError(t, err)
 
 	pub, sub, closer := eventing.NewGoChannelPublisher()
 	defer func() { require.NoError(t, closer.Close()) }()

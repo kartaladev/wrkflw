@@ -296,7 +296,10 @@ func run(logger *slog.Logger) error {
 		return runtime.SuccessorDecision{}, false
 	}
 
-	core := runtime.NewChainer(runner, policy, runtime.WithChainLinks(be.links))
+	core, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(be.links))
+	if err != nil {
+		return fmt.Errorf("chainer: %w", err)
+	}
 	cr := eventing.NewChainerRunner(core)
 
 	// ── Start the ChainerRunner goroutine BEFORE any relay publish ────────────
