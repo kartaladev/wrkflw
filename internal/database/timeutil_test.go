@@ -1,6 +1,8 @@
 package database_test
 
 import (
+	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	_ "modernc.org/sqlite" // register "sqlite" driver for TestProbeUTCPassesOnSQLite
 )
 
 func TestUTCNormalizes(t *testing.T) {
@@ -38,6 +41,24 @@ func TestProbeUTCPassesOnMySQL(t *testing.T) {
 	q, err := database.From(db)
 	require.NoError(t, err)
 	require.NoError(t, database.ProbeUTC(t.Context(), q, database.MySQL))
+}
+
+// TestProbeUTCPassesOnSQLite verifies the SQLite probe path passes on an
+// in-process SQLite database opened directly (no Docker required). The test
+// imports modernc.org/sqlite as a blank driver import in this test file only;
+// that import does not appear in non-test code so the extraction constraint
+// (ADR-0079) is not violated.
+func TestProbeUTCPassesOnSQLite(t *testing.T) {
+	dir := t.TempDir()
+	dsn := "file:" + filepath.Join(dir, "probe.db") + "?_pragma=journal_mode(WAL)"
+	db, err := sql.Open("sqlite", dsn)
+	require.NoError(t, err, "open sqlite")
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.PingContext(t.Context()), "ping sqlite")
+
+	q, err := database.From(db)
+	require.NoError(t, err)
+	require.NoError(t, database.ProbeUTC(t.Context(), q, database.SQLite))
 }
 
 // TestProbeUTCUnknownDialect verifies that an unknown Dialect constant is
