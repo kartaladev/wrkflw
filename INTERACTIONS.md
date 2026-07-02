@@ -68,6 +68,18 @@ earlier flows are summarized for cross-reference.
 
 ## 1. Human task
 
+**Why this seam exists.** The engine must never do I/O: it cannot call a user
+directory, persist a task record, or evaluate a policy. Instead it emits `AwaitHuman`
+carrying only a typed value (`TaskToken`, `Eligibility`) and parks the token.
+`runtime.Runner` owns all the side effects: it resolves candidates, writes the task
+record, and later reads it back to authorize the claim. `runtime.TaskService` is the
+authorization adapter exposed to transport layers so the engine core remains untouched
+by any authorization SDK.
+
+**Files to read:** `runtime/runner.go` (`AwaitHuman`/`UpdateTask` cases in
+`perform`), `runtime/taskservice.go` (claim/complete/reassign lifecycle),
+`humantask/taskstore.go` (port interface), `authz/authz.go` (Authorizer interface).
+
 `humantask/` holds pure types + ports; `runtime.TaskService` is the behavioural
 adapter. The `Runner` writes tasks into a `humantask.TaskStore`; `TaskService`
 reads from it to authorize actor actions.
@@ -97,13 +109,31 @@ sequenceDiagram
     R->>E: Runner.Deliver(trigger) → Step advances token
 ```
 
+**Guarantees and ownership:**
 - `humantask.TaskStore` is the meeting point: `Runner` writes through it
   (`runner.go` `AwaitHuman` case), `TaskService` reads through it
-  (`runtime/taskservice.go`).
+  (`runtime/taskservice.go`). The store owns persistence; the runner never re-reads
+  its own write — the next read happens during claim/complete.
 - `task.Vars` is a variable snapshot taken at task-creation time so attribute-based
-  authorization predicates (`vars["region"] == "EU"`) evaluate deterministically.
+  authorization predicates (`vars["region"] == "EU"`) evaluate deterministically
+  even if process variables later change.
+- **Failure path:** if `Upsert` fails, the `perform` call returns an error and the
+  runner surfaces it as a retryable `ActionFailed` — the token never parks. If
+  `Authorize` returns `ErrNotAuthorized`, `TaskService` propagates it without ever
+  delivering a trigger, leaving the token parked. `ErrConcurrentUpdate` on `Deliver`
+  retries exactly once (the standard CAS retry path shared by all flows).
 
 ## 2. Timer
+
+**Why this seam exists.** The engine must not read the wall clock or call a
+scheduler. It emits `ScheduleTimer` carrying the resolved `FireAt` time (computed
+from the expression in the definition) and parks. The scheduler is entirely owned
+by the runtime — swapping from `MemScheduler` (tests) to `gocron` (production) is
+a single constructor option with no engine change.
+
+**Files to read:** `runtime/runner.go` (`armTimer`), `runtime/scheduler.go` (port
+interface), `scheduling/scheduler.go` (gocron wrapper), `runtime/memstore.go`
+(`MemTimerStore`).
 
 The port is `runtime.Scheduler`; the trigger is `engine.TimerFired`. See also the
 **"arm" terminology** note at the end.
@@ -123,13 +153,35 @@ sequenceDiagram
     R->>E: Runner.Deliver(...) → Step advances the token
 ```
 
-- `armTimer` (`runner.go`) registers the timer; the `fire` callback uses a fresh
-  `context.Background()` (the request context is long gone) and retries only on
-  `ErrConcurrentUpdate`.
+**Guarantees and ownership:**
+- `armTimer` (`runner.go`) registers the timer and also writes the arm into
+  `AppliedStep.TimerArms` inside the same `Store.Commit` transaction (atomic).
+  The `fire` callback uses a fresh `context.Background()` (the original request
+  context is long gone) and retries on `ErrConcurrentUpdate` — a timer firing
+  concurrently with a human-task completion is a normal race; the losing side
+  simply retries.
 - Armed timers are persisted as `AppliedStep.TimerArms` (atomic with state) so
-  `RehydrateTimers` can re-arm them after a restart via the `TimerStore` read port.
+  `RehydrateTimers` can re-arm them after a process restart via the `TimerStore`
+  read port. A timer whose `FireAt` is already past fires immediately, producing an
+  idempotent engine no-op if the instance has already advanced.
+- `CancelTimer` commands are written into `AppliedStep.TimerCancels` and applied by
+  `armTimer`'s cancel path immediately after commit — no separate transaction.
+- **`Kind` determines routing** inside `step_timers.go`: `TimerRetry` re-invokes
+  the parked service action; `TimerDeadline` routes the token down the deadline's
+  escape flow; `TimerInWait` runs the reminder action fire-and-forget (no trigger
+  fed back); `TimerIntermediate` resumes the catch-event token.
 
 ## 3. Message / signal boundary
+
+**Why this seam exists.** Messages and signals carry data _into_ a parked token
+from outside. The engine never sends or receives a message; it parks a token with
+an `AwaitMessage` / `AwaitSignal` field. The runtime owns the correlation table
+(`msgWaiters`) and the fan-out bus (`SignalBus`) so a single trigger path covers
+both external transport calls and inter-instance signals.
+
+**Files to read:** `runtime/runner.go` (`deliverMessage`, `armSignal`, `Sync`
+for the `msgWaiters` update), `runtime/broadcast.go` (`SignalBus`),
+`engine/step_triggers.go` (`handleMessageReceived`, `handleSignalReceived`).
 
 Two directions, two ports.
 
@@ -158,6 +210,14 @@ sequenceDiagram
     end
 ```
 
+**Guarantees and ownership (inbound):** `msgWaiters` is an in-memory map; it is
+rebuilt from `InstanceState` after every `deliverLoop` pass. It survives restarts
+only if the consumer calls `Runner.Sync` on process startup (not currently
+exposed — the `MemStore` path is restart-free by construction; the SQL-backed path
+relies on a fresh `Run`/`Deliver` call per instance to re-register). A message with
+no waiter is silently dropped — the transport is responsible for retry if the
+receive task has not yet armed.
+
 **Outbound** — `engine.ThrowSignal` → `Runner.perform` → `SignalBus.Publish`,
 which fans out to subscribed instances through an injected `DeliverFunc` (wrapping
 `Runner.Deliver`). `engine.SendMessage` is purely a transactional-outbox event
@@ -181,7 +241,25 @@ sequenceDiagram
     Note over R: perform() → return nil, nil<br/>(emitted as a message.«Name» outbox row inside<br/>the SAME commit tx — at-least-once, see flow 7)
 ```
 
+**Guarantees and ownership (outbound signals):** `SignalBus.Publish` is synchronous
+and in-process: all subscribed `DeliverFunc` callbacks run before `Publish` returns.
+Subscription is per `(instanceID, signalName)` pair; `Runner.Sync` re-registers
+after each `deliverLoop`. If `Deliver` fails for a given subscriber the error is
+returned from `Publish`, the signal delivery attempt counts as failed, and the
+engine records the throw command as failed — no at-least-once guarantee for signals.
+Signals are therefore best-effort fan-out; for durable delivery use the outbox
+(SendMessage) instead.
+
 ## 4. Compensation / rollback
+
+**Why this seam exists.** Compensation is pure engine logic: the undo-log
+accumulation, cursor walk, and status transitions happen entirely inside
+`engine.Step`. The only external seam is the catalog lookup for each compensation
+action, which follows the normal `InvokeAction` path. No new port is introduced.
+
+**Files to read:** `engine/step_compensation.go` (`beginCompensation`,
+`stepCompensationAdvance`, `stepCompensationFinish`), `engine/state.go`
+(`CompensationRecord`, `ArchivedCompensations`).
 
 Two phases: an **undo log** accumulated during forward flow, then replayed in
 reverse. The replay reuses the normal `InvokeAction` → `action.Catalog` machinery.
@@ -203,13 +281,31 @@ PHASE 2 — rollback (admin CompensateRequested trigger, or cancel/error path):
           partial (ToNode!="") → place a token back at ToNode, resume forward
 ```
 
+**Guarantees and ownership:**
 - Entry is the `CompensateRequested` **trigger** (not a command). Partial rollback
   does not compensate the `ToNode` target itself — records *after* it are eligible.
+- Each compensation action runs through the normal `InvokeAction` → catalog path;
+  its `ActionCompleted` advances the cursor. An action failure during compensation
+  is currently not caught — the compensation walk still advances (best-effort
+  semantics). The state persists at each `ActionCompleted` commit, so a crash
+  mid-walk resumes from the correct cursor on the next `Deliver`.
 - `InvokeCancelAction` is distinct: best-effort cancel-time side effect, no
   `CommandID`, result never fed back (instance already terminal).
 - `engine.Compensate{ScopeID, FromNode}` is **RESERVED / not yet emitted**.
 
 ## 5. Retry / incident resolution
+
+**Why this seam exists.** Retry logic is pure engine arithmetic (backoff, budget),
+but the timer that defers re-invocation is a side effect. The engine emits
+`ScheduleTimer{TimerRetry}` and parks; the runtime arms it via the same `Scheduler`
+port used by all timers. Incidents are persisted inside `InstanceState.Incidents` —
+no external port is needed to raise one — but clearing an incident requires an
+external trigger (`ResolveIncident`) from an admin flow (REST/gRPC or direct
+`Runner.ResolveIncident` call).
+
+**Files to read:** `engine/step_timers.go` (`handleTimerFired`, `reinvokeServiceAction`),
+`engine/step_triggers.go` (`handleActionFailed`, `handleResolveIncident`),
+`runtime/runner.go` (`perform` error-branch, `ResolveIncident`).
 
 A retry is a self-scheduled `TimerRetry`; an incident is a parked token awaiting
 an operator. Both converge on the shared `reinvokeServiceAction` primitive.
@@ -227,14 +323,30 @@ InvokeAction fails → ActionFailed{Retryable} ─► handleActionFailed:
                   → clear incident, grant budget, reinvokeServiceAction (same InvokeAction)
 ```
 
+**Guarantees and ownership:**
 - Terminality is decided by the node's effective retry policy: `!Retryable`,
   non-retryable classification, `MaxAttempts`, or `MaxElapsed`.
+- `ActionFailed.JitterFraction` (set by the runner's `JitterSource` via
+  `engine.WithJitter`) de-synchronizes concurrent retry schedules. Construct via
+  `engine.NewActionFailed(at, commandID, errMsg, retryable, engine.WithJitter(fraction))`;
+  `fraction` is dimensionless (0–1) and multiplied against the computed backoff
+  interval inside `step_timers.go`.
 - `ResolveIncident` is idempotent: unknown/cleared incident is a no-op; a missing
   token clears the record without re-invoking.
 - The **DLQ is a separate poison channel** in the *eventing relay* (flow 7), for
   failed event *publication* — not for action execution. Do not conflate them.
 
 ## 6. Sub-process vs. call activity
+
+**Why this seam exists.** Sub-processes are pure scope nesting handled entirely in
+`drive()` — no new port, no state outside the instance. Call activities spawn a
+genuinely separate instance, so they need a `DefinitionRegistry` to resolve the
+child definition and (in async mode) a `CallLinkStore` to durably correlate the
+child's terminal event back to the parked parent token.
+
+**Files to read:** `engine/step_nodes.go` (sub-process strategy, call-activity
+strategy), `runtime/runner.go` (`startSubInstance`, `callActivityAsync`),
+`runtime/call_notifier.go` (`DrainOnce`, `ClaimPending`, `MarkNotified`).
 
 |  | Sub-process (`KindSubProcess`) | Call activity (`KindCallActivity`) |
 |---|---|---|
@@ -289,6 +401,12 @@ sequenceDiagram
     end
 ```
 
+**Guarantees and ownership (sync path):** the child shares the parent's store,
+catalog, and scheduler. A child that parks (user task, async wait) causes the sync
+path to return `SubInstanceFailed` immediately — sync mode cannot re-enter a parked
+child. Use sync only when definitions are guaranteed to run to completion without
+human tasks or long-running async waits.
+
 **Call activity (async, with `CallLinkStore`)** starts the child non-blocking,
 persists a `CallLink` in the child's first transaction, and returns `nil` (parent
 stays parked). When the child terminates, its outcome is queued on the link and a
@@ -331,7 +449,31 @@ sequenceDiagram
 
 ---
 
+**Guarantees and ownership (async path):** the `CallLink` row is written inside the
+child's first `Store.Create` transaction, so the link either exists or the child
+instance does not. `ClaimPending` uses `FOR UPDATE SKIP LOCKED` (Postgres/MySQL) so
+concurrent `CallNotifier` replicas never double-deliver. `ErrTokenNotFound` from
+`Deliver` is idempotent success (parent already resumed, e.g. by a concurrent
+admin action). The child's cancel (`CancelInstance`) propagates recursively when
+`WithCallLinkStore` and `WithDefinitions` are both wired.
+
+---
+
 ## 7. Eventing / outbox relay (full detail)
+
+**Why this seam exists.** The engine cannot call a broker. Domain events must be
+atomic with their state change (if the state commits, the event is queued; if the
+state rolls back, the event disappears). The transactional outbox achieves this by
+treating the event queue as rows in the same database. A separate `Relay` process
+publishes rows to the broker at-least-once without ever touching the state transaction.
+Watermill is confined entirely to `eventing/` so the engine and runtime remain
+broker-agnostic.
+
+**Files to read:** `runtime/outbox.go` (event derivation),
+`internal/persistence/store/store.go` (`Commit` outbox insert),
+`internal/persistence/store/relay.go` (drain + backoff + dead-letter),
+`eventing/eventing.go` (watermill publisher wrapper), `eventing/chaining.go`
+(chain handler).
 
 This is the one flow that carries data **out** of the engine rather than waking a
 parked token. It uses the **transactional outbox** pattern so a domain event is
@@ -479,6 +621,186 @@ only difference from the wake-up flows is that the result is a message on a brok
 rather than a `Trigger` re-entering `Runner.Deliver` — though a consumer's
 subscriber (message handler, chainer) frequently *does* loop an event back into
 the engine as the next interaction.
+
+---
+
+## 8. Constructor conventions
+
+Every stateful object in this library that holds a required, non-nilable dependency
+returns `(T, error)` from its constructor. This is the **fail-fast** rule: if a
+required interface is nil at construction time, you get a clear error immediately
+rather than a panic buried inside the first method call.
+
+### The rule
+
+A constructor returns `(T, error)` when **all** of these hold:
+1. The type is stateful (holds fields that survive the call).
+2. At least one parameter is a required, non-nilable dependency (interface or pointer).
+3. The type is created at wire-up time, not at every request.
+
+A constructor returns `T` (no error) when:
+- It builds a pure value type (no I/O, no lifecycle), or
+- All parameters are optional / safe to omit.
+
+### Affected constructors (all now return `(T, error)`)
+
+| Constructor | Sentinel when nil dep |
+|---|---|
+| `runtime.NewRunner(cat, store, opts...)` | `runtime.ErrNilDependency` |
+| `runtime.NewTaskService(store, az, opts...)` | `runtime.ErrNilDependency` |
+| `runtime.NewCachingStore(backing, owner, opts...)` | `runtime.ErrNilDependency` |
+| `runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)` | `runtime.ErrNilDependency` |
+| `runtime.NewSignalBus(deliver, opts...)` | `runtime.ErrNilDependency` |
+| `runtime.NewCallNotifier(cl, deliver, reg, opts...)` | `runtime.ErrNilDependency` |
+| `runtime.NewChainer(starter, policy, opts...)` | `runtime.ErrNilDependency` |
+| `runtime.NewLineageReader(calls, chains)` | `runtime.ErrNilDependency` |
+| `runtime.NewMemStore(opts...)` | `runtime.ErrNilDependency` (option validation) |
+| `internal/persistence/store` constructors | `store.ErrNilDependency` |
+
+Sentinel values:
+- `runtime.ErrNilDependency` = `"workflow-runtime: nil required dependency"` (in `runtime/errors_construct.go`)
+- `store.ErrNilDependency` = `"workflow-store: nil required dependency"` (internal; exposed via persistence façade errors)
+
+Both follow the `"workflow-<package>: ..."` prefix convention (ADR-0026).
+
+### Functional-options collapse
+
+Three APIs consolidated multiple old constructors into a single constructor plus options:
+
+**`runtime.NewMemStore(opts ...MemStoreOption) (*MemStore, error)`**
+
+Replaces the old `NewMemStore()` / `NewMemStoreWithCallLinks(cl)` / `NewMemStoreWithTimers(mts)`.
+Options: `runtime.WithCallLinks(cl *MemCallLinkStore)`, `runtime.WithTimers(mts *MemTimerStore)`.
+Either, both, or neither may be passed; the zero-option call tracks neither.
+
+```go
+cl  := runtime.NewMemCallLinkStore()
+mts := runtime.NewMemTimerStore()
+store, err := runtime.NewMemStore(
+    runtime.WithCallLinks(cl),
+    runtime.WithTimers(mts),
+)
+```
+
+**`engine.NewActionFailed(at, commandID, errMsg, retryable, opts ...ActionFailedOption) ActionFailed`**
+
+Replaces the old `NewActionFailed` + `NewActionFailedJittered`. The value type is
+unchanged (no new error path); the option `engine.WithJitter(fraction float64)` sets
+`ActionFailed.JitterFraction`. Calling with no options is identical to the old form.
+
+**`casbinauthz.NewCasbinAuthorizer(opts ...Option) (authz.Authorizer, io.Closer, error)`**
+
+Replaces the old `NewCasbinAuthorizer(e)` / `NewCasbinAuthorizerFromStrings` /
+`NewCasbinAuthorizerFromDB`. Exactly one source option must be passed:
+- `casbinauthz.FromEnforcer(e *casbinv2.SyncedEnforcer)` — wraps a consumer-built enforcer.
+- `casbinauthz.FromStrings(modelText, policyText string)` — builds from inline text.
+- `casbinauthz.FromDB(ctx, pool, opts ...DBOption)` — builds from a live Postgres pool.
+
+Zero or multiple source options return an error. `io.Closer` is non-nil only for
+`FromDB` (watcher goroutine); for the others it is nil, but callers should always
+call `closer.Close()` if non-nil.
+
+### When a constructor does NOT return an error
+
+Value types, triggers, and stateless helpers keep their simple form:
+- `model.NewDefinition(id, version)` — returns `DefinitionBuilder` (no deps, no I/O).
+- `engine.NewStartInstance(at, vars)` — returns an `engine.StartInstance` value.
+- `action.NewMapCatalog(m)` — stateless read-only wrapper (no required interface).
+- `humantask.NewMemTaskStore()` — no required non-nilable dep.
+
+---
+
+## 9. Builder vs. Loader
+
+`model` provides two interfaces for constructing a `*ProcessDefinition`: one for
+Go-authored definitions, one for YAML-loaded ones. They share the same underlying
+`definitionCore` and differ only in what they expose.
+
+### `DefinitionBuilder` — full authoring surface
+
+```go
+type DefinitionBuilder interface {
+    Add(n Node) DefinitionBuilder
+    AddServiceTask(id string, opts ...serviceTaskOption) DefinitionBuilder
+    // ... one AddX per node kind ...
+    Connect(fromID, toID string, opts ...FlowOption) DefinitionBuilder
+    RegisterAction(name string, a action.ServiceAction) DefinitionBuilder
+    RegisterActionFunc(name, fn ...) DefinitionBuilder
+    CancelActions(names ...string) DefinitionBuilder
+    Build() (*ProcessDefinition, error)
+    Loader() DefinitionLoader
+}
+```
+
+`NewDefinition(id, version)` returns a `DefinitionBuilder`. Structural elements
+(nodes, flows) and action registrations can be chained in any order — both the
+"actions-first" and "structure-first" idioms compile identically because every
+mutating method returns `DefinitionBuilder`. `Build()` assembles, validates, and
+locks the scoped action catalog.
+
+### `DefinitionLoader` — post-parse, actions only
+
+```go
+type DefinitionLoader interface {
+    RegisterAction(name string, a action.ServiceAction) DefinitionLoader
+    RegisterActionFunc(name string, fn func(...) (...)) DefinitionLoader
+    CancelActions(names ...string) DefinitionLoader
+    Build() (*ProcessDefinition, error)
+}
+```
+
+`ParseYAML(data []byte)` and `LoadYAML(r io.Reader)` return a `DefinitionLoader`.
+The structural elements (nodes, flows, kind, options) are all decoded from YAML —
+the `DefinitionLoader` has no `Add*` or `Connect` methods because the structure is
+already declared. It exposes only what YAML cannot carry: **runtime action
+registrations** (Go function values cannot be serialized).
+
+### Why YAML can't carry `RegisterAction`
+
+A YAML file can name an action (`action: charge-card`) but it cannot embed a Go
+function. The load → register-actions → `Build()` sequence is therefore mandatory
+for any YAML-loaded definition that uses definition-scoped actions:
+
+```go
+ld, err := model.ParseYAML(data)
+if err != nil {
+    return err
+}
+ld.RegisterAction("charge-card", myChargeAction)
+ld.RegisterAction("refund-card", myRefundAction)
+def, err := ld.Build()
+```
+
+`Build()` validates the definition and compiles the scoped action catalog from the
+registered actions. Calling `Build()` without registering any actions is valid (the
+definition uses the global catalog only). Registering the same name twice returns
+`model.ErrDuplicateScopedAction` from `Build()`.
+
+### The `Loader()` bridge
+
+`DefinitionBuilder` exposes a `.Loader()` method that returns a `DefinitionLoader`
+backed by the same core. This allows passing a builder to code that only needs the
+loader API (e.g. a test helper that only registers actions):
+
+```go
+b := model.NewDefinition("order", 1).
+    AddServiceTask("charge", model.WithActionName("charge-card"))
+// hand off to a helper that knows nothing about the structure:
+myHelper(b.Loader())
+```
+
+### Summary
+
+| | `NewDefinition` → `DefinitionBuilder` | `ParseYAML`/`LoadYAML` → `DefinitionLoader` |
+|---|---|---|
+| Adds nodes | Yes (`Add`, `AddX`) | No (declared in YAML) |
+| Adds flows | Yes (`Connect`) | No (declared in YAML) |
+| Registers scoped actions | Yes | Yes |
+| Calls `Build()` | Yes | Yes (mandatory) |
+| Typical use | Go-authored definitions, tests | Config-driven pipelines |
+
+**Files to read:** `model/builder.go` (interfaces + `definitionCore`),
+`model/yaml.go` (`ParseYAML`, `LoadYAML`, `definitionLoader` wrapper).
 
 ---
 

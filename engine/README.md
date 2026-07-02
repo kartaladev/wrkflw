@@ -39,6 +39,53 @@ The runtime is responsible for all side effects. It reads the `[]Command` slice
 returned by `Step`, executes each command (invoke a service action, schedule a
 timer, create a human task, etc.), and persists the resulting `InstanceState`.
 
+### Why the engine holds no ports
+
+Adding a database call or scheduler invocation to the engine would:
+1. Make `Step` no longer a pure function — replay, debugging, and deterministic
+   unit tests would all require real infrastructure.
+2. Couple the engine to a specific broker or scheduler SDK — swapping dependencies
+   would require engine changes.
+3. Break testability — a test of a three-node process would need a real database.
+
+Instead, the engine emits a **command** (a named value type) that describes *what*
+must happen; the runtime decides *how* and *when* to perform it. The engine never
+knows whether its `ScheduleTimer` command ends up in an in-memory map or a gocron
+cluster. This separation is enforced by the import-purity test in `purity_test.go`.
+
+### Trigger → Command vocabulary
+
+Every external event enters as a **Trigger** and every side effect the engine
+requests leaves as a **Command**. The two types are sealed interfaces; the only way
+to construct them is through the provided constructors (never raw struct literals).
+
+**Triggers** carry a timestamp (`OccurredAt`) — the engine's only time source:
+
+| Trigger | Produced by |
+|---|---|
+| `StartInstance` | Runner.Run (first step) |
+| `ActionCompleted` / `ActionFailed` | Runtime (after `InvokeAction`) |
+| `HumanClaimed` / `HumanCompleted` / `HumanReassigned` | TaskService |
+| `TimerFired` | Scheduler callback |
+| `SignalReceived` | SignalBus |
+| `MessageReceived` | Runner.DeliverMessage |
+| `SubInstanceCompleted` / `SubInstanceFailed` | Runner (sync) or CallNotifier (async) |
+| `CancelRequested` / `CompensateRequested` | Admin path (Runner.CancelInstance / service layer) |
+| `ResolveIncident` | Admin path (Runner.ResolveIncident) |
+
+**Commands** are promises the runtime must fulfil before persisting:
+
+| Command | Runtime obligation |
+|---|---|
+| `InvokeAction` | Call catalog action; return `ActionCompleted` or `ActionFailed`. |
+| `ScheduleTimer` / `CancelTimer` | Arm or disarm a timer via the Scheduler port. |
+| `AwaitHuman` / `UpdateTask` | Create or update a human-task record. |
+| `CompleteInstance` / `FailInstance` | Mark the instance terminal. |
+| `ThrowSignal` | Broadcast to the SignalBus. |
+| `SendMessage` | Write to the transactional outbox (no trigger fed back). |
+| `StartSubInstance` | Start a child instance (sync or async). |
+| `InvokeCancelAction` | Best-effort cancel side effect (no result fed back). |
+
 ---
 
 ## 2. Token-based execution
