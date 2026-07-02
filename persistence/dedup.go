@@ -24,7 +24,7 @@ import (
 // unit. When no ambient transaction is present, Seen begins and commits a fresh
 // leaf transaction so the call is always atomic. This also unifies the former
 // separate Deduper (pgx.Tx) and MySQLDeduper (*sql.Tx) interfaces into one
-// backend-neutral type — MySQLDeduper is now an alias of Deduper.
+// backend-neutral type — MySQLDeduper has been removed; use Deduper.
 //
 // Migration: replace
 //

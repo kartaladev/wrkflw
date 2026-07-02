@@ -224,7 +224,7 @@ func TestNewMySQLRelay_DrainsViaFacade(t *testing.T) {
 }
 
 // TestNewMySQLDeduper_FirstThenDup verifies that NewMySQLDeduper returns a
-// MySQLDeduper whose Seen method returns true on first observation and false on
+// Deduper whose Seen method returns true on first observation and false on
 // a repeat within a MySQL transaction.
 func TestNewMySQLDeduper_FirstThenDup(t *testing.T) {
 	t.Parallel()

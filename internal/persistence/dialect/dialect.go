@@ -17,7 +17,7 @@ import (
 
 // ErrUnsupported is returned by a capability that the dialect or
 // backend-and-access combination does not provide (for example, advisory
-// locking on SQLite). Callers MUST match it with [errors.Is].
+// locking on SQLite). Callers must match it with [errors.Is].
 var ErrUnsupported = errors.New("workflow-dialect: capability not supported")
 
 // Dialect abstracts the SQL-text and driver-error differences between
@@ -169,7 +169,7 @@ type Notifier interface {
 
 // Locker is a distributed advisory lock backed by the database. Postgres uses
 // session-level advisory locks; MySQL uses GET_LOCK / RELEASE_LOCK. SQLite
-// provides no advisory locking — its implementation MUST return
+// provides no advisory locking — its implementation must return
 // [ErrUnsupported] from both methods.
 type Locker interface {
 	// TryLock attempts to acquire the advisory lock identified by key without

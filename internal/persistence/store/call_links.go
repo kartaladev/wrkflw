@@ -35,7 +35,7 @@ type CallLinkOption func(*CallLinkStore)
 //   - MySQL (SupportsReturning=false, SupportsSkipLocked=true): transactional
 //     SELECT…FOR UPDATE SKIP LOCKED followed by a separate UPDATE.
 //   - SQLite (SupportsReturning=true, SupportsSkipLocked=false): plain
-//     UPDATE…WHERE child_instance_id = (SELECT…LIMIT 1)…RETURNING (no locking).
+//     UPDATE…WHERE child_instance_id IN (SELECT…[LIMIT n])…RETURNING (no locking).
 func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
 	return func(s *CallLinkStore) {
 		s.leaseOwner = owner
@@ -104,7 +104,7 @@ func NewCallLinkStore(conn any, d dialect.Dialect, opts ...CallLinkOption) *Call
 //
 //   - Postgres: UPDATE…FROM (SELECT…FOR UPDATE SKIP LOCKED)…RETURNING
 //   - MySQL:    transactional SELECT…FOR UPDATE SKIP LOCKED + UPDATE
-//   - SQLite:   UPDATE…WHERE child = (SELECT…LIMIT 1)…RETURNING (no locking)
+//   - SQLite:   UPDATE…WHERE child_instance_id IN (SELECT…[LIMIT n])…RETURNING (no locking)
 //
 // When leaseTTL <= 0 (default) a plain SELECT is used (no stamp, no locking —
 // backward-compatible). A limit <= 0 means "no limit" (all matching rows).
