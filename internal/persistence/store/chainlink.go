@@ -31,8 +31,10 @@ type ChainLinkStore struct {
 	dialect dialect.Dialect
 }
 
-// Compile-time check: *ChainLinkStore satisfies [runtime.ChainLinkStore].
+// Compile-time checks: *ChainLinkStore satisfies [runtime.ChainLinkStore] and
+// [runtime.ChainLineageReader].
 var _ runtime.ChainLinkStore = (*ChainLinkStore)(nil)
+var _ runtime.ChainLineageReader = (*ChainLinkStore)(nil)
 
 // NewChainLinkStore constructs a ChainLinkStore over conn using the supplied
 // dialect d. conn must be either a *pgxpool.Pool (Postgres) or a *sql.DB
@@ -177,6 +179,75 @@ func (c *ChainLinkStore) ListByPredecessor(ctx context.Context, predecessorID st
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("workflow-store: chain links: list: rows: %w", err)
+	}
+	return links, nil
+}
+
+// PredecessorOf returns the [runtime.ChainLink] that produced successorID.
+// Returns (nil, nil) when successorID was not started by chaining — that is,
+// no row with successor_instance_id = successorID exists in wrkflw_chain_links.
+//
+// Implements [runtime.ChainLineageReader].
+func (c *ChainLinkStore) PredecessorOf(ctx context.Context, successorID string) (*runtime.ChainLink, error) {
+	q, err := database.From(c.conn)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-store: chain links: predecessor of: conn: %w", err)
+	}
+
+	row := q.QueryRow(ctx, c.dialect.Rebind(
+		`SELECT predecessor_instance_id, outcome, successor_instance_id,
+		        predecessor_definition_ref, successor_definition_ref, start_vars, created_at
+		   FROM wrkflw_chain_links
+		  WHERE successor_instance_id = ?`),
+		successorID,
+	)
+	link, err := c.scanChainLink(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("workflow-store: chain links: predecessor of: %w", err)
+	}
+	return &link, nil
+}
+
+// SuccessorsOf returns all [runtime.ChainLink]s fanned out from predecessorID,
+// ordered by outcome for deterministic results. Returns an empty (non-nil) slice
+// when no successors exist — the caller must not treat a nil result as distinct
+// from an empty result.
+//
+// Implements [runtime.ChainLineageReader].
+func (c *ChainLinkStore) SuccessorsOf(ctx context.Context, predecessorID string) ([]runtime.ChainLink, error) {
+	q, err := database.From(c.conn)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-store: chain links: successors of: conn: %w", err)
+	}
+
+	rows, err := q.Query(ctx, c.dialect.Rebind(
+		`SELECT predecessor_instance_id, outcome, successor_instance_id,
+		        predecessor_definition_ref, successor_definition_ref, start_vars, created_at
+		   FROM wrkflw_chain_links
+		  WHERE predecessor_instance_id = ?
+		  ORDER BY outcome`),
+		predecessorID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-store: chain links: successors of: query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Non-nil empty slice: the interface contract requires callers to receive an
+	// empty (not nil) slice when no successors exist.
+	links := []runtime.ChainLink{}
+	for rows.Next() {
+		link, err := c.scanChainLink(rows)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-store: chain links: successors of: scan: %w", err)
+		}
+		links = append(links, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("workflow-store: chain links: successors of: rows: %w", err)
 	}
 	return links, nil
 }
