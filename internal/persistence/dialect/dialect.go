@@ -155,8 +155,11 @@ type Dialect interface {
 }
 
 // Notifier is the receive side of a database-level pub/sub channel. Only the
-// (pgx, Postgres) combination provides a meaningful implementation; all other
-// backends return [ErrUnsupported] from [Listen].
+// (pgx, Postgres) combination provides a meaningful implementation. MySQL and
+// SQLite do not implement this interface — no [Notifier] is injected for those
+// backends, so the relay falls back to poll-only mode when the notifier is nil.
+// There is no [ErrUnsupported] path for [Notifier]: the interface is simply
+// absent for non-Postgres backends.
 //
 // Listen subscribes to channel and returns:
 //   - a read-only wake channel that receives an empty struct whenever a

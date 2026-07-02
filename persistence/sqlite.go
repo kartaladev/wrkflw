@@ -77,8 +77,9 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 
 // NewSQLiteAdvisoryLockOwnership returns a fail-loud [runtime.Ownership] for
 // SQLite deployments. SQLite provides no distributed advisory locking
-// mechanism: [runtime.Ownership.Acquire] and [runtime.Ownership.Release] both
-// return [dialect.ErrUnsupported] on every call.
+// mechanism: [runtime.Ownership.Acquire] returns [dialect.ErrUnsupported] on
+// every call; [runtime.Ownership.Release] is a no-op (returns nil) for a lock
+// that was never held.
 //
 // This constructor exists so SQLite consumers can satisfy the ownership
 // parameter required by [runtime.NewCachingStore] while making the

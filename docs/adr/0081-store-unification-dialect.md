@@ -61,6 +61,9 @@ neither a concrete pool type nor a dialect name string appears in their signatur
 `Dialect` encapsulates every SQL-text and driver-error difference in one stateless, concurrently
 safe value chosen once at startup:
 
+- **Identity:** `Name()` — returns a stable lowercase identifier (`"postgres"`, `"mysql"`,
+  `"sqlite"`). Used for logging, metrics labels, and as a guard of last resort when
+  capability flags do not cover a branch.
 - **Placeholder translation:** `Rebind(query)` — `?` → `$1`/`$2`... for Postgres; no-op
   for MySQL/SQLite.
 - **Conflict/ignore clauses:** `UpsertTimer()`, `UpsertDefinition()`, `InsertIgnorePrefix()`,
@@ -89,8 +92,11 @@ are modeled as **optional capabilities**, type-asserted from the `Dialect` value
 time and injected into the stores that need them:
 
 - **`Notifier`** — `Listen(ctx, channel) (<-chan struct{}, func(), error)`. Only the
-  (pgx, Postgres) combination provides a real implementation; all others return
-  `ErrUnsupported`. The relay polls on a timer when no `Notifier` is available.
+  (pgx, Postgres) combination provides a meaningful implementation (`NewPgxNotifier`).
+  MySQL and SQLite do not implement `Notifier` at all — no `Notifier` is injected for
+  those backends, so the relay's `notifier` field stays nil and the relay falls back to
+  poll-only mode. There is no `ErrUnsupported` path for `Notifier` — the interface is
+  simply absent.
 - **`Locker`** — `TryLock(ctx, key) (bool, error)` / `Unlock(ctx, key) error`. Postgres uses
   session-scoped `pg_try_advisory_lock`; MySQL uses connection-scoped `GET_LOCK`; SQLite
   returns `ErrUnsupported` (see ADR-0082). `ErrUnsupported` is the sentinel in
@@ -146,9 +152,12 @@ are removed or degraded.
   merge.
 - **`MySQLDeduper` removed (breaking).** Code that type-asserted to `MySQLDeduper` or passed
   `*sql.Tx` to `Seen` must migrate to the new ambient-transaction signature (see §5).
-- **`ErrUnsupported` is the contract for optional capabilities.** Callers that require
-  `Notifier` or `Locker` must guard with `errors.Is(err, dialect.ErrUnsupported)` and
-  choose a fallback (poll for relay, skip ownership-dependent paths for SQLite).
+- **`ErrUnsupported` is the contract for unsupported `Locker` calls.** SQLite's `Locker`
+  returns `dialect.ErrUnsupported` from `TryLock` and `Unlock` (fail-loud); callers must
+  guard with `errors.Is(err, dialect.ErrUnsupported)` and skip ownership-dependent paths.
+  `Notifier` is handled differently: MySQL and SQLite do not provide a `Notifier`
+  implementation — the relay checks for nil and falls back to poll-only, not
+  `ErrUnsupported`.
 - **ADR-0080 UTC discipline is preserved.** The `TimestampsAsText()` flag is the single
   decision point for time (de)serialization; all scan sites call `.UTC()` as defence-in-depth
   per ADR-0080.

@@ -42,11 +42,13 @@ We add SQLite as a first-class third dialect, accessible via `persistence.OpenSQ
 
 ### 2. Single-writer constraint
 
-`SetMaxOpenConns(1)` is applied to every SQLite `*sql.DB`. This serializes all writes through
-a single connection, eliminating `SQLITE_BUSY` write–write conflicts and making the
-`FOR UPDATE SKIP LOCKED`-equivalent claim paths safe without row-level locking. This is
-appropriate for the single-node / test-oriented use-cases; multi-node production deployments
-must use Postgres (advisory locks, NOTIFY) or MySQL (GET_LOCK).
+The caller is responsible for calling `db.SetMaxOpenConns(1)` on the `*sql.DB` passed to
+`OpenSQLite`. This serializes all writes through a single connection, eliminating
+`SQLITE_BUSY` write–write conflicts and making the `FOR UPDATE SKIP LOCKED`-equivalent claim
+paths safe without row-level locking. `OpenSQLite` documents this requirement in its godoc;
+`dbtest.RunTestSQLite` applies it automatically for tests. This is appropriate for the
+single-node / test-oriented use-cases; multi-node production deployments must use Postgres
+(advisory locks, NOTIFY) or MySQL (GET_LOCK).
 
 ### 3. RETURNING and the leased-claim path
 
@@ -100,9 +102,13 @@ injected, which is the same fallback used for MySQL. `NotifyStatement` returns `
 
 Two functions are added to the root `persistence` package:
 
-- `persistence.OpenSQLite(ctx, db) (*SQLiteStore, error)` — runs `ProbeUTC` as a fail-fast
-  check, applies `SetMaxOpenConns(1)`, and wires the neutral store with `dialect.NewSQLite()`.
-- `persistence.MigrateSQLite(ctx, db) error` — runs the consolidated Goose migration.
+- `persistence.OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (Store, error)` —
+  runs `ProbeUTC` as a fail-fast check and wires the neutral store with `dialect.NewSQLite()`.
+  The caller must call `db.SetMaxOpenConns(1)` before passing `db` (documented in the godoc).
+  Accepts the same variadic `Option` values as `OpenPostgres` and `OpenMySQL` (e.g.
+  `WithHistoryCap`). Returns the `Store` interface, not a concrete `*SQLiteStore` type.
+- `persistence.MigrateSQLite(ctx context.Context, db *sql.DB) error` — runs the consolidated
+  Goose migration.
 
 ### 9. Extraction constraint (ADR-0079)
 
@@ -110,8 +116,11 @@ Test helpers that import `modernc.org/sqlite` (e.g. `dbtest.RunTestSQLite`) live
 `internal/dbtest` package, which already falls outside the extraction boundary. The
 `internal/database` and `internal/database/transaction` packages do not import
 `modernc.org/sqlite`, so the `go list -deps` extraction check (ADR-0079 §6) remains green.
-A `database.SQLite` dialect probe constant is added to `internal/database` to enable
-dialect-aware routing at the access layer without importing the SQLite driver.
+A `database.SQLite` constant is added to `internal/database` solely as a probe-dialect
+discriminator for `ProbeUTC` — it selects the SQLite-specific probe expression (TEXT-based
+datetime round-trip check). It does NOT drive general access-layer routing; dialect-aware
+routing across all persistence sites is handled by the `dialect.Dialect` interface injected
+into the neutral store, which is distinct from the `database.Dialect` probe type.
 
 ## Consequences
 
