@@ -55,3 +55,11 @@ func mustCachingDefinitionRegistry(t *testing.T, backing runtime.DefinitionRegis
 	require.NoError(t, err)
 	return c
 }
+
+// mustSignalBus builds a SignalBus or fails the test.
+func mustSignalBus(t *testing.T, deliver runtime.DeliverFunc, opts ...runtime.SignalBusOption) *runtime.SignalBus {
+	t.Helper()
+	bus, err := runtime.NewSignalBus(deliver, opts...)
+	require.NoError(t, err)
+	return bus
+}

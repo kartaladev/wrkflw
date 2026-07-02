@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -65,7 +66,10 @@ func WithSignalBusClock(clk clock.Clock) SignalBusOption {
 // NewSignalBus constructs a SignalBus backed by the given delivery function.
 // deliver is called once per registered waiter for each Publish. The time source
 // defaults to clock.System(); override it with WithSignalBusClock (ADR-0003).
-func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) *SignalBus {
+func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) (*SignalBus, error) {
+	if deliver == nil {
+		return nil, fmt.Errorf("%w: deliver", ErrNilDependency)
+	}
 	b := &SignalBus{
 		clk:     clock.System(),
 		waiters: make(map[string]map[string]struct{}),
@@ -74,7 +78,7 @@ func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) *SignalBus {
 	for _, o := range opts {
 		o(b)
 	}
-	return b
+	return b, nil
 }
 
 // Subscribe registers instanceID as a waiter for signal signalName. Calling
