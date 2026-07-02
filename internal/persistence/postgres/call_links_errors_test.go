@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -106,7 +106,7 @@ func TestFlipCallLinkMarshalError(t *testing.T) {
 // the underlying pool is closed, covering their Query/Exec/QueryRow error
 // branches (call_links.go:63, :133, :162).
 //
-// Each sub-test gets its own isolated pool (from database.RunTestDatabase) so
+// Each sub-test gets its own isolated pool (from dbtest.RunTestDatabase) so
 // closing it does not affect any other test.
 func TestCallLinkStoreClosedPoolErrors(t *testing.T) {
 	tests := map[string]struct {
@@ -114,7 +114,7 @@ func TestCallLinkStoreClosedPoolErrors(t *testing.T) {
 	}{
 		"ClaimPending returns error on closed pool": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewCallLinkStore(pool)
 
@@ -128,7 +128,7 @@ func TestCallLinkStoreClosedPoolErrors(t *testing.T) {
 		},
 		"MarkNotified returns error on closed pool": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewCallLinkStore(pool)
 
@@ -142,7 +142,7 @@ func TestCallLinkStoreClosedPoolErrors(t *testing.T) {
 		},
 		"LookupChild returns error on closed pool": {
 			assert: func(t *testing.T) {
-				pool := database.RunTestDatabase(t)
+				pool := dbtest.RunTestDatabase(t)
 				require.NoError(t, pg.Migrate(t.Context(), pool))
 				cls := pg.NewCallLinkStore(pool)
 

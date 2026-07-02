@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -76,7 +76,7 @@ func richDefinition() *model.ProcessDefinition {
 // the SQL query: a pre-cancelled context causes the query to fail immediately.
 func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	ds := pg.NewDefinitionStore(pool)
 
@@ -93,7 +93,7 @@ func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 
 func TestDefinitionStoreLookupBadVersion(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	ds := pg.NewDefinitionStore(pool)
 
@@ -104,7 +104,7 @@ func TestDefinitionStoreLookupBadVersion(t *testing.T) {
 
 func TestDefinitionStore(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	ds := pg.NewDefinitionStore(pool)
 

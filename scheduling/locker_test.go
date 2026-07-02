@@ -8,7 +8,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -16,7 +16,7 @@ import (
 // Postgres-backed locker down to gocron: a timer whose advisory lock is already
 // held elsewhere is skipped, while an uncontended timer fires normally.
 func TestSchedulerWithDistributedTimerLock(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	// Pre-hold the lock for "held" on a side connection.

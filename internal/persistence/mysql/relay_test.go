@@ -17,7 +17,7 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/goleak"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -160,7 +160,7 @@ func outboxRowStateByDedupMySQL(t *testing.T, db *sql.DB, dedup string) (status 
 // asserts they are published and marked.
 func TestRelay_DrainOnce_PublishesAndMarks(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	seedOutboxMySQL(t, db, 3)
 
@@ -183,7 +183,7 @@ func TestRelay_DrainOnce_PublishesAndMarks(t *testing.T) {
 // TestRelay_DrainOnce_EmptyOutbox verifies DrainOnce on an empty outbox returns 0.
 func TestRelay_DrainOnce_EmptyOutbox(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	relay := mypkg.NewRelay(db, &recordingPub{})
 	n, err := relay.DrainOnce(t.Context())
@@ -195,7 +195,7 @@ func TestRelay_DrainOnce_EmptyOutbox(t *testing.T) {
 // causes retry_count to climb and eventually quarantine the row as 'dead'.
 func TestRelay_Retry_Backoff_DeadLetter(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	base := time.Now().UTC().Truncate(time.Second)
 	fc := clockwork.NewFakeClockAt(base)
@@ -252,7 +252,7 @@ func TestRelay_Retry_Backoff_DeadLetter(t *testing.T) {
 // TestRelay_ListDeadLettered_And_Redrive verifies the DLQ admin API.
 func TestRelay_ListDeadLettered_And_Redrive(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	base := time.Now().UTC().Truncate(time.Second)
 	fc := clockwork.NewFakeClockAt(base)
@@ -351,7 +351,7 @@ func TestRelay_ListDeadLettered_And_Redrive(t *testing.T) {
 // ctx.Err() on context termination — specifically context.DeadlineExceeded here.
 func TestRelay_Run_ReturnsDeadlineExceededOnTimeout(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithPollInterval(10*time.Millisecond))
 
@@ -377,7 +377,7 @@ func TestRelay_Run_ReturnsDeadlineExceededOnTimeout(t *testing.T) {
 // context.DeadlineExceeded and return a workflow-prefixed error instead.
 func TestRelay_Run_ReturnsDeadlineExceededOnAlreadyExpiredCtx(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	relay := mypkg.NewRelay(db, &recordingPub{})
 
@@ -403,7 +403,7 @@ func TestRelay_Run_DrainsUntilCancelled(t *testing.T) {
 		goleak.IgnoreTopFunction("database/sql.(*DB).connectionOpener"),
 	)
 	// Not parallel — goleak requires single-threaded goroutine state.
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	relay := mypkg.NewRelay(db, &recordingPub{}, mypkg.WithPollInterval(10*time.Millisecond))
 
@@ -427,7 +427,7 @@ func TestRelay_Run_DrainsUntilCancelled(t *testing.T) {
 // a Publish failure must NOT mark the row published; retry_count climbs.
 func TestRelay_PublishError_RowStaysUnpublished(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	seedOutboxMySQL(t, db, 1)
 
@@ -446,7 +446,7 @@ func TestRelay_PublishError_RowStaysUnpublished(t *testing.T) {
 // TestRelay_BatchSize limits rows per drain.
 func TestRelay_BatchSize(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	seedOutboxMySQL(t, db, 5)
 
@@ -464,7 +464,7 @@ func TestRelay_BatchSize(t *testing.T) {
 // to WithRelayClock does NOT overwrite the default clock.System().
 func TestRelay_WithRelayClock_Nil_FallsBackToSystem(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	pub := &recordingPub{}
 	relay := mypkg.NewRelay(db, pub, mypkg.WithRelayClock(nil))
@@ -478,7 +478,7 @@ func TestRelay_WithRelayClock_Nil_FallsBackToSystem(t *testing.T) {
 // onto the OutboxEvent it publishes.
 func TestRelay_PopulatesDedupAndInstanceID(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	_, err := db.ExecContext(t.Context(),
 		`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at)
@@ -503,7 +503,7 @@ func TestRelay_PopulatesDedupAndInstanceID(t *testing.T) {
 // and WithRelayMeterProvider are accepted without error and don't break DrainOnce.
 func TestRelay_TelemetryOptions(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	relay := mypkg.NewRelay(db, &recordingPub{},
 		mypkg.WithRelayLogger(slog.Default()),
@@ -519,7 +519,7 @@ func TestRelay_TelemetryOptions(t *testing.T) {
 // Publisher does not terminate Run — the loop keeps polling until cancelled.
 func TestRelay_Run_AbsorbsPublishFailures(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	seedOutboxMySQL(t, db, 1)
 
@@ -582,7 +582,7 @@ func TestRelayBackoff_Pure(t *testing.T) {
 // TestRelay_ListDeadLettered_Empty returns an empty slice when no dead rows exist.
 func TestRelay_ListDeadLettered_Empty(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	relay := mypkg.NewRelay(db, &recordingPub{})
 	dead, err := relay.ListDeadLettered(t.Context(), 10)
@@ -593,7 +593,7 @@ func TestRelay_ListDeadLettered_Empty(t *testing.T) {
 // TestRelay_Redrive_NoIds is a no-op.
 func TestRelay_Redrive_NoIds(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	relay := mypkg.NewRelay(db, &recordingPub{})
 	n, err := relay.Redrive(t.Context())
@@ -605,7 +605,7 @@ func TestRelay_Redrive_NoIds(t *testing.T) {
 // (e.g., closed connection) is propagated from DrainOnce and terminates Run.
 func TestRelay_DrainOnce_InfraError(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	// Close the DB so all operations fail immediately.
 	require.NoError(t, db.Close())
 
@@ -619,7 +619,7 @@ func TestRelay_DrainOnce_InfraError(t *testing.T) {
 // error (not just context.Canceled) when the DB is unavailable.
 func TestRelay_Run_PropagatesInfraError(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	// Close the DB so DrainOnce fails on the first call within Run.
 	require.NoError(t, db.Close())
 
@@ -634,7 +634,7 @@ func TestRelay_Run_PropagatesInfraError(t *testing.T) {
 // TestRelay_ListDeadLettered_ClosedDB verifies that ListDeadLettered propagates a DB error.
 func TestRelay_ListDeadLettered_ClosedDB(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	require.NoError(t, db.Close())
 
 	relay := mypkg.NewRelay(db, &recordingPub{})
@@ -646,7 +646,7 @@ func TestRelay_ListDeadLettered_ClosedDB(t *testing.T) {
 // TestRelay_ListDeadLettered_MultipleRows verifies ordering and limit for multiple dead rows.
 func TestRelay_ListDeadLettered_MultipleRows(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	base := time.Now().UTC().Truncate(time.Second)
 	for i := range 5 {
@@ -674,7 +674,7 @@ func TestRelay_ListDeadLettered_MultipleRows(t *testing.T) {
 // invalid JSON payload causes DrainOnce to return an unmarshal error.
 func TestRelay_DrainOnce_BadJSONReturnsError(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	// MySQL JSON column rejects non-object JSON at insert time; use a valid
 	// JSON value (a quoted string) that json.Unmarshal cannot decode into map[string]any.
@@ -697,7 +697,7 @@ func TestRelay_DrainOnce_BadJSONReturnsError(t *testing.T) {
 // TestRelay_Redrive_MultipleIds verifies that Redrive handles multiple IDs at once.
 func TestRelay_Redrive_MultipleIds(t *testing.T) {
 	t.Parallel()
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	base := time.Now().UTC().Truncate(time.Second)
 	fc := clockwork.NewFakeClockAt(base)

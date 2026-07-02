@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -35,7 +35,7 @@ func listArmedDirect(t *testing.T, pool *pgxpool.Pool) []string {
 // TimerStore.ListArmed by closing the pool before the call.
 func TestPgTimerStoreListArmedClosedPool(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	ts := pg.NewTimerStore(pool)
 
@@ -51,7 +51,7 @@ func TestPgTimerStoreListArmedClosedPool(t *testing.T) {
 // with the instance state change (ADR-0027).
 func TestStorePersistsTimerOpsAtomically(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	store := pg.NewStore(pool)
 
@@ -99,7 +99,7 @@ func TestStorePersistsTimerOpsAtomically(t *testing.T) {
 
 func TestPgTimerStoreListArmedOrdered(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	store := pg.NewStore(pool)
 	ts := pg.NewTimerStore(pool)

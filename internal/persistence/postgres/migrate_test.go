@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 )
 
 func TestMigrateCreatesTables(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
@@ -27,7 +27,7 @@ func TestMigrateCreatesTables(t *testing.T) {
 
 func TestMigrateIsIdempotent(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	require.NoError(t, pg.Migrate(t.Context(), pool)) // second run is a no-op
 }
@@ -36,7 +36,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 // when the underlying *sql.DB cannot reach the database (pool is closed before use).
 func TestMigrateFailsOnClosedPool(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	pool.Close() // close the pool so stdlib.OpenDBFromPool yields an unusable *sql.DB
 
 	err := pg.Migrate(t.Context(), pool)
@@ -47,7 +47,7 @@ func TestMigrateFailsOnClosedPool(t *testing.T) {
 // columns to wrkflw_outbox and creates the wrkflw_processed_message table.
 func TestMigration0003AddsDLQAndDedup(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	// Assert new columns exist on wrkflw_outbox.

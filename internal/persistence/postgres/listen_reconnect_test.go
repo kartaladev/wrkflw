@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 )
 
@@ -24,7 +24,7 @@ import (
 //  5. The test waits for Run to return, then cancels runCtx.
 //  6. The backoff select fires ctx.Done and listenLoop exits.
 func TestListenLoopAcquireFailBackoff(t *testing.T) {
-	mainPool := database.RunTestDatabase(t)
+	mainPool := dbtest.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), mainPool))
 
 	// Create a new pool pointing at the same database, then close it immediately.
@@ -65,7 +65,7 @@ func TestListenLoopAcquireFailBackoff(t *testing.T) {
 // TestListenLoopExitsOnContextCancellation verifies that a relay started with
 // WithListenNotify exits cleanly when the run context is cancelled.
 func TestListenLoopExitsOnContextCancellation(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, postgres.Migrate(t.Context(), pool))
 
 	// Synchronize on the listen loop's ACTUAL establishment (not a sleep): the

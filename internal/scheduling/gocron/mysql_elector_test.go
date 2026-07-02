@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
 
@@ -20,7 +20,7 @@ import (
 // after the leader Closes, the follower wins leadership on its next attempt
 // (natural failover, no lease loop). MySQL uses GET_LOCK/RELEASE_ALL_LOCKS.
 func TestMySQLElectorLeadership(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	electorA, err := sched.NewMySQLElector(ctx, db)
@@ -50,7 +50,7 @@ func TestMySQLElectorLeadership(t *testing.T) {
 // (ADR-0072): when an instance wins leadership, the registered
 // on-leadership-acquired callback fires asynchronously.
 func TestMySQLElectorInvokesOnLeadershipAcquired(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	acquired := make(chan struct{}, 1)
@@ -74,7 +74,7 @@ func TestMySQLElectorInvokesOnLeadershipAcquired(t *testing.T) {
 // TestMySQLElectorCloseIdempotent proves Close is idempotent — mirrors the
 // AdvisoryLockOwnership contract: a second Close returns nil without acting.
 func TestMySQLElectorCloseIdempotent(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	elector, err := sched.NewMySQLElector(ctx, db)
@@ -92,7 +92,7 @@ func TestMySQLElectorCloseIdempotent(t *testing.T) {
 // step-down can clear isLeader while the session lock is still held, so we need
 // Close to release locks regardless of the isLeader flag.
 func TestMySQLElectorCloseIdempotentAfterLeadership(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	elector, err := sched.NewMySQLElector(ctx, db)
@@ -111,7 +111,7 @@ func TestMySQLElectorCloseIdempotentAfterLeadership(t *testing.T) {
 // two electors contending under DIFFERENT keys can both be leaders, letting
 // multiple independent engines coexist in one database.
 func TestMySQLElectorKeyOverride(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	electorA, err := sched.NewMySQLElector(ctx, db, sched.WithMySQLElectorKey("mysql-engine-a"))
@@ -129,7 +129,7 @@ func TestMySQLElectorKeyOverride(t *testing.T) {
 // TestMySQLElectorAfterCloseIsNotLeader proves that after Close, IsLeader
 // returns ErrNotLeader and does not attempt further DB access.
 func TestMySQLElectorAfterCloseIsNotLeader(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	elector, err := sched.NewMySQLElector(ctx, db)

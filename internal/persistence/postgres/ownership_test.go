@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 )
 
@@ -19,7 +19,7 @@ import (
 //   - B acquires same id      → false (A holds it)
 //   - A releases              → B acquires → true
 func TestAdvisoryLockOwnershipContention(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	// Two independent "processes", each with its own dedicated session connection.
 	procA, err := postgres.NewAdvisoryLockOwnership(t.Context(), pool)

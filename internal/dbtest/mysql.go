@@ -1,4 +1,4 @@
-package database
+package dbtest
 
 import (
 	"context"
@@ -35,15 +35,10 @@ var (
 	mysqlCreateMu   sync.Mutex
 )
 
-// RunTestMySQL starts (once per test binary) a MySQL 8.0 testcontainer, creates
-// a fresh per-test database, opens a *sql.DB with parseTime=true&loc=UTC, and
-// registers cleanup via t.Cleanup. The connection is safe to use immediately —
-// Ping is verified before returning.
-//
-// Requires a running Docker daemon.
-func RunTestMySQL(t *testing.T) *sql.DB {
-	t.Helper()
-
+// initMySQLContainer initialises the shared MySQL 8.0 testcontainer (once per
+// test binary) and populates mysqlShared / mysqlSharedErr. It is called by both
+// RunTestMySQL and RunTestMySQLDSN so neither duplicates the startup logic.
+func initMySQLContainer() {
 	mysqlSharedOnce.Do(func() {
 		ctx := context.Background()
 
@@ -85,10 +80,16 @@ func RunTestMySQL(t *testing.T) *sql.DB {
 		// Container intentionally not terminated here; Ryuk reaps it when the
 		// test binary exits.
 	})
-	require.NoError(t, mysqlSharedErr)
+}
+
+// allocTestMySQLDB creates a fresh per-test database in the shared container,
+// registers a DROP DATABASE cleanup, and returns (dbName, dsn). Callers must
+// invoke initMySQLContainer (and check mysqlSharedErr) before calling this.
+func allocTestMySQLDB(t *testing.T) (dbName, dsn string) {
+	t.Helper()
 
 	n := mysqlDBCounter.Add(1)
-	dbName := fmt.Sprintf("wrkflw_test_%d", n)
+	dbName = fmt.Sprintf("wrkflw_test_%d", n)
 	ctx := context.Background()
 
 	// Create per-test database using a root connection to the default DB.
@@ -109,7 +110,25 @@ func RunTestMySQL(t *testing.T) *sql.DB {
 		}
 	})
 
-	db, err := sql.Open("mysql", mysqlShared.rootDSN(dbName))
+	return dbName, mysqlShared.rootDSN(dbName)
+}
+
+// RunTestMySQL starts (once per test binary) a MySQL 8.0 testcontainer, creates
+// a fresh per-test database, opens a *sql.DB with parseTime=true&loc=UTC, and
+// registers cleanup via t.Cleanup. The connection is safe to use immediately —
+// Ping is verified before returning.
+//
+// Requires a running Docker daemon.
+func RunTestMySQL(t *testing.T) *sql.DB {
+	t.Helper()
+
+	initMySQLContainer()
+	require.NoError(t, mysqlSharedErr)
+
+	_, dsn := allocTestMySQLDB(t)
+	ctx := context.Background()
+
+	db, err := sql.Open("mysql", dsn)
 	require.NoError(t, err, "open per-test mysql db")
 	db.SetMaxOpenConns(8)
 	db.SetConnMaxLifetime(time.Minute)
@@ -118,4 +137,25 @@ func RunTestMySQL(t *testing.T) *sql.DB {
 	require.NoError(t, db.PingContext(ctx), "ping per-test mysql db")
 	require.NoError(t, mysqlpersistence.Migrate(ctx, db), "auto-migrate per-test mysql db")
 	return db
+}
+
+// RunTestMySQLDSN starts the shared MySQL testcontainer (same singleton as
+// RunTestMySQL), creates a fresh per-test database, and returns the raw DSN
+// string — identical to what RunTestMySQL passes to sql.Open internally.
+// Use this when a test needs to manipulate the DSN (e.g. to inject a wrong
+// loc= for negative-probe tests) rather than accept the pre-opened *sql.DB.
+//
+// The per-test database is created and registered for cleanup exactly as in
+// RunTestMySQL. Migrations are NOT applied; call persistence.MigrateMySQL if
+// the schema is needed.
+//
+// Requires a running Docker daemon.
+func RunTestMySQLDSN(t *testing.T) string {
+	t.Helper()
+
+	initMySQLContainer()
+	require.NoError(t, mysqlSharedErr)
+
+	_, dsn := allocTestMySQLDB(t)
+	return dsn
 }

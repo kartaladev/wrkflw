@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -67,7 +67,7 @@ func TestMapConflict(t *testing.T) {
 // when the pool is closed (exercises the error-propagation path in Create).
 func TestStoreCreateFailsOnClosedPool(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	// Close the pool before using it so Begin will fail.
 	pool.Close()
 
@@ -80,7 +80,7 @@ func TestStoreCreateFailsOnClosedPool(t *testing.T) {
 // when the pool is closed (exercises the error-propagation path in Commit).
 func TestStoreCommitFailsOnClosedPool(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	pool.Close()
 
 	s := pg.NewStore(pool)
@@ -92,7 +92,7 @@ func TestStoreCommitFailsOnClosedPool(t *testing.T) {
 // when the pool is closed.
 func TestStoreLoadFailsOnClosedPool(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	pool.Close()
 
 	s := pg.NewStore(pool)
@@ -106,7 +106,7 @@ func TestStoreLoadFailsOnClosedPool(t *testing.T) {
 // when the pool is closed.
 func TestStoreEntriesFailsOnClosedPool(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	pool.Close()
 
 	s := pg.NewStore(pool)
@@ -138,7 +138,7 @@ func TestStoreOutboxDedupKeyIsUnique(t *testing.T) {
 	t.Parallel()
 
 	// Provision a single DB + pool so we can both drive the store and issue a raw INSERT.
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	s := pg.NewStore(pool)
 

@@ -22,15 +22,17 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql" // register "mysql" driver
+	"github.com/go-sql-driver/mysql"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	mysqlstore "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -93,7 +95,14 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 //	persistence.MigrateMySQL(ctx, db)
 //	store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
 //	runner := runtime.NewRunner(nil, store)
-func OpenMySQL(_ context.Context, db *sql.DB, opts ...MySQLOption) (Store, error) {
+func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, error) {
+	q, err := database.From(db)
+	if err != nil {
+		return nil, err
+	}
+	if err := database.ProbeUTC(ctx, q, database.MySQL); err != nil {
+		return nil, err
+	}
 	return mysqlstore.NewStore(db, opts...), nil
 }
 
@@ -384,6 +393,30 @@ func NewMySQLDefinitionStore(db *sql.DB) DefinitionStore {
 //	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
 func NewMySQLPruner(db *sql.DB) Pruner {
 	return mysqlstore.NewPruner(db)
+}
+
+// MySQLDSN returns base with the parameters required for correct DATETIME(6)
+// time handling: parseTime=true, loc=UTC, and time_zone='+00:00' (applied as a
+// session SET on every connection by go-sql-driver). Existing values are
+// overridden so the result is idempotent regardless of what base contains.
+//
+// Example:
+//
+//	dsn, err := persistence.MySQLDSN("user:pass@tcp(127.0.0.1:3306)/wrkflw")
+//	if err != nil { ... }
+//	db, _ := sql.Open("mysql", dsn)
+func MySQLDSN(base string) (string, error) {
+	cfg, err := mysql.ParseDSN(base)
+	if err != nil {
+		return "", fmt.Errorf("workflow-persistence-mysql: parse dsn: %w", err)
+	}
+	cfg.ParseTime = true
+	cfg.Loc = time.UTC
+	if cfg.Params == nil {
+		cfg.Params = map[string]string{}
+	}
+	cfg.Params["time_zone"] = "'+00:00'"
+	return cfg.FormatDSN(), nil
 }
 
 // Compile-time checks: MySQL internal concrete types must satisfy the same

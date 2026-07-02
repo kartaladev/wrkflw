@@ -6,12 +6,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mysqlpkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 )
 
 func TestMigrate_CreatesAllTables(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := context.Background()
 
 	require.NoError(t, mysqlpkg.Migrate(ctx, db), "migrate must succeed")
@@ -48,7 +48,7 @@ func TestMigrate_CreatesAllTables(t *testing.T) {
 func TestMigrate_IsIdempotent(t *testing.T) {
 	// RunTestMySQL already runs Migrate once internally; calling it again on the
 	// same *sql.DB (same goose_db_version table) proves re-running is a no-op.
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 	ctx := context.Background()
 
 	require.NoError(t, mysqlpkg.Migrate(ctx, db), "migrate on already-migrated db must be idempotent")

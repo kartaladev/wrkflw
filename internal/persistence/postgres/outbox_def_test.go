@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -32,7 +32,7 @@ func (p *defCapturePub) Publish(_ context.Context, ev runtime.OutboxEvent) error
 // by the relay onto the republished OutboxEvent, so the publisher can set the
 // "def" metadata the chaining handler projects into PredecessorDefinitionRef.
 func TestRelayCarriesDefThroughOutbox(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	store := pg.NewStore(pool)
 	ctx := t.Context()

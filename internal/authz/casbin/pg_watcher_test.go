@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestPGWatcherNotifiesOtherNodesNotSelf(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	const channel = "wrkflw_casbin_policy_test"
 
 	// Each watcher signals its ready channel once LISTEN is established, so the

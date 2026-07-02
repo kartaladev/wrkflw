@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -75,7 +75,7 @@ func seedFacadeTerminalLink(t *testing.T, pgStore *pg.Store, pool *pgxpool.Pool,
 // to the Postgres lease machinery (ADR-0031).
 func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 	t.Run("WithCallLinkLease options compile and a leased store is non-nil", func(t *testing.T) {
-		pool := database.RunTestDatabase(t)
+		pool := dbtest.RunTestDatabase(t)
 		require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 		fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
@@ -88,7 +88,7 @@ func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 	})
 
 	t.Run("leased ClaimPending reserves row from a concurrent second owner", func(t *testing.T) {
-		pool := database.RunTestDatabase(t)
+		pool := dbtest.RunTestDatabase(t)
 		require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 		fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
@@ -123,7 +123,7 @@ func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 	})
 
 	t.Run("zero-option NewCallLinkStore call still compiles (backward compat)", func(t *testing.T) {
-		pool := database.RunTestDatabase(t)
+		pool := dbtest.RunTestDatabase(t)
 		require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 		cls := persistence.NewCallLinkStore(pool)

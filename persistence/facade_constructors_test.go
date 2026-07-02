@@ -14,12 +14,12 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 )
 
 func TestTimerStoreFacade(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	ts := persistence.NewTimerStore(pool)
@@ -31,7 +31,7 @@ func TestTimerStoreFacade(t *testing.T) {
 }
 
 func TestOpenPostgresWithStoreObservabilityOptions(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	store, err := persistence.OpenPostgres(t.Context(), pool,

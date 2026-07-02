@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	mypkg "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
 	"go.uber.org/goleak"
 )
@@ -17,7 +17,7 @@ import (
 //   - Owner B acquires same instanceID while A holds it → false.
 //   - After A releases, B acquires → true.
 func TestOwnership_AcquireExclusiveThenRelease(t *testing.T) {
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	procA, err := mypkg.NewAdvisoryLockOwnership(t.Context(), db)
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestOwnership_CloseIdempotentReleasesAll(t *testing.T) {
 		goleak.IgnoreTopFunction("database/sql.(*DB).connectionOpener"),
 	)
 
-	db := database.RunTestMySQL(t)
+	db := dbtest.RunTestMySQL(t)
 
 	o, err := mypkg.NewAdvisoryLockOwnership(t.Context(), db)
 	require.NoError(t, err)

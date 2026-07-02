@@ -8,7 +8,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
 
@@ -17,7 +17,7 @@ import (
 // per-timer advisory lock (key = timerID) is obtainable. Cases share one pool and
 // run sequentially (each holds a pooled connection), so they are not parallel.
 func TestGocronSchedulerLockerGatesFire(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	type testCase struct {
 		name      string

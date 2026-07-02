@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -44,7 +44,7 @@ func TestRelayOutboxStats(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pool := database.RunTestDatabase(t)
+			pool := dbtest.RunTestDatabase(t)
 			require.NoError(t, pg.Migrate(t.Context(), pool))
 
 			if tc.seed {
@@ -106,7 +106,7 @@ func TestTimerStoreStats(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pool := database.RunTestDatabase(t)
+			pool := dbtest.RunTestDatabase(t)
 			require.NoError(t, pg.Migrate(t.Context(), pool))
 
 			if tc.seed {

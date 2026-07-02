@@ -8,7 +8,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -23,7 +23,7 @@ func leaseClockBase() time.Time {
 // freshly migrated pool.
 func newLeaseCallLinkReader(t *testing.T, opts ...pg.CallLinkOption) (*pg.CallLinkStore, *pg.Store, *pgxpool.Pool) {
 	t.Helper()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	cls := pg.NewCallLinkStore(pool, opts...)
 	store := pg.NewStore(pool)

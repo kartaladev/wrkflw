@@ -41,6 +41,7 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error
 		if err := rows.Scan(&a.InstanceID, &a.DefID, &a.DefVersion, &a.TimerID, &a.FireAt, &kind); err != nil {
 			return nil, fmt.Errorf("workflow-postgres: scan armed timer: %w", err)
 		}
+		a.FireAt = a.FireAt.UTC() // normalize TIMESTAMPTZ to UTC-located (pgx may return host zone)
 		a.Kind = engine.TimerKind(kind)
 		out = append(out, a)
 	}
@@ -63,6 +64,10 @@ func (s *TimerStore) Stats(ctx context.Context) (runtime.TimerStats, error) {
 	).Scan(&armed, &nextFireAt)
 	if err != nil {
 		return runtime.TimerStats{}, fmt.Errorf("workflow-postgres: timer store: stats: %w", err)
+	}
+	if nextFireAt != nil {
+		t := nextFireAt.UTC() // normalize TIMESTAMPTZ to UTC-located (pgx may return host zone)
+		nextFireAt = &t
 	}
 	return runtime.TimerStats{
 		Armed:      armed,

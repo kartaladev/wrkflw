@@ -8,7 +8,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
 
@@ -19,7 +19,7 @@ import (
 // skips every fire. Cases share one pool and run sequentially, so they are not
 // parallel.
 func TestGocronSchedulerElectorGatesFire(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	type testCase struct {
 		name      string
@@ -88,7 +88,7 @@ func TestGocronSchedulerElectorGatesFire(t *testing.T) {
 // modes cannot be combined: configuring both a Locker and an Elector is a
 // construction error (ErrLockerElectorConflict), not silent precedence.
 func TestGocronSchedulerLockerElectorMutuallyExclusive(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	elector, err := sched.NewPostgresElector(ctx, pool, sched.WithElectorKey("conflict"))

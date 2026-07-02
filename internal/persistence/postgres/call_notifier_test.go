@@ -10,7 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -67,7 +67,7 @@ func callNotifierParentDef() *model.ProcessDefinition {
 func TestCallNotifierCrashSafety(t *testing.T) {
 	ctx := t.Context()
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(ctx, pool))
 
 	clk := clock.System()
@@ -190,7 +190,7 @@ func TestCallNotifierCrashSafety(t *testing.T) {
 func TestCallNotifierDrainIdempotentDuplicate(t *testing.T) {
 	ctx := t.Context()
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(ctx, pool))
 
 	clk := clock.System()

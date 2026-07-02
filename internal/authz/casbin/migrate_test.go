@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestMigrateCasbinCreatesRuleTable(t *testing.T) {
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 
 	require.NoError(t, authzcasbin.MigrateCasbin(t.Context(), pool))
 	// Idempotent: a second run is a no-op.

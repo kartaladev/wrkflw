@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -15,7 +15,7 @@ import (
 // newCallLinkReader returns a freshly migrated CallLinkStore + pool for read-side tests.
 func newCallLinkReader(t *testing.T) (runtime.CallLinkStore, *pgxpool.Pool) {
 	t.Helper()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	return pg.NewCallLinkStore(pool), pool
 }
@@ -23,7 +23,7 @@ func newCallLinkReader(t *testing.T) (runtime.CallLinkStore, *pgxpool.Pool) {
 // newCallLinkStore returns a freshly migrated store + pool for call-link tests.
 func newCallLinkStore(t *testing.T) (*pg.Store, *pgxpool.Pool) {
 	t.Helper()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 	return pg.NewStore(pool), pool
 }

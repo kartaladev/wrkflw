@@ -13,7 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -90,7 +90,7 @@ func boundaryResumeDef() *model.ProcessDefinition {
 func TestPostgresParkedTimerResumesAfterReload(t *testing.T) {
 	t.Parallel()
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -168,7 +168,7 @@ func TestPostgresParkedTimerResumesAfterReload(t *testing.T) {
 func TestPostgresParkedBoundaryResumesAfterReload(t *testing.T) {
 	t.Parallel()
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	startAt := time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC)
@@ -290,7 +290,7 @@ func retryResumeDef() *model.ProcessDefinition {
 func TestPostgresParkedRetryResumesAfterReload(t *testing.T) {
 	t.Parallel()
 
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	startAt := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)

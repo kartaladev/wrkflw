@@ -11,7 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -147,7 +147,7 @@ func (p *poisonPub) publishCount(dedup string) int {
 // are published and a second drain returns 0.
 func TestRelayDrainsRows(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	seedOutbox(t, pool, 3)
@@ -173,7 +173,7 @@ func TestRelayDrainsRows(t *testing.T) {
 // verifies DrainOnce only claims the unlocked rows (SKIP LOCKED semantics).
 func TestRelaySkipLockedNoDoublePublish(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	// Seed 4 rows. We will lock 2 of them in a separate transaction to simulate
@@ -237,7 +237,7 @@ func TestRelaySkipLockedNoDoublePublish(t *testing.T) {
 // it persists the row's retry state and reports 0 successfully-published rows.
 func TestRelayPublishErrorLeavesRowUnpublished(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	seedOutbox(t, pool, 1)
@@ -258,7 +258,7 @@ func TestRelayPublishErrorLeavesRowUnpublished(t *testing.T) {
 // cancelled (no goroutine leak) and returns ctx.Err().
 func TestRelayRunCancellation(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	relay := pg.NewRelay(pool, &recordingPub{}, pg.WithPollInterval(10*time.Millisecond))
@@ -283,7 +283,7 @@ func TestRelayRunCancellation(t *testing.T) {
 // returns 0 without error.
 func TestRelayDrainOnceEmptyOutbox(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	relay := pg.NewRelay(pool, &recordingPub{})
@@ -295,7 +295,7 @@ func TestRelayDrainOnceEmptyOutbox(t *testing.T) {
 // TestRelayBatchSizeOption verifies that WithBatchSize limits rows per drain.
 func TestRelayBatchSizeOption(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	// Seed 5 rows but set batch size to 2.
@@ -331,7 +331,7 @@ func TestRelayBatchSizeOption(t *testing.T) {
 // fix: a broker outage no longer crashes the relay loop.
 func TestRelayRunAbsorbsPublishFailures(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	// Seed 1 row so each drain attempts to publish and fails.
@@ -391,7 +391,7 @@ func (p *capturingPub) Publish(_ context.Context, ev runtime.OutboxEvent) error 
 // watermill adapter can set a stable message UUID + partition key.
 func TestRelayPopulatesDedupAndInstanceID(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	_, err := pool.Exec(t.Context(),
@@ -418,7 +418,7 @@ func TestRelayPopulatesDedupAndInstanceID(t *testing.T) {
 // error is properly wrapped and returned.
 func TestRelayDrainOncePayloadUnmarshalError(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	// Insert a row with a JSON string value (not an object).
@@ -444,7 +444,7 @@ func TestRelayDrainOncePayloadUnmarshalError(t *testing.T) {
 // MaxDeliveryAttempts. The healthy row is published exactly once and never again.
 func TestRelayPoisonIsolation(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	base := time.Now().UTC().Truncate(time.Second)
@@ -507,7 +507,7 @@ func TestRelayPoisonIsolation(t *testing.T) {
 // subsequent DrainOnce can pick it up again.
 func TestRelayDLQAdmin(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	base := time.Now().UTC().Truncate(time.Second)
@@ -602,7 +602,7 @@ func TestRelayDLQAdmin(t *testing.T) {
 // predicate even when the outbox is empty. A nil clock would panic there.
 func TestWithClockNilFallsBackToSystem(t *testing.T) {
 	t.Parallel()
-	pool := database.RunTestDatabase(t)
+	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, pg.Migrate(t.Context(), pool))
 
 	pub := &recordingPub{}
