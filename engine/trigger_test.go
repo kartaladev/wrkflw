@@ -161,16 +161,33 @@ func TestTimerFiredFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNewActionFailedJitteredCarriesFraction asserts that NewActionFailedJittered
-// stores JitterFraction and all other ActionFailed fields faithfully, and that
-// the result satisfies the Trigger interface.
+// TestNewActionFailedJitteredCarriesFraction asserts that NewActionFailed with
+// WithJitter stores JitterFraction and all other ActionFailed fields faithfully,
+// and that the result satisfies the Trigger interface.
 func TestNewActionFailedJitteredCarriesFraction(t *testing.T) {
 	at := time.Unix(0, 0)
-	f := engine.NewActionFailedJittered(at, "c-1", "boom", true, 0.5)
+	f := engine.NewActionFailed(at, "c-1", "boom", true, engine.WithJitter(0.5))
 	if f.JitterFraction != 0.5 || !f.Retryable || f.CommandID != "c-1" {
 		t.Fatalf("bad ActionFailed: %+v", f)
 	}
 	var _ engine.Trigger = f
+}
+
+// TestNewActionFailedJitterOption asserts that NewActionFailed supports a
+// variadic WithJitter option and that omitting the option leaves JitterFraction at 0.
+func TestNewActionFailedJitterOption(t *testing.T) {
+	at := time.Unix(0, 0)
+	base := engine.NewActionFailed(at, "cmd", "boom", true)
+	if base.JitterFraction != 0 {
+		t.Fatalf("default jitter = %v, want 0", base.JitterFraction)
+	}
+	jit := engine.NewActionFailed(at, "cmd", "boom", true, engine.WithJitter(0.5))
+	if jit.JitterFraction != 0.5 {
+		t.Fatalf("jitter = %v, want 0.5", jit.JitterFraction)
+	}
+	if !jit.Retryable || jit.CommandID != "cmd" || jit.Err != "boom" {
+		t.Fatalf("unexpected fields: %+v", jit)
+	}
 }
 
 // TestResolveIncidentIsTrigger asserts that ResolveIncident satisfies the Trigger
