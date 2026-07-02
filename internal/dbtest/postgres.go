@@ -1,8 +1,17 @@
-// Package dbtest provides the shared testcontainers helper for PostgreSQL tests.
+// Package dbtest provides the shared testcontainers helpers for database tests
+// against real PostgreSQL and MySQL instances.
 //
-// [RunTestDatabase] is the single entry point for all tests that need a real
-// PostgreSQL instance. It returns a connected [pgxpool.Pool] to a database that
-// is isolated to the calling test.
+// [RunTestDatabase] is the entry point for tests needing a real PostgreSQL
+// instance (returns a connected [pgxpool.Pool]); [RunTestMySQL] and
+// [RunTestMySQLDSN] (in mysql.go) are the MySQL equivalents. Each returns a
+// database isolated to the calling test.
+//
+// These helpers live in their own package (not in internal/database) so that
+// the internal/database and internal/database/transaction toolkit packages stay
+// free of any wrkflw imports (the extraction constraint — see ADR-0079);
+// this package may depend on internal/persistence/mysql for auto-migration.
+//
+// The PostgreSQL helper below:
 //
 // To avoid the resource storm of booting one container per test — which, under
 // high `-p 1` parallelism (GOMAXPROCS tests each starting a postgres:17-alpine

@@ -183,6 +183,7 @@ func scanMySQLChainLink(row rowScanner) (runtime.ChainLink, error) {
 		return runtime.ChainLink{}, err
 	}
 	link.Outcome = runtime.Outcome(outcome)
+	link.CreatedAt = link.CreatedAt.UTC() // normalize DATETIME(6) to UTC-located (guard against non-UTC loc)
 	if len(startVarsJSON) > 0 {
 		if err := json.Unmarshal(startVarsJSON, &link.StartVars); err != nil {
 			return runtime.ChainLink{}, fmt.Errorf("workflow-persistence-mysql: chain links: unmarshal start vars: %w", err)

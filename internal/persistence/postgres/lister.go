@@ -134,6 +134,11 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 		if err := rows.Scan(&instanceID, &defID, &defVersion, &status, &startedAt, &endedAt, &incidentCount); err != nil {
 			return runtime.InstancePage{}, fmt.Errorf("postgres lister: scan: %w", err)
 		}
+		startedAt = startedAt.UTC() // normalize TIMESTAMPTZ to UTC-located (pgx may return host zone)
+		if endedAt != nil {
+			t := endedAt.UTC() // normalize TIMESTAMPTZ to UTC-located (pgx may return host zone)
+			endedAt = &t
+		}
 		items = append(items, runtime.InstanceSummary{
 			InstanceID:    instanceID,
 			DefID:         defID,

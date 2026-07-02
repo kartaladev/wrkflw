@@ -332,6 +332,7 @@ func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.Dead
 		if err := rows.Scan(&dl.ID, &dl.InstanceID, &dl.Topic, &dl.RetryCount, &dl.LastError, &dl.CreatedAt); err != nil {
 			return nil, fmt.Errorf("workflow-postgres: relay: list dead-lettered: scan: %w", err)
 		}
+		dl.CreatedAt = dl.CreatedAt.UTC() // normalize TIMESTAMPTZ to UTC-located (pgx may return host zone)
 		out = append(out, dl)
 	}
 	if err := rows.Err(); err != nil {

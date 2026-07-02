@@ -89,14 +89,27 @@ storing it. This is the defence-in-depth layer: even if a future driver version 
 connection-pool configuration change shifts the returned `time.Time.Location()`, the
 value written into the engine's data structures is a UTC-located instant.
 
-In Phase 1, normalization is applied to the **timer `fire_at` read path** in both
-`internal/persistence/postgres/timerstore.go` (Postgres `ListArmed` and `Stats`) and
-`internal/persistence/mysql/timerstore.go` (MySQL `ListArmed` and `Stats`), as these
-are the most critical sites (a wrong fire instant causes timers to fire at the wrong
-moment or be missed entirely). Other scanned timestamp columns — instance `started_at`
-/ `ended_at` in the lister, dead-letter `created_at` in the relay, chain-link
-`created_at` — are **not yet normalized**; applying `.UTC()` uniformly across all
-remaining scan sites is a documented Phase-1.x follow-up.
+Normalization is applied to **all real scanned timestamp columns** across both dialects:
+
+| File | Column | Notes |
+|---|---|---|
+| `internal/persistence/postgres/timerstore.go` | `fire_at` | Phase 1 (original) |
+| `internal/persistence/mysql/timerstore.go` | `fire_at` | Phase 1 (original) |
+| `internal/persistence/postgres/lister.go` | `started_at`, `ended_at` | Phase 1.x follow-up; `ended_at` is nil-safe |
+| `internal/persistence/mysql/lister.go` | `started_at`, `ended_at` | Phase 1.x follow-up; `ended_at` is nil-safe |
+| `internal/persistence/postgres/relay.go` | dead-letter `created_at` | Phase 1.x follow-up |
+| `internal/persistence/mysql/relay.go` | dead-letter `created_at` | Phase 1.x follow-up |
+| `internal/persistence/postgres/chainlink.go` | chain-link `created_at` | Phase 1.x follow-up |
+| `internal/persistence/mysql/chainlink.go` | chain-link `created_at` | Phase 1.x follow-up |
+
+Regression tests asserting UTC-located, instant-preserved rehydration under
+`TZ=Asia/Jakarta` exist in `time_roundtrip_test.go` for both dialects. The
+Postgres tests for the Phase 1.x sites produced a genuine red state under
+`TZ=Asia/Jakarta` before the fix (pgx returns `TIMESTAMPTZ` in `time.Local`
+when the host zone is non-UTC). The MySQL tests passed pre-fix (the
+`loc=UTC` DSN setting causes the driver to return UTC-located values already)
+and serve as regression guards ensuring the normalization call is never
+removed.
 
 ## Consequences
 
@@ -125,10 +138,11 @@ remaining scan sites is a documented Phase-1.x follow-up.
   preserves the instant regardless of session time zone; the `.UTC()` call at scan sites
   corrects the `time.Time.Location()` field and documents the intent, guarding against
   future driver or configuration changes that might return a non-UTC-located `time.Time`.
-- **Phase-1.x follow-up: complete normalize-on-read coverage.** Currently only the timer
-  `fire_at` read path normalizes to UTC. Remaining timestamp columns (instance
-  `started_at`/`ended_at`, dead-letter `created_at`, chain-link `created_at`) are a
-  documented follow-up; they are not on the engine's hot execution path.
+- **Normalize-on-read coverage is complete.** All real scanned timestamp columns —
+  timer `fire_at`, instance `started_at`/`ended_at` in the lister, dead-letter
+  `created_at` in the relay, and chain-link `created_at` — are normalized to UTC
+  on read in both the Postgres and MySQL dialects. There are no outstanding
+  normalize-on-read follow-ups for the current persistence surface.
 - **MySQL `DATETIME(6)` vs Postgres `TIMESTAMPTZ` difference is managed, not
   eliminated.** The two column types carry different semantics (zoneless vs. zone-aware).
   The three-layer discipline bridges the gap at the driver boundary; the application code

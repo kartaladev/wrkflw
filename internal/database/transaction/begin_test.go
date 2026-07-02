@@ -12,42 +12,39 @@ import (
 
 func TestBeginCommitPersists(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
-	base, _ := database.From(pool)
-	_, _ = base.Exec(t.Context(), `CREATE TABLE tb (id int)`)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE tb (id int)`)
+	require.NoError(t, err)
 
 	tx, ctx, err := transaction.Begin(t.Context(), pool)
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO tb VALUES (1)`); err != nil {
-		t.Fatalf("exec: %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit: %v", err)
-	}
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `INSERT INTO tb VALUES (1)`)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+
 	var n int
-	_ = base.QueryRow(t.Context(), `SELECT count(*) FROM tb`).Scan(&n)
-	if n != 1 {
-		t.Fatalf("count = %d, want 1", n)
-	}
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM tb`).Scan(&n))
+	assert.Equal(t, 1, n)
 }
 
 func TestBeginMarkRollbackRollsBack(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
-	base, _ := database.From(pool)
-	_, _ = base.Exec(t.Context(), `CREATE TABLE tr (id int)`)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE tr (id int)`)
+	require.NoError(t, err)
 
-	tx, ctx, _ := transaction.Begin(t.Context(), pool)
-	_, _ = tx.Exec(ctx, `INSERT INTO tr VALUES (1)`)
+	tx, ctx, err := transaction.Begin(t.Context(), pool)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `INSERT INTO tr VALUES (1)`)
+	require.NoError(t, err)
 	transaction.MarkRollback(ctx)
-	if err := tx.Commit(ctx); err != nil { // honors mark -> rolls back
-		t.Fatalf("commit: %v", err)
-	}
+	require.NoError(t, tx.Commit(ctx)) // honors mark -> rolls back
+
 	var n int
-	_ = base.QueryRow(t.Context(), `SELECT count(*) FROM tr`).Scan(&n)
-	if n != 0 {
-		t.Fatalf("count = %d, want 0 (rolled back)", n)
-	}
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM tr`).Scan(&n))
+	assert.Equal(t, 0, n, "rolled back")
 }
 
 // TestBeginRejectsUnsupportedConn covers the error path in Begin (83.3% → 100%).
@@ -101,8 +98,9 @@ func TestOwnerQuerierQueryAndQueryRow(t *testing.T) {
 // TestOwnerQuerierRollback directly exercises ownerQuerier.Rollback (0% coverage).
 func TestOwnerQuerierRollback(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
-	base, _ := database.From(pool)
-	_, err := base.Exec(t.Context(), `CREATE TABLE orb (id int)`)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE orb (id int)`)
 	require.NoError(t, err)
 
 	tx, ctx, err := transaction.Begin(t.Context(), pool)
@@ -115,6 +113,6 @@ func TestOwnerQuerierRollback(t *testing.T) {
 	require.NoError(t, tx.Rollback(ctx))
 
 	var n int
-	_ = base.QueryRow(t.Context(), `SELECT count(*) FROM orb`).Scan(&n)
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM orb`).Scan(&n))
 	assert.Equal(t, 0, n, "rolled back: row must not persist")
 }

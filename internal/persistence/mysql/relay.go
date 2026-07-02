@@ -236,6 +236,7 @@ func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.Dead
 		if err := rows.Scan(&dl.ID, &dl.InstanceID, &dl.Topic, &dl.RetryCount, &dl.LastError, &dl.CreatedAt); err != nil {
 			return nil, fmt.Errorf("workflow-persistence-mysql: relay: list dead-lettered: scan: %w", err)
 		}
+		dl.CreatedAt = dl.CreatedAt.UTC() // normalize DATETIME(6) to UTC-located (guard against non-UTC loc)
 		out = append(out, dl)
 	}
 	if err := rows.Err(); err != nil {
