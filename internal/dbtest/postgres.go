@@ -1,10 +1,13 @@
-// Package dbtest provides the shared testcontainers helpers for database tests
-// against real PostgreSQL and MySQL instances.
+// Package dbtest provides the shared helpers for database tests against real
+// PostgreSQL and MySQL instances (via testcontainers) and an in-process SQLite
+// database (no Docker required).
 //
 // [RunTestDatabase] is the entry point for tests needing a real PostgreSQL
 // instance (returns a connected [pgxpool.Pool]); [RunTestMySQL] and
-// [RunTestMySQLDSN] (in mysql.go) are the MySQL equivalents. Each returns a
-// database isolated to the calling test.
+// [RunTestMySQLDSN] (in mysql.go) are the MySQL equivalents; [RunTestSQLite]
+// (in sqlite.go) provides a file-backed SQLite database with all migrations
+// applied — no Docker daemon is required. Each returns a database isolated to
+// the calling test.
 //
 // These helpers live in their own package (not in internal/database) so that
 // the internal/database and internal/database/transaction toolkit packages stay

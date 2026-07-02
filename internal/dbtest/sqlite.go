@@ -6,20 +6,19 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	store "github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	_ "modernc.org/sqlite" // register "sqlite" driver
 )
 
 // RunTestSQLite opens a fresh file-backed SQLite database in t.TempDir(),
 // configures it with WAL journal mode, a 5 000 ms busy timeout, and foreign-key
-// enforcement, and returns the *sql.DB torn down via t.Cleanup.
+// enforcement, applies all wrkflw SQLite migrations via [store.MigrateSQLite],
+// and returns the *sql.DB torn down via t.Cleanup.
 //
 // The helper is in-process: no Docker daemon is required. SetMaxOpenConns(1)
 // enforces single-writer access, matching SQLite's write-serialisation model.
 // This is a lightweight, test-only analogue of [RunTestDatabase] / [RunTestMySQL]
 // for use when a real networked database is unnecessary.
-//
-// Note: migrations are NOT applied here — they will be wired by Task 6 once the
-// SQLite migrate entry point exists. Look for the TODO below in the source.
 func RunTestSQLite(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -35,9 +34,7 @@ func RunTestSQLite(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 
 	require.NoError(t, db.PingContext(t.Context()), "ping sqlite")
-
-	// TODO(Task 6): apply SQLite migrations here once the migrate entry point exists.
-	// require.NoError(t, persistencesqlite.Migrate(t.Context(), db), "migrate sqlite")
+	require.NoError(t, store.MigrateSQLite(t.Context(), db), "migrate sqlite")
 
 	return db
 }
