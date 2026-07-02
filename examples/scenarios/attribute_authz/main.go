@@ -174,9 +174,9 @@ func demoCasbinRBAC(ctx context.Context) {
 	// AuthzSpec.Roles but not Privileges (which is reserved for casbin-style checks).
 	// The cleanest path is to drive TaskService.Claim directly with a pre-stored task.
 	taskStore := humantask.NewMemTaskStore()
-	const taskToken = "finance-tok-001"
+	const financeTaskID = "finance-task-001" // opaque task identifier (not a credential)
 	if uErr := taskStore.Upsert(ctx, humantask.HumanTask{
-		TaskToken:   taskToken,
+		TaskToken:   financeTaskID,
 		Eligibility: spec,
 		Vars:        map[string]any{},
 		State:       humantask.Unclaimed,
@@ -188,7 +188,7 @@ func demoCasbinRBAC(ctx context.Context) {
 
 	// Actor WITH the "approver" role → casbin policy grants finance-task claim.
 	withRole := authz.Actor{ID: "bob", Roles: []string{"approver"}}
-	_, err = svc.Claim(ctx, taskToken, withRole)
+	_, err = svc.Claim(ctx, financeTaskID, withRole)
 	if err == nil {
 		fmt.Println("  Actor with 'approver' role: ALLOW (expected)")
 	} else {
@@ -197,7 +197,7 @@ func demoCasbinRBAC(ctx context.Context) {
 
 	// Reset task state so the second claim attempt is on an unclaimed task.
 	if uErr := taskStore.Upsert(ctx, humantask.HumanTask{
-		TaskToken:   taskToken,
+		TaskToken:   financeTaskID,
 		Eligibility: spec,
 		Vars:        map[string]any{},
 		State:       humantask.Unclaimed,
@@ -207,7 +207,7 @@ func demoCasbinRBAC(ctx context.Context) {
 
 	// Actor WITHOUT the "approver" role → casbin denies.
 	withoutRole := authz.Actor{ID: "carol", Roles: []string{"viewer"}}
-	_, err = svc.Claim(ctx, taskToken, withoutRole)
+	_, err = svc.Claim(ctx, financeTaskID, withoutRole)
 	if errors.Is(err, authz.ErrNotAuthorized) {
 		fmt.Println("  Actor without 'approver' role: DENY (expected) — authz.ErrNotAuthorized")
 	} else if err != nil {
