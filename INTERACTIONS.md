@@ -147,7 +147,7 @@ sequenceDiagram
 
     T->>R: DeliverMessage(name, corrKey, payload)
     R->>MW: findMessageWaiter(name, corrKey)
-    Note over MW: synced after each deliverLoop;<br/>no Store enumeration API
+    Note over MW: synced after each deliverLoop<br/>no Store enumeration API
     alt not found
         MW-->>R: (none)
         Note over R: clean no-op
@@ -178,7 +178,7 @@ sequenceDiagram
 
     Note over E,R: SendMessage path
     E->>R: SendMessage {Name, CorrelationKey, Payload}
-    Note over R: perform() → return nil, nil<br/>(emitted as a message.&lt;Name&gt; outbox row inside<br/>the SAME commit tx — at-least-once, see flow 7)
+    Note over R: perform() → return nil, nil<br/>(emitted as a message.«Name» outbox row inside<br/>the SAME commit tx — at-least-once, see flow 7)
 ```
 
 ## 4. Compensation / rollback
@@ -279,7 +279,7 @@ sequenceDiagram
     Note over EP: parent token parks on cmdID
     R->>R: depth guard (cycle protection)
     R->>R: reg.Lookup(DefRef) → childDef
-    R->>R: childSt := r.Run(childCtx, childDef, childID, Input)<br/>(child shares store/journal/outbox/catalog/scheduler;<br/>drives its OWN deliverLoop)
+    R->>R: childSt := r.Run(childCtx, childDef, childID, Input)<br/>(child shares store/journal/outbox/catalog/scheduler,<br/>drives its OWN deliverLoop)
     alt Completed
         R-->>EP: NewSubInstanceCompleted(cmdID, vars) → resume parent token
     else Running (parked child)
@@ -363,7 +363,7 @@ sequenceDiagram
     Note over OB: → OutboxEvent{Topic:"message."+Name, Payload:{messageName, correlationKey, variables}}
     OB-->>R: message events
     R->>SC: Store.Commit(expected Token, AppliedStep{State, Trigger, Events:[…], TimerArms, TimerCancels, …})
-    Note over SC: ATOMIC: snapshot + journal + outbox rows<br/>(all dialects: the store's Commit INSERTs each event into wrkflw_outbox<br/>in the same tx; the Postgres dialect additionally emits<br/>NOTIFY wrkflw_outbox on commit when built with WithOutboxNotify() (opt-in — ADR-0022))
+    Note over SC: ATOMIC: snapshot + journal + outbox rows<br/>(all dialects: the store's Commit INSERTs each event into wrkflw_outbox<br/>in the same tx — the Postgres dialect additionally emits<br/>NOTIFY wrkflw_outbox on commit when built with WithOutboxNotify() (opt-in — ADR-0022))
 ```
 
 Key points:
@@ -402,7 +402,7 @@ sequenceDiagram
     loop DrainOnce(ctx)
         RL->>DB: BEGIN tx
         RL->>DB: SELECT … FROM wrkflw_outbox<br/>WHERE status='pending' AND next_attempt_at<=now<br/>ORDER BY id FOR UPDATE SKIP LOCKED LIMIT batch
-        Note over DB: cooperative claim (multi-relay safe;<br/>Postgres & MySQL use FOR UPDATE SKIP LOCKED;<br/>SQLite is single-writer, no SKIP LOCKED needed)
+        Note over DB: cooperative claim (multi-relay safe<br/>Postgres & MySQL use FOR UPDATE SKIP LOCKED<br/>SQLite is single-writer, no SKIP LOCKED needed)
         DB-->>RL: claimed rows
         loop for each claimed row
             RL->>PB: pub.Publish(ctx, event)
@@ -415,7 +415,7 @@ sequenceDiagram
             end
         end
         RL->>DB: COMMIT tx
-        Note over DB: whole batch commits atomically;<br/>a row is 'published' only AFTER a successful Publish → at-least-once
+        Note over DB: whole batch commits atomically<br/>a row is 'published' only AFTER a successful Publish → at-least-once
     end
 ```
 
