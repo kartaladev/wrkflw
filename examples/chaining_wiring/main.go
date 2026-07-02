@@ -126,7 +126,7 @@ func openSQLite(ctx context.Context, pub runtime.Publisher, logger *slog.Logger)
 		return backend{}, fmt.Errorf("open sqlite store: %w", err)
 	}
 
-	relay := persistence.NewSQLiteRelay(db, pub, persistence.MySQLWithRelayLogger(logger))
+	relay := persistence.NewSQLiteRelay(db, pub, persistence.WithRelayLogger(logger))
 	links := persistence.NewSQLiteChainLinkStore(db)
 
 	return backend{
