@@ -362,9 +362,9 @@ func TestNewRunnerFailsFast(t *testing.T) {
 	store := mustMemStore(t)
 	cat := action.NewMapCatalog(nil)
 	cases := []struct {
-		name  string
-		cat   action.Catalog
-		store runtime.Store
+		name   string
+		cat    action.Catalog
+		store  runtime.Store
 		assert func(t *testing.T, r *runtime.Runner, err error)
 	}{
 		{
