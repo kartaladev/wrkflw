@@ -31,6 +31,10 @@ func (s *Store) TimeArgForTest(t time.Time) any { return timeArg(s.dialect, t) }
 // for use by black-box tests that do not hold a *Store (e.g. relay conformance helpers).
 func TimeArgForDialect(s *Store, t time.Time) any { return timeArg(s.dialect, t) }
 
+// MySQLHashKeyForTest exposes the unexported mysqlHashKey helper so
+// ownership_conformance_test.go can verify the 64-char SHA-256 key contract.
+var MySQLHashKeyForTest = mysqlHashKey
+
 // WithRelayListenReady exposes the test-only withRelayListenReady relay option
 // to black-box tests so they can synchronize on the listen loop's actual LISTEN
 // establishment instead of sleeping.
