@@ -14,6 +14,53 @@ The first tagged release (`v0.1.0`) will be cut from this section. It captures t
 built across ADRs 0001–0082.
 
 ### Changed
+- **BREAKING: stateful/service constructors now fail fast with `(T, error)` (ADR-0083).**
+  Constructors that own state and take a required, non-nilable dependency validate their
+  arguments and return a wrapped `ErrNilDependency` instead of accepting a nil and panicking
+  later. Affected in `runtime`: `NewRunner`, `NewTaskService`, `NewCachingStore`,
+  `NewCachingDefinitionRegistry`, `NewSignalBus`, `NewCallNotifier`, `NewLineageReader`
+  (each now returns `(*T, error)`); the `persistence` facade wrappers and the neutral
+  `internal/persistence/store` constructors (`New`, `NewCallLinkStore`, `NewChainLinkStore`,
+  `NewDeduper`, `NewDefinitionStore`, `NewLister`, `NewPruner`, `NewTimerStore`, `NewRelay`)
+  likewise gained an `error` result and reject a nil `conn`/`dialect`. Two package-scoped
+  sentinels back this: `runtime.ErrNilDependency` and `internal/persistence/store.ErrNilDependency`
+  (each wrapped with the offending argument name). Pure value/DTO/trigger constructors and
+  `model.NewDefinition` are intentionally unchanged. Migration: capture and handle the new
+  `error` at each construction site.
+- **BREAKING: `runtime.NewChainer` no longer panics on a nil `starter`/`policy`** — it returns
+  `(*Chainer, error)` wrapping `ErrNilDependency` (ADR-0083). Migration: handle the error rather
+  than recovering a panic.
+- **BREAKING: the three `runtime.NewMemStore*` constructors collapsed into one options
+  constructor** `NewMemStore(opts ...MemStoreOption) (*MemStore, error)` (ADR-0083).
+  `NewMemStoreWithCallLinks`/`NewMemStoreWithTimers` were REMOVED; use
+  `runtime.WithCallLinks(cl)` / `runtime.WithTimers(mts)` (each returns an error if passed nil),
+  which also closes the previous can't-set-both gap.
+- **BREAKING: the `runtime.Runner` option `WithCallLinks` was renamed to `WithCallLinkStore`**
+  (parallels `WithTimerStore`), freeing the `WithCallLinks` name for the new `MemStore` option
+  above. Migration: rename `runtime.WithCallLinks(cl)` in Runner wiring to
+  `runtime.WithCallLinkStore(cl)`.
+- **BREAKING: `engine.NewActionFailedJittered` was removed; `engine.NewActionFailed` gained a
+  variadic option** `NewActionFailed(at, commandID, errMsg, retryable, opts ...ActionFailedOption)`
+  with `engine.WithJitter(fraction)` (ADR-0083). `ActionFailed` remains a value type (no error).
+  Migration: `NewActionFailedJittered(…, j)` → `NewActionFailed(…, engine.WithJitter(j))`; drop the
+  option when `j == 0`.
+- **BREAKING: `casbinauthz` collapsed to a single source-options constructor**
+  `NewCasbinAuthorizer(opts ...Option) (authz.Authorizer, io.Closer, error)` with
+  `FromEnforcer` / `FromStrings` / `FromDB` (ADR-0083). The old
+  `NewCasbinAuthorizer(e)` / `NewCasbinAuthorizerFromStrings` / `NewCasbinAuthorizerFromDB` were
+  REMOVED. Exactly one source must be supplied — zero sources returns `ErrNoAuthorizerSource`,
+  two or more returns `ErrMultipleAuthorizerSources`. Migration: wrap the source in the matching
+  `From*` option (e.g. `NewCasbinAuthorizer(FromStrings(model, policy))`).
+- **BREAKING: `model.DefinitionBuilder` is now an interface, and `model.DefinitionLoader` was
+  introduced (ADR-0084).** `DefinitionBuilder` is the full authoring surface; `DefinitionLoader`
+  is the reduced surface (everything except `Add`/`AddX`/`Connect`) for a definition whose
+  structure is already declared. `NewDefinition` now returns `DefinitionBuilder` (was a
+  `*DefinitionBuilder` struct pointer). `ParseYAML`/`LoadYAML` now return
+  `(DefinitionLoader, error)` with structural validation deferred to `Build()` — a YAML-loaded
+  definition can register its (non-serializable) scoped actions and then `Build()`. The
+  established actions-first fluent idiom continues to compile. Migration: a YAML caller now does
+  `ld, err := model.LoadYAML(r); def, err := ld.Build()`; code that stored `*model.DefinitionBuilder`
+  uses the interface `model.DefinitionBuilder`.
 - **BREAKING: `Deduper.Seen` dropped its explicit driver-transaction parameter.** The new
   signature is `Seen(ctx, subscriber, messageID)` — it joins the ambient transaction from
   ctx, or commits its own leaf tx when none is present. The separate `MySQLDeduper` interface
