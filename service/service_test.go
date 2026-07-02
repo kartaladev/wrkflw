@@ -141,8 +141,9 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
 
-	svc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 
+	require.NoError(t, err)
 	return &harness{
 		runner:    r,
 		tasks:     svc,

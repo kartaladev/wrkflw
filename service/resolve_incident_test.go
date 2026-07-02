@@ -79,7 +79,8 @@ func TestEngineResolveIncident(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	// Start the instance — parks with an incident after the first failure.
@@ -142,7 +143,8 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	ctx := t.Context()

@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -26,4 +28,13 @@ func mustRunner(t *testing.T, cat action.Catalog, store runtime.Store, opts ...r
 	r, err := runtime.NewRunner(cat, store, opts...)
 	require.NoError(t, err)
 	return r
+}
+
+// mustTaskService builds a TaskService with the given store and authorizer,
+// failing the test on any error.
+func mustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorizer, opts ...runtime.TaskServiceOption) *runtime.TaskService {
+	t.Helper()
+	svc, err := runtime.NewTaskService(store, az, opts...)
+	require.NoError(t, err)
+	return svc
 }

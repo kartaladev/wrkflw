@@ -117,7 +117,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	taskToken := claimable[0].TaskToken
 
 	// ── Step 2: complete the human task → child completes, link flips ────────
-	svc := runtime.NewTaskService(tasks, az)
+	svc := mustTaskService(t, tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"childResult": "done"})
 	require.NoError(t, err)
 

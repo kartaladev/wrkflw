@@ -233,7 +233,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tasks := runtime.NewTaskService(taskStore, az)
+	tasks, err := runtime.NewTaskService(taskStore, az)
+	if err != nil {
+		return err
+	}
 	lister := persistence.NewSQLiteLister(db)
 	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)
 

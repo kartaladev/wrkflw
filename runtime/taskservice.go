@@ -78,7 +78,13 @@ func WithTaskServiceClock(clk clock.Clock) TaskServiceOption {
 //
 // The variadic opts are additive; callers that do not need custom observability
 // or a custom clock can omit them entirely.
-func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...TaskServiceOption) *TaskService {
+func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...TaskServiceOption) (*TaskService, error) {
+	if store == nil {
+		return nil, fmt.Errorf("%w: store", ErrNilDependency)
+	}
+	if az == nil {
+		return nil, fmt.Errorf("%w: authorizer", ErrNilDependency)
+	}
 	cfg := taskServiceConfig{clk: clock.System()}
 	for _, o := range opts {
 		o(&cfg)
@@ -93,7 +99,7 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...Task
 		authz:      az,
 		clk:        cfg.clk,
 		humanTasks: tel.Int64Counter("wrkflw_human_tasks_total", "Human-task lifecycle transitions."),
-	}
+	}, nil
 }
 
 // Claim authorizes actor against the task's eligibility and, on success, returns

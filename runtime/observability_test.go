@@ -446,7 +446,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				runtime.WithHumanTasks(resolver, taskStore, az),
 				runtime.WithMeterProvider(mp),
 			)
-			svc := runtime.NewTaskService(taskStore, az,
+			svc := mustTaskService(t, taskStore, az,
 				runtime.WithTaskServiceClock(clk),
 				runtime.WithTaskServiceMeterProvider(mp))
 

@@ -77,7 +77,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	taskToken := task.TaskToken
 
 	// --- TaskService.Claim → Deliver ---
-	svc := runtime.NewTaskService(taskStore, az)
+	svc := mustTaskService(t, taskStore, az)
 
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)
 	require.NoError(t, err)
@@ -281,7 +281,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 
 			// Step 3: Claim — the TaskService evaluates the EligibilityExpr against
 			// the snapshotted vars. Result depends on whether region matches the predicate.
-			svc := runtime.NewTaskService(taskStore, az)
+			svc := mustTaskService(t, taskStore, az)
 			_, err = svc.Claim(ctx, taskToken, approver)
 			tc.assertErr(t, err)
 		})

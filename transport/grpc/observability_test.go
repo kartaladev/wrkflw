@@ -54,7 +54,8 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 		defsMap[d.ID] = d
 	}
 	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	tasks, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	require.NoError(t, err)
 	svc := service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 
 	lis := bufconn.Listen(bufSize)

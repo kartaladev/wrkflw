@@ -74,7 +74,10 @@ func Example_responseShapes() {
 		"approval:1": def,
 		"approval":   def,
 	})
-	taskSvc := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	if err != nil {
+		panic(err)
+	}
 	svc := service.New(runner, taskSvc, reg, store, store, taskStore,
 		service.WithEngineClock(fc),
 	)

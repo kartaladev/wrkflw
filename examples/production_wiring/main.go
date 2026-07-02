@@ -161,7 +161,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tasks := runtime.NewTaskService(taskStore, az)
+	tasks, err := runtime.NewTaskService(taskStore, az)
+	if err != nil {
+		return err
+	}
 	svc := service.New(runner, tasks, reg, store, lister, taskStore)
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---
