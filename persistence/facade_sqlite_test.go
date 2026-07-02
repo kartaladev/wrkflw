@@ -21,6 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -162,7 +163,8 @@ func TestNewSQLiteCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	_, err = r.Run(t.Context(), sqliteMinimalDef(), "sqlite-parent-cls-1", nil)
 	require.NoError(t, err)
 
@@ -242,7 +244,8 @@ func TestNewSQLiteLister_ListsInstances(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	for _, id := range []string{"sqlite-lst-inst-a", "sqlite-lst-inst-b"} {
 		_, err := r.Run(t.Context(), sqliteMinimalDef(), id, nil)
 		require.NoError(t, err)
@@ -273,7 +276,8 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	require.NoError(t, err)
 
 	def := sqliteMinimalDef()
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	require.NoError(t, err)
 	_, err = r.Run(t.Context(), def, "sqlite-notifier-parent-1", nil)
 	require.NoError(t, err)
 

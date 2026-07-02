@@ -126,7 +126,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		"e2e-parent:1":     pDef,
 	})
 
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -241,7 +241,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		"async-fail-parent:1": parent,
 	})
 
-	runner := runtime.NewRunner(cat, store,
+	runner := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -339,7 +339,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		"self-call:1": def,
 	})
 
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -481,7 +481,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 
 	// Runner built WITHOUT WithCallLinkStore → synchronous call-activity path.
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),

@@ -142,9 +142,7 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			r := runtime.NewRunner(
-				action.NewMapCatalog(nil),
-				mustMemStore(t),
+			r := mustRunner(t, action.NewMapCatalog(nil), mustMemStore(t),
 				tc.opt,
 			)
 			tc.assert(t, r)
@@ -170,9 +168,7 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 		}),
 	})
 
-	r := runtime.NewRunner(
-		cat,
-		mustMemStore(t),
+	r := mustRunner(t, cat, mustMemStore(t),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 	)
@@ -298,7 +294,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			cat := action.NewMapCatalog(map[string]action.ServiceAction{
 				"charge": action.Func(tc.actionFunc),
 			})
-			r := runtime.NewRunner(cat, mustMemStore(t),
+			r := mustRunner(t, cat, mustMemStore(t),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
 
 			_, _ = r.Run(t.Context(), paymentDef(), "i1", map[string]any{})
@@ -344,7 +340,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		},
 	}
 
-	runner := runtime.NewRunner(cat, mustMemStore(t),
+	runner := mustRunner(t, cat, mustMemStore(t),
 		runtime.WithRunnerClock(clk),
 		runtime.WithMeterProvider(mp),
 		// MaxAttempts=1: first failure parks immediately as an incident.
@@ -445,9 +441,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			az := authz.RoleAuthorizer{}
 			clk := clock.System()
 
-			r := runtime.NewRunner(
-				nil,
-				mustMemStore(t),
+			r := mustRunner(t, nil, mustMemStore(t),
 				runtime.WithRunnerClock(clk),
 				runtime.WithHumanTasks(resolver, taskStore, az),
 				runtime.WithMeterProvider(mp),
@@ -528,7 +522,7 @@ func TestDeliverSpan(t *testing.T) {
 	}
 
 	store := mustMemStore(t)
-	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk), runtime.WithTracerProvider(tp))
+	runner := mustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithTracerProvider(tp))
 
 	// Run parks at the catch-message node.
 	parked, err := runner.Run(t.Context(), msgDef, "del-obs-1", nil)

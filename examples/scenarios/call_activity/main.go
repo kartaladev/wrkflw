@@ -72,9 +72,12 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r := runtime.NewRunner(cat, memSt,
+	r, err := runtime.NewRunner(cat, memSt,
 		runtime.WithDefinitions(reg),
 	)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	fmt.Println("--- Loan Origination: Call Activity ---")
 	state, err := r.Run(ctx, parent, "loan-001", map[string]any{"applicant": "Ada"})

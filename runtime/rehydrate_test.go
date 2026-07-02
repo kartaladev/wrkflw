@@ -34,7 +34,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	// Original process: arm the timer, then it "crashes" — discard runner + scheduler.
 	{
 		sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-		r := runtime.NewRunner(cat, store,
+		r := mustRunner(t, cat, store,
 			runtime.WithRunnerClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
 		_, err := r.Run(t.Context(), def, "rh-1", nil)
@@ -43,7 +43,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 	// New process: fresh runner + fresh scheduler, same store + timer store.
 	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	r2 := runtime.NewRunner(cat, store,
+	r2 := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched2), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
 
@@ -60,7 +60,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 func TestRehydrateTimersRequiresWiring(t *testing.T) {
 	store := mustMemStore(t)
-	r := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	r := mustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	err := r.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")
 }

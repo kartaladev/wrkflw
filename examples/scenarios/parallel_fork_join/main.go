@@ -65,7 +65,10 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r := runtime.NewRunner(cat, memSt)
+	r, err := runtime.NewRunner(cat, memSt)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	fmt.Println("--- Order Fulfillment: Parallel Fork/Join ---")
 	state, err := r.Run(ctx, def, "order-001", map[string]any{"order_id": "ORD-001"})

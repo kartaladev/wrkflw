@@ -28,9 +28,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		mustMemStore(t),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -67,9 +65,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		mustMemStore(t),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -127,9 +123,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		mustMemStore(t),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -172,9 +166,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		mustMemStore(t),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 

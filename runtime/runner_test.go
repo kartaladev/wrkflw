@@ -44,7 +44,7 @@ func (s *commitErrStore) Commit(_ context.Context, _ runtime.Token, _ runtime.Ap
 func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	cat := action.NewMapCatalog(nil)
 	store := mustMemStore(t)
-	r := runtime.NewRunner(cat, store)
+	r := mustRunner(t, cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 		}),
 	})
 	store := mustMemStore(t)
-	r := runtime.NewRunner(cat, store)
+	r := mustRunner(t, cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, errStore{mustMemStore(t)})
+	r := mustRunner(t, cat, errStore{mustMemStore(t)})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -98,7 +98,7 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	})
 	// commitErrStore: Create succeeds (first step), Commit fails (second step when
 	// ActionCompleted is delivered).
-	r := runtime.NewRunner(cat, &commitErrStore{mustMemStore(t)})
+	r := mustRunner(t, cat, &commitErrStore{mustMemStore(t)})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -129,11 +129,8 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 // error — rather than panicking — when it reaches an AwaitHuman command.
 func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 	// Build a Runner with no human-task option (nil resolver and nil tasks).
-	r := runtime.NewRunner(
-		nil, // no catalog
-		mustMemStore(t),
-		// WithHumanTasks intentionally omitted to test error path.
-	)
+	r := mustRunner(t, action.NewMapCatalog(nil), mustMemStore(t))
+	// WithHumanTasks intentionally omitted to test error path.
 
 	_, err := r.Run(t.Context(), userTaskOnlyDef(), "i1", nil)
 	require.Error(t, err, "Run must fail with a descriptive error, not panic")
@@ -162,11 +159,8 @@ func timerOnlyDef() *model.ProcessDefinition {
 // if no Scheduler is configured, attempting to perform a ScheduleTimer returns a
 // descriptive error rather than panicking.
 func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
-	r := runtime.NewRunner(
-		nil,
-		mustMemStore(t),
-		// WithScheduler intentionally omitted.
-	)
+	r := mustRunner(t, nil, mustMemStore(t))
+	// WithScheduler intentionally omitted.
 
 	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
 	require.Error(t, err, "Run must fail with a descriptive error when no Scheduler is configured")
@@ -213,11 +207,8 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 	// CancelTimer nil-guard separately by reading the runner.go source
 	// (same guard pattern), but we also add an integration assertion here:
 	// the error messages for both cases must contain "no Scheduler configured".
-	r := runtime.NewRunner(
-		nil,
-		mustMemStore(t),
-		// WithScheduler intentionally omitted.
-	)
+	r := mustRunner(t, nil, mustMemStore(t))
+	// WithScheduler intentionally omitted.
 	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
 	require.Error(t, err)
 	// Both ScheduleTimer and CancelTimer use the same "no Scheduler configured" pattern.
@@ -287,7 +278,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 	store := &onceConflictStore{inner: inner}
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 
-	r := runtime.NewRunner(nil, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
+	r := mustRunner(t, nil, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
 
 	def := conflictTimerDef()
 	const instanceID = "conflict-timer-1"
@@ -324,7 +315,7 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, errStore{mustMemStore(t)})
+	r := mustRunner(t, cat, errStore{mustMemStore(t)})
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
@@ -340,7 +331,7 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 		}),
 	})
 	before := time.Now()
-	r := runtime.NewRunner(cat, mustMemStore(t))
+	r := mustRunner(t, cat, mustMemStore(t))
 	st, err := r.Run(t.Context(), linearDef(), "i-sys-1", nil)
 	after := time.Now()
 	require.NoError(t, err)
@@ -359,10 +350,55 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, mustMemStore(t), runtime.WithRunnerClock(fake))
+	r := mustRunner(t, cat, mustMemStore(t), runtime.WithRunnerClock(fake))
 	st, err := r.Run(t.Context(), linearDef(), "i-fake-1", nil)
 	require.NoError(t, err)
 	// StartedAt is stamped from r.clk.Now() = fake.Now() = time.Unix(1000, 0).
 	assert.Equal(t, time.Unix(1000, 0), st.StartedAt,
 		"StartedAt must equal fake clock's epoch")
+}
+
+func TestNewRunnerFailsFast(t *testing.T) {
+	store := mustMemStore(t)
+	cat := action.NewMapCatalog(nil)
+	cases := []struct {
+		name  string
+		cat   action.Catalog
+		store runtime.Store
+		assert func(t *testing.T, r *runtime.Runner, err error)
+	}{
+		{
+			name:  "nil catalog",
+			cat:   nil,
+			store: store,
+			assert: func(t *testing.T, r *runtime.Runner, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, r)
+			},
+		},
+		{
+			name:  "nil store",
+			cat:   cat,
+			store: nil,
+			assert: func(t *testing.T, r *runtime.Runner, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, r)
+			},
+		},
+		{
+			name:  "valid args",
+			cat:   cat,
+			store: store,
+			assert: func(t *testing.T, r *runtime.Runner, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, r)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := runtime.NewRunner(tc.cat, tc.store)
+			tc.assert(t, r, err)
+		})
+	}
 }

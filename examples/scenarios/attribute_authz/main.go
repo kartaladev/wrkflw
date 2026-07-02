@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -46,6 +47,14 @@ func mustMemStore() *runtime.MemStore {
 		log.Fatal("memstore:", err)
 	}
 	return m
+}
+
+func mustRunner(cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.Runner {
+	r, err := runtime.NewRunner(cat, store, opts...)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
+	return r
 }
 
 func main() {
@@ -97,9 +106,12 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- EU instance: should be ALLOWED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, mustMemStore(),
+		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
+		if err != nil {
+			log.Fatal("new runner EU:", err)
+		}
 
 		parked, err := r.Run(ctx, def, "region-eu-001", map[string]any{"region": "EU"})
 		if err != nil {
@@ -134,9 +146,12 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- US instance: should be DENIED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, mustMemStore(),
+		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
+		if err != nil {
+			log.Fatal("new runner US:", err)
+		}
 
 		parked, err := r.Run(ctx, def, "region-us-001", map[string]any{"region": "US"})
 		if err != nil {
@@ -203,7 +218,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITH the "approver" role → casbin policy grants finance-task claim.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, mustMemStore(),
+		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := r.Run(ctx, def, "finance-allow-001", nil)
@@ -223,7 +238,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITHOUT the "approver" role → casbin denies.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, mustMemStore(),
+		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := r.Run(ctx, def, "finance-deny-001", nil)

@@ -124,12 +124,13 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 		"greet": greetAction{},
 	})
 
-	r := runtime.NewRunner(
+	r, err := runtime.NewRunner(
 		cat,
 		store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
+	require.NoError(t, err)
 
 	// Build the definition registry with all provided definitions.
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs))

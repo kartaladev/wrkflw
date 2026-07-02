@@ -48,10 +48,13 @@ func Example_responseShapes() {
 	})
 	az := authz.RoleAuthorizer{}
 	cat := action.NewMapCatalog(nil)
-	runner := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewRunner(cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
+	if err != nil {
+		panic(err)
+	}
 
 	// approval: start → approve (UserTask, candidates: ["manager"]) → end
 	def := &model.ProcessDefinition{

@@ -124,7 +124,8 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 	t.Helper()
 
 	catalog := action.NewMapCatalog(nil)
-	runner := runtime.NewRunner(catalog, d.store)
+	runner, err := runtime.NewRunner(catalog, d.store)
+		require.NoError(t, err)
 
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.
 	policy := func(ctx context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {

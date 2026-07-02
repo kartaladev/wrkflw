@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -41,7 +42,8 @@ func TestOpenSQLite(t *testing.T) {
 		},
 	}
 
-	r := runtime.NewRunner(nil, s)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), s)
+	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "i-sqlite-e2e", map[string]any{"backend": "sqlite"})
 	require.NoError(t, err, "Runner.Run must succeed on SQLite store")
 	require.Equal(t, engine.StatusCompleted, st.Status)

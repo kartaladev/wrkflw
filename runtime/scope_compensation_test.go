@@ -91,7 +91,7 @@ func TestCompensationThrowRunsSubProcessCompensationE2E(t *testing.T) {
 	})
 
 	store := mustMemStore(t)
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc))
+	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc))
 
 	def := scopeCompensationDef()
 	const instanceID = "scope-comp-i1"

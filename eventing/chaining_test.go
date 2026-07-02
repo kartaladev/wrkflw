@@ -179,7 +179,8 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	store, err := runtime.NewMemStore()
 	require.NoError(t, err)
 	links := runtime.NewMemChainLinkStore()
-	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clk))
+	runner, err := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clk))
+	require.NoError(t, err)
 
 	succ := &model.ProcessDefinition{
 		ID: "fulfillment", Version: 1,

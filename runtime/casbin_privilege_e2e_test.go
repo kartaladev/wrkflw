@@ -61,7 +61,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	r := runtime.NewRunner(nil, mustMemStore(t),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 
@@ -100,7 +100,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	r := runtime.NewRunner(nil, mustMemStore(t),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -36,7 +37,10 @@ func ExampleNewCachingStore() {
 
 	def := signalCatchDef("approved")
 
-	r := runtime.NewRunner(nil, store)
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	if err != nil {
+		panic(err)
+	}
 
 	// Run parks at the signal-catch node.
 	parked, err := r.Run(ctx, def, "cache-demo-1", nil)

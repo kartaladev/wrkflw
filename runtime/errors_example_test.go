@@ -133,7 +133,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	store := mustMemStore(t)
 
-	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fakeClock))
+	runner := mustRunner(t, cat, store, runtime.WithRunnerClock(fakeClock))
 
 	def := sagaDef()
 
@@ -218,7 +218,7 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 
 	store := mustMemStore(t)
 
-	runner := runtime.NewRunner(cat, store)
+	runner := mustRunner(t, cat, store)
 
 	def := boundaryErrorDef()
 

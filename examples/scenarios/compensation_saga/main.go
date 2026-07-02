@@ -94,7 +94,10 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk))
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk))
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	const instanceID = "saga-001"
 

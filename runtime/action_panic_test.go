@@ -42,7 +42,7 @@ func TestRunnerRecoversActionPanic(t *testing.T) {
 			panic("action blew up")
 		}),
 	})
-	r := runtime.NewRunner(cat, mustMemStore(t), runtime.WithRunnerClock(fc))
+	r := mustRunner(t, cat, mustMemStore(t), runtime.WithRunnerClock(fc))
 
 	// Must not panic.
 	st, err := r.Run(t.Context(), panicTaskDef(), "p1", nil)

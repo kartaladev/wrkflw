@@ -45,7 +45,8 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": greetServiceAction{},
 	})
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	require.NoError(t, err)
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {
 		defsMap[fmt.Sprintf("%s:%d", d.ID, d.Version)] = d

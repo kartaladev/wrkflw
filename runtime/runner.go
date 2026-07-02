@@ -315,7 +315,13 @@ func NewRunner(
 	cat action.Catalog,
 	store Store,
 	opts ...Option,
-) *Runner {
+) (*Runner, error) {
+	if cat == nil {
+		return nil, fmt.Errorf("%w: catalog", ErrNilDependency)
+	}
+	if store == nil {
+		return nil, fmt.Errorf("%w: store", ErrNilDependency)
+	}
 	r := &Runner{
 		cat:           cat,
 		clk:           clock.System(),
@@ -328,7 +334,7 @@ func NewRunner(
 		o(r)
 	}
 	r.obs = newRunnerObs(r.logOpt, r.tpOpt, r.mpOpt)
-	return r
+	return r, nil
 }
 
 // Run starts an instance and drives it to a terminal state or until the engine

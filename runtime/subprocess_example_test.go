@@ -97,7 +97,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 		"child": child,
 	})
 
-	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := mustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
 
 	parent := parentCallDef()
 	st, err := runner.Run(ctx, parent, "parent-i1", map[string]any{"x": 42})
@@ -175,7 +175,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		"failing-child": failingChild,
 	})
 
-	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := mustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
 
 	st, err := runner.Run(ctx, failingParent, "parent-fail-i1", nil)
 	require.NoError(t, err)
@@ -252,7 +252,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	// persist the task, and return nil/nil — leaving childSt.Status == StatusRunning.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -339,7 +339,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 		"self-ref": def,
 	})
 
-	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := mustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
 
 	// This must not panic / stack-overflow. The depth guard must kick in and
 	// fail the parent instance with a descriptive error.
@@ -377,7 +377,7 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	store := mustMemStore(t)
 
 	// No WithDefinitions option.
-	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk))
+	runner := mustRunner(t, nil, store, runtime.WithRunnerClock(clk))
 
 	parent := parentCallDef()
 	_, err := runner.Run(ctx, parent, "no-reg-i1", nil)

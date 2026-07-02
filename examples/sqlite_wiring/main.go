@@ -225,11 +225,14 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner = runtime.NewRunner(cat, cachingStore,
+	runner, err = runtime.NewRunner(cat, cachingStore,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(scheduler),
 		runtime.WithTimerStore(timerStore),
 	)
+	if err != nil {
+		return err
+	}
 	tasks := runtime.NewTaskService(taskStore, az)
 	lister := persistence.NewSQLiteLister(db)
 	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)

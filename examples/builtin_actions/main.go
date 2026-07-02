@@ -169,7 +169,10 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r := runtime.NewRunner(cat, store)
+	r, err := runtime.NewRunner(cat, store)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	// --- 5. Run ————————————————————————————————————————————————————————————
 	fmt.Println("\n--- Running instance demo-001 ---")

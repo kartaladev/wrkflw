@@ -45,7 +45,8 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": serverTestGreetAction{},
 	})
-	runner := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	runner, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	require.NoError(t, err)
 
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {

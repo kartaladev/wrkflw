@@ -61,13 +61,16 @@ func ExampleRunner_observability() {
 	if err != nil {
 		panic(err)
 	}
-	r := runtime.NewRunner(
+	r, err := runtime.NewRunner(
 		cat,
 		mem,
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 		runtime.WithLogger(slog.Default()),
 	)
+	if err != nil {
+		panic(err)
+	}
 
 	_, _ = r.Run(context.Background(), def, "demo-1", map[string]any{})
 	// Output:

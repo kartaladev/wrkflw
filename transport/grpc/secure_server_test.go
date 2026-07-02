@@ -32,7 +32,8 @@ func minimalSvc(t *testing.T) service.Service {
 	require.NoError(t, err)
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
-	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	runner, err := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	require.NoError(t, err)
 	reg := runtime.NewMapDefinitionRegistry(nil)
 	tasks := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 	return service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))

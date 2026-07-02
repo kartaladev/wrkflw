@@ -110,7 +110,7 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	mts := runtime.NewMemTimerStore()
 	store := mustMemStore(t, runtime.WithTimers(mts))
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	r := runtime.NewRunner(action.NewMapCatalog(nil), store,
+	r := mustRunner(t, action.NewMapCatalog(nil), store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 

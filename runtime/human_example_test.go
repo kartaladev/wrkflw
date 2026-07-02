@@ -52,9 +52,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 	store := mustMemStore(t)
 
-	r := runtime.NewRunner(
-		nil, // no service actions needed for this process
-		store,
+	r := mustRunner(t, nil, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -142,7 +140,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
-	r := runtime.NewRunner(nil, mustMemStore(t))
+	r := mustRunner(t, nil, mustMemStore(t))
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
 	_, err := r.Deliver(ctx, approvalDef(), "non-existent", trg)
@@ -165,9 +163,7 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtime.NewRunner(
-		nil,
-		mustMemStore(t),
+	r := mustRunner(t, nil, mustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -261,9 +257,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 			az := authz.RoleAuthorizer{}
 			store := mustMemStore(t)
 
-			r := runtime.NewRunner(
-				nil, // no service actions needed
-				store,
+			r := mustRunner(t, nil, store,
 				runtime.WithHumanTasks(resolver, taskStore, az),
 			)
 

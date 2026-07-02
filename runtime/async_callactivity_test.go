@@ -74,7 +74,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	runner := runtime.NewRunner(nil, store,
+	runner := mustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -241,7 +241,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-imm-child": child,
 		})
 
-		runner := runtime.NewRunner(cat, store,
+		runner := mustRunner(t, cat, store,
 			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)
@@ -282,7 +282,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-fail-child": child,
 		})
 
-		runner := runtime.NewRunner(cat, store,
+		runner := mustRunner(t, cat, store,
 			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)

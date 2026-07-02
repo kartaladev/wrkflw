@@ -10,7 +10,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 func linearDef() *model.ProcessDefinition {
@@ -56,7 +55,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			return map[string]any{"b": true}, nil
 		}),
 	})
-	r := runtime.NewRunner(cat, mustMemStore(t))
+	r := mustRunner(t, cat, mustMemStore(t))
 
 	final, err := r.Run(t.Context(), def, "i1", nil)
 	require.NoError(t, err)
@@ -101,7 +100,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 		})
 	}
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
-	r := runtime.NewRunner(cat, mustMemStore(t))
+	r := mustRunner(t, cat, mustMemStore(t))
 
 	final, err := r.Run(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
 	require.NoError(t, err)
@@ -126,7 +125,7 @@ func TestRunnerExecutesLinearProcess(t *testing.T) {
 		}),
 	})
 	store := mustMemStore(t)
-	r := runtime.NewRunner(cat, store)
+	r := mustRunner(t, cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", map[string]any{"name": "Ada"})
 	require.NoError(t, err)

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -60,10 +61,13 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	// No service-action catalog is needed for this process, so pass nil.
-	r := runtime.NewRunner(nil, memSt,
+	// No service-action catalog needed; pass an empty catalog.
+	r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	const instanceID = "expense-001"
 

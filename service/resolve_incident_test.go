@@ -61,7 +61,7 @@ func TestEngineResolveIncident(t *testing.T) {
 		"failing": failingAction,
 	})
 
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		// MaxAttempts=1 → first failure becomes an incident.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -71,6 +71,7 @@ func TestEngineResolveIncident(t *testing.T) {
 			MaxInterval:     time.Minute,
 		}),
 	)
+	require.NoError(t, err)
 
 	def := incidentDef()
 	defsMap := map[string]*model.ProcessDefinition{
@@ -124,7 +125,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		"failing": failingAction,
 	})
 
-	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
+	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
@@ -133,6 +134,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 			MaxInterval:     time.Minute,
 		}),
 	)
+	require.NoError(t, err)
 
 	def := incidentDef()
 	defsMap := map[string]*model.ProcessDefinition{

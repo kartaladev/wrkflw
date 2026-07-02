@@ -71,7 +71,10 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r := runtime.NewRunner(cat, memSt)
+	r, err := runtime.NewRunner(cat, memSt)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	cases := []struct {
 		id     string

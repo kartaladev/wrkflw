@@ -82,7 +82,10 @@ flows:
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r := runtime.NewRunner(cat, memSt)
+	r, err := runtime.NewRunner(cat, memSt)
+	if err != nil {
+		log.Fatal("runner:", err)
+	}
 
 	state, err := r.Run(ctx, simpleDef, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {
