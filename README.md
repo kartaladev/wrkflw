@@ -38,7 +38,7 @@ adapters are mountable handlers a consumer registers in their own server.
 | Requirement | Version |
 |---|---|
 | Go | 1.25 |
-| PostgreSQL | 17 |
+| Database | PostgreSQL 17, MySQL 8.0+, or SQLite (`modernc.org/sqlite`, in-process; single-node / test / embedded) |
 | Docker | any recent version — only needed to run the testcontainers-based integration tests |
 
 ---
@@ -224,7 +224,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 | `authz` | Pluggable `Authorizer` abstraction: role, resource-privilege, and attribute-based rules. |
 | `casbinauthz` | Casbin-backed `Authorizer` (baseline implementation). Wraps `*casbin.SyncedEnforcer`. |
 | `transport` | REST `http.Handler` factory (`transport/rest.NewHandler`) and gRPC `ServiceRegistrar` registration (`transport/grpc.RegisterWorkflowServiceServer`). |
-| `persistence` | Persistence façade over the SQL/PostgreSQL store. |
+| `persistence` | Persistence façade over the neutral SQL store: `OpenPostgres`, `OpenMySQL`, and `OpenSQLite`, plus migrations and relay/lister/store constructors (ADR-0081/0082). |
 | `eventing` | Eventing façade for publishing domain events via the transactional outbox. |
 | `scheduling` | Façade over the timer/deadline scheduler (gocron behind the abstraction). |
 | `observability` | Metrics, traces, and `slog` wiring at the runtime boundary. |
@@ -984,6 +984,32 @@ Connect("split", "fraud-check",   model.WithCondition("flagged == true")).
 branches only, then continues to `end`. Contrast with the exclusive gateway (exactly
 one branch) and the parallel gateway (all branches unconditionally).
 → [`examples/scenarios/inclusive_gateway`](examples/scenarios/inclusive_gateway)
+
+---
+
+## Persistence backends
+
+The engine supports three SQL backends, all using the same neutral store and migration set:
+
+| Backend | Facade constructors | Notes |
+|---|---|---|
+| **PostgreSQL 17** | `persistence.OpenPostgres` / `persistence.MigratePostgres` | Production default; LISTEN/NOTIFY relay, advisory-lock ownership. |
+| **MySQL 8.0+** | `persistence.OpenMySQL` / `persistence.MigrateMySQL` | Production-grade; poll-only relay (no LISTEN/NOTIFY), advisory-lock ownership. |
+| **SQLite** | `persistence.OpenSQLite` / `persistence.MigrateSQLite` | Single-node / test / embedded; WAL mode, single-writer. No distributed advisory lock (`persistence.NewSQLiteAdvisoryLockOwnership` is fail-loud — every acquire returns `dialect.ErrUnsupported`) and no LISTEN/NOTIFY (relay is poll-only). Use Postgres or MySQL for multi-replica. |
+
+### SQLite quickstart
+
+```go
+import _ "modernc.org/sqlite"
+
+db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+db.SetMaxOpenConns(1) // single-writer serialisation (required)
+persistence.MigrateSQLite(ctx, db)
+store, _ := persistence.OpenSQLite(ctx, db)
+runner := runtime.NewRunner(cat, store)
+```
+
+See [`examples/sqlite_wiring/`](examples/sqlite_wiring/) for the complete reference wiring.
 
 ---
 

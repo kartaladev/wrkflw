@@ -40,7 +40,8 @@ decision, and the Architecture section expands the rest:
 | Concern | Choice | Notes |
 |---|---|---|
 | Language | **Go 1.25** | hard requirement |
-| Database | **PostgreSQL 17** (primary) or **MySQL 8.0+**, SQL-based | hot-path data must be cached to avoid overloading the DB (see ADR-0073) |
+| Database | **PostgreSQL 17** (primary), **MySQL 8.0+**, or **SQLite** (`modernc.org/sqlite`, pure-Go; single-node / test / embedded) — SQL-based behind ONE neutral store parametrized by a dialect (ADR-0081). SQLite is single-writer/WAL, no distributed advisory lock or LISTEN/NOTIFY (ADR-0082) | hot-path data must be cached to avoid overloading the DB (see ADR-0073) |
+| SQLite | `modernc.org/sqlite` | hard pin (ADR-0082); pure-Go, WAL mode, single-writer; single-node/test/embedded use only |
 | Expressions | `github.com/expr-lang/expr` | all in-definition / in-execution expressions |
 | Eventing | [`watermill`](https://github.com/ThreeDotsLabs/watermill), **outbox publishing** | **never import watermill from workflow code** — go through the eventing abstraction (no vendor lock-in) |
 | Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.21.2** | hard pin; timers, SLA waiters, in-wait actions |
@@ -63,7 +64,9 @@ public packages live directly at the repo root.
   registrations) all live here. Consumers import them as `github.com/zakyalvan/krtlwrkflw/engine`,
   etc.
 - `internal/` — non-exported implementation details (concrete persistence, outbox plumbing,
-  casbin adapters, watermill wiring) that consumers must not import.
+  casbin adapters, watermill wiring) that consumers must not import. (Concrete persistence
+  now lives in the neutral `internal/persistence/store` + `internal/persistence/dialect`;
+  the former `internal/persistence/{postgres,mysql}` packages were removed — ADR-0081.)
 - `examples/` — optional **reference wiring** showing how a consumer embeds the engine and
   mounts its transports. These are illustrative `main` packages, **not a product we ship or
   run**; they must not become the only path through which a feature is reachable.
@@ -90,9 +93,7 @@ These are the seams to understand before touching code; they span multiple packa
   nodes per the definition's sequence flows. Gateways (exclusive/parallel/etc.) read token
   variables (via `expr`) to decide routing. Keep this **pure of transport, storage vendor,
   and event-bus specifics** — it depends on interfaces only.
-- **Persistence** — SQL/Postgres-backed definition + instance + token state. Identify hot
-  read paths and put a cache in front of them. The DB is the source of truth; the outbox
-  table is part of it.
+- **Persistence** — SQL-backed definition + instance + token state via the neutral `internal/persistence/store` parametrized by `internal/persistence/dialect` (Postgres/MySQL/SQLite — ADR-0081). The dialect layer abstracts both the access mechanism (pgx vs database/sql) and the SQL dialect; capability interfaces `Notifier` (LISTEN/NOTIFY) and `Locker` (advisory lock) are opt-in so SQLite simply omits them. Identify hot read paths and put a cache in front of them. The DB is the source of truth; the outbox table is part of it.
 - **Eventing abstraction** — workflow code emits domain events through an in-repo interface;
   an `internal/` adapter implements it over watermill using the **transactional outbox**
   pattern (events written in the same tx as state changes, relayed afterward). Swapping
@@ -297,7 +298,7 @@ Core:
 
 Domain (this engine specifically):
 
-- `samber/cc-skills-golang@golang-database` — Postgres 17, transactions, hot-path caching, the outbox table.
+- `samber/cc-skills-golang@golang-database` — Postgres 17 / MySQL / SQLite, transactions, hot-path caching, the outbox table.
 - `samber/cc-skills-golang@golang-concurrency` — token execution, gocron waiters, background relayers.
 - `samber/cc-skills-golang@golang-context` — cancellation/deadline propagation through the engine.
 - `samber/cc-skills-golang@golang-structs-interfaces` — the eventing/authz/action/persistence abstractions.

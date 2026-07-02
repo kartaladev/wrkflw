@@ -23,6 +23,18 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
+// SQLiteRelayOption configures a SQLite Relay returned by NewSQLiteRelay. It is
+// an alias of the facade RelayOption. SQLite has no LISTEN/NOTIFY; its relay is
+// poll-only (there is no SQLiteWithListenNotify). The same option values used
+// with MySQL (e.g. MySQLWithPollInterval, MySQLWithBatchSize) are directly
+// compatible because RelayOption is a shared type.
+type SQLiteRelayOption = RelayOption
+
+// SQLiteCallLinkOption configures a CallLinkStore returned by NewSQLiteCallLinkStore.
+// It aliases the single store.CallLinkOption (same type as CallLinkOption and
+// MySQLCallLinkOption).
+type SQLiteCallLinkOption = store.CallLinkOption
+
 // OpenSQLite constructs a SQLite-backed runtime.Store + JournalReader over db.
 //
 // The returned Store satisfies both runtime.Store and runtime.JournalReader,
@@ -105,4 +117,182 @@ func NewSQLiteAdvisoryLockOwnership() (runtime.Ownership, io.Closer, error) {
 		return nil, nil, err
 	}
 	return o, o, nil
+}
+
+// NewSQLiteTimerStore returns a runtime.TimerStore backed by SQLite, for
+// Runner.RehydrateTimers. The db must already have migrations applied.
+// Mirrors [NewMySQLTimerStore] for MySQL and [NewTimerStore] for Postgres.
+//
+// SQLite is single-node and in-process; this constructor is well-suited for
+// embedded deployments, CLI tools, integration tests, and local development.
+//
+// Example:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	persistence.MigrateSQLite(ctx, db)
+//	ts := persistence.NewSQLiteTimerStore(db)
+//	armed, err := ts.ListArmed(ctx)
+func NewSQLiteTimerStore(db *sql.DB) runtime.TimerStore {
+	return store.NewTimerStore(db, dialect.NewSQLite())
+}
+
+// NewSQLiteRelay constructs an outbox relay over db that publishes each event via pub.
+// SQLite has no LISTEN/NOTIFY; the relay is poll-only: Run loops on the poll interval
+// calling DrainOnce until the context is cancelled.
+//
+// Call relay.Run(ctx) in a goroutine to start continuous polling, or call
+// relay.DrainOnce(ctx) to drain a single batch synchronously.
+//
+// Returns the same Relay interface as [NewMySQLRelay] and [NewRelay] (the Postgres
+// analog) so the three backends are interchangeable at the consumer site.
+//
+// Available options: [MySQLWithPollInterval], [MySQLWithBatchSize],
+// [MySQLWithRelayClock], [MySQLWithMaxDeliveryAttempts], [MySQLWithRelayBackoff],
+// [MySQLWithRelayLogger], [MySQLWithRelayTracerProvider], [MySQLWithRelayMeterProvider].
+// Note: there is no SQLiteWithListenNotify — SQLite is poll-only. Passing the
+// Postgres-only [WithListenNotify] has no effect (SQLite provides no notifier).
+//
+// SQLite enforces a single writer (db.SetMaxOpenConns(1)); the relay's claim+publish
+// cycle is compatible with this constraint.
+//
+// Example:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db.SetMaxOpenConns(1)
+//	persistence.MigrateSQLite(ctx, db)
+//	relay := persistence.NewSQLiteRelay(db, myPublisher,
+//	    persistence.MySQLWithPollInterval(500*time.Millisecond),
+//	)
+//	go relay.Run(ctx)
+func NewSQLiteRelay(db *sql.DB, pub runtime.Publisher, opts ...SQLiteRelayOption) Relay {
+	var cfg relayConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	// SQLite has no LISTEN/NOTIFY; cfg.listenNotify is intentionally ignored.
+	return store.NewRelay(db, dialect.NewSQLite(), pub, cfg.opts...)
+}
+
+// NewSQLiteCallLinkStore constructs the SQLite-backed runtime.CallLinkStore (read/claim
+// side). It provides ClaimPending, MarkNotified, LookupChild, and ListRunningChildren
+// over the wrkflw_call_links table. The write side is fused into Store.Create /
+// Store.Commit (ADR-0025); use [OpenSQLite] for that.
+//
+// Pass [WithCallLinkLease] and [WithCallLinkClock] to opt in to lease-based
+// exclusivity. Existing zero-option call sites compile unchanged.
+//
+// MigrateSQLite must have been applied before the first call to any method.
+//
+// Mirrors [NewMySQLCallLinkStore] for MySQL and [NewCallLinkStore] for Postgres.
+//
+// SQLite is single-node; lease-based exclusivity is rarely needed but is
+// supported for parity.
+//
+// Example:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	persistence.MigrateSQLite(ctx, db)
+//	cls := persistence.NewSQLiteCallLinkStore(db)
+//	pending, err := cls.ClaimPending(ctx, 100)
+func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) runtime.CallLinkStore {
+	return store.NewCallLinkStore(db, dialect.NewSQLite(), opts...)
+}
+
+// NewSQLiteChainLinkStore constructs the SQLite-backed runtime.ChainLinkStore for
+// process-instance chaining lineage (ADR-0045): Record persists one
+// predecessor->successor hop; LookupBySuccessor and ListByPredecessor serve
+// ancestry/audit queries. MigrateSQLite must have been applied before the first call.
+//
+// Mirrors [NewMySQLChainLinkStore] for MySQL and [NewChainLinkStore] for Postgres.
+//
+// Example:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	persistence.MigrateSQLite(ctx, db)
+//	links := persistence.NewSQLiteChainLinkStore(db)
+//	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+func NewSQLiteChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
+	return store.NewChainLinkStore(db, dialect.NewSQLite())
+}
+
+// NewSQLiteLister constructs the SQLite-backed runtime.InstanceLister for
+// admin-list and monitoring use-cases. It executes a keyset-cursor-paginated
+// query over wrkflw_instances and projects only the columns in
+// runtime.InstanceSummary (no full snapshot read).
+//
+// MigrateSQLite must have been applied before the first call to List.
+//
+// Mirrors [NewMySQLLister] for MySQL and [NewLister] for Postgres.
+//
+// Example:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	persistence.MigrateSQLite(ctx, db)
+//	lister := persistence.NewSQLiteLister(db)
+//	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
+func NewSQLiteLister(db *sql.DB) runtime.InstanceLister {
+	return store.NewLister(db, dialect.NewSQLite())
+}
+
+// NewSQLiteCallNotifier builds a durable call-activity notifier over db using the
+// SQLite call-link store: it claims terminal call links and resumes parked parents
+// (SubInstanceCompleted/Failed) idempotently. Run it in a goroutine (notifier.Run)
+// or drain manually (DrainOnce).
+//
+// This is the SQLite analog of [NewMySQLCallNotifier] and [NewCallNotifier] (the
+// Postgres facade constructor). The underlying runtime.CallNotifier is
+// dialect-agnostic: this constructor simply builds the SQLite-backed CallLinkStore
+// and passes it to runtime.NewCallNotifier. opts are forwarded to
+// runtime.NewCallNotifier; use runtime.WithCallNotifierClock to inject a fake clock
+// in tests.
+//
+// SQLite is single-node and in-process; the notifier is well-suited for embedded
+// deployments where a single process both runs and delivers call-link notifications.
+//
+// Example:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	persistence.MigrateSQLite(ctx, db)
+//	notifier := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
+//	go notifier.Run(ctx)
+func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+	return runtime.NewCallNotifier(store.NewCallLinkStore(db, dialect.NewSQLite()), deliver, reg, opts...)
+}
+
+// NewSQLiteDefinitionStore constructs the durable SQLite-backed definition store.
+// It satisfies runtime.DefinitionRegistry via its Lookup method, which resolves
+// a DefRef of the form "defID:version" (exact match) or "defID" (latest version).
+//
+// Use this together with [NewCachingDefinitionRegistry] to cache hot definitions.
+// It returns the same [DefinitionStore] interface as [NewMySQLDefinitionStore] and
+// [NewDefinitionStore] (the Postgres analog) so the three backends are
+// interchangeable at the consumer site.
+//
+// Mirrors [NewMySQLDefinitionStore] for MySQL and [NewDefinitionStore] for Postgres.
+//
+// Example:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	persistence.MigrateSQLite(ctx, db)
+//	ds := persistence.NewSQLiteDefinitionStore(db)
+//	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
+func NewSQLiteDefinitionStore(db *sql.DB) DefinitionStore {
+	return store.NewDefinitionStore(db, dialect.NewSQLite())
+}
+
+// NewSQLitePruner constructs a Pruner over db (returns the stable [Pruner] interface).
+// MigrateSQLite must have been applied before calling any method.
+//
+// It returns the same [Pruner] interface as [NewMySQLPruner] and [NewPruner] (the
+// Postgres analog) so the three backends are interchangeable at the consumer site.
+//
+// Wire it into a scheduled job the consumer owns, e.g.:
+//
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	persistence.MigrateSQLite(ctx, db)
+//	pruner := persistence.NewSQLitePruner(db)
+//	// every hour, drop outbox events published more than 7 days ago:
+//	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
+func NewSQLitePruner(db *sql.DB) Pruner {
+	return store.NewPruner(db, dialect.NewSQLite())
 }

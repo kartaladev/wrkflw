@@ -186,7 +186,7 @@ Satisfied by the relay. Wired via `WithRelayStatsAdmin`.
 | `Stats` | `(ctx) (runtime.TimerStats, error)` | Armed-timer aggregate (count + next fire-at). |
 | `ListArmed` | `(ctx) ([]runtime.ArmedTimer, error)` | All armed timers, in `(FireAt, InstanceID, TimerID)` order. |
 
-Satisfied by the persistence `TimerStore` (Postgres/MySQL). `runtime.MemTimerStore`
+Satisfied by the persistence `TimerStore` (Postgres/MySQL/SQLite). `runtime.MemTimerStore`
 implements only `ListArmed`, so it is **not** a full `TimerAdmin`. Wired via `WithTimerAdmin`.
 
 ### `LineageAdmin` (`lineage.go`)

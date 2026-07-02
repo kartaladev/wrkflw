@@ -33,7 +33,8 @@
 //
 // # Supporting ports and façades
 //
-//   - persistence  The persistence façade over the SQL/Postgres store.
+//   - persistence  The persistence façade over the neutral SQL store: OpenPostgres,
+//     OpenMySQL, and OpenSQLite backends (Postgres/MySQL/SQLite dialects, ADR-0081/0082).
 //   - eventing     The eventing façade for publishing domain events (outbox).
 //   - scheduling   The façade over the timer/deadline scheduler.
 //   - observability Metrics, traces, and slog wiring at the runtime boundary.
