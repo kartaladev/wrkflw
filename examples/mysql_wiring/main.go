@@ -128,7 +128,10 @@ func run(logger *slog.Logger) error {
 	})
 	// The definition store resolves parent-process definitions during notification.
 	defStore := persistence.NewMySQLDefinitionStore(db)
-	notifier := persistence.NewMySQLCallNotifier(db, deliver, defStore)
+	notifier, err := persistence.NewMySQLCallNotifier(db, deliver, defStore)
+	if err != nil {
+		return fmt.Errorf("call notifier: %w", err)
+	}
 	go func() {
 		if nerr := notifier.Run(workerCtx); nerr != nil && !errors.Is(nerr, context.Canceled) {
 			logger.Error("mysql call notifier run", "err", nerr)

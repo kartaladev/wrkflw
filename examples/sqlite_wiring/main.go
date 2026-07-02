@@ -149,7 +149,10 @@ func run(logger *slog.Logger) error {
 	})
 	// The definition store resolves parent-process definitions during notification.
 	defStore := persistence.NewSQLiteDefinitionStore(db)
-	notifier := persistence.NewSQLiteCallNotifier(db, deliver, defStore)
+	notifier, err := persistence.NewSQLiteCallNotifier(db, deliver, defStore)
+	if err != nil {
+		return err
+	}
 	go func() {
 		if nerr := notifier.Run(workerCtx); nerr != nil && !errors.Is(nerr, context.Canceled) {
 			logger.Error("sqlite call notifier run", "err", nerr)

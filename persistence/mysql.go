@@ -315,7 +315,7 @@ func NewMySQLLister(db *sql.DB) runtime.InstanceLister {
 //	persistence.MigrateMySQL(ctx, db)
 //	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
 	return runtime.NewCallNotifier(store.NewCallLinkStore(db, dialect.NewMySQL()), deliver, reg, opts...)
 }
 

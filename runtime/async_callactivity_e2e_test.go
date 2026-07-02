@@ -137,7 +137,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
+	notifier := mustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; parks because grandchild parks at human task ─────
 	const parentID = "e2e-nested-parent-i1"
@@ -251,7 +251,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
+	notifier := mustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; child fails immediately during its first burst ────
 	const parentID = "e2e-fail-parent-i1"
@@ -349,7 +349,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def2, instanceID, trg)
 		return err
 	})
-	notifier := runtime.NewCallNotifier(cl, deliverFn, reg)
+	notifier := mustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run the self-calling root ─────────────────────────────────────
 	// During Run, each child synchronously spawns its own child (via runChild

@@ -31,7 +31,7 @@ func newTracingCallNotifier(t *testing.T) (*runtime.CallNotifier, *tracetest.Spa
 		"batch-span-parent:1": {ID: "batch-span-parent", Version: 1},
 	})
 
-	n := runtime.NewCallNotifier(cl, deliver, reg,
+	n := mustCallNotifier(t, cl, deliver, reg,
 		runtime.WithCallNotifierTracerProvider(tp),
 	)
 	return n, sr
@@ -69,7 +69,7 @@ func TestCallNotifierBatchSpan(t *testing.T) {
 	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	n2 := runtime.NewCallNotifier(cl, deliver, reg,
+	n2 := mustCallNotifier(t, cl, deliver, reg,
 		runtime.WithCallNotifierTracerProvider(tp2),
 	)
 
@@ -152,7 +152,7 @@ func TestCallNotifierLinksNotifiedCounter(t *testing.T) {
 			deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 				return nil
 			})
-			n := runtime.NewCallNotifier(cl, deliver, reg,
+			n := mustCallNotifier(t, cl, deliver, reg,
 				runtime.WithCallNotifierMeterProvider(mp),
 			)
 
@@ -200,13 +200,13 @@ func TestCallNotifierTelemetryOptionsAdditive(t *testing.T) {
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
 
 	// All existing callers pass no telemetry options — must compile and not panic.
-	n := runtime.NewCallNotifier(cl, deliver, reg)
+	n := mustCallNotifier(t, cl, deliver, reg)
 	require.NotNil(t, n)
 
 	// Callers may supply any subset of the new options.
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
-	n2 := runtime.NewCallNotifier(cl, deliver, reg,
+	n2 := mustCallNotifier(t, cl, deliver, reg,
 		runtime.WithCallNotifierTracerProvider(tp),
 	)
 	require.NotNil(t, n2)
@@ -215,12 +215,12 @@ func TestCallNotifierTelemetryOptionsAdditive(t *testing.T) {
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-	n3 := runtime.NewCallNotifier(cl, deliver, reg,
+	n3 := mustCallNotifier(t, cl, deliver, reg,
 		runtime.WithCallNotifierMeterProvider(mp),
 	)
 	require.NotNil(t, n3)
 
-	n4 := runtime.NewCallNotifier(cl, deliver, reg,
+	n4 := mustCallNotifier(t, cl, deliver, reg,
 		runtime.WithCallNotifierTracerProvider(tp),
 		runtime.WithCallNotifierMeterProvider(mp),
 	)

@@ -300,7 +300,8 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 		return nil
 	})
 
-	notifier := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
+	notifier, err := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
+	require.NoError(t, err)
 
 	notified, err := notifier.DrainOnce(t.Context())
 	require.NoError(t, err)

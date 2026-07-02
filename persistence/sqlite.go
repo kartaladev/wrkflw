@@ -255,7 +255,7 @@ func NewSQLiteLister(db *sql.DB) runtime.InstanceLister {
 //	persistence.MigrateSQLite(ctx, db)
 //	notifier := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
 	return runtime.NewCallNotifier(store.NewCallLinkStore(db, dialect.NewSQLite()), deliver, reg, opts...)
 }
 

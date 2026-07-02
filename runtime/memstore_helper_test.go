@@ -63,3 +63,11 @@ func mustSignalBus(t *testing.T, deliver runtime.DeliverFunc, opts ...runtime.Si
 	require.NoError(t, err)
 	return bus
 }
+
+// mustCallNotifier builds a CallNotifier or fails the test.
+func mustCallNotifier(t *testing.T, cl runtime.CallLinkStore, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+	t.Helper()
+	n, err := runtime.NewCallNotifier(cl, deliver, reg, opts...)
+	require.NoError(t, err)
+	return n
+}

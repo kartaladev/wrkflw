@@ -456,6 +456,6 @@ func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
 //
 // reg MUST resolve every parent definition under the exact key "<defID>:<version>";
 // an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
-func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
 	return runtime.NewCallNotifier(store.NewCallLinkStore(pool, dialect.NewPostgres()), deliver, reg, opts...)
 }

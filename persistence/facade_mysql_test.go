@@ -586,7 +586,8 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 		return nil
 	})
 
-	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
+	notifier, err := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
+	require.NoError(t, err)
 
 	notified, err := notifier.DrainOnce(t.Context())
 	require.NoError(t, err)
