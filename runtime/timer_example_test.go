@@ -58,7 +58,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	})
 
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
 
@@ -136,7 +136,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	r := runtime.NewRunner(
 		cat, store,

@@ -58,7 +58,7 @@ func TestActionFailedHonoursRetryContract(t *testing.T) {
 				return nil, tc.actErr
 			})
 
-			store := runtime.NewMemStore()
+			store := mustMemStore(t)
 			cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": act})
 			// No retry policy: ActionFailed is terminal → instance reaches StatusFailed.
 			runner := runtime.NewRunner(cat, store)

@@ -84,7 +84,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	def := signalCatchDef("approved")
 
@@ -146,7 +146,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	r := runtime.NewRunner(nil, runtime.NewMemStore(), runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	r := runtime.NewRunner(nil, mustMemStore(t), runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
 	_, err := r.Run(t.Context(), def, "i1", nil)
@@ -162,7 +162,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
@@ -208,7 +208,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
@@ -257,7 +257,7 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	ctx := t.Context()
 	fc := clockwork.NewFakeClock()
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	def := messageCatchDef("order-shipped")
 
 	r := runtime.NewRunner(nil, store, runtime.WithRunnerClock(fc))

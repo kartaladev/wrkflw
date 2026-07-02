@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
@@ -39,7 +40,8 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
 	az := authz.RoleAuthorizer{}
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": greetServiceAction{},
 	})

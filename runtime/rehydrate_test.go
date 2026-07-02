@@ -19,7 +19,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 13, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := runtime.NewMemTimerStore()
-	store := runtime.NewMemStoreWithTimers(mts)
+	store := mustMemStore(t, runtime.WithTimers(mts))
 	def := timerIntermediateDef()
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		def.ID + ":1": def, // key format "DefID:DefVersion" — match def.ID/def.Version
@@ -59,7 +59,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 }
 
 func TestRehydrateTimersRequiresWiring(t *testing.T) {
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	r := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	err := r.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")

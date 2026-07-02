@@ -29,7 +29,7 @@ func topicsOf(evs []runtime.OutboxEvent) []string {
 // "instance.terminated" event — NOT the old, status-inaccurate "instance.failed".
 func TestCancelEmitsInstanceTerminated(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	r := runtime.NewRunner(action.NewMapCatalog(nil), store,
@@ -65,7 +65,7 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 // completing instance still emits exactly one "instance.completed".
 func TestCompleteEmitsInstanceCompleted(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	r := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 
 	def := &model.ProcessDefinition{

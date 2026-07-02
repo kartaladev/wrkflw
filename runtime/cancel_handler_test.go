@@ -66,7 +66,7 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 		}),
 	})
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
@@ -99,7 +99,7 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 		}),
 	})
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
@@ -121,7 +121,7 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	// Empty catalog — "cleanup" will not resolve.

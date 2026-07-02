@@ -3,6 +3,7 @@ package runtime
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 
@@ -35,31 +36,56 @@ type MemStore struct {
 	timers    *MemTimerStore    // optional; nil means no timer tracking
 }
 
-// NewMemStore constructs an empty MemStore with no call-link tracking.
-func NewMemStore() *MemStore {
-	return &MemStore{
-		instances: map[string]*memInstance{},
-		journal:   map[string][]engine.Trigger{},
+// memStoreConfig holds the optional collaborators for a MemStore.
+type memStoreConfig struct {
+	callLinks *MemCallLinkStore
+	timers    *MemTimerStore
+}
+
+// MemStoreOption configures a MemStore. Options validate eagerly and may return
+// an error.
+type MemStoreOption func(*memStoreConfig) error
+
+// WithCallLinks records call-link correlation into cl atomically with
+// Create/Commit (ADR-0025).
+func WithCallLinks(cl *MemCallLinkStore) MemStoreOption {
+	return func(c *memStoreConfig) error {
+		if cl == nil {
+			return fmt.Errorf("%w: call-link store", ErrNilDependency)
+		}
+		c.callLinks = cl
+		return nil
 	}
 }
 
-// NewMemStoreWithCallLinks constructs a MemStore that records call-link
-// correlation into cl atomically with Create/Commit (ADR-0025).
-func NewMemStoreWithCallLinks(cl *MemCallLinkStore) *MemStore {
-	return &MemStore{
-		instances: map[string]*memInstance{},
-		journal:   map[string][]engine.Trigger{},
-		callLinks: cl,
+// WithTimers records armed-timer side-effects into mts atomically with each
+// Create/Commit.
+func WithTimers(mts *MemTimerStore) MemStoreOption {
+	return func(c *memStoreConfig) error {
+		if mts == nil {
+			return fmt.Errorf("%w: timer store", ErrNilDependency)
+		}
+		c.timers = mts
+		return nil
 	}
 }
 
-// NewMemStoreWithTimers constructs a MemStore that records armed-timer
-// side-effects (AppliedStep.TimerArms / TimerCancels) into mts atomically with
-// each Create/Commit.
-func NewMemStoreWithTimers(mts *MemTimerStore) *MemStore {
-	m := NewMemStore()
-	m.timers = mts
-	return m
+// NewMemStore constructs an in-memory Store + JournalReader. By default it
+// tracks neither call-links nor timers; use [WithCallLinks] / [WithTimers] to
+// opt in.
+func NewMemStore(opts ...MemStoreOption) (*MemStore, error) {
+	var cfg memStoreConfig
+	for _, o := range opts {
+		if err := o(&cfg); err != nil {
+			return nil, err
+		}
+	}
+	return &MemStore{
+		instances: map[string]*memInstance{},
+		journal:   map[string][]engine.Trigger{},
+		callLinks: cfg.callLinks,
+		timers:    cfg.timers,
+	}, nil
 }
 
 // Create inserts a brand-new instance from its first applied step and returns

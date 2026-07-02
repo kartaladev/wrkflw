@@ -67,7 +67,11 @@ func main() {
 		}),
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r := runtime.NewRunner(cat, memSt)
 
 	cases := []struct {
 		id     string

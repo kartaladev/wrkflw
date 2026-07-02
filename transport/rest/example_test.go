@@ -38,7 +38,10 @@ func Example_responseShapes() {
 	// ── 1. In-memory wiring ──────────────────────────────────────────────────
 
 	fc := clockwork.NewFakeClock()
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
@@ -86,7 +89,7 @@ func Example_responseShapes() {
 
 	// Use runner.Run directly so the instance parks at the human task before
 	// service.StartInstance (which also uses runner) — same observable state.
-	_, err := runner.Run(context.Background(), def, "demo-instance-1", nil)
+	_, err = runner.Run(context.Background(), def, "demo-instance-1", nil)
 	if err != nil {
 		fmt.Printf("runner.Run error: %v\n", err)
 		return

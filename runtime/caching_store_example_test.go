@@ -25,8 +25,12 @@ func ExampleNewCachingStore() {
 
 	// Wrap an in-memory backing store with the write-through cache.
 	// AlwaysOwn is appropriate for a single-process embedding.
+	backing, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
 	store := runtime.NewCachingStore(
-		runtime.NewMemStore(),
+		backing,
 		runtime.AlwaysOwn{},
 	)
 

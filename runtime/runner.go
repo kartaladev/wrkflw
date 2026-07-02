@@ -181,14 +181,14 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 	return func(r *Runner) { r.defsReg = reg }
 }
 
-// WithCallLinks wires a [CallLinkStore] into the Runner, enabling the
+// WithCallLinkStore wires a [CallLinkStore] into the Runner, enabling the
 // non-blocking (async) path for [engine.StartSubInstance] commands (call
 // activities). When this option is set, [perform] records the parent↔child link
 // and starts the child's first burst without waiting for the child to complete —
 // the parent parks at the call node until a notifier delivers the outcome. When
 // this option is NOT set, the synchronous behavior (run child to completion
 // in-process) is preserved verbatim.
-func WithCallLinks(store CallLinkStore) Option {
+func WithCallLinkStore(store CallLinkStore) Option {
 	return func(r *Runner) { r.callLinks = store }
 }
 
@@ -306,7 +306,7 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 // Optional capabilities are supplied via functional options; the full set of
 // With* functions returning [Option] is (see each for details):
 //   - Node-kind capabilities: [WithHumanTasks], [WithScheduler], [WithSignalBus],
-//     [WithDefinitions], [WithCallLinks], [WithTimerStore].
+//     [WithDefinitions], [WithCallLinkStore], [WithTimerStore].
 //   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
 //     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
 //   - Time source: [WithRunnerClock] (default [clock.System]).

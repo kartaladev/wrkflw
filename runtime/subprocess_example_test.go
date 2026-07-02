@@ -89,7 +89,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	})
 
 	clk := clock.System()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	// Build the definition registry with the child def.
 	child := childDef()
@@ -141,7 +141,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	})
 
 	clk := clock.System()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	// Child def uses a failing action.
 	failingChild := &model.ProcessDefinition{
@@ -240,7 +240,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	parkingChild := parkingChildDef()
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
@@ -332,7 +332,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	def := selfRefDef()
 	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
@@ -374,7 +374,7 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	// No WithDefinitions option.
 	runner := runtime.NewRunner(nil, store, runtime.WithRunnerClock(clk))

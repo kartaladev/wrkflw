@@ -68,7 +68,11 @@ func main() {
 		"credit-check": child,
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore(),
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r := runtime.NewRunner(cat, memSt,
 		runtime.WithDefinitions(reg),
 	)
 

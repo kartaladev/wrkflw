@@ -48,7 +48,7 @@ func buildOrderPlacedSendTaskDef() *model.ProcessDefinition {
 // and that Run succeeds without any MessageSink configured.
 func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	def := buildOrderPlacedSendTaskDef()
-	store := &recordingStore{Store: runtime.NewMemStore()}
+	store := &recordingStore{Store: mustMemStore(t)}
 	r := runtime.NewRunner(nil, store) // NO MessageSink — must not error
 	_, err := r.Run(t.Context(), def, "i-1", map[string]any{"k": "v"})
 	require.NoError(t, err)

@@ -45,7 +45,7 @@ func runningState(id string) engine.InstanceState {
 func startTrg() engine.Trigger { return engine.NewStartInstance(time.Unix(0, 0).UTC(), nil) }
 
 func TestCachingStoreServesOwnedLoadFromCache(t *testing.T) {
-	cs := &countingStore{backing: runtime.NewMemStore()}
+	cs := &countingStore{backing: mustMemStore(t)}
 	clk := clockwork.NewFakeClock()
 	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clk))
 
@@ -66,7 +66,7 @@ func TestCachingStoreServesOwnedLoadFromCache(t *testing.T) {
 }
 
 func TestCachingStoreBypassesWhenNotOwned(t *testing.T) {
-	cs := &countingStore{backing: runtime.NewMemStore()}
+	cs := &countingStore{backing: mustMemStore(t)}
 	store := runtime.NewCachingStore(cs, neverOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()))
 
 	id := "c2"
@@ -82,7 +82,7 @@ func TestCachingStoreBypassesWhenNotOwned(t *testing.T) {
 }
 
 func TestCachingStoreEvictsOnConcurrentUpdate(t *testing.T) {
-	mem := runtime.NewMemStore()
+	mem := mustMemStore(t)
 	cs := &countingStore{backing: mem}
 	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()))
 
@@ -106,7 +106,7 @@ func TestCachingStoreEvictsOnConcurrentUpdate(t *testing.T) {
 }
 
 func TestCachingStoreTTLExpiryForcesReload(t *testing.T) {
-	cs := &countingStore{backing: runtime.NewMemStore()}
+	cs := &countingStore{backing: mustMemStore(t)}
 	clk := clockwork.NewFakeClock()
 	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCacheTTL(time.Minute), runtime.WithCachingStoreClock(clk))
 
@@ -125,7 +125,7 @@ func TestCachingStoreTTLExpiryForcesReload(t *testing.T) {
 }
 
 func TestCachingStoreLRUEvictsBeyondMax(t *testing.T) {
-	cs := &countingStore{backing: runtime.NewMemStore()}
+	cs := &countingStore{backing: mustMemStore(t)}
 	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{},
 		runtime.WithCachingStoreClock(clockwork.NewFakeClock()),
 		runtime.WithCacheMaxEntries(2), runtime.WithCacheTTL(time.Hour))
@@ -146,7 +146,7 @@ func TestCachingStoreLRUEvictsBeyondMax(t *testing.T) {
 }
 
 func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
-	mem := runtime.NewMemStore()
+	mem := mustMemStore(t)
 	store := runtime.NewCachingStore(mem, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()), runtime.WithCacheTTL(time.Hour))
 
 	id := "race1"
@@ -171,7 +171,7 @@ func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
 }
 
 func TestCachingStoreReleaseEvicts(t *testing.T) {
-	cs := &countingStore{backing: runtime.NewMemStore()}
+	cs := &countingStore{backing: mustMemStore(t)}
 	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()), runtime.WithCacheTTL(time.Hour))
 
 	id := "rel1"
@@ -195,14 +195,14 @@ func TestCachingStoreReleaseEvicts(t *testing.T) {
 
 func TestNewCachingStoreDefaultClockNoPanic(t *testing.T) {
 	// No clock option → defaults to clock.System(); construction + a basic op must not panic.
-	cs := &countingStore{backing: runtime.NewMemStore()}
+	cs := &countingStore{backing: mustMemStore(t)}
 	s := runtime.NewCachingStore(cs, runtime.AlwaysOwn{})
 	assert.NotNil(t, s)
 }
 
 func TestNewCachingStoreWithClockOption(t *testing.T) {
 	// WithCachingStoreClock injects a fake clock; advancing past TTL must force a backing reload.
-	cs := &countingStore{backing: runtime.NewMemStore()}
+	cs := &countingStore{backing: mustMemStore(t)}
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
 	s := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCacheTTL(time.Minute), runtime.WithCachingStoreClock(fake))
 	assert.NotNil(t, s)

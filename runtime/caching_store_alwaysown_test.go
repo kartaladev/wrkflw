@@ -67,7 +67,7 @@ func TestNewCachingStoreAlwaysOwnWarning(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 			_ = runtime.NewCachingStore(
-				runtime.NewMemStore(),
+				mustMemStore(t),
 				tc.owner,
 				runtime.WithCachingStoreClock(clockwork.NewFakeClock()),
 				runtime.WithCacheLogger(logger),

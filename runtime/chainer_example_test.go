@@ -21,7 +21,10 @@ import (
 // this example drives Chainer.Handle directly so the output is deterministic.
 func ExampleChainer() {
 	ctx := context.Background()
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
 	links := runtime.NewMemChainLinkStore()
 	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
 

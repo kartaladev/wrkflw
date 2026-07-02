@@ -40,6 +40,14 @@ const casbinPolicy = `
 p, approver, finance-task, claim
 `
 
+func mustMemStore() *runtime.MemStore {
+	m, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	return m
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -89,7 +97,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- EU instance: should be ALLOWED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r := runtime.NewRunner(nil, mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 
@@ -126,7 +134,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- US instance: should be DENIED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r := runtime.NewRunner(nil, mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 
@@ -195,7 +203,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITH the "approver" role → casbin policy grants finance-task claim.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r := runtime.NewRunner(nil, mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := r.Run(ctx, def, "finance-allow-001", nil)
@@ -215,7 +223,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITHOUT the "approver" role → casbin denies.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := runtime.NewRunner(nil, runtime.NewMemStore(),
+		r := runtime.NewRunner(nil, mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := r.Run(ctx, def, "finance-deny-001", nil)

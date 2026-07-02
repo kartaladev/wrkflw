@@ -89,7 +89,7 @@ func cancelPropRunner(store *runtime.MemStore, cl *runtime.MemCallLinkStore, def
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	return runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -112,7 +112,7 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 	ctx := t.Context()
 
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("prop-child")
 	parentDef := cancelPropParentDef("prop-parent", "prop-child")
@@ -149,7 +149,7 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	ctx := t.Context()
 
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	// grandchild parks at human task
 	grandchildDef := cancelPropChildDef("prop-grandchild")
@@ -202,7 +202,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	ctx := t.Context()
 
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("prop-missing-child")
 	parentDef := cancelPropParentDef("prop-missing-parent", "prop-missing-child")
@@ -223,7 +223,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	fullRunner := runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(fullReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -240,7 +240,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 		// "prop-missing-child" intentionally absent
 	})
 	partialRunner := runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(partialReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -261,14 +261,14 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	cl := runtime.NewMemCallLinkStore()
 
 	// We need to insert links directly via the MemStore path, but MemCallLinkStore
-	// exposes record/markTerminal only internally. Use MemStore + MemStoreWithCallLinks
+	// exposes record/markTerminal only internally. Use NewMemStore(WithCallLinks(cl))
 	// and a minimal runner run to populate the store, or test via the exported
 	// NewMemCallLinkStore + manual setup.
 	//
 	// Since record/markTerminal are unexported, we populate via store.Create/Commit
 	// using a minimal runner setup.
 
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 	childA := cancelPropChildDef("list-child-a")
 	childB := cancelPropChildDef("list-child-b")
 	childC := cancelPropChildDef("list-child-c") // different parent
@@ -295,7 +295,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	}
 	reg := cancelPropRegistry(fullDefs)
 	runner := runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -360,7 +360,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 func TestCancelPropagationNoCallLinks(t *testing.T) {
 	ctx := t.Context()
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	// Simple process: start → human task → end. Parks at the human task.
 	parentDef := &model.ProcessDefinition{
@@ -377,7 +377,7 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 		},
 	}
 
-	// Runner WITHOUT WithCallLinks — propagation gate disabled.
+	// Runner WITHOUT WithCallLinkStore — propagation gate disabled.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	runner := runtime.NewRunner(nil, store,
@@ -401,7 +401,7 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 	ctx := t.Context()
 
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("ctx-child")
 	parentDef := cancelPropParentDef("ctx-parent", "ctx-child")
@@ -423,13 +423,13 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 }
 
 // TestCancelPropagationNoDefsReg verifies that CancelInstance returns no error and
-// does NOT propagate when WithCallLinks is set but WithDefinitions is not (M1).
+// does NOT propagate when WithCallLinkStore is set but WithDefinitions is not (M1).
 // Symmetric to TestCancelPropagationNoCallLinks.
 func TestCancelPropagationNoDefsReg(t *testing.T) {
 	ctx := t.Context()
 
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("no-reg-child")
 	parentDef := cancelPropParentDef("no-reg-parent", "no-reg-child")
@@ -455,7 +455,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	noRegRunner := runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 		// intentionally NO WithDefinitions
 	)
@@ -493,7 +493,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	ctx := t.Context()
 
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	// D: leaf grandchild that parks at a human task.
 	dDef := cancelPropChildDef("dmnd-d")
@@ -525,7 +525,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	// The runner used for initial Run must use cl (not countingCL) so that call links
 	// are recorded in cl's internal store. The cancel runner uses countingCL.
 	setupRunner := runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -575,7 +575,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 
 	// Build the cancel runner with the counting wrapper so we observe the guard.
 	cancelRunner := runtime.NewRunner(nil, store,
-		runtime.WithCallLinks(countingCL),
+		runtime.WithCallLinkStore(countingCL),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)

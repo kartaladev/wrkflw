@@ -102,7 +102,10 @@ func main() {
 		"reviewer": {reviewer},
 	})
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(clk))
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
 
 	r := runtime.NewRunner(cat, store,
 		runtime.WithRunnerClock(clk),

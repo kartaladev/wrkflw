@@ -45,7 +45,7 @@ func messageBoundaryDef() *model.ProcessDefinition {
 func TestDeliverMessageFiresBoundary(t *testing.T) {
 	ctx := t.Context()
 	fc := clockwork.NewFakeClock()
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	taskStore := humantask.NewMemTaskStore()

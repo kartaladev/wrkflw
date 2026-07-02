@@ -137,7 +137,8 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
 	az := authz.RoleAuthorizer{}
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
 
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": serverTestGreetAction{},

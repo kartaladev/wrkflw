@@ -28,7 +28,8 @@ import (
 func minimalSvc(t *testing.T) service.Service {
 	t.Helper()
 	fc := clockwork.NewFakeClock()
-	store := runtime.NewMemStore()
+	store, err := runtime.NewMemStore()
+	require.NoError(t, err)
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 	runner := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))

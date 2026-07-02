@@ -57,9 +57,13 @@ func ExampleRunner_observability() {
 		}),
 	})
 
+	mem, err := runtime.NewMemStore()
+	if err != nil {
+		panic(err)
+	}
 	r := runtime.NewRunner(
 		cat,
-		runtime.NewMemStore(),
+		mem,
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 		runtime.WithLogger(slog.Default()),

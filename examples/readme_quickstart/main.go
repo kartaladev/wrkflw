@@ -78,7 +78,11 @@ flows:
 		}),
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r := runtime.NewRunner(cat, memSt)
 
 	state, err := r.Run(ctx, simpleDef, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {

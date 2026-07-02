@@ -89,9 +89,13 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(scheduler) // *Scheduler is an io.Closer
 
 	// --- Store, relay, and readiness probe (Postgres when DATABASE_URL is set) ---
+	memStore, merr := runtime.NewMemStore()
+	if merr != nil {
+		return merr
+	}
 	var (
-		store       runtime.Store = runtime.NewMemStore()
-		lister                    = store.(*runtime.MemStore)
+		store       runtime.Store = memStore
+		lister                    = memStore
 		readyChecks []rest.HealthCheck
 	)
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {

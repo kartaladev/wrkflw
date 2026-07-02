@@ -90,7 +90,7 @@ func TestCompensationThrowRunsSubProcessCompensationE2E(t *testing.T) {
 		}),
 	})
 
-	store := runtime.NewMemStore()
+	store := mustMemStore(t)
 	r := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc))
 
 	def := scopeCompensationDef()

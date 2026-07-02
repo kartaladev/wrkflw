@@ -22,7 +22,7 @@ func newInstanceState(id string, st engine.Status, at time.Time) engine.Instance
 // seedMemStore creates a MemStore and inserts each InstanceState via Create, returning the store.
 func seedMemStore(t *testing.T, states ...engine.InstanceState) *runtime.MemStore {
 	t.Helper()
-	ms := runtime.NewMemStore()
+	ms := mustMemStore(t)
 	for _, st := range states {
 		now := st.StartedAt
 		_, err := ms.Create(t.Context(), runtime.AppliedStep{

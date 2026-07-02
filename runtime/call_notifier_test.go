@@ -70,7 +70,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	// ── wiring ───────────────────────────────────────────────────────────────
 	clk := clock.System()
 	cl := runtime.NewMemCallLinkStore()
-	store := runtime.NewMemStoreWithCallLinks(cl)
+	store := mustMemStore(t, runtime.WithCallLinks(cl))
 
 	worker := authz.Actor{ID: "bob", Roles: []string{"worker"}}
 	child := notifierChildDef()
@@ -91,7 +91,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 
 	runner := runtime.NewRunner(nil, store,
 		runtime.WithRunnerClock(clk),
-		runtime.WithCallLinks(cl),
+		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
 	)

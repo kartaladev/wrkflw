@@ -75,7 +75,7 @@ func TestMemTimerStore(t *testing.T) {
 
 func TestMemStoreRecordsTimerOps(t *testing.T) {
 	mts := runtime.NewMemTimerStore()
-	store := runtime.NewMemStoreWithTimers(mts)
+	store := mustMemStore(t, runtime.WithTimers(mts))
 	at := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
 	st := engine.InstanceState{InstanceID: "i1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning, StartedAt: at}
 
@@ -108,7 +108,7 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := runtime.NewMemTimerStore()
-	store := runtime.NewMemStoreWithTimers(mts)
+	store := mustMemStore(t, runtime.WithTimers(mts))
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	r := runtime.NewRunner(action.NewMapCatalog(nil), store,
 		runtime.WithRunnerClock(fc),

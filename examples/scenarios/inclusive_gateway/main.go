@@ -71,7 +71,11 @@ func main() {
 		"fraud-check":   mk("fraud-check", "fraud_checked"),
 	})
 
-	r := runtime.NewRunner(cat, runtime.NewMemStore())
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+	r := runtime.NewRunner(cat, memSt)
 
 	fmt.Println("--- Application Screening: Inclusive Gateway ---")
 	state, err := r.Run(ctx, def, "app-001", map[string]any{

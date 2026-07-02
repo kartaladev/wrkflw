@@ -56,8 +56,12 @@ func main() {
 	az := authz.RoleAuthorizer{}
 	clk := clock.System()
 
+	memSt, err := runtime.NewMemStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
 	// No service-action catalog is needed for this process, so pass nil.
-	r := runtime.NewRunner(nil, runtime.NewMemStore(),
+	r := runtime.NewRunner(nil, memSt,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
