@@ -36,7 +36,7 @@ type Actor struct {
 // means allow-all.
 type AuthzSpec struct {
 	Roles      []string // actor authorized if it has any of these roles
-	Privileges []string // reserved for resource-privilege checks (future use)
+	Privileges []string // resource-privilege tokens evaluated by a casbin-backed Authorizer (e.g. "finance-task claim")
 	Attribute  string   // expr predicate over {"actor": Actor, "vars": map} (optional)
 }
 
