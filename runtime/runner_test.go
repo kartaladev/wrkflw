@@ -359,6 +359,7 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 }
 
 func TestNewRunnerFailsFast(t *testing.T) {
+	t.Parallel()
 	store := mustMemStore(t)
 	cat := action.NewMapCatalog(nil)
 	cases := []struct {

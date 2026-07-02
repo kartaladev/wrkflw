@@ -281,6 +281,7 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 }
 
 func TestNewTaskServiceFailsFast(t *testing.T) {
+	t.Parallel()
 	store := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 	cases := []struct {
