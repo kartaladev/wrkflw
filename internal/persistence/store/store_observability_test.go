@@ -32,10 +32,11 @@ func TestStoreLoadCommitSpans(t *testing.T) {
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-	s := store.New(db, dialect.NewSQLite(),
+	s, err := store.New(db, dialect.NewSQLite(),
 		store.WithStoreTracerProvider(tp),
 		store.WithStoreMeterProvider(mp),
 	)
+	require.NoError(t, err)
 
 	// Create → Load → Commit cycle.
 	step := appliedStep("obs-store-1", "obs.topic")
@@ -100,9 +101,10 @@ func TestStoreLoadErrorSpan(t *testing.T) {
 
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
-	s := store.New(db, dialect.NewSQLite(), store.WithStoreTracerProvider(tp))
+	s, err := store.New(db, dialect.NewSQLite(), store.WithStoreTracerProvider(tp))
+	require.NoError(t, err)
 
-	_, _, err := s.Load(t.Context(), "no-such-instance")
+	_, _, err = s.Load(t.Context(), "no-such-instance")
 	require.ErrorIs(t, err, runtime.ErrInstanceNotFound)
 
 	var loadSpan sdktrace.ReadOnlySpan
@@ -124,9 +126,10 @@ func TestStoreCommitConcurrentUpdateNotSpanError(t *testing.T) {
 
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
-	s := store.New(db, dialect.NewSQLite(), store.WithStoreTracerProvider(tp))
+	s, err := store.New(db, dialect.NewSQLite(), store.WithStoreTracerProvider(tp))
+	require.NoError(t, err)
 
-	_, err := s.Create(t.Context(), appliedStep("obs-cas-1", "cas.topic"))
+	_, err = s.Create(t.Context(), appliedStep("obs-cas-1", "cas.topic"))
 	require.NoError(t, err)
 
 	// Commit with a stale (wrong) expected token → version mismatch.
@@ -156,7 +159,8 @@ func TestStoreCommitConcurrentUpdateNotSpanError(t *testing.T) {
 // options (noop tracer/meter) still executes Load and Commit without panicking.
 func TestStoreNoOptionsNoPanic(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
-	s := store.New(db, dialect.NewSQLite())
+	s, err := store.New(db, dialect.NewSQLite())
+	require.NoError(t, err)
 
 	step := appliedStep("obs-noop-1", "noop.topic")
 	tok, err := s.Create(t.Context(), step)

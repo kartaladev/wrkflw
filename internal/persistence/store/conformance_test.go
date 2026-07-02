@@ -58,7 +58,8 @@ func forEachDialect(t *testing.T, fn func(t *testing.T, b backend)) {
 // working Querier on every supported backend by executing a trivial SELECT 1.
 func TestStoreQuerierRoundTrip(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
 		q := s.QuerierForTest(t.Context())
 
 		var one int

@@ -15,12 +15,12 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -132,7 +132,8 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 
 	// NewDefinitionStore must return a non-nil *postgres.DefinitionStore that
 	// satisfies runtime.DefinitionRegistry.
-	ds := persistence.NewDefinitionStore(pool)
+	ds, err := persistence.NewDefinitionStore(pool)
+	require.NoError(t, err)
 	require.NotNil(t, ds)
 
 	// Round-trip a definition through the store.
@@ -164,13 +165,14 @@ func TestRelayOptionsConstructors(t *testing.T) {
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	pub := &capturingPublisher{}
-	relay := persistence.NewRelay(pool, pub,
+	relay, err := persistence.NewRelay(pool, pub,
 		persistence.WithPollInterval(50*time.Millisecond),
 		persistence.WithBatchSize(10),
 		persistence.WithRelayClock(clock.System()),
 		persistence.WithMaxDeliveryAttempts(5),
 		persistence.WithRelayBackoff(time.Second, time.Minute),
 	)
+	require.NoError(t, err)
 	require.NotNil(t, relay)
 
 	// DrainOnce on an empty outbox must succeed with 0 rows drained.
@@ -197,7 +199,8 @@ func TestNewRelayDrainsOutbox(t *testing.T) {
 
 	// Drain via persistence.NewRelay.
 	pub := &capturingPublisher{}
-	relay := persistence.NewRelay(pool, pub)
+	relay, err := persistence.NewRelay(pool, pub)
+	require.NoError(t, err)
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 1, n, "relay must drain exactly one outbox event")
@@ -220,11 +223,12 @@ func TestRelayTelemetryOptions(t *testing.T) {
 	mp := sdkmetric.NewMeterProvider()
 	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-	relay := persistence.NewRelay(pool, &capturingPublisher{},
+	relay, err := persistence.NewRelay(pool, &capturingPublisher{},
 		persistence.WithRelayLogger(slog.Default()),
 		persistence.WithRelayTracerProvider(tp),
 		persistence.WithRelayMeterProvider(mp),
 	)
+	require.NoError(t, err)
 	require.NotNil(t, relay)
 
 	n, err := relay.DrainOnce(t.Context())

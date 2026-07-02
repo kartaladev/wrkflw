@@ -116,7 +116,8 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.Equal(t, 1, n, "exactly one message.OrderPlaced outbox row expected")
 
 	// ── 6. Relay drains the outbox → publishes to GoChannel ─────────────────
-	relay := persistence.NewRelay(pool, pub)
+	relay, err := persistence.NewRelay(pool, pub)
+	require.NoError(t, err)
 	drained, err := relay.DrainOnce(ctx)
 	require.NoError(t, err)
 	// At least the message.OrderPlaced row must have been drained.

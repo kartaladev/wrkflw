@@ -80,7 +80,8 @@ func TestCallLinkStoreErrors(t *testing.T) {
 			// Drop the table so the next read operation fails immediately.
 			_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_call_links")
 			require.NoError(t, err, "drop wrkflw_call_links")
-			cls := store.NewCallLinkStore(db, dialect.NewSQLite())
+			cls, err := store.NewCallLinkStore(db, dialect.NewSQLite())
+			require.NoError(t, err)
 			tc.run(t, cls)
 		})
 	}
@@ -90,7 +91,8 @@ func TestCallLinkStoreErrors(t *testing.T) {
 // surface an error when constructed with an unsupported connection type (neither
 // *pgxpool.Pool nor *sql.DB), covering the database.From() error path.
 func TestCallLinkStoreUnsupportedConn(t *testing.T) {
-	cls := store.NewCallLinkStore(struct{}{}, dialect.NewSQLite())
+	cls, err := store.NewCallLinkStore(struct{}{}, dialect.NewSQLite())
+	require.NoError(t, err)
 
 	t.Run("ClaimPending unsupported conn", func(t *testing.T) {
 		_, err := cls.ClaimPending(t.Context(), 10)
@@ -124,23 +126,26 @@ func TestCallLinkStoreUnsupportedConn(t *testing.T) {
 // transaction.JoinOrBegin error branch in claimLeasedSelectUpdate).
 func TestCallLinkStoreLeasedUnsupportedConn(t *testing.T) {
 	// Use Postgres dialect → SupportsReturning=true, SupportsSkipLocked=true → claimLeasedReturning
-	clsPG := store.NewCallLinkStore(struct{}{}, dialect.NewPostgres(),
+	clsPG, err := store.NewCallLinkStore(struct{}{}, dialect.NewPostgres(),
 		store.WithCallLinkLease("owner", 30_000_000_000), // 30s in nanos
 	)
-	_, err := clsPG.ClaimPending(t.Context(), 10)
+	require.NoError(t, err)
+	_, err = clsPG.ClaimPending(t.Context(), 10)
 	require.Error(t, err, "leased claim (returning) must fail on unsupported conn")
 
 	// Use MySQL dialect → SupportsReturning=false, SupportsSkipLocked=true → claimLeasedSelectUpdate
-	clsMY := store.NewCallLinkStore(struct{}{}, dialect.NewMySQL(),
+	clsMY, err := store.NewCallLinkStore(struct{}{}, dialect.NewMySQL(),
 		store.WithCallLinkLease("owner", 30_000_000_000),
 	)
+	require.NoError(t, err)
 	_, err = clsMY.ClaimPending(t.Context(), 10)
 	require.Error(t, err, "leased claim (select-update) must fail on unsupported conn")
 
 	// Use SQLite dialect → SupportsReturning=true, SupportsSkipLocked=false → claimLeasedSQLite
-	clsSQ := store.NewCallLinkStore(struct{}{}, dialect.NewSQLite(),
+	clsSQ, err := store.NewCallLinkStore(struct{}{}, dialect.NewSQLite(),
 		store.WithCallLinkLease("owner", 30_000_000_000),
 	)
+	require.NoError(t, err)
 	_, err = clsSQ.ClaimPending(t.Context(), 10)
 	require.Error(t, err, "leased claim (sqlite) must fail on unsupported conn")
 }
@@ -150,8 +155,10 @@ func TestCallLinkStoreLeasedUnsupportedConn(t *testing.T) {
 // calling ClaimPending. Uses SQLite (single-writer, in-process).
 func TestCallLinkStoreMarshalError(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
-	s := store.New(db, dialect.NewSQLite())
-	cls := store.NewCallLinkStore(db, dialect.NewSQLite())
+	s, err := store.New(db, dialect.NewSQLite())
+	require.NoError(t, err)
+	cls, err := store.NewCallLinkStore(db, dialect.NewSQLite())
+	require.NoError(t, err)
 
 	// Seed a completed link normally.
 	seed := callLinkBaseStepStore("scan-err-child")

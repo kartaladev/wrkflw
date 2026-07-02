@@ -21,7 +21,8 @@ func TestTimerStoreFacade(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-	ts := persistence.NewTimerStore(pool)
+	ts, err := persistence.NewTimerStore(pool)
+	require.NoError(t, err)
 	require.NotNil(t, ts)
 
 	armed, err := ts.ListArmed(t.Context())

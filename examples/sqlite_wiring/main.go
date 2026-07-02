@@ -126,7 +126,10 @@ func run(logger *slog.Logger) error {
 	// SQLite has no LISTEN/NOTIFY; NewSQLiteRelay is poll-only — do NOT pass
 	// any ListenNotify option. The poll interval defaults to 500 ms which is
 	// suitable for local/embedded deployments.
-	relay := persistence.NewSQLiteRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	relay, err := persistence.NewSQLiteRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	if err != nil {
+		return err
+	}
 	go func() {
 		if rerr := relay.Run(workerCtx); rerr != nil && !errors.Is(rerr, context.Canceled) {
 			logger.Error("sqlite relay run", "err", rerr)
@@ -148,7 +151,10 @@ func run(logger *slog.Logger) error {
 		return err
 	})
 	// The definition store resolves parent-process definitions during notification.
-	defStore := persistence.NewSQLiteDefinitionStore(db)
+	defStore, err := persistence.NewSQLiteDefinitionStore(db)
+	if err != nil {
+		return err
+	}
 	notifier, err := persistence.NewSQLiteCallNotifier(db, deliver, defStore)
 	if err != nil {
 		return err
@@ -225,7 +231,10 @@ func run(logger *slog.Logger) error {
 	})
 
 	// --- Timer store for rehydration ---
-	timerStore := persistence.NewSQLiteTimerStore(db)
+	timerStore, err := persistence.NewSQLiteTimerStore(db)
+	if err != nil {
+		return err
+	}
 
 	// --- Engine + human-task plumbing + Service facade ---
 	taskStore := humantask.NewMemTaskStore()
@@ -243,7 +252,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	lister := persistence.NewSQLiteLister(db)
+	lister, err := persistence.NewSQLiteLister(db)
+	if err != nil {
+		return err
+	}
 	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)
 
 	// --- Health probe (SQLite *sql.DB ping) ---

@@ -13,7 +13,8 @@
 //
 // # Relay (transactional outbox drain)
 //
-//	relay := persistence.NewRelay(pool, myPublisher)
+//	relay, err := persistence.NewRelay(pool, myPublisher)
+//	if err != nil { ... }
 //	go relay.Run(ctx)
 package persistence
 
@@ -200,7 +201,11 @@ func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Stor
 	if err := database.ProbeUTC(ctx, q, database.Postgres); err != nil {
 		return nil, err
 	}
-	return store.New(pool, dialect.NewPostgres(), opts...), nil
+	s, err := store.New(pool, dialect.NewPostgres(), opts...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // Migrate applies the embedded schema migrations to pool. It is idempotent:
@@ -216,7 +221,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 // It satisfies runtime.DefinitionRegistry via its Lookup method.
 //
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
-func NewDefinitionStore(pool *pgxpool.Pool) DefinitionStore {
+func NewDefinitionStore(pool *pgxpool.Pool) (DefinitionStore, error) {
 	return store.NewDefinitionStore(pool, dialect.NewPostgres())
 }
 
@@ -248,7 +253,7 @@ func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.D
 // persistence.WithRelayBackoff. The relay isolates publish failures per row
 // (a poison event never blocks healthy peers) and quarantines a row to a
 // dead-letter status after MaxDeliveryAttempts (ADR-0017).
-func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) Relay {
+func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -324,7 +329,7 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 //	persistence.Migrate(ctx, pool)
 //	lister := persistence.NewLister(pool)
 //	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
-func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
+func NewLister(pool *pgxpool.Pool) (runtime.InstanceLister, error) {
 	return store.NewLister(pool, dialect.NewPostgres())
 }
 
@@ -394,7 +399,7 @@ func WithCallLinkClock(clk clock.Clock) CallLinkOption {
 //	    persistence.WithCallLinkLease("replica-1", 30*time.Second),
 //	)
 //	pending, err := cls.ClaimPending(ctx, 100)
-func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) runtime.CallLinkStore {
+func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (runtime.CallLinkStore, error) {
 	return store.NewCallLinkStore(pool, dialect.NewPostgres(), opts...)
 }
 
@@ -407,7 +412,7 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) runtime.CallLi
 //	persistence.Migrate(ctx, pool)
 //	ts := persistence.NewTimerStore(pool)
 //	armed, err := ts.ListArmed(ctx)
-func NewTimerStore(pool *pgxpool.Pool) runtime.TimerStore {
+func NewTimerStore(pool *pgxpool.Pool) (runtime.TimerStore, error) {
 	return store.NewTimerStore(pool, dialect.NewPostgres())
 }
 
@@ -423,7 +428,7 @@ func NewTimerStore(pool *pgxpool.Pool) runtime.TimerStore {
 //	persistence.Migrate(ctx, pool)
 //	links := persistence.NewChainLinkStore(pool)
 //	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
-func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
+func NewChainLinkStore(pool *pgxpool.Pool) (runtime.ChainLinkStore, error) {
 	return store.NewChainLinkStore(pool, dialect.NewPostgres())
 }
 
@@ -457,5 +462,9 @@ func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
 // reg MUST resolve every parent definition under the exact key "<defID>:<version>";
 // an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
 func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
-	return runtime.NewCallNotifier(store.NewCallLinkStore(pool, dialect.NewPostgres()), deliver, reg, opts...)
+	cls, err := store.NewCallLinkStore(pool, dialect.NewPostgres())
+	if err != nil {
+		return nil, err
+	}
+	return runtime.NewCallNotifier(cls, deliver, reg, opts...)
 }

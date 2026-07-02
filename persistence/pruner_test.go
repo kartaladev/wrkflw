@@ -20,7 +20,8 @@ func TestPrunerFacade(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-	p := persistence.NewPruner(pool)
+	p, err := persistence.NewPruner(pool)
+	require.NoError(t, err)
 
 	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	cutoff := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)

@@ -72,9 +72,11 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 		st, err := persistence.OpenPostgres(ctx, pool)
 		require.NoError(t, err)
 
-		links := persistence.NewChainLinkStore(pool)
+		links, err := persistence.NewChainLinkStore(pool)
+		require.NoError(t, err)
 		pub, sub, closer := eventing.NewGoChannelPublisher()
-		relay := persistence.NewRelay(pool, pub)
+		relay, err := persistence.NewRelay(pool, pub)
+		require.NoError(t, err)
 
 		fn(t, chainingDialect{store: st, links: links, relay: relay, pub: pub, sub: sub, closer: closer})
 		require.NoError(t, closer.Close())
@@ -89,9 +91,11 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 		st, err := persistence.OpenMySQL(ctx, db)
 		require.NoError(t, err)
 
-		links := persistence.NewMySQLChainLinkStore(db)
+		links, err := persistence.NewMySQLChainLinkStore(db)
+		require.NoError(t, err)
 		pub, sub, closer := eventing.NewGoChannelPublisher()
-		relay := persistence.NewMySQLRelay(db, pub)
+		relay, err := persistence.NewMySQLRelay(db, pub)
+		require.NoError(t, err)
 
 		fn(t, chainingDialect{store: st, links: links, relay: relay, pub: pub, sub: sub, closer: closer})
 		require.NoError(t, closer.Close())
@@ -106,9 +110,11 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 		st, err := persistence.OpenSQLite(ctx, db)
 		require.NoError(t, err)
 
-		links := persistence.NewSQLiteChainLinkStore(db)
+		links, err := persistence.NewSQLiteChainLinkStore(db)
+		require.NoError(t, err)
 		pub, sub, closer := eventing.NewGoChannelPublisher()
-		relay := persistence.NewSQLiteRelay(db, pub)
+		relay, err := persistence.NewSQLiteRelay(db, pub)
+		require.NoError(t, err)
 
 		fn(t, chainingDialect{store: st, links: links, relay: relay, pub: pub, sub: sub, closer: closer})
 		require.NoError(t, closer.Close())
@@ -125,7 +131,7 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 
 	catalog := action.NewMapCatalog(nil)
 	runner, err := runtime.NewRunner(catalog, d.store)
-		require.NoError(t, err)
+	require.NoError(t, err)
 
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.
 	policy := func(ctx context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {

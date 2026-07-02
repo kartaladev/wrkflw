@@ -42,8 +42,10 @@ func seedTimerInstance(
 // three dialects, with correct field projection and UTC-normalised FireAt.
 func TestTimerStoreListArmed(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		ts := store.NewTimerStore(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ts, err := store.NewTimerStore(b.conn, b.dialect)
+		require.NoError(t, err)
 		var _ runtime.TimerStore = ts // compile-time interface check
 
 		base := time.Date(2026, 6, 22, 14, 0, 0, 0, time.UTC)
@@ -95,7 +97,8 @@ func TestTimerStoreListArmed(t *testing.T) {
 // slice (not an error) when the wrkflw_timers table is empty.
 func TestTimerStoreListArmedEmpty(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ts := store.NewTimerStore(b.conn, b.dialect)
+		ts, err := store.NewTimerStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		armed, err := ts.ListArmed(t.Context())
 		require.NoError(t, err, "%s: ListArmed on empty table", b.name)
@@ -108,8 +111,10 @@ func TestTimerStoreListArmedEmpty(t *testing.T) {
 // timer_id is tertiary.
 func TestTimerStoreListArmedMultiInstance(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		ts := store.NewTimerStore(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ts, err := store.NewTimerStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		base := time.Date(2026, 6, 22, 15, 0, 0, 0, time.UTC)
 
@@ -141,8 +146,10 @@ func TestTimerStoreListArmedMultiInstance(t *testing.T) {
 // NextFireAt (nil when empty, earliest fire_at when non-empty), UTC-located.
 func TestTimerStoreStats(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		ts := store.NewTimerStore(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ts, err := store.NewTimerStore(b.conn, b.dialect)
+		require.NoError(t, err)
 		var _ runtime.TimerStatsReader = ts // compile-time interface check
 
 		// Stats on empty table.
@@ -187,8 +194,10 @@ func TestTimerStoreStats(t *testing.T) {
 // precision so the assertion holds on all three backends.
 func TestTimerStoreFireAtSubSecond(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		s := store.New(b.conn, b.dialect)
-		ts := store.NewTimerStore(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ts, err := store.NewTimerStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		// Use microsecond precision: Postgres TIMESTAMPTZ and MySQL DATETIME(6)
 		// store at most 6 decimal places; nanosecond digits are truncated/rounded.

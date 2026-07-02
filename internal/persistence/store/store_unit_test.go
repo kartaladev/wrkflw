@@ -11,9 +11,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
-// allDialects returns one Store per dialect over a nil connection. The stores
-// are used only for pure-function coverage (mapConflict, timeArg) that does not
-// touch the connection.
+// allDialects returns one dialect per name. Stores built for pure-function
+// coverage (mapConflict, timeArg) must use a non-nil conn such as struct{}{}.
 func allDialects() map[string]dialect.Dialect {
 	return map[string]dialect.Dialect{
 		"postgres": dialect.NewPostgres(),
@@ -29,7 +28,8 @@ func TestMapConflictPassThrough(t *testing.T) {
 	sentinel := errors.New("plain error")
 	for name, d := range allDialects() {
 		t.Run(name, func(t *testing.T) {
-			s := store.New(nil, d)
+			s, err := store.New(struct{}{}, d)
+			require.NoError(t, err)
 			require.ErrorIs(t, s.MapConflictForTest(sentinel), sentinel,
 				"%s: non-retryable error must pass through unchanged", name)
 			require.NoError(t, s.MapConflictForTest(nil), "%s: nil stays nil", name)
@@ -50,7 +50,8 @@ func TestTimeArgDialect(t *testing.T) {
 	ts := time.Date(2023, 11, 14, 22, 13, 20, 123456789, loc)
 
 	t.Run("sqlite formats RFC3339Nano UTC", func(t *testing.T) {
-		s := store.New(nil, dialect.NewSQLite())
+		s, err := store.New(struct{}{}, dialect.NewSQLite())
+		require.NoError(t, err)
 		got, ok := s.TimeArgForTest(ts).(string)
 		require.True(t, ok, "sqlite timeArg must be a string")
 		require.Equal(t, ts.UTC().Format(time.RFC3339Nano), got)
@@ -59,7 +60,8 @@ func TestTimeArgDialect(t *testing.T) {
 	for _, name := range []string{"postgres", "mysql"} {
 		t.Run(name+" binds time.Time", func(t *testing.T) {
 			d := allDialects()[name]
-			s := store.New(nil, d)
+			s, err := store.New(struct{}{}, d)
+			require.NoError(t, err)
 			got, ok := s.TimeArgForTest(ts).(time.Time)
 			require.True(t, ok, "%s timeArg must be a time.Time", name)
 			require.True(t, got.Equal(ts), "%s: instant must be preserved", name)

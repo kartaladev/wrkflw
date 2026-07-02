@@ -85,7 +85,8 @@ func richConformanceDefinition() *model.ProcessDefinition {
 // round-trip on all 3 dialects.
 func TestDefinitionStorePutGetRoundTrip(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 		// compile-time interface checks
 		var _ runtime.DefinitionRegistry = ds
 
@@ -102,7 +103,8 @@ func TestDefinitionStorePutGetRoundTrip(t *testing.T) {
 // TestDefinitionStoreLookupExact verifies Lookup("defID:version") on all 3 dialects.
 func TestDefinitionStoreLookupExact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		def := &model.ProcessDefinition{ID: "d-lx", Version: 1}
 		require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: PutDefinition", b.name)
@@ -118,7 +120,8 @@ func TestDefinitionStoreLookupExact(t *testing.T) {
 // definition with the highest version when multiple versions exist.
 func TestDefinitionStoreLookupLatest(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d-ll", Version: 1}))
 		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d-ll", Version: 2}))
@@ -134,7 +137,8 @@ func TestDefinitionStoreLookupLatest(t *testing.T) {
 // the second value (no duplicate rows, second content wins).
 func TestDefinitionStoreUpsertOverwrite(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		first := &model.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-first"}}
 		second := &model.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-second"}}
@@ -153,9 +157,10 @@ func TestDefinitionStoreUpsertOverwrite(t *testing.T) {
 // runtime.ErrDefinitionNotFound when no row matches (defID, version).
 func TestDefinitionStoreGetNotFound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
-		_, err := ds.GetDefinition(t.Context(), "no-such-def", 99)
+		_, err = ds.GetDefinition(t.Context(), "no-such-def", 99)
 		require.Error(t, err, "%s: GetDefinition missing must error", b.name)
 		require.ErrorIs(t, err, runtime.ErrDefinitionNotFound,
 			"%s: must wrap ErrDefinitionNotFound; got %v", b.name, err)
@@ -166,10 +171,11 @@ func TestDefinitionStoreGetNotFound(t *testing.T) {
 // runtime.ErrDefinitionNotFound for both exact and latest forms.
 func TestDefinitionStoreLookupNotFound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		// Exact ref not found.
-		_, err := ds.Lookup(t.Context(), "no-such:1")
+		_, err = ds.Lookup(t.Context(), "no-such:1")
 		require.ErrorIs(t, err, runtime.ErrDefinitionNotFound,
 			"%s: exact Lookup must wrap ErrDefinitionNotFound; got %v", b.name, err)
 
@@ -184,9 +190,10 @@ func TestDefinitionStoreLookupNotFound(t *testing.T) {
 // containing "bad version segment" when the version segment cannot be parsed.
 func TestDefinitionStoreLookupBadVersion(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
-		_, err := ds.Lookup(t.Context(), "proc:notanumber")
+		_, err = ds.Lookup(t.Context(), "proc:notanumber")
 		require.Error(t, err, "%s: bad version must error", b.name)
 		require.Contains(t, err.Error(), "bad version segment",
 			"%s: error must mention 'bad version segment'", b.name)
@@ -197,7 +204,8 @@ func TestDefinitionStoreLookupBadVersion(t *testing.T) {
 // to the SQL query: a pre-cancelled context causes the query to fail immediately.
 func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		// Seed a real definition so the query would otherwise succeed.
 		require.NoError(t,
@@ -208,7 +216,7 @@ func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 		cctx, cancel := context.WithCancel(t.Context())
 		cancel() // pre-cancel
 
-		_, err := ds.Lookup(cctx, "cancel-ctx-"+b.name+":1")
+		_, err = ds.Lookup(cctx, "cancel-ctx-"+b.name+":1")
 		require.Error(t, err, "%s: cancelled context must return an error", b.name)
 	})
 }
@@ -218,7 +226,8 @@ func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 // signal, compensation) survives the JSON store/load round-trip on all dialects.
 func TestDefinitionStoreRichRoundTrip(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		ds := store.NewDefinitionStore(b.conn, b.dialect)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		orig := richConformanceDefinition()
 		require.NoError(t, ds.PutDefinition(t.Context(), orig), "%s: PutDefinition rich", b.name)

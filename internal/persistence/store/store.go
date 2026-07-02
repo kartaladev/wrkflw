@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/metric"
@@ -90,17 +91,24 @@ func WithStoreMeterProvider(mp metric.MeterProvider) Option {
 // New constructs a [Store] over conn using dialect d. conn must be either a
 // *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite); any other type will
 // cause [database.From] to return an error when the first query is issued.
+// Returns [ErrNilDependency] when conn is nil or d is nil.
 //
 // Example (Postgres):
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
-//	s := store.New(pool, dialect.NewPostgres())
+//	s, err := store.New(pool, dialect.NewPostgres())
 //
 // Example (SQLite, tests):
 //
 //	db := dbtest.RunTestSQLite(t)
-//	s := store.New(db, dialect.NewSQLite())
-func New(conn any, d dialect.Dialect, opts ...Option) *Store {
+//	s, err := store.New(db, dialect.NewSQLite())
+func New(conn any, d dialect.Dialect, opts ...Option) (*Store, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
 	s := &Store{conn: conn, dialect: d}
 	for _, o := range opts {
 		o(s)
@@ -113,7 +121,7 @@ func New(conn any, d dialect.Dialect, opts ...Option) *Store {
 		"wrkflw_store_duration_seconds",
 		"Duration of persistence Store operations in seconds",
 	)
-	return s
+	return s, nil
 }
 
 // filterNilOpts strips nil [observability.Option] values so New does not pass

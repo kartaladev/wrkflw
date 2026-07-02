@@ -19,7 +19,8 @@ func TestChainLinkStoreFacade(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-	cls := persistence.NewChainLinkStore(pool)
+	cls, err := persistence.NewChainLinkStore(pool)
+	require.NoError(t, err)
 	ctx := t.Context()
 
 	require.NoError(t, cls.Record(ctx, runtime.ChainLink{

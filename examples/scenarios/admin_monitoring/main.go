@@ -164,7 +164,10 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 		fmt.Printf("  started %s → %s\n", id, statusName(st.Status))
 	}
 
-	lister := persistence.NewSQLiteLister(db)
+	lister, err := persistence.NewSQLiteLister(db)
+	if err != nil {
+		return fmt.Errorf("new sqlite lister: %w", err)
+	}
 
 	// First page: limit 2.
 	page1, err := lister.List(ctx, runtime.InstanceFilter{Limit: 2, IncludeTotal: true})
@@ -330,9 +333,12 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store)
 
 	// Build a relay with the failing publisher and MaxDeliveryAttempts=1 so a
 	// single DrainOnce call quarantines every row it touches.
-	relay := persistence.NewSQLiteRelay(db, failPublisher{},
+	relay, err := persistence.NewSQLiteRelay(db, failPublisher{},
 		persistence.WithMaxDeliveryAttempts(1),
 	)
+	if err != nil {
+		return fmt.Errorf("new sqlite relay: %w", err)
+	}
 
 	// DrainOnce → publish fails → retry_count reaches maxDel(1) → status='dead'.
 	published, drainErr := relay.DrainOnce(ctx)

@@ -16,8 +16,9 @@ import (
 // an unsupported connection type makes transaction.JoinOrBegin fail before any
 // write is attempted.
 func TestStoreCreateBeginError(t *testing.T) {
-	s := store.New(struct{}{}, dialect.NewSQLite()) // unsupported conn type
-	_, err := s.Create(t.Context(), appliedStep("i", "a"))
+	s, err := store.New(struct{}{}, dialect.NewSQLite()) // unsupported conn type
+	require.NoError(t, err)
+	_, err = s.Create(t.Context(), appliedStep("i", "a"))
 	require.Error(t, err, "create must fail on unsupported conn")
 	_, err = s.Commit(t.Context(), 1, appliedStep("i", "b"))
 	require.Error(t, err, "commit must fail on unsupported conn")
@@ -94,7 +95,9 @@ func TestStoreWriteErrors(t *testing.T) {
 			db := dbtest.RunTestSQLite(t)
 			_, err := db.ExecContext(t.Context(), "DROP TABLE "+tc.drop)
 			require.NoError(t, err, "drop %s", tc.drop)
-			tc.run(t, store.New(db, dialect.NewSQLite()))
+			s, err := store.New(db, dialect.NewSQLite())
+			require.NoError(t, err)
+			tc.run(t, s)
 		})
 	}
 }
@@ -124,7 +127,8 @@ func TestStoreCommitWriteErrors(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			db := dbtest.RunTestSQLite(t)
-			s := store.New(db, dialect.NewSQLite())
+			s, err := store.New(db, dialect.NewSQLite())
+			require.NoError(t, err)
 			tok, err := s.Create(t.Context(), appliedStep("i", "a"))
 			require.NoError(t, err)
 

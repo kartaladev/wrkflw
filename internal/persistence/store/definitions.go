@@ -46,18 +46,25 @@ var (
 // conn must be either a *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite);
 // any other type causes [database.From] to return an error when the first query
 // is issued.
+// Returns [ErrNilDependency] when conn is nil or d is nil.
 //
 // Example (Postgres):
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
-//	ds := store.NewDefinitionStore(pool, dialect.NewPostgres())
+//	ds, err := store.NewDefinitionStore(pool, dialect.NewPostgres())
 //
 // Example (SQLite, tests):
 //
 //	db := dbtest.RunTestSQLite(t)
-//	ds := store.NewDefinitionStore(db, dialect.NewSQLite())
-func NewDefinitionStore(conn any, d dialect.Dialect) *DefinitionStore {
-	return &DefinitionStore{conn: conn, dialect: d}
+//	ds, err := store.NewDefinitionStore(db, dialect.NewSQLite())
+func NewDefinitionStore(conn any, d dialect.Dialect) (*DefinitionStore, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
+	return &DefinitionStore{conn: conn, dialect: d}, nil
 }
 
 // querier returns a pool-backed [database.Querier] over ds.conn. DefinitionStore

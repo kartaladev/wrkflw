@@ -18,7 +18,8 @@ import (
 // observations, across all three dialects.
 func TestDedupSeen_FirstThenDuplicate(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		d := store.NewDeduper(b.conn, b.dialect)
+		d, err := store.NewDeduper(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		// First Seen within an ambient transaction — must return true (first-time).
 		q, ctx, err := transaction.Begin(t.Context(), b.conn)
@@ -42,7 +43,8 @@ func TestDedupSeen_FirstThenDuplicate(t *testing.T) {
 // ID are independent, and the same subscriber with different IDs are independent.
 func TestDedupSeen_DifferentSubscribersOrMessages(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		d := store.NewDeduper(b.conn, b.dialect)
+		d, err := store.NewDeduper(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		for _, tc := range []struct {
 			sub string
@@ -64,7 +66,8 @@ func TestDedupSeen_DifferentSubscribersOrMessages(t *testing.T) {
 // joins the caller's ambient transaction and does not independently commit.
 func TestDedupSeen_RollbackParticipation(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		d := store.NewDeduper(b.conn, b.dialect)
+		d, err := store.NewDeduper(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		// Begin an ambient transaction and call Seen inside it.
 		q, ctx, err := transaction.Begin(t.Context(), b.conn)
@@ -96,11 +99,13 @@ func TestDedupSeen_RollbackParticipation(t *testing.T) {
 // cutoff format mismatch (see implementation comments).
 func TestDedupPrune(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		d := store.NewDeduper(b.conn, b.dialect)
+		d, err := store.NewDeduper(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		// Obtain a raw Querier to insert rows with explicit processed_at values so
 		// we can control the timestamp without sleeping.
-		s := store.New(b.conn, b.dialect)
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
 
 		cutoff := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 		oldTime := cutoff.Add(-24 * time.Hour) // strictly before — should be pruned

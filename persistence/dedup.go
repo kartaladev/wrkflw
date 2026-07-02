@@ -57,7 +57,7 @@ var _ Deduper = (*store.Deduper)(nil)
 // NewDeduper constructs a Deduper over pool (returns the stable Deduper interface).
 // The consumer must call persistence.Migrate before the first Seen call so the
 // wrkflw_processed_message table exists.
-func NewDeduper(pool *pgxpool.Pool) Deduper {
+func NewDeduper(pool *pgxpool.Pool) (Deduper, error) {
 	return store.NewDeduper(pool, dialect.NewPostgres())
 }
 
@@ -68,6 +68,6 @@ func NewDeduper(pool *pgxpool.Pool) Deduper {
 // It returns the same unified Deduper interface as NewDeduper (the Postgres
 // analog) so the two backends are interchangeable at the consumer site. See the
 // Deduper doc for the store-unification breaking change to Seen's signature.
-func NewMySQLDeduper(db *sql.DB) Deduper {
+func NewMySQLDeduper(db *sql.DB) (Deduper, error) {
 	return store.NewDeduper(db, dialect.NewMySQL())
 }

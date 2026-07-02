@@ -28,8 +28,15 @@ type Deduper struct {
 // for placeholder rewriting and insert-ignore syntax.
 //
 // conn must be either a *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite).
-func NewDeduper(conn any, d dialect.Dialect) *Deduper {
-	return &Deduper{conn: conn, dialect: d}
+// Returns [ErrNilDependency] when conn is nil or d is nil.
+func NewDeduper(conn any, d dialect.Dialect) (*Deduper, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
+	return &Deduper{conn: conn, dialect: d}, nil
 }
 
 // Seen records (subscriber, messageID) and reports whether this is the FIRST

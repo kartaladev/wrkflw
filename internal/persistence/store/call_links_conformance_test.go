@@ -61,7 +61,8 @@ func callLinkTerminalStepStore(instanceID string) runtime.AppliedStep {
 func seedCompletedCallLink(t *testing.T, b backend, childID string, outcome runtime.CallOutcome) {
 	t.Helper()
 
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err, "%s: seedCompletedCallLink: store.New", b.name)
 
 	createStep := callLinkBaseStepStore(childID)
 	createStep.NewCallLink = &runtime.CallLink{
@@ -85,7 +86,8 @@ func seedCompletedCallLink(t *testing.T, b backend, childID string, outcome runt
 func seedRunningCallLink(t *testing.T, b backend, childID, parentID string) {
 	t.Helper()
 
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err, "%s: seedRunningCallLink: store.New", b.name)
 
 	step := callLinkBaseStepStore(childID)
 	step.NewCallLink = &runtime.CallLink{
@@ -96,7 +98,7 @@ func seedRunningCallLink(t *testing.T, b backend, childID, parentID string) {
 		ParentDefVersion: 1,
 		Depth:            1,
 	}
-	_, err := s.Create(t.Context(), step)
+	_, err = s.Create(t.Context(), step)
 	require.NoError(t, err, "%s: seed running create", b.name)
 }
 
@@ -104,7 +106,8 @@ func seedRunningCallLink(t *testing.T, b backend, childID, parentID string) {
 func seedCompletedCallLinkForParent(t *testing.T, b backend, childID, parentID string) {
 	t.Helper()
 
-	s := store.New(b.conn, b.dialect)
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err, "%s: seedCompletedCallLinkForParent: store.New", b.name)
 
 	step := callLinkBaseStepStore(childID)
 	step.NewCallLink = &runtime.CallLink{
@@ -138,7 +141,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("insert link is returned by ClaimPending after completion", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "ins-child-1", runtime.CallOutcome{Completed: true, Output: map[string]any{"a": float64(1)}})
 
 			pending, err := cls.ClaimPending(t.Context(), 10)
@@ -151,7 +155,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ClaimPending returns terminal rows in stable child_instance_id order", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "zzz-child", runtime.CallOutcome{Completed: true, Output: map[string]any{"a": float64(1)}})
 			seedCompletedCallLink(t, b, "aaa-child", runtime.CallOutcome{Completed: false, Err: "boom"})
 
@@ -165,7 +170,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ClaimPending respects limit parameter", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "lim-child-1", runtime.CallOutcome{Completed: true})
 			seedCompletedCallLink(t, b, "lim-child-2", runtime.CallOutcome{Completed: true})
 			seedCompletedCallLink(t, b, "lim-child-3", runtime.CallOutcome{Completed: true})
@@ -178,7 +184,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ClaimPending excludes running (non-terminal) rows", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedRunningCallLink(t, b, "running-child", "parent-x")
 
 			pending, err := cls.ClaimPending(t.Context(), 10)
@@ -189,7 +196,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ClaimPending output JSON round-trips", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			want := map[string]any{"result": float64(99), "label": "ok"}
 			seedCompletedCallLink(t, b, "json-child", runtime.CallOutcome{Completed: true, Output: want})
 
@@ -203,7 +211,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ClaimPending failed outcome maps Completed=false with Err string", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "fail-child", runtime.CallOutcome{Completed: false, Err: "child timed out"})
 
 			pending, err := cls.ClaimPending(t.Context(), 10)
@@ -217,7 +226,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ClaimPending limit zero returns all rows", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "zero-lim-1", runtime.CallOutcome{Completed: true})
 			seedCompletedCallLink(t, b, "zero-lim-2", runtime.CallOutcome{Completed: true})
 
@@ -231,7 +241,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("MarkNotified excludes row from subsequent ClaimPending", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "notif-child-1", runtime.CallOutcome{Completed: true})
 			seedCompletedCallLink(t, b, "notif-child-2", runtime.CallOutcome{Completed: true})
 
@@ -248,7 +259,8 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			fixed := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
 			fc := clockwork.NewFakeClockAt(fixed)
-			cls := store.NewCallLinkStore(b.conn, b.dialect, store.WithCallLinkClock(fc))
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect, store.WithCallLinkClock(fc))
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			seedCompletedCallLink(t, b, "mn-clock-child", runtime.CallOutcome{Completed: true})
 
@@ -268,7 +280,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("WithCallLinkClock nil falls back to system clock (no panic)", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect, store.WithCallLinkClock(nil))
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect, store.WithCallLinkClock(nil))
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "nil-clk-child", runtime.CallOutcome{Completed: true})
 			assert.NotPanics(t, func() {
 				_ = cls.MarkNotified(t.Context(), "nil-clk-child")
@@ -280,7 +293,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("LookupChild returns the link for a known child", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "lookup-child", runtime.CallOutcome{Completed: true})
 
 			link, ok, err := cls.LookupChild(t.Context(), "lookup-child")
@@ -297,7 +311,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("LookupChild returns ok=false for unknown instance", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			link, ok, err := cls.LookupChild(t.Context(), "nonexistent-child")
 			require.NoError(t, err, "%s: LookupChild", b.name)
@@ -308,8 +323,10 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("LookupChild works on running (not yet terminal) link", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			s := store.New(b.conn, b.dialect)
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err, "%s: store.New", b.name)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			step := callLinkBaseStepStore("running-lookup")
 			step.NewCallLink = &runtime.CallLink{
@@ -320,7 +337,7 @@ func TestCallLinkStore(t *testing.T) {
 				ParentDefVersion: 2,
 				Depth:            3,
 			}
-			_, err := s.Create(t.Context(), step)
+			_, err = s.Create(t.Context(), step)
 			require.NoError(t, err, "%s: create running", b.name)
 
 			link, ok, err := cls.LookupChild(t.Context(), "running-lookup")
@@ -336,7 +353,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ParentOf returns the link for a known child", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLink(t, b, "parentof-child", runtime.CallOutcome{Completed: true})
 
 			link, err := cls.ParentOf(t.Context(), "parentof-child")
@@ -349,7 +367,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ParentOf returns nil nil for root instance", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			link, err := cls.ParentOf(t.Context(), "not-a-child")
 			require.NoError(t, err, "%s: ParentOf root", b.name)
@@ -361,7 +380,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ChildrenOf returns all children ordered by created_at child_instance_id", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedCompletedCallLinkForParent(t, b, "ch-child-1", "co-parent")
 			seedCompletedCallLinkForParent(t, b, "ch-child-2", "co-parent")
 
@@ -376,7 +396,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ChildrenOf returns non-nil empty slice when no children", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			links, err := cls.ChildrenOf(t.Context(), "unknown-parent")
 			require.NoError(t, err, "%s: ChildrenOf unknown", b.name)
@@ -389,7 +410,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ListRunningChildren returns running children ordered by child_instance_id", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedRunningCallLink(t, b, "p-child-aaa", "P")
 			seedRunningCallLink(t, b, "p-child-bbb", "P")
 			seedCompletedCallLinkForParent(t, b, "p-child-zzz", "P")
@@ -406,7 +428,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ListRunningChildren returns single running child", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			seedRunningCallLink(t, b, "p-child-aaa", "P")
 			seedRunningCallLink(t, b, "q-child-001", "Q")
 
@@ -419,8 +442,10 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ListRunningChildren call link fields populated correctly", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			s := store.New(b.conn, b.dialect)
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			s, err := store.New(b.conn, b.dialect)
+			require.NoError(t, err, "%s: store.New", b.name)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			step := callLinkBaseStepStore("field-child-1")
 			step.NewCallLink = &runtime.CallLink{
@@ -431,7 +456,7 @@ func TestCallLinkStore(t *testing.T) {
 				ParentDefVersion: 7,
 				Depth:            3,
 			}
-			_, err := s.Create(t.Context(), step)
+			_, err = s.Create(t.Context(), step)
 			require.NoError(t, err, "%s: create field-child", b.name)
 
 			children, err := cls.ListRunningChildren(t.Context(), "field-parent")
@@ -449,7 +474,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ListRunningChildren returns empty non-nil slice for unknown parent", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect)
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			children, err := cls.ListRunningChildren(t.Context(), "unknown-parent")
 			require.NoError(t, err, "%s: ListRunningChildren unknown", b.name)
@@ -463,10 +489,11 @@ func TestCallLinkStore(t *testing.T) {
 	t.Run("leased claim stamps claimed_at/claimed_by", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			fc := clockwork.NewFakeClockAt(leaseClockBase())
-			cls := store.NewCallLinkStore(b.conn, b.dialect,
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("replica-A", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
+			require.NoError(t, err, "%s: NewCallLinkStore leased", b.name)
 			seedCompletedCallLink(t, b, "lease-child-1", runtime.CallOutcome{Completed: true})
 
 			got, err := cls.ClaimPending(t.Context(), 10)
@@ -483,14 +510,16 @@ func TestCallLinkStore(t *testing.T) {
 				t.Skip("SQLite is single-writer; concurrency assertion not applicable")
 			}
 			fc := clockwork.NewFakeClockAt(leaseClockBase())
-			clsA := store.NewCallLinkStore(b.conn, b.dialect,
+			clsA, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("replica-A", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
-			clsB := store.NewCallLinkStore(b.conn, b.dialect,
+			require.NoError(t, err, "%s: NewCallLinkStore A", b.name)
+			clsB, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("replica-B", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
+			require.NoError(t, err, "%s: NewCallLinkStore B", b.name)
 			seedCompletedCallLink(t, b, "lease-child-2", runtime.CallOutcome{Completed: true})
 
 			first, err := clsA.ClaimPending(t.Context(), 10)
@@ -506,14 +535,16 @@ func TestCallLinkStore(t *testing.T) {
 	t.Run("after fake-clock advance past TTL second worker reclaims", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			fc := clockwork.NewFakeClockAt(leaseClockBase())
-			clsA := store.NewCallLinkStore(b.conn, b.dialect,
+			clsA, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("replica-A", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
-			clsB := store.NewCallLinkStore(b.conn, b.dialect,
+			require.NoError(t, err, "%s: NewCallLinkStore A", b.name)
+			clsB, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("replica-B", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
+			require.NoError(t, err, "%s: NewCallLinkStore B", b.name)
 			seedCompletedCallLink(t, b, "lease-child-3", runtime.CallOutcome{Completed: true})
 
 			first, err := clsA.ClaimPending(t.Context(), 10)
@@ -532,10 +563,11 @@ func TestCallLinkStore(t *testing.T) {
 	t.Run("notified row never returned by leased ClaimPending", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			fc := clockwork.NewFakeClockAt(leaseClockBase())
-			cls := store.NewCallLinkStore(b.conn, b.dialect,
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("replica-A", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
+			require.NoError(t, err, "%s: NewCallLinkStore leased", b.name)
 			seedCompletedCallLink(t, b, "lease-notif-1", runtime.CallOutcome{Completed: true})
 
 			require.NoError(t, cls.MarkNotified(t.Context(), "lease-notif-1"), "%s: MarkNotified", b.name)
@@ -553,7 +585,8 @@ func TestCallLinkStore(t *testing.T) {
 
 	t.Run("ttl=0 two consecutive claims both return the link (backward-compat)", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
-			cls := store.NewCallLinkStore(b.conn, b.dialect) // no lease opts
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
+			require.NoError(t, err)
 			seedCompletedCallLink(t, b, "lease-noopt-1", runtime.CallOutcome{Completed: true})
 
 			first, err := cls.ClaimPending(t.Context(), 10)
@@ -573,10 +606,11 @@ func TestCallLinkStore(t *testing.T) {
 				t.Skip("SQLite-only single-writer correctness test")
 			}
 			fc := clockwork.NewFakeClockAt(leaseClockBase())
-			cls := store.NewCallLinkStore(b.conn, b.dialect,
+			cls, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("single-writer", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
+			require.NoError(t, err, "sqlite: NewCallLinkStore leased")
 			seedCompletedCallLink(t, b, "sqlite-lease-1", runtime.CallOutcome{Completed: true})
 
 			// First claim succeeds.

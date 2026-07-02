@@ -126,8 +126,16 @@ func openSQLite(ctx context.Context, pub runtime.Publisher, logger *slog.Logger)
 		return backend{}, fmt.Errorf("open sqlite store: %w", err)
 	}
 
-	relay := persistence.NewSQLiteRelay(db, pub, persistence.WithRelayLogger(logger))
-	links := persistence.NewSQLiteChainLinkStore(db)
+	relay, err := persistence.NewSQLiteRelay(db, pub, persistence.WithRelayLogger(logger))
+	if err != nil {
+		_ = db.Close()
+		return backend{}, fmt.Errorf("new sqlite relay: %w", err)
+	}
+	links, err := persistence.NewSQLiteChainLinkStore(db)
+	if err != nil {
+		_ = db.Close()
+		return backend{}, fmt.Errorf("new sqlite chain link store: %w", err)
+	}
 
 	return backend{
 		store:   st,
@@ -170,8 +178,16 @@ func openPostgres(ctx context.Context, dsn string, pub runtime.Publisher, logger
 		return backend{}, fmt.Errorf("open postgres store: %w", err)
 	}
 
-	relay := persistence.NewRelay(pool, pub, persistence.WithRelayLogger(logger))
-	links := persistence.NewChainLinkStore(pool)
+	relay, err := persistence.NewRelay(pool, pub, persistence.WithRelayLogger(logger))
+	if err != nil {
+		pool.Close()
+		return backend{}, fmt.Errorf("new relay: %w", err)
+	}
+	links, err := persistence.NewChainLinkStore(pool)
+	if err != nil {
+		pool.Close()
+		return backend{}, fmt.Errorf("new chain link store: %w", err)
+	}
 
 	return backend{
 		store:   st,
@@ -228,8 +244,16 @@ func openMySQL(ctx context.Context, dsn string, pub runtime.Publisher, logger *s
 		return backend{}, fmt.Errorf("open mysql store: %w", err)
 	}
 
-	relay := persistence.NewMySQLRelay(db, pub, persistence.MySQLWithRelayLogger(logger))
-	links := persistence.NewMySQLChainLinkStore(db)
+	relay, err := persistence.NewMySQLRelay(db, pub, persistence.MySQLWithRelayLogger(logger))
+	if err != nil {
+		_ = db.Close()
+		return backend{}, fmt.Errorf("new mysql relay: %w", err)
+	}
+	links, err := persistence.NewMySQLChainLinkStore(db)
+	if err != nil {
+		_ = db.Close()
+		return backend{}, fmt.Errorf("new mysql chain link store: %w", err)
+	}
 
 	return backend{
 		store:   st,

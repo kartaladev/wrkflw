@@ -17,11 +17,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -95,7 +95,8 @@ func TestNewSQLiteTimerStore_ListArmed(t *testing.T) {
 	_, err = store.Create(t.Context(), step)
 	require.NoError(t, err)
 
-	ts := persistence.NewSQLiteTimerStore(db)
+	ts, err := persistence.NewSQLiteTimerStore(db)
+	require.NoError(t, err)
 	armed, err := ts.ListArmed(t.Context())
 	require.NoError(t, err)
 	require.Len(t, armed, 1, "exactly one armed timer expected")
@@ -116,10 +117,11 @@ func TestNewSQLiteRelay_DrainsViaFacade(t *testing.T) {
 	seedSQLiteOutbox(t, db, 3, base)
 
 	pub := &facadePub{}
-	relay := persistence.NewSQLiteRelay(db, pub,
+	relay, err := persistence.NewSQLiteRelay(db, pub,
 		persistence.MySQLWithPollInterval(10*time.Millisecond),
 		persistence.MySQLWithBatchSize(10),
 	)
+	require.NoError(t, err)
 
 	n, err := relay.DrainOnce(t.Context())
 	require.NoError(t, err)
@@ -146,7 +148,9 @@ func TestNewSQLiteRelay_OutboxStatsViaFacadeInterface(t *testing.T) {
 		return r.OutboxStats(t.Context())
 	}
 
-	stats, err := callViaInterface(persistence.NewSQLiteRelay(db, pub))
+	sqliteRelay, err := persistence.NewSQLiteRelay(db, pub)
+	require.NoError(t, err)
+	stats, err := callViaInterface(sqliteRelay)
 	require.NoError(t, err)
 	assert.Equal(t, int64(pending), stats.Pending, "Pending must equal seeded row count")
 	assert.Equal(t, int64(0), stats.Dead, "Dead must be 0 when no rows have been quarantined")
@@ -177,7 +181,8 @@ func TestNewSQLiteCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	`, "sqlite-child-cls-1", "sqlite-parent-cls-1", "cmd-sqlite-1", "sqlite-minimal", 1, 0)
 	require.NoError(t, err)
 
-	cls := persistence.NewSQLiteCallLinkStore(db)
+	cls, err := persistence.NewSQLiteCallLinkStore(db)
+	require.NoError(t, err)
 
 	// ClaimPending must return the link.
 	pending, err := cls.ClaimPending(t.Context(), 10)
@@ -204,7 +209,8 @@ func TestNewSQLiteCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
 
-	links := persistence.NewSQLiteChainLinkStore(db)
+	links, err := persistence.NewSQLiteChainLinkStore(db)
+	require.NoError(t, err)
 	at := time.Now().UTC().Truncate(time.Millisecond)
 
 	link := runtime.ChainLink{
@@ -216,7 +222,7 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 		StartVars:                map[string]any{"k": "v"},
 		CreatedAt:                at,
 	}
-	err := links.Record(t.Context(), link)
+	err = links.Record(t.Context(), link)
 	require.NoError(t, err)
 
 	// LookupBySuccessor round-trip.
@@ -251,7 +257,8 @@ func TestNewSQLiteLister_ListsInstances(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	lister := persistence.NewSQLiteLister(db)
+	lister, err := persistence.NewSQLiteLister(db)
+	require.NoError(t, err)
 	page, err := lister.List(t.Context(), runtime.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 2, "isolated DB must contain exactly the two seeded instances")
@@ -322,7 +329,8 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 func TestNewSQLiteDefinitionStore_RoundTrip(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
 
-	ds := persistence.NewSQLiteDefinitionStore(db)
+	ds, err := persistence.NewSQLiteDefinitionStore(db)
+	require.NoError(t, err)
 	require.NotNil(t, ds)
 
 	def := &model.ProcessDefinition{
@@ -376,7 +384,8 @@ func TestNewSQLitePruner_PruneOutbox(t *testing.T) {
 		new_.Format("2006-01-02 15:04:05"), new_.Format("2006-01-02 15:04:05"))
 	require.NoError(t, err)
 
-	pr := persistence.NewSQLitePruner(db)
+	pr, err := persistence.NewSQLitePruner(db)
+	require.NoError(t, err)
 	require.NotNil(t, pr)
 
 	n, err := pr.PruneOutbox(ctx, cutoff)
@@ -420,7 +429,8 @@ func TestNewSQLitePruner_PruneProcessedMessages(t *testing.T) {
 		new_.Format("2006-01-02 15:04:05"))
 	require.NoError(t, err)
 
-	pr := persistence.NewSQLitePruner(db)
+	pr, err := persistence.NewSQLitePruner(db)
+	require.NoError(t, err)
 	require.NotNil(t, pr)
 
 	n, err := pr.PruneProcessedMessages(ctx, cutoff)

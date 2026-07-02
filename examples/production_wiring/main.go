@@ -116,7 +116,10 @@ func run(logger *slog.Logger) error {
 		store = pgStore
 
 		// Relay drains the transactional outbox; the consumer owns its goroutine.
-		relay := persistence.NewRelay(pool, publisher, persistence.WithRelayLogger(logger))
+		relay, rerr := persistence.NewRelay(pool, publisher, persistence.WithRelayLogger(logger))
+		if rerr != nil {
+			return rerr
+		}
 		go func() {
 			if rerr := relay.Run(workerCtx); rerr != nil && !errors.Is(rerr, context.Canceled) {
 				logger.Error("relay run", "err", rerr)

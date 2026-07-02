@@ -39,18 +39,25 @@ type Pruner struct {
 // NewPruner constructs a Pruner over conn using dialect d. conn must be either
 // a *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite). Migrate must be
 // applied before calling any method.
+// Returns [ErrNilDependency] when conn is nil or d is nil.
 //
 // Example (Postgres):
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
-//	p := store.NewPruner(pool, dialect.NewPostgres())
+//	p, err := store.NewPruner(pool, dialect.NewPostgres())
 //
 // Example (SQLite, tests):
 //
 //	db := dbtest.RunTestSQLite(t)
-//	p := store.NewPruner(db, dialect.NewSQLite())
-func NewPruner(conn any, d dialect.Dialect) *Pruner {
-	return &Pruner{conn: conn, dialect: d}
+//	p, err := store.NewPruner(db, dialect.NewSQLite())
+func NewPruner(conn any, d dialect.Dialect) (*Pruner, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
+	}
+	if d == nil {
+		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
+	}
+	return &Pruner{conn: conn, dialect: d}, nil
 }
 
 // PruneOutbox deletes published outbox rows whose published_at is strictly
@@ -154,7 +161,13 @@ func (p *Pruner) PruneChainLinks(ctx context.Context, cutoff time.Time) (int64, 
 // supply a cutoff well past the relay max-delivery × backoff window so
 // in-flight messages are never evicted. Returns the number of rows deleted.
 func (p *Pruner) PruneProcessedMessages(ctx context.Context, cutoff time.Time) (int64, error) {
-	return NewDeduper(p.conn, p.dialect).Prune(ctx, cutoff)
+	// p.conn and p.dialect are guaranteed non-nil by the constructor guard, so
+	// the only error from NewDeduper here would be unreachable — ignore it.
+	d, err := NewDeduper(p.conn, p.dialect)
+	if err != nil {
+		return 0, fmt.Errorf("workflow-store: pruner: prune processed messages: %w", err)
+	}
+	return d.Prune(ctx, cutoff)
 }
 
 // PruneTimers deletes timer rows whose fire_at is strictly before cutoff.
