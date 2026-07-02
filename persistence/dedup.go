@@ -2,12 +2,13 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 )
 
 // Deduper is the stable public interface for idempotent-consumer deduplication
@@ -15,14 +16,32 @@ import (
 // business transaction so the dedup record and the side effect commit
 // atomically.
 //
-// The pgx.Tx parameter is a third-party DB type the consumer already owns —
-// this is acceptable in the public interface because the consumer supplies their
-// own transaction (obtained from pgxpool.Pool.Begin).
+// # Breaking change (store unification, Phase 2)
+//
+// Deduper.Seen no longer takes an explicit transaction handle. It joins the
+// ambient transaction stashed in ctx by the internal transaction helper, so the
+// dedup record commits or rolls back together with the surrounding business
+// unit. When no ambient transaction is present, Seen begins and commits a fresh
+// leaf transaction so the call is always atomic. This also unifies the former
+// separate Deduper (pgx.Tx) and MySQLDeduper (*sql.Tx) interfaces into one
+// backend-neutral type — MySQLDeduper is now an alias of Deduper.
+//
+// Migration: replace
+//
+//	tx, _ := pool.Begin(ctx)
+//	first, _ := d.Seen(ctx, tx, sub, id)
+//	tx.Commit(ctx)
+//
+// with a call whose ctx already carries the ambient transaction (obtained from
+// the engine's own commit path); a bare d.Seen(ctx, sub, id) with no ambient
+// transaction transparently begins and commits its own leaf transaction.
 type Deduper interface {
-	// Seen records (subscriber, messageID) within tx and reports whether this is
-	// the FIRST time the pair was seen. firstTime==false means the message is a
-	// duplicate and the caller should skip the side effect.
-	Seen(ctx context.Context, tx pgx.Tx, subscriber, messageID string) (firstTime bool, err error)
+	// Seen records (subscriber, messageID) and reports whether this is the FIRST
+	// time the pair was seen. firstTime==false means the message is a duplicate
+	// and the caller should skip the side effect. Seen joins the ambient
+	// transaction in ctx when present so the dedup record and the side effect
+	// commit atomically; otherwise it commits its own leaf transaction.
+	Seen(ctx context.Context, subscriber, messageID string) (firstTime bool, err error)
 
 	// Prune deletes all processed-message records with a processed_at strictly
 	// before before. Callers should supply a cutoff well past the relay
@@ -32,12 +51,23 @@ type Deduper interface {
 	Prune(ctx context.Context, before time.Time) (int64, error)
 }
 
-// Compile-time check: internal concrete type must satisfy the public interface.
-var _ Deduper = (*postgres.Deduper)(nil)
+// Compile-time check: the neutral store Deduper satisfies the public interface.
+var _ Deduper = (*store.Deduper)(nil)
 
 // NewDeduper constructs a Deduper over pool (returns the stable Deduper interface).
 // The consumer must call persistence.Migrate before the first Seen call so the
 // wrkflw_processed_message table exists.
 func NewDeduper(pool *pgxpool.Pool) Deduper {
-	return postgres.NewDeduper(pool)
+	return store.NewDeduper(pool, dialect.NewPostgres())
+}
+
+// NewMySQLDeduper constructs a Deduper backed by a MySQL database (ADR-0018),
+// using INSERT IGNORE into wrkflw_processed_message. MigrateMySQL must be called
+// before the first Seen call so the table exists.
+//
+// It returns the same unified Deduper interface as NewDeduper (the Postgres
+// analog) so the two backends are interchangeable at the consumer site. See the
+// Deduper doc for the store-unification breaking change to Seen's signature.
+func NewMySQLDeduper(db *sql.DB) Deduper {
+	return store.NewDeduper(db, dialect.NewMySQL())
 }

@@ -19,6 +19,7 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -231,16 +232,18 @@ func TestNewMySQLDeduper_FirstThenDup(t *testing.T) {
 
 	d := persistence.NewMySQLDeduper(db)
 
-	// Helper to call Seen inside a committed tx.
+	// Helper to call Seen inside a committed tx. Seen joins the ambient
+	// transaction stashed in ctx by transaction.Begin, so the dedup record
+	// commits atomically with the caller's business unit.
 	callSeen := func(subscriber, msgID string) (bool, error) {
-		tx, err := db.BeginTx(t.Context(), nil)
+		q, ctx, err := transaction.Begin(t.Context(), db)
 		require.NoError(t, err)
-		first, err := d.Seen(t.Context(), tx, subscriber, msgID)
+		first, err := d.Seen(ctx, subscriber, msgID)
 		if err != nil {
-			_ = tx.Rollback()
+			_ = q.Rollback(ctx)
 			return false, err
 		}
-		return first, tx.Commit()
+		return first, q.Commit(ctx)
 	}
 
 	first, err := callSeen("sub-facade", "msg-facade-1")

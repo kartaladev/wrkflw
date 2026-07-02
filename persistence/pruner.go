@@ -6,7 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 )
 
 // Pruner is the stable public interface for data-lifecycle retention pruning
@@ -40,8 +41,8 @@ type Pruner interface {
 	PruneProcessedMessages(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
-// Compile-time check: the internal concrete type satisfies the public interface.
-var _ Pruner = (*postgres.Pruner)(nil)
+// Compile-time check: the neutral store concrete type satisfies the public interface.
+var _ Pruner = (*store.Pruner)(nil)
 
 // NewPruner constructs a Pruner over pool (returns the stable Pruner interface).
 // Migrate must have been applied before calling any method.
@@ -52,5 +53,5 @@ var _ Pruner = (*postgres.Pruner)(nil)
 //	// every hour, drop outbox events published more than 7 days ago:
 //	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
 func NewPruner(pool *pgxpool.Pool) Pruner {
-	return postgres.NewPruner(pool)
+	return store.NewPruner(pool, dialect.NewPostgres())
 }

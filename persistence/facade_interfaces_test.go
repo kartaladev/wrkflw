@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -78,19 +79,20 @@ func TestNewDeduperReturnsInterface(t *testing.T) {
 	assert.NotNil(t, d)
 
 	// Functional smoke: first Seen returns true; duplicate returns false.
-	tx, err := pool.Begin(t.Context())
+	// Seen joins the ambient transaction stashed in ctx by transaction.Begin,
+	// so the dedup record commits atomically with the caller's business unit.
+	q, ctx, err := transaction.Begin(t.Context(), pool)
 	require.NoError(t, err)
-	defer tx.Rollback(t.Context()) //nolint:errcheck
 
-	first, err := d.Seen(t.Context(), tx, "facade-sub", "facade-msg-1")
+	first, err := d.Seen(ctx, "facade-sub", "facade-msg-1")
 	require.NoError(t, err)
 	assert.True(t, first, "first Seen via facade must return true")
 
-	dup, err := d.Seen(t.Context(), tx, "facade-sub", "facade-msg-1")
+	dup, err := d.Seen(ctx, "facade-sub", "facade-msg-1")
 	require.NoError(t, err)
 	assert.False(t, dup, "duplicate Seen via facade must return false")
 
-	require.NoError(t, tx.Rollback(t.Context()))
+	require.NoError(t, q.Rollback(ctx))
 }
 
 // TestNewRelayDLQAdminViaFacade verifies that the DLQ admin methods
