@@ -107,7 +107,7 @@ functions accepted by `NewRunner`:
 | `WithScheduler(sched)` | Timer support: `ScheduleTimer`/`CancelTimer` commands are armed. Without this, any timer node returns an error. |
 | `WithSignalBus(bus)` | Signal throw support: `ThrowSignal` commands are broadcast. Without this, any signal-throw node returns an error. |
 | `WithDefinitions(reg)` | Definition registry for resolving call-activity `DefRef` strings. Required when any `CallActivity` node is present. |
-| `WithCallLinks(store)` | Enables the async (non-blocking) call-activity path. Without this, call activities run the child synchronously to completion in-process. |
+| `WithCallLinkStore(store)` | Enables the async (non-blocking) call-activity path. Without this, call activities run the child synchronously to completion in-process. |
 | `WithTimerStore(store)` | Persists armed timers so `RehydrateTimers` can re-arm them after a restart. Without this, timers are in-memory only. |
 | `WithDefaultRetryPolicy(p)` | Fallback `model.RetryPolicy` for action-bearing nodes that declare none. Without this, a failed action goes straight to incident or error-boundary. |
 | `WithActionTimeout(d)` | Per-invocation timeout applied to every service action (default **30s**; `0` disables). A hung action that honours ctx is cancelled and surfaces as a retryable failure. |
@@ -180,7 +180,7 @@ st, err := r.CancelInstance(ctx, def, instanceID)
 ```
 
 Delivers a `CancelRequested` trigger. Any definition-level cancel actions (see
-`model.CancelActions`) run best-effort inside the same loop. When `WithCallLinks`
+`model.CancelActions`) run best-effort inside the same loop. When `WithCallLinkStore`
 and `WithDefinitions` are both configured, running async child instances are
 cancelled recursively (best-effort; errors are logged, never returned). Returns
 the terminated `InstanceState`.

@@ -72,14 +72,14 @@ These currently return a value only; they become `(T, error)`.
 
 We introduce one exported sentinel per package for "required argument missing", e.g.
 `runtime.ErrNilDependency`. Sentinel messages follow the repo-wide prefix convention:
-`errors.New("workflow-runtime: nil dependency")`. All nil-arg errors are wrapped with the
+`errors.New("workflow-runtime: nil required dependency")`. All nil-arg errors are wrapped with the
 offending argument name for context:
 
 ```go
 fmt.Errorf("%w: store", ErrNilDependency)
 ```
 
-This produces readable messages (`workflow-runtime: nil dependency: store`) while remaining
+This produces readable messages (`workflow-runtime: nil required dependency: store`) while remaining
 targetable with `errors.Is`.
 
 ### 5. Redundant-constructor collapse — functional options
