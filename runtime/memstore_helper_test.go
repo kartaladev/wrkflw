@@ -38,3 +38,11 @@ func mustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 	require.NoError(t, err)
 	return svc
 }
+
+// mustCachingStore builds a CachingStore or fails the test.
+func mustCachingStore(t *testing.T, backing runtime.Store, owner runtime.Ownership, opts ...runtime.CachingStoreOption) *runtime.CachingStore {
+	t.Helper()
+	s, err := runtime.NewCachingStore(backing, owner, opts...)
+	require.NoError(t, err)
+	return s
+}

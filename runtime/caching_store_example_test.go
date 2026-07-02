@@ -30,10 +30,13 @@ func ExampleNewCachingStore() {
 	if err != nil {
 		panic(err)
 	}
-	store := runtime.NewCachingStore(
+	store, err := runtime.NewCachingStore(
 		backing,
 		runtime.AlwaysOwn{},
 	)
+	if err != nil {
+		panic(err)
+	}
 
 	def := signalCatchDef("approved")
 

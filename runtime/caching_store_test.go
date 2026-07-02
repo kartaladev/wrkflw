@@ -47,7 +47,7 @@ func startTrg() engine.Trigger { return engine.NewStartInstance(time.Unix(0, 0).
 func TestCachingStoreServesOwnedLoadFromCache(t *testing.T) {
 	cs := &countingStore{backing: mustMemStore(t)}
 	clk := clockwork.NewFakeClock()
-	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clk))
+	store := mustCachingStore(t, cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clk))
 
 	id := "c1"
 	_, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -67,7 +67,7 @@ func TestCachingStoreServesOwnedLoadFromCache(t *testing.T) {
 
 func TestCachingStoreBypassesWhenNotOwned(t *testing.T) {
 	cs := &countingStore{backing: mustMemStore(t)}
-	store := runtime.NewCachingStore(cs, neverOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()))
+	store := mustCachingStore(t, cs, neverOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()))
 
 	id := "c2"
 	_, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -84,7 +84,7 @@ func TestCachingStoreBypassesWhenNotOwned(t *testing.T) {
 func TestCachingStoreEvictsOnConcurrentUpdate(t *testing.T) {
 	mem := mustMemStore(t)
 	cs := &countingStore{backing: mem}
-	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()))
+	store := mustCachingStore(t, cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()))
 
 	id := "c3"
 	tok, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -108,7 +108,7 @@ func TestCachingStoreEvictsOnConcurrentUpdate(t *testing.T) {
 func TestCachingStoreTTLExpiryForcesReload(t *testing.T) {
 	cs := &countingStore{backing: mustMemStore(t)}
 	clk := clockwork.NewFakeClock()
-	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCacheTTL(time.Minute), runtime.WithCachingStoreClock(clk))
+	store := mustCachingStore(t, cs, runtime.AlwaysOwn{}, runtime.WithCacheTTL(time.Minute), runtime.WithCachingStoreClock(clk))
 
 	id := "ttl1"
 	_, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -126,7 +126,7 @@ func TestCachingStoreTTLExpiryForcesReload(t *testing.T) {
 
 func TestCachingStoreLRUEvictsBeyondMax(t *testing.T) {
 	cs := &countingStore{backing: mustMemStore(t)}
-	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{},
+	store := mustCachingStore(t, cs, runtime.AlwaysOwn{},
 		runtime.WithCachingStoreClock(clockwork.NewFakeClock()),
 		runtime.WithCacheMaxEntries(2), runtime.WithCacheTTL(time.Hour))
 
@@ -147,7 +147,7 @@ func TestCachingStoreLRUEvictsBeyondMax(t *testing.T) {
 
 func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
 	mem := mustMemStore(t)
-	store := runtime.NewCachingStore(mem, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()), runtime.WithCacheTTL(time.Hour))
+	store := mustCachingStore(t, mem, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()), runtime.WithCacheTTL(time.Hour))
 
 	id := "race1"
 	tok, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -172,7 +172,7 @@ func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
 
 func TestCachingStoreReleaseEvicts(t *testing.T) {
 	cs := &countingStore{backing: mustMemStore(t)}
-	store := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()), runtime.WithCacheTTL(time.Hour))
+	store := mustCachingStore(t, cs, runtime.AlwaysOwn{}, runtime.WithCachingStoreClock(clockwork.NewFakeClock()), runtime.WithCacheTTL(time.Hour))
 
 	id := "rel1"
 	_, err := store.Create(t.Context(), runtime.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -196,7 +196,7 @@ func TestCachingStoreReleaseEvicts(t *testing.T) {
 func TestNewCachingStoreDefaultClockNoPanic(t *testing.T) {
 	// No clock option → defaults to clock.System(); construction + a basic op must not panic.
 	cs := &countingStore{backing: mustMemStore(t)}
-	s := runtime.NewCachingStore(cs, runtime.AlwaysOwn{})
+	s := mustCachingStore(t, cs, runtime.AlwaysOwn{})
 	assert.NotNil(t, s)
 }
 
@@ -204,7 +204,7 @@ func TestNewCachingStoreWithClockOption(t *testing.T) {
 	// WithCachingStoreClock injects a fake clock; advancing past TTL must force a backing reload.
 	cs := &countingStore{backing: mustMemStore(t)}
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	s := runtime.NewCachingStore(cs, runtime.AlwaysOwn{}, runtime.WithCacheTTL(time.Minute), runtime.WithCachingStoreClock(fake))
+	s := mustCachingStore(t, cs, runtime.AlwaysOwn{}, runtime.WithCacheTTL(time.Minute), runtime.WithCachingStoreClock(fake))
 	assert.NotNil(t, s)
 
 	id := "clkopt1"
@@ -223,4 +223,52 @@ func TestNewCachingStoreWithClockOption(t *testing.T) {
 	_, _, err = s.Load(t.Context(), id)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), cs.loads.Load(), "expired entry must reload from backing (fake clock drives TTL)")
+}
+
+func TestNewCachingStoreFailsFast(t *testing.T) {
+	t.Parallel()
+
+	mem := mustMemStore(t)
+	type testCase struct {
+		name    string
+		backing runtime.Store
+		owner   runtime.Ownership
+		assert  func(t *testing.T, s *runtime.CachingStore, err error)
+	}
+	cases := []testCase{
+		{
+			name:    "nil backing",
+			backing: nil,
+			owner:   runtime.AlwaysOwn{},
+			assert: func(t *testing.T, s *runtime.CachingStore, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, s)
+			},
+		},
+		{
+			name:    "nil owner",
+			backing: mem,
+			owner:   nil,
+			assert: func(t *testing.T, s *runtime.CachingStore, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, s)
+			},
+		},
+		{
+			name:    "valid args",
+			backing: mem,
+			owner:   runtime.AlwaysOwn{},
+			assert: func(t *testing.T, s *runtime.CachingStore, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, s)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, err := runtime.NewCachingStore(tc.backing, tc.owner)
+			tc.assert(t, s, err)
+		})
+	}
 }

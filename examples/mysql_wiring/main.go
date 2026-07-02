@@ -22,6 +22,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -144,7 +145,10 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(ownerCloser)
 
 	// Wrap the store in the caching store so hot instances are served from memory.
-	cachingStore := runtime.NewCachingStore(store, ownership)
+	cachingStore, err := runtime.NewCachingStore(store, ownership)
+	if err != nil {
+		return fmt.Errorf("caching store: %w", err)
+	}
 
 	// --- Scheduler with MySQL leader elector (single-leader timer firing) ---
 	// We capture runner in a closure; it is assigned after scheduler construction.

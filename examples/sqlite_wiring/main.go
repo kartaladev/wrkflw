@@ -178,7 +178,10 @@ func run(logger *slog.Logger) error {
 
 	// Use AlwaysOwn for single-process caching — the fail-loud SQLite ownership
 	// value is not passed to NewCachingStore.
-	cachingStore := runtime.NewCachingStore(store, runtime.AlwaysOwn{})
+	cachingStore, err := runtime.NewCachingStore(store, runtime.AlwaysOwn{})
+	if err != nil {
+		return err
+	}
 
 	// --- Scheduler (no elector — SQLite is single-process) ---
 	// SQLite is inherently single-process; there is no multi-replica timer leader
