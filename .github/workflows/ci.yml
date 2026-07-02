@@ -43,6 +43,22 @@ jobs:
           path: cover.out
           if-no-files-found: ignore
 
+  extraction:
+    name: extraction constraint (internal/database)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # ADR-0079: the database toolkit must import only stdlib + drivers, never
+      # any other wrkflw package, so it stays extractable. No Docker needed.
+      - name: Check toolkit extraction constraint
+        run: bash scripts/check-extraction.sh
+
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
