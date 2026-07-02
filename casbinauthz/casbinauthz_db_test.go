@@ -35,10 +35,10 @@ func TestNewCasbinAuthorizerFromDB_MultiNodeReload(t *testing.T) {
 	const ch = "wrkflw_casbin_policy_db_test"
 
 	// Node A — we don't exercise Authorize on A; it's the "other node" that wrote.
-	_, closerA, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,
+	_, closerA, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromDB(t.Context(), pool,
 		casbinauthz.WithNodeID("A"),
 		casbinauthz.WithWatcherChannel(ch),
-	)
+	))
 	require.NoError(t, err)
 	defer func() { _ = closerA.Close() }()
 
@@ -47,11 +47,11 @@ func TestNewCasbinAuthorizerFromDB_MultiNodeReload(t *testing.T) {
 	// genuinely listening (closing the NOTIFY-before-LISTEN race that made this
 	// test flaky).
 	readyB := make(chan struct{}, 1)
-	authB, closerB, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,
+	authB, closerB, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromDB(t.Context(), pool,
 		casbinauthz.WithNodeID("B"),
 		casbinauthz.WithWatcherChannel(ch),
 		casbinauthz.WithListenReady(readyB),
-	)
+	))
 	require.NoError(t, err)
 	defer func() { _ = closerB.Close() }()
 
@@ -102,9 +102,9 @@ func TestNewCasbinAuthorizerFromDB_WithoutWatcher(t *testing.T) {
 		`INSERT INTO casbin_rule (ptype, v0, v1) VALUES ('g', 'bob', 'admin')`)
 	require.NoError(t, err)
 
-	a, closer, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,
+	a, closer, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromDB(t.Context(), pool,
 		casbinauthz.WithoutWatcher(),
-	)
+	))
 	require.NoError(t, err)
 	require.NotNil(t, a)
 	require.NotNil(t, closer)
@@ -122,9 +122,9 @@ func TestNewCasbinAuthorizerFromDB_ReturnsInterface(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, casbinauthz.MigrateCasbin(t.Context(), pool))
 
-	a, closer, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,
+	a, closer, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromDB(t.Context(), pool,
 		casbinauthz.WithoutWatcher(),
-	)
+	))
 	require.NoError(t, err)
 
 	assert.NotNil(t, a) // a non-nil interface must not wrap a nil concrete authorizer
@@ -139,10 +139,10 @@ func TestNewCasbinAuthorizerFromDB_WithModel(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, casbinauthz.MigrateCasbin(t.Context(), pool))
 
-	a, closer, err := casbinauthz.NewCasbinAuthorizerFromDB(t.Context(), pool,
+	a, closer, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromDB(t.Context(), pool,
 		casbinauthz.WithModel(casbinauthz.DefaultModel),
 		casbinauthz.WithoutWatcher(),
-	)
+	))
 	require.NoError(t, err)
 	require.NotNil(t, a)
 	defer func() { _ = closer.Close() }()

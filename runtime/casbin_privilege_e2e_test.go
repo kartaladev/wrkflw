@@ -52,7 +52,7 @@ func financePrivilegeDef() *model.ProcessDefinition {
 func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	ctx := t.Context()
 
-	casbinAz, err := casbinauthz.NewCasbinAuthorizerFromStrings("", casbinFinancePolicy)
+	casbinAz, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", casbinFinancePolicy))
 	require.NoError(t, err, "build casbin authorizer")
 
 	approver := authz.Actor{ID: "bob", Roles: []string{"approver"}}
@@ -90,7 +90,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	ctx := t.Context()
 
-	casbinAz, err := casbinauthz.NewCasbinAuthorizerFromStrings("", casbinFinancePolicy)
+	casbinAz, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", casbinFinancePolicy))
 	require.NoError(t, err, "build casbin authorizer")
 
 	approver := authz.Actor{ID: "bob", Roles: []string{"approver"}}

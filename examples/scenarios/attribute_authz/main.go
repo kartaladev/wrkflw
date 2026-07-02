@@ -8,7 +8,7 @@
 //     path with no Docker required.
 //
 //  2. Casbin RBAC / resource-privilege: a casbin-backed authz.Authorizer wired
-//     via casbinauthz.NewCasbinAuthorizerFromStrings. A small inline policy CSV
+//     via casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(...)). A small inline policy CSV
 //     grants the "approver" role the "finance-task claim" privilege. An actor
 //     with that role is allowed; an actor without it is denied. The UserTask is
 //     defined using model.WithEligibilityPrivileges so the privilege authz flows
@@ -156,7 +156,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	}
 }
 
-// demoCasbinRBAC wires casbinauthz.NewCasbinAuthorizerFromStrings with an inline
+// demoCasbinRBAC wires casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(...)) with an inline
 // policy CSV granting the "approver" role the "finance-task claim" privilege. Two
 // actors are tested through TaskService.Claim: one with the "approver" role
 // (ALLOW) and one without (DENY).
@@ -167,7 +167,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// Build a casbin-backed authorizer from the inline policy CSV.
 	// The default model (casbinauthz.DefaultModel) supports RBAC via g lines and
 	// resource-privilege via p lines; no custom model text needed here.
-	casbinAz, err := casbinauthz.NewCasbinAuthorizerFromStrings("", casbinPolicy)
+	casbinAz, _, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings("", casbinPolicy))
 	if err != nil {
 		log.Fatal("build casbin authorizer:", err)
 	}
