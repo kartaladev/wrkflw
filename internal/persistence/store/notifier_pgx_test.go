@@ -5,10 +5,15 @@ package store_test
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -94,7 +99,6 @@ func TestPgxNotifierListenDrainsBeforePollInterval(t *testing.T) {
 
 	// Cancel and wait for Run to exit.
 	cancel()
-	time.Sleep(100 * time.Millisecond)
 
 	// Verify no goroutine leaked after context cancellation.
 	goleak.VerifyNone(t, opt)
@@ -318,7 +322,154 @@ func TestPgxNotifierRecoversFromConnLoss(t *testing.T) {
 	// ── Step 6: clean shutdown + goleak ──────────────────────────────────────
 	cancel()
 	cancelListen()
-	time.Sleep(300 * time.Millisecond)
+	goleak.VerifyNone(t, opt)
+}
+
+// ── TestPgxNotifierReconnectLogsWarn ─────────────────────────────────────────
+
+// recordingHandler is a minimal slog.Handler that appends every record it
+// handles to a slice (guarded by a mutex). Used to assert warn-log emission
+// without touching stdout or global logger state.
+type recordingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r)
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(_ string) slog.Handler      { return h }
+
+func (h *recordingHandler) warnRecords() []slog.Record {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []slog.Record
+	for _, r := range h.records {
+		if r.Level == slog.LevelWarn {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// TestPgxNotifierReconnectLogsWarn verifies that:
+//  1. WithPgxNotifierLogger wires a custom logger into the notifier.
+//  2. When Acquire fails during a reconnect, the goroutine emits at least one
+//     slog.LevelWarn record containing "reconnect".
+//
+// Strategy: build a pool whose BeforeConnect hook is toggled by an atomic flag.
+// The flag starts "allow" (initial Listen succeeds). After LISTEN is established,
+// the flag switches to "deny" so all future Acquire calls fail. Then
+// pg_terminate_backend kills the LISTEN connection — WaitForNotification errors,
+// the goroutine sleeps the reconnect backoff, calls Acquire (BeforeConnect fails
+// → Acquire fails → Warn emitted). Finally cancel the context so the goroutine
+// exits cleanly.
+func TestPgxNotifierReconnectLogsWarn(t *testing.T) {
+	mainPool := dbtest.RunTestDatabase(t)
+	require.NoError(t, persistence.Migrate(t.Context(), mainPool))
+
+	// Build a pool with a toggleable BeforeConnect hook using the same DSN as
+	// mainPool so it connects to the same Postgres instance.
+	var denyConnects atomic.Bool // false = allow, true = deny
+	poolCfg := mainPool.Config().Copy()
+	poolCfg.BeforeConnect = func(_ context.Context, _ *pgx.ConnConfig) error {
+		if denyConnects.Load() {
+			return fmt.Errorf("test: connections denied by BeforeConnect")
+		}
+		return nil
+	}
+	notifierPool, err := pgxpool.NewWithConfig(t.Context(), poolCfg)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		denyConnects.Store(false) // allow pool cleanup connections
+		notifierPool.Close()
+	})
+
+	// Capture goroutine baseline after pools are created.
+	opt := goleak.IgnoreCurrent()
+
+	handler := &recordingHandler{}
+	logger := slog.New(handler)
+
+	// NewPgxNotifier with logger option — fails to compile before Fix 1 is applied.
+	notifier := store.NewPgxNotifier(notifierPool, store.WithPgxNotifierLogger(logger))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	wake, cancelListen, err := notifier.Listen(ctx, "wrkflw_outbox")
+	require.NoError(t, err)
+	require.NotNil(t, wake)
+	defer cancelListen()
+
+	// Wait for the LISTEN backend to appear in pg_stat_activity.
+	var listenPID int
+	require.Eventually(t, func() bool {
+		kc, acquireErr := mainPool.Acquire(t.Context())
+		if acquireErr != nil {
+			return false
+		}
+		defer kc.Release()
+		var pid int
+		scanErr := kc.QueryRow(t.Context(),
+			`SELECT pid FROM pg_stat_activity
+			  WHERE pid <> pg_backend_pid()
+			    AND state = 'idle'
+			    AND wait_event_type = 'Client'
+			  LIMIT 1`,
+		).Scan(&pid)
+		if scanErr == nil && pid > 0 {
+			listenPID = pid
+			return true
+		}
+		return false
+	}, 5*time.Second, 100*time.Millisecond, "LISTEN backend must appear within 5s")
+	t.Logf("LISTEN backend PID: %d", listenPID)
+
+	// Deny new connections — now Acquire in the reconnect loop will fail when it
+	// tries to create a new connection (BeforeConnect returns an error). Note:
+	// BeforeConnect is only called for NEW connections; pooled idle connections are
+	// reused without it. So we must also drain all existing pool connections by
+	// killing every notifierPool backend so the pool has no idle conns to reuse.
+	denyConnects.Store(true)
+
+	// Kill ALL notifierPool connections (including the LISTEN conn) so the pool
+	// has no idle connections left to hand out. The notifier goroutine's next
+	// Acquire must create a fresh connection → BeforeConnect fires → error.
+	killConn, err := mainPool.Acquire(t.Context())
+	require.NoError(t, err)
+	var killedCount int
+	_ = killConn.QueryRow(t.Context(),
+		`SELECT count(pg_terminate_backend(pid))
+		   FROM pg_stat_activity
+		  WHERE pid <> pg_backend_pid()`,
+	).Scan(&killedCount)
+	killConn.Release()
+	t.Logf("killed %d connections (including LISTEN conn %d)", killedCount, listenPID)
+
+	// Wait: reconnect backoff (500ms) + error-detection margin + buffer.
+	// The goroutine: detects WaitForNotification error → sets current=nil →
+	// sleeps 500ms backoff → calls Acquire (BeforeConnect fails) → emits Warn.
+	time.Sleep(store.PgxNotifierReconnectBackoffForTest + 400*time.Millisecond)
+
+	warnRecs := handler.warnRecords()
+	assert.NotEmpty(t, warnRecs, "expected at least one slog.Warn record from reconnect-acquire failure")
+	if len(warnRecs) > 0 {
+		assert.Contains(t, warnRecs[0].Message, "reconnect", "warn message must mention 'reconnect'")
+	}
+
+	// Allow connections again so the goroutine can exit cleanly on cancel.
+	denyConnects.Store(false)
+	cancel()
+	cancelListen()
+	time.Sleep(100 * time.Millisecond)
 	goleak.VerifyNone(t, opt)
 }
 
