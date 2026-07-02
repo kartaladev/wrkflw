@@ -5,7 +5,6 @@ package persistence_test
 // No Docker daemon is required.
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -55,25 +54,39 @@ func TestOpenSQLite(t *testing.T) {
 	assert.Equal(t, "sqlite", reloaded.Variables["backend"])
 }
 
-// TestOpenSQLiteErrUnsupported verifies that the SQLite ownership/locker path
-// returns dialect.ErrUnsupported from both TryLock and Unlock. SQLite provides
-// no advisory locking, so there is no persistence.NewSQLiteAdvisoryLockOwnership
-// constructor; callers who try to build a CachingStore with SQLite will hit
-// ErrUnsupported when the locker methods are invoked.
+// TestOpenSQLiteErrUnsupported verifies the end-to-end fail-loud contract for
+// SQLite advisory locking: NewSQLiteAdvisoryLockOwnership returns a valid
+// runtime.Ownership whose Acquire method returns dialect.ErrUnsupported. This
+// proves the full wiring from facade → store.AdvisoryLockOwnership →
+// store.sqliteLocker → dialect.ErrUnsupported, not just that the sentinel
+// equals itself.
 //
-// The underlying locker is exercised in
-// internal/persistence/store/ownership_conformance_test.go; here we verify the
-// sentinel is reachable via the dialect package imported from the facade layer.
+// Release is a no-op (returns nil) when the lock was never acquired — that is
+// the correct AdvisoryLockOwnership contract: it guards via the held-map so
+// it never calls Unlock on a lock it doesn't hold. The unsupported-locking
+// failure surfaces on Acquire, which is the guarding point for ownership flows.
 func TestOpenSQLiteErrUnsupported(t *testing.T) {
-	// Confirm the sentinel is exported and matchable via errors.Is.
-	err := dialect.ErrUnsupported
-	require.True(t, errors.Is(err, dialect.ErrUnsupported),
-		"dialect.ErrUnsupported must be matchable via errors.Is")
+	ctx := t.Context()
 
-	// Smoke-check: SQLite dialect reports TimestampsAsText=true (TEXT codec).
-	d := dialect.NewSQLite()
-	assert.True(t, d.TimestampsAsText(),
-		"SQLite dialect must store timestamps as TEXT (RFC3339Nano)")
+	owner, closer, err := persistence.NewSQLiteAdvisoryLockOwnership()
+	require.NoError(t, err, "NewSQLiteAdvisoryLockOwnership must not fail (no connection needed)")
+	require.NotNil(t, owner)
+	require.NotNil(t, closer)
+	t.Cleanup(func() { _ = closer.Close() })
+
+	// Acquire must return (false, dialect.ErrUnsupported): proves that the full
+	// wiring from facade → store.AdvisoryLockOwnership → sqliteLocker is live.
+	ok, acquireErr := owner.Acquire(ctx, "some-instance-id")
+	assert.False(t, ok, "Acquire on SQLite must not report ownership")
+	require.Error(t, acquireErr)
+	assert.ErrorIs(t, acquireErr, dialect.ErrUnsupported,
+		"Acquire on SQLite must wrap dialect.ErrUnsupported through the full facade chain")
+
+	// Release returns nil for an un-held instance (held-map guard fires first).
+	// This is correct: there is nothing to unlock when Acquire never succeeded.
+	releaseErr := owner.Release(ctx, "some-instance-id")
+	assert.NoError(t, releaseErr,
+		"Release on an un-held SQLite instance must be a no-op (nil), not an error")
 }
 
 // TestOpenSQLiteNotFoundSentinel verifies that ErrInstanceNotFound is returned

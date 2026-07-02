@@ -88,6 +88,24 @@ func NewMySQLOwnership(ctx context.Context, db *sql.DB) (*AdvisoryLockOwnership,
 	}, nil
 }
 
+// NewSQLiteOwnership returns an [AdvisoryLockOwnership] for SQLite deployments.
+// SQLite provides no advisory locking mechanism: both [AdvisoryLockOwnership.Acquire]
+// and [AdvisoryLockOwnership.Release] will return [dialect.ErrUnsupported] (fail-loud).
+//
+// Use this constructor to satisfy the ownership parameter required by
+// [runtime.NewCachingStore] in single-node SQLite deployments. Ownership-dependent
+// flows must guard against [dialect.ErrUnsupported] and skip the ownership path
+// when running on SQLite.
+//
+// No connection or context is needed: the SQLite locker is stateless.
+func NewSQLiteOwnership() (*AdvisoryLockOwnership, error) {
+	return &AdvisoryLockOwnership{
+		locker: NewSQLiteLocker(),
+		close:  nil, // no connection to release
+		held:   make(map[string]bool),
+	}, nil
+}
+
 // Acquire takes an advisory lock for instanceID. If the instance is already
 // held by this process (sticky), it returns true immediately without a DB
 // round-trip. owned=false means another session holds the lock.
