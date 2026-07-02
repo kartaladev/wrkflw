@@ -168,15 +168,25 @@ func NewRelay(conn any, d dialect.Dialect, pub runtime.Publisher, opts ...RelayO
 	return r
 }
 
-// DrainOnce claims one batch of due pending outbox rows, publishes each via the
-// Publisher, and records each row's outcome independently in the same transaction:
+// DrainOnce claims one batch of due pending outbox rows (status='pending' AND
+// next_attempt_at <= now, ORDER BY id [FOR UPDATE SKIP LOCKED on PG/MySQL]),
+// publishes each via the Publisher, and records each row's outcome independently
+// in the SAME transaction:
 //
 //   - on success: status='published', published_at=now.
 //   - on publish failure: retry_count++, next_attempt_at+=backoff, last_error=err;
 //     if retry_count reaches MaxDeliveryAttempts, status='dead'.
 //
+// Correctness invariant: claim + Publish + mark all run inside ONE transaction
+// that is committed only at the end. The SELECT … FOR UPDATE SKIP LOCKED lock is
+// held across the entire publish+mark phase so concurrent Relay replicas skip
+// already-claimed rows instead of re-claiming and re-publishing them
+// (no double-publish). SQLite uses the same single-tx shape without the locking
+// clause because it is single-writer by contract.
+//
 // A publish failure does NOT abort the drain — healthy rows in the same batch
-// are still marked published. The whole batch commits atomically.
+// are still marked published. The whole batch commits atomically. At-least-once
+// is preserved: a row becomes 'published' only after a successful Publish call.
 //
 // Returns the number of rows successfully published in this drain.
 func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
@@ -186,26 +196,95 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	drainStart := r.clk.Now()
 	now := drainStart
 
-	claims, err := r.claimRows(ctx, now)
+	// Open the single transaction that holds claim+publish+mark.
+	q, txCtx, err := r.beginDrainTx(ctx)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(otelcodes.Error, err.Error())
+		infraErr := fmt.Errorf("workflow-store: relay: begin tx: %w", err)
+		span.RecordError(infraErr)
+		span.SetStatus(otelcodes.Error, infraErr.Error())
+		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay begin tx failed",
+			append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+		return 0, infraErr
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = q.Rollback(txCtx)
+		}
+	}()
+
+	// Claim due pending rows — locks held until commit (FOR UPDATE SKIP LOCKED
+	// on PG/MySQL; plain SELECT on SQLite single-writer).
+	claims, err := r.claimInTx(txCtx, q, now)
+	if err != nil {
+		infraErr := fmt.Errorf("workflow-store: relay: claim: %w", err)
+		span.RecordError(infraErr)
+		span.SetStatus(otelcodes.Error, infraErr.Error())
 		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay claim failed",
-			append(r.tel.LogAttrs(ctx), slog.Any("error", err))...)
-		return 0, err
+			append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+		return 0, infraErr
 	}
 
 	if len(claims) == 0 {
+		// No rows to drain; commit the empty tx (or rollback — either is fine).
+		_ = q.Commit(txCtx)
+		committed = true
 		span.SetAttributes(attribute.Int("wrkflw.batch_size", 0))
 		return 0, nil
 	}
 
-	published, err := r.publishBatch(ctx, claims, now)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(otelcodes.Error, err.Error())
-		return 0, err
+	// Publish each claim and record per-row outcome inside the same open tx.
+	published := 0
+	for _, c := range claims {
+		if pubErr := r.pub.Publish(ctx, c.event); pubErr != nil {
+			// Publish failure: increment retry_count, advance next_attempt_at,
+			// quarantine to 'dead' once MaxDeliveryAttempts is reached.
+			newRetry := c.retryCount + 1
+			status := "pending"
+			if newRetry >= r.maxDel {
+				status = "dead"
+			}
+			nextAttempt := now.Add(RelayBackoff(c.retryCount, r.backoff.base, r.backoff.max))
+			if _, err := q.Exec(txCtx, r.d.Rebind(
+				`UPDATE wrkflw_outbox
+				    SET retry_count = ?, status = ?, next_attempt_at = ?, last_error = ?
+				  WHERE id = ?`),
+				newRetry, status, timeArg(r.d, nextAttempt), pubErr.Error(), c.id,
+			); err != nil {
+				infraErr := fmt.Errorf("workflow-store: relay: quarantine id=%d: %w", c.id, err)
+				span.RecordError(infraErr)
+				span.SetStatus(otelcodes.Error, infraErr.Error())
+				r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay quarantine failed",
+					append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+				return 0, infraErr
+			}
+			continue
+		}
+		// Mark published inside the open transaction. If commit fails the row
+		// stays pending (at-least-once, not at-most-once).
+		if _, err := q.Exec(txCtx, r.d.Rebind(
+			`UPDATE wrkflw_outbox SET status = 'published', published_at = ? WHERE id = ?`),
+			timeArg(r.d, now), c.id,
+		); err != nil {
+			infraErr := fmt.Errorf("workflow-store: relay: mark published id=%d: %w", c.id, err)
+			span.RecordError(infraErr)
+			span.SetStatus(otelcodes.Error, infraErr.Error())
+			r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay mark-published failed",
+				append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+			return 0, infraErr
+		}
+		published++
 	}
+
+	if err := q.Commit(txCtx); err != nil {
+		infraErr := fmt.Errorf("workflow-store: relay: commit: %w", err)
+		span.RecordError(infraErr)
+		span.SetStatus(otelcodes.Error, infraErr.Error())
+		r.tel.Logger.LogAttrs(ctx, slog.LevelError, "persistence: relay commit failed",
+			append(r.tel.LogAttrs(ctx), slog.Any("error", infraErr))...)
+		return 0, infraErr
+	}
+	committed = true
 
 	span.SetAttributes(
 		attribute.Int("wrkflw.batch_size", len(claims)),
@@ -223,6 +302,13 @@ func (r *Relay) DrainOnce(ctx context.Context) (int, error) {
 	return published, nil
 }
 
+// beginDrainTx starts the single transaction used for claim+publish+mark.
+// It returns the transaction Querier together with a context that carries the
+// tx (so nested JoinOrBegin calls in helpers join it automatically).
+func (r *Relay) beginDrainTx(ctx context.Context) (transaction.Querier, context.Context, error) {
+	return transaction.Begin(ctx, r.conn)
+}
+
 // claimRow holds one claimed outbox row.
 type claimRow struct {
 	id         int64
@@ -230,43 +316,40 @@ type claimRow struct {
 	event      runtime.OutboxEvent
 }
 
-// claimRows selects and locks due pending rows, returning them without committing.
-// Branching is on dialect capabilities, not dialect name.
-func (r *Relay) claimRows(ctx context.Context, now time.Time) ([]claimRow, error) {
-	if r.d.SupportsSkipLocked() {
-		return r.claimSkipLocked(ctx, now)
-	}
-	// SQLite: single-writer, no SKIP LOCKED needed.
-	return r.claimPlain(ctx, now)
-}
-
-// claimSkipLocked uses a transaction + SELECT … FOR UPDATE SKIP LOCKED.
+// claimInTx selects due pending rows on the already-open Querier q.
+// For SupportsSkipLocked dialects (PG/MySQL) the query includes FOR UPDATE
+// SKIP LOCKED so concurrent Relay replicas see no overlap; for SQLite
+// (single-writer) a plain SELECT is used — no locking clause needed.
+//
 // MySQL requires the LIMIT to be a literal integer in the query string when
 // combined with a locking clause — it is an internal constant, never external input.
-func (r *Relay) claimSkipLocked(ctx context.Context, now time.Time) ([]claimRow, error) {
-	q, err := transaction.JoinOrBegin(ctx, r.conn)
-	if err != nil {
-		return nil, fmt.Errorf("workflow-store: relay: begin tx: %w", err)
+func (r *Relay) claimInTx(ctx context.Context, q transaction.Querier, now time.Time) ([]claimRow, error) {
+	var claimSQL string
+	if r.d.SupportsSkipLocked() {
+		claimSQL = fmt.Sprintf(
+			`SELECT id, topic, payload, instance_id, dedup_key, retry_count, definition_ref
+			   FROM wrkflw_outbox
+			  WHERE status = 'pending' AND next_attempt_at <= ?
+			  ORDER BY id
+			  LIMIT %d
+			    FOR UPDATE SKIP LOCKED`,
+			r.batch,
+		)
+	} else {
+		// SQLite: single-writer, plain SELECT.
+		claimSQL = fmt.Sprintf(
+			`SELECT id, topic, payload, instance_id, dedup_key, retry_count, definition_ref
+			   FROM wrkflw_outbox
+			  WHERE status = 'pending' AND next_attempt_at <= ?
+			  ORDER BY id
+			  LIMIT %d`,
+			r.batch,
+		)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = q.Rollback(ctx)
-		}
-	}()
 
-	claimSQL := fmt.Sprintf(
-		`SELECT id, topic, payload, instance_id, dedup_key, retry_count, definition_ref
-		   FROM wrkflw_outbox
-		  WHERE status = 'pending' AND next_attempt_at <= ?
-		  ORDER BY id
-		  LIMIT %d
-		    FOR UPDATE SKIP LOCKED`,
-		r.batch,
-	)
 	rows, err := q.Query(ctx, r.d.Rebind(claimSQL), timeArg(r.d, now))
 	if err != nil {
-		return nil, fmt.Errorf("workflow-store: relay: claim: %w", err)
+		return nil, fmt.Errorf("claim query: %w", err)
 	}
 
 	claims, scanErr := scanClaimRows(rows)
@@ -274,42 +357,8 @@ func (r *Relay) claimSkipLocked(ctx context.Context, now time.Time) ([]claimRow,
 	if scanErr != nil {
 		return nil, scanErr
 	}
-
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("workflow-store: relay: rows: %w", err)
-	}
-
-	if err := q.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("workflow-store: relay: claim commit: %w", err)
-	}
-	committed = true
-	return claims, nil
-}
-
-// claimPlain performs a non-locking SELECT for SQLite (single-writer).
-func (r *Relay) claimPlain(ctx context.Context, now time.Time) ([]claimRow, error) {
-	q, err := database.From(r.conn)
-	if err != nil {
-		return nil, fmt.Errorf("workflow-store: relay: conn: %w", err)
-	}
-	rows, err := q.Query(ctx, r.d.Rebind(fmt.Sprintf(
-		`SELECT id, topic, payload, instance_id, dedup_key, retry_count, definition_ref
-		   FROM wrkflw_outbox
-		  WHERE status = 'pending' AND next_attempt_at <= ?
-		  ORDER BY id
-		  LIMIT %d`, r.batch)),
-		timeArg(r.d, now),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("workflow-store: relay: claim: %w", err)
-	}
-	claims, scanErr := scanClaimRows(rows)
-	_ = rows.Close()
-	if scanErr != nil {
-		return nil, scanErr
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("workflow-store: relay: rows: %w", err)
+		return nil, fmt.Errorf("rows iteration: %w", err)
 	}
 	return claims, nil
 }
@@ -343,55 +392,6 @@ func scanClaimRows(rows database.Rows) ([]claimRow, error) {
 		}})
 	}
 	return out, nil
-}
-
-// publishBatch opens a transaction, publishes each claim, records the per-row
-// outcome (published / retry / dead), and commits.
-func (r *Relay) publishBatch(ctx context.Context, claims []claimRow, now time.Time) (int, error) {
-	q, err := transaction.JoinOrBegin(ctx, r.conn)
-	if err != nil {
-		return 0, fmt.Errorf("workflow-store: relay: begin publish tx: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = q.Rollback(ctx)
-		}
-	}()
-
-	published := 0
-	for _, c := range claims {
-		if pubErr := r.pub.Publish(ctx, c.event); pubErr != nil {
-			newRetry := c.retryCount + 1
-			status := "pending"
-			if newRetry >= r.maxDel {
-				status = "dead"
-			}
-			nextAttempt := now.Add(RelayBackoff(c.retryCount, r.backoff.base, r.backoff.max))
-			if _, err := q.Exec(ctx, r.d.Rebind(
-				`UPDATE wrkflw_outbox
-				    SET retry_count = ?, status = ?, next_attempt_at = ?, last_error = ?
-				  WHERE id = ?`),
-				newRetry, status, timeArg(r.d, nextAttempt), pubErr.Error(), c.id,
-			); err != nil {
-				return 0, fmt.Errorf("workflow-store: relay: quarantine id=%d: %w", c.id, err)
-			}
-			continue
-		}
-		if _, err := q.Exec(ctx, r.d.Rebind(
-			`UPDATE wrkflw_outbox SET status = 'published', published_at = ? WHERE id = ?`),
-			timeArg(r.d, now), c.id,
-		); err != nil {
-			return 0, fmt.Errorf("workflow-store: relay: mark published id=%d: %w", c.id, err)
-		}
-		published++
-	}
-
-	if err := q.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("workflow-store: relay: commit: %w", err)
-	}
-	committed = true
-	return published, nil
 }
 
 // drainUntilEmpty repeatedly calls DrainOnce until the batch is empty or an

@@ -645,6 +645,39 @@ func TestRelayWithLogger(t *testing.T) {
 	})
 }
 
+// TestRelayDrainOnce_NilConn verifies DrainOnce returns an error (begin tx
+// failure) when the connection is nil. This exercises the beginDrainTx error
+// path and the accompanying span/log instrumentation in DrainOnce.
+func TestRelayDrainOnce_NilConn(t *testing.T) {
+	t.Parallel()
+	relay := store.NewRelay(nil, newSQLiteDialectForTest(), &recordingRelayPub{})
+	_, err := relay.DrainOnce(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "relay: begin tx")
+}
+
+// TestRelayDrainOnce_ClaimQueryFails verifies that a claim-query failure
+// (cancelled context after tx begin) is reported as an infra error from
+// DrainOnce and does NOT panic or leak. Only exercised on SupportsSkipLocked
+// backends; SQLite single-writer is covered by TestRelayRun_InfraErrorPropagates.
+func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, b backend) {
+		if !b.dialect.SupportsSkipLocked() {
+			t.Skipf("skip SQLite — nil conn test covers the non-locking path")
+		}
+		relay := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
+
+		// A pre-cancelled context causes the claim query to fail immediately
+		// after transaction.Begin succeeds (begin uses a background context under
+		// the hood in pgx/sql; the query honours the caller's context).
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel() // cancel before DrainOnce
+
+		_, err := relay.DrainOnce(ctx)
+		require.Error(t, err, "DrainOnce must propagate query error on %s", b.name)
+	})
+}
+
 // TestRelayRun_InfraErrorPropagates verifies Run returns an infra error when
 // the initial drain fails (e.g. a nil/bad connection).
 func TestRelayRun_InfraErrorPropagates(t *testing.T) {
@@ -702,6 +735,99 @@ func TestRelayBatchSize(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 2, n, "batch size limits to 2 on %s", b.name)
 		assert.Equal(t, 3, countOutboxByStatus(t, b, "pending"), "3 remain on %s", b.name)
+	})
+}
+
+// ── Concurrency: no double-publish ───────────────────────────────────────────
+
+// blockingRelayPub records every Publish call (thread-safe) and stalls
+// briefly after acquiring the lock — widening the window in which a second
+// concurrent Relay replica can re-claim the same still-pending rows and
+// publish them again (exposes the two-tx bug pre-fix).
+type blockingRelayPub struct {
+	mu        sync.Mutex
+	delay     time.Duration
+	published []runtime.OutboxEvent
+}
+
+func newBlockingRelayPub(delay time.Duration) *blockingRelayPub {
+	return &blockingRelayPub{delay: delay}
+}
+
+func (p *blockingRelayPub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+	// Hold the lock for `delay` so the race window is wide enough for a
+	// concurrent DrainOnce to re-claim and re-publish the same rows.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.delay > 0 {
+		time.Sleep(p.delay)
+	}
+	p.published = append(p.published, ev)
+	return nil
+}
+
+func (p *blockingRelayPub) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.published)
+}
+
+// dedupCounts returns a map[dedupKey]→publishCount so the test can verify
+// each event was published exactly once.
+func (p *blockingRelayPub) dedupCounts() map[string]int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	m := make(map[string]int, len(p.published))
+	for _, e := range p.published {
+		m[e.DedupKey]++
+	}
+	return m
+}
+
+// TestRelayDrainOnce_NoConcurrentDoublePublish is the gate test for the
+// single-tx drain fix.
+//
+// Two Relay instances share the same connection pool and the same
+// blockingRelayPub (which stalls each Publish call for 20 ms to widen the
+// window). With the pre-fix two-transaction structure, the second DrainOnce
+// re-claims the same pending rows after the first committed its claim tx but
+// before it committed the publish tx → double-publish. After the fix (one tx
+// holds SELECT…FOR UPDATE SKIP LOCKED until commit), SKIP LOCKED correctly
+// skips already-locked rows so each dedup_key is published exactly once and
+// the total equals N.
+//
+// SQLite is excluded: it is single-writer (no concurrent Relay replicas
+// expected) and SupportsSkipLocked()==false.
+func TestRelayDrainOnce_NoConcurrentDoublePublish(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, b backend) {
+		if !b.dialect.SupportsSkipLocked() {
+			t.Skipf("SKIP LOCKED not supported on %s — single-writer, concurrent relay not expected", b.name)
+		}
+
+		const N = 20
+		seedRelayOutbox(t, b, N)
+
+		// A single shared publisher that stalls 20 ms per Publish call so the
+		// two goroutines' Publish phases overlap, maximising double-publish odds.
+		pub := newBlockingRelayPub(20 * time.Millisecond)
+
+		relay1 := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayBatchSize(N))
+		relay2 := store.NewRelay(b.conn, b.dialect, pub, store.WithRelayBatchSize(N))
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); _, _ = relay1.DrainOnce(t.Context()) }()
+		go func() { defer wg.Done(); _, _ = relay2.DrainOnce(t.Context()) }()
+		wg.Wait()
+
+		counts := pub.dedupCounts()
+		total := pub.count()
+
+		// Every event published exactly once; total equals N.
+		assert.Equal(t, N, total, "total published events must equal N on %s (got %d, want %d)", b.name, total, N)
+		for key, n := range counts {
+			assert.Equal(t, 1, n, "dedup_key %s published %d times (want 1) on %s", key, n, b.name)
+		}
 	})
 }
 
