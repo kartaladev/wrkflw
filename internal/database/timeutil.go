@@ -16,6 +16,16 @@ type Dialect int
 const (
 	Postgres Dialect = iota
 	MySQL
+	// SQLite selects the in-process SQLite probe path in [ProbeUTC]. The probe
+	// executes SELECT datetime('2000-01-01 00:00:00') and verifies that the
+	// returned TEXT string matches the expected UTC literal exactly.
+	//
+	// modernc.org/sqlite returns DATETIME values as plain TEXT strings rather
+	// than time.Time; the probe scans into a string and compares it directly.
+	// This validates that the SQLite connection's time functions return UTC-consistent
+	// values — a no-op for a typical in-process SQLite, but a useful smoke-check
+	// that the connection is healthy and the datetime function is available.
+	SQLite
 )
 
 // ProbeUTC verifies the connection interprets stored datetimes as UTC. It reads a
@@ -31,24 +41,47 @@ const (
 // time_zone (which governs DEFAULT CURRENT_TIMESTAMP(6) columns) is enforced
 // separately by persistence.MySQLDSN.
 func ProbeUTC(ctx context.Context, q Querier, d Dialect) error {
-	known := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	var sql string
 	switch d {
 	case Postgres:
-		sql = `SELECT TIMESTAMPTZ '2000-01-01 00:00:00+00'`
+		known := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+		query := `SELECT TIMESTAMPTZ '2000-01-01 00:00:00+00'`
+		var got time.Time
+		if err := q.QueryRow(ctx, query).Scan(&got); err != nil {
+			return fmt.Errorf("workflow-database: probe query: %w", err)
+		}
+		if !got.Equal(known) {
+			return fmt.Errorf("workflow-database: connection is not UTC (read %s, want %s); "+
+				"for MySQL set DSN parseTime=true&loc=UTC (see persistence.MySQLDSN)",
+				got.Format(time.RFC3339Nano), known.Format(time.RFC3339Nano))
+		}
 	case MySQL:
-		sql = `SELECT TIMESTAMP('2000-01-01 00:00:00')`
+		known := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+		query := `SELECT TIMESTAMP('2000-01-01 00:00:00')`
+		var got time.Time
+		if err := q.QueryRow(ctx, query).Scan(&got); err != nil {
+			return fmt.Errorf("workflow-database: probe query: %w", err)
+		}
+		if !got.Equal(known) {
+			return fmt.Errorf("workflow-database: connection is not UTC (read %s, want %s); "+
+				"for MySQL set DSN parseTime=true&loc=UTC (see persistence.MySQLDSN)",
+				got.Format(time.RFC3339Nano), known.Format(time.RFC3339Nano))
+		}
+	case SQLite:
+		// modernc.org/sqlite returns DATETIME values as TEXT strings rather than
+		// time.Time. Scan the literal directly into a string and verify it matches
+		// the expected UTC representation. This confirms the connection is healthy
+		// and the datetime function returns UTC-consistent values.
+		const wantText = "2000-01-01 00:00:00"
+		query := `SELECT datetime('2000-01-01 00:00:00')`
+		var got string
+		if err := q.QueryRow(ctx, query).Scan(&got); err != nil {
+			return fmt.Errorf("workflow-database: probe query: %w", err)
+		}
+		if got != wantText {
+			return fmt.Errorf("workflow-database: sqlite probe: got %q, want %q", got, wantText)
+		}
 	default:
 		return fmt.Errorf("workflow-database: probe: unknown dialect %d", d)
-	}
-	var got time.Time
-	if err := q.QueryRow(ctx, sql).Scan(&got); err != nil {
-		return fmt.Errorf("workflow-database: probe query: %w", err)
-	}
-	if !got.Equal(known) {
-		return fmt.Errorf("workflow-database: connection is not UTC (read %s, want %s); "+
-			"for MySQL set DSN parseTime=true&loc=UTC (see persistence.MySQLDSN)",
-			got.Format(time.RFC3339Nano), known.Format(time.RFC3339Nano))
 	}
 	return nil
 }

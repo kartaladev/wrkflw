@@ -1,23 +1,21 @@
 package persistence
 
 // mysql.go contains the consumer-facing façade over the MySQL persistence
-// backend (internal/persistence/mysql). It mirrors the Postgres façade
-// constructors: OpenMySQL, MigrateMySQL, NewMySQLTimerStore, NewMySQLRelay,
-// and NewMySQLDeduper.
+// backend. After the store-unification refactor (Phase 2) every MySQL
+// constructor is rewired onto the neutral internal/persistence/store package
+// parametrised with dialect.NewMySQL(); only OpenMySQL's ProbeUTC guard and the
+// migration entry point (MigrateMySQL, still delegating to the internal mysql
+// package until Task 22 relocates it) remain MySQL-specific.
 //
-// MySQLOption is a distinct type from Option (which aliases postgres.StoreOption)
-// because the two backends have incompatible concrete option function signatures.
-// MySQL-specific option constructors (MySQLWith*) map 1:1 to internal/persistence/mysql
-// option constructors, exactly as the Postgres façade option constructors map to
-// internal/persistence/postgres option constructors.
+// Store unification collapsed the former per-backend option types: MySQLOption,
+// MySQLRelayOption, and MySQLCallLinkOption are now aliases of the single
+// store.Option / persistence.RelayOption / store.CallLinkOption surfaces. The
+// MySQLWith* constructor names are kept for source compatibility; each simply
+// returns the corresponding unified option value.
 //
-// MySQLRelayOption is similarly distinct from RelayOption (which aliases
-// postgres.RelayOption); use MySQLWith* constructors to configure it.
-//
-// MySQLDeduper is a separate interface from Deduper because the Postgres Deduper
-// operates over pgx.Tx (a pgx-specific transaction type) while the MySQL Deduper
-// operates over *sql.Tx (the standard library transaction type). They cannot share
-// a single interface without coupling one backend to the other's driver.
+// The separate MySQLDeduper interface is gone: NewMySQLDeduper (in dedup.go) now
+// returns the unified persistence.Deduper, whose Seen joins the ambient
+// transaction rather than taking an explicit *sql.Tx.
 
 import (
 	"context"
@@ -33,53 +31,35 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	mysqlstore "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
-// MySQLDeduper is the stable public interface for idempotent-consumer
-// deduplication against a MySQL backend (ADR-0018). It is analogous to
-// Deduper (which uses pgx.Tx) but operates over *sql.Tx so it remains
-// driver-agnostic with respect to the standard library.
-//
-// NewMySQLDeduper returns this interface; consumers never need to import
-// internal/persistence/mysql directly.
-type MySQLDeduper interface {
-	// Seen records (subscriber, messageID) within tx and reports whether this is
-	// the FIRST time the pair was seen. firstTime==false means the message is a
-	// duplicate and the caller should skip the side effect. Uses INSERT IGNORE so
-	// concurrent inserts of the same pair resolve without error.
-	Seen(ctx context.Context, tx *sql.Tx, subscriber, messageID string) (firstTime bool, err error)
-
-	// Prune deletes all processed-message records with a processed_at strictly
-	// before before. Returns the number of rows deleted.
-	Prune(ctx context.Context, before time.Time) (int64, error)
-}
-
-// MySQLOption configures the MySQL Store returned by OpenMySQL.
-// It is distinct from Option (which aliases postgres.StoreOption) because the
-// MySQL and Postgres store implementations carry incompatible option types.
-type MySQLOption = mysqlstore.StoreOption
+// MySQLOption configures the MySQL Store returned by OpenMySQL. After store
+// unification it is an alias of the single store.Option (the same type Option
+// aliases); the two backends share one option surface.
+type MySQLOption = store.Option
 
 // MySQLWithHistoryCap bounds the inline instance History persisted in the
 // snapshot to every open visit plus at most n most-recent closed visits
 // (ADR-0021). n <= 0 keeps full inline history. Mirrors WithHistoryCap for Postgres.
-func MySQLWithHistoryCap(n int) MySQLOption { return mysqlstore.WithHistoryCap(n) }
+func MySQLWithHistoryCap(n int) MySQLOption { return store.WithHistoryCap(n) }
 
 // MySQLWithStoreLogger sets the structured logger used by the MySQL Store.
 // Default: slog.Default(). Mirrors WithStoreLogger for Postgres.
-func MySQLWithStoreLogger(l *slog.Logger) MySQLOption { return mysqlstore.WithStoreLogger(l) }
+func MySQLWithStoreLogger(l *slog.Logger) MySQLOption { return store.WithStoreLogger(l) }
 
 // MySQLWithStoreTracerProvider sets the OTel TracerProvider for MySQL Store
 // operation spans. Default: the OTel global provider. Mirrors WithStoreTracerProvider.
 func MySQLWithStoreTracerProvider(tp trace.TracerProvider) MySQLOption {
-	return mysqlstore.WithStoreTracerProvider(tp)
+	return store.WithStoreTracerProvider(tp)
 }
 
 // MySQLWithStoreMeterProvider sets the OTel MeterProvider for MySQL Store
 // metrics. Default: the OTel global provider. Mirrors WithStoreMeterProvider.
 func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
-	return mysqlstore.WithStoreMeterProvider(mp)
+	return store.WithStoreMeterProvider(mp)
 }
 
 // OpenMySQL constructs a MySQL-backed runtime.Store + JournalReader over db.
@@ -103,7 +83,7 @@ func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, err
 	if err := database.ProbeUTC(ctx, q, database.MySQL); err != nil {
 		return nil, err
 	}
-	return mysqlstore.NewStore(db, opts...), nil
+	return store.New(db, dialect.NewMySQL(), opts...), nil
 }
 
 // MigrateMySQL applies the embedded schema migrations to the MySQL database
@@ -113,7 +93,7 @@ func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, err
 // MigrateMySQL is intended to be called explicitly by the consumer during
 // application startup — it is never auto-invoked on import.
 func MigrateMySQL(ctx context.Context, db *sql.DB) error {
-	return mysqlstore.Migrate(ctx, db)
+	return store.MigrateMySQL(ctx, db)
 }
 
 // NewMySQLTimerStore returns a runtime.TimerStore backed by MySQL, for
@@ -127,39 +107,38 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 //	ts := persistence.NewMySQLTimerStore(db)
 //	armed, err := ts.ListArmed(ctx)
 func NewMySQLTimerStore(db *sql.DB) runtime.TimerStore {
-	return mysqlstore.NewTimerStore(db)
+	return store.NewTimerStore(db, dialect.NewMySQL())
 }
 
-// MySQLRelayOption configures a MySQL Relay returned by NewMySQLRelay.
-// It is distinct from RelayOption (which aliases postgres.RelayOption) because
-// MySQL and Postgres relay implementations carry incompatible option types.
-// MySQL has no LISTEN/NOTIFY; its relay is poll-only (no MySQLWithListenNotify).
-type MySQLRelayOption = mysqlstore.RelayOption
+// MySQLRelayOption configures a MySQL Relay returned by NewMySQLRelay. After
+// store unification it is an alias of the facade RelayOption. MySQL has no
+// LISTEN/NOTIFY; its relay is poll-only (there is no MySQLWithListenNotify).
+type MySQLRelayOption = RelayOption
 
 // MySQLWithPollInterval sets the interval between DrainOnce calls in the MySQL
 // Relay's Run loop. Default: 1s. Mirrors WithPollInterval for the Postgres relay.
 func MySQLWithPollInterval(d time.Duration) MySQLRelayOption {
-	return mysqlstore.WithPollInterval(d)
+	return storeRelayOption(store.WithRelayPollInterval(d))
 }
 
 // MySQLWithBatchSize sets the maximum number of outbox rows claimed per
 // DrainOnce call. Default: 100. Mirrors WithBatchSize for the Postgres relay.
 func MySQLWithBatchSize(n int) MySQLRelayOption {
-	return mysqlstore.WithBatchSize(n)
+	return storeRelayOption(store.WithRelayBatchSize(n))
 }
 
 // MySQLWithMaxDeliveryAttempts sets how many failed publish attempts a row
 // tolerates before it is quarantined to status 'dead'. Default: 10.
 // Mirrors WithMaxDeliveryAttempts for the Postgres relay.
 func MySQLWithMaxDeliveryAttempts(n int) MySQLRelayOption {
-	return mysqlstore.WithMaxDeliveryAttempts(n)
+	return storeRelayOption(store.WithRelayMaxDeliveryAttempts(n))
 }
 
 // MySQLWithRelayBackoff sets the base and maximum interval of the capped
 // exponential backoff applied to a row's next_attempt_at after a failed publish.
 // Defaults: base 1s, max 1m. Mirrors WithRelayBackoff for the Postgres relay.
 func MySQLWithRelayBackoff(base, maxInterval time.Duration) MySQLRelayOption {
-	return mysqlstore.WithRelayBackoff(base, maxInterval)
+	return storeRelayOption(store.WithRelayBackoff(base, maxInterval))
 }
 
 // MySQLWithRelayClock sets the clock the MySQL relay uses to stamp published_at
@@ -167,25 +146,25 @@ func MySQLWithRelayBackoff(base, maxInterval time.Duration) MySQLRelayOption {
 // Inject a fake clock in tests for deterministic behaviour (ADR-0003).
 // Mirrors WithRelayClock for the Postgres relay.
 func MySQLWithRelayClock(clk clock.Clock) MySQLRelayOption {
-	return mysqlstore.WithRelayClock(clk)
+	return storeRelayOption(store.WithRelayClock(clk))
 }
 
 // MySQLWithRelayLogger sets the structured logger used by the MySQL relay for
 // drain logs. Default: slog.Default(). Mirrors WithRelayLogger for the Postgres relay.
 func MySQLWithRelayLogger(l *slog.Logger) MySQLRelayOption {
-	return mysqlstore.WithRelayLogger(l)
+	return storeRelayOption(store.WithRelayLogger(l))
 }
 
 // MySQLWithRelayTracerProvider sets the OTel TracerProvider for MySQL relay batch
 // spans. Default: the OTel global provider. Mirrors WithRelayTracerProvider.
 func MySQLWithRelayTracerProvider(tp trace.TracerProvider) MySQLRelayOption {
-	return mysqlstore.WithRelayTracerProvider(tp)
+	return storeRelayOption(store.WithRelayTracerProvider(tp))
 }
 
 // MySQLWithRelayMeterProvider sets the OTel MeterProvider for MySQL relay metrics.
 // Default: the OTel global provider. Mirrors WithRelayMeterProvider.
 func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
-	return mysqlstore.WithRelayMeterProvider(mp)
+	return storeRelayOption(store.WithRelayMeterProvider(mp))
 }
 
 // NewMySQLRelay constructs an outbox relay over db that publishes each event via pub.
@@ -201,7 +180,8 @@ func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
 // Available options: MySQLWithPollInterval, MySQLWithBatchSize, MySQLWithRelayClock,
 // MySQLWithMaxDeliveryAttempts, MySQLWithRelayBackoff, MySQLWithRelayLogger,
 // MySQLWithRelayTracerProvider, MySQLWithRelayMeterProvider.
-// Note: there is no MySQLWithListenNotify — MySQL is poll-only.
+// Note: there is no MySQLWithListenNotify — MySQL is poll-only. Passing the
+// Postgres-only WithListenNotify has no effect (MySQL provides no notifier).
 //
 // Example:
 //
@@ -212,37 +192,18 @@ func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
 //	)
 //	go relay.Run(ctx)
 func NewMySQLRelay(db *sql.DB, pub runtime.Publisher, opts ...MySQLRelayOption) Relay {
-	return mysqlstore.NewRelay(db, pub, opts...)
-}
-
-// NewMySQLDeduper constructs a MySQLDeduper backed by db. It implements the
-// idempotent-consumer pattern (ADR-0018) using INSERT IGNORE into
-// wrkflw_processed_message.
-//
-// MigrateMySQL must be called before the first Seen call so the
-// wrkflw_processed_message table exists.
-//
-// Returns MySQLDeduper rather than the Postgres-typed Deduper interface because
-// they use incompatible transaction types (pgx.Tx vs *sql.Tx).
-//
-// Example:
-//
-//	db, _ := sql.Open("mysql", dsn)
-//	persistence.MigrateMySQL(ctx, db)
-//	d := persistence.NewMySQLDeduper(db)
-//	tx, _ := db.BeginTx(ctx, nil)
-//	first, err := d.Seen(ctx, tx, "my-subscriber", msgID)
-//	if err != nil { ... }
-//	if !first { return nil } // duplicate: skip side effect
-//	// ... perform side effect ...
-//	tx.Commit()
-func NewMySQLDeduper(db *sql.DB) MySQLDeduper {
-	return mysqlstore.NewDeduper(db)
+	var cfg relayConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	// MySQL has no LISTEN/NOTIFY; cfg.listenNotify is intentionally ignored.
+	return store.NewRelay(db, dialect.NewMySQL(), pub, cfg.opts...)
 }
 
 // MySQLCallLinkOption configures a CallLinkStore returned by NewMySQLCallLinkStore.
-// It aliases the internal mysql.CallLinkOption.
-type MySQLCallLinkOption = mysqlstore.CallLinkOption
+// After store unification it aliases the single store.CallLinkOption (same type
+// as CallLinkOption).
+type MySQLCallLinkOption = store.CallLinkOption
 
 // MySQLWithCallLinkLease configures opt-in lease-based multi-replica exclusivity
 // on the MySQL CallLinkStore. When ttl > 0, ClaimPending stamps claimed_at/claimed_by,
@@ -250,7 +211,7 @@ type MySQLCallLinkOption = mysqlstore.CallLinkOption
 // (the default), a plain SELECT is used (backward-compatible).
 // Mirrors WithCallLinkLease for the Postgres facade.
 func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption {
-	return mysqlstore.WithCallLinkLease(owner, ttl)
+	return store.WithCallLinkLease(owner, ttl)
 }
 
 // MySQLWithCallLinkClock sets the clock the MySQL CallLinkStore uses for lease
@@ -258,7 +219,7 @@ func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption
 // deterministic behaviour (ADR-0003).
 // Mirrors WithCallLinkClock for the Postgres facade.
 func MySQLWithCallLinkClock(clk clock.Clock) MySQLCallLinkOption {
-	return mysqlstore.WithCallLinkClock(clk)
+	return store.WithCallLinkClock(clk)
 }
 
 // NewMySQLCallLinkStore constructs the MySQL-backed runtime.CallLinkStore (read/claim
@@ -273,7 +234,7 @@ func MySQLWithCallLinkClock(clk clock.Clock) MySQLCallLinkOption {
 //
 // Mirrors NewCallLinkStore for the Postgres facade.
 func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) runtime.CallLinkStore {
-	return mysqlstore.NewCallLinkStore(db, opts...)
+	return store.NewCallLinkStore(db, dialect.NewMySQL(), opts...)
 }
 
 // NewMySQLAdvisoryLockOwnership constructs a multi-process [runtime.Ownership]
@@ -294,7 +255,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) runtime.Call
 //	store, _ := persistence.OpenMySQL(ctx, db)
 //	cachingStore := runtime.NewCachingStore(store, owner)
 func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Ownership, io.Closer, error) {
-	o, err := mysqlstore.NewAdvisoryLockOwnership(ctx, db)
+	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -315,7 +276,7 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Own
 //	links := persistence.NewMySQLChainLinkStore(db)
 //	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
 func NewMySQLChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
-	return mysqlstore.NewChainLinkStore(db)
+	return store.NewChainLinkStore(db, dialect.NewMySQL())
 }
 
 // NewMySQLLister constructs the MySQL-backed runtime.InstanceLister for
@@ -334,7 +295,7 @@ func NewMySQLChainLinkStore(db *sql.DB) runtime.ChainLinkStore {
 //	lister := persistence.NewMySQLLister(db)
 //	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
 func NewMySQLLister(db *sql.DB) runtime.InstanceLister {
-	return mysqlstore.NewLister(db)
+	return store.NewLister(db, dialect.NewMySQL())
 }
 
 // NewMySQLCallNotifier builds a durable call-activity notifier over db using the
@@ -355,7 +316,7 @@ func NewMySQLLister(db *sql.DB) runtime.InstanceLister {
 //	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
 func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
-	return runtime.NewCallNotifier(mysqlstore.NewCallLinkStore(db), deliver, reg, opts...)
+	return runtime.NewCallNotifier(store.NewCallLinkStore(db, dialect.NewMySQL()), deliver, reg, opts...)
 }
 
 // NewMySQLDefinitionStore constructs the durable MySQL-backed definition store.
@@ -373,16 +334,14 @@ func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runti
 //	ds := persistence.NewMySQLDefinitionStore(db)
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
 func NewMySQLDefinitionStore(db *sql.DB) DefinitionStore {
-	return mysqlstore.NewDefinitionStore(db)
+	return store.NewDefinitionStore(db, dialect.NewMySQL())
 }
 
 // NewMySQLPruner constructs a Pruner over db (returns the stable Pruner interface).
 // MigrateMySQL must have been applied before calling any method.
 //
 // It returns the same Pruner interface as NewPruner (the Postgres analog) so the
-// two backends are interchangeable at the consumer site. The underlying MySQL
-// concrete type additionally offers PruneTimers (a MySQL-specific method with no
-// Postgres analog) accessible by type-asserting to *mysqlstore.Pruner if needed.
+// two backends are interchangeable at the consumer site.
 //
 // Wire it into a scheduled job the consumer owns, e.g.:
 //
@@ -392,7 +351,7 @@ func NewMySQLDefinitionStore(db *sql.DB) DefinitionStore {
 //	// every hour, drop outbox events published more than 7 days ago:
 //	_, err := pruner.PruneOutbox(ctx, time.Now().Add(-7*24*time.Hour))
 func NewMySQLPruner(db *sql.DB) Pruner {
-	return mysqlstore.NewPruner(db)
+	return store.NewPruner(db, dialect.NewMySQL())
 }
 
 // MySQLDSN returns base with the parameters required for correct DATETIME(6)
@@ -419,18 +378,18 @@ func MySQLDSN(base string) (string, error) {
 	return cfg.FormatDSN(), nil
 }
 
-// Compile-time checks: MySQL internal concrete types must satisfy the same
+// Compile-time checks: the neutral store concrete types must satisfy the same
 // public interfaces as their Postgres analogs.
 var (
-	_ Store                      = (*mysqlstore.Store)(nil)
-	_ runtime.TimerStore         = (*mysqlstore.TimerStore)(nil)
-	_ Relay                      = (*mysqlstore.Relay)(nil)
-	_ MySQLDeduper               = (*mysqlstore.Deduper)(nil)
-	_ runtime.CallLinkStore      = (*mysqlstore.CallLinkStore)(nil)
-	_ runtime.ChainLinkStore     = (*mysqlstore.ChainLinkStore)(nil)
-	_ runtime.InstanceLister     = (*mysqlstore.Lister)(nil)
-	_ runtime.Ownership          = (*mysqlstore.AdvisoryLockOwnership)(nil)
-	_ DefinitionStore            = (*mysqlstore.DefinitionStore)(nil)
-	_ Pruner                     = (*mysqlstore.Pruner)(nil)
-	_ runtime.DefinitionRegistry = (*mysqlstore.DefinitionStore)(nil)
+	_ Store                      = (*store.Store)(nil)
+	_ runtime.TimerStore         = (*store.TimerStore)(nil)
+	_ Relay                      = (*store.Relay)(nil)
+	_ Deduper                    = (*store.Deduper)(nil)
+	_ runtime.CallLinkStore      = (*store.CallLinkStore)(nil)
+	_ runtime.ChainLinkStore     = (*store.ChainLinkStore)(nil)
+	_ runtime.InstanceLister     = (*store.Lister)(nil)
+	_ runtime.Ownership          = (*store.AdvisoryLockOwnership)(nil)
+	_ DefinitionStore            = (*store.DefinitionStore)(nil)
+	_ Pruner                     = (*store.Pruner)(nil)
+	_ runtime.DefinitionRegistry = (*store.DefinitionStore)(nil)
 )

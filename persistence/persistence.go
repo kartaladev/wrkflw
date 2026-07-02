@@ -1,7 +1,7 @@
-// Package persistence is the consumer-facing façade over the internal
-// Postgres-backed persistence implementation (ADR-0008). It exposes
-// constructors, stable port/interface types, options, and re-exported sentinels
-// so library consumers never have to import internal/persistence/postgres directly.
+// Package persistence is the consumer-facing façade over the neutral
+// persistence store (ADR-0008). It exposes constructors, stable port/interface
+// types, options, and re-exported sentinels so library consumers never have to
+// import internal persistence packages directly.
 //
 // # Usage
 //
@@ -29,7 +29,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -84,44 +85,67 @@ type Relay interface {
 // Publisher is the broker-agnostic outbox publisher alias (same as runtime.Publisher).
 type Publisher = runtime.Publisher
 
-// Option configures the Postgres Store returned by OpenPostgres
-// (alias of postgres.StoreOption).
-type Option = postgres.StoreOption
+// Option configures the Store returned by OpenPostgres (alias of the neutral
+// store.Option). The same underlying type also backs OpenMySQL's MySQLOption:
+// the two backends share one option surface after the store-unification refactor.
+type Option = store.Option
 
 // WithHistoryCap bounds the inline instance History persisted in the snapshot
 // to every open visit plus at most n most-recent closed visits (ADR-0021).
 // Unset / n <= 0 keeps full inline history (current behavior). The journal
 // table remains the complete audit source.
-func WithHistoryCap(n int) Option { return postgres.WithHistoryCap(n) }
+func WithHistoryCap(n int) Option { return store.WithHistoryCap(n) }
 
 // WithOutboxNotify makes the Store emit a transactional NOTIFY wrkflw_outbox
 // when a step inserts outbox rows, so a relay started with WithListenNotify
 // drains with sub-poll-interval latency (ADR-0022). Opt-in; default off.
-func WithOutboxNotify() Option { return postgres.WithOutboxNotify() }
+// Only Postgres emits a NOTIFY; MySQL silently skips it.
+func WithOutboxNotify() Option { return store.WithOutboxNotify() }
 
 // WithStoreLogger sets the structured logger used by the Store for operation logs.
 // Default: slog.Default().
-func WithStoreLogger(l *slog.Logger) Option { return postgres.WithStoreLogger(l) }
+func WithStoreLogger(l *slog.Logger) Option { return store.WithStoreLogger(l) }
 
 // WithStoreTracerProvider sets the OTel TracerProvider for Store operation spans
 // (wrkflw.store.load, wrkflw.store.commit). Default: the OTel global provider.
 func WithStoreTracerProvider(tp trace.TracerProvider) Option {
-	return postgres.WithStoreTracerProvider(tp)
+	return store.WithStoreTracerProvider(tp)
 }
 
 // WithStoreMeterProvider sets the OTel MeterProvider for Store metrics
 // (wrkflw_store_duration_seconds histogram). Default: the OTel global provider.
 func WithStoreMeterProvider(mp metric.MeterProvider) Option {
-	return postgres.WithStoreMeterProvider(mp)
+	return store.WithStoreMeterProvider(mp)
+}
+
+// RelayOption configures a Relay returned by NewRelay / NewMySQLRelay.
+//
+// It is a facade-local function type (not a bare alias of store.RelayOption)
+// because WithListenNotify needs the Postgres pool to build the pgx notifier,
+// and a plain store.RelayOption cannot capture the pool. NewRelay folds every
+// RelayOption into a relayConfig, then translates it into []store.RelayOption at
+// construction time (injecting store.NewPgxNotifier(pool) when listenNotify is set).
+type RelayOption func(*relayConfig)
+
+// relayConfig accumulates the store-level relay options plus the Postgres-only
+// listen-notify flag until NewRelay/NewMySQLRelay assemble the final relay.
+type relayConfig struct {
+	opts         []store.RelayOption
+	listenNotify bool
+}
+
+// storeRelayOption lifts a store.RelayOption into the facade RelayOption type.
+func storeRelayOption(o store.RelayOption) RelayOption {
+	return func(c *relayConfig) { c.opts = append(c.opts, o) }
 }
 
 // WithListenNotify makes the relay LISTEN on wrkflw_outbox and drain on each
 // NOTIFY (emitted by a Store configured with WithOutboxNotify), keeping the poll
-// interval as a fallback (ADR-0022). Opt-in; default off.
-func WithListenNotify() RelayOption { return postgres.WithListenNotify() }
-
-// RelayOption configures a Relay (alias of postgres.RelayOption).
-type RelayOption = postgres.RelayOption
+// interval as a fallback (ADR-0022). Opt-in; default off. Postgres-only — MySQL
+// has no LISTEN/NOTIFY and its relay is poll-only.
+func WithListenNotify() RelayOption {
+	return func(c *relayConfig) { c.listenNotify = true }
+}
 
 // Re-exported sentinel errors so consumers can do errors.Is(err, persistence.ErrInstanceNotFound)
 // without importing the runtime or internal packages.
@@ -133,15 +157,16 @@ var (
 	ErrConcurrentUpdate = runtime.ErrConcurrentUpdate
 )
 
-// Compile-time checks: internal concrete types must satisfy the public interfaces.
+// Compile-time checks: the neutral store concrete types must satisfy the public
+// interfaces so the facade constructors can return them.
 var (
-	_ Store                  = (*postgres.Store)(nil)
-	_ DefinitionStore        = (*postgres.DefinitionStore)(nil)
-	_ Relay                  = (*postgres.Relay)(nil)
-	_ runtime.InstanceLister = (*postgres.Lister)(nil)
-	_ runtime.CallLinkStore  = (*postgres.CallLinkStore)(nil)
-	_ runtime.TimerStore     = (*postgres.TimerStore)(nil)
-	_ runtime.ChainLinkStore = (*postgres.ChainLinkStore)(nil)
+	_ Store                  = (*store.Store)(nil)
+	_ DefinitionStore        = (*store.DefinitionStore)(nil)
+	_ Relay                  = (*store.Relay)(nil)
+	_ runtime.InstanceLister = (*store.Lister)(nil)
+	_ runtime.CallLinkStore  = (*store.CallLinkStore)(nil)
+	_ runtime.TimerStore     = (*store.TimerStore)(nil)
+	_ runtime.ChainLinkStore = (*store.ChainLinkStore)(nil)
 )
 
 // ErrInstanceExists is returned by Store.Create when an instance id already
@@ -167,7 +192,7 @@ func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Stor
 	if err := database.ProbeUTC(ctx, q, database.Postgres); err != nil {
 		return nil, err
 	}
-	return postgres.NewStore(pool, opts...), nil
+	return store.New(pool, dialect.NewPostgres(), opts...), nil
 }
 
 // Migrate applies the embedded schema migrations to pool. It is idempotent:
@@ -176,7 +201,7 @@ func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Stor
 // Migrate is intended to be called explicitly by the consumer during application
 // startup — it is never auto-invoked on import.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	return postgres.Migrate(ctx, pool)
+	return store.MigratePostgres(ctx, pool)
 }
 
 // NewDefinitionStore constructs the durable Postgres-backed definition store.
@@ -184,7 +209,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 //
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
 func NewDefinitionStore(pool *pgxpool.Pool) DefinitionStore {
-	return postgres.NewDefinitionStore(pool)
+	return store.NewDefinitionStore(pool, dialect.NewPostgres())
 }
 
 // NewCachingDefinitionRegistry wraps backing with a TTL-bounded, single-flight
@@ -216,56 +241,66 @@ func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.D
 // (a poison event never blocks healthy peers) and quarantines a row to a
 // dead-letter status after MaxDeliveryAttempts (ADR-0017).
 func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) Relay {
-	return postgres.NewRelay(pool, pub, opts...)
+	var cfg relayConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	if cfg.listenNotify {
+		// WithListenNotify: wire the pgx notifier so Run wakes on NOTIFY. The pool
+		// is only available here (not in the option), so the notifier is injected
+		// at construction time rather than as a plain store.RelayOption.
+		cfg.opts = append(cfg.opts, store.WithRelayNotifier(store.NewPgxNotifier(pool)))
+	}
+	return store.NewRelay(pool, dialect.NewPostgres(), pub, cfg.opts...)
 }
 
 // WithPollInterval sets the interval between DrainOnce calls in Relay.Run.
 // Default: 1s.
 func WithPollInterval(d time.Duration) RelayOption {
-	return postgres.WithPollInterval(d)
+	return storeRelayOption(store.WithRelayPollInterval(d))
 }
 
 // WithBatchSize sets the maximum number of outbox rows claimed per DrainOnce call.
 // Default: 100.
 func WithBatchSize(n int) RelayOption {
-	return postgres.WithBatchSize(n)
+	return storeRelayOption(store.WithRelayBatchSize(n))
 }
 
 // WithRelayClock sets the clock the relay uses to stamp published_at /
 // next_attempt_at and to evaluate which rows are due. Default: clock.System().
 func WithRelayClock(clk clock.Clock) RelayOption {
-	return postgres.WithClock(clk)
+	return storeRelayOption(store.WithRelayClock(clk))
 }
 
 // WithMaxDeliveryAttempts sets how many failed publish attempts a row tolerates
 // before it is quarantined to a dead-letter status. Default: 10.
 func WithMaxDeliveryAttempts(n int) RelayOption {
-	return postgres.WithMaxDeliveryAttempts(n)
+	return storeRelayOption(store.WithRelayMaxDeliveryAttempts(n))
 }
 
 // WithRelayBackoff sets the base and maximum interval of the capped exponential
 // backoff applied to a row's next retry after a failed publish.
 // Defaults: base 1s, max 1m.
 func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
-	return postgres.WithRelayBackoff(base, maxInterval)
+	return storeRelayOption(store.WithRelayBackoff(base, maxInterval))
 }
 
 // WithRelayLogger sets the structured logger used by the relay for drain logs.
 // Default: slog.Default().
 func WithRelayLogger(l *slog.Logger) RelayOption {
-	return postgres.WithRelayLogger(l)
+	return storeRelayOption(store.WithRelayLogger(l))
 }
 
 // WithRelayTracerProvider sets the OTel TracerProvider for relay batch spans.
 // Default: the OTel global provider.
 func WithRelayTracerProvider(tp trace.TracerProvider) RelayOption {
-	return postgres.WithRelayTracerProvider(tp)
+	return storeRelayOption(store.WithRelayTracerProvider(tp))
 }
 
 // WithRelayMeterProvider sets the OTel MeterProvider for relay metrics.
 // Default: the OTel global provider.
 func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
-	return postgres.WithRelayMeterProvider(mp)
+	return storeRelayOption(store.WithRelayMeterProvider(mp))
 }
 
 // NewLister constructs the Postgres-backed runtime.InstanceLister for
@@ -282,7 +317,7 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 //	lister := persistence.NewLister(pool)
 //	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
 func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
-	return postgres.NewLister(pool)
+	return store.NewLister(pool, dialect.NewPostgres())
 }
 
 // NewAdvisoryLockOwnership constructs a multi-process [runtime.Ownership]
@@ -304,7 +339,7 @@ func NewLister(pool *pgxpool.Pool) runtime.InstanceLister {
 //	store, _ := persistence.OpenPostgres(ctx, pool)
 //	cachingStore := runtime.NewCachingStore(store, owner)
 func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.Ownership, io.Closer, error) {
-	o, err := postgres.NewAdvisoryLockOwnership(ctx, pool)
+	o, err := store.NewPostgresOwnership(ctx, pool)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -312,8 +347,9 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.
 }
 
 // CallLinkOption configures a CallLinkStore returned by NewCallLinkStore
-// (thin wrapper delegating to postgres.CallLinkOption).
-type CallLinkOption = postgres.CallLinkOption
+// (alias of the neutral store.CallLinkOption). The same underlying type backs
+// NewMySQLCallLinkStore's MySQLCallLinkOption after store unification.
+type CallLinkOption = store.CallLinkOption
 
 // WithCallLinkLease configures opt-in lease-based multi-replica exclusivity on
 // the CallLinkStore (ADR-0031). When ttl > 0, ClaimPending stamps claimed_at /
@@ -321,14 +357,14 @@ type CallLinkOption = postgres.CallLinkOption
 // expires. When ttl <= 0 (the default), the original plain SELECT is used
 // unchanged (backward-compatible).
 func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
-	return postgres.WithCallLinkLease(owner, ttl)
+	return store.WithCallLinkLease(owner, ttl)
 }
 
 // WithCallLinkClock sets the clock the CallLinkStore uses for lease timestamps.
 // Default: clock.System(). Inject a fake clock in tests for deterministic
 // behaviour (ADR-0003, ADR-0031).
 func WithCallLinkClock(clk clock.Clock) CallLinkOption {
-	return postgres.WithCallLinkClock(clk)
+	return store.WithCallLinkClock(clk)
 }
 
 // NewCallLinkStore constructs the Postgres-backed runtime.CallLinkStore (read/claim
@@ -351,7 +387,7 @@ func WithCallLinkClock(clk clock.Clock) CallLinkOption {
 //	)
 //	pending, err := cls.ClaimPending(ctx, 100)
 func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) runtime.CallLinkStore {
-	return postgres.NewCallLinkStore(pool, opts...)
+	return store.NewCallLinkStore(pool, dialect.NewPostgres(), opts...)
 }
 
 // NewTimerStore returns a runtime.TimerStore backed by Postgres, for
@@ -364,7 +400,7 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) runtime.CallLi
 //	ts := persistence.NewTimerStore(pool)
 //	armed, err := ts.ListArmed(ctx)
 func NewTimerStore(pool *pgxpool.Pool) runtime.TimerStore {
-	return postgres.NewTimerStore(pool)
+	return store.NewTimerStore(pool, dialect.NewPostgres())
 }
 
 // NewChainLinkStore constructs the Postgres-backed runtime.ChainLinkStore for
@@ -380,7 +416,7 @@ func NewTimerStore(pool *pgxpool.Pool) runtime.TimerStore {
 //	links := persistence.NewChainLinkStore(pool)
 //	chainer := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
 func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
-	return postgres.NewChainLinkStore(pool)
+	return store.NewChainLinkStore(pool, dialect.NewPostgres())
 }
 
 // NewCallNotifier builds a durable call-activity notifier over pool: it claims
@@ -413,5 +449,5 @@ func NewChainLinkStore(pool *pgxpool.Pool) runtime.ChainLinkStore {
 // reg MUST resolve every parent definition under the exact key "<defID>:<version>";
 // an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
 func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
-	return runtime.NewCallNotifier(postgres.NewCallLinkStore(pool), deliver, reg, opts...)
+	return runtime.NewCallNotifier(store.NewCallLinkStore(pool, dialect.NewPostgres()), deliver, reg, opts...)
 }

@@ -2,8 +2,7 @@ package persistence_test
 
 // facade_constructors_test.go covers thin façade constructors/options that were
 // previously untested: NewTimerStore and the WithStore* observability options.
-// These are pure delegations to internal/persistence/postgres; the test asserts
-// the façade wires through to a working store/timer reader.
+// The test asserts the façade wires through to a working store/timer reader.
 
 import (
 	"log/slog"

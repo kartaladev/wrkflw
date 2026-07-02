@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
-	mysqlpersistence "github.com/zakyalvan/krtlwrkflw/internal/persistence/mysql"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 )
 
 const (
@@ -135,7 +135,7 @@ func RunTestMySQL(t *testing.T) *sql.DB {
 
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, db.PingContext(ctx), "ping per-test mysql db")
-	require.NoError(t, mysqlpersistence.Migrate(ctx, db), "auto-migrate per-test mysql db")
+	require.NoError(t, store.MigrateMySQL(ctx, db), "auto-migrate per-test mysql db")
 	return db
 }
 
