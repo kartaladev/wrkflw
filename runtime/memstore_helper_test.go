@@ -79,3 +79,11 @@ func mustChainer(t *testing.T, starter runtime.InstanceStarter, policy runtime.S
 	require.NoError(t, err)
 	return c
 }
+
+// mustLineageReader builds a LineageReader or fails the test.
+func mustLineageReader(t *testing.T, calls runtime.CallLineageReader, chains runtime.ChainLineageReader) *runtime.LineageReader {
+	t.Helper()
+	r, err := runtime.NewLineageReader(calls, chains)
+	require.NoError(t, err)
+	return r
+}

@@ -38,6 +38,64 @@ func (s *stubChainLineageReader) SuccessorsOf(ctx context.Context, predecessorID
 	return s.successorsOf(ctx, predecessorID)
 }
 
+// TestNewLineageReaderFailsFast asserts the constructor rejects nil calls or
+// chains with ErrNilDependency, and succeeds when both are non-nil.
+func TestNewLineageReaderFailsFast(t *testing.T) {
+	t.Parallel()
+
+	validCalls := &stubCallLineageReader{
+		parentOf:   func(_ context.Context, _ string) (*runtime.CallLink, error) { return nil, nil },
+		childrenOf: func(_ context.Context, _ string) ([]runtime.CallLink, error) { return nil, nil },
+	}
+	validChains := &stubChainLineageReader{
+		predecessorOf: func(_ context.Context, _ string) (*runtime.ChainLink, error) { return nil, nil },
+		successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
+	}
+
+	type testCase struct {
+		name   string
+		calls  runtime.CallLineageReader
+		chains runtime.ChainLineageReader
+		assert func(t *testing.T, r *runtime.LineageReader, err error)
+	}
+	cases := []testCase{
+		{
+			name:   "nil calls",
+			calls:  nil,
+			chains: validChains,
+			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, r)
+			},
+		},
+		{
+			name:   "nil chains",
+			calls:  validCalls,
+			chains: nil,
+			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
+				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.Nil(t, r)
+			},
+		},
+		{
+			name:   "valid args",
+			calls:  validCalls,
+			chains: validChains,
+			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, r)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, err := runtime.NewLineageReader(tc.calls, tc.chains)
+			tc.assert(t, r, err)
+		})
+	}
+}
+
 // TestLineageReader_Lineage exercises the LineageReader assembler.
 func TestLineageReader_Lineage(t *testing.T) {
 	t.Parallel()
@@ -105,7 +163,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			},
 		}
 
-		reader := runtime.NewLineageReader(calls, chains)
+		reader := mustLineageReader(t, calls, chains)
 		lin, err := reader.Lineage(t.Context(), "inst-A")
 		require.NoError(t, err)
 
@@ -154,7 +212,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return []runtime.ChainLink{}, nil },
 		}
 
-		reader := runtime.NewLineageReader(calls, chains)
+		reader := mustLineageReader(t, calls, chains)
 		lin, err := reader.Lineage(t.Context(), "root-inst")
 		require.NoError(t, err)
 
@@ -179,7 +237,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
 		}
 
-		reader := runtime.NewLineageReader(calls, chains)
+		reader := mustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)
@@ -197,7 +255,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
 		}
 
-		reader := runtime.NewLineageReader(calls, chains)
+		reader := mustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)
@@ -215,7 +273,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
 		}
 
-		reader := runtime.NewLineageReader(calls, chains)
+		reader := mustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)
@@ -233,7 +291,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, boom },
 		}
 
-		reader := runtime.NewLineageReader(calls, chains)
+		reader := mustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)
