@@ -78,7 +78,7 @@ func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 	n, err := calllink.NewCallNotifier(cl, deliver, reg,
 		calllink.WithCallNotifierBatchSize(10),
 		calllink.WithCallNotifierPollInterval(time.Millisecond),
-		calllink.WithCallNotifierClock(clock.System()),
+		calllink.WithClock(clock.System()),
 		calllink.WithCallNotifierLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 	require.NoError(t, err)

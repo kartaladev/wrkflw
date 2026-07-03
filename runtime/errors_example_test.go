@@ -134,7 +134,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	store := runtimetest.MustMemStore(t)
 
-	runner := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fakeClock))
+	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fakeClock))
 
 	def := sagaDef()
 

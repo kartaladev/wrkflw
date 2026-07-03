@@ -214,7 +214,7 @@ func TestNewChainerNilGuards(t *testing.T) {
 }
 
 // TestWithChainClockNilFallsBackToSystem asserts that passing a nil clock to
-// WithChainClock does NOT overwrite the constructor's clock.System() default.
+// WithClock does NOT overwrite the constructor's clock.System() default.
 // The guard is verified by exercising Handle on a path that calls clk.Now()
 // (ChainLink.CreatedAt stamping) — a nil clock would panic.
 func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
@@ -225,7 +225,7 @@ func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
 	starter := &recordingStarter{}
 	c := runtimetest.MustChainer(t, starter, policy,
 		chain.WithChainLinks(links),
-		chain.WithChainClock(nil), // must be ignored — default clock.System() must survive
+		chain.WithClock(nil), // must be ignored — default clock.System() must survive
 	)
 	ev := chain.ChainEvent{
 		PredecessorID: "p-nil-clk",
@@ -235,7 +235,7 @@ func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
 	// If the nil-guard is absent the nil clock's Now() call panics here.
 	assert.NotPanics(t, func() {
 		_ = c.Handle(t.Context(), ev)
-	}, "WithChainClock(nil) must be ignored; clk.Now() must not panic")
+	}, "WithClock(nil) must be ignored; clk.Now() must not panic")
 }
 
 func TestNewChainerFailsFast(t *testing.T) {

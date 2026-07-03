@@ -70,7 +70,7 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i1"
@@ -103,7 +103,7 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i2"
@@ -126,7 +126,7 @@ func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	// Empty catalog — "cleanup" will not resolve.
-	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i3"

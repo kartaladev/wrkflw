@@ -918,7 +918,7 @@ if err != nil {
 }
 // This process has no service tasks, so pass an empty catalog (nil is rejected).
 r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
-    runtime.WithRunnerClock(clk),
+    runtime.WithClock(clk),
     runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 if err != nil {
     log.Fatal(err)
@@ -927,7 +927,7 @@ if err != nil {
 parked, _ := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
 
 claimable, _ := taskStore.ClaimableBy(ctx, manager)        // discover tasks
-svc, _ := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+svc, _ := runtime.NewTaskService(taskStore, az, runtime.WithClock(clk))
 
 claimTrg, _ := svc.Claim(ctx, claimable[0].TaskToken, manager)
 r.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed

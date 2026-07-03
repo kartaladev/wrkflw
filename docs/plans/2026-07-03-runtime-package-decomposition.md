@@ -189,7 +189,7 @@ git commit -m "$(printf 'refactor(runtime): extract kernel package (types, ports
 
 **Interfaces:**
 - Consumes: `kernel.*` (Publisher, sentinels, clock via existing imports).
-- Produces: `signal.SignalBus`, `signal.NewSignalBus`, `signal.DeliverFunc`, `signal.SignalBusOption`, `signal.WithSignalBusClock`.
+- Produces: `signal.SignalBus`, `signal.NewSignalBus`, `signal.DeliverFunc`, `signal.SignalBusOption`, `signal.WithClock`.
 
 - [ ] **Step 1: Move file + set package `signal`.**
 
@@ -208,7 +208,7 @@ Expected: FAIL referencing `SignalBus`/`NewSignalBus`.
 - [ ] **Step 3: Re-qualify callers.**
 
 ```bash
-for s in SignalBus NewSignalBus DeliverFunc SignalBusOption WithSignalBusClock; do
+for s in SignalBus NewSignalBus DeliverFunc SignalBusOption WithClock; do
   for f in $(grep -rl "runtime\.$s" --include='*.go' . | grep -v '^./runtime/signal/'); do
     gofmt -w -r "runtime.$s -> signal.$s" "$f"; goimports -w "$f"; done
 done
@@ -259,7 +259,7 @@ Expected: FAIL referencing `CallNotifier`/`NewCallNotifier`.
 
 ```bash
 for s in CallNotifier NewCallNotifier CallDeliverFunc CallNotifierOption WithCallNotifierBatchSize \
-         WithCallNotifierPollInterval WithCallNotifierClock WithCallNotifierLogger \
+         WithCallNotifierPollInterval WithClock WithCallNotifierLogger \
          WithCallNotifierTracerProvider WithCallNotifierMeterProvider; do
   for f in $(grep -rl "runtime\.$s" --include='*.go' . | grep -v '^./runtime/calllink/'); do
     gofmt -w -r "runtime.$s -> calllink.$s" "$f"; goimports -w "$f"; done
@@ -287,7 +287,7 @@ git add -A && git commit -m "$(printf 'refactor(runtime): extract calllink packa
 
 **Interfaces:**
 - Consumes: `kernel.ChainLinkStore`, `kernel.ChainLink`, `kernel.Outcome`, `kernel.ErrInstanceExists`, `kernel.ErrNilDependency`.
-- Produces: `chain.Chainer`, `chain.NewChainer`, `chain.ChainEvent`, `chain.SuccessorPolicy`, `chain.SuccessorDecision`, `chain.InstanceStarter`, `chain.ChainerOption`, `chain.WithChainLinks/WithChainClock/WithChainLogger/WithChainTracerProvider/WithChainMeterProvider`.
+- Produces: `chain.Chainer`, `chain.NewChainer`, `chain.ChainEvent`, `chain.SuccessorPolicy`, `chain.SuccessorDecision`, `chain.InstanceStarter`, `chain.ChainerOption`, `chain.WithChainLinks/WithClock/WithChainLogger/WithChainTracerProvider/WithChainMeterProvider`.
 
 - [ ] **Step 1: Move files + set package `chain`.**
 
@@ -309,7 +309,7 @@ Expected: FAIL.
 
 ```bash
 for s in Chainer NewChainer ChainEvent SuccessorPolicy SuccessorDecision InstanceStarter ChainerOption \
-         WithChainLinks WithChainClock WithChainLogger WithChainTracerProvider WithChainMeterProvider; do
+         WithChainLinks WithClock WithChainLogger WithChainTracerProvider WithChainMeterProvider; do
   for f in $(grep -rl "runtime\.$s" --include='*.go' . | grep -v '^./runtime/chain/'); do
     gofmt -w -r "runtime.$s -> chain.$s" "$f"; goimports -w "$f"; done
 done
@@ -336,7 +336,7 @@ git add -A && git commit -m "$(printf 'refactor(runtime): extract chain package 
 
 **Interfaces:**
 - Consumes: `kernel.*` (none directly beyond sentinels), plus external `humantask`, `authz`, `engine`.
-- Produces: `task.TaskService`, `task.NewTaskService`, `task.TaskServiceOption`, `task.WithTaskServiceMeterProvider`, `task.WithTaskServiceClock`.
+- Produces: `task.TaskService`, `task.NewTaskService`, `task.TaskServiceOption`, `task.WithTaskServiceMeterProvider`, `task.WithClock`.
 
 - [ ] **Step 1: Move files + set package `task`.**
 
@@ -355,7 +355,7 @@ Expected: FAIL.
 - [ ] **Step 3: Re-qualify callers.**
 
 ```bash
-for s in TaskService NewTaskService TaskServiceOption WithTaskServiceMeterProvider WithTaskServiceClock; do
+for s in TaskService NewTaskService TaskServiceOption WithTaskServiceMeterProvider WithClock; do
   for f in $(grep -rl "runtime\.$s" --include='*.go' . | grep -v '^./runtime/task/'); do
     gofmt -w -r "runtime.$s -> task.$s" "$f"; goimports -w "$f"; done
 done

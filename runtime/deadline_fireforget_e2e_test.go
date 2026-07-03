@@ -104,7 +104,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 	logger := slog.New(rec)
 
 	r := runtimetest.MustRunner(t, cat, store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),
 		runtime.WithLogger(logger),

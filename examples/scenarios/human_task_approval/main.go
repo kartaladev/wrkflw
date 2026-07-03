@@ -95,7 +95,7 @@ func main() {
 	taskToken := claimable[0].TaskToken
 	fmt.Printf("manager %q sees %d claimable task(s)\n", manager.ID, len(claimable))
 
-	svc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(clk))
+	svc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
 	if err != nil {
 		log.Fatal("task service:", err)
 	}

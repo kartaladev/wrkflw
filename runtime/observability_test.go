@@ -343,7 +343,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	}
 
 	runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithMeterProvider(mp),
 		// MaxAttempts=1: first failure parks immediately as an incident.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -444,12 +444,12 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			clk := clock.System()
 
 			r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
-				runtime.WithRunnerClock(clk),
+				runtime.WithClock(clk),
 				runtime.WithHumanTasks(resolver, taskStore, az),
 				runtime.WithMeterProvider(mp),
 			)
 			svc := runtimetest.MustTaskService(t, taskStore, az,
-				task.WithTaskServiceClock(clk),
+				task.WithClock(clk),
 				task.WithTaskServiceMeterProvider(mp))
 
 			def := runtimetest.ApprovalDef()
@@ -524,7 +524,7 @@ func TestDeliverSpan(t *testing.T) {
 	}
 
 	store := runtimetest.MustMemStore(t)
-	runner := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithTracerProvider(tp))
+	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithTracerProvider(tp))
 
 	// Run parks at the catch-message node.
 	parked, err := runner.Run(t.Context(), msgDef, "del-obs-1", nil)

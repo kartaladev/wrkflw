@@ -29,7 +29,7 @@ func ExampleChainer() {
 		panic(err)
 	}
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
 	if err != nil {
 		panic(err)
 	}

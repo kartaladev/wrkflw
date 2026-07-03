@@ -160,10 +160,10 @@ func WithConditionEvaluator(eval engine.ConditionEvaluator) Option {
 	}
 }
 
-// WithRunnerClock sets the time source the ProcessDriver uses to stamp triggers,
+// WithClock sets the time source the ProcessDriver uses to stamp triggers,
 // step-duration metrics, and armed-timer times. Default: clock.System().
 // A nil clock is ignored. Inject a fake clock in tests for determinism (ADR-0003).
-func WithRunnerClock(clk clock.Clock) Option {
+func WithClock(clk clock.Clock) Option {
 	return func(r *ProcessDriver) {
 		if clk != nil {
 			r.clk = clk

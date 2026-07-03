@@ -108,7 +108,7 @@ func TestRunner_ActionTimeout(t *testing.T) {
 
 			o := &obs{}
 			cat := action.NewMapCatalog(map[string]action.ServiceAction{"t": tc.newAction(o)})
-			opts := append([]runtime.Option{runtime.WithRunnerClock(clockwork.NewFakeClock())}, tc.opts...)
+			opts := append([]runtime.Option{runtime.WithClock(clockwork.NewFakeClock())}, tc.opts...)
 			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), opts...)
 
 			st, err := r.Run(t.Context(), timeoutTaskDef(), "p1", nil)

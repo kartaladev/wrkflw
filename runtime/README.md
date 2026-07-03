@@ -119,7 +119,7 @@ resolving action names to `ServiceAction` implementations. Required non-nil; pas
 `persistence` package for production.
 
 > The **clock is no longer positional** — it defaults to `clock.System()` and is
-> overridden with the `WithRunnerClock` option (inject a fake clock in tests for
+> overridden with the `WithClock` option (inject a fake clock in tests for
 > deterministic timers).
 
 **Optional capabilities (functional options).** The complete set of `With*`
@@ -138,7 +138,7 @@ functions accepted by `NewProcessDriver`:
 | `WithExpressionTimeout(d)` | Wraps the engine's expression evaluator with a per-eval timeout (guards against expression-DoS from untrusted definitions). |
 | `WithConditionEvaluator(eval)` | Replaces the engine's expression evaluator entirely (advanced; supersedes `WithExpressionTimeout`). |
 | `WithJitterSource(src)` | Custom jitter for retry-backoff de-synchronization; inject a deterministic source in tests. |
-| `WithRunnerClock(clk)` | Overrides the time source (default `clock.System()`); inject a fake clock in tests. |
+| `WithClock(clk)` | Overrides the time source (default `clock.System()`); inject a fake clock in tests. |
 | `WithLogger(l)` | Structured logger (`*slog.Logger`); defaults to `slog.Default()`. |
 | `WithTracerProvider(tp)` | OTel tracer provider; defaults to the OTel global. |
 | `WithMeterProvider(mp)` | OTel meter provider; defaults to the OTel global. |
@@ -340,7 +340,7 @@ fc    := clockwork.NewFakeClockAt(startAt)
 sched := kernel.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 r, err := runtime.NewProcessDriver(cat, store,
     runtime.WithScheduler(sched),
-    runtime.WithRunnerClock(fc)) // share the fake clock for deterministic timers
+    runtime.WithClock(fc)) // share the fake clock for deterministic timers
 if err != nil {
     log.Fatal(err)
 }

@@ -75,9 +75,9 @@ func WithCallNotifierPollInterval(d time.Duration) CallNotifierOption {
 	}
 }
 
-// WithCallNotifierClock sets the time source for trigger timestamps (ADR-0003).
+// WithClock sets the time source for trigger timestamps (ADR-0003).
 // Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithCallNotifierClock(clk clock.Clock) CallNotifierOption {
+func WithClock(clk clock.Clock) CallNotifierOption {
 	return func(n *CallNotifier) {
 		if clk != nil {
 			n.clk = clk
@@ -110,7 +110,7 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 //   - cl: the CallLinkStore to claim pending notifications from.
 //   - deliver: wraps Runner.Deliver (the parent def is pre-resolved by DrainOnce via reg).
 //   - reg: resolves parent definition references (format "defID:version").
-//   - opts: optional configuration overrides (use [WithCallNotifierClock] to set the
+//   - opts: optional configuration overrides (use [WithClock] to set the
 //     time source; default is clock.System() per ADR-0003).
 //
 // REQUIRED registration contract: every parent definition MUST be resolvable from

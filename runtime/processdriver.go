@@ -86,7 +86,7 @@ type ProcessDriver struct {
 //     See [Store]; the in-memory [MemStore] is the reference fake.
 //
 // The time source defaults to [clock.System]. Inject a fake clock in tests via
-// [WithRunnerClock] for deterministic timestamps (ADR-0003).
+// [WithClock] for deterministic timestamps (ADR-0003).
 //
 // ADR-0007 amends ADR-0005: the former store/jnl/out positionals collapse to
 // one transactional Store, so snapshot, journal, and outbox commit atomically
@@ -98,7 +98,7 @@ type ProcessDriver struct {
 //     [WithDefinitions], [WithCallLinkStore], [WithTimerStore].
 //   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
 //     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
-//   - Time source: [WithRunnerClock] (default [clock.System]).
+//   - Time source: [WithClock] (default [clock.System]).
 //   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
 func NewProcessDriver(
 	cat action.Catalog,

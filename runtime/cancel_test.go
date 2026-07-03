@@ -41,7 +41,7 @@ func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	return runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	return runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 }
 
 // TestRunnerCancelInstanceRunsCancelActions verifies that:

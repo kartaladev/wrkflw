@@ -442,7 +442,7 @@ func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
 // terminal call links and resumes parked parents (SubInstanceCompleted/Failed)
 // idempotently. Run it in a goroutine (notifier.Run) or drain manually (DrainOnce).
 //
-// opts are forwarded to runtime.NewCallNotifier; use runtime.WithCallNotifierClock
+// opts are forwarded to runtime.NewCallNotifier; use runtime.WithClock
 // to inject a fake clock in tests.
 //
 // For lease-based multi-replica exclusivity (ADR-0031), build the CallLinkStore

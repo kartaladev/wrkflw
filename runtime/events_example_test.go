@@ -81,9 +81,9 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, signal.WithSignalBusClock(fc))
+	}, signal.WithClock(fc))
 
-	r = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithSignalBus(bus))
+	r = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := r.Run(ctx, def, "inst-1", nil)
@@ -132,7 +132,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t), runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t), runtime.WithClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
 	_, err := r.Run(t.Context(), def, "i1", nil)
@@ -158,10 +158,10 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, signal.WithSignalBusClock(fc))
+	}, signal.WithClock(fc))
 
 	r = runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -202,10 +202,10 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, signal.WithSignalBusClock(fc))
+	}, signal.WithClock(fc))
 
 	r = runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
@@ -246,7 +246,7 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	def := messageCatchDef("order-shipped")
 
-	r := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(fc))
+	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
 
 	// Start two instances with different orderId values.
 	_, err := r.Run(ctx, def, "order-100", map[string]any{"orderId": "100"})

@@ -17,7 +17,7 @@
 - Touched packages: keep `go build ./...` green and all `examples/` compiling after every task.
 - Conventional Commits scoped to the area; commit per task. End commit messages with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer.
 - Spec: `docs/specs/optional-clock-via-option.md`.
-- Naming: `With<Component>Clock` (e.g. `WithRunnerClock`, `WithSignalBusClock`). Default when absent or nil: `clock.System()`.
+- Naming: `With<Component>Clock` (e.g. `WithClock`, `WithClock`). Default when absent or nil: `clock.System()`.
 - Out of scope: the `clockwork.Clock` gocron constructors (`scheduling.NewScheduler`, `internal/scheduling/gocron.NewGocronScheduler`, `WithElectorClock`).
 
 ---
@@ -177,14 +177,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 3: `NewSignalBus` → `WithSignalBusClock`
+### Task 3: `NewSignalBus` → `WithClock`
 
 **Files:**
 - Modify: `runtime/broadcast.go` (add option type + option; change `NewSignalBus` signature, `deliver` stays positional)
 - Test: `runtime/broadcast_test.go`
 
 **Interfaces:**
-- Produces: `func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) *SignalBus`; `type SignalBusOption func(*SignalBus)`; `func WithSignalBusClock(clk clock.Clock) SignalBusOption`.
+- Produces: `func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) *SignalBus`; `type SignalBusOption func(*SignalBus)`; `func WithClock(clk clock.Clock) SignalBusOption`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -212,7 +212,7 @@ func TestNewSignalBusWithClockOption(t *testing.T) {
 		got = trg.OccurredAt()
 		return nil
 	}
-	bus := runtime.NewSignalBus(deliver, runtime.WithSignalBusClock(fake))
+	bus := runtime.NewSignalBus(deliver, runtime.WithClock(fake))
 	bus.Subscribe("inst-1", "sig")
 	require.NoError(t, bus.Publish(t.Context(), "sig", nil))
 	assert.Equal(t, time.Unix(1000, 0).UTC(), got.UTC())
@@ -224,7 +224,7 @@ Ensure imports include `context`, `time`, `clockwork`, the `engine` package, tes
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./runtime/ -run 'TestNewSignalBus' -v`
-Expected: FAIL — `undefined: runtime.WithSignalBusClock` / signature mismatch.
+Expected: FAIL — `undefined: runtime.WithClock` / signature mismatch.
 
 - [ ] **Step 3: Implement the option and new signature**
 
@@ -234,10 +234,10 @@ In `runtime/broadcast.go`, replace the constructor and add the option:
 // SignalBusOption configures a SignalBus.
 type SignalBusOption func(*SignalBus)
 
-// WithSignalBusClock sets the time source used to stamp SignalReceived triggers.
+// WithClock sets the time source used to stamp SignalReceived triggers.
 // Default: clock.System(). A nil clock is ignored. Pass the Runner's fake clock in
 // tests so downstream timers anchored to the signal timestamp stay deterministic.
-func WithSignalBusClock(clk clock.Clock) SignalBusOption {
+func WithClock(clk clock.Clock) SignalBusOption {
 	return func(b *SignalBus) {
 		if clk != nil {
 			b.clk = clk
@@ -247,7 +247,7 @@ func WithSignalBusClock(clk clock.Clock) SignalBusOption {
 
 // NewSignalBus constructs a SignalBus backed by the given delivery function.
 // deliver is called once per registered waiter for each Publish. The time source
-// defaults to clock.System(); override it with WithSignalBusClock (ADR-0003).
+// defaults to clock.System(); override it with WithClock (ADR-0003).
 func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) *SignalBus {
 	b := &SignalBus{
 		clk:     clock.System(),
@@ -262,12 +262,12 @@ func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) *SignalBus {
 ```
 
 Also update the doc-comment example in the `SignalBus` type comment from
-`runtime.NewSignalBus(clk, func(...){...})` to `runtime.NewSignalBus(func(...){...}, runtime.WithSignalBusClock(clk))`.
+`runtime.NewSignalBus(clk, func(...){...})` to `runtime.NewSignalBus(func(...){...}, runtime.WithClock(clk))`.
 
 - [ ] **Step 4: Update all callers**
 
 Run: `go build ./...`
-For each `NewSignalBus(<clk>, <deliver>)`: rewrite as `NewSignalBus(<deliver>, runtime.WithSignalBusClock(<clk>))` when a fake/explicit clock was passed; drop the clock and reorder to `NewSignalBus(<deliver>)` when it was `clock.System()`. Note the **argument order swap** (deliver is now first). Repeat until clean.
+For each `NewSignalBus(<clk>, <deliver>)`: rewrite as `NewSignalBus(<deliver>, runtime.WithClock(<clk>))` when a fake/explicit clock was passed; drop the clock and reorder to `NewSignalBus(<deliver>)` when it was `clock.System()`. Note the **argument order swap** (deliver is now first). Repeat until clean.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -278,7 +278,7 @@ Expected: PASS; build clean.
 
 ```bash
 git add runtime/broadcast.go runtime/broadcast_test.go
-git commit -m "refactor(runtime): make NewSignalBus clock optional via WithSignalBusClock
+git commit -m "refactor(runtime): make NewSignalBus clock optional via WithClock
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -490,14 +490,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 6: `NewCallNotifier` → `WithCallNotifierClock`
+### Task 6: `NewCallNotifier` → `WithClock`
 
 **Files:**
 - Modify: `runtime/call_notifier.go` (drop positional `clk`; add option; default `clock.System()`)
 - Test: `runtime/call_notifier_test.go`
 
 **Interfaces:**
-- Produces: `func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRegistry, opts ...CallNotifierOption) *CallNotifier`; `func WithCallNotifierClock(clk clock.Clock) CallNotifierOption`. (`CallNotifierOption` already exists.)
+- Produces: `func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRegistry, opts ...CallNotifierOption) *CallNotifier`; `func WithClock(clk clock.Clock) CallNotifierOption`. (`CallNotifierOption` already exists.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -511,7 +511,7 @@ func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 
 func TestNewCallNotifierWithClockOption(t *testing.T) {
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	n := runtime.NewCallNotifier(<cl>, <deliver>, <reg>, runtime.WithCallNotifierClock(fake))
+	n := runtime.NewCallNotifier(<cl>, <deliver>, <reg>, runtime.WithClock(fake))
 	assert.NotNil(t, n)
 	// If the file already drives a notify cycle and inspects the stamped trigger
 	// time, extend it to assert time.Unix(1000,0) flows into the delivered trigger.
@@ -523,16 +523,16 @@ Replace `<cl>`, `<deliver>`, `<reg>` with the exact doubles the existing tests p
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `go test ./runtime/ -run 'TestNewCallNotifier.*Clock' -v`
-Expected: FAIL — `undefined: runtime.WithCallNotifierClock` / too many args.
+Expected: FAIL — `undefined: runtime.WithClock` / too many args.
 
 - [ ] **Step 3: Implement the option and new signature**
 
 In `runtime/call_notifier.go`, add the option beside the other `WithCallNotifier*` options:
 
 ```go
-// WithCallNotifierClock sets the time source for trigger timestamps (ADR-0003).
+// WithClock sets the time source for trigger timestamps (ADR-0003).
 // Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithCallNotifierClock(clk clock.Clock) CallNotifierOption {
+func WithClock(clk clock.Clock) CallNotifierOption {
 	return func(n *CallNotifier) {
 		if clk != nil {
 			n.clk = clk
@@ -559,7 +559,7 @@ func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRe
 - [ ] **Step 4: Update all callers**
 
 Run: `go build ./...`
-Rewrite `NewCallNotifier(cl, d, reg, <clk>, <opts...>)` → drop `<clk>` if `clock.System()`, else add `runtime.WithCallNotifierClock(<clk>)`. (The `persistence` facade caller is handled in Task 9.) Repeat until clean.
+Rewrite `NewCallNotifier(cl, d, reg, <clk>, <opts...>)` → drop `<clk>` if `clock.System()`, else add `runtime.WithClock(<clk>)`. (The `persistence` facade caller is handled in Task 9.) Repeat until clean.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -570,21 +570,21 @@ Expected: PASS; build clean.
 
 ```bash
 git add runtime/call_notifier.go runtime/call_notifier_test.go
-git commit -m "refactor(runtime): make NewCallNotifier clock optional via WithCallNotifierClock
+git commit -m "refactor(runtime): make NewCallNotifier clock optional via WithClock
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 7: `NewTaskService` → `WithTaskServiceClock`
+### Task 7: `NewTaskService` → `WithClock`
 
 **Files:**
 - Modify: `runtime/taskservice.go` (option flows through the existing `taskServiceConfig`; drop positional `clk`)
 - Test: `runtime/taskservice_test.go`
 
 **Interfaces:**
-- Produces: `func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...TaskServiceOption) *TaskService`; `func WithTaskServiceClock(clk clock.Clock) TaskServiceOption`. (`TaskServiceOption func(*taskServiceConfig)` already exists.)
+- Produces: `func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...TaskServiceOption) *TaskService`; `func WithClock(clk clock.Clock) TaskServiceOption`. (`TaskServiceOption func(*taskServiceConfig)` already exists.)
 
 **Note:** This constructor's options mutate a `taskServiceConfig`, not the `*TaskService` directly. Read `runtime/taskservice.go` to confirm `taskServiceConfig` has (or add) a `clk clock.Clock` field, default it to `clock.System()` when building the config, and copy `cfg.clk` into the `TaskService` struct.
 
@@ -600,7 +600,7 @@ func TestNewTaskServiceDefaultClockNoPanic(t *testing.T) {
 
 func TestNewTaskServiceWithClockOption(t *testing.T) {
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	svc := runtime.NewTaskService(<store>, <authorizer>, runtime.WithTaskServiceClock(fake))
+	svc := runtime.NewTaskService(<store>, <authorizer>, runtime.WithClock(fake))
 	assert.NotNil(t, svc)
 	// If the file exercises a task-lifecycle op that stamps a time, assert the
 	// fake time flows through.
@@ -610,7 +610,7 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `go test ./runtime/ -run 'TestNewTaskService.*Clock' -v`
-Expected: FAIL — `undefined: runtime.WithTaskServiceClock` / too many args.
+Expected: FAIL — `undefined: runtime.WithClock` / too many args.
 
 - [ ] **Step 3: Implement the option and new signature**
 
@@ -620,9 +620,9 @@ In `runtime/taskservice.go`:
 2. Add the option:
 
 ```go
-// WithTaskServiceClock sets the time source used to stamp task-lifecycle triggers.
+// WithClock sets the time source used to stamp task-lifecycle triggers.
 // Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithTaskServiceClock(clk clock.Clock) TaskServiceOption {
+func WithClock(clk clock.Clock) TaskServiceOption {
 	return func(c *taskServiceConfig) {
 		if clk != nil {
 			c.clk = clk
@@ -651,7 +651,7 @@ Read the file first to preserve the existing config defaults and the exact `Task
 - [ ] **Step 4: Update all callers**
 
 Run: `go build ./...`
-Rewrite `NewTaskService(s, az, <clk>, <opts...>)` → drop `<clk>` if `clock.System()`, else add `runtime.WithTaskServiceClock(<clk>)`. Repeat until clean.
+Rewrite `NewTaskService(s, az, <clk>, <opts...>)` → drop `<clk>` if `clock.System()`, else add `runtime.WithClock(<clk>)`. Repeat until clean.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -662,21 +662,21 @@ Expected: PASS; build clean.
 
 ```bash
 git add runtime/taskservice.go runtime/taskservice_test.go
-git commit -m "refactor(runtime): make NewTaskService clock optional via WithTaskServiceClock
+git commit -m "refactor(runtime): make NewTaskService clock optional via WithClock
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 8: `NewRunner` → `WithRunnerClock` (highest call-site churn)
+### Task 8: `NewRunner` → `WithClock` (highest call-site churn)
 
 **Files:**
-- Modify: `runtime/runner.go` (drop positional `clk`; add `WithRunnerClock` using the existing `Option` type; default `clock.System()`)
+- Modify: `runtime/runner.go` (drop positional `clk`; add `WithClock` using the existing `Option` type; default `clock.System()`)
 - Test: `runtime/runner_test.go` (add the two focused tests; migrate existing callers)
 
 **Interfaces:**
-- Produces: `func NewRunner(cat action.Catalog, store Store, opts ...Option) *Runner`; `func WithRunnerClock(clk clock.Clock) Option`. (`Option func(*Runner)` already exists.)
+- Produces: `func NewRunner(cat action.Catalog, store Store, opts ...Option) *Runner`; `func WithClock(clk clock.Clock) Option`. (`Option func(*Runner)` already exists.)
 
 **Note:** `NewRunner` is called by many tests/examples and by `service`/`persistence` examples. This is the bulk of the churn — budget time for it.
 
@@ -698,7 +698,7 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 
 func TestNewRunnerWithClockOption(t *testing.T) {
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	r := runtime.NewRunner(<catalog>, <store>, runtime.WithRunnerClock(fake))
+	r := runtime.NewRunner(<catalog>, <store>, runtime.WithClock(fake))
 	_, err := r.Run(t.Context(), <oneStepDef>, "i-1", nil)
 	require.NoError(t, err)
 	// Assert time.Unix(1000,0) flows into a stamped trigger/journal entry.
@@ -710,17 +710,17 @@ Fill `<catalog>`, `<store>`, `<oneStepDef>`, and the timestamp read using the id
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./runtime/ -run 'TestNewRunner.*Clock' -v`
-Expected: FAIL — `undefined: runtime.WithRunnerClock` / not enough arguments.
+Expected: FAIL — `undefined: runtime.WithClock` / not enough arguments.
 
 - [ ] **Step 3: Implement the option and new signature**
 
 In `runtime/runner.go`, add the option beside the other `Option`-returning `With*` functions:
 
 ```go
-// WithRunnerClock sets the time source the Runner uses to stamp triggers,
+// WithClock sets the time source the Runner uses to stamp triggers,
 // step-duration metrics, and armed-timer times. Default: clock.System().
 // A nil clock is ignored. Inject a fake clock in tests for determinism (ADR-0003).
-func WithRunnerClock(clk clock.Clock) Option {
+func WithClock(clk clock.Clock) Option {
 	return func(r *Runner) {
 		if clk != nil {
 			r.clk = clk
@@ -748,12 +748,12 @@ func NewRunner(cat action.Catalog, store Store, opts ...Option) *Runner {
 }
 ```
 
-Update the `NewRunner` doc comment to drop the `clk` parameter line and mention `WithRunnerClock` defaulting to `clock.System()`.
+Update the `NewRunner` doc comment to drop the `clk` parameter line and mention `WithClock` defaulting to `clock.System()`.
 
 - [ ] **Step 4: Update all callers (repo-wide)**
 
 Run: `go build ./...`
-For every `NewRunner(cat, <clk>, store, <opts...>)`: drop `<clk>` and reorder to `NewRunner(cat, store, <opts...>)` when it was `clock.System()`; otherwise `NewRunner(cat, store, runtime.WithRunnerClock(<clk>), <opts...>)`. Note the **positional removal** changes argument order (store moves to second). Sweep `runtime/`, `service/`, `persistence/`, and `examples/`. Repeat `go build ./...` until clean.
+For every `NewRunner(cat, <clk>, store, <opts...>)`: drop `<clk>` and reorder to `NewRunner(cat, store, <opts...>)` when it was `clock.System()`; otherwise `NewRunner(cat, store, runtime.WithClock(<clk>), <opts...>)`. Note the **positional removal** changes argument order (store moves to second). Sweep `runtime/`, `service/`, `persistence/`, and `examples/`. Repeat `go build ./...` until clean.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -764,7 +764,7 @@ Expected: PASS; build clean.
 
 ```bash
 git add -A
-git commit -m "refactor(runtime): make NewRunner clock optional via WithRunnerClock
+git commit -m "refactor(runtime): make NewRunner clock optional via WithClock
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -780,7 +780,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Produces: `func New(runner *runtime.Runner, tasks *runtime.TaskService, reg runtime.DefinitionRegistry, store runtime.Store, lister runtime.InstanceLister, taskStore humantask.TaskStore, opts ...EngineOption) *Engine`; `type EngineOption func(*Engine)`; `func WithEngineClock(clk clock.Clock) EngineOption`.
-- Consumes: `runtime.WithCachingDefinitionRegistryClock` (Task 4), `runtime.WithCallNotifierClock` (Task 6).
+- Consumes: `runtime.WithCachingDefinitionRegistryClock` (Task 4), `runtime.WithClock` (Task 6).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -862,7 +862,7 @@ func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg ru
 - [ ] **Step 4: Update all callers**
 
 Run: `go build ./...`
-Drop positional `clk` from every `service.New(...)`, `persistence.NewCachingDefinitionRegistry(...)`, `persistence.NewCallNotifier(...)` call; where a fake clock was passed, add the matching `With*Clock` option (`service.WithEngineClock`, `runtime.WithCachingDefinitionRegistryClock`, `runtime.WithCallNotifierClock`). Sweep `service/`, `persistence/`, `examples/`. Repeat until clean.
+Drop positional `clk` from every `service.New(...)`, `persistence.NewCachingDefinitionRegistry(...)`, `persistence.NewCallNotifier(...)` call; where a fake clock was passed, add the matching `With*Clock` option (`service.WithEngineClock`, `runtime.WithCachingDefinitionRegistryClock`, `runtime.WithClock`). Sweep `service/`, `persistence/`, `examples/`. Repeat until clean.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -883,7 +883,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 10: Harden the already-option-based clocks (nil-guard)
 
 **Files:**
-- Modify: `runtime/chainer.go` (`WithChainClock`), `runtime/mem_calllink.go` (`WithMemCallLinkClock`), `internal/persistence/postgres/relay.go` (`WithClock`), `internal/persistence/postgres/call_links.go` (`WithCallLinkClock`)
+- Modify: `runtime/chainer.go` (`WithClock`), `runtime/mem_calllink.go` (`WithMemCallLinkClock`), `internal/persistence/postgres/relay.go` (`WithClock`), `internal/persistence/postgres/call_links.go` (`WithCallLinkClock`)
 - Test: extend each package's existing test file with a nil-guard test.
 
 **Interfaces:**
@@ -891,13 +891,13 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-For each of the four options, add a focused test asserting that passing `nil` leaves a working (non-nil) clock. Example for `WithChainClock` in `runtime/chainer_test.go`:
+For each of the four options, add a focused test asserting that passing `nil` leaves a working (non-nil) clock. Example for `WithClock` in `runtime/chainer_test.go`:
 
 ```go
 func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
 	// Building a chainer with an explicit nil clock must not nil out the default.
 	// Construct via the package's existing chainer test helper, passing
-	// runtime.WithChainClock(nil), then exercise an operation that calls clk.Now()
+	// runtime.WithClock(nil), then exercise an operation that calls clk.Now()
 	// and assert it does not panic.
 }
 ```
@@ -913,7 +913,7 @@ Expected: FAIL — a `nil`-clock construction panics on `clk.Now()` (nil interfa
 
 `runtime/chainer.go`:
 ```go
-func WithChainClock(clk clock.Clock) ChainerOption {
+func WithClock(clk clock.Clock) ChainerOption {
 	return func(c *chainerConfig) {
 		if clk != nil {
 			c.clk = clk
@@ -1012,5 +1012,5 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ## Self-review notes
 
 - **Spec coverage:** every In-scope constructor in the spec maps to a task (MemScheduler→T2, SignalBus→T3, runtime CachingDefinitionRegistry→T4, CachingStore→T5, CallNotifier→T6, TaskService→T7, Runner→T8, service.New + persistence facades→T9); already-option-based hardening→T10; ADR→T1; verification→T11. The `clockwork.Clock` seam is explicitly out of scope (spec + Global Constraints).
-- **Naming consistency:** option names are `WithMemSchedulerClock`, `WithSignalBusClock`, `WithCachingDefinitionRegistryClock`, `WithCachingStoreClock`, `WithCallNotifierClock`, `WithTaskServiceClock`, `WithRunnerClock`, `WithEngineClock` — all `With<Component>Clock`, all returning the component's existing/added option type, all defaulting to `clock.System()` with a nil-guard.
+- **Naming consistency:** option names are `WithMemSchedulerClock`, `WithClock`, `WithCachingDefinitionRegistryClock`, `WithCachingStoreClock`, `WithClock`, `WithClock`, `WithClock`, `WithEngineClock` — all `With<Component>Clock`, all returning the component's existing/added option type, all defaulting to `clock.System()` with a nil-guard.
 - **Determinism footgun:** recorded in the ADR (T1) and every migrated test passes its fake via the new option rather than relying on the default.

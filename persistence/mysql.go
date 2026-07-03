@@ -312,7 +312,7 @@ func NewMySQLLister(db *sql.DB) (kernel.InstanceLister, error) {
 // This is the MySQL analog of [NewCallNotifier] (the Postgres facade constructor).
 // The underlying runtime.CallNotifier is dialect-agnostic: this constructor simply
 // builds the MySQL-backed CallLinkStore and passes it to runtime.NewCallNotifier.
-// opts are forwarded to runtime.NewCallNotifier; use runtime.WithCallNotifierClock
+// opts are forwarded to runtime.NewCallNotifier; use runtime.WithClock
 // to inject a fake clock in tests.
 //
 // Example:

@@ -20,7 +20,7 @@ func NewMemScheduler(clk clock.Clock) *MemScheduler
 The consumer wants the clock to be **optional**: when not provided, the component
 defaults to the system clock (`clock.System()`, which already exists). Several
 components already express the clock as an optional `With<Component>Clock` functional
-option that defaults to `clock.System()` (e.g. `WithChainClock`, `WithMemCallLinkClock`,
+option that defaults to `clock.System()` (e.g. `WithClock`, `WithMemCallLinkClock`,
 `WithRelayClock`, `WithCallLinkClock`). This refactor makes that pattern **uniform**.
 
 ## Decision
@@ -39,7 +39,7 @@ option that defaults to `clock.System()`. Repo-wide.**
 
 Go forbids two `WithClock` functions in one package, and several packages host multiple
 clock-bearing constructors. The repo already uses **`With<Component>Clock`** precisely to
-avoid this collision (`WithChainClock`, `WithMemCallLinkClock`, `WithRelayClock`,
+avoid this collision (`WithClock`, `WithMemCallLinkClock`, `WithRelayClock`,
 `WithCallLinkClock`, `WithElectorClock`). All new options follow it.
 
 ### Why not Approach A (nil-tolerant positional)
@@ -54,21 +54,21 @@ the call site and matches the components that already use options.
 
 | Package | Constructor | New option | Notes |
 |---|---|---|---|
-| `runtime` | `NewRunner(cat, clk, store, opts...)` | `WithRunnerClock` | **highest call-site churn** (many tests/examples) |
+| `runtime` | `NewRunner(cat, clk, store, opts...)` | `WithClock` | **highest call-site churn** (many tests/examples) |
 | `runtime` | `NewCachingDefinitionRegistry(backing, ttl, clk)` | `WithCachingDefinitionRegistryClock` | add variadic `...Option` (none today) |
-| `runtime` | `NewCallNotifier(cl, deliver, reg, clk, opts...)` | `WithCallNotifierClock` | already has `CallNotifierOption` |
+| `runtime` | `NewCallNotifier(cl, deliver, reg, clk, opts...)` | `WithClock` | already has `CallNotifierOption` |
 | `runtime` | `NewCachingStore(backing, owner, clk, opts...)` | `WithCachingStoreClock` | already has `CachingStoreOption` |
-| `runtime` | `NewTaskService(store, az, clk, opts...)` | `WithTaskServiceClock` | already has `TaskServiceOption` |
-| `runtime` | `NewSignalBus(clk, deliver)` | `WithSignalBusClock` | add variadic `...Option` (none today) |
+| `runtime` | `NewTaskService(store, az, clk, opts...)` | `WithClock` | already has `TaskServiceOption` |
+| `runtime` | `NewSignalBus(clk, deliver)` | `WithClock` | add variadic `...Option` (none today) |
 | `runtime` | `NewMemScheduler(clk)` | `WithMemSchedulerClock` | add variadic `...Option` (none today) |
 | `persistence` | `NewCachingDefinitionRegistry(backing, ttl, clk)` | `WithCachingDefinitionRegistryClock` | facade mirror |
-| `persistence` | `NewCallNotifier(pool, deliver, reg, clk, opts...)` | (reuses `runtime.WithCallNotifierClock`) | facade mirror |
+| `persistence` | `NewCallNotifier(pool, deliver, reg, clk, opts...)` | (reuses `runtime.WithClock`) | facade mirror |
 | `service` | `New(runner, tasks, reg, store, lister, taskStore, clk)` | `WithEngineClock` | add variadic `...Option` (none today) |
 
 ### In scope — already option-based, harden only
 
 Ensure the absent-default is `clock.System()` (already true) **and** add the nil-guard so an
-explicit nil falls back to system: `runtime.WithChainClock`, `runtime.WithMemCallLinkClock`,
+explicit nil falls back to system: `runtime.WithClock`, `runtime.WithMemCallLinkClock`,
 `internal/persistence/postgres` relay `WithClock` + `WithCallLinkClock`,
 `persistence.WithRelayClock` + `persistence.WithCallLinkClock`.
 
@@ -96,8 +96,8 @@ follow-up if desired — flagged for the user.)
   	return b
   }
 
-  // WithSignalBusClock sets the time source. Default: clock.System().
-  func WithSignalBusClock(clk clock.Clock) SignalBusOption {
+  // WithClock sets the time source. Default: clock.System().
+  func WithClock(clk clock.Clock) SignalBusOption {
   	return func(b *SignalBus) {
   		if clk != nil {
   			b.clk = clk

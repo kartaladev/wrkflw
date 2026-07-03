@@ -35,7 +35,7 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 //     bus := NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
 //     _, err := runner.Deliver(ctx, def, id, trg)
 //     return err
-//     }, WithSignalBusClock(clk))
+//     }, WithClock(clk))
 //
 // Concurrency: all internal state is protected by a mutex; the bus is safe for
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).
@@ -53,10 +53,10 @@ type SignalBus struct {
 // SignalBusOption configures a SignalBus.
 type SignalBusOption func(*SignalBus)
 
-// WithSignalBusClock sets the time source used to stamp SignalReceived triggers.
+// WithClock sets the time source used to stamp SignalReceived triggers.
 // Default: clock.System(). A nil clock is ignored. Pass the Runner's fake clock in
 // tests so downstream timers anchored to the signal timestamp stay deterministic.
-func WithSignalBusClock(clk clock.Clock) SignalBusOption {
+func WithClock(clk clock.Clock) SignalBusOption {
 	return func(b *SignalBus) {
 		if clk != nil {
 			b.clk = clk
@@ -66,7 +66,7 @@ func WithSignalBusClock(clk clock.Clock) SignalBusOption {
 
 // NewSignalBus constructs a SignalBus backed by the given delivery function.
 // deliver is called once per registered waiter for each Publish. The time source
-// defaults to clock.System(); override it with WithSignalBusClock (ADR-0003).
+// defaults to clock.System(); override it with WithClock (ADR-0003).
 func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) (*SignalBus, error) {
 	if deliver == nil {
 		return nil, fmt.Errorf("%w: deliver", kernel.ErrNilDependency)

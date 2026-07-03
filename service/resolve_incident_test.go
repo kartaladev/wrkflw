@@ -63,7 +63,7 @@ func TestEngineResolveIncident(t *testing.T) {
 		"failing": failingAction,
 	})
 
-	r, err := runtime.NewProcessDriver(cat, store, runtime.WithRunnerClock(clk),
+	r, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		// MaxAttempts=1 → first failure becomes an incident.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -81,7 +81,7 @@ func TestEngineResolveIncident(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	taskSvc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(clk))
+	taskSvc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
 	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
@@ -128,7 +128,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		"failing": failingAction,
 	})
 
-	r, err := runtime.NewProcessDriver(cat, store, runtime.WithRunnerClock(clk),
+	r, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
@@ -145,7 +145,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	taskSvc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(clk))
+	taskSvc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
 	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 

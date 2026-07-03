@@ -54,7 +54,7 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 		"manager": {manager},
 	})
 	r := runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 
 	def := messageBoundaryDef()

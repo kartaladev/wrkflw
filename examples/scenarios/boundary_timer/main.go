@@ -110,7 +110,7 @@ func main() {
 	}
 
 	r, err := runtime.NewProcessDriver(cat, store,
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
 		runtime.WithScheduler(sched),
 	)

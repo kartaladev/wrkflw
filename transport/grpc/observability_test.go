@@ -47,7 +47,7 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": serverTestGreetAction{},
 	})
-	runner, err := runtime.NewProcessDriver(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	runner, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 	require.NoError(t, err)
 
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
@@ -56,7 +56,7 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 		defsMap[d.ID] = d
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	tasks, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
+	tasks, err := task.NewTaskService(taskStore, az, task.WithClock(fc))
 	require.NoError(t, err)
 	svc := service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 

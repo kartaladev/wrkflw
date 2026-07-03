@@ -60,7 +60,7 @@ func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	t.Cleanup(func() { close(release) })
 
 	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithExpressionTimeout(50*time.Millisecond))
 
 	vars := map[string]any{
@@ -87,7 +87,7 @@ func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 // instance runs to completion. amount=150 takes the "big" branch.
 func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t), runtime.WithRunnerClock(fc))
+	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t), runtime.WithClock(fc))
 
 	st, err := r.Run(t.Context(), exclusiveRuntimeDef(), "d1", map[string]any{"amount": 150})
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestRunnerWithConditionEvaluatorInjectsCustom(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	ev := expreval.New(expreval.WithTimeout(0)) // pure, explicit
 	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithConditionEvaluator(ev))
 
 	st, err := r.Run(t.Context(), exclusiveRuntimeDef(), "c1", map[string]any{"amount": 5})

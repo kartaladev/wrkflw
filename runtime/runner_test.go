@@ -280,7 +280,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 	store := &onceConflictStore{inner: inner}
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 
-	r := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
+	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
 
 	def := conflictTimerDef()
 	const instanceID = "conflict-timer-1"
@@ -343,7 +343,7 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 		"StartedAt must be within [before, after] wall-clock bracket")
 }
 
-// TestNewRunnerWithClockOption verifies that WithRunnerClock injects a fake clock
+// TestNewRunnerWithClockOption verifies that WithClock injects a fake clock
 // whose time flows into the engine's StartedAt stamp (behavioral assertion).
 func TestNewRunnerWithClockOption(t *testing.T) {
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
@@ -352,7 +352,7 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithRunnerClock(fake))
+	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fake))
 	st, err := r.Run(t.Context(), linearDef(), "i-fake-1", nil)
 	require.NoError(t, err)
 	// StartedAt is stamped from r.clk.Now() = fake.Now() = time.Unix(1000, 0).
