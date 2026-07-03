@@ -356,6 +356,11 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	}
 
 	var cmds []Command
+	// Reconcile the human-task projection at the terminal of every compensation
+	// walk: a parked UserTask on a sibling branch must not be left open in the
+	// TaskStore once the instance is terminated/failed (ADR-0088/0089). Idempotent
+	// for cancel-with-compensation, whose tasks were already cancelled at trigger.
+	cmds = append(cmds, s.cancelOpenTasks()...)
 	if finalErr != "" {
 		cmds = append(cmds, FailInstance{Err: finalErr})
 	}

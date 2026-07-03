@@ -625,6 +625,9 @@ func handleSubInstanceFailed(s *InstanceState, t SubInstanceFailed) (StepResult,
 	ended := t.OccurredAt()
 	s.EndedAt = &ended
 	cmds := []Command{FailInstance{Err: t.Err}}
+	// Reconcile the human-task projection: a UserTask parked on a sibling branch
+	// must not be left open when a child failure fails the parent (ADR-0089).
+	cmds = append(cmds, s.cancelOpenTasks()...)
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
 	return StepResult{State: *s, Commands: cmds}, nil

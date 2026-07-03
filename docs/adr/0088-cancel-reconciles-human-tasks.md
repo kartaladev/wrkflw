@@ -71,4 +71,5 @@ already exist; the runtime already performs `UpdateTask` against the `TaskStore`
   unhandled error can likewise orphan a parked task on a parallel branch. The same
   `cancelOpenTasks` helper can be wired at that terminal point, but the reported
   bug and this ADR concern cancellation (`StatusTerminated`) only. Tracked as a
-  future task rather than silently expanded here.
+  future task rather than silently expanded here. **Update:** addressed by
+  [ADR-0089](0089-fail-reconciles-human-tasks.md).
