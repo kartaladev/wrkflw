@@ -115,11 +115,10 @@ func TestPruner_PruneTimers_ThroughInterface(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
-	concreteP, err := persistence.NewPruner(pool)
+	// NewPruner returns the interface type; p is already persistence.Pruner —
+	// calling PruneTimers through it validates the method is on the interface.
+	p, err := persistence.NewPruner(pool)
 	require.NoError(t, err)
-
-	// Interface-typed on purpose: the test validates the method is on the interface.
-	var p persistence.Pruner = concreteP
 
 	cutoff := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	before := cutoff.Add(-1 * time.Hour) // strictly before cutoff → should be pruned
