@@ -46,5 +46,10 @@ go.work.sum
 /exclusive_routing
 /human_task_approval
 /inclusive_gateway
+/instance_cancellation
+/inwait_reminder
+/message_correlation
 /parallel_fork_join
+/retry_recovery
+/signal_broadcast
 /subprocess_embedded
