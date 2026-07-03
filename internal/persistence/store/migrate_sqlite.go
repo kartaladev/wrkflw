@@ -9,10 +9,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"fmt"
-	"io/fs"
-
-	"github.com/pressly/goose/v3"
 )
 
 //go:embed migrations/sqlite/*.sql
@@ -29,16 +25,9 @@ var sqliteMigrationsFS embed.FS
 // It uses the goose.Provider API (instance-scoped, not the deprecated
 // package-level globals) so it is safe to call concurrently from parallel tests.
 func MigrateSQLite(ctx context.Context, db *sql.DB) error {
-	sub, err := fs.Sub(sqliteMigrationsFS, "migrations/sqlite")
+	m, err := NewSQLiteMigrator(db)
 	if err != nil {
-		return fmt.Errorf("workflow-store: migrate sqlite: sub fs: %w", err)
+		return err
 	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, db, sub)
-	if err != nil {
-		return fmt.Errorf("workflow-store: migrate sqlite: new provider: %w", err)
-	}
-	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("workflow-store: migrate sqlite: up: %w", err)
-	}
-	return nil
+	return m.Up(ctx)
 }

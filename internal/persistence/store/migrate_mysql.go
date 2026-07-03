@@ -4,10 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"fmt"
-	"io/fs"
-
-	"github.com/pressly/goose/v3"
 )
 
 //go:embed migrations/mysql/*.sql
@@ -24,16 +20,9 @@ var mysqlMigrationsFS embed.FS
 // It uses the goose.Provider API (instance-scoped, not the package-level
 // globals) so it is safe to call concurrently from parallel tests.
 func MigrateMySQL(ctx context.Context, db *sql.DB) error {
-	sub, err := fs.Sub(mysqlMigrationsFS, "migrations/mysql")
+	m, err := NewMySQLMigrator(db)
 	if err != nil {
-		return fmt.Errorf("workflow-store: migrate mysql: sub fs: %w", err)
+		return err
 	}
-	provider, err := goose.NewProvider(goose.DialectMySQL, db, sub)
-	if err != nil {
-		return fmt.Errorf("workflow-store: migrate mysql: new provider: %w", err)
-	}
-	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("workflow-store: migrate mysql: up: %w", err)
-	}
-	return nil
+	return m.Up(ctx)
 }
