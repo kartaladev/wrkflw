@@ -1,25 +1,22 @@
 package runtime_test
 
-// This helper set is intentionally duplicated with runtime/kernel's
-// memstore_helper_test.go: Go test helpers are package-scoped, and both the
-// root runtime_test package and the kernel_test package need the same
-// constructors. Keeping a copy in each package avoids introducing a shared
-// non-test support package that would drag testing.T and testify into
-// production import graphs. Keep the two copies in sync when editing.
+// Package-scoped test helpers for the root runtime_test package. Mirrors of these
+// constructors live in runtime/kernel and the behavioural sub-packages' test
+// packages (Go test helpers cannot be shared across packages); keep the copies in
+// sync when editing. Only the helpers the root package's tests actually use are
+// kept here.
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
+
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
-	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
@@ -33,8 +30,7 @@ func mustMemStore(t *testing.T, opts ...kernel.MemStoreOption) *kernel.MemStore 
 }
 
 // mustRunner builds a ProcessDriver with the given catalog and store, failing the
-// test on any error. Use at sites where NewProcessDriver is called many times with
-// valid args.
+// test on any error.
 func mustRunner(t *testing.T, cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
 	t.Helper()
 	if cat == nil {
@@ -54,22 +50,6 @@ func mustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 	return svc
 }
 
-// mustCachingStore builds a CachingStore or fails the test.
-func mustCachingStore(t *testing.T, backing kernel.Store, owner kernel.Ownership, opts ...kernel.CachingStoreOption) *kernel.CachingStore {
-	t.Helper()
-	s, err := kernel.NewCachingStore(backing, owner, opts...)
-	require.NoError(t, err)
-	return s
-}
-
-// mustCachingDefinitionRegistry builds a CachingDefinitionRegistry or fails the test.
-func mustCachingDefinitionRegistry(t *testing.T, backing kernel.DefinitionRegistry, ttl time.Duration, opts ...kernel.CachingDefinitionRegistryOption) *kernel.CachingDefinitionRegistry {
-	t.Helper()
-	c, err := kernel.NewCachingDefinitionRegistry(backing, ttl, opts...)
-	require.NoError(t, err)
-	return c
-}
-
 // mustSignalBus builds a SignalBus or fails the test.
 func mustSignalBus(t *testing.T, deliver signal.DeliverFunc, opts ...signal.SignalBusOption) *signal.SignalBus {
 	t.Helper()
@@ -84,20 +64,4 @@ func mustCallNotifier(t *testing.T, cl kernel.CallLinkStore, deliver calllink.Ca
 	n, err := calllink.NewCallNotifier(cl, deliver, reg, opts...)
 	require.NoError(t, err)
 	return n
-}
-
-// mustChainer builds a Chainer or fails the test.
-func mustChainer(t *testing.T, starter chain.InstanceStarter, policy chain.SuccessorPolicy, opts ...chain.ChainerOption) *chain.Chainer {
-	t.Helper()
-	c, err := chain.NewChainer(starter, policy, opts...)
-	require.NoError(t, err)
-	return c
-}
-
-// mustLineageReader builds a LineageReader or fails the test.
-func mustLineageReader(t *testing.T, calls kernel.CallLineageReader, chains kernel.ChainLineageReader) *monitor.LineageReader {
-	t.Helper()
-	r, err := monitor.NewLineageReader(calls, chains)
-	require.NoError(t, err)
-	return r
 }
