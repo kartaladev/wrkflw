@@ -366,13 +366,13 @@ func TestNewRunnerFailsFast(t *testing.T) {
 		name   string
 		cat    action.Catalog
 		store  runtime.Store
-		assert func(t *testing.T, r *runtime.Runner, err error)
+		assert func(t *testing.T, r *runtime.ProcessDriver, err error)
 	}{
 		{
 			name:  "nil catalog",
 			cat:   nil,
 			store: store,
-			assert: func(t *testing.T, r *runtime.Runner, err error) {
+			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
 				require.ErrorIs(t, err, runtime.ErrNilDependency)
 				require.Nil(t, r)
 			},
@@ -381,7 +381,7 @@ func TestNewRunnerFailsFast(t *testing.T) {
 			name:  "nil store",
 			cat:   cat,
 			store: nil,
-			assert: func(t *testing.T, r *runtime.Runner, err error) {
+			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
 				require.ErrorIs(t, err, runtime.ErrNilDependency)
 				require.Nil(t, r)
 			},
@@ -390,7 +390,7 @@ func TestNewRunnerFailsFast(t *testing.T) {
 			name:  "valid args",
 			cat:   cat,
 			store: store,
-			assert: func(t *testing.T, r *runtime.Runner, err error) {
+			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, r)
 			},
@@ -398,7 +398,7 @@ func TestNewRunnerFailsFast(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := runtime.NewRunner(tc.cat, tc.store)
+			r, err := runtime.NewProcessDriver(tc.cat, tc.store)
 			tc.assert(t, r, err)
 		})
 	}

@@ -169,7 +169,7 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewRunner(cat, store)
+	r, err := runtime.NewProcessDriver(cat, store)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}

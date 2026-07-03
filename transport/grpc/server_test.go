@@ -144,7 +144,7 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 		"greet": serverTestGreetAction{},
 	})
 
-	runner, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	runner, err := runtime.NewProcessDriver(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 	require.NoError(t, err)
 
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)

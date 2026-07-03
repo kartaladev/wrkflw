@@ -9,7 +9,7 @@ import (
 )
 
 // MessageDeliverFunc routes a decoded outbound SendTask message to its receiver. A
-// consumer typically wraps [runtime.Runner.DeliverMessage] with the receiver definition
+// consumer typically wraps [runtime.ProcessDriver.DeliverMessage] with the receiver definition
 // pre-captured in the closure.
 type MessageDeliverFunc func(ctx context.Context, name, correlationKey string, payload map[string]any) error
 

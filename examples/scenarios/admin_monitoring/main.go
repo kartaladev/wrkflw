@@ -7,7 +7,7 @@
 //     their id/status.
 //  2. Incident raise → resolve — drive an instance whose service action fails
 //     non-retryably so it parks on an incident (StatusRunning + Incidents),
-//     then call [runtime.Runner.ResolveIncident] to clear it and resume the
+//     then call [runtime.ProcessDriver.ResolveIncident] to clear it and resume the
 //     instance to completion.
 //  3. Outbox stats + dead-letter + redrive — wire a deliberately-failing
 //     [runtime.Publisher] and a low MaxDeliveryAttempts (1) so the relay
@@ -150,7 +150,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 		}),
 	})
 
-	runner, err := runtime.NewRunner(cat, store)
+	runner, err := runtime.NewProcessDriver(cat, store)
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}
@@ -235,7 +235,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store runtime.Store) er
 
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
-	runner, err := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewProcessDriver(cat, store,
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: 0,
@@ -320,7 +320,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store)
 		}),
 	})
 
-	runner, err := runtime.NewRunner(cat, store)
+	runner, err := runtime.NewProcessDriver(cat, store)
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}

@@ -167,7 +167,7 @@ func TestNewSQLiteCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), sqliteMinimalDef(), "sqlite-parent-cls-1", nil)
 	require.NoError(t, err)
@@ -250,7 +250,7 @@ func TestNewSQLiteLister_ListsInstances(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	for _, id := range []string{"sqlite-lst-inst-a", "sqlite-lst-inst-b"} {
 		_, err := r.Run(t.Context(), sqliteMinimalDef(), id, nil)
@@ -283,7 +283,7 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	require.NoError(t, err)
 
 	def := sqliteMinimalDef()
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), def, "sqlite-notifier-parent-1", nil)
 	require.NoError(t, err)

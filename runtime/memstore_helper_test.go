@@ -21,12 +21,12 @@ func mustMemStore(t *testing.T, opts ...runtime.MemStoreOption) *runtime.MemStor
 
 // mustRunner builds a Runner with the given catalog and store, failing the test
 // on any error. Use at sites where NewRunner is called many times with valid args.
-func mustRunner(t *testing.T, cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.Runner {
+func mustRunner(t *testing.T, cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.ProcessDriver {
 	t.Helper()
 	if cat == nil {
 		cat = action.NewMapCatalog(nil)
 	}
-	r, err := runtime.NewRunner(cat, store, opts...)
+	r, err := runtime.NewProcessDriver(cat, store, opts...)
 	require.NoError(t, err)
 	return r
 }

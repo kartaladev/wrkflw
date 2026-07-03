@@ -89,7 +89,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 3. Runner (shared by receiver and sender) ────────────────────────────
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 
 	// ── 4. Park the receiver instance ────────────────────────────────────────

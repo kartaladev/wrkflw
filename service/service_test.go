@@ -22,7 +22,7 @@ import (
 
 // harness wires a real in-memory engine for the service tests.
 type harness struct {
-	runner *runtime.Runner
+	runner *runtime.ProcessDriver
 	tasks  *runtime.TaskService
 	reg    *runtime.MapDefinitionRegistry
 	store  *runtime.MemStore
@@ -124,7 +124,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 		"greet": greetAction{},
 	})
 
-	r, err := runtime.NewRunner(
+	r, err := runtime.NewProcessDriver(
 		cat,
 		store,
 		runtime.WithRunnerClock(fc),

@@ -62,7 +62,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 	// No service-action catalog needed; pass an empty catalog.
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), memSt,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	if err != nil {

@@ -11,7 +11,7 @@ import (
 // ExampleNewMessageHandler shows wiring a message.* subscription to intra-engine delivery.
 func ExampleNewMessageHandler() {
 	// Given a runner and the receiver definition (the process that has a ReceiveTask):
-	var runner *runtime.Runner
+	var runner *runtime.ProcessDriver
 	var receiverDef *model.ProcessDefinition
 
 	handler := eventing.NewMessageHandler(func(ctx context.Context, name, key string, payload map[string]any) error {

@@ -307,7 +307,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// ── Wire Runner, Chainer, and ChainerRunner ───────────────────────────────
-	runner, err := runtime.NewRunner(action.NewMapCatalog(nil), be.store)
+	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), be.store)
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}

@@ -92,7 +92,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	// Use a forward-reference (pointer-forward) pattern so the same runner (with
 	// its signal bus) handles deliveries. This ensures subscriptions/msgWaiters
 	// are always in sync — not a separate ephemeral runner.
-	var r *runtime.Runner
+	var r *runtime.ProcessDriver
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
@@ -169,7 +169,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
 	// dependency with a forward reference via a pointer.
-	var r *runtime.Runner
+	var r *runtime.ProcessDriver
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
@@ -213,7 +213,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
-	var r *runtime.Runner
+	var r *runtime.ProcessDriver
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err

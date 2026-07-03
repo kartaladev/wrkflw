@@ -107,7 +107,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewRunner(cat, store,
+	r, err := runtime.NewProcessDriver(cat, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
 		runtime.WithScheduler(sched),

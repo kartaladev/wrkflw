@@ -11,7 +11,7 @@ import (
 )
 
 // ExampleNewCachingStore shows how a library consumer wires a [runtime.CachingStore]
-// as the store for a [runtime.Runner]. In this configuration:
+// as the store for a [runtime.ProcessDriver]. In this configuration:
 //
 //   - [runtime.AlwaysOwn] is used — correct for single-replica or sticky-routed
 //     deployments where this process is the sole writer for every instance it touches.
@@ -19,7 +19,7 @@ import (
 //
 // The example drives a single instance through a park→resume cycle using a
 // signal-catch definition (start → signal-catch("approved") → end). The second
-// [runtime.Runner.Deliver] call is served from the write-through cache because
+// [runtime.ProcessDriver.Deliver] call is served from the write-through cache because
 // [runtime.AlwaysOwn] grants ownership on every [runtime.CachingStore.Load].
 func ExampleNewCachingStore() {
 	ctx := context.Background()
@@ -40,7 +40,7 @@ func ExampleNewCachingStore() {
 
 	def := signalCatchDef("approved")
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	if err != nil {
 		panic(err)
 	}

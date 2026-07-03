@@ -158,7 +158,7 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewProcessDriver(cat, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	if err != nil {

@@ -116,13 +116,13 @@ func WithElectorHeartbeatInterval(d time.Duration) ElectorOption {
 // WithOnLeadershipAcquired registers a callback invoked each time the elected
 // leader wins (or re-wins, after a heartbeat step-down) leadership. It runs
 // asynchronously and never blocks timer firing. Wire it to
-// [runtime.Runner.RehydrateTimers] so a new leader re-arms the full persisted
+// [runtime.ProcessDriver.RehydrateTimers] so a new leader re-arms the full persisted
 // timer set on leadership acquisition — not only at startup — closing the window
 // where timers armed at runtime would otherwise be lost on the new leader until a
 // restart (Option A, ADR-0072). Because the runner is typically built after the
 // scheduler, capture it in the closure and assign it afterwards:
 //
-//	var runner *runtime.Runner
+//	var runner *runtime.ProcessDriver
 //	s, _ := scheduling.NewScheduler(scheduling.WithTimerElector(pool,
 //		scheduling.WithOnLeadershipAcquired(func(ctx context.Context) {
 //			_ = runner.RehydrateTimers(ctx)

@@ -79,7 +79,7 @@ type Service interface {
 }
 
 // Engine is the concrete implementation of Service. It wires together the
-// runtime.Runner, runtime.TaskService, runtime.DefinitionRegistry,
+// runtime.ProcessDriver, runtime.TaskService, runtime.DefinitionRegistry,
 // runtime.Store, runtime.InstanceLister, and humantask.TaskStore.
 //
 // The constructor requires all collaborators as interface/concrete parameters;
@@ -90,7 +90,7 @@ type Service interface {
 // loading an existing instance. Short aliases (e.g. the bare definition ID)
 // may also be registered for use with StartInstance.
 type Engine struct {
-	runner    *runtime.Runner
+	runner    *runtime.ProcessDriver
 	tasks     *runtime.TaskService
 	reg       runtime.DefinitionRegistry
 	store     runtime.Store
@@ -126,7 +126,7 @@ func WithEngineClock(clk clock.Clock) EngineOption {
 //     task-lifecycle operations (ClaimTask, CompleteTask, ReassignTask).
 //   - opts: optional; use WithEngineClock to override the default clock.System().
 func New(
-	runner *runtime.Runner,
+	runner *runtime.ProcessDriver,
 	tasks *runtime.TaskService,
 	reg runtime.DefinitionRegistry,
 	store runtime.Store,

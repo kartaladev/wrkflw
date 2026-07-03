@@ -126,11 +126,11 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 // wireChainerRunner builds the full chaining stack over d and starts the
 // ChainerRunner goroutine. It registers cleanup via t.Cleanup. The returned
 // runner is ready to call Run against.
-func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.Runner {
+func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 
 	catalog := action.NewMapCatalog(nil)
-	runner, err := runtime.NewRunner(catalog, d.store)
+	runner, err := runtime.NewProcessDriver(catalog, d.store)
 	require.NoError(t, err)
 
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.

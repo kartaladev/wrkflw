@@ -121,7 +121,7 @@ func run(logger *slog.Logger) error {
 	// The closure captures runner by pointer so the forward-reference is safe:
 	// runner is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
-	var runner *runtime.Runner
+	var runner *runtime.ProcessDriver
 	deliver := runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		if runner == nil {
 			return nil // not yet wired; should not occur in practice
@@ -214,7 +214,7 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err = runtime.NewRunner(cat, cachingStore,
+	runner, err = runtime.NewProcessDriver(cat, cachingStore,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(scheduler),
 		runtime.WithTimerStore(timerStore),

@@ -10,7 +10,7 @@
 //
 //	store, err := persistence.OpenPostgres(ctx, pool)
 //	if err != nil { log.Fatal(err) }
-//	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 //	if err != nil { log.Fatal(err) }
 //
 // # Relay (transactional outbox drain)
@@ -194,7 +194,7 @@ var ErrInstanceExists = runtime.ErrInstanceExists
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
 //	store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
-//	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 //	if err != nil { log.Fatal(err) }
 func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
 	q, err := database.From(pool)

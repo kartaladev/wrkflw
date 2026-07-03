@@ -48,7 +48,7 @@ func Example_responseShapes() {
 	})
 	az := authz.RoleAuthorizer{}
 	cat := action.NewMapCatalog(nil)
-	runner, err := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewProcessDriver(cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)

@@ -60,7 +60,7 @@ func TestResolveInvokeAction(t *testing.T) {
 	})
 	st, err := NewMemStore()
 	require.NoError(t, err)
-	r, err := NewRunner(global, st)
+	r, err := NewProcessDriver(global, st)
 	require.NoError(t, err)
 	def := resolveActionScopedDef(t)
 
@@ -145,7 +145,7 @@ func TestResolveActionName(t *testing.T) {
 	})
 	st2, err := NewMemStore()
 	require.NoError(t, err)
-	r, err := NewRunner(global, st2)
+	r, err := NewProcessDriver(global, st2)
 	require.NoError(t, err)
 	def := resolveActionScopedDef(t)
 

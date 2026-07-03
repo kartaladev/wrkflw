@@ -190,9 +190,9 @@ func TestChainerHandleRetriesStartAfterTransientFailure(t *testing.T) {
 	require.Len(t, starter.calls, 2, "the successor start must be re-attempted on redelivery, not skipped")
 }
 
-// TestChainerSatisfiedByRunner pins the InstanceStarter contract to *runtime.Runner.
+// TestChainerSatisfiedByRunner pins the InstanceStarter contract to *runtime.ProcessDriver.
 func TestChainerSatisfiedByRunner(t *testing.T) {
-	var _ runtime.InstanceStarter = (*runtime.Runner)(nil)
+	var _ runtime.InstanceStarter = (*runtime.ProcessDriver)(nil)
 }
 
 // TestNewChainerNilGuards asserts the constructor returns ErrNilDependency on a

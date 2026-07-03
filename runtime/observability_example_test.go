@@ -12,8 +12,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
-// ExampleRunner_observability shows how a library consumer wires an SDK
-// TracerProvider, MeterProvider, and slog logger into a [runtime.Runner].
+// ExampleProcessDriver_observability shows how a library consumer wires an SDK
+// TracerProvider, MeterProvider, and slog logger into a [runtime.ProcessDriver].
 //
 // The pattern:
 //   - Build SDK providers (real or noop) and a *slog.Logger.
@@ -25,7 +25,7 @@ import (
 // When any With* option is omitted the runner defaults to the OTel global
 // provider (or noop if no global is set) and slog.Default() — so observability
 // is purely additive: processes that do not need it incur only noop overhead.
-func ExampleRunner_observability() {
+func ExampleProcessDriver_observability() {
 	// Build a minimal SDK TracerProvider (discards spans in this example).
 	tp := sdktrace.NewTracerProvider()
 	defer func() { _ = tp.Shutdown(context.Background()) }()
@@ -61,7 +61,7 @@ func ExampleRunner_observability() {
 	if err != nil {
 		panic(err)
 	}
-	r, err := runtime.NewRunner(
+	r, err := runtime.NewProcessDriver(
 		cat,
 		mem,
 		runtime.WithTracerProvider(tp),

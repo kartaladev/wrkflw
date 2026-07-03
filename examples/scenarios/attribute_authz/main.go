@@ -49,8 +49,8 @@ func mustMemStore() *runtime.MemStore {
 	return m
 }
 
-func mustRunner(cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.Runner {
-	r, err := runtime.NewRunner(cat, store, opts...)
+func mustRunner(cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.ProcessDriver {
+	r, err := runtime.NewProcessDriver(cat, store, opts...)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -106,7 +106,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- EU instance: should be ALLOWED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
+		r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 		if err != nil {
@@ -149,7 +149,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- US instance: should be DENIED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
+		r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 		if err != nil {
