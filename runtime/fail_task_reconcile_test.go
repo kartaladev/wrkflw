@@ -1,0 +1,77 @@
+package runtime_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	clockwork "github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+)
+
+// TestRunnerUnhandledFailureCancelsParkedTask is the end-to-end counterpart to
+// TestRunnerCancelInstanceCancelsParkedTask (ADR-0089): when a parallel branch
+// fails unhandled while another branch is parked at a UserTask, the instance
+// fails and the parked task is Cancelled in the TaskStore — not orphaned in an
+// inbox query.
+func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
+	fc := clockwork.NewFakeClock()
+	actor := authz.Actor{ID: "sam", Roles: []string{"r"}}
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"r": {actor}})
+	tasks := humantask.NewMemTaskStore()
+	store := runtimetest.MustMemStore(t)
+
+	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		"boom": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			// Non-retryable → the instance fails immediately (no retry scheduled).
+			return nil, action.NonRetryable(errors.New("boom"))
+		}),
+	})
+	r := runtimetest.MustRunner(t, cat, store,
+		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
+
+	// start → fork → (user[UserTask] | svc[Service "boom"]) → join → end
+	def := &model.ProcessDefinition{
+		ID: "fail-e2e", Version: 1,
+		Nodes: []model.Node{
+			model.NewStartEvent("start"),
+			model.NewParallelGateway("fork"),
+			model.NewUserTask("user", []string{"r"}),
+			model.NewServiceTask("svc", model.WithActionName("boom")),
+			model.NewParallelGateway("join"),
+			model.NewEndEvent("end"),
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f0", Source: "start", Target: "fork"},
+			{ID: "f1", Source: "fork", Target: "user"},
+			{ID: "f2", Source: "fork", Target: "svc"},
+			{ID: "f3", Source: "user", Target: "join"},
+			{ID: "f4", Source: "svc", Target: "join"},
+			{ID: "f5", Source: "join", Target: "end"},
+		},
+	}
+
+	st, err := r.Run(t.Context(), def, "fe-1", nil)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusFailed, st.Status, "unhandled action failure must fail the instance")
+
+	// The parked task must be Cancelled and gone from the inbox.
+	before, err := tasks.ClaimableBy(t.Context(), actor)
+	require.NoError(t, err)
+	require.Empty(t, before, "a failed instance must not leave tasks in the inbox")
+
+	assigned, err := tasks.AssignedTo(t.Context(), actor.ID)
+	require.NoError(t, err)
+	for _, ht := range assigned {
+		assert.NotEqual(t, humantask.Unclaimed, ht.State)
+	}
+}

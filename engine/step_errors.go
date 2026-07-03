@@ -301,6 +301,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	ended := at
 	s.EndedAt = &ended
 	var cmds []Command
+	// Reconcile the human-task projection: a parallel branch parked at a UserTask
+	// must not be left open in the TaskStore when the instance fails (ADR-0089).
+	cmds = append(cmds, s.cancelOpenTasks()...)
 	cmds = append(cmds, FailInstance{Err: errorCode})
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
