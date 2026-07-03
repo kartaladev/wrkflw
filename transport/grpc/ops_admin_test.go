@@ -12,8 +12,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -281,8 +281,8 @@ func TestDeadLetterCategoryPopulated(t *testing.T) {
 	t.Parallel()
 	// LastError that matches the "timeout" category.
 	created := time.Now()
-	dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
-		return []runtime.DeadLetter{
+	dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
+		return []monitor.DeadLetter{
 			{ID: 1, InstanceID: "p1", Topic: "t", RetryCount: 0, LastError: "context deadline exceeded", CreatedAt: created},
 		}, nil
 	}}

@@ -1,11 +1,10 @@
-package runtime_test
+package monitor_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 func TestClassifyDeadLetter(t *testing.T) {
@@ -130,7 +129,7 @@ func TestClassifyDeadLetter(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := runtime.ClassifyDeadLetter(tc.lastError)
+			got := monitor.ClassifyDeadLetter(tc.lastError)
 			tc.assert(t, got)
 		})
 	}

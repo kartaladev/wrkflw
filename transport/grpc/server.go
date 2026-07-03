@@ -19,6 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -840,7 +841,7 @@ func protoToRoleBinding(p *workflowpb.RoleBinding) service.RoleBinding {
 
 // deadLetterToProto projects a runtime.DeadLetter onto its gRPC message.
 // The category field is populated via runtime.ClassifyDeadLetter.
-func deadLetterToProto(dl runtime.DeadLetter) *workflowpb.DeadLetter {
+func deadLetterToProto(dl monitor.DeadLetter) *workflowpb.DeadLetter {
 	return &workflowpb.DeadLetter{
 		Id:         dl.ID,
 		InstanceId: dl.InstanceID,
@@ -848,7 +849,7 @@ func deadLetterToProto(dl runtime.DeadLetter) *workflowpb.DeadLetter {
 		RetryCount: int32(dl.RetryCount), //nolint:gosec // bounded retry count
 		LastError:  dl.LastError,
 		CreatedAt:  timestamppb.New(dl.CreatedAt),
-		Category:   runtime.ClassifyDeadLetter(dl.LastError),
+		Category:   monitor.ClassifyDeadLetter(dl.LastError),
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
@@ -86,9 +87,9 @@ func mustChainer(t *testing.T, starter chain.InstanceStarter, policy chain.Succe
 }
 
 // mustLineageReader builds a LineageReader or fails the test.
-func mustLineageReader(t *testing.T, calls kernel.CallLineageReader, chains kernel.ChainLineageReader) *runtime.LineageReader {
+func mustLineageReader(t *testing.T, calls kernel.CallLineageReader, chains kernel.ChainLineageReader) *monitor.LineageReader {
 	t.Helper()
-	r, err := runtime.NewLineageReader(calls, chains)
+	r, err := monitor.NewLineageReader(calls, chains)
 	require.NoError(t, err)
 	return r
 }

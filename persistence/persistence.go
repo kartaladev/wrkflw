@@ -35,9 +35,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 // Store is the stable public interface for the Postgres-backed store.
@@ -78,7 +78,7 @@ type Relay interface {
 	// ListDeadLettered returns up to limit dead-lettered outbox rows, oldest
 	// first. Dead rows were quarantined after exhausting MaxDeliveryAttempts
 	// failed publish attempts. Use Redrive to re-queue selected rows.
-	ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error)
+	ListDeadLettered(ctx context.Context, limit int) ([]monitor.DeadLetter, error)
 	// Redrive resets the given dead rows back to pending (retry_count=0,
 	// next_attempt_at=now) so they are eligible for a future DrainOnce.
 	// Only rows with status='dead' are affected; others are silently skipped.

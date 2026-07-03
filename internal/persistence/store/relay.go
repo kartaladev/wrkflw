@@ -19,8 +19,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 // Relay drains wrkflw_outbox and hands each event to a [kernel.Publisher]
@@ -532,7 +532,7 @@ func (r *Relay) Run(ctx context.Context) error {
 // after exhausting MaxDeliveryAttempts consecutive publish failures.
 //
 // Use Redrive to re-queue selected rows for re-delivery.
-func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error) {
+func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]monitor.DeadLetter, error) {
 	q, err := database.From(r.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: relay: list dead-lettered: conn: %w", err)
@@ -549,9 +549,9 @@ func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.Dead
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []runtime.DeadLetter
+	var out []monitor.DeadLetter
 	for rows.Next() {
-		var dl runtime.DeadLetter
+		var dl monitor.DeadLetter
 		if r.d.TimestampsAsText() {
 			var createdAtStr string
 			if err := rows.Scan(&dl.ID, &dl.InstanceID, &dl.Topic, &dl.RetryCount, &dl.LastError, &createdAtStr); err != nil {

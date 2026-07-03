@@ -1,4 +1,4 @@
-package runtime_test
+package monitor_test
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 // fakeOutboxReader is an in-test implementation of kernel.OutboxStatsReader.
@@ -141,7 +141,7 @@ func TestOutboxStatsCollector(t *testing.T) {
 			rdr := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
 
-			_ = runtime.NewOutboxStatsCollector(tc.reader, observability.WithMeterProvider(mp))
+			_ = monitor.NewOutboxStatsCollector(tc.reader, observability.WithMeterProvider(mp))
 
 			var rm metricdata.ResourceMetrics
 			require.NoError(t, rdr.Collect(context.Background(), &rm))
@@ -209,7 +209,7 @@ func TestTimerStatsCollector(t *testing.T) {
 			rdr := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
 
-			_ = runtime.NewTimerStatsCollector(tc.reader, observability.WithMeterProvider(mp))
+			_ = monitor.NewTimerStatsCollector(tc.reader, observability.WithMeterProvider(mp))
 
 			var rm metricdata.ResourceMetrics
 			require.NoError(t, rdr.Collect(context.Background(), &rm))

@@ -1,4 +1,4 @@
-package runtime_test
+package monitor_test
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 // stubCallLineageReader is an in-test stub for CallLineageReader.
@@ -57,14 +57,14 @@ func TestNewLineageReaderFailsFast(t *testing.T) {
 		name   string
 		calls  kernel.CallLineageReader
 		chains kernel.ChainLineageReader
-		assert func(t *testing.T, r *runtime.LineageReader, err error)
+		assert func(t *testing.T, r *monitor.LineageReader, err error)
 	}
 	cases := []testCase{
 		{
 			name:   "nil calls",
 			calls:  nil,
 			chains: validChains,
-			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
+			assert: func(t *testing.T, r *monitor.LineageReader, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, r)
 			},
@@ -73,7 +73,7 @@ func TestNewLineageReaderFailsFast(t *testing.T) {
 			name:   "nil chains",
 			calls:  validCalls,
 			chains: nil,
-			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
+			assert: func(t *testing.T, r *monitor.LineageReader, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, r)
 			},
@@ -82,7 +82,7 @@ func TestNewLineageReaderFailsFast(t *testing.T) {
 			name:   "valid args",
 			calls:  validCalls,
 			chains: validChains,
-			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
+			assert: func(t *testing.T, r *monitor.LineageReader, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, r)
 			},
@@ -91,7 +91,7 @@ func TestNewLineageReaderFailsFast(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := runtime.NewLineageReader(tc.calls, tc.chains)
+			r, err := monitor.NewLineageReader(tc.calls, tc.chains)
 			tc.assert(t, r, err)
 		})
 	}

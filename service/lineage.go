@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 // LineageAdmin is the admin port for single-hop process-instance lineage
@@ -18,4 +18,4 @@ type LineageAdmin interface {
 }
 
 // Compile-time assertion: *runtime.LineageReader satisfies LineageAdmin.
-var _ LineageAdmin = (*runtime.LineageReader)(nil)
+var _ LineageAdmin = (*monitor.LineageReader)(nil)

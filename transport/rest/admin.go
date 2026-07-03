@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -191,7 +191,7 @@ func (h *handler) handleListDeadLetters(w http.ResponseWriter, r *http.Request) 
 			Topic:      dl.Topic,
 			RetryCount: dl.RetryCount,
 			LastError:  dl.LastError,
-			Category:   runtime.ClassifyDeadLetter(dl.LastError),
+			Category:   monitor.ClassifyDeadLetter(dl.LastError),
 			CreatedAt:  dl.CreatedAt,
 		}
 	}
