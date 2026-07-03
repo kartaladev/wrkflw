@@ -30,6 +30,7 @@ go.work.sum
 # (leading slash anchors to root so the examples/<name>/ source dirs stay tracked)
 /builtin_actions
 /chaining_wiring
+/migrate
 /mysql_wiring
 /production_wiring
 /readme_quickstart
