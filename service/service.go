@@ -10,14 +10,15 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // Service is the single application-layer seam between the transport adapters
 // (REST, gRPC) and the workflow engine. All operations are transport-neutral:
 // request and result types carry no HTTP/gRPC concerns.
 //
-// Domain errors (runtime.ErrInstanceNotFound, runtime.ErrDefinitionNotFound,
-// authz.ErrNotAuthorized, runtime.ErrConcurrentUpdate, humantask.ErrTaskNotFound)
+// Domain errors (kernel.ErrInstanceNotFound, kernel.ErrDefinitionNotFound,
+// authz.ErrNotAuthorized, kernel.ErrConcurrentUpdate, humantask.ErrTaskNotFound)
 // are propagated as-is so transport layers can classify them correctly.
 type Service interface {
 	// StartInstance resolves the process definition by req.DefRef, starts a new
@@ -26,7 +27,7 @@ type Service interface {
 	StartInstance(ctx context.Context, req StartInstanceRequest) (engine.InstanceState, error)
 
 	// GetInstance loads and returns the current state of an existing instance.
-	// Returns runtime.ErrInstanceNotFound when no instance exists for the ID.
+	// Returns kernel.ErrInstanceNotFound when no instance exists for the ID.
 	GetInstance(ctx context.Context, instanceID string) (engine.InstanceState, error)
 
 	// DeliverSignal resolves the definition for the instance, then delivers a
@@ -51,7 +52,7 @@ type Service interface {
 	ReassignTask(ctx context.Context, req ReassignTaskRequest) (engine.InstanceState, error)
 
 	// ListInstances returns a paginated list of instance summaries matching the filter.
-	ListInstances(ctx context.Context, filter runtime.InstanceFilter) (runtime.InstancePage, error)
+	ListInstances(ctx context.Context, filter kernel.InstanceFilter) (kernel.InstancePage, error)
 
 	// ResolveIncident clears an open incident on a process instance, grants
 	// addAttempts additional execution attempts (≤ 0 defaults to 1), and
@@ -59,7 +60,7 @@ type Service interface {
 	// resolving the process definition from the registry.
 	//
 	// Returns the resulting InstanceState (parked or completed) on success.
-	// Propagates runtime.ErrInstanceNotFound when no instance exists for the ID.
+	// Propagates kernel.ErrInstanceNotFound when no instance exists for the ID.
 	ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (engine.InstanceState, error)
 
 	// CancelInstance terminates a running process instance, running any
@@ -72,15 +73,15 @@ type Service interface {
 	// layer's entry point whenever both the state and the definition are needed
 	// (e.g. to build an InstanceSnapshot or ActionableView).
 	//
-	// Returns runtime.ErrInstanceNotFound when no instance exists for the ID and
-	// runtime.ErrDefinitionNotFound when the registry has no entry for the
+	// Returns kernel.ErrInstanceNotFound when no instance exists for the ID and
+	// kernel.ErrDefinitionNotFound when the registry has no entry for the
 	// instance's DefID:DefVersion key.
 	GetInstanceWithDefinition(ctx context.Context, instanceID string) (engine.InstanceState, *model.ProcessDefinition, error)
 }
 
 // Engine is the concrete implementation of Service. It wires together the
-// runtime.ProcessDriver, runtime.TaskService, runtime.DefinitionRegistry,
-// runtime.Store, runtime.InstanceLister, and humantask.TaskStore.
+// runtime.ProcessDriver, runtime.TaskService, kernel.DefinitionRegistry,
+// kernel.Store, kernel.InstanceLister, and humantask.TaskStore.
 //
 // The constructor requires all collaborators as interface/concrete parameters;
 // no DI container is used so consumers can wire this by hand.
@@ -92,9 +93,9 @@ type Service interface {
 type Engine struct {
 	runner    *runtime.ProcessDriver
 	tasks     *runtime.TaskService
-	reg       runtime.DefinitionRegistry
-	store     runtime.Store
-	lister    runtime.InstanceLister
+	reg       kernel.DefinitionRegistry
+	store     kernel.Store
+	lister    kernel.InstanceLister
 	taskStore humantask.TaskStore
 	clk       clock.Clock
 }
@@ -128,9 +129,9 @@ func WithEngineClock(clk clock.Clock) EngineOption {
 func New(
 	runner *runtime.ProcessDriver,
 	tasks *runtime.TaskService,
-	reg runtime.DefinitionRegistry,
-	store runtime.Store,
-	lister runtime.InstanceLister,
+	reg kernel.DefinitionRegistry,
+	store kernel.Store,
+	lister kernel.InstanceLister,
 	taskStore humantask.TaskStore,
 	opts ...EngineOption,
 ) *Engine {
@@ -254,10 +255,10 @@ func (e *Engine) ReassignTask(ctx context.Context, req ReassignTaskRequest) (eng
 }
 
 // ListInstances delegates to the InstanceLister.
-func (e *Engine) ListInstances(ctx context.Context, filter runtime.InstanceFilter) (runtime.InstancePage, error) {
+func (e *Engine) ListInstances(ctx context.Context, filter kernel.InstanceFilter) (kernel.InstancePage, error) {
 	page, err := e.lister.List(ctx, filter)
 	if err != nil {
-		return runtime.InstancePage{}, fmt.Errorf("workflow-service: list instances: %w", err)
+		return kernel.InstancePage{}, fmt.Errorf("workflow-service: list instances: %w", err)
 	}
 	return page, nil
 }

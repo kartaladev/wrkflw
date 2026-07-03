@@ -13,11 +13,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // DefinitionStore is the vendor-neutral, dialect-parametrised durable
-// process-definition store. It satisfies [runtime.DefinitionRegistry] via
+// process-definition store. It satisfies [kernel.DefinitionRegistry] via
 // [DefinitionStore.Lookup] and also exposes [DefinitionStore.PutDefinition]
 // and [DefinitionStore.GetDefinition] for admin / write paths.
 //
@@ -39,7 +39,7 @@ type DefinitionStore struct {
 
 // Compile-time checks that *DefinitionStore satisfies both ports.
 var (
-	_ runtime.DefinitionRegistry = (*DefinitionStore)(nil)
+	_ kernel.DefinitionRegistry = (*DefinitionStore)(nil)
 )
 
 // NewDefinitionStore constructs a DefinitionStore over conn using dialect d.
@@ -109,7 +109,7 @@ func (ds *DefinitionStore) PutDefinition(ctx context.Context, def *model.Process
 }
 
 // GetDefinition fetches the definition identified by (defID, version).
-// Returns [runtime.ErrDefinitionNotFound] when no row matches.
+// Returns [kernel.ErrDefinitionNotFound] when no row matches.
 func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, version int) (*model.ProcessDefinition, error) {
 	q := ds.querier(ctx)
 
@@ -119,7 +119,7 @@ func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, vers
 		defID, version,
 	).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s:%d", runtime.ErrDefinitionNotFound, defID, version)
+		return nil, fmt.Errorf("%w: %s:%d", kernel.ErrDefinitionNotFound, defID, version)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: get definition %s:%d: %w", defID, version, err)
@@ -132,11 +132,11 @@ func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, vers
 	return &def, nil
 }
 
-// Lookup satisfies [runtime.DefinitionRegistry]. defRef is interpreted as:
+// Lookup satisfies [kernel.DefinitionRegistry]. defRef is interpreted as:
 //   - "defID:version" — exact (defID, version) lookup via [GetDefinition].
 //   - "defID"         — the definition with the highest version for defID.
 //
-// Returns [runtime.ErrDefinitionNotFound] when no matching row exists.
+// Returns [kernel.ErrDefinitionNotFound] when no matching row exists.
 // ctx is propagated to the underlying SQL query for cancellation support.
 func (ds *DefinitionStore) Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error) {
 	if id, ver, ok := strings.Cut(defRef, ":"); ok {
@@ -159,7 +159,7 @@ func (ds *DefinitionStore) Lookup(ctx context.Context, defRef string) (*model.Pr
 		defRef,
 	).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s", runtime.ErrDefinitionNotFound, defRef)
+		return nil, fmt.Errorf("%w: %s", kernel.ErrDefinitionNotFound, defRef)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: lookup %q: %w", defRef, err)

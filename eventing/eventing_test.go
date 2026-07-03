@@ -7,7 +7,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -21,7 +21,7 @@ func (f *fakePub) Close() error                                  { return nil }
 func TestNewPublisherReturnsWorkingRuntimePublisher(t *testing.T) {
 	fp := &fakePub{}
 	pub := eventing.NewPublisher(fp)
-	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic: "instance.completed", Payload: map[string]any{"ok": true}, DedupKey: "i:1:0",
 	})
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestNewPublisherWithOptionsForwardsToInternal(t *testing.T) {
 		eventing.WithMeterProvider(mp),
 	)
 
-	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic: "instance.started", Payload: map[string]any{"x": 1}, DedupKey: "i:2:0",
 	})
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestNewPublisherMarshalErrorPropagates(t *testing.T) {
 	pub := eventing.NewPublisher(fp)
 
 	// A channel cannot be JSON-marshalled; this exercises the marshal-error path.
-	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic:   "instance.broken",
 		Payload: map[string]any{"bad": make(chan int)},
 	})
@@ -84,7 +84,7 @@ func TestNewGoChannelPublisherWithOptions(t *testing.T) {
 	msgs, err := sub.Subscribe(t.Context(), "test.topic")
 	require.NoError(t, err)
 
-	_ = pub.Publish(t.Context(), runtime.OutboxEvent{
+	_ = pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic: "test.topic", Payload: map[string]any{"k": "v"}, DedupKey: "i:3:0",
 	})
 	msg := <-msgs

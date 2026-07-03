@@ -22,6 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // minimalStartEndDefinition returns the simplest possible process: start → end.
@@ -43,10 +44,10 @@ func minimalStartEndDefinition() *model.ProcessDefinition {
 
 // capturingPublisher records every OutboxEvent published to it.
 type capturingPublisher struct {
-	events []runtime.OutboxEvent
+	events []kernel.OutboxEvent
 }
 
-func (c *capturingPublisher) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+func (c *capturingPublisher) Publish(_ context.Context, ev kernel.OutboxEvent) error {
 	c.events = append(c.events, ev)
 	return nil
 }
@@ -131,7 +132,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	// NewDefinitionStore must return a non-nil *postgres.DefinitionStore that
-	// satisfies runtime.DefinitionRegistry.
+	// satisfies kernel.DefinitionRegistry.
 	ds, err := persistence.NewDefinitionStore(pool)
 	require.NoError(t, err)
 	require.NotNil(t, ds)

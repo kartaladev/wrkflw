@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // signalCatchDef returns: start → signal-catch(name) → end.
@@ -164,7 +165,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := mustMemStore(t)
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
@@ -210,7 +211,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := mustMemStore(t)
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	var r *runtime.ProcessDriver

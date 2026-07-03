@@ -9,19 +9,20 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // timerOpsFor derives the armed-timer side-effects of one applied step from its
 // commands and trigger. ScheduleTimer commands become arms; CancelTimer commands
 // and a TimerFired trigger (the fired timer is consumed) become cancels. Pure;
 // kind-agnostic so it covers every timer kind uniformly.
-func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVersion int, instanceID string) ([]ArmedTimer, []string) {
-	var arms []ArmedTimer
+func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVersion int, instanceID string) ([]kernel.ArmedTimer, []string) {
+	var arms []kernel.ArmedTimer
 	var cancels []string
 	for _, c := range cmds {
 		switch cmd := c.(type) {
 		case engine.ScheduleTimer:
-			arms = append(arms, ArmedTimer{
+			arms = append(arms, kernel.ArmedTimer{
 				InstanceID: instanceID,
 				DefID:      defID,
 				DefVersion: defVersion,
@@ -56,7 +57,7 @@ func (r *ProcessDriver) armTimer(def *model.ProcessDefinition, instanceID, timer
 			if _, err = r.Deliver(fireCtx, def, instanceID, trg); err == nil {
 				return
 			}
-			if !errors.Is(err, ErrConcurrentUpdate) {
+			if !errors.Is(err, kernel.ErrConcurrentUpdate) {
 				r.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver failed",
 					append(r.obs.tel.LogAttrs(fireCtx),
 						slog.String("timer_id", timerID),

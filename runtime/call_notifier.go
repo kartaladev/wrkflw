@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // CallDeliverFunc delivers a trigger to a parent process instance. The
@@ -34,9 +35,9 @@ type CallDeliverFunc func(ctx context.Context, def *model.ProcessDefinition, ins
 // idempotent: a parent whose token was already resumed (engine.ErrTokenNotFound)
 // is treated as successfully notified and the link is marked notified.
 type CallNotifier struct {
-	cl      CallLinkStore
+	cl      kernel.CallLinkStore
 	deliver CallDeliverFunc
-	reg     DefinitionRegistry
+	reg     kernel.DefinitionRegistry
 	clk     clock.Clock
 	batch   int
 	poll    time.Duration
@@ -117,15 +118,15 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 // up). If a parent def cannot be resolved, DrainOnce SKIPS that link (it stays
 // claimable for a later drain) — so a registry missing the "id:version" key leaves
 // the parked parent unresumed until the registration is fixed.
-func NewCallNotifier(cl CallLinkStore, deliver CallDeliverFunc, reg DefinitionRegistry, opts ...CallNotifierOption) (*CallNotifier, error) {
+func NewCallNotifier(cl kernel.CallLinkStore, deliver CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...CallNotifierOption) (*CallNotifier, error) {
 	if cl == nil {
-		return nil, fmt.Errorf("%w: call link store", ErrNilDependency)
+		return nil, fmt.Errorf("%w: call link store", kernel.ErrNilDependency)
 	}
 	if deliver == nil {
-		return nil, fmt.Errorf("%w: deliver", ErrNilDependency)
+		return nil, fmt.Errorf("%w: deliver", kernel.ErrNilDependency)
 	}
 	if reg == nil {
-		return nil, fmt.Errorf("%w: definition registry", ErrNilDependency)
+		return nil, fmt.Errorf("%w: definition registry", kernel.ErrNilDependency)
 	}
 	n := &CallNotifier{
 		cl:      cl,

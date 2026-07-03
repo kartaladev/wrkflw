@@ -7,13 +7,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // seedMemCallLink seeds one running call-link into a MemCallLinkStore using the
 // existing SeedCallLink test-export helper.
-func seedMemCallLink(s *runtime.MemCallLinkStore, childID, parentID string) {
-	runtime.SeedCallLink(s, runtime.CallLink{
+func seedMemCallLink(s *kernel.MemCallLinkStore, childID, parentID string) {
+	s.Seed(kernel.CallLink{
 		ChildInstanceID:  childID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  "cmd-" + childID,
@@ -21,6 +21,7 @@ func seedMemCallLink(s *runtime.MemCallLinkStore, childID, parentID string) {
 		ParentDefVersion: 1,
 		Depth:            1,
 	})
+
 }
 
 // TestMemCallLinkStore_ParentOf tests the ParentOf lineage read on
@@ -30,7 +31,7 @@ func TestMemCallLinkStore_ParentOf(t *testing.T) {
 
 	t.Run("returns the call link when child has a parent", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemCallLinkStore()
+		cls := kernel.NewMemCallLinkStore()
 		seedMemCallLink(cls, "child-1", "parent-1")
 
 		got, err := cls.ParentOf(t.Context(), "child-1")
@@ -42,7 +43,7 @@ func TestMemCallLinkStore_ParentOf(t *testing.T) {
 
 	t.Run("returns nil nil when child is a root instance", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemCallLinkStore()
+		cls := kernel.NewMemCallLinkStore()
 
 		got, err := cls.ParentOf(t.Context(), "ghost")
 		require.NoError(t, err)
@@ -57,7 +58,7 @@ func TestMemCallLinkStore_ChildrenOf(t *testing.T) {
 
 	t.Run("returns all children ordered by child_instance_id", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemCallLinkStore()
+		cls := kernel.NewMemCallLinkStore()
 		seedMemCallLink(cls, "child-zzz", "parent-A")
 		seedMemCallLink(cls, "child-aaa", "parent-A")
 		seedMemCallLink(cls, "child-other", "parent-B")
@@ -74,7 +75,7 @@ func TestMemCallLinkStore_ChildrenOf(t *testing.T) {
 
 	t.Run("returns empty non-nil slice for unknown parent", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemCallLinkStore()
+		cls := kernel.NewMemCallLinkStore()
 
 		children, err := cls.ChildrenOf(t.Context(), "no-such-parent")
 		require.NoError(t, err)
@@ -90,13 +91,13 @@ func TestMemChainLinkStore_PredecessorOf(t *testing.T) {
 
 	t.Run("returns the chain link when successor was produced by chaining", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemChainLinkStore()
+		cls := kernel.NewMemChainLinkStore()
 		ctx := t.Context()
 
-		require.NoError(t, cls.Record(ctx, runtime.ChainLink{
+		require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 			PredecessorID:            "pred-1",
 			PredecessorDefinitionRef: "order:1",
-			Outcome:                  runtime.OutcomeCompleted,
+			Outcome:                  kernel.OutcomeCompleted,
 			SuccessorID:              "succ-1",
 			SuccessorDefinitionRef:   "fulfillment:1",
 			CreatedAt:                time.Now().UTC(),
@@ -107,14 +108,14 @@ func TestMemChainLinkStore_PredecessorOf(t *testing.T) {
 		require.NotNil(t, got)
 		assert.Equal(t, "pred-1", got.PredecessorID)
 		assert.Equal(t, "succ-1", got.SuccessorID)
-		assert.Equal(t, runtime.OutcomeCompleted, got.Outcome)
+		assert.Equal(t, kernel.OutcomeCompleted, got.Outcome)
 		assert.Equal(t, "order:1", got.PredecessorDefinitionRef)
 		assert.Equal(t, "fulfillment:1", got.SuccessorDefinitionRef)
 	})
 
 	t.Run("returns nil nil when successor is a chain root", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemChainLinkStore()
+		cls := kernel.NewMemChainLinkStore()
 
 		got, err := cls.PredecessorOf(t.Context(), "chain-root")
 		require.NoError(t, err)
@@ -129,26 +130,26 @@ func TestMemChainLinkStore_SuccessorsOf(t *testing.T) {
 
 	t.Run("returns all successors ordered by outcome", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemChainLinkStore()
+		cls := kernel.NewMemChainLinkStore()
 		ctx := t.Context()
 		now := time.Now().UTC()
 
-		require.NoError(t, cls.Record(ctx, runtime.ChainLink{
+		require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 			PredecessorID: "pred-fanout",
-			Outcome:       runtime.OutcomeTerminated,
+			Outcome:       kernel.OutcomeTerminated,
 			SuccessorID:   "succ-terminated",
 			CreatedAt:     now,
 		}))
-		require.NoError(t, cls.Record(ctx, runtime.ChainLink{
+		require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 			PredecessorID: "pred-fanout",
-			Outcome:       runtime.OutcomeCompleted,
+			Outcome:       kernel.OutcomeCompleted,
 			SuccessorID:   "succ-completed",
 			CreatedAt:     now,
 		}))
 		// Different predecessor — must not appear.
-		require.NoError(t, cls.Record(ctx, runtime.ChainLink{
+		require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 			PredecessorID: "pred-other",
-			Outcome:       runtime.OutcomeCompleted,
+			Outcome:       kernel.OutcomeCompleted,
 			SuccessorID:   "succ-other",
 			CreatedAt:     now,
 		}))
@@ -157,15 +158,15 @@ func TestMemChainLinkStore_SuccessorsOf(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, succs, 2)
 		// Ordered by outcome: "completed" < "terminated".
-		assert.Equal(t, runtime.OutcomeCompleted, succs[0].Outcome)
+		assert.Equal(t, kernel.OutcomeCompleted, succs[0].Outcome)
 		assert.Equal(t, "succ-completed", succs[0].SuccessorID)
-		assert.Equal(t, runtime.OutcomeTerminated, succs[1].Outcome)
+		assert.Equal(t, kernel.OutcomeTerminated, succs[1].Outcome)
 		assert.Equal(t, "succ-terminated", succs[1].SuccessorID)
 	})
 
 	t.Run("returns empty non-nil slice for unknown predecessor", func(t *testing.T) {
 		t.Parallel()
-		cls := runtime.NewMemChainLinkStore()
+		cls := kernel.NewMemChainLinkStore()
 
 		succs, err := cls.SuccessorsOf(t.Context(), "ghost-pred")
 		require.NoError(t, err)

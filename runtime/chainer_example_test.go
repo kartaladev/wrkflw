@@ -9,6 +9,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ExampleChainer shows process-instance chaining (ADR-0045): when one instance
@@ -21,11 +22,11 @@ import (
 // this example drives Chainer.Handle directly so the output is deterministic.
 func ExampleChainer() {
 	ctx := context.Background()
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	if err != nil {
 		panic(err)
 	}
-	links := runtime.NewMemChainLinkStore()
+	links := kernel.NewMemChainLinkStore()
 	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	if err != nil {
 		panic(err)
@@ -41,7 +42,7 @@ func ExampleChainer() {
 	// approval starts fulfillment seeded with the approval's result; any other
 	// outcome ends the chain.
 	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-		if ev.Outcome != runtime.OutcomeCompleted {
+		if ev.Outcome != kernel.OutcomeCompleted {
 			return runtime.SuccessorDecision{}, false
 		}
 		return runtime.SuccessorDecision{Def: fulfillment, Vars: ev.Result}, true
@@ -55,7 +56,7 @@ func ExampleChainer() {
 	// Simulate the "approval-1" instance completing.
 	_ = chainer.Handle(ctx, runtime.ChainEvent{
 		PredecessorID: "approval-1",
-		Outcome:       runtime.OutcomeCompleted,
+		Outcome:       kernel.OutcomeCompleted,
 		Result:        map[string]any{"orderID": "o-7"},
 	})
 

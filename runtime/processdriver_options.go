@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -51,7 +52,7 @@ func WithHumanTasks(resolver humantask.ActorResolver, tasks humantask.TaskStore,
 // WithScheduler wires a Scheduler into the ProcessDriver, enabling timer commands
 // (ScheduleTimer / CancelTimer). Without this option any process that reaches a
 // timer node will return a descriptive error.
-func WithScheduler(sched Scheduler) Option {
+func WithScheduler(sched kernel.Scheduler) Option {
 	return func(r *ProcessDriver) { r.sched = sched }
 }
 
@@ -74,7 +75,7 @@ func WithSignalBus(bus *SignalBus) Option {
 // The registry resolves DefRef strings (as stored on KindCallActivity nodes)
 // to *model.ProcessDefinition values. Use [NewMapDefinitionRegistry] to build
 // an in-memory registry from a plain map.
-func WithDefinitions(reg DefinitionRegistry) Option {
+func WithDefinitions(reg kernel.DefinitionRegistry) Option {
 	return func(r *ProcessDriver) { r.defsReg = reg }
 }
 
@@ -85,7 +86,7 @@ func WithDefinitions(reg DefinitionRegistry) Option {
 // the parent parks at the call node until a notifier delivers the outcome. When
 // this option is NOT set, the synchronous behavior (run child to completion
 // in-process) is preserved verbatim.
-func WithCallLinkStore(store CallLinkStore) Option {
+func WithCallLinkStore(store kernel.CallLinkStore) Option {
 	return func(r *ProcessDriver) { r.callLinks = store }
 }
 
@@ -93,13 +94,15 @@ func WithCallLinkStore(store CallLinkStore) Option {
 // records each armed/cancelled timer into the AppliedStep so the Store persists
 // them atomically with state, and [ProcessDriver.RehydrateTimers] can re-arm them on
 // restart. Absent this option, timers are in-memory only and lost on restart.
-func WithTimerStore(store TimerStore) Option {
+func WithTimerStore(store kernel.TimerStore) Option {
 	return func(r *ProcessDriver) { r.timerStore = store }
 }
 
 // WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).
 // Inject a deterministic source in tests to produce predictable fire-at times.
-func WithJitterSource(src JitterSource) Option { return func(r *ProcessDriver) { r.jitter = src } }
+func WithJitterSource(src kernel.JitterSource) Option {
+	return func(r *ProcessDriver) { r.jitter = src }
+}
 
 // WithDefaultRetryPolicy sets the fallback retry policy applied to any action-bearing
 // node that declares no RetryPolicy of its own. Without this option, retry is disabled

@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -55,7 +56,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"failing": failingAction,
@@ -78,7 +79,7 @@ func TestEngineResolveIncident(t *testing.T) {
 		defRefFor(def): def,
 		def.ID:         def,
 	}
-	reg := runtime.NewMapDefinitionRegistry(defsMap)
+	reg := kernel.NewMapDefinitionRegistry(defsMap)
 	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
 	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
@@ -120,7 +121,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"failing": failingAction,
@@ -142,7 +143,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		defRefFor(def): def,
 		def.ID:         def,
 	}
-	reg := runtime.NewMapDefinitionRegistry(defsMap)
+	reg := kernel.NewMapDefinitionRegistry(defsMap)
 	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
 	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
@@ -175,5 +176,5 @@ func TestEngineResolveIncidentInstanceNotFound(t *testing.T) {
 		AddAttempts: 1,
 	})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+	assert.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 }

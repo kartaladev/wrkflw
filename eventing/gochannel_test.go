@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func TestGoChannelPublisherRoundTrip(t *testing.T) {
@@ -15,7 +15,7 @@ func TestGoChannelPublisherRoundTrip(t *testing.T) {
 	msgs, err := sub.Subscribe(t.Context(), "instance.completed")
 	require.NoError(t, err)
 
-	require.NoError(t, pub.Publish(t.Context(), runtime.OutboxEvent{
+	require.NoError(t, pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic:      "instance.completed",
 		Payload:    map[string]any{"order": "A-1"},
 		DedupKey:   "inst-1:1:0",

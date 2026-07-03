@@ -13,6 +13,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -20,31 +21,31 @@ import (
 // ---- fake ports ----
 
 type fakeRelayStatsAdmin struct {
-	statsFn func(ctx context.Context) (runtime.OutboxStats, error)
+	statsFn func(ctx context.Context) (kernel.OutboxStats, error)
 }
 
-func (f *fakeRelayStatsAdmin) OutboxStats(ctx context.Context) (runtime.OutboxStats, error) {
+func (f *fakeRelayStatsAdmin) OutboxStats(ctx context.Context) (kernel.OutboxStats, error) {
 	return f.statsFn(ctx)
 }
 
 type fakeTimerAdmin struct {
-	statsFn     func(ctx context.Context) (runtime.TimerStats, error)
-	listArmedFn func(ctx context.Context) ([]runtime.ArmedTimer, error)
+	statsFn     func(ctx context.Context) (kernel.TimerStats, error)
+	listArmedFn func(ctx context.Context) ([]kernel.ArmedTimer, error)
 }
 
-func (f *fakeTimerAdmin) Stats(ctx context.Context) (runtime.TimerStats, error) {
+func (f *fakeTimerAdmin) Stats(ctx context.Context) (kernel.TimerStats, error) {
 	return f.statsFn(ctx)
 }
 
-func (f *fakeTimerAdmin) ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error) {
+func (f *fakeTimerAdmin) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error) {
 	return f.listArmedFn(ctx)
 }
 
 type fakeLineageAdmin struct {
-	lineageFn func(ctx context.Context, instanceID string) (runtime.InstanceLineage, error)
+	lineageFn func(ctx context.Context, instanceID string) (kernel.InstanceLineage, error)
 }
 
-func (f *fakeLineageAdmin) Lineage(ctx context.Context, instanceID string) (runtime.InstanceLineage, error) {
+func (f *fakeLineageAdmin) Lineage(ctx context.Context, instanceID string) (kernel.InstanceLineage, error) {
 	return f.lineageFn(ctx, instanceID)
 }
 
@@ -63,8 +64,8 @@ func TestServerGetRelayStats(t *testing.T) {
 	t.Run("wired returns relay stats", func(t *testing.T) {
 		t.Parallel()
 		age := 90 * time.Second
-		admin := &fakeRelayStatsAdmin{statsFn: func(_ context.Context) (runtime.OutboxStats, error) {
-			return runtime.OutboxStats{
+		admin := &fakeRelayStatsAdmin{statsFn: func(_ context.Context) (kernel.OutboxStats, error) {
+			return kernel.OutboxStats{
 				Pending:          3,
 				Dead:             1,
 				OldestPendingAge: age,
@@ -80,8 +81,8 @@ func TestServerGetRelayStats(t *testing.T) {
 
 	t.Run("admin error maps to Internal", func(t *testing.T) {
 		t.Parallel()
-		admin := &fakeRelayStatsAdmin{statsFn: func(_ context.Context) (runtime.OutboxStats, error) {
-			return runtime.OutboxStats{}, errors.New("workflow-postgres: outbox stats: boom")
+		admin := &fakeRelayStatsAdmin{statsFn: func(_ context.Context) (kernel.OutboxStats, error) {
+			return kernel.OutboxStats{}, errors.New("workflow-postgres: outbox stats: boom")
 		}}
 		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithRelayStatsAdmin(admin))
 		_, err := client.GetRelayStats(t.Context(), &workflowpb.GetRelayStatsRequest{})
@@ -111,11 +112,11 @@ func TestServerListTimers(t *testing.T) {
 	t.Run("wired returns timer list", func(t *testing.T) {
 		t.Parallel()
 		admin := &fakeTimerAdmin{
-			statsFn: func(_ context.Context) (runtime.TimerStats, error) {
-				return runtime.TimerStats{Armed: 1, NextFireAt: &now}, nil
+			statsFn: func(_ context.Context) (kernel.TimerStats, error) {
+				return kernel.TimerStats{Armed: 1, NextFireAt: &now}, nil
 			},
-			listArmedFn: func(_ context.Context) ([]runtime.ArmedTimer, error) {
-				return []runtime.ArmedTimer{
+			listArmedFn: func(_ context.Context) ([]kernel.ArmedTimer, error) {
+				return []kernel.ArmedTimer{
 					{
 						InstanceID: "inst-1",
 						DefID:      "proc",
@@ -146,10 +147,10 @@ func TestServerListTimers(t *testing.T) {
 	t.Run("admin stats error maps to Internal", func(t *testing.T) {
 		t.Parallel()
 		admin := &fakeTimerAdmin{
-			statsFn: func(_ context.Context) (runtime.TimerStats, error) {
-				return runtime.TimerStats{}, errors.New("workflow-postgres: timer stats: boom")
+			statsFn: func(_ context.Context) (kernel.TimerStats, error) {
+				return kernel.TimerStats{}, errors.New("workflow-postgres: timer stats: boom")
 			},
-			listArmedFn: func(_ context.Context) ([]runtime.ArmedTimer, error) {
+			listArmedFn: func(_ context.Context) ([]kernel.ArmedTimer, error) {
 				return nil, nil
 			},
 		}
@@ -161,11 +162,11 @@ func TestServerListTimers(t *testing.T) {
 	t.Run("nil NextFireAt when no timers", func(t *testing.T) {
 		t.Parallel()
 		admin := &fakeTimerAdmin{
-			statsFn: func(_ context.Context) (runtime.TimerStats, error) {
-				return runtime.TimerStats{Armed: 0, NextFireAt: nil}, nil
+			statsFn: func(_ context.Context) (kernel.TimerStats, error) {
+				return kernel.TimerStats{Armed: 0, NextFireAt: nil}, nil
 			},
-			listArmedFn: func(_ context.Context) ([]runtime.ArmedTimer, error) {
-				return []runtime.ArmedTimer{}, nil
+			listArmedFn: func(_ context.Context) ([]kernel.ArmedTimer, error) {
+				return []kernel.ArmedTimer{}, nil
 			},
 		}
 		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithTimerAdmin(admin))
@@ -196,13 +197,13 @@ func TestServerGetInstanceLineage(t *testing.T) {
 
 	t.Run("wired root instance returns lineage with nil parents", func(t *testing.T) {
 		t.Parallel()
-		admin := &fakeLineageAdmin{lineageFn: func(_ context.Context, id string) (runtime.InstanceLineage, error) {
-			return runtime.InstanceLineage{
+		admin := &fakeLineageAdmin{lineageFn: func(_ context.Context, id string) (kernel.InstanceLineage, error) {
+			return kernel.InstanceLineage{
 				InstanceID:       id,
 				CallParent:       nil,
-				CallChildren:     []runtime.CallLinkRef{},
+				CallChildren:     []kernel.CallLinkRef{},
 				ChainPredecessor: nil,
-				ChainSuccessors:  []runtime.ChainLinkRef{},
+				ChainSuccessors:  []kernel.ChainLinkRef{},
 			}, nil
 		}}
 		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithLineageAdmin(admin))
@@ -217,24 +218,24 @@ func TestServerGetInstanceLineage(t *testing.T) {
 
 	t.Run("wired child instance returns populated lineage", func(t *testing.T) {
 		t.Parallel()
-		admin := &fakeLineageAdmin{lineageFn: func(_ context.Context, id string) (runtime.InstanceLineage, error) {
-			return runtime.InstanceLineage{
+		admin := &fakeLineageAdmin{lineageFn: func(_ context.Context, id string) (kernel.InstanceLineage, error) {
+			return kernel.InstanceLineage{
 				InstanceID: id,
-				CallParent: &runtime.CallLinkRef{
+				CallParent: &kernel.CallLinkRef{
 					InstanceID: "parent-inst",
 					DefID:      "parent-def",
 					DefVersion: 1,
 					Depth:      0,
 				},
-				CallChildren: []runtime.CallLinkRef{
+				CallChildren: []kernel.CallLinkRef{
 					{InstanceID: "child-inst", DefID: "", DefVersion: 0, Depth: 1},
 				},
-				ChainPredecessor: &runtime.ChainLinkRef{
+				ChainPredecessor: &kernel.ChainLinkRef{
 					InstanceID:    "pred-inst",
 					DefinitionRef: "pred-def:1",
 					Outcome:       "completed",
 				},
-				ChainSuccessors: []runtime.ChainLinkRef{
+				ChainSuccessors: []kernel.ChainLinkRef{
 					{InstanceID: "succ-inst", DefinitionRef: "succ-def:1", Outcome: "completed"},
 				},
 			}, nil
@@ -260,8 +261,8 @@ func TestServerGetInstanceLineage(t *testing.T) {
 
 	t.Run("admin error maps to Internal", func(t *testing.T) {
 		t.Parallel()
-		admin := &fakeLineageAdmin{lineageFn: func(_ context.Context, _ string) (runtime.InstanceLineage, error) {
-			return runtime.InstanceLineage{}, errors.New("workflow-postgres: lineage: boom")
+		admin := &fakeLineageAdmin{lineageFn: func(_ context.Context, _ string) (kernel.InstanceLineage, error) {
+			return kernel.InstanceLineage{}, errors.New("workflow-postgres: lineage: boom")
 		}}
 		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithLineageAdmin(admin))
 		_, err := client.GetInstanceLineage(t.Context(), &workflowpb.GetInstanceLineageRequest{InstanceId: "p1"})

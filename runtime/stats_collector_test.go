@@ -13,25 +13,26 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// fakeOutboxReader is an in-test implementation of runtime.OutboxStatsReader.
+// fakeOutboxReader is an in-test implementation of kernel.OutboxStatsReader.
 type fakeOutboxReader struct {
-	stats runtime.OutboxStats
+	stats kernel.OutboxStats
 	err   error
 }
 
-func (f *fakeOutboxReader) OutboxStats(_ context.Context) (runtime.OutboxStats, error) {
+func (f *fakeOutboxReader) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
 	return f.stats, f.err
 }
 
-// fakeTimerReader is an in-test implementation of runtime.TimerStatsReader.
+// fakeTimerReader is an in-test implementation of kernel.TimerStatsReader.
 type fakeTimerReader struct {
-	stats runtime.TimerStats
+	stats kernel.TimerStats
 	err   error
 }
 
-func (f *fakeTimerReader) Stats(_ context.Context) (runtime.TimerStats, error) {
+func (f *fakeTimerReader) Stats(_ context.Context) (kernel.TimerStats, error) {
 	return f.stats, f.err
 }
 
@@ -80,7 +81,7 @@ func TestOutboxStatsCollector(t *testing.T) {
 		{
 			name: "known stats produce expected gauge values",
 			reader: &fakeOutboxReader{
-				stats: runtime.OutboxStats{
+				stats: kernel.OutboxStats{
 					Pending:          3,
 					Dead:             1,
 					OldestPendingAge: 2 * time.Second,
@@ -165,7 +166,7 @@ func TestTimerStatsCollector(t *testing.T) {
 		{
 			name: "known stats produce expected gauge value",
 			reader: &fakeTimerReader{
-				stats: runtime.TimerStats{Armed: 7},
+				stats: kernel.TimerStats{Armed: 7},
 			},
 			assertMetrics: func(t *testing.T, rm metricdata.ResourceMetrics) {
 				t.Helper()

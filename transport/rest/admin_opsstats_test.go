@@ -12,33 +12,33 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
 
 // ---- fakes ----
 
 type fakeRelayStatsAdmin struct {
-	stats runtime.OutboxStats
+	stats kernel.OutboxStats
 	err   error
 }
 
-func (f *fakeRelayStatsAdmin) OutboxStats(_ context.Context) (runtime.OutboxStats, error) {
+func (f *fakeRelayStatsAdmin) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
 	return f.stats, f.err
 }
 
 type fakeTimerAdmin struct {
-	stats    runtime.TimerStats
+	stats    kernel.TimerStats
 	statsErr error
-	armed    []runtime.ArmedTimer
+	armed    []kernel.ArmedTimer
 	armedErr error
 }
 
-func (f *fakeTimerAdmin) Stats(_ context.Context) (runtime.TimerStats, error) {
+func (f *fakeTimerAdmin) Stats(_ context.Context) (kernel.TimerStats, error) {
 	return f.stats, f.statsErr
 }
 
-func (f *fakeTimerAdmin) ListArmed(_ context.Context) ([]runtime.ArmedTimer, error) {
+func (f *fakeTimerAdmin) ListArmed(_ context.Context) ([]kernel.ArmedTimer, error) {
 	return f.armed, f.armedErr
 }
 
@@ -98,7 +98,7 @@ func TestAdminRelayStats(t *testing.T) {
 			}
 			if tc.wired {
 				opts = append(opts, rest.WithRelayStatsAdmin(&fakeRelayStatsAdmin{
-					stats: runtime.OutboxStats{
+					stats: kernel.OutboxStats{
 						Pending:          5,
 						Dead:             2,
 						OldestPendingAge: 30 * time.Second,
@@ -187,8 +187,8 @@ func TestAdminTimers(t *testing.T) {
 			if tc.wired {
 				nextFire := fireAt
 				opts = append(opts, rest.WithTimerAdmin(&fakeTimerAdmin{
-					stats: runtime.TimerStats{Armed: 1, NextFireAt: &nextFire},
-					armed: []runtime.ArmedTimer{{
+					stats: kernel.TimerStats{Armed: 1, NextFireAt: &nextFire},
+					armed: []kernel.ArmedTimer{{
 						InstanceID: "inst-1",
 						DefID:      "def-1",
 						DefVersion: 2,

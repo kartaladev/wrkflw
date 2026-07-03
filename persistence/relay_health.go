@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // relayBacklogConfig holds the threshold values for [RelayBacklogCheck].
@@ -43,14 +43,14 @@ func WithMaxPending(n int64) RelayBacklogOption {
 // import dependency on the persistence layer. Only the test asserts the
 // interface satisfaction via var _ rest.HealthCheck = check.
 type RelayBacklogCheck struct {
-	reader runtime.OutboxStatsReader
+	reader kernel.OutboxStatsReader
 	cfg    relayBacklogConfig
 }
 
 // NewRelayBacklogCheck returns a [RelayBacklogCheck] backed by r. Both thresholds
 // default to 0, which means disabled — [RelayBacklogCheck.Check] will only return
 // an error when r.OutboxStats itself errors or a non-zero threshold is breached.
-func NewRelayBacklogCheck(r runtime.OutboxStatsReader, opts ...RelayBacklogOption) RelayBacklogCheck {
+func NewRelayBacklogCheck(r kernel.OutboxStatsReader, opts ...RelayBacklogOption) RelayBacklogCheck {
 	cfg := relayBacklogConfig{}
 	for _, o := range opts {
 		o(&cfg)
@@ -61,7 +61,7 @@ func NewRelayBacklogCheck(r runtime.OutboxStatsReader, opts ...RelayBacklogOptio
 // Name returns "relay-backlog", the probe's name as it appears in /readyz responses.
 func (c RelayBacklogCheck) Name() string { return "relay-backlog" }
 
-// Check reads the outbox statistics from the underlying [runtime.OutboxStatsReader]
+// Check reads the outbox statistics from the underlying [kernel.OutboxStatsReader]
 // and returns a non-nil error when:
 //   - the reader call fails (e.g. DB down, ctx cancelled), or
 //   - maxDead > 0 and stats.Dead > maxDead, or

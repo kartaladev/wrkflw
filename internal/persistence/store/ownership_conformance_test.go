@@ -16,11 +16,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// Compile-time assertion: both locker-backed ownership types satisfy runtime.Ownership.
-var _ runtime.Ownership = (*store.AdvisoryLockOwnership)(nil)
+// Compile-time assertion: both locker-backed ownership types satisfy kernel.Ownership.
+var _ kernel.Ownership = (*store.AdvisoryLockOwnership)(nil)
 
 // ── Postgres ──────────────────────────────────────────────────────────────────
 

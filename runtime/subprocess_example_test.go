@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // childDef builds a simple child definition:
@@ -93,7 +94,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 
 	// Build the definition registry with the child def.
 	child := childDef()
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"child": child,
 	})
 
@@ -171,7 +172,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		},
 	}
 
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"failing-child": failingChild,
 	})
 
@@ -243,7 +244,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	store := mustMemStore(t)
 
 	parkingChild := parkingChildDef()
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"parking-child": parkingChild,
 	})
 
@@ -268,7 +269,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 
 	// The outbox must carry the failure event; check its error message is diagnosable.
 	events := store.Events()
-	var failEvent *runtime.OutboxEvent
+	var failEvent *kernel.OutboxEvent
 	for i := range events {
 		if events[i].Topic == "instance.failed" {
 			e := events[i]
@@ -335,7 +336,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	store := mustMemStore(t)
 
 	def := selfRefDef()
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"self-ref": def,
 	})
 

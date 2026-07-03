@@ -10,14 +10,15 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // chainTopics are the three status-accurate terminal topics a chaining consumer
 // subscribes (ADR-0046). The map also drives topic→Outcome projection.
-var chainTopics = map[string]runtime.Outcome{
-	"instance.completed":  runtime.OutcomeCompleted,
-	"instance.failed":     runtime.OutcomeFailed,
-	"instance.terminated": runtime.OutcomeTerminated,
+var chainTopics = map[string]kernel.Outcome{
+	"instance.completed":  kernel.OutcomeCompleted,
+	"instance.failed":     kernel.OutcomeFailed,
+	"instance.terminated": kernel.OutcomeTerminated,
 }
 
 // NewChainHandler adapts the broker-agnostic runtime.Chainer core to a watermill

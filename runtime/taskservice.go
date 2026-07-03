@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TaskService authorizes human-task interactions and returns the engine triggers
@@ -80,10 +81,10 @@ func WithTaskServiceClock(clk clock.Clock) TaskServiceOption {
 // or a custom clock can omit them entirely.
 func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...TaskServiceOption) (*TaskService, error) {
 	if store == nil {
-		return nil, fmt.Errorf("%w: store", ErrNilDependency)
+		return nil, fmt.Errorf("%w: store", kernel.ErrNilDependency)
 	}
 	if az == nil {
-		return nil, fmt.Errorf("%w: authorizer", ErrNilDependency)
+		return nil, fmt.Errorf("%w: authorizer", kernel.ErrNilDependency)
 	}
 	cfg := taskServiceConfig{clk: clock.System()}
 	for _, o := range opts {

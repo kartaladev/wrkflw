@@ -5,6 +5,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // callDepthKey is the private context key used to thread the call-activity
@@ -50,7 +51,7 @@ func withCallDepth(ctx context.Context, d int) context.Context {
 // with create=true, passing link so the child's first AppliedStep.NewCallLink
 // is set atomically. The parent stays parked; the child may park too (e.g. at a
 // human task) — that is the expected outcome for the async path.
-func (r *ProcessDriver) runChild(ctx context.Context, def *model.ProcessDefinition, childInstanceID string, vars map[string]any, link *CallLink) error {
+func (r *ProcessDriver) runChild(ctx context.Context, def *model.ProcessDefinition, childInstanceID string, vars map[string]any, link *kernel.CallLink) error {
 	st := engine.InstanceState{InstanceID: childInstanceID}
 	_, err := r.deliverLoop(ctx, def, st, 0, true, link, engine.NewStartInstance(r.clk.Now(), vars))
 	return err

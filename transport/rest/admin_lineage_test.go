@@ -8,30 +8,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
 
 // fakeLineageAdmin is a configurable service.LineageAdmin test double.
 type fakeLineageAdmin struct {
-	lineage runtime.InstanceLineage
+	lineage kernel.InstanceLineage
 	err     error
 }
 
-func (f *fakeLineageAdmin) Lineage(_ context.Context, instanceID string) (runtime.InstanceLineage, error) {
+func (f *fakeLineageAdmin) Lineage(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
 	return f.lineage, f.err
 }
 
 func TestAdminInstanceLineage(t *testing.T) {
 	t.Parallel()
 
-	parentRef := &runtime.CallLinkRef{
+	parentRef := &kernel.CallLinkRef{
 		InstanceID: "parent-inst",
 		DefID:      "parent-def",
 		DefVersion: 1,
 		Depth:      0,
 	}
-	childRef := runtime.CallLinkRef{
+	childRef := kernel.CallLinkRef{
 		InstanceID: "child-inst",
 		DefID:      "",
 		DefVersion: 0,
@@ -104,12 +104,12 @@ func TestAdminInstanceLineage(t *testing.T) {
 			}
 			if tc.wired {
 				opts = append(opts, rest.WithLineageAdmin(&fakeLineageAdmin{
-					lineage: runtime.InstanceLineage{
+					lineage: kernel.InstanceLineage{
 						InstanceID:       "test-inst-1",
 						CallParent:       parentRef,
-						CallChildren:     []runtime.CallLinkRef{childRef},
+						CallChildren:     []kernel.CallLinkRef{childRef},
 						ChainPredecessor: nil,
-						ChainSuccessors:  []runtime.ChainLinkRef{},
+						ChainSuccessors:  []kernel.ChainLinkRef{},
 					},
 				}))
 			}

@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 const callLinkLeaseTTL = 30 * time.Second
@@ -27,9 +27,9 @@ func leaseClockBase() time.Time {
 
 // callLinkBaseStepStore returns a running AppliedStep for a child instance,
 // matching the helper shape used in the postgres/mysql source tests.
-func callLinkBaseStepStore(instanceID string) runtime.AppliedStep {
+func callLinkBaseStepStore(instanceID string) kernel.AppliedStep {
 	now := time.Unix(1700000000, 0).UTC()
-	return runtime.AppliedStep{
+	return kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: instanceID,
 			DefID:      "def-parent",
@@ -42,9 +42,9 @@ func callLinkBaseStepStore(instanceID string) runtime.AppliedStep {
 }
 
 // callLinkTerminalStepStore returns a completed AppliedStep for a child instance.
-func callLinkTerminalStepStore(instanceID string) runtime.AppliedStep {
+func callLinkTerminalStepStore(instanceID string) kernel.AppliedStep {
 	now := time.Unix(1700000000, 0).UTC()
-	return runtime.AppliedStep{
+	return kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: instanceID,
 			DefID:      "def-parent",
@@ -58,14 +58,14 @@ func callLinkTerminalStepStore(instanceID string) runtime.AppliedStep {
 
 // seedCompletedCallLink seeds a child instance + call link via store.New, then
 // commits it as terminal with the given outcome.
-func seedCompletedCallLink(t *testing.T, b backend, childID string, outcome runtime.CallOutcome) {
+func seedCompletedCallLink(t *testing.T, b backend, childID string, outcome kernel.CallOutcome) {
 	t.Helper()
 
 	s, err := store.New(b.conn, b.dialect)
 	require.NoError(t, err, "%s: seedCompletedCallLink: store.New", b.name)
 
 	createStep := callLinkBaseStepStore(childID)
-	createStep.NewCallLink = &runtime.CallLink{
+	createStep.NewCallLink = &kernel.CallLink{
 		ChildInstanceID:  childID,
 		ParentInstanceID: "parent-" + childID,
 		ParentCommandID:  "cmd-" + childID,
@@ -90,7 +90,7 @@ func seedRunningCallLink(t *testing.T, b backend, childID, parentID string) {
 	require.NoError(t, err, "%s: seedRunningCallLink: store.New", b.name)
 
 	step := callLinkBaseStepStore(childID)
-	step.NewCallLink = &runtime.CallLink{
+	step.NewCallLink = &kernel.CallLink{
 		ChildInstanceID:  childID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  "cmd-" + childID,
@@ -110,7 +110,7 @@ func seedCompletedCallLinkForParent(t *testing.T, b backend, childID, parentID s
 	require.NoError(t, err, "%s: seedCompletedCallLinkForParent: store.New", b.name)
 
 	step := callLinkBaseStepStore(childID)
-	step.NewCallLink = &runtime.CallLink{
+	step.NewCallLink = &kernel.CallLink{
 		ChildInstanceID:  childID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  "cmd-" + childID,
@@ -122,7 +122,7 @@ func seedCompletedCallLinkForParent(t *testing.T, b backend, childID, parentID s
 	require.NoError(t, err, "%s: seed completed-for-parent create", b.name)
 
 	termStep := callLinkTerminalStepStore(childID)
-	termStep.CallOutcome = &runtime.CallOutcome{Completed: true}
+	termStep.CallOutcome = &kernel.CallOutcome{Completed: true}
 	_, err = s.Commit(t.Context(), tok, termStep)
 	require.NoError(t, err, "%s: seed completed-for-parent commit", b.name)
 }
@@ -136,14 +136,14 @@ func seedCompletedCallLinkForParent(t *testing.T, b backend, childID, parentID s
 //   - Leased-claim: claim one, immediate second claim, TTL expiry, notified rows
 func TestCallLinkStore(t *testing.T) {
 	// Compile-time interface assertions.
-	var _ runtime.CallLinkStore = (*store.CallLinkStore)(nil)
-	var _ runtime.CallLineageReader = (*store.CallLinkStore)(nil)
+	var _ kernel.CallLinkStore = (*store.CallLinkStore)(nil)
+	var _ kernel.CallLineageReader = (*store.CallLinkStore)(nil)
 
 	t.Run("insert link is returned by ClaimPending after completion", func(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "ins-child-1", runtime.CallOutcome{Completed: true, Output: map[string]any{"a": float64(1)}})
+			seedCompletedCallLink(t, b, "ins-child-1", kernel.CallOutcome{Completed: true, Output: map[string]any{"a": float64(1)}})
 
 			pending, err := cls.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: ClaimPending", b.name)
@@ -157,8 +157,8 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "zzz-child", runtime.CallOutcome{Completed: true, Output: map[string]any{"a": float64(1)}})
-			seedCompletedCallLink(t, b, "aaa-child", runtime.CallOutcome{Completed: false, Err: "boom"})
+			seedCompletedCallLink(t, b, "zzz-child", kernel.CallOutcome{Completed: true, Output: map[string]any{"a": float64(1)}})
+			seedCompletedCallLink(t, b, "aaa-child", kernel.CallOutcome{Completed: false, Err: "boom"})
 
 			pending, err := cls.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: ClaimPending", b.name)
@@ -172,9 +172,9 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "lim-child-1", runtime.CallOutcome{Completed: true})
-			seedCompletedCallLink(t, b, "lim-child-2", runtime.CallOutcome{Completed: true})
-			seedCompletedCallLink(t, b, "lim-child-3", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lim-child-1", kernel.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lim-child-2", kernel.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lim-child-3", kernel.CallOutcome{Completed: true})
 
 			pending, err := cls.ClaimPending(t.Context(), 2)
 			require.NoError(t, err, "%s: ClaimPending limit=2", b.name)
@@ -199,7 +199,7 @@ func TestCallLinkStore(t *testing.T) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 			want := map[string]any{"result": float64(99), "label": "ok"}
-			seedCompletedCallLink(t, b, "json-child", runtime.CallOutcome{Completed: true, Output: want})
+			seedCompletedCallLink(t, b, "json-child", kernel.CallOutcome{Completed: true, Output: want})
 
 			pending, err := cls.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: ClaimPending", b.name)
@@ -213,7 +213,7 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "fail-child", runtime.CallOutcome{Completed: false, Err: "child timed out"})
+			seedCompletedCallLink(t, b, "fail-child", kernel.CallOutcome{Completed: false, Err: "child timed out"})
 
 			pending, err := cls.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: ClaimPending", b.name)
@@ -228,8 +228,8 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "zero-lim-1", runtime.CallOutcome{Completed: true})
-			seedCompletedCallLink(t, b, "zero-lim-2", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "zero-lim-1", kernel.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "zero-lim-2", kernel.CallOutcome{Completed: true})
 
 			pending, err := cls.ClaimPending(t.Context(), 0)
 			require.NoError(t, err, "%s: ClaimPending limit=0", b.name)
@@ -243,8 +243,8 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "notif-child-1", runtime.CallOutcome{Completed: true})
-			seedCompletedCallLink(t, b, "notif-child-2", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "notif-child-1", kernel.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "notif-child-2", kernel.CallOutcome{Completed: true})
 
 			require.NoError(t, cls.MarkNotified(t.Context(), "notif-child-1"), "%s: MarkNotified", b.name)
 
@@ -262,7 +262,7 @@ func TestCallLinkStore(t *testing.T) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect, store.WithCallLinkClock(fc))
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
-			seedCompletedCallLink(t, b, "mn-clock-child", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "mn-clock-child", kernel.CallOutcome{Completed: true})
 
 			before := time.Now().UTC()
 			require.NoError(t, cls.MarkNotified(t.Context(), "mn-clock-child"), "%s: MarkNotified", b.name)
@@ -282,7 +282,7 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect, store.WithCallLinkClock(nil))
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "nil-clk-child", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "nil-clk-child", kernel.CallOutcome{Completed: true})
 			assert.NotPanics(t, func() {
 				_ = cls.MarkNotified(t.Context(), "nil-clk-child")
 			}, "%s: nil clock must not panic", b.name)
@@ -295,7 +295,7 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "lookup-child", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lookup-child", kernel.CallOutcome{Completed: true})
 
 			link, ok, err := cls.LookupChild(t.Context(), "lookup-child")
 			require.NoError(t, err, "%s: LookupChild", b.name)
@@ -317,7 +317,7 @@ func TestCallLinkStore(t *testing.T) {
 			link, ok, err := cls.LookupChild(t.Context(), "nonexistent-child")
 			require.NoError(t, err, "%s: LookupChild", b.name)
 			assert.False(t, ok, "%s: ok must be false", b.name)
-			assert.Equal(t, runtime.CallLink{}, link, "%s: empty link on miss", b.name)
+			assert.Equal(t, kernel.CallLink{}, link, "%s: empty link on miss", b.name)
 		})
 	})
 
@@ -329,7 +329,7 @@ func TestCallLinkStore(t *testing.T) {
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			step := callLinkBaseStepStore("running-lookup")
-			step.NewCallLink = &runtime.CallLink{
+			step.NewCallLink = &kernel.CallLink{
 				ChildInstanceID:  "running-lookup",
 				ParentInstanceID: "parent-running-lookup",
 				ParentCommandID:  "cmd-rl",
@@ -355,7 +355,7 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
-			seedCompletedCallLink(t, b, "parentof-child", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "parentof-child", kernel.CallOutcome{Completed: true})
 
 			link, err := cls.ParentOf(t.Context(), "parentof-child")
 			require.NoError(t, err, "%s: ParentOf", b.name)
@@ -448,7 +448,7 @@ func TestCallLinkStore(t *testing.T) {
 			require.NoError(t, err, "%s: NewCallLinkStore", b.name)
 
 			step := callLinkBaseStepStore("field-child-1")
-			step.NewCallLink = &runtime.CallLink{
+			step.NewCallLink = &kernel.CallLink{
 				ChildInstanceID:  "field-child-1",
 				ParentInstanceID: "field-parent",
 				ParentCommandID:  "cmd-field",
@@ -494,7 +494,7 @@ func TestCallLinkStore(t *testing.T) {
 				store.WithCallLinkClock(fc),
 			)
 			require.NoError(t, err, "%s: NewCallLinkStore leased", b.name)
-			seedCompletedCallLink(t, b, "lease-child-1", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lease-child-1", kernel.CallOutcome{Completed: true})
 
 			got, err := cls.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: ClaimPending leased", b.name)
@@ -520,7 +520,7 @@ func TestCallLinkStore(t *testing.T) {
 				store.WithCallLinkClock(fc),
 			)
 			require.NoError(t, err, "%s: NewCallLinkStore B", b.name)
-			seedCompletedCallLink(t, b, "lease-child-2", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lease-child-2", kernel.CallOutcome{Completed: true})
 
 			first, err := clsA.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: A ClaimPending", b.name)
@@ -545,7 +545,7 @@ func TestCallLinkStore(t *testing.T) {
 				store.WithCallLinkClock(fc),
 			)
 			require.NoError(t, err, "%s: NewCallLinkStore B", b.name)
-			seedCompletedCallLink(t, b, "lease-child-3", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lease-child-3", kernel.CallOutcome{Completed: true})
 
 			first, err := clsA.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: A ClaimPending", b.name)
@@ -568,7 +568,7 @@ func TestCallLinkStore(t *testing.T) {
 				store.WithCallLinkClock(fc),
 			)
 			require.NoError(t, err, "%s: NewCallLinkStore leased", b.name)
-			seedCompletedCallLink(t, b, "lease-notif-1", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lease-notif-1", kernel.CallOutcome{Completed: true})
 
 			require.NoError(t, cls.MarkNotified(t.Context(), "lease-notif-1"), "%s: MarkNotified", b.name)
 
@@ -587,7 +587,7 @@ func TestCallLinkStore(t *testing.T) {
 		forEachDialect(t, func(t *testing.T, b backend) {
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect)
 			require.NoError(t, err)
-			seedCompletedCallLink(t, b, "lease-noopt-1", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "lease-noopt-1", kernel.CallOutcome{Completed: true})
 
 			first, err := cls.ClaimPending(t.Context(), 10)
 			require.NoError(t, err, "%s: first ClaimPending", b.name)
@@ -611,7 +611,7 @@ func TestCallLinkStore(t *testing.T) {
 				store.WithCallLinkClock(fc),
 			)
 			require.NoError(t, err, "sqlite: NewCallLinkStore leased")
-			seedCompletedCallLink(t, b, "sqlite-lease-1", runtime.CallOutcome{Completed: true})
+			seedCompletedCallLink(t, b, "sqlite-lease-1", kernel.CallOutcome{Completed: true})
 
 			// First claim succeeds.
 			first, err := cls.ClaimPending(t.Context(), 10)

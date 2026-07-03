@@ -1,5 +1,12 @@
 package runtime_test
 
+// This helper set is intentionally duplicated with runtime/kernel's
+// memstore_helper_test.go: Go test helpers are package-scoped, and both the
+// root runtime_test package and the kernel_test package need the same
+// constructors. Keeping a copy in each package avoids introducing a shared
+// non-test support package that would drag testing.T and testify into
+// production import graphs. Keep the two copies in sync when editing.
+
 import (
 	"testing"
 	"time"
@@ -9,19 +16,21 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // mustMemStore builds a MemStore or fails the test. Keeps option-free call sites terse.
-func mustMemStore(t *testing.T, opts ...runtime.MemStoreOption) *runtime.MemStore {
+func mustMemStore(t *testing.T, opts ...kernel.MemStoreOption) *kernel.MemStore {
 	t.Helper()
-	m, err := runtime.NewMemStore(opts...)
+	m, err := kernel.NewMemStore(opts...)
 	require.NoError(t, err)
 	return m
 }
 
-// mustRunner builds a Runner with the given catalog and store, failing the test
-// on any error. Use at sites where NewRunner is called many times with valid args.
-func mustRunner(t *testing.T, cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.ProcessDriver {
+// mustRunner builds a ProcessDriver with the given catalog and store, failing the
+// test on any error. Use at sites where NewProcessDriver is called many times with
+// valid args.
+func mustRunner(t *testing.T, cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
 	t.Helper()
 	if cat == nil {
 		cat = action.NewMapCatalog(nil)
@@ -41,17 +50,17 @@ func mustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 }
 
 // mustCachingStore builds a CachingStore or fails the test.
-func mustCachingStore(t *testing.T, backing runtime.Store, owner runtime.Ownership, opts ...runtime.CachingStoreOption) *runtime.CachingStore {
+func mustCachingStore(t *testing.T, backing kernel.Store, owner kernel.Ownership, opts ...kernel.CachingStoreOption) *kernel.CachingStore {
 	t.Helper()
-	s, err := runtime.NewCachingStore(backing, owner, opts...)
+	s, err := kernel.NewCachingStore(backing, owner, opts...)
 	require.NoError(t, err)
 	return s
 }
 
 // mustCachingDefinitionRegistry builds a CachingDefinitionRegistry or fails the test.
-func mustCachingDefinitionRegistry(t *testing.T, backing runtime.DefinitionRegistry, ttl time.Duration, opts ...runtime.CachingDefinitionRegistryOption) *runtime.CachingDefinitionRegistry {
+func mustCachingDefinitionRegistry(t *testing.T, backing kernel.DefinitionRegistry, ttl time.Duration, opts ...kernel.CachingDefinitionRegistryOption) *kernel.CachingDefinitionRegistry {
 	t.Helper()
-	c, err := runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)
+	c, err := kernel.NewCachingDefinitionRegistry(backing, ttl, opts...)
 	require.NoError(t, err)
 	return c
 }
@@ -65,7 +74,7 @@ func mustSignalBus(t *testing.T, deliver runtime.DeliverFunc, opts ...runtime.Si
 }
 
 // mustCallNotifier builds a CallNotifier or fails the test.
-func mustCallNotifier(t *testing.T, cl runtime.CallLinkStore, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+func mustCallNotifier(t *testing.T, cl kernel.CallLinkStore, deliver runtime.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
 	t.Helper()
 	n, err := runtime.NewCallNotifier(cl, deliver, reg, opts...)
 	require.NoError(t, err)
@@ -81,7 +90,7 @@ func mustChainer(t *testing.T, starter runtime.InstanceStarter, policy runtime.S
 }
 
 // mustLineageReader builds a LineageReader or fails the test.
-func mustLineageReader(t *testing.T, calls runtime.CallLineageReader, chains runtime.ChainLineageReader) *runtime.LineageReader {
+func mustLineageReader(t *testing.T, calls kernel.CallLineageReader, chains kernel.ChainLineageReader) *runtime.LineageReader {
 	t.Helper()
 	r, err := runtime.NewLineageReader(calls, chains)
 	require.NoError(t, err)

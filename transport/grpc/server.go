@@ -18,6 +18,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -510,7 +511,7 @@ func (s *server) ListDeadLetters(ctx context.Context, req *workflowpb.ListDeadLe
 	if s.deadLetters == nil {
 		return nil, status.Error(codes.Unimplemented, "workflow-grpc: dead-letter admin not configured")
 	}
-	rows, err := s.deadLetters.ListDeadLettered(ctx, runtime.NormalizeLimit(int(req.GetLimit())))
+	rows, err := s.deadLetters.ListDeadLettered(ctx, kernel.NormalizeLimit(int(req.GetLimit())))
 	if err != nil {
 		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
@@ -751,8 +752,8 @@ func (s *server) GetInstanceLineage(ctx context.Context, req *workflowpb.GetInst
 	return instanceLineageToProto(lin), nil
 }
 
-// instanceLineageToProto converts a runtime.InstanceLineage to its proto representation.
-func instanceLineageToProto(lin runtime.InstanceLineage) *workflowpb.InstanceLineage {
+// instanceLineageToProto converts a kernel.InstanceLineage to its proto representation.
+func instanceLineageToProto(lin kernel.InstanceLineage) *workflowpb.InstanceLineage {
 	pb := &workflowpb.InstanceLineage{
 		InstanceId: lin.InstanceID,
 	}
@@ -773,8 +774,8 @@ func instanceLineageToProto(lin runtime.InstanceLineage) *workflowpb.InstanceLin
 	return pb
 }
 
-// callLinkRefToProto converts a runtime.CallLinkRef to its proto representation.
-func callLinkRefToProto(r runtime.CallLinkRef) *workflowpb.CallLinkRef {
+// callLinkRefToProto converts a kernel.CallLinkRef to its proto representation.
+func callLinkRefToProto(r kernel.CallLinkRef) *workflowpb.CallLinkRef {
 	return &workflowpb.CallLinkRef{
 		InstanceId: r.InstanceID,
 		DefId:      r.DefID,
@@ -783,8 +784,8 @@ func callLinkRefToProto(r runtime.CallLinkRef) *workflowpb.CallLinkRef {
 	}
 }
 
-// chainLinkRefToProto converts a runtime.ChainLinkRef to its proto representation.
-func chainLinkRefToProto(r runtime.ChainLinkRef) *workflowpb.ChainLinkRef {
+// chainLinkRefToProto converts a kernel.ChainLinkRef to its proto representation.
+func chainLinkRefToProto(r kernel.ChainLinkRef) *workflowpb.ChainLinkRef {
 	return &workflowpb.ChainLinkRef{
 		InstanceId:    r.InstanceID,
 		DefinitionRef: r.DefinitionRef,
@@ -856,7 +857,7 @@ func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstance
 	ctx, span := s.startSpan(ctx, "ListInstances")
 	defer span.End()
 
-	filter := runtime.InstanceFilter{
+	filter := kernel.InstanceFilter{
 		Limit:        int(req.GetLimit()),
 		Cursor:       req.GetCursor(),
 		IncludeTotal: req.GetIncludeTotal(),
@@ -929,8 +930,8 @@ func instanceToProto(st engine.InstanceState) (*workflowpb.Instance, error) {
 	return inst, nil
 }
 
-// summaryToProto converts a runtime.InstanceSummary to a workflowpb.InstanceSummary.
-func summaryToProto(s runtime.InstanceSummary) *workflowpb.InstanceSummary {
+// summaryToProto converts a kernel.InstanceSummary to a workflowpb.InstanceSummary.
+func summaryToProto(s kernel.InstanceSummary) *workflowpb.InstanceSummary {
 	sum := &workflowpb.InstanceSummary{
 		InstanceId: s.InstanceID,
 		DefId:      s.DefID,

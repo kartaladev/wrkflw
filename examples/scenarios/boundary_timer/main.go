@@ -44,6 +44,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func main() {
@@ -101,8 +102,8 @@ func main() {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"reviewer": {reviewer},
 	})
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(clk))
-	store, err := runtime.NewMemStore()
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	store, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}

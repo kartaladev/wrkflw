@@ -16,6 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // timerIntermediateDef returns: start → timer-catch("1h") → service("greet") → end.
@@ -57,7 +58,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 		}),
 	})
 
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	store := mustMemStore(t)
 
 	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
@@ -135,7 +136,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	store := mustMemStore(t)
 
 	r := mustRunner(t, cat, store,

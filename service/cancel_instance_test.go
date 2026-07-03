@@ -8,7 +8,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -80,7 +80,7 @@ func TestCancelInstance(t *testing.T) {
 			name: "unknown instance returns ErrInstanceNotFound",
 			assert: func(t *testing.T, svc *service.Engine) {
 				_, err := svc.CancelInstance(t.Context(), service.CancelInstanceRequest{InstanceID: "nope"})
-				require.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+				require.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 			},
 		},
 	}

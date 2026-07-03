@@ -18,6 +18,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
@@ -28,13 +29,13 @@ import (
 func minimalSvc(t *testing.T) service.Service {
 	t.Helper()
 	fc := clockwork.NewFakeClock()
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 	require.NoError(t, err)
-	reg := runtime.NewMapDefinitionRegistry(nil)
+	reg := kernel.NewMapDefinitionRegistry(nil)
 	tasks, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 	require.NoError(t, err)
 	return service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))

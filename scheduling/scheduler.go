@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ErrTimerLockElectorConflict is returned by [NewScheduler] when more than one
@@ -29,7 +29,7 @@ import (
 var ErrTimerLockElectorConflict = errors.New(
 	"workflow-scheduling: WithDistributedTimerLock and WithTimerElector are mutually exclusive — set only one")
 
-// Scheduler is the production, gocron-backed [runtime.Scheduler]. Construct it
+// Scheduler is the production, gocron-backed [kernel.Scheduler]. Construct it
 // with [NewScheduler]; supply the same [clockwork.Clock] instance used to build
 // the runtime via [WithSchedulerClock] so one fake-clock advance drives both
 // engine timestamps and timer firing under test (ADR-0003). When the clock
@@ -51,8 +51,8 @@ type Scheduler struct {
 
 // Compile-time contract assertions.
 var (
-	_ runtime.Scheduler = (*Scheduler)(nil)
-	_ io.Closer         = (*Scheduler)(nil)
+	_ kernel.Scheduler = (*Scheduler)(nil)
+	_ io.Closer        = (*Scheduler)(nil)
 )
 
 // config holds façade-level options.

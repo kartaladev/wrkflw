@@ -21,7 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // newSQLiteDialectForTest returns the SQLite dialect without a real db connection.
@@ -32,10 +32,10 @@ func newSQLiteDialectForTest() dialect.Dialect { return dialect.NewSQLite() }
 type recordingRelayPub struct {
 	mu     sync.Mutex
 	topics []string
-	events []runtime.OutboxEvent
+	events []kernel.OutboxEvent
 }
 
-func (p *recordingRelayPub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+func (p *recordingRelayPub) Publish(_ context.Context, ev kernel.OutboxEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.topics = append(p.topics, ev.Topic)
@@ -45,7 +45,7 @@ func (p *recordingRelayPub) Publish(_ context.Context, ev runtime.OutboxEvent) e
 
 type failingRelayPub struct{}
 
-func (failingRelayPub) Publish(context.Context, runtime.OutboxEvent) error {
+func (failingRelayPub) Publish(context.Context, kernel.OutboxEvent) error {
 	return errors.New("broker: down")
 }
 
@@ -59,7 +59,7 @@ func newPoisonRelayPub(poisonKey string) *poisonRelayPub {
 	return &poisonRelayPub{poisonKey: poisonKey, counts: map[string]int{}}
 }
 
-func (p *poisonRelayPub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+func (p *poisonRelayPub) Publish(_ context.Context, ev kernel.OutboxEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.counts[ev.DedupKey]++
@@ -799,14 +799,14 @@ func TestRelayBatchSize(t *testing.T) {
 type blockingRelayPub struct {
 	mu        sync.Mutex
 	delay     time.Duration
-	published []runtime.OutboxEvent
+	published []kernel.OutboxEvent
 }
 
 func newBlockingRelayPub(delay time.Duration) *blockingRelayPub {
 	return &blockingRelayPub{delay: delay}
 }
 
-func (p *blockingRelayPub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+func (p *blockingRelayPub) Publish(_ context.Context, ev kernel.OutboxEvent) error {
 	// Hold the lock for `delay` so the race window is wide enough for a
 	// concurrent DrainOnce to re-claim and re-publish the same rows.
 	p.mu.Lock()

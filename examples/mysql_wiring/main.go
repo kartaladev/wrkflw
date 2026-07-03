@@ -40,6 +40,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
@@ -94,7 +95,7 @@ func run(logger *slog.Logger) error {
 		return merr
 	}
 
-	// Open the MySQL-backed runtime.Store (and JournalReader).
+	// Open the MySQL-backed kernel.Store (and JournalReader).
 	store, oerr := persistence.OpenMySQL(workerCtx, db)
 	if oerr != nil {
 		return oerr
@@ -154,7 +155,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(ownerCloser)
 
 	// Wrap the store in the caching store so hot instances are served from memory.
-	cachingStore, err := runtime.NewCachingStore(store, ownership)
+	cachingStore, err := kernel.NewCachingStore(store, ownership)
 	if err != nil {
 		return fmt.Errorf("caching store: %w", err)
 	}
@@ -199,7 +200,7 @@ func run(logger *slog.Logger) error {
 	// definitions survive restarts. For illustrative purposes we also seed a
 	// well-known definition via the map registry; in production you would use
 	// persistence.NewMySQLDefinitionStore exclusively.
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})

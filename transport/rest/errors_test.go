@@ -10,7 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -24,12 +24,12 @@ func TestMapToHTTPError(t *testing.T) {
 	}{
 		{
 			name:       "instance not found",
-			err:        fmt.Errorf("wrap: %w", runtime.ErrInstanceNotFound),
+			err:        fmt.Errorf("wrap: %w", kernel.ErrInstanceNotFound),
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name:       "definition not found",
-			err:        fmt.Errorf("wrap: %w", runtime.ErrDefinitionNotFound),
+			err:        fmt.Errorf("wrap: %w", kernel.ErrDefinitionNotFound),
 			wantStatus: http.StatusNotFound,
 		},
 		{
@@ -44,12 +44,12 @@ func TestMapToHTTPError(t *testing.T) {
 		},
 		{
 			name:       "concurrent update",
-			err:        fmt.Errorf("wrap: %w", runtime.ErrConcurrentUpdate),
+			err:        fmt.Errorf("wrap: %w", kernel.ErrConcurrentUpdate),
 			wantStatus: http.StatusConflict,
 		},
 		{
 			name:       "bad cursor",
-			err:        fmt.Errorf("wrap: %w", runtime.ErrBadCursor),
+			err:        fmt.Errorf("wrap: %w", kernel.ErrBadCursor),
 			wantStatus: http.StatusBadRequest,
 		},
 		{

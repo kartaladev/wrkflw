@@ -12,7 +12,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -23,7 +23,7 @@ func TestNewScheduler_SatisfiesPortAndFires(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Runtime checks that the façade satisfies the required contracts.
-	var _ runtime.Scheduler = s
+	var _ kernel.Scheduler = s
 	var _ io.Closer = s
 
 	var wg sync.WaitGroup

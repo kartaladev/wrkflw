@@ -16,27 +16,28 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // errStore is a Store whose Create and Commit always fail with a concurrency error.
-// It embeds *runtime.MemStore so that Load still works for Deliver-based tests
+// It embeds *kernel.MemStore so that Load still works for Deliver-based tests
 // that need an initial state.
-type errStore struct{ *runtime.MemStore }
+type errStore struct{ *kernel.MemStore }
 
-func (errStore) Create(_ context.Context, _ runtime.AppliedStep) (runtime.Token, error) {
-	return 0, runtime.ErrConcurrentUpdate
+func (errStore) Create(_ context.Context, _ kernel.AppliedStep) (kernel.Token, error) {
+	return 0, kernel.ErrConcurrentUpdate
 }
 
-func (errStore) Commit(_ context.Context, _ runtime.Token, _ runtime.AppliedStep) (runtime.Token, error) {
-	return 0, runtime.ErrConcurrentUpdate
+func (errStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) (kernel.Token, error) {
+	return 0, kernel.ErrConcurrentUpdate
 }
 
 // commitErrStore is a Store whose Create succeeds but Commit always fails
 // with ErrConcurrentUpdate. Used to test the Commit failure path independently.
-type commitErrStore struct{ *runtime.MemStore }
+type commitErrStore struct{ *kernel.MemStore }
 
-func (s *commitErrStore) Commit(_ context.Context, _ runtime.Token, _ runtime.AppliedStep) (runtime.Token, error) {
-	return 0, runtime.ErrConcurrentUpdate
+func (s *commitErrStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) (kernel.Token, error) {
+	return 0, kernel.ErrConcurrentUpdate
 }
 
 // TestRunnerUnknownActionFailsInstance verifies that a catalog with no actions
@@ -102,7 +103,7 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
+	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Commit must be surfaced via errors.Is")
 	assert.Contains(t, err.Error(), "workflow-runtime: commit:")
 }
@@ -216,29 +217,29 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 		"ScheduleTimer/CancelTimer nil-guard must mention 'no Scheduler configured'")
 }
 
-// onceConflictStore wraps *runtime.MemStore and injects a single ErrConcurrentUpdate
+// onceConflictStore wraps *kernel.MemStore and injects a single ErrConcurrentUpdate
 // on the first Commit call whose step.Trigger is an engine.TimerFired. All other
 // calls (before or after the triggered conflict) delegate to the inner store.
 //
 // This lets TestTimerFireRetriesOnCASConflict drive a deterministic CAS conflict on
 // the timer-fire path without any concurrency or timing gymnastics.
 type onceConflictStore struct {
-	inner     *runtime.MemStore
+	inner     *kernel.MemStore
 	triggered atomic.Bool
 }
 
-func (s *onceConflictStore) Create(ctx context.Context, step runtime.AppliedStep) (runtime.Token, error) {
+func (s *onceConflictStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
 	return s.inner.Create(ctx, step)
 }
 
-func (s *onceConflictStore) Load(ctx context.Context, id string) (engine.InstanceState, runtime.Token, error) {
+func (s *onceConflictStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Token, error) {
 	return s.inner.Load(ctx, id)
 }
 
-func (s *onceConflictStore) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
+func (s *onceConflictStore) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
 	if _, ok := step.Trigger.(engine.TimerFired); ok && s.triggered.CompareAndSwap(false, true) {
 		// First TimerFired Commit → simulate CAS conflict.
-		return 0, runtime.ErrConcurrentUpdate
+		return 0, kernel.ErrConcurrentUpdate
 	}
 	return s.inner.Commit(ctx, expected, step)
 }
@@ -276,7 +277,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 
 	inner := mustMemStore(t)
 	store := &onceConflictStore{inner: inner}
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 
 	r := mustRunner(t, nil, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
 
@@ -318,7 +319,7 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 	r := mustRunner(t, cat, errStore{mustMemStore(t)})
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
+	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
 }
 
@@ -365,7 +366,7 @@ func TestNewRunnerFailsFast(t *testing.T) {
 	cases := []struct {
 		name   string
 		cat    action.Catalog
-		store  runtime.Store
+		store  kernel.Store
 		assert func(t *testing.T, r *runtime.ProcessDriver, err error)
 	}{
 		{
@@ -373,7 +374,7 @@ func TestNewRunnerFailsFast(t *testing.T) {
 			cat:   nil,
 			store: store,
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, r)
 			},
 		},
@@ -382,7 +383,7 @@ func TestNewRunnerFailsFast(t *testing.T) {
 			cat:   cat,
 			store: nil,
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, r)
 			},
 		},

@@ -28,6 +28,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ── scenario 1: nested async ─────────────────────────────────────────────────
@@ -101,8 +102,8 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 
 	// ── wiring ───────────────────────────────────────────────────────────────
 	clk := clock.System()
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	gcDef := e2eGrandchildDef()
 	cDef := e2eChildDef()
@@ -117,7 +118,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 
 	// Registry: definitions are looked up by "defID:version" format for the notifier,
 	// and by plain "defID" for runtime call-activity DefRef resolution.
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"e2e-grandchild":   gcDef,
 		"e2e-child":        cDef,
 		"e2e-parent":       pDef,
@@ -223,8 +224,8 @@ func TestFailurePathCallActivity(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"fail-action": &failAction{msg: "e2e child service error"},
@@ -235,7 +236,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 
 	// Register under both plain "defID" (for call activity resolution) and
 	// "defID:version" (for notifier parent-def lookup).
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"async-fail-child":    child,
 		"async-fail-parent":   parent,
 		"async-fail-parent:1": parent,
@@ -326,15 +327,15 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	def := selfCallDef()
 
 	// The registry must answer for:
 	// - "self-call"   (call activity DefRef resolution during child spawning)
 	// - "self-call:1" (parent def lookup by CallNotifier)
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"self-call":   def,
 		"self-call:1": def,
 	})
@@ -432,7 +433,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 // countCallLinks counts how many call links exist for the chain rooted at rootID
 // by walking the derived child IDs. It checks at most maxCheck depth levels.
 // Each child ID follows the scheme: "<parentID>-sub-c1".
-func countCallLinks(ctx context.Context, t *testing.T, cl *runtime.MemCallLinkStore, rootID string, maxCheck int) int {
+func countCallLinks(ctx context.Context, t *testing.T, cl *kernel.MemCallLinkStore, rootID string, maxCheck int) int {
 	t.Helper()
 	count := 0
 	currentID := rootID
@@ -473,7 +474,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	child := asyncChildDef()
 	parent := asyncParentDef()
 
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"async-child": child,
 	})
 

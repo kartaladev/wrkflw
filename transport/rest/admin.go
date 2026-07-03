@@ -8,10 +8,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
-// instanceSummaryView is the admin-list JSON projection of a runtime.InstanceSummary.
+// instanceSummaryView is the admin-list JSON projection of a kernel.InstanceSummary.
 // It intentionally omits large fields (tokens, history, tasks) to keep the payload small.
 type instanceSummaryView struct {
 	InstanceID    string     `json:"instance_id"`
@@ -36,7 +37,7 @@ type adminListResponse struct {
 // Query parameters:
 //
 //	status  (optional) — filter by lifecycle status; unknown values → 400.
-//	limit   (optional) — page size; clamped by runtime.NormalizeLimit.
+//	limit   (optional) — page size; clamped by kernel.NormalizeLimit.
 //	cursor  (optional) — opaque keyset cursor; malformed → 400.
 //	total   (optional) — "true" or "1" to compute and include total_count (the
 //	                     count of all status-matching instances) in the response.
@@ -68,9 +69,9 @@ func (h *handler) handleAdminListInstances(w http.ResponseWriter, r *http.Reques
 	totalParam := q.Get("total")
 	includeTotal := totalParam == "true" || totalParam == "1"
 
-	filter := runtime.InstanceFilter{
+	filter := kernel.InstanceFilter{
 		Status:       statusFilter,
-		Limit:        runtime.NormalizeLimit(limit),
+		Limit:        kernel.NormalizeLimit(limit),
 		Cursor:       q.Get("cursor"),
 		IncludeTotal: includeTotal,
 	}
@@ -161,7 +162,7 @@ type dlqRedriveResponse struct {
 //
 // Query parameters:
 //
-//	limit (optional) — page size; clamped by runtime.NormalizeLimit (default 50, max 200).
+//	limit (optional) — page size; clamped by kernel.NormalizeLimit (default 50, max 200).
 //
 // It is registered only when a DeadLetterAdmin is wired via WithDeadLetterAdmin,
 // so h.cfg.deadLetters is guaranteed non-nil here.
@@ -176,7 +177,7 @@ func (h *handler) handleListDeadLetters(w http.ResponseWriter, r *http.Request) 
 		limit = n
 	}
 
-	rows, err := h.cfg.deadLetters.ListDeadLettered(r.Context(), runtime.NormalizeLimit(limit))
+	rows, err := h.cfg.deadLetters.ListDeadLettered(r.Context(), kernel.NormalizeLimit(limit))
 	if err != nil {
 		WriteHTTPError(w, err)
 		return
@@ -381,7 +382,7 @@ func (h *handler) handleAdminRelayStats(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// timerItemView is the JSON projection of a single runtime.ArmedTimer.
+// timerItemView is the JSON projection of a single kernel.ArmedTimer.
 type timerItemView struct {
 	InstanceID string `json:"instance_id"`
 	DefID      string `json:"def_id"`

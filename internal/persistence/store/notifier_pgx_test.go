@@ -23,7 +23,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ import (
 // notifyCountingPublisher records how many events it has published.
 type notifyCountingPublisher struct{ n atomic.Int64 }
 
-func (p *notifyCountingPublisher) Publish(_ context.Context, _ runtime.OutboxEvent) error {
+func (p *notifyCountingPublisher) Publish(_ context.Context, _ kernel.OutboxEvent) error {
 	p.n.Add(1)
 	return nil
 }
@@ -84,13 +84,13 @@ func TestPgxNotifierListenDrainsBeforePollInterval(t *testing.T) {
 	// Write an outbox event with NOTIFY so the relay wakes immediately.
 	st, err := store.New(pool, dialect.NewPostgres(), store.WithOutboxNotify())
 	require.NoError(t, err)
-	_, err = st.Create(t.Context(), runtime.AppliedStep{
+	_, err = st.Create(t.Context(), kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: "pn-lr1", DefID: "d", DefVersion: 1,
 			Status: engine.StatusRunning, StartedAt: time.Now().UTC(),
 		},
 		Trigger: pgxNotifyStartTrigger(),
-		Events:  []runtime.OutboxEvent{{Topic: "instance.completed", Payload: map[string]any{"id": "pn-lr1"}}},
+		Events:  []kernel.OutboxEvent{{Topic: "instance.completed", Payload: map[string]any{"id": "pn-lr1"}}},
 	})
 	require.NoError(t, err)
 

@@ -59,6 +59,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func main() {
@@ -76,7 +77,7 @@ func main() {
 // relay drains the transactional outbox; cleanup releases held resources.
 type backend struct {
 	store   persistence.Store
-	links   runtime.ChainLinkStore
+	links   kernel.ChainLinkStore
 	relay   persistence.Relay
 	cleanup func()
 }
@@ -88,7 +89,7 @@ type backend struct {
 //
 // kind must be one of "sqlite", "postgres", or "mysql".
 // dsn is the connection string for postgres/mysql; it is ignored for sqlite.
-func openBackend(ctx context.Context, kind, dsn string, pub runtime.Publisher, logger *slog.Logger) (backend, error) {
+func openBackend(ctx context.Context, kind, dsn string, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
 	switch kind {
 	case "sqlite":
 		return openSQLite(ctx, pub, logger)
@@ -107,7 +108,7 @@ func openBackend(ctx context.Context, kind, dsn string, pub runtime.Publisher, l
 // SetMaxOpenConns(1) is REQUIRED for SQLite: a second concurrent connection races
 // on WAL writes. :memory: with MaxOpenConns(1) ensures the relay and store share
 // the same connection and see each other's writes immediately.
-func openSQLite(ctx context.Context, pub runtime.Publisher, logger *slog.Logger) (backend, error) {
+func openSQLite(ctx context.Context, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		return backend{}, fmt.Errorf("open sqlite: %w", err)
@@ -151,7 +152,7 @@ func openSQLite(ctx context.Context, pub runtime.Publisher, logger *slog.Logger)
 // dsn must be a valid pgx/libpq connection string, e.g.:
 //
 //	"postgres://user:pass@localhost:5432/wrkflw?sslmode=disable"
-func openPostgres(ctx context.Context, dsn string, pub runtime.Publisher, logger *slog.Logger) (backend, error) {
+func openPostgres(ctx context.Context, dsn string, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
 	if dsn == "" {
 		return backend{}, errors.New("-dsn is required for -db postgres")
 	}
@@ -207,7 +208,7 @@ func openPostgres(ctx context.Context, dsn string, pub runtime.Publisher, logger
 //
 // multiStatements=true is added manually so MigrateMySQL can execute multi-
 // statement migration files (goose requires it).
-func openMySQL(ctx context.Context, dsn string, pub runtime.Publisher, logger *slog.Logger) (backend, error) {
+func openMySQL(ctx context.Context, dsn string, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
 	if dsn == "" {
 		return backend{}, errors.New("-dsn is required for -db mysql")
 	}
@@ -358,7 +359,7 @@ func run(logger *slog.Logger) error {
 		if loadErr == nil {
 			break
 		}
-		if !errors.Is(loadErr, runtime.ErrInstanceNotFound) {
+		if !errors.Is(loadErr, kernel.ErrInstanceNotFound) {
 			return fmt.Errorf("load successor: %w", loadErr)
 		}
 		if time.Now().After(deadline) {

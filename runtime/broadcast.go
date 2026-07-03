@@ -9,6 +9,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // DeliverFunc is the function the SignalBus uses to deliver a trigger to a
@@ -68,7 +69,7 @@ func WithSignalBusClock(clk clock.Clock) SignalBusOption {
 // defaults to clock.System(); override it with WithSignalBusClock (ADR-0003).
 func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) (*SignalBus, error) {
 	if deliver == nil {
-		return nil, fmt.Errorf("%w: deliver", ErrNilDependency)
+		return nil, fmt.Errorf("%w: deliver", kernel.ErrNilDependency)
 	}
 	b := &SignalBus{
 		clk:     clock.System(),

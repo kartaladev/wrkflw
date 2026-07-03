@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 const statsInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/stats"
@@ -18,7 +19,7 @@ const statsInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/stats"
 // Construct it with [NewOutboxStatsCollector]; the zero value is not useful.
 type OutboxStatsCollector struct {
 	tel    observability.Telemetry
-	reader OutboxStatsReader
+	reader kernel.OutboxStatsReader
 }
 
 // NewOutboxStatsCollector creates an OutboxStatsCollector that registers three
@@ -32,7 +33,7 @@ type OutboxStatsCollector struct {
 //
 // The collector adds no background goroutines — all data is read inside the OTel
 // SDK's collection callback.
-func NewOutboxStatsCollector(r OutboxStatsReader, opts ...observability.Option) *OutboxStatsCollector {
+func NewOutboxStatsCollector(r kernel.OutboxStatsReader, opts ...observability.Option) *OutboxStatsCollector {
 	var real []observability.Option
 	for _, o := range opts {
 		if o != nil {
@@ -100,7 +101,7 @@ func NewOutboxStatsCollector(r OutboxStatsReader, opts ...observability.Option) 
 // Construct it with [NewTimerStatsCollector]; the zero value is not useful.
 type TimerStatsCollector struct {
 	tel    observability.Telemetry
-	reader TimerStatsReader
+	reader kernel.TimerStatsReader
 }
 
 // NewTimerStatsCollector creates a TimerStatsCollector that registers one
@@ -112,7 +113,7 @@ type TimerStatsCollector struct {
 //
 // The collector adds no background goroutines — all data is read inside the OTel
 // SDK's collection callback.
-func NewTimerStatsCollector(r TimerStatsReader, opts ...observability.Option) *TimerStatsCollector {
+func NewTimerStatsCollector(r kernel.TimerStatsReader, opts ...observability.Option) *TimerStatsCollector {
 	var real []observability.Option
 	for _, o := range opts {
 		if o != nil {

@@ -3,14 +3,14 @@
 // It demonstrates three operator-facing surfaces over an in-process SQLite
 // store — no Docker or network database required:
 //
-//  1. [runtime.InstanceLister] — page through all process instances and print
+//  1. [kernel.InstanceLister] — page through all process instances and print
 //     their id/status.
 //  2. Incident raise → resolve — drive an instance whose service action fails
 //     non-retryably so it parks on an incident (StatusRunning + Incidents),
 //     then call [runtime.ProcessDriver.ResolveIncident] to clear it and resume the
 //     instance to completion.
 //  3. Outbox stats + dead-letter + redrive — wire a deliberately-failing
-//     [runtime.Publisher] and a low MaxDeliveryAttempts (1) so the relay
+//     [kernel.Publisher] and a low MaxDeliveryAttempts (1) so the relay
 //     quarantines terminal-event rows to status='dead' after one publish
 //     attempt; then call [persistence.Relay.ListDeadLettered] to inspect
 //     them, [persistence.Relay.Redrive] to re-queue them, and verify the
@@ -41,6 +41,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // statusName returns a human-readable label for engine.Status values.
@@ -91,7 +92,7 @@ func run() error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
-	// Shared SQLite store (also implements runtime.JournalReader).
+	// Shared SQLite store (also implements kernel.JournalReader).
 	store, err := persistence.OpenSQLite(ctx, db)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -131,7 +132,7 @@ func run() error {
 
 // demonstrateLister starts three instances (two completed, one parked with an
 // incident so it stays running) and pages through them via the SQLite lister.
-func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) error {
+func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// Simple linear definition: start → greet → end.
 	def, err := model.NewDefinition("greet", 1).
 		Add(model.NewStartEvent("start")).
@@ -170,7 +171,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 	}
 
 	// First page: limit 2.
-	page1, err := lister.List(ctx, runtime.InstanceFilter{Limit: 2, IncludeTotal: true})
+	page1, err := lister.List(ctx, kernel.InstanceFilter{Limit: 2, IncludeTotal: true})
 	if err != nil {
 		return fmt.Errorf("list page1: %w", err)
 	}
@@ -180,7 +181,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 	}
 
 	if page1.HasMore {
-		page2, err := lister.List(ctx, runtime.InstanceFilter{Limit: 2, Cursor: page1.NextCursor})
+		page2, err := lister.List(ctx, kernel.InstanceFilter{Limit: 2, Cursor: page1.NextCursor})
 		if err != nil {
 			return fmt.Errorf("list page2: %w", err)
 		}
@@ -192,7 +193,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 
 	// Filter by status=completed.
 	completed := engine.StatusCompleted
-	onlyCompleted, err := lister.List(ctx, runtime.InstanceFilter{Status: &completed, IncludeTotal: true})
+	onlyCompleted, err := lister.List(ctx, kernel.InstanceFilter{Status: &completed, IncludeTotal: true})
 	if err != nil {
 		return fmt.Errorf("list completed: %w", err)
 	}
@@ -208,7 +209,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store runtime.Store) err
 // demonstrateIncident wires a service action that fails on the first invocation
 // (MaxAttempts=1 so no retry, incident raised immediately) then calls
 // ResolveIncident to resume the instance to completion.
-func demonstrateIncident(ctx context.Context, _ *sql.DB, store runtime.Store) error {
+func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) error {
 	def, err := model.NewDefinition("incident-demo", 1).
 		Add(model.NewStartEvent("start")).
 		Add(model.NewServiceTask("risky-op", model.WithActionName("risky"))).
@@ -284,13 +285,13 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store runtime.Store) er
 // Section 3: Outbox stats + dead-letter + redrive
 // ──────────────────────────────────────────────────────────────────────────
 
-// failPublisher is a runtime.Publisher that always returns an error.
+// failPublisher is a kernel.Publisher that always returns an error.
 // It simulates a permanently unavailable broker — every DrainOnce call
 // increments retry_count on the row. With MaxDeliveryAttempts=1 the row
 // is quarantined to status='dead' after the very first publish attempt.
 type failPublisher struct{}
 
-func (failPublisher) Publish(_ context.Context, _ runtime.OutboxEvent) error {
+func (failPublisher) Publish(_ context.Context, _ kernel.OutboxEvent) error {
 	return errors.New("broker unavailable (deliberate failure)")
 }
 
@@ -301,7 +302,7 @@ func (failPublisher) Publish(_ context.Context, _ runtime.OutboxEvent) error {
 //   - lists the dead row via ListDeadLettered;
 //   - redrives the row via Redrive;
 //   - confirms OutboxStats.Dead == 0 after redrive (row is pending again).
-func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store runtime.Store) error {
+func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// A simple definition that completes immediately → emits a terminal outbox event.
 	def, err := model.NewDefinition("dl-demo", 1).
 		Add(model.NewStartEvent("start")).

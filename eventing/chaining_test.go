@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // capturingStarter is an ad-hoc InstanceStarter double that records calls and
@@ -66,7 +67,7 @@ func TestChainHandlerProjection(t *testing.T) {
 			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
 				require.NoError(t, err)
 				require.Len(t, seen, 1)
-				assert.Equal(t, runtime.OutcomeCompleted, seen[0].Outcome)
+				assert.Equal(t, kernel.OutcomeCompleted, seen[0].Outcome)
 				assert.Equal(t, "p1", seen[0].PredecessorID)
 				assert.Equal(t, "approval:1", seen[0].PredecessorDefinitionRef, "def metadata must project into PredecessorDefinitionRef (ADR-0047)")
 				assert.Equal(t, map[string]any{"orderID": "o-7"}, seen[0].Result)
@@ -79,7 +80,7 @@ func TestChainHandlerProjection(t *testing.T) {
 			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
 				require.NoError(t, err)
 				require.Len(t, seen, 1)
-				assert.Equal(t, runtime.OutcomeFailed, seen[0].Outcome)
+				assert.Equal(t, kernel.OutcomeFailed, seen[0].Outcome)
 				assert.Equal(t, []string{"p1-next-failed"}, starter.startedIDs())
 			},
 		},
@@ -89,7 +90,7 @@ func TestChainHandlerProjection(t *testing.T) {
 			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
 				require.NoError(t, err)
 				require.Len(t, seen, 1)
-				assert.Equal(t, runtime.OutcomeTerminated, seen[0].Outcome)
+				assert.Equal(t, kernel.OutcomeTerminated, seen[0].Outcome)
 				assert.Equal(t, []string{"p1-next-terminated"}, starter.startedIDs())
 			},
 		},
@@ -179,9 +180,9 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	defer cancel()
 
 	clk := clockwork.NewFakeClock()
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	links := runtime.NewMemChainLinkStore()
+	links := kernel.NewMemChainLinkStore()
 	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clk))
 	require.NoError(t, err)
 
@@ -206,7 +207,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	// GoChannel is non-persistent: publishing before Run subscribes drops the
 	// message. Republish on each tick until the (idempotent) chaining lands.
 	require.Eventually(t, func() bool {
-		_ = pub.Publish(ctx, runtime.OutboxEvent{
+		_ = pub.Publish(ctx, kernel.OutboxEvent{
 			Topic:      "instance.completed",
 			Payload:    map[string]any{"orderID": "o-9"},
 			InstanceID: "p1",

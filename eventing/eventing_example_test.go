@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ExampleNewGoChannelPublisher shows publishing an outbox event in-process and
@@ -17,7 +17,7 @@ func ExampleNewGoChannelPublisher() {
 	ctx := context.Background()
 	msgs, _ := sub.Subscribe(ctx, "instance.completed")
 
-	_ = pub.Publish(ctx, runtime.OutboxEvent{
+	_ = pub.Publish(ctx, kernel.OutboxEvent{
 		Topic:      "instance.completed",
 		Payload:    map[string]any{"order": "A-1"},
 		DedupKey:   "inst-1:1:0",

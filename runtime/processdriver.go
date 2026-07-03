@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -23,19 +24,19 @@ import (
 type ProcessDriver struct {
 	cat        action.Catalog
 	clk        clock.Clock
-	store      Store
+	store      kernel.Store
 	resolver   humantask.ActorResolver
 	tasks      humantask.TaskStore
 	authz      authz.Authorizer
-	sched      Scheduler
+	sched      kernel.Scheduler
 	sigbus     *SignalBus
-	defsReg    DefinitionRegistry
-	callLinks  CallLinkStore
-	timerStore TimerStore
+	defsReg    kernel.DefinitionRegistry
+	callLinks  kernel.CallLinkStore
+	timerStore kernel.TimerStore
 	// jitter supplies the random fraction used to de-synchronize retry backoff.
 	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
 	// trigger so that engine replay remains deterministic.
-	jitter JitterSource
+	jitter kernel.JitterSource
 
 	// actionTimeout bounds how long a single service-action invocation may run
 	// before its context is cancelled. Defaults to defaultActionTimeout; a
@@ -100,20 +101,20 @@ type ProcessDriver struct {
 //   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
 func NewProcessDriver(
 	cat action.Catalog,
-	store Store,
+	store kernel.Store,
 	opts ...Option,
 ) (*ProcessDriver, error) {
 	if cat == nil {
-		return nil, fmt.Errorf("%w: catalog", ErrNilDependency)
+		return nil, fmt.Errorf("%w: catalog", kernel.ErrNilDependency)
 	}
 	if store == nil {
-		return nil, fmt.Errorf("%w: store", ErrNilDependency)
+		return nil, fmt.Errorf("%w: store", kernel.ErrNilDependency)
 	}
 	r := &ProcessDriver{
 		cat:           cat,
 		clk:           clock.System(),
 		store:         store,
-		jitter:        NewJitterSource(),
+		jitter:        kernel.NewJitterSource(),
 		actionTimeout: defaultActionTimeout,
 		msgWaiters:    make(map[msgKey]string),
 	}
@@ -198,9 +199,9 @@ func (r *ProcessDriver) deliverLoop(
 	ctx context.Context,
 	def *model.ProcessDefinition,
 	st engine.InstanceState,
-	token Token,
+	token kernel.Token,
 	create bool,
-	firstCallLink *CallLink,
+	firstCallLink *kernel.CallLink,
 	trg engine.Trigger,
 ) (engine.InstanceState, error) {
 	queue := []engine.Trigger{trg}
@@ -261,23 +262,23 @@ func (r *ProcessDriver) deliverLoop(
 		// (one transaction / one MemStore lock). For root instances the Store
 		// treats a missing link as a no-op, so setting CallOutcome unconditionally
 		// on terminal is safe even without special-casing here.
-		var outcome *CallOutcome
+		var outcome *kernel.CallOutcome
 		if r.callLinks != nil && isTerminal(st.Status) && !isTerminal(prevStatus) {
 			switch st.Status {
 			case engine.StatusCompleted:
-				outcome = &CallOutcome{Completed: true, Output: copyVarsForOutcome(st.Variables)}
+				outcome = &kernel.CallOutcome{Completed: true, Output: copyVarsForOutcome(st.Variables)}
 			default: // StatusFailed, StatusTerminated, or any other terminal
-				outcome = &CallOutcome{Completed: false, Err: terminalErr(st)}
+				outcome = &kernel.CallOutcome{Completed: false, Err: terminalErr(st)}
 			}
 		}
 
-		var timerArms []ArmedTimer
+		var timerArms []kernel.ArmedTimer
 		var timerCancels []string
 		if r.timerStore != nil {
 			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID)
 		}
 
-		appliedStep := AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome, TimerArms: timerArms, TimerCancels: timerCancels}
+		appliedStep := kernel.AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome, TimerArms: timerArms, TimerCancels: timerCancels}
 
 		if create {
 			// Attach the firstCallLink to the Create step (child async path only).

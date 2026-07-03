@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -41,7 +41,7 @@ func conflictCancelStub() service.Service {
 
 func notFoundCancelStub() service.Service {
 	return &cancelInstanceStub{
-		err: runtime.ErrInstanceNotFound,
+		err: kernel.ErrInstanceNotFound,
 	}
 }
 

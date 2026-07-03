@@ -10,31 +10,32 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // stubCallLineageReader is an in-test stub for CallLineageReader.
 type stubCallLineageReader struct {
-	parentOf   func(ctx context.Context, childID string) (*runtime.CallLink, error)
-	childrenOf func(ctx context.Context, parentID string) ([]runtime.CallLink, error)
+	parentOf   func(ctx context.Context, childID string) (*kernel.CallLink, error)
+	childrenOf func(ctx context.Context, parentID string) ([]kernel.CallLink, error)
 }
 
-func (s *stubCallLineageReader) ParentOf(ctx context.Context, childID string) (*runtime.CallLink, error) {
+func (s *stubCallLineageReader) ParentOf(ctx context.Context, childID string) (*kernel.CallLink, error) {
 	return s.parentOf(ctx, childID)
 }
-func (s *stubCallLineageReader) ChildrenOf(ctx context.Context, parentID string) ([]runtime.CallLink, error) {
+func (s *stubCallLineageReader) ChildrenOf(ctx context.Context, parentID string) ([]kernel.CallLink, error) {
 	return s.childrenOf(ctx, parentID)
 }
 
 // stubChainLineageReader is an in-test stub for ChainLineageReader.
 type stubChainLineageReader struct {
-	predecessorOf func(ctx context.Context, successorID string) (*runtime.ChainLink, error)
-	successorsOf  func(ctx context.Context, predecessorID string) ([]runtime.ChainLink, error)
+	predecessorOf func(ctx context.Context, successorID string) (*kernel.ChainLink, error)
+	successorsOf  func(ctx context.Context, predecessorID string) ([]kernel.ChainLink, error)
 }
 
-func (s *stubChainLineageReader) PredecessorOf(ctx context.Context, successorID string) (*runtime.ChainLink, error) {
+func (s *stubChainLineageReader) PredecessorOf(ctx context.Context, successorID string) (*kernel.ChainLink, error) {
 	return s.predecessorOf(ctx, successorID)
 }
-func (s *stubChainLineageReader) SuccessorsOf(ctx context.Context, predecessorID string) ([]runtime.ChainLink, error) {
+func (s *stubChainLineageReader) SuccessorsOf(ctx context.Context, predecessorID string) ([]kernel.ChainLink, error) {
 	return s.successorsOf(ctx, predecessorID)
 }
 
@@ -44,18 +45,18 @@ func TestNewLineageReaderFailsFast(t *testing.T) {
 	t.Parallel()
 
 	validCalls := &stubCallLineageReader{
-		parentOf:   func(_ context.Context, _ string) (*runtime.CallLink, error) { return nil, nil },
-		childrenOf: func(_ context.Context, _ string) ([]runtime.CallLink, error) { return nil, nil },
+		parentOf:   func(_ context.Context, _ string) (*kernel.CallLink, error) { return nil, nil },
+		childrenOf: func(_ context.Context, _ string) ([]kernel.CallLink, error) { return nil, nil },
 	}
 	validChains := &stubChainLineageReader{
-		predecessorOf: func(_ context.Context, _ string) (*runtime.ChainLink, error) { return nil, nil },
-		successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
+		predecessorOf: func(_ context.Context, _ string) (*kernel.ChainLink, error) { return nil, nil },
+		successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, nil },
 	}
 
 	type testCase struct {
 		name   string
-		calls  runtime.CallLineageReader
-		chains runtime.ChainLineageReader
+		calls  kernel.CallLineageReader
+		chains kernel.ChainLineageReader
 		assert func(t *testing.T, r *runtime.LineageReader, err error)
 	}
 	cases := []testCase{
@@ -64,7 +65,7 @@ func TestNewLineageReaderFailsFast(t *testing.T) {
 			calls:  nil,
 			chains: validChains,
 			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, r)
 			},
 		},
@@ -73,7 +74,7 @@ func TestNewLineageReaderFailsFast(t *testing.T) {
 			calls:  validCalls,
 			chains: nil,
 			assert: func(t *testing.T, r *runtime.LineageReader, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, r)
 			},
 		},
@@ -105,9 +106,9 @@ func TestLineageReader_Lineage(t *testing.T) {
 		now := time.Now().UTC()
 
 		calls := &stubCallLineageReader{
-			parentOf: func(_ context.Context, childID string) (*runtime.CallLink, error) {
+			parentOf: func(_ context.Context, childID string) (*kernel.CallLink, error) {
 				if childID == "inst-A" {
-					return &runtime.CallLink{
+					return &kernel.CallLink{
 						ChildInstanceID:  "inst-A",
 						ParentInstanceID: "inst-parent",
 						ParentDefID:      "def-parent",
@@ -117,9 +118,9 @@ func TestLineageReader_Lineage(t *testing.T) {
 				}
 				return nil, nil
 			},
-			childrenOf: func(_ context.Context, parentID string) ([]runtime.CallLink, error) {
+			childrenOf: func(_ context.Context, parentID string) ([]kernel.CallLink, error) {
 				if parentID == "inst-A" {
-					return []runtime.CallLink{
+					return []kernel.CallLink{
 						{
 							ChildInstanceID:  "inst-child-1",
 							ParentInstanceID: "inst-A",
@@ -129,16 +130,16 @@ func TestLineageReader_Lineage(t *testing.T) {
 						},
 					}, nil
 				}
-				return []runtime.CallLink{}, nil
+				return []kernel.CallLink{}, nil
 			},
 		}
 		chains := &stubChainLineageReader{
-			predecessorOf: func(_ context.Context, successorID string) (*runtime.ChainLink, error) {
+			predecessorOf: func(_ context.Context, successorID string) (*kernel.ChainLink, error) {
 				if successorID == "inst-A" {
-					return &runtime.ChainLink{
+					return &kernel.ChainLink{
 						PredecessorID:            "inst-pred",
 						SuccessorID:              "inst-A",
-						Outcome:                  runtime.OutcomeCompleted,
+						Outcome:                  kernel.OutcomeCompleted,
 						SuccessorDefinitionRef:   "def-A:1",
 						PredecessorDefinitionRef: "def-pred:1",
 						CreatedAt:                now,
@@ -146,20 +147,20 @@ func TestLineageReader_Lineage(t *testing.T) {
 				}
 				return nil, nil
 			},
-			successorsOf: func(_ context.Context, predecessorID string) ([]runtime.ChainLink, error) {
+			successorsOf: func(_ context.Context, predecessorID string) ([]kernel.ChainLink, error) {
 				if predecessorID == "inst-A" {
-					return []runtime.ChainLink{
+					return []kernel.ChainLink{
 						{
 							PredecessorID:            "inst-A",
 							SuccessorID:              "inst-succ-1",
-							Outcome:                  runtime.OutcomeCompleted,
+							Outcome:                  kernel.OutcomeCompleted,
 							SuccessorDefinitionRef:   "def-succ:1",
 							PredecessorDefinitionRef: "def-A:1",
 							CreatedAt:                now,
 						},
 					}, nil
 				}
-				return []runtime.ChainLink{}, nil
+				return []kernel.ChainLink{}, nil
 			},
 		}
 
@@ -192,24 +193,24 @@ func TestLineageReader_Lineage(t *testing.T) {
 		require.NotNil(t, lin.ChainPredecessor)
 		assert.Equal(t, "inst-pred", lin.ChainPredecessor.InstanceID)
 		assert.Equal(t, "def-pred:1", lin.ChainPredecessor.DefinitionRef)
-		assert.Equal(t, string(runtime.OutcomeCompleted), lin.ChainPredecessor.Outcome)
+		assert.Equal(t, string(kernel.OutcomeCompleted), lin.ChainPredecessor.Outcome)
 
 		// Chain successors.
 		require.Len(t, lin.ChainSuccessors, 1)
 		assert.Equal(t, "inst-succ-1", lin.ChainSuccessors[0].InstanceID)
 		assert.Equal(t, "def-succ:1", lin.ChainSuccessors[0].DefinitionRef)
-		assert.Equal(t, string(runtime.OutcomeCompleted), lin.ChainSuccessors[0].Outcome)
+		assert.Equal(t, string(kernel.OutcomeCompleted), lin.ChainSuccessors[0].Outcome)
 	})
 
 	t.Run("top-level instance: nil call parent and nil chain predecessor", func(t *testing.T) {
 		t.Parallel()
 		calls := &stubCallLineageReader{
-			parentOf:   func(_ context.Context, _ string) (*runtime.CallLink, error) { return nil, nil },
-			childrenOf: func(_ context.Context, _ string) ([]runtime.CallLink, error) { return []runtime.CallLink{}, nil },
+			parentOf:   func(_ context.Context, _ string) (*kernel.CallLink, error) { return nil, nil },
+			childrenOf: func(_ context.Context, _ string) ([]kernel.CallLink, error) { return []kernel.CallLink{}, nil },
 		}
 		chains := &stubChainLineageReader{
-			predecessorOf: func(_ context.Context, _ string) (*runtime.ChainLink, error) { return nil, nil },
-			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return []runtime.ChainLink{}, nil },
+			predecessorOf: func(_ context.Context, _ string) (*kernel.ChainLink, error) { return nil, nil },
+			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return []kernel.ChainLink{}, nil },
 		}
 
 		reader := mustLineageReader(t, calls, chains)
@@ -229,12 +230,12 @@ func TestLineageReader_Lineage(t *testing.T) {
 		t.Parallel()
 		boom := errors.New("db is down")
 		calls := &stubCallLineageReader{
-			parentOf:   func(_ context.Context, _ string) (*runtime.CallLink, error) { return nil, boom },
-			childrenOf: func(_ context.Context, _ string) ([]runtime.CallLink, error) { return nil, nil },
+			parentOf:   func(_ context.Context, _ string) (*kernel.CallLink, error) { return nil, boom },
+			childrenOf: func(_ context.Context, _ string) ([]kernel.CallLink, error) { return nil, nil },
 		}
 		chains := &stubChainLineageReader{
-			predecessorOf: func(_ context.Context, _ string) (*runtime.ChainLink, error) { return nil, nil },
-			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
+			predecessorOf: func(_ context.Context, _ string) (*kernel.ChainLink, error) { return nil, nil },
+			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, nil },
 		}
 
 		reader := mustLineageReader(t, calls, chains)
@@ -247,12 +248,12 @@ func TestLineageReader_Lineage(t *testing.T) {
 		t.Parallel()
 		boom := errors.New("children query failed")
 		calls := &stubCallLineageReader{
-			parentOf:   func(_ context.Context, _ string) (*runtime.CallLink, error) { return nil, nil },
-			childrenOf: func(_ context.Context, _ string) ([]runtime.CallLink, error) { return nil, boom },
+			parentOf:   func(_ context.Context, _ string) (*kernel.CallLink, error) { return nil, nil },
+			childrenOf: func(_ context.Context, _ string) ([]kernel.CallLink, error) { return nil, boom },
 		}
 		chains := &stubChainLineageReader{
-			predecessorOf: func(_ context.Context, _ string) (*runtime.ChainLink, error) { return nil, nil },
-			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
+			predecessorOf: func(_ context.Context, _ string) (*kernel.ChainLink, error) { return nil, nil },
+			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, nil },
 		}
 
 		reader := mustLineageReader(t, calls, chains)
@@ -265,12 +266,12 @@ func TestLineageReader_Lineage(t *testing.T) {
 		t.Parallel()
 		boom := errors.New("predecessor query failed")
 		calls := &stubCallLineageReader{
-			parentOf:   func(_ context.Context, _ string) (*runtime.CallLink, error) { return nil, nil },
-			childrenOf: func(_ context.Context, _ string) ([]runtime.CallLink, error) { return []runtime.CallLink{}, nil },
+			parentOf:   func(_ context.Context, _ string) (*kernel.CallLink, error) { return nil, nil },
+			childrenOf: func(_ context.Context, _ string) ([]kernel.CallLink, error) { return []kernel.CallLink{}, nil },
 		}
 		chains := &stubChainLineageReader{
-			predecessorOf: func(_ context.Context, _ string) (*runtime.ChainLink, error) { return nil, boom },
-			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, nil },
+			predecessorOf: func(_ context.Context, _ string) (*kernel.ChainLink, error) { return nil, boom },
+			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, nil },
 		}
 
 		reader := mustLineageReader(t, calls, chains)
@@ -283,12 +284,12 @@ func TestLineageReader_Lineage(t *testing.T) {
 		t.Parallel()
 		boom := errors.New("successors query failed")
 		calls := &stubCallLineageReader{
-			parentOf:   func(_ context.Context, _ string) (*runtime.CallLink, error) { return nil, nil },
-			childrenOf: func(_ context.Context, _ string) ([]runtime.CallLink, error) { return []runtime.CallLink{}, nil },
+			parentOf:   func(_ context.Context, _ string) (*kernel.CallLink, error) { return nil, nil },
+			childrenOf: func(_ context.Context, _ string) ([]kernel.CallLink, error) { return []kernel.CallLink{}, nil },
 		}
 		chains := &stubChainLineageReader{
-			predecessorOf: func(_ context.Context, _ string) (*runtime.ChainLink, error) { return nil, nil },
-			successorsOf:  func(_ context.Context, _ string) ([]runtime.ChainLink, error) { return nil, boom },
+			predecessorOf: func(_ context.Context, _ string) (*kernel.ChainLink, error) { return nil, nil },
+			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, boom },
 		}
 
 		reader := mustLineageReader(t, calls, chains)

@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -309,7 +310,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 				), nil
 			}
 
-			link := CallLink{
+			link := kernel.CallLink{
 				ChildInstanceID:  childInstanceID,
 				ParentInstanceID: st.InstanceID,
 				ParentCommandID:  cmd.CommandID,

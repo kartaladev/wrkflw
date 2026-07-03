@@ -13,15 +13,16 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 13, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
-	mts := runtime.NewMemTimerStore()
-	store := mustMemStore(t, runtime.WithTimers(mts))
+	mts := kernel.NewMemTimerStore()
+	store := mustMemStore(t, kernel.WithTimers(mts))
 	def := timerIntermediateDef()
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		def.ID + ":1": def, // key format "DefID:DefVersion" — match def.ID/def.Version
 	})
 
@@ -33,7 +34,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 	// Original process: arm the timer, then it "crashes" — discard runner + scheduler.
 	{
-		sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+		sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 		r := mustRunner(t, cat, store,
 			runtime.WithRunnerClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
@@ -42,7 +43,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	}
 
 	// New process: fresh runner + fresh scheduler, same store + timer store.
-	sched2 := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched2 := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	r2 := mustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched2), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))

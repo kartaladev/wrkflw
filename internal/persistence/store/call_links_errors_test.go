@@ -16,7 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestCallLinkStoreErrors covers the error branches of CallLinkStore read
@@ -162,7 +162,7 @@ func TestCallLinkStoreMarshalError(t *testing.T) {
 
 	// Seed a completed link normally.
 	seed := callLinkBaseStepStore("scan-err-child")
-	seed.NewCallLink = &runtime.CallLink{
+	seed.NewCallLink = &kernel.CallLink{
 		ChildInstanceID:  "scan-err-child",
 		ParentInstanceID: "scan-err-parent",
 		ParentCommandID:  "cmd-scan",
@@ -174,7 +174,7 @@ func TestCallLinkStoreMarshalError(t *testing.T) {
 	require.NoError(t, err)
 
 	term := callLinkTerminalStepStore("scan-err-child")
-	term.CallOutcome = &runtime.CallOutcome{Completed: true, Output: map[string]any{"ok": float64(1)}}
+	term.CallOutcome = &kernel.CallOutcome{Completed: true, Output: map[string]any{"ok": float64(1)}}
 	_, err = s.Commit(t.Context(), tok, term)
 	require.NoError(t, err)
 

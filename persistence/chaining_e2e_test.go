@@ -28,6 +28,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ---- minimal process definitions -----------------------------------------------
@@ -49,9 +50,9 @@ func buildDef(t *testing.T, id string, version int) *model.ProcessDefinition {
 // chainingDialect bundles the objects needed by each dialect sub-test.
 type chainingDialect struct {
 	store  persistence.Store
-	links  runtime.ChainLinkStore
+	links  kernel.ChainLinkStore
 	relay  persistence.Relay
-	pub    runtime.Publisher
+	pub    kernel.Publisher
 	sub    message.Subscriber
 	closer io.Closer
 }
@@ -263,7 +264,7 @@ func TestChainingE2E(t *testing.T) {
 			// No successor must have been created.
 			_, _, err = d.store.Load(ctx, "inst-c-next-completed")
 			require.Error(t, err, "no successor must be started for proc-c")
-			assert.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+			assert.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 
 			// No chain link must be recorded either.
 			_, ok, err := d.links.LookupBySuccessor(ctx, "inst-c-next-completed")

@@ -9,27 +9,27 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // appliedStep builds a minimal AppliedStep for instance id emitting one outbox
 // event on topic. The trigger is always a StartInstance so Entries assertions
 // are deterministic across dialects.
-func appliedStep(id, topic string) runtime.AppliedStep {
+func appliedStep(id, topic string) kernel.AppliedStep {
 	now := time.Unix(1700000000, 0).UTC()
-	return runtime.AppliedStep{
+	return kernel.AppliedStep{
 		State:   engine.InstanceState{InstanceID: id, DefID: "d", DefVersion: 1, Status: engine.StatusRunning, StartedAt: now},
 		Trigger: engine.NewStartInstance(now, map[string]any{"k": "v"}),
-		Events:  []runtime.OutboxEvent{{Topic: topic, Payload: map[string]any{"x": float64(1)}}},
+		Events:  []kernel.OutboxEvent{{Topic: topic, Payload: map[string]any{"x": float64(1)}}},
 	}
 }
 
 // newTestInstance builds a richer valid AppliedStep (with tokens, history and
 // sequence counters) suitable for exercising snapshot + time round-trip.
-func newTestInstance(t *testing.T, id string) runtime.AppliedStep {
+func newTestInstance(t *testing.T, id string) kernel.AppliedStep {
 	t.Helper()
 	now := time.Unix(1700000000, 123456789).UTC() // sub-second to catch precision loss
-	return runtime.AppliedStep{
+	return kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: id,
 			DefID:      "d",
@@ -49,7 +49,7 @@ func newTestInstance(t *testing.T, id string) runtime.AppliedStep {
 			TokenSeq: 1,
 		},
 		Trigger: engine.NewStartInstance(now, map[string]any{"str": "hello"}),
-		Events:  []runtime.OutboxEvent{{Topic: "created", Payload: map[string]any{"x": float64(1)}}},
+		Events:  []kernel.OutboxEvent{{Topic: "created", Payload: map[string]any{"x": float64(1)}}},
 	}
 }
 
@@ -74,14 +74,14 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		s, err := store.New(b.conn, b.dialect)
 		require.NoError(t, err)
-		var _ runtime.Store = s         // compile-time interface check
-		var _ runtime.JournalReader = s // compile-time JournalReader check
+		var _ kernel.Store = s         // compile-time interface check
+		var _ kernel.JournalReader = s // compile-time JournalReader check
 
 		// --- Create → Load round-trip (with time round-trip) ---
 		inst := newTestInstance(t, "i1")
 		tok, err := s.Create(t.Context(), inst)
 		require.NoError(t, err, "%s: create", b.name)
-		require.Equal(t, runtime.Token(1), tok, "%s: first token is 1", b.name)
+		require.Equal(t, kernel.Token(1), tok, "%s: first token is 1", b.name)
 
 		got, loaded, err := s.Load(t.Context(), "i1")
 		require.NoError(t, err, "%s: load", b.name)
@@ -105,7 +105,7 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 		// --- Commit advances version + persists journal + outbox ---
 		next, err := s.Commit(t.Context(), tok, appliedStep("i1", "b"))
 		require.NoError(t, err, "%s: commit", b.name)
-		require.Equal(t, runtime.Token(2), next, "%s: commit advances token", b.name)
+		require.Equal(t, kernel.Token(2), next, "%s: commit advances token", b.name)
 
 		require.Equal(t, 1, countRows(t, b,
 			`SELECT COUNT(*) FROM wrkflw_journal WHERE instance_id = ? AND seq = 2`, "i1"),
@@ -125,16 +125,16 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 
 		// --- Stale version conflicts (CAS sentinel preserved) ---
 		_, err = s.Commit(t.Context(), tok, appliedStep("i1", "c")) // tok is now stale (current is 2)
-		require.ErrorIs(t, err, runtime.ErrConcurrentUpdate,
+		require.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 			"%s: stale token must map to ErrConcurrentUpdate", b.name)
 
 		// --- Load missing ---
 		_, _, err = s.Load(t.Context(), "nope")
-		require.ErrorIs(t, err, runtime.ErrInstanceNotFound, "%s: load missing", b.name)
+		require.ErrorIs(t, err, kernel.ErrInstanceNotFound, "%s: load missing", b.name)
 
 		// --- Duplicate create ---
 		_, err = s.Create(t.Context(), appliedStep("i1", "dup"))
-		require.ErrorIs(t, err, runtime.ErrInstanceExists, "%s: duplicate create", b.name)
+		require.ErrorIs(t, err, kernel.ErrInstanceExists, "%s: duplicate create", b.name)
 
 		// --- Entries for unknown instance is empty, not an error ---
 		empty, err := s.Entries(t.Context(), "unknown")
@@ -158,7 +158,7 @@ func TestStoreSideEffects(t *testing.T) {
 		require.NoError(t, err, "%s: create parent", b.name)
 
 		child := appliedStep("child", "c")
-		child.NewCallLink = &runtime.CallLink{
+		child.NewCallLink = &kernel.CallLink{
 			ChildInstanceID:  "child",
 			ParentInstanceID: "parent",
 			ParentCommandID:  "cmd-1",
@@ -166,7 +166,7 @@ func TestStoreSideEffects(t *testing.T) {
 			ParentDefVersion: 1,
 			Depth:            1,
 		}
-		child.TimerArms = []runtime.ArmedTimer{
+		child.TimerArms = []kernel.ArmedTimer{
 			{InstanceID: "child", DefID: "d", DefVersion: 1, TimerID: "t1", FireAt: now.Add(time.Hour), Kind: engine.TimerIntermediate},
 		}
 		childTok, err := s.Create(t.Context(), child)
@@ -181,7 +181,7 @@ func TestStoreSideEffects(t *testing.T) {
 
 		// Commit a terminal step: flip the call link to completed + cancel the timer.
 		term := appliedStep("child", "done")
-		term.CallOutcome = &runtime.CallOutcome{Completed: true, Output: map[string]any{"r": float64(1)}}
+		term.CallOutcome = &kernel.CallOutcome{Completed: true, Output: map[string]any{"r": float64(1)}}
 		term.TimerCancels = []string{"t1"}
 		_, err = s.Commit(t.Context(), childTok, term)
 		require.NoError(t, err, "%s: commit terminal", b.name)
@@ -196,14 +196,14 @@ func TestStoreSideEffects(t *testing.T) {
 		// A second child with a FAILED terminal outcome exercises the error-text
 		// branch of flipCallLink (status='failed', error column set).
 		child2 := appliedStep("child2", "c2")
-		child2.NewCallLink = &runtime.CallLink{
+		child2.NewCallLink = &kernel.CallLink{
 			ChildInstanceID: "child2", ParentInstanceID: "parent", ParentCommandID: "cmd-2",
 			ParentDefID: "d", ParentDefVersion: 1, Depth: 1,
 		}
 		tok2, err := s.Create(t.Context(), child2)
 		require.NoError(t, err, "%s: create child2", b.name)
 		fail := appliedStep("child2", "failed")
-		fail.CallOutcome = &runtime.CallOutcome{Completed: false, Err: "boom"}
+		fail.CallOutcome = &kernel.CallOutcome{Completed: false, Err: "boom"}
 		_, err = s.Commit(t.Context(), tok2, fail)
 		require.NoError(t, err, "%s: commit failed outcome", b.name)
 		require.Equal(t, 1, countRows(t, b,
@@ -214,7 +214,7 @@ func TestStoreSideEffects(t *testing.T) {
 		rootTok, err := s.Create(t.Context(), appliedStep("root", "r"))
 		require.NoError(t, err, "%s: create root", b.name)
 		rootTerm := appliedStep("root", "root-done")
-		rootTerm.CallOutcome = &runtime.CallOutcome{Completed: true}
+		rootTerm.CallOutcome = &kernel.CallOutcome{Completed: true}
 		_, err = s.Commit(t.Context(), rootTok, rootTerm)
 		require.NoError(t, err, "%s: root flip no-op must not error", b.name)
 	})

@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // newTracingCallNotifier builds a CallNotifier with an in-memory SpanRecorder
@@ -23,11 +24,11 @@ func newTracingCallNotifier(t *testing.T) (*runtime.CallNotifier, *tracetest.Spa
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
 
-	cl := runtime.NewMemCallLinkStore()
+	cl := kernel.NewMemCallLinkStore()
 	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"batch-span-parent:1": {ID: "batch-span-parent", Version: 1},
 	})
 
@@ -44,16 +45,16 @@ func TestCallNotifierBatchSpan(t *testing.T) {
 	n, sr := newTracingCallNotifier(t)
 
 	// Seed one terminal link so the batch has work to do.
-	cl := runtime.NewMemCallLinkStore()
-	link := runtime.CallLink{
+	cl := kernel.NewMemCallLinkStore()
+	link := kernel.CallLink{
 		ChildInstanceID:  "batch-span-child-1",
 		ParentInstanceID: "batch-span-parent-1",
 		ParentDefID:      "batch-span-parent",
 		ParentDefVersion: 1,
 		ParentCommandID:  "cmd-span-1",
 	}
-	runtime.SeedCallLink(cl, link)
-	runtime.SeedTerminal(cl, "batch-span-child-1", runtime.CallOutcome{
+	cl.Seed(link)
+	cl.SeedTerminal("batch-span-child-1", kernel.CallOutcome{
 		Completed: true,
 		Output:    map[string]any{"k": "v"},
 	})
@@ -63,7 +64,7 @@ func TestCallNotifierBatchSpan(t *testing.T) {
 	tp2 := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr2))
 
 	parentDef := &model.ProcessDefinition{ID: "batch-span-parent", Version: 1}
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"batch-span-parent:1": parentDef,
 	})
 	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
@@ -120,7 +121,7 @@ func TestCallNotifierLinksNotifiedCounter(t *testing.T) {
 	}
 
 	parentDef := &model.ProcessDefinition{ID: "counter-parent", Version: 1}
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"counter-parent:1": parentDef,
 	})
 
@@ -130,23 +131,24 @@ func TestCallNotifierLinksNotifiedCounter(t *testing.T) {
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 			t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-			cl := runtime.NewMemCallLinkStore()
+			cl := kernel.NewMemCallLinkStore()
 
 			// Seed tc.seedLinks terminal links.
 			for i := range tc.seedLinks {
 				childID := "counter-child-" + tc.name + "-" + string(rune('0'+i))
-				link := runtime.CallLink{
+				link := kernel.CallLink{
 					ChildInstanceID:  childID,
 					ParentInstanceID: "counter-parent-" + tc.name + "-" + string(rune('0'+i)),
 					ParentDefID:      "counter-parent",
 					ParentDefVersion: 1,
 					ParentCommandID:  "cmd-" + string(rune('0'+i)),
 				}
-				runtime.SeedCallLink(cl, link)
-				runtime.SeedTerminal(cl, childID, runtime.CallOutcome{
+				cl.Seed(link)
+				cl.SeedTerminal(childID, kernel.CallOutcome{
 					Completed: true,
 					Output:    map[string]any{"i": i},
 				})
+
 			}
 
 			deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
@@ -193,11 +195,11 @@ func TestCallNotifierLinksNotifiedCounter(t *testing.T) {
 // WithCallNotifierLogger) are variadic/additive and do not break the existing
 // CallNotifier constructor signature.
 func TestCallNotifierTelemetryOptionsAdditive(t *testing.T) {
-	cl := runtime.NewMemCallLinkStore()
+	cl := kernel.NewMemCallLinkStore()
 	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
 
 	// All existing callers pass no telemetry options — must compile and not panic.
 	n := mustCallNotifier(t, cl, deliver, reg)

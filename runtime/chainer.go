@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ChainEvent is the broker-agnostic input to a chaining decision, projected from
@@ -31,7 +32,7 @@ type ChainEvent struct {
 	// that does not set the "def" metadata key.
 	PredecessorDefinitionRef string
 	// Outcome is the terminal outcome that fired the event.
-	Outcome Outcome
+	Outcome kernel.Outcome
 	// Result is the event payload: the terminal variables (completed) or
 	// {"error": …} (failed/terminated).
 	Result map[string]any
@@ -64,7 +65,7 @@ type InstanceStarter interface {
 type Chainer struct {
 	starter InstanceStarter
 	policy  SuccessorPolicy
-	links   ChainLinkStore // optional; nil disables lineage recording (deterministic-id idempotency only)
+	links   kernel.ChainLinkStore // optional; nil disables lineage recording (deterministic-id idempotency only)
 	clk     clock.Clock
 	tel     observability.Telemetry
 	started metric.Int64Counter
@@ -74,7 +75,7 @@ type Chainer struct {
 type ChainerOption func(*chainerConfig)
 
 type chainerConfig struct {
-	links   ChainLinkStore
+	links   kernel.ChainLinkStore
 	clk     clock.Clock
 	obsOpts []observability.Option
 }
@@ -83,7 +84,7 @@ type chainerConfig struct {
 // before the successor starts, and an already-recorded (PredecessorID, Outcome)
 // is the exactly-once backstop (the start is skipped). When unset, idempotency
 // rests on the deterministic successor id + Store.Create's ErrInstanceExists.
-func WithChainLinks(links ChainLinkStore) ChainerOption {
+func WithChainLinks(links kernel.ChainLinkStore) ChainerOption {
 	return func(c *chainerConfig) { c.links = links }
 }
 
@@ -119,10 +120,10 @@ func WithChainMeterProvider(mp metric.MeterProvider) ChainerOption {
 // enable durable lineage + the DB-level exactly-once backstop.
 func NewChainer(starter InstanceStarter, policy SuccessorPolicy, opts ...ChainerOption) (*Chainer, error) {
 	if starter == nil {
-		return nil, fmt.Errorf("%w: starter", ErrNilDependency)
+		return nil, fmt.Errorf("%w: starter", kernel.ErrNilDependency)
 	}
 	if policy == nil {
-		return nil, fmt.Errorf("%w: policy", ErrNilDependency)
+		return nil, fmt.Errorf("%w: policy", kernel.ErrNilDependency)
 	}
 	cfg := chainerConfig{clk: clock.System()}
 	for _, o := range opts {
@@ -145,7 +146,7 @@ const chainerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/chai
 // outcome) hop. Determinism is the first idempotency layer: a redelivered
 // terminal event computes the same id, so Store.Create rejects the second start
 // with ErrInstanceExists even when no ChainLinkStore is configured.
-func successorID(predecessorID string, outcome Outcome) string {
+func successorID(predecessorID string, outcome kernel.Outcome) string {
 	return predecessorID + "-next-" + string(outcome)
 }
 
@@ -177,7 +178,7 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 	)
 
 	if c.links != nil {
-		link := ChainLink{
+		link := kernel.ChainLink{
 			PredecessorID:            ev.PredecessorID,
 			PredecessorDefinitionRef: ev.PredecessorDefinitionRef,
 			Outcome:                  ev.Outcome,
@@ -187,7 +188,7 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 			CreatedAt:                c.clk.Now(),
 		}
 		switch err := c.links.Record(ctx, link); {
-		case errors.Is(err, ErrChainLinkExists):
+		case errors.Is(err, kernel.ErrChainLinkExists):
 			// The link was recorded by a prior delivery, but that delivery's start
 			// may have failed AFTER the link was written. Do NOT return here — fall
 			// through and (re)attempt the start. Store.Create's ErrInstanceExists
@@ -204,7 +205,7 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 	}
 
 	switch _, err := c.starter.Run(ctx, dec.Def, id, dec.Vars); {
-	case errors.Is(err, ErrInstanceExists):
+	case errors.Is(err, kernel.ErrInstanceExists):
 		c.tel.Logger.DebugContext(ctx, "chain: successor already started; skipping",
 			slog.String("successor_id", id))
 		return nil

@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // cancelPropParentDef builds a parent definition with a call activity pointing at childDefRef.
@@ -59,16 +60,16 @@ func cancelPropChildDef(id string) *model.ProcessDefinition {
 // per parentInstanceID. Used in TestCancelPropagationDiamond to verify the shared
 // visited map prevents double-processing of shared subtree nodes.
 type countingCallLinkStore struct {
-	runtime.CallLinkStore
+	kernel.CallLinkStore
 	mu     sync.Mutex
 	counts map[string]int
 }
 
-func newCountingCallLinkStore(inner runtime.CallLinkStore) *countingCallLinkStore {
+func newCountingCallLinkStore(inner kernel.CallLinkStore) *countingCallLinkStore {
 	return &countingCallLinkStore{CallLinkStore: inner, counts: make(map[string]int)}
 }
 
-func (c *countingCallLinkStore) ListRunningChildren(ctx context.Context, parentID string) ([]runtime.CallLink, error) {
+func (c *countingCallLinkStore) ListRunningChildren(ctx context.Context, parentID string) ([]kernel.CallLink, error) {
 	c.mu.Lock()
 	c.counts[parentID]++
 	c.mu.Unlock()
@@ -84,7 +85,7 @@ func (c *countingCallLinkStore) listCount(parentID string) int {
 // cancelPropRunner builds a Runner with CallLinks + Definitions + HumanTasks wired.
 // The registry is populated with BOTH plain "defID" keys (for StartSubInstance
 // DefRef lookup) and "defID:version" keys (for propagateCancel's def resolution).
-func cancelPropRunner(t *testing.T, store *runtime.MemStore, cl *runtime.MemCallLinkStore, defs map[string]*model.ProcessDefinition) *runtime.ProcessDriver {
+func cancelPropRunner(t *testing.T, store *kernel.MemStore, cl *kernel.MemCallLinkStore, defs map[string]*model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 	reg := cancelPropRegistry(defs)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
@@ -98,13 +99,13 @@ func cancelPropRunner(t *testing.T, store *runtime.MemStore, cl *runtime.MemCall
 
 // cancelPropRegistry builds a MapDefinitionRegistry with both plain and versioned
 // keys for each definition, matching the convention used in e2e tests.
-func cancelPropRegistry(defs map[string]*model.ProcessDefinition) *runtime.MapDefinitionRegistry {
+func cancelPropRegistry(defs map[string]*model.ProcessDefinition) *kernel.MapDefinitionRegistry {
 	full := make(map[string]*model.ProcessDefinition, len(defs)*2)
 	for k, v := range defs {
 		full[k] = v
 		full[fmt.Sprintf("%s:%d", v.ID, v.Version)] = v
 	}
-	return runtime.NewMapDefinitionRegistry(full)
+	return kernel.NewMapDefinitionRegistry(full)
 }
 
 // TestCancelPropagationParentAndChild verifies that cancelling a parent also cancels
@@ -112,8 +113,8 @@ func cancelPropRegistry(defs map[string]*model.ProcessDefinition) *runtime.MapDe
 func TestCancelPropagationParentAndChild(t *testing.T) {
 	ctx := t.Context()
 
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("prop-child")
 	parentDef := cancelPropParentDef("prop-parent", "prop-child")
@@ -149,8 +150,8 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 func TestCancelPropagationGrandchild(t *testing.T) {
 	ctx := t.Context()
 
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	// grandchild parks at human task
 	grandchildDef := cancelPropChildDef("prop-grandchild")
@@ -202,8 +203,8 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 func TestCancelPropagationChildDefMissing(t *testing.T) {
 	ctx := t.Context()
 
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("prop-missing-child")
 	parentDef := cancelPropParentDef("prop-missing-parent", "prop-missing-child")
@@ -259,7 +260,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 //   - Results are ordered by ChildInstanceID.
 func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	ctx := t.Context()
-	cl := runtime.NewMemCallLinkStore()
+	cl := kernel.NewMemCallLinkStore()
 
 	// We need to insert links directly via the MemStore path, but MemCallLinkStore
 	// exposes record/markTerminal only internally. Use NewMemStore(WithCallLinks(cl))
@@ -269,7 +270,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	// Since record/markTerminal are unexported, we populate via store.Create/Commit
 	// using a minimal runner setup.
 
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 	childA := cancelPropChildDef("list-child-a")
 	childB := cancelPropChildDef("list-child-b")
 	childC := cancelPropChildDef("list-child-c") // different parent
@@ -401,8 +402,8 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 func TestCancelPropagationContextPropagated(t *testing.T) {
 	ctx := t.Context()
 
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("ctx-child")
 	parentDef := cancelPropParentDef("ctx-parent", "ctx-child")
@@ -429,8 +430,8 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 func TestCancelPropagationNoDefsReg(t *testing.T) {
 	ctx := t.Context()
 
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("no-reg-child")
 	parentDef := cancelPropParentDef("no-reg-parent", "no-reg-child")
@@ -493,8 +494,8 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 func TestCancelPropagationDiamond(t *testing.T) {
 	ctx := t.Context()
 
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	// D: leaf grandchild that parks at a human task.
 	dDef := cancelPropChildDef("dmnd-d")
@@ -557,7 +558,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	// Seed call links to wire the diamond topology into cl:
 	//   parent → C  (C is a second running child of parent)
 	//   C → D       (D is also a child of C → shared grandchild)
-	runtime.SeedCallLink(cl, runtime.CallLink{
+	cl.Seed(kernel.CallLink{
 		ChildInstanceID:  cID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  parentID + "-c2",
@@ -565,7 +566,8 @@ func TestCancelPropagationDiamond(t *testing.T) {
 		ParentDefVersion: parentDef.Version,
 		Depth:            1,
 	})
-	runtime.SeedCallLink(cl, runtime.CallLink{
+
+	cl.Seed(kernel.CallLink{
 		ChildInstanceID:  dID,
 		ParentInstanceID: cID,
 		ParentCommandID:  cID + "-c1",

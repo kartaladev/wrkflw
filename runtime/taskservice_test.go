@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestTaskServiceRejectsIneligibleActor verifies that Claim returns ErrNotAuthorized
@@ -295,7 +296,7 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 			store: nil,
 			az:    az,
 			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, svc)
 			},
 		},
@@ -304,7 +305,7 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 			store: store,
 			az:    nil,
 			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, svc)
 			},
 		},

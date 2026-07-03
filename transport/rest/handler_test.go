@@ -19,6 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -27,7 +28,7 @@ import (
 
 type testHarness struct {
 	runner    *runtime.ProcessDriver
-	store     *runtime.MemStore
+	store     *kernel.MemStore
 	taskStore *humantask.MemTaskStore
 	clk       *clockwork.FakeClock
 }
@@ -40,7 +41,7 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
 	az := authz.RoleAuthorizer{}
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": greetServiceAction{},
@@ -52,7 +53,7 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 		defsMap[fmt.Sprintf("%s:%d", d.ID, d.Version)] = d
 		defsMap[d.ID] = d
 	}
-	reg := runtime.NewMapDefinitionRegistry(defsMap)
+	reg := kernel.NewMapDefinitionRegistry(defsMap)
 	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
 	require.NoError(t, err)
 	facade := service.New(r, svc, reg, store, store, taskStore, service.WithEngineClock(fc))

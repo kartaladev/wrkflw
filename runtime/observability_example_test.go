@@ -10,6 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ExampleProcessDriver_observability shows how a library consumer wires an SDK
@@ -57,7 +58,7 @@ func ExampleProcessDriver_observability() {
 		}),
 	})
 
-	mem, err := runtime.NewMemStore()
+	mem, err := kernel.NewMemStore()
 	if err != nil {
 		panic(err)
 	}

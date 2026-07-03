@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // notifierChildDef returns a child def whose single task is a human task with
@@ -69,15 +70,15 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 
 	// ── wiring ───────────────────────────────────────────────────────────────
 	clk := clock.System()
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	worker := authz.Actor{ID: "bob", Roles: []string{"worker"}}
 	child := notifierChildDef()
 	parent := notifierParentDef()
 
 	// Parent definition must be resolvable under the "id:version" ref format.
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"notifier-child":    child,
 		"notifier-parent:1": parent,
 	})
@@ -158,11 +159,11 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 // TestNewCallNotifierDefaultClockNoPanic verifies that NewCallNotifier works
 // without a positional clock argument (ADR-0003: clock defaults to clock.System()).
 func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
-	cl := runtime.NewMemCallLinkStore()
+	cl := kernel.NewMemCallLinkStore()
 	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
 
 	n := mustCallNotifier(t, cl, deliver, reg)
 	assert.NotNil(t, n)
@@ -176,7 +177,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 	fakeTime := time.Unix(1000, 0).UTC()
 	fake := clockwork.NewFakeClockAt(fakeTime)
 
-	cl := runtime.NewMemCallLinkStore()
+	cl := kernel.NewMemCallLinkStore()
 	var capturedTrigger engine.Trigger
 	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, trg engine.Trigger) error {
 		capturedTrigger = trg
@@ -185,7 +186,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 
 	// Wire minimal parent def so the registry resolves the parent ref.
 	parentDef := &model.ProcessDefinition{ID: "opt-parent", Version: 1}
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"opt-parent:1": parentDef,
 	})
 
@@ -193,15 +194,15 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 	require.NotNil(t, n)
 
 	// Seed a terminal call link so DrainOnce delivers a trigger.
-	link := runtime.CallLink{
+	link := kernel.CallLink{
 		ChildInstanceID:  "child-1",
 		ParentInstanceID: "parent-1",
 		ParentDefID:      "opt-parent",
 		ParentDefVersion: 1,
 		ParentCommandID:  "cmd-1",
 	}
-	runtime.SeedCallLink(cl, link)
-	runtime.SeedTerminal(cl, "child-1", runtime.CallOutcome{
+	cl.Seed(link)
+	cl.SeedTerminal("child-1", kernel.CallOutcome{
 		Completed: true,
 		Output:    map[string]any{"k": "v"},
 	})
@@ -219,17 +220,17 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 func TestNewCallNotifierFailsFast(t *testing.T) {
 	t.Parallel()
 
-	cl := runtime.NewMemCallLinkStore()
+	cl := kernel.NewMemCallLinkStore()
 	var deliver runtime.CallDeliverFunc = func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	}
-	reg := runtime.NewMapDefinitionRegistry(nil)
+	reg := kernel.NewMapDefinitionRegistry(nil)
 
 	type testCase struct {
 		name    string
-		cl      runtime.CallLinkStore
+		cl      kernel.CallLinkStore
 		deliver runtime.CallDeliverFunc
-		reg     runtime.DefinitionRegistry
+		reg     kernel.DefinitionRegistry
 		assert  func(t *testing.T, n *runtime.CallNotifier, err error)
 	}
 	cases := []testCase{
@@ -239,7 +240,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			deliver: deliver,
 			reg:     reg,
 			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, n)
 			},
 		},
@@ -249,7 +250,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			deliver: nil,
 			reg:     reg,
 			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, n)
 			},
 		},
@@ -259,7 +260,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			deliver: deliver,
 			reg:     nil,
 			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, n)
 			},
 		},

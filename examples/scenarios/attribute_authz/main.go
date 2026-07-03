@@ -30,6 +30,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // casbinPolicy is the inline policy CSV used for the casbin RBAC demo.
@@ -41,15 +42,15 @@ const casbinPolicy = `
 p, approver, finance-task, claim
 `
 
-func mustMemStore() *runtime.MemStore {
-	m, err := runtime.NewMemStore()
+func mustMemStore() *kernel.MemStore {
+	m, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 	return m
 }
 
-func mustRunner(cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.ProcessDriver {
+func mustRunner(cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
 	r, err := runtime.NewProcessDriver(cat, store, opts...)
 	if err != nil {
 		log.Fatal("runner:", err)

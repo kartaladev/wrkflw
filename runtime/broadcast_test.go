@@ -13,6 +13,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // deliverRecord tracks what was delivered to which instance.
@@ -254,7 +255,7 @@ func TestNewSignalBusFailsFast(t *testing.T) {
 			name:    "nil deliver",
 			deliver: nil,
 			assert: func(t *testing.T, bus *runtime.SignalBus, err error) {
-				require.ErrorIs(t, err, runtime.ErrNilDependency)
+				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, bus)
 			},
 		},

@@ -9,7 +9,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // seedTimerInstance creates an instance via Store.Create, arming the given
@@ -20,10 +20,10 @@ func seedTimerInstance(
 	s *store.Store,
 	id string,
 	base time.Time,
-	timers []runtime.ArmedTimer,
+	timers []kernel.ArmedTimer,
 ) {
 	t.Helper()
-	_, err := s.Create(t.Context(), runtime.AppliedStep{
+	_, err := s.Create(t.Context(), kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: id,
 			DefID:      "d",
@@ -46,11 +46,11 @@ func TestTimerStoreListArmed(t *testing.T) {
 		require.NoError(t, err)
 		ts, err := store.NewTimerStore(b.conn, b.dialect)
 		require.NoError(t, err)
-		var _ runtime.TimerStore = ts // compile-time interface check
+		var _ kernel.TimerStore = ts // compile-time interface check
 
 		base := time.Date(2026, 6, 22, 14, 0, 0, 0, time.UTC)
 
-		seedTimerInstance(t, s, "ts-ord-1", base, []runtime.ArmedTimer{
+		seedTimerInstance(t, s, "ts-ord-1", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "ts-ord-1",
 				DefID:      "proc-def",
@@ -119,13 +119,13 @@ func TestTimerStoreListArmedMultiInstance(t *testing.T) {
 		base := time.Date(2026, 6, 22, 15, 0, 0, 0, time.UTC)
 
 		// Two instances each with one timer; inst-a fires later than inst-b.
-		seedTimerInstance(t, s, "inst-a", base, []runtime.ArmedTimer{
+		seedTimerInstance(t, s, "inst-a", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "inst-a", DefID: "d", DefVersion: 1,
 				TimerID: "ta", FireAt: base.Add(2 * time.Hour), Kind: engine.TimerIntermediate,
 			},
 		})
-		seedTimerInstance(t, s, "inst-b", base, []runtime.ArmedTimer{
+		seedTimerInstance(t, s, "inst-b", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "inst-b", DefID: "d", DefVersion: 1,
 				TimerID: "tb", FireAt: base.Add(time.Hour), Kind: engine.TimerIntermediate,
@@ -150,7 +150,7 @@ func TestTimerStoreStats(t *testing.T) {
 		require.NoError(t, err)
 		ts, err := store.NewTimerStore(b.conn, b.dialect)
 		require.NoError(t, err)
-		var _ runtime.TimerStatsReader = ts // compile-time interface check
+		var _ kernel.TimerStatsReader = ts // compile-time interface check
 
 		// Stats on empty table.
 		stats, err := ts.Stats(t.Context())
@@ -162,7 +162,7 @@ func TestTimerStoreStats(t *testing.T) {
 		sooner := base.Add(time.Hour)
 		later := base.Add(2 * time.Hour)
 
-		seedTimerInstance(t, s, "stats-inst", base, []runtime.ArmedTimer{
+		seedTimerInstance(t, s, "stats-inst", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "stats-inst", DefID: "d", DefVersion: 1,
 				TimerID: "t-later", FireAt: later, Kind: engine.TimerIntermediate,
@@ -203,7 +203,7 @@ func TestTimerStoreFireAtSubSecond(t *testing.T) {
 		// store at most 6 decimal places; nanosecond digits are truncated/rounded.
 		at := time.Date(2026, 6, 22, 12, 0, 0, 123456000, time.UTC) // 123456 µs
 
-		seedTimerInstance(t, s, "sub-sec-inst", at, []runtime.ArmedTimer{
+		seedTimerInstance(t, s, "sub-sec-inst", at, []kernel.ArmedTimer{
 			{
 				InstanceID: "sub-sec-inst", DefID: "d", DefVersion: 1,
 				TimerID: "t-usec", FireAt: at, Kind: engine.TimerIntermediate,

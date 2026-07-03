@@ -8,7 +8,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -19,7 +19,7 @@ import (
 
 const instrumentationName = "github.com/zakyalvan/krtlwrkflw/eventing"
 
-// Publisher adapts a watermill message.Publisher to runtime.Publisher. It maps
+// Publisher adapts a watermill message.Publisher to kernel.Publisher. It maps
 // one OutboxEvent to one watermill message: the message UUID is the event's
 // DedupKey (or a fresh UUID when empty) so redeliveries are deduplicable, and
 // the instance id is set as metadata for per-instance partitioning/ordering.
@@ -32,7 +32,7 @@ type Publisher struct {
 }
 
 // Compile-time check.
-var _ runtime.Publisher = (*Publisher)(nil)
+var _ kernel.Publisher = (*Publisher)(nil)
 
 // NewPublisher wraps a watermill message.Publisher.
 func NewPublisher(pub message.Publisher, opts ...Option) *Publisher {
@@ -67,7 +67,7 @@ func NewPublisher(pub message.Publisher, opts ...Option) *Publisher {
 
 // Publish maps ev to a watermill message, publishes it to ev.Topic, and emits
 // an OTel span and counter increment for each call.
-func (p *Publisher) Publish(ctx context.Context, ev runtime.OutboxEvent) error {
+func (p *Publisher) Publish(ctx context.Context, ev kernel.OutboxEvent) error {
 	ctx, span := p.tracer.Start(ctx, "eventing.publish", trace.WithAttributes(
 		attribute.String("messaging.destination", ev.Topic),
 		attribute.String("wrkflw.instance_id", ev.InstanceID),
@@ -88,7 +88,7 @@ func (p *Publisher) Publish(ctx context.Context, ev runtime.OutboxEvent) error {
 // publish is the core marshal+publish logic; it is called by Publish after the
 // span has been started. The active span context propagates through ctx into
 // msg.SetContext so downstream systems can extract it.
-func (p *Publisher) publish(ctx context.Context, ev runtime.OutboxEvent) error {
+func (p *Publisher) publish(ctx context.Context, ev kernel.OutboxEvent) error {
 	payload, err := json.Marshal(ev.Payload)
 	if err != nil {
 		p.logger.ErrorContext(ctx, "eventing: marshal payload failed",

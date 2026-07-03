@@ -34,6 +34,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // MySQLOption configures the MySQL Store returned by OpenMySQL. After store
@@ -62,9 +63,9 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 	return store.WithStoreMeterProvider(mp)
 }
 
-// OpenMySQL constructs a MySQL-backed runtime.Store + JournalReader over db.
+// OpenMySQL constructs a MySQL-backed kernel.Store + JournalReader over db.
 //
-// The returned Store satisfies both runtime.Store and runtime.JournalReader,
+// The returned Store satisfies both kernel.Store and kernel.JournalReader,
 // identical to the interface returned by OpenPostgres. MigrateMySQL must be
 // called before OpenMySQL so the required tables exist (or use RunTestMySQL in
 // tests which auto-migrates).
@@ -101,7 +102,7 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 	return store.MigrateMySQL(ctx, db)
 }
 
-// NewMySQLTimerStore returns a runtime.TimerStore backed by MySQL, for
+// NewMySQLTimerStore returns a kernel.TimerStore backed by MySQL, for
 // Runner.RehydrateTimers. The db must already have migrations applied.
 // Mirrors NewTimerStore for Postgres.
 //
@@ -111,7 +112,7 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 //	persistence.MigrateMySQL(ctx, db)
 //	ts := persistence.NewMySQLTimerStore(db)
 //	armed, err := ts.ListArmed(ctx)
-func NewMySQLTimerStore(db *sql.DB) (runtime.TimerStore, error) {
+func NewMySQLTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewMySQL())
 }
 
@@ -196,7 +197,7 @@ func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewMySQLRelay(db *sql.DB, pub runtime.Publisher, opts ...MySQLRelayOption) (Relay, error) {
+func NewMySQLRelay(db *sql.DB, pub kernel.Publisher, opts ...MySQLRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -227,7 +228,7 @@ func MySQLWithCallLinkClock(clk clock.Clock) MySQLCallLinkOption {
 	return store.WithCallLinkClock(clk)
 }
 
-// NewMySQLCallLinkStore constructs the MySQL-backed runtime.CallLinkStore (read/claim
+// NewMySQLCallLinkStore constructs the MySQL-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, LookupChild, and ListRunningChildren
 // over the wrkflw_call_links table. The write side is fused into Store.Create /
 // Store.Commit (ADR-0025); use OpenMySQL for that.
@@ -238,12 +239,12 @@ func MySQLWithCallLinkClock(clk clock.Clock) MySQLCallLinkOption {
 // MigrateMySQL must have been applied before the first call to any method.
 //
 // Mirrors NewCallLinkStore for the Postgres facade.
-func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (runtime.CallLinkStore, error) {
+func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.CallLinkStore, error) {
 	return store.NewCallLinkStore(db, dialect.NewMySQL(), opts...)
 }
 
-// NewMySQLAdvisoryLockOwnership constructs a multi-process [runtime.Ownership]
-// backed by MySQL GET_LOCK advisory locks, for use with [runtime.NewCachingStore]
+// NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.Ownership]
+// backed by MySQL GET_LOCK advisory locks, for use with [kernel.NewCachingStore]
 // across multiple replicas sharing one database.
 //
 // It holds a dedicated *sql.Conn for its lifetime; close the returned [io.Closer]
@@ -258,8 +259,8 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (runtime.Cal
 //	owner, closer, _ := persistence.NewMySQLAdvisoryLockOwnership(ctx, db)
 //	defer closer.Close()
 //	store, _ := persistence.OpenMySQL(ctx, db)
-//	cachingStore, err := runtime.NewCachingStore(store, owner)
-func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Ownership, io.Closer, error) {
+//	cachingStore, err := kernel.NewCachingStore(store, owner)
+func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.Ownership, io.Closer, error) {
 	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {
 		return nil, nil, err
@@ -267,7 +268,7 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Own
 	return o, o, nil
 }
 
-// NewMySQLChainLinkStore constructs the MySQL-backed runtime.ChainLinkStore for
+// NewMySQLChainLinkStore constructs the MySQL-backed kernel.ChainLinkStore for
 // process-instance chaining lineage (ADR-0045): Record persists one
 // predecessor->successor hop; LookupBySuccessor and ListByPredecessor serve
 // ancestry/audit queries. MigrateMySQL must have been applied before the first call.
@@ -280,14 +281,14 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (runtime.Own
 //	persistence.MigrateMySQL(ctx, db)
 //	links := persistence.NewMySQLChainLinkStore(db)
 //	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
-func NewMySQLChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
+func NewMySQLChainLinkStore(db *sql.DB) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewMySQL())
 }
 
-// NewMySQLLister constructs the MySQL-backed runtime.InstanceLister for
+// NewMySQLLister constructs the MySQL-backed kernel.InstanceLister for
 // admin-list and monitoring use-cases. It executes a keyset-cursor-paginated
 // query over wrkflw_instances and projects only the columns in
-// runtime.InstanceSummary (no full snapshot read).
+// kernel.InstanceSummary (no full snapshot read).
 //
 // MigrateMySQL must have been applied before the first call to List.
 //
@@ -298,8 +299,8 @@ func NewMySQLChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	lister := persistence.NewMySQLLister(db)
-//	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
-func NewMySQLLister(db *sql.DB) (runtime.InstanceLister, error) {
+//	page, err := lister.List(ctx, kernel.InstanceFilter{Limit: 20})
+func NewMySQLLister(db *sql.DB) (kernel.InstanceLister, error) {
 	return store.NewLister(db, dialect.NewMySQL())
 }
 
@@ -320,7 +321,7 @@ func NewMySQLLister(db *sql.DB) (runtime.InstanceLister, error) {
 //	persistence.MigrateMySQL(ctx, db)
 //	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
 	cls, err := store.NewCallLinkStore(db, dialect.NewMySQL())
 	if err != nil {
 		return nil, err
@@ -329,7 +330,7 @@ func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runti
 }
 
 // NewMySQLDefinitionStore constructs the durable MySQL-backed definition store.
-// It satisfies runtime.DefinitionRegistry via its Lookup method, which resolves
+// It satisfies kernel.DefinitionRegistry via its Lookup method, which resolves
 // a DefRef of the form "defID:version" (exact match) or "defID" (latest version).
 //
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
@@ -390,15 +391,15 @@ func MySQLDSN(base string) (string, error) {
 // Compile-time checks: the neutral store concrete types must satisfy the same
 // public interfaces as their Postgres analogs.
 var (
-	_ Store                      = (*store.Store)(nil)
-	_ runtime.TimerStore         = (*store.TimerStore)(nil)
-	_ Relay                      = (*store.Relay)(nil)
-	_ Deduper                    = (*store.Deduper)(nil)
-	_ runtime.CallLinkStore      = (*store.CallLinkStore)(nil)
-	_ runtime.ChainLinkStore     = (*store.ChainLinkStore)(nil)
-	_ runtime.InstanceLister     = (*store.Lister)(nil)
-	_ runtime.Ownership          = (*store.AdvisoryLockOwnership)(nil)
-	_ DefinitionStore            = (*store.DefinitionStore)(nil)
-	_ Pruner                     = (*store.Pruner)(nil)
-	_ runtime.DefinitionRegistry = (*store.DefinitionStore)(nil)
+	_ Store                     = (*store.Store)(nil)
+	_ kernel.TimerStore         = (*store.TimerStore)(nil)
+	_ Relay                     = (*store.Relay)(nil)
+	_ Deduper                   = (*store.Deduper)(nil)
+	_ kernel.CallLinkStore      = (*store.CallLinkStore)(nil)
+	_ kernel.ChainLinkStore     = (*store.ChainLinkStore)(nil)
+	_ kernel.InstanceLister     = (*store.Lister)(nil)
+	_ kernel.Ownership          = (*store.AdvisoryLockOwnership)(nil)
+	_ DefinitionStore           = (*store.DefinitionStore)(nil)
+	_ Pruner                    = (*store.Pruner)(nil)
+	_ kernel.DefinitionRegistry = (*store.DefinitionStore)(nil)
 )

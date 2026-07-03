@@ -36,15 +36,16 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // Store is the stable public interface for the Postgres-backed store.
-// It composes runtime.Store (Create/Load/Commit) and runtime.JournalReader
+// It composes kernel.Store (Create/Load/Commit) and kernel.JournalReader
 // (Entries) so consumers never need to reference internal package paths.
 // OpenPostgres returns this interface; internal churn never affects this type.
 type Store interface {
-	runtime.Store
-	runtime.JournalReader
+	kernel.Store
+	kernel.JournalReader
 }
 
 // DefinitionStore is the stable public interface for the Postgres-backed
@@ -54,7 +55,7 @@ type DefinitionStore interface {
 	// PutDefinition upserts a process definition (idempotent on (ID, Version)).
 	PutDefinition(ctx context.Context, def *model.ProcessDefinition) error
 	// Lookup resolves a DefRef string ("defID:version" or "defID") to a definition.
-	// Returns runtime.ErrDefinitionNotFound when no matching row exists.
+	// Returns kernel.ErrDefinitionNotFound when no matching row exists.
 	// ctx is propagated to the underlying SQL query for cancellation support.
 	Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error)
 }
@@ -88,13 +89,13 @@ type Relay interface {
 	// (quarantined after exhausting MaxDeliveryAttempts), and the age of the
 	// oldest pending row (zero when there are no pending rows).
 	//
-	// Implements [runtime.OutboxStatsReader] — callers that previously
+	// Implements [kernel.OutboxStatsReader] — callers that previously
 	// type-asserted to that interface can call this method directly.
-	OutboxStats(ctx context.Context) (runtime.OutboxStats, error)
+	OutboxStats(ctx context.Context) (kernel.OutboxStats, error)
 }
 
-// Publisher is the broker-agnostic outbox publisher alias (same as runtime.Publisher).
-type Publisher = runtime.Publisher
+// Publisher is the broker-agnostic outbox publisher alias (same as kernel.Publisher).
+type Publisher = kernel.Publisher
 
 // Option configures the Store returned by OpenPostgres (alias of the neutral
 // store.Option). The same underlying type also backs OpenMySQL's MySQLOption:
@@ -162,31 +163,31 @@ func WithListenNotify() RelayOption {
 // without importing the runtime or internal packages.
 var (
 	// ErrInstanceNotFound is returned by Store.Load when no instance exists for the id.
-	ErrInstanceNotFound = runtime.ErrInstanceNotFound
+	ErrInstanceNotFound = kernel.ErrInstanceNotFound
 
 	// ErrConcurrentUpdate is returned by Store.Commit when the expected token is stale.
-	ErrConcurrentUpdate = runtime.ErrConcurrentUpdate
+	ErrConcurrentUpdate = kernel.ErrConcurrentUpdate
 )
 
 // Compile-time checks: the neutral store concrete types must satisfy the public
 // interfaces so the facade constructors can return them.
 var (
-	_ Store                  = (*store.Store)(nil)
-	_ DefinitionStore        = (*store.DefinitionStore)(nil)
-	_ Relay                  = (*store.Relay)(nil)
-	_ runtime.InstanceLister = (*store.Lister)(nil)
-	_ runtime.CallLinkStore  = (*store.CallLinkStore)(nil)
-	_ runtime.TimerStore     = (*store.TimerStore)(nil)
-	_ runtime.ChainLinkStore = (*store.ChainLinkStore)(nil)
+	_ Store                 = (*store.Store)(nil)
+	_ DefinitionStore       = (*store.DefinitionStore)(nil)
+	_ Relay                 = (*store.Relay)(nil)
+	_ kernel.InstanceLister = (*store.Lister)(nil)
+	_ kernel.CallLinkStore  = (*store.CallLinkStore)(nil)
+	_ kernel.TimerStore     = (*store.TimerStore)(nil)
+	_ kernel.ChainLinkStore = (*store.ChainLinkStore)(nil)
 )
 
 // ErrInstanceExists is returned by Store.Create when an instance id already
 // exists (re-exported so consumers can errors.Is without importing runtime).
-var ErrInstanceExists = runtime.ErrInstanceExists
+var ErrInstanceExists = kernel.ErrInstanceExists
 
-// OpenPostgres constructs a Postgres-backed runtime.Store + JournalReader over pool.
+// OpenPostgres constructs a Postgres-backed kernel.Store + JournalReader over pool.
 //
-// The returned Store satisfies both runtime.Store and runtime.JournalReader.
+// The returned Store satisfies both kernel.Store and kernel.JournalReader.
 // Migrate must be called before OpenPostgres so the required tables exist.
 //
 // Example:
@@ -221,7 +222,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 // NewDefinitionStore constructs the durable Postgres-backed definition store.
-// It satisfies runtime.DefinitionRegistry via its Lookup method.
+// It satisfies kernel.DefinitionRegistry via its Lookup method.
 //
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
 func NewDefinitionStore(pool *pgxpool.Pool) (DefinitionStore, error) {
@@ -230,7 +231,7 @@ func NewDefinitionStore(pool *pgxpool.Pool) (DefinitionStore, error) {
 
 // NewCachingDefinitionRegistry wraps backing with a TTL-bounded, single-flight
 // read-through cache. ttl is the maximum age of a cached definition.
-// opts are forwarded to runtime.NewCachingDefinitionRegistry; use
+// opts are forwarded to kernel.NewCachingDefinitionRegistry; use
 // runtime.WithCachingDefinitionRegistryClock to inject a fake clock in tests.
 //
 // Definitions are immutable per (defID, version), so caching without invalidation
@@ -242,8 +243,8 @@ func NewDefinitionStore(pool *pgxpool.Pool) (DefinitionStore, error) {
 //	// inject a fake clock in tests:
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute,
 //	    runtime.WithCachingDefinitionRegistryClock(fakeClock))
-func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.Duration, opts ...runtime.CachingDefinitionRegistryOption) (*runtime.CachingDefinitionRegistry, error) {
-	return runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)
+func NewCachingDefinitionRegistry(backing kernel.DefinitionRegistry, ttl time.Duration, opts ...kernel.CachingDefinitionRegistryOption) (*kernel.CachingDefinitionRegistry, error) {
+	return kernel.NewCachingDefinitionRegistry(backing, ttl, opts...)
 }
 
 // NewRelay constructs an outbox relay over pool that publishes each event via pub.
@@ -256,7 +257,7 @@ func NewCachingDefinitionRegistry(backing runtime.DefinitionRegistry, ttl time.D
 // persistence.WithRelayBackoff. The relay isolates publish failures per row
 // (a poison event never blocks healthy peers) and quarantines a row to a
 // dead-letter status after MaxDeliveryAttempts (ADR-0017).
-func NewRelay(pool *pgxpool.Pool, pub runtime.Publisher, opts ...RelayOption) (Relay, error) {
+func NewRelay(pool *pgxpool.Pool, pub kernel.Publisher, opts ...RelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -319,10 +320,10 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 	return storeRelayOption(store.WithRelayMeterProvider(mp))
 }
 
-// NewLister constructs the Postgres-backed runtime.InstanceLister for
+// NewLister constructs the Postgres-backed kernel.InstanceLister for
 // admin-list and monitoring use-cases. It executes a keyset-cursor-paginated
 // query over wrkflw_instances and projects only the columns in
-// runtime.InstanceSummary (no full snapshot read).
+// kernel.InstanceSummary (no full snapshot read).
 //
 // Migrate must have been applied before the first call to List.
 //
@@ -331,20 +332,20 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
 //	lister := persistence.NewLister(pool)
-//	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
-func NewLister(pool *pgxpool.Pool) (runtime.InstanceLister, error) {
+//	page, err := lister.List(ctx, kernel.InstanceFilter{Limit: 20})
+func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 	return store.NewLister(pool, dialect.NewPostgres())
 }
 
-// NewAdvisoryLockOwnership constructs a multi-process [runtime.Ownership]
+// NewAdvisoryLockOwnership constructs a multi-process [kernel.Ownership]
 // backed by Postgres session advisory locks (ADR-0020), for use with
-// [runtime.NewCachingStore] across multiple replicas sharing one database.
+// [kernel.NewCachingStore] across multiple replicas sharing one database.
 //
 // It holds a dedicated pool connection for its lifetime; close the returned
 // [io.Closer] at shutdown to release every held lock and return the connection.
 //
-// When used with a [runtime.CachingStore], always relinquish ownership through
-// [runtime.CachingStore.Release] (not the bare [runtime.Ownership.Release]), so
+// When used with a [kernel.CachingStore], always relinquish ownership through
+// [kernel.CachingStore.Release] (not the bare [kernel.Ownership.Release]), so
 // the cache evicts the instance's state on hand-off and a re-acquiring process
 // does not serve a stale cached entry.
 //
@@ -353,9 +354,9 @@ func NewLister(pool *pgxpool.Pool) (runtime.InstanceLister, error) {
 //	owner, closer, _ := persistence.NewAdvisoryLockOwnership(ctx, pool)
 //	defer closer.Close()
 //	store, _ := persistence.OpenPostgres(ctx, pool)
-//	cachingStore, err := runtime.NewCachingStore(store, owner)
+//	cachingStore, err := kernel.NewCachingStore(store, owner)
 //	if err != nil { log.Fatal(err) }
-func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (runtime.Ownership, io.Closer, error) {
+func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.Ownership, io.Closer, error) {
 	o, err := store.NewPostgresOwnership(ctx, pool)
 	if err != nil {
 		return nil, nil, err
@@ -384,7 +385,7 @@ func WithCallLinkClock(clk clock.Clock) CallLinkOption {
 	return store.WithCallLinkClock(clk)
 }
 
-// NewCallLinkStore constructs the Postgres-backed runtime.CallLinkStore (read/claim
+// NewCallLinkStore constructs the Postgres-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, and LookupChild over the
 // wrkflw_call_links table. The write side is fused into Store.Create /
 // Store.Commit (ADR-0025); use OpenPostgres for that.
@@ -403,11 +404,11 @@ func WithCallLinkClock(clk clock.Clock) CallLinkOption {
 //	    persistence.WithCallLinkLease("replica-1", 30*time.Second),
 //	)
 //	pending, err := cls.ClaimPending(ctx, 100)
-func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (runtime.CallLinkStore, error) {
+func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (kernel.CallLinkStore, error) {
 	return store.NewCallLinkStore(pool, dialect.NewPostgres(), opts...)
 }
 
-// NewTimerStore returns a runtime.TimerStore backed by Postgres, for
+// NewTimerStore returns a kernel.TimerStore backed by Postgres, for
 // Runner.RehydrateTimers. The pool must already have migrations applied.
 //
 // Example:
@@ -416,11 +417,11 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (runtime.CallL
 //	persistence.Migrate(ctx, pool)
 //	ts := persistence.NewTimerStore(pool)
 //	armed, err := ts.ListArmed(ctx)
-func NewTimerStore(pool *pgxpool.Pool) (runtime.TimerStore, error) {
+func NewTimerStore(pool *pgxpool.Pool) (kernel.TimerStore, error) {
 	return store.NewTimerStore(pool, dialect.NewPostgres())
 }
 
-// NewChainLinkStore constructs the Postgres-backed runtime.ChainLinkStore for
+// NewChainLinkStore constructs the Postgres-backed kernel.ChainLinkStore for
 // process-instance chaining lineage (ADR-0045): Record persists one
 // predecessor->successor hop (a unique (predecessor, outcome) is the
 // exactly-once backstop), LookupBySuccessor and ListByPredecessor serve
@@ -432,7 +433,7 @@ func NewTimerStore(pool *pgxpool.Pool) (runtime.TimerStore, error) {
 //	persistence.Migrate(ctx, pool)
 //	links := persistence.NewChainLinkStore(pool)
 //	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
-func NewChainLinkStore(pool *pgxpool.Pool) (runtime.ChainLinkStore, error) {
+func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(pool, dialect.NewPostgres())
 }
 
@@ -465,7 +466,7 @@ func NewChainLinkStore(pool *pgxpool.Pool) (runtime.ChainLinkStore, error) {
 //
 // reg MUST resolve every parent definition under the exact key "<defID>:<version>";
 // an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
-func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
 	cls, err := store.NewCallLinkStore(pool, dialect.NewPostgres())
 	if err != nil {
 		return nil, err
