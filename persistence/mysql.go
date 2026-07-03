@@ -33,7 +33,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -321,12 +321,12 @@ func NewMySQLLister(db *sql.DB) (kernel.InstanceLister, error) {
 //	persistence.MigrateMySQL(ctx, db)
 //	notifier := persistence.NewMySQLCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewMySQLCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+func NewMySQLCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...calllink.CallNotifierOption) (*calllink.CallNotifier, error) {
 	cls, err := store.NewCallLinkStore(db, dialect.NewMySQL())
 	if err != nil {
 		return nil, err
 	}
-	return runtime.NewCallNotifier(cls, deliver, reg, opts...)
+	return calllink.NewCallNotifier(cls, deliver, reg, opts...)
 }
 
 // NewMySQLDefinitionStore constructs the durable MySQL-backed definition store.

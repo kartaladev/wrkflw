@@ -20,7 +20,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -261,12 +261,12 @@ func NewSQLiteLister(db *sql.DB) (kernel.InstanceLister, error) {
 //	persistence.MigrateSQLite(ctx, db)
 //	notifier := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+func NewSQLiteCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...calllink.CallNotifierOption) (*calllink.CallNotifier, error) {
 	cls, err := store.NewCallLinkStore(db, dialect.NewSQLite())
 	if err != nil {
 		return nil, err
 	}
-	return runtime.NewCallNotifier(cls, deliver, reg, opts...)
+	return calllink.NewCallNotifier(cls, deliver, reg, opts...)
 }
 
 // NewSQLiteDefinitionStore constructs the durable SQLite-backed definition store.

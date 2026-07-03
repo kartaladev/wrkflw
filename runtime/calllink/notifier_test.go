@@ -1,4 +1,4 @@
-package runtime_test
+package calllink_test
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -133,7 +134,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	assert.True(t, pending[0].Outcome.Completed, "link outcome must be Completed")
 
 	// ── Step 3: build CallNotifier and DrainOnce → parent resumes ─────────
-	deliverFn := runtime.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err2 := runner.Deliver(ctx2, def, instanceID, trg)
 		return err2
 	})
@@ -160,7 +161,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 // without a positional clock argument (ADR-0003: clock defaults to clock.System()).
 func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
 	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
@@ -179,7 +180,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 
 	cl := kernel.NewMemCallLinkStore()
 	var capturedTrigger engine.Trigger
-	deliver := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, trg engine.Trigger) error {
+	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, trg engine.Trigger) error {
 		capturedTrigger = trg
 		return nil
 	})
@@ -190,7 +191,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 		"opt-parent:1": parentDef,
 	})
 
-	n := mustCallNotifier(t, cl, deliver, reg, runtime.WithCallNotifierClock(fake))
+	n := mustCallNotifier(t, cl, deliver, reg, calllink.WithCallNotifierClock(fake))
 	require.NotNil(t, n)
 
 	// Seed a terminal call link so DrainOnce delivers a trigger.
@@ -221,7 +222,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 	t.Parallel()
 
 	cl := kernel.NewMemCallLinkStore()
-	var deliver runtime.CallDeliverFunc = func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+	var deliver calllink.CallDeliverFunc = func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	}
 	reg := kernel.NewMapDefinitionRegistry(nil)
@@ -229,9 +230,9 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 	type testCase struct {
 		name    string
 		cl      kernel.CallLinkStore
-		deliver runtime.CallDeliverFunc
+		deliver calllink.CallDeliverFunc
 		reg     kernel.DefinitionRegistry
-		assert  func(t *testing.T, n *runtime.CallNotifier, err error)
+		assert  func(t *testing.T, n *calllink.CallNotifier, err error)
 	}
 	cases := []testCase{
 		{
@@ -239,7 +240,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			cl:      nil,
 			deliver: deliver,
 			reg:     reg,
-			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+			assert: func(t *testing.T, n *calllink.CallNotifier, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, n)
 			},
@@ -249,7 +250,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			cl:      cl,
 			deliver: nil,
 			reg:     reg,
-			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+			assert: func(t *testing.T, n *calllink.CallNotifier, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, n)
 			},
@@ -259,7 +260,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			cl:      cl,
 			deliver: deliver,
 			reg:     nil,
-			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+			assert: func(t *testing.T, n *calllink.CallNotifier, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, n)
 			},
@@ -269,7 +270,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			cl:      cl,
 			deliver: deliver,
 			reg:     reg,
-			assert: func(t *testing.T, n *runtime.CallNotifier, err error) {
+			assert: func(t *testing.T, n *calllink.CallNotifier, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, n)
 			},
@@ -278,7 +279,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			n, err := runtime.NewCallNotifier(tc.cl, tc.deliver, tc.reg)
+			n, err := calllink.NewCallNotifier(tc.cl, tc.deliver, tc.reg)
 			tc.assert(t, n, err)
 		})
 	}

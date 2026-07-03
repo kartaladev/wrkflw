@@ -1,4 +1,4 @@
-package runtime
+package calllink
 
 import (
 	"context"
@@ -24,7 +24,7 @@ import (
 //
 // A typical wiring:
 //
-//	fn := runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, id string, trg engine.Trigger) error {
+//	fn := CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, id string, trg engine.Trigger) error {
 //	    _, err := runner.Deliver(ctx, def, id, trg)
 //	    return err
 //	})

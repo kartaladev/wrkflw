@@ -28,6 +28,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -134,7 +135,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		runtime.WithHumanTasks(resolver, tasks, az),
 	)
 
-	deliverFn := runtime.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
@@ -248,7 +249,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		runtime.WithDefinitions(reg),
 	)
 
-	deliverFn := runtime.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
@@ -346,7 +347,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		runtime.WithDefinitions(reg),
 	)
 
-	deliverFn := runtime.CallDeliverFunc(func(ctx2 context.Context, def2 *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def2 *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err := runner.Deliver(ctx2, def2, instanceID, trg)
 		return err
 	})

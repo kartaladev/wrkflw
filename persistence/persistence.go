@@ -36,6 +36,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -466,10 +467,10 @@ func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
 //
 // reg MUST resolve every parent definition under the exact key "<defID>:<version>";
 // an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
-func NewCallNotifier(pool *pgxpool.Pool, deliver runtime.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+func NewCallNotifier(pool *pgxpool.Pool, deliver calllink.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...calllink.CallNotifierOption) (*calllink.CallNotifier, error) {
 	cls, err := store.NewCallLinkStore(pool, dialect.NewPostgres())
 	if err != nil {
 		return nil, err
 	}
-	return runtime.NewCallNotifier(cls, deliver, reg, opts...)
+	return calllink.NewCallNotifier(cls, deliver, reg, opts...)
 }

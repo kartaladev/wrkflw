@@ -50,6 +50,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -144,7 +145,7 @@ func run(logger *slog.Logger) error {
 	// runner is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
 	var runner *runtime.ProcessDriver
-	deliver := runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		if runner == nil {
 			return nil // not yet wired; should not occur in practice
 		}

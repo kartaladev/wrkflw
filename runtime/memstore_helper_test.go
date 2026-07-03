@@ -16,6 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
@@ -75,9 +76,9 @@ func mustSignalBus(t *testing.T, deliver signal.DeliverFunc, opts ...signal.Sign
 }
 
 // mustCallNotifier builds a CallNotifier or fails the test.
-func mustCallNotifier(t *testing.T, cl kernel.CallLinkStore, deliver runtime.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...runtime.CallNotifierOption) *runtime.CallNotifier {
+func mustCallNotifier(t *testing.T, cl kernel.CallLinkStore, deliver calllink.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...calllink.CallNotifierOption) *calllink.CallNotifier {
 	t.Helper()
-	n, err := runtime.NewCallNotifier(cl, deliver, reg, opts...)
+	n, err := calllink.NewCallNotifier(cl, deliver, reg, opts...)
 	require.NoError(t, err)
 	return n
 }
