@@ -9,11 +9,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-const runnerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime"
-
-// runnerObs bundles the runner's telemetry and pre-built process instruments.
+// driverObs bundles the driver's telemetry and pre-built process instruments.
 // It is always non-nil after [NewProcessDriver] (defaults to noop providers + slog.Default()).
 type driverObs struct {
 	tel observability.Telemetry
@@ -31,7 +30,7 @@ type driverObs struct {
 	humanTasks        metric.Int64Counter
 }
 
-// newRunnerObs constructs a runnerObs from the given observability options.
+// newDriverObs constructs a driverObs from the given observability options.
 // Nil options (unset signal options) are silently dropped so [observability.New]
 // only sees real, non-nil options.
 func newDriverObs(opts ...observability.Option) *driverObs {
@@ -42,7 +41,7 @@ func newDriverObs(opts ...observability.Option) *driverObs {
 			real = append(real, o)
 		}
 	}
-	tel := observability.New(runnerInstrumentationName, real...)
+	tel := observability.New(kernel.InstrumentationScope, real...)
 	return &driverObs{
 		tel:               tel,
 		instStarted:       tel.Int64Counter("wrkflw_instances_started_total", "Process instances started."),

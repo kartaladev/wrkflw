@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,22 +28,36 @@ func minimalDef(id string) *model.ProcessDefinition {
 	}
 }
 
-// TestCallNotifierOptionsDrainAndRun exercises the functional options, both
-// DrainOnce outcome branches (completed + failed), and Run's cancellation
-// contract without standing up a full parent/child process. It seeds terminal
-// links directly via MemCallLinkStore.Seed/SeedTerminal.
-func TestCallNotifierOptionsDrainAndRun(t *testing.T) {
+// seedTerminalLink inserts a terminal call link (parent def "parent:1") directly
+// into the reference store, so a drain can claim and deliver it.
+func seedTerminalLink(cl *kernel.MemCallLinkStore, child, parent string, completed bool) {
+	cl.Seed(kernel.CallLink{
+		ChildInstanceID:  child,
+		ParentInstanceID: parent,
+		ParentCommandID:  parent + "-c1",
+		ParentDefID:      "parent",
+		ParentDefVersion: 1,
+		Depth:            1,
+	})
+	if completed {
+		cl.SeedTerminal(child, kernel.CallOutcome{Completed: true, Output: map[string]any{"result": 42}})
+	} else {
+		cl.SeedTerminal(child, kernel.CallOutcome{Completed: false, Err: "child failed"})
+	}
+}
+
+// TestCallNotifierOptionsAndDrainBranches exercises every functional option and
+// both DrainOnce outcome branches (completed + failed) plus the unknown-def skip
+// branch, then asserts the second drain does not redeliver already-notified links.
+func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
 	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"parent:1": minimalDef("parent"),
 	})
 
-	// Seed one completed and one failed terminal link, plus one whose parent
-	// definition is not registered (exercises the lookup-failure skip branch).
-	cl.Seed(kernel.CallLink{ChildInstanceID: "c-ok", ParentInstanceID: "p-ok", ParentCommandID: "p-ok-c1", ParentDefID: "parent", ParentDefVersion: 1, Depth: 1})
-	cl.SeedTerminal("c-ok", kernel.CallOutcome{Completed: true, Output: map[string]any{"result": 42}})
-	cl.Seed(kernel.CallLink{ChildInstanceID: "c-fail", ParentInstanceID: "p-fail", ParentCommandID: "p-fail-c1", ParentDefID: "parent", ParentDefVersion: 1, Depth: 1})
-	cl.SeedTerminal("c-fail", kernel.CallOutcome{Completed: false, Err: "child failed"})
+	seedTerminalLink(cl, "c-ok", "p-ok", true)
+	seedTerminalLink(cl, "c-fail", "p-fail", false)
+	// Unknown parent def → DrainOnce resolves nothing and skips (continue branch).
 	cl.Seed(kernel.CallLink{ChildInstanceID: "c-skip", ParentInstanceID: "p-skip", ParentCommandID: "p-skip-c1", ParentDefID: "missing", ParentDefVersion: 1, Depth: 1})
 	cl.SeedTerminal("c-skip", kernel.CallOutcome{Completed: true})
 
@@ -68,33 +83,72 @@ func TestCallNotifierOptionsDrainAndRun(t *testing.T) {
 
 	got, err := n.DrainOnce(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, 2, got, "both resolvable terminal links must be drained; the unknown-def link is skipped")
+	assert.Equal(t, 2, got, "both resolvable terminal links drain; the unknown-def link is skipped")
 	assert.Equal(t, 1, completed)
 	assert.Equal(t, 1, failed)
 
-	// A second drain is a no-op: the delivered links are now marked notified,
-	// and the unknown-def link is skipped again.
+	// Second drain: the two delivered links are now marked notified, so the
+	// deliver callback must NOT fire again (counters unchanged). The unknown-def
+	// link is re-scanned and re-skipped, contributing nothing.
 	got, err = n.DrainOnce(t.Context())
 	require.NoError(t, err)
 	assert.Zero(t, got)
+	assert.Equal(t, 1, completed, "an already-notified completed link must not be redelivered")
+	assert.Equal(t, 1, failed, "an already-notified failed link must not be redelivered")
+}
 
-	// Run returns ctx.Err() when its context is already cancelled (the immediate
-	// drain observes the cancellation).
+// TestCallNotifierRunRedrainsOnTick proves Run's ticker branch (case <-ticker.C)
+// actually redrains: a link seeded AFTER Run has finished its immediate drain can
+// only be delivered by a subsequent tick. Using the "early then late" ordering
+// makes this deterministic — observing the early delivery guarantees the immediate
+// drain has already returned, so the late delivery must come from the ticker.
+func TestCallNotifierRunRedrainsOnTick(t *testing.T) {
+	cl := kernel.NewMemCallLinkStore()
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		"parent:1": minimalDef("parent"),
+	})
+
+	var delivered atomic.Int64
+	deliver := func(context.Context, *model.ProcessDefinition, string, engine.Trigger) error {
+		delivered.Add(1)
+		return nil
+	}
+	n, err := calllink.NewCallNotifier(cl, deliver, reg, calllink.WithCallNotifierPollInterval(time.Millisecond))
+	require.NoError(t, err)
+
+	seedTerminalLink(cl, "c-early", "p-early", true) // present before Run's immediate drain
+
 	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	assert.ErrorIs(t, n.Run(ctx), context.Canceled)
-
-	// Run's polling loop: start it live, let it tick at least once, then cancel
-	// and confirm it returns context.Canceled.
-	runCtx, runCancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- n.Run(runCtx) }()
-	time.Sleep(10 * time.Millisecond) // let the 1ms-poll ticker fire several times
-	runCancel()
+	go func() { done <- n.Run(ctx) }()
+
+	require.Eventually(t, func() bool { return delivered.Load() == 1 }, 2*time.Second, time.Millisecond,
+		"the early link must be delivered (immediate drain), confirming Run reached its select loop")
+
+	// Seeded strictly after the immediate drain returned — only a ticker tick can pick it up.
+	seedTerminalLink(cl, "c-late", "p-late", true)
+	require.Eventually(t, func() bool { return delivered.Load() == 2 }, 2*time.Second, time.Millisecond,
+		"the late link must be redelivered by the ticker branch")
+
+	cancel()
 	select {
 	case rerr := <-done:
 		assert.ErrorIs(t, rerr, context.Canceled)
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not exit after cancel")
 	}
+}
+
+// TestCallNotifierRunHonorsCancelledContext covers Run's immediate-drain
+// cancellation path: an already-cancelled context returns ctx.Err() before any tick.
+func TestCallNotifierRunHonorsCancelledContext(t *testing.T) {
+	cl := kernel.NewMemCallLinkStore()
+	reg := kernel.NewMapDefinitionRegistry(nil)
+	deliver := func(context.Context, *model.ProcessDefinition, string, engine.Trigger) error { return nil }
+	n, err := calllink.NewCallNotifier(cl, deliver, reg)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	assert.ErrorIs(t, n.Run(ctx), context.Canceled)
 }

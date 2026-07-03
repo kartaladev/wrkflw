@@ -142,7 +142,7 @@ func NewCallNotifier(cl kernel.CallLinkStore, deliver CallDeliverFunc, reg kerne
 	// Build the Telemetry value after all options have been applied so that any
 	// subset of logger/tracer/meter providers can be set independently.
 	n.tel = observability.New(
-		"github.com/zakyalvan/krtlwrkflw/runtime",
+		kernel.InstrumentationScope,
 		filterCallNotifierNilOpts(n.logOpt, n.tpOpt, n.mpOpt)...,
 	)
 	n.linksNotifiedCounter = n.tel.Int64Counter(

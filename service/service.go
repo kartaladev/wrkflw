@@ -81,7 +81,7 @@ type Service interface {
 }
 
 // Engine is the concrete implementation of Service. It wires together the
-// runtime.ProcessDriver, runtime.TaskService, kernel.DefinitionRegistry,
+// runtime.ProcessDriver, task.TaskService, kernel.DefinitionRegistry,
 // kernel.Store, kernel.InstanceLister, and humantask.TaskStore.
 //
 // The constructor requires all collaborators as interface/concrete parameters;

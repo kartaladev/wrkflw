@@ -26,13 +26,6 @@ import (
 // at task-creation time. TaskService passes task.Vars to the Authorizer so that
 // attribute predicates referencing data variables (e.g. vars["region"] == "EU")
 // are correctly evaluated.
-
-// taskInstrumentationName is the OTel instrumentation scope name TaskService
-// emits metrics under. It is deliberately the runtime module path (not
-// ".../task") so the emitted scope is unchanged from before the package split —
-// this keeps the observability contract behavior-preserving.
-const taskInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime"
-
 type TaskService struct {
 	store      humantask.TaskStore
 	authz      authz.Authorizer
@@ -101,7 +94,7 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...Task
 	if cfg.mp != nil {
 		obsOpts = append(obsOpts, observability.WithMeterProvider(cfg.mp))
 	}
-	tel := observability.New(taskInstrumentationName, obsOpts...)
+	tel := observability.New(kernel.InstrumentationScope, obsOpts...)
 	return &TaskService{
 		store:      store,
 		authz:      az,
