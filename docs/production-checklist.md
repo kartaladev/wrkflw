@@ -147,13 +147,16 @@ configured for production**. `persistence.WarnUnsafeConfig` flags each one that 
 
 **What:** When you run more than one engine replica AND use call activities (child
 processes notifying a parent), you must wire
-`persistence.NewAdvisoryLockOwnership` so that only one replica acts on each
-completed child. Without it, every replica races to notify the parent.
+`persistence.NewAdvisoryLockOwnership` and pass the resulting `Ownership` to
+`runtime.NewCachingStore` so that only one replica acts on each completed child.
+Without it, every replica races to notify the parent.
 
 ```go
-ownership, closer, err := persistence.NewAdvisoryLockOwnership(pool)
-defer closer.Close()
-store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithOwnership(ownership))
+ownership, closer, err := persistence.NewAdvisoryLockOwnership(ctx, pool)
+// ... handle err; defer closer.Close()
+store, _ := persistence.OpenPostgres(ctx, pool)
+cachingStore, _ := runtime.NewCachingStore(store, ownership)
+// use cachingStore for multi-replica exclusivity
 ```
 
 **Failure mode if skipped:** when two replicas both see the child's `completed` event,
@@ -173,7 +176,7 @@ node visit.
 ```go
 store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
 // or MySQL:
-store, _ := persistence.OpenMySQL(ctx, db, persistence.WithHistoryCap(50))
+store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
 ```
 
 Pick `n` from your deepest expected open-visit fan-out plus headroom. `WithHistoryCap(n)`
@@ -199,9 +202,11 @@ pruning job you schedule:
 | `wrkflw_processed_message` | `pruner.PruneProcessedMessages(ctx, cutoff)` | processed > 7 days ago |
 | `wrkflw_call_links` | `pruner.PruneCallLinks(ctx, cutoff)` | notified > 30 days ago |
 | `wrkflw_chain_links` | `pruner.PruneChainLinks(ctx, cutoff)` | created > 90 days ago |
+| `wrkflw_timers` | `pruner.PruneTimers(ctx, cutoff)` (on public `persistence.Pruner`) | expired > 30 days ago |
 
 ```go
-pruner := persistence.NewPruner(pool)
+pruner := persistence.NewPruner(pool) // Postgres
+// MySQL: persistence.NewMySQLPruner(db); SQLite: persistence.NewSQLitePruner(db)
 
 // In your scheduled job (gocron, k8s CronJob, a ticker, …):
 now := time.Now()
@@ -227,7 +232,7 @@ pruning it eventually becomes a full-table-scan bottleneck for deduplication loo
 ## Quick-reference: safe startup template
 
 ```go
-// At application startup — fails fast if topology is misconfigured.
+// At application startup — logs one WARN per unsafe configuration item.
 persistence.WarnUnsafeConfig(logger, persistence.DeploymentProfile{
     MultiReplica:       cfg.Replicas > 1,
     CallLinksEnabled:   cfg.CallActivitiesEnabled,

@@ -51,6 +51,14 @@ func TestWarnUnsafeConfig(t *testing.T) {
 				assert.Contains(t, logged, persistence.WarnMsgPruning)
 			},
 		},
+		"call-links disabled suppresses call-link lease warning even in multi-replica": {
+			profile: persistence.DeploymentProfile{
+				MultiReplica: true, CallLinksEnabled: false, HistoryCapSet: true, PruningScheduled: true,
+			},
+			assert: func(t *testing.T, logged string) {
+				assert.NotContains(t, logged, persistence.WarnMsgCallLinkLease)
+			},
+		},
 	}
 
 	for name, tc := range tests {
