@@ -88,20 +88,6 @@ func (m *MemCallLinkStore) markTerminal(childID string, out CallOutcome) {
 	}
 }
 
-// Seed inserts a call link directly, bypassing the normal Store.Create flow.
-// It exists so tests and reference wiring in OTHER packages (calllink, monitor,
-// the driver's own tests) can pre-populate this reference store without driving a
-// full instance. Production code records links via [MemStore] on Create; do not
-// use Seed on a hot path.
-func (m *MemCallLinkStore) Seed(link CallLink) { m.record(link) }
-
-// SeedTerminal marks a seeded child's link terminal with the given outcome,
-// bypassing the normal Store.Commit flow. Test/reference support companion to
-// [MemCallLinkStore.Seed]; a no-op when childID has no link.
-func (m *MemCallLinkStore) SeedTerminal(childID string, out CallOutcome) {
-	m.markTerminal(childID, out)
-}
-
 // ClaimPending returns up to limit terminal-but-unnotified links.
 //
 // When leaseTTL > 0 (lease mode), only links whose claimedAt is zero or has

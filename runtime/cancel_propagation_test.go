@@ -559,7 +559,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	// Seed call links to wire the diamond topology into cl:
 	//   parent → C  (C is a second running child of parent)
 	//   C → D       (D is also a child of C → shared grandchild)
-	cl.Seed(kernel.CallLink{
+	runtimetest.SeedCallLink(t, cl, kernel.CallLink{
 		ChildInstanceID:  cID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  parentID + "-c2",
@@ -568,7 +568,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 		Depth:            1,
 	})
 
-	cl.Seed(kernel.CallLink{
+	runtimetest.SeedCallLink(t, cl, kernel.CallLink{
 		ChildInstanceID:  dID,
 		ParentInstanceID: cID,
 		ParentCommandID:  cID + "-c1",

@@ -203,8 +203,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 		ParentDefVersion: 1,
 		ParentCommandID:  "cmd-1",
 	}
-	cl.Seed(link)
-	cl.SeedTerminal("child-1", kernel.CallOutcome{
+	runtimetest.SeedTerminalCallLink(t, cl, link, kernel.CallOutcome{
 		Completed: true,
 		Output:    map[string]any{"k": "v"},
 	})

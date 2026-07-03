@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -28,22 +29,24 @@ func minimalDef(id string) *model.ProcessDefinition {
 	}
 }
 
-// seedTerminalLink inserts a terminal call link (parent def "parent:1") directly
-// into the reference store, so a drain can claim and deliver it.
-func seedTerminalLink(cl *kernel.MemCallLinkStore, child, parent string, completed bool) {
-	cl.Seed(kernel.CallLink{
+// seedTerminalLink inserts a terminal call link (parent def "parent:1") into the
+// reference store via the shared runtimetest helper, so a drain can claim and
+// deliver it.
+func seedTerminalLink(t *testing.T, cl *kernel.MemCallLinkStore, child, parent string, completed bool) {
+	t.Helper()
+	link := kernel.CallLink{
 		ChildInstanceID:  child,
 		ParentInstanceID: parent,
 		ParentCommandID:  parent + "-c1",
 		ParentDefID:      "parent",
 		ParentDefVersion: 1,
 		Depth:            1,
-	})
-	if completed {
-		cl.SeedTerminal(child, kernel.CallOutcome{Completed: true, Output: map[string]any{"result": 42}})
-	} else {
-		cl.SeedTerminal(child, kernel.CallOutcome{Completed: false, Err: "child failed"})
 	}
+	out := kernel.CallOutcome{Completed: true, Output: map[string]any{"result": 42}}
+	if !completed {
+		out = kernel.CallOutcome{Completed: false, Err: "child failed"}
+	}
+	runtimetest.SeedTerminalCallLink(t, cl, link, out)
 }
 
 // TestCallNotifierOptionsAndDrainBranches exercises every functional option and
@@ -55,11 +58,10 @@ func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 		"parent:1": minimalDef("parent"),
 	})
 
-	seedTerminalLink(cl, "c-ok", "p-ok", true)
-	seedTerminalLink(cl, "c-fail", "p-fail", false)
+	seedTerminalLink(t, cl, "c-ok", "p-ok", true)
+	seedTerminalLink(t, cl, "c-fail", "p-fail", false)
 	// Unknown parent def → DrainOnce resolves nothing and skips (continue branch).
-	cl.Seed(kernel.CallLink{ChildInstanceID: "c-skip", ParentInstanceID: "p-skip", ParentCommandID: "p-skip-c1", ParentDefID: "missing", ParentDefVersion: 1, Depth: 1})
-	cl.SeedTerminal("c-skip", kernel.CallOutcome{Completed: true})
+	runtimetest.SeedTerminalCallLink(t, cl, kernel.CallLink{ChildInstanceID: "c-skip", ParentInstanceID: "p-skip", ParentCommandID: "p-skip-c1", ParentDefID: "missing", ParentDefVersion: 1, Depth: 1}, kernel.CallOutcome{Completed: true})
 
 	var completed, failed int
 	deliver := func(_ context.Context, def *model.ProcessDefinition, _ string, trg engine.Trigger) error {
@@ -116,7 +118,7 @@ func TestCallNotifierRunRedrainsOnTick(t *testing.T) {
 	n, err := calllink.NewCallNotifier(cl, deliver, reg, calllink.WithCallNotifierPollInterval(time.Millisecond))
 	require.NoError(t, err)
 
-	seedTerminalLink(cl, "c-early", "p-early", true) // present before Run's immediate drain
+	seedTerminalLink(t, cl, "c-early", "p-early", true) // present before Run's immediate drain
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -126,7 +128,7 @@ func TestCallNotifierRunRedrainsOnTick(t *testing.T) {
 		"the early link must be delivered (immediate drain), confirming Run reached its select loop")
 
 	// Seeded strictly after the immediate drain returned — only a ticker tick can pick it up.
-	seedTerminalLink(cl, "c-late", "p-late", true)
+	seedTerminalLink(t, cl, "c-late", "p-late", true)
 	require.Eventually(t, func() bool { return delivered.Load() == 2 }, 2*time.Second, time.Millisecond,
 		"the late link must be redelivered by the ticker branch")
 

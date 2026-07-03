@@ -54,8 +54,7 @@ func TestCallNotifierBatchSpan(t *testing.T) {
 		ParentDefVersion: 1,
 		ParentCommandID:  "cmd-span-1",
 	}
-	cl.Seed(link)
-	cl.SeedTerminal("batch-span-child-1", kernel.CallOutcome{
+	runtimetest.SeedTerminalCallLink(t, cl, link, kernel.CallOutcome{
 		Completed: true,
 		Output:    map[string]any{"k": "v"},
 	})
@@ -144,8 +143,7 @@ func TestCallNotifierLinksNotifiedCounter(t *testing.T) {
 					ParentDefVersion: 1,
 					ParentCommandID:  "cmd-" + string(rune('0'+i)),
 				}
-				cl.Seed(link)
-				cl.SeedTerminal(childID, kernel.CallOutcome{
+				runtimetest.SeedTerminalCallLink(t, cl, link, kernel.CallOutcome{
 					Completed: true,
 					Output:    map[string]any{"i": i},
 				})
