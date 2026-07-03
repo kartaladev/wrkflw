@@ -31,6 +31,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
 // casbinPolicy is the inline policy CSV used for the casbin RBAC demo.
@@ -120,7 +121,7 @@ func demoAttributeAuthz(ctx context.Context) {
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
 
-		svc, err := runtime.NewTaskService(taskStore, az)
+		svc, err := task.NewTaskService(taskStore, az)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
@@ -163,7 +164,7 @@ func demoAttributeAuthz(ctx context.Context) {
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
 
-		svc, err := runtime.NewTaskService(taskStore, az)
+		svc, err := task.NewTaskService(taskStore, az)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
@@ -233,7 +234,7 @@ func demoCasbinRBAC(ctx context.Context) {
 			log.Fatal("run (allow):", runErr)
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
-		svc, err := runtime.NewTaskService(taskStore, casbinAz)
+		svc, err := task.NewTaskService(taskStore, casbinAz)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
@@ -256,7 +257,7 @@ func demoCasbinRBAC(ctx context.Context) {
 			log.Fatal("run (deny):", runErr)
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
-		svc, err := runtime.NewTaskService(taskStore, casbinAz)
+		svc, err := task.NewTaskService(taskStore, casbinAz)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}

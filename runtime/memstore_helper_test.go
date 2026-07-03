@@ -20,6 +20,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
 // mustMemStore builds a MemStore or fails the test. Keeps option-free call sites terse.
@@ -45,9 +46,9 @@ func mustRunner(t *testing.T, cat action.Catalog, store kernel.Store, opts ...ru
 
 // mustTaskService builds a TaskService with the given store and authorizer,
 // failing the test on any error.
-func mustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorizer, opts ...runtime.TaskServiceOption) *runtime.TaskService {
+func mustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorizer, opts ...task.TaskServiceOption) *task.TaskService {
 	t.Helper()
-	svc, err := runtime.NewTaskService(store, az, opts...)
+	svc, err := task.NewTaskService(store, az, opts...)
 	require.NoError(t, err)
 	return svc
 }

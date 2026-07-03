@@ -52,6 +52,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
@@ -250,7 +251,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := runtime.NewTaskService(taskStore, az)
+	tasks, err := task.NewTaskService(taskStore, az)
 	if err != nil {
 		return err
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
 // collect gathers a ResourceMetrics snapshot from a ManualReader.
@@ -447,8 +448,8 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				runtime.WithMeterProvider(mp),
 			)
 			svc := mustTaskService(t, taskStore, az,
-				runtime.WithTaskServiceClock(clk),
-				runtime.WithTaskServiceMeterProvider(mp))
+				task.WithTaskServiceClock(clk),
+				task.WithTaskServiceMeterProvider(mp))
 
 			def := approvalDef()
 			const instID = "htlc-inst"

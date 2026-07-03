@@ -20,6 +20,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -54,7 +55,7 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 		defsMap[d.ID] = d
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	svc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 	require.NoError(t, err)
 	facade := service.New(r, svc, reg, store, store, taskStore, service.WithEngineClock(fc))
 	return &testHarness{runner: r, store: store, taskStore: taskStore, clk: fc}, facade

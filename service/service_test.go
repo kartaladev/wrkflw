@@ -18,13 +18,14 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
 // harness wires a real in-memory engine for the service tests.
 type harness struct {
 	runner *runtime.ProcessDriver
-	tasks  *runtime.TaskService
+	tasks  *task.TaskService
 	reg    *kernel.MapDefinitionRegistry
 	store  *kernel.MemStore
 	lister kernel.InstanceLister
@@ -142,7 +143,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
 
-	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	svc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 
 	require.NoError(t, err)
 	return &harness{

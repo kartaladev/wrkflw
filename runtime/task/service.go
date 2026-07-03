@@ -1,4 +1,4 @@
-package runtime
+package task
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 )
 
 // TaskService authorizes human-task interactions and returns the engine triggers
-// that the caller (typically via Runner.Deliver) feeds back into the process.
+// that the caller (typically via ProcessDriver.Deliver) feeds back into the process.
 //
 // Authorization happens here, in the runtime layer, so that the engine core
 // remains pure and free of I/O. TaskService never calls engine.Step itself.
@@ -26,6 +26,13 @@ import (
 // at task-creation time. TaskService passes task.Vars to the Authorizer so that
 // attribute predicates referencing data variables (e.g. vars["region"] == "EU")
 // are correctly evaluated.
+
+// taskInstrumentationName is the OTel instrumentation scope name TaskService
+// emits metrics under. It is deliberately the runtime module path (not
+// ".../task") so the emitted scope is unchanged from before the package split —
+// this keeps the observability contract behavior-preserving.
+const taskInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime"
+
 type TaskService struct {
 	store      humantask.TaskStore
 	authz      authz.Authorizer
@@ -94,7 +101,7 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...Task
 	if cfg.mp != nil {
 		obsOpts = append(obsOpts, observability.WithMeterProvider(cfg.mp))
 	}
-	tel := observability.New(runnerInstrumentationName, obsOpts...)
+	tel := observability.New(taskInstrumentationName, obsOpts...)
 	return &TaskService{
 		store:      store,
 		authz:      az,
@@ -104,7 +111,7 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...Task
 }
 
 // Claim authorizes actor against the task's eligibility and, on success, returns
-// a HumanClaimed trigger for the caller to deliver to the engine via Runner.Deliver.
+// a HumanClaimed trigger for the caller to deliver to the engine via ProcessDriver.Deliver.
 //
 // task.Vars (snapshotted at task-creation by the runner's AwaitHuman perform) are
 // forwarded to the Authorizer so that attribute predicates referencing process

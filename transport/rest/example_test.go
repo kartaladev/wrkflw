@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -75,7 +76,7 @@ func Example_responseShapes() {
 		"approval:1": def,
 		"approval":   def,
 	})
-	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	taskSvc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 	if err != nil {
 		panic(err)
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -80,7 +81,7 @@ func TestEngineResolveIncident(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	taskSvc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(clk))
 	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
@@ -144,7 +145,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	taskSvc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(clk))
 	require.NoError(t, err)
 	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 

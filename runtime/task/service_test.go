@@ -1,4 +1,4 @@
-package runtime_test
+package task_test
 
 import (
 	"testing"
@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
 // TestTaskServiceRejectsIneligibleActor verifies that Claim returns ErrNotAuthorized
@@ -270,7 +271,7 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 	}))
 
 	az := authz.AllowAll{}
-	svc := mustTaskService(t, store, az, runtime.WithTaskServiceClock(fake))
+	svc := mustTaskService(t, store, az, task.WithTaskServiceClock(fake))
 	assert.NotNil(t, svc)
 
 	// Claim stamps the trigger's At field from the clock; verify fake time flows through.
@@ -289,13 +290,13 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 		name   string
 		store  humantask.TaskStore
 		az     authz.Authorizer
-		assert func(t *testing.T, svc *runtime.TaskService, err error)
+		assert func(t *testing.T, svc *task.TaskService, err error)
 	}{
 		{
 			name:  "nil store",
 			store: nil,
 			az:    az,
-			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
+			assert: func(t *testing.T, svc *task.TaskService, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, svc)
 			},
@@ -304,7 +305,7 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 			name:  "nil authorizer",
 			store: store,
 			az:    nil,
-			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
+			assert: func(t *testing.T, svc *task.TaskService, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, svc)
 			},
@@ -313,7 +314,7 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 			name:  "valid args",
 			store: store,
 			az:    az,
-			assert: func(t *testing.T, svc *runtime.TaskService, err error) {
+			assert: func(t *testing.T, svc *task.TaskService, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, svc)
 			},
@@ -321,7 +322,7 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			svc, err := runtime.NewTaskService(tc.store, tc.az)
+			svc, err := task.NewTaskService(tc.store, tc.az)
 			tc.assert(t, svc, err)
 		})
 	}

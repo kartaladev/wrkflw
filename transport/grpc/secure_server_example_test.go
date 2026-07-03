@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 )
@@ -46,7 +47,7 @@ func buildService() service.Service {
 		panic(err)
 	}
 	reg := kernel.NewMapDefinitionRegistry(nil)
-	tasks, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	tasks, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 	if err != nil {
 		panic(err)
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
@@ -55,7 +56,7 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 		defsMap[d.ID] = d
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	tasks, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	tasks, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 	require.NoError(t, err)
 	svc := service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 

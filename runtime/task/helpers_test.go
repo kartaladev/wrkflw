@@ -1,8 +1,8 @@
-package calllink_test
+package task_test
 
-// Package-scoped test helpers for calllink_test. These mirror the same-named
-// helpers in runtime/kernel and the root runtime_test package (Go test helpers
-// cannot be shared across packages); keep them in sync when editing.
+// Package-scoped test helpers for task_test. These mirror the same-named helpers
+// in the root runtime_test / kernel_test packages (Go test helpers cannot be
+// shared across packages); keep them in sync when editing.
 
 import (
 	"testing"
@@ -12,11 +12,28 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
+
+// approvalDef returns a minimal process: start → userTask("approve", role "manager") → end.
+func approvalDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "approval",
+		Version: 1,
+		Nodes: []model.Node{
+			model.NewStartEvent("start"),
+			model.NewUserTask("approve", []string{"manager"}),
+			model.NewEndEvent("end"),
+		},
+		Flows: []model.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "approve"},
+			{ID: "f2", Source: "approve", Target: "end"},
+		},
+	}
+}
 
 // mustMemStore builds a MemStore or fails the test.
 func mustMemStore(t *testing.T, opts ...kernel.MemStoreOption) *kernel.MemStore {
@@ -43,12 +60,4 @@ func mustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 	svc, err := task.NewTaskService(store, az, opts...)
 	require.NoError(t, err)
 	return svc
-}
-
-// mustCallNotifier builds a CallNotifier or fails the test.
-func mustCallNotifier(t *testing.T, cl kernel.CallLinkStore, deliver calllink.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...calllink.CallNotifierOption) *calllink.CallNotifier {
-	t.Helper()
-	n, err := calllink.NewCallNotifier(cl, deliver, reg, opts...)
-	require.NoError(t, err)
-	return n
 }

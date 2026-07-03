@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
 // Service is the single application-layer seam between the transport adapters
@@ -92,7 +93,7 @@ type Service interface {
 // may also be registered for use with StartInstance.
 type Engine struct {
 	runner    *runtime.ProcessDriver
-	tasks     *runtime.TaskService
+	tasks     *task.TaskService
 	reg       kernel.DefinitionRegistry
 	store     kernel.Store
 	lister    kernel.InstanceLister
@@ -128,7 +129,7 @@ func WithEngineClock(clk clock.Clock) EngineOption {
 //   - opts: optional; use WithEngineClock to override the default clock.System().
 func New(
 	runner *runtime.ProcessDriver,
-	tasks *runtime.TaskService,
+	tasks *task.TaskService,
 	reg kernel.DefinitionRegistry,
 	store kernel.Store,
 	lister kernel.InstanceLister,
