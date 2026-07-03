@@ -163,10 +163,10 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func main() {
@@ -186,9 +186,9 @@ func main() {
 		}),
 	})
 
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	if err != nil { log.Fatal(err) }
-	r, err := runtime.NewRunner(cat, store)
+	r, err := runtime.NewProcessDriver(cat, store)
 	if err != nil { log.Fatal(err) }
 
 	state, err := r.Run(ctx, def, "order-001", map[string]any{"amount": 99.0})
@@ -202,7 +202,7 @@ func main() {
 ```
 
 For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
-`runtime/caching_store_example_test.go` for a park-then-resume pattern.
+`runtime/kernel/caching_store_example_test.go` for a park-then-resume pattern.
 
 ---
 
@@ -223,7 +223,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 |---|---|
 | `model` | Process-definition types: nodes, gateways, sequence flows, `ProcessDefinition`. Pure data + validation; no I/O. |
 | `engine` | Core token state machine. Pure of transport, storage, and event-bus specifics — depends on interfaces only. |
-| `runtime` | Reference driver: wires the engine to persistence, scheduling, and actions; provides `Runner`, `CachingStore`, `MemStore`, snapshot DTOs. |
+| `runtime` | Reference driver `ProcessDriver` that wires the engine to persistence, scheduling, and actions, plus lifecycle helpers (`ShutdownGroup`). Supporting pieces live in sub-packages: `runtime/kernel` (in-memory `MemStore`/`CachingStore`, schedulers, definition registry, ownership), `runtime/view` (snapshot DTOs), `runtime/chain` (instance chaining), `runtime/task` (human-task service), plus `runtime/signal`, `runtime/calllink`, `runtime/monitor`. |
 | `action` | Service-action catalog (`Catalog`, `ServiceAction`, `MapCatalog`, `Func` adapter). |
 | `humantask` | Human-task model and ports that drive human work (claim, complete, reassign). |
 | `authz` | Pluggable `Authorizer` abstraction: role, resource-privilege, and attribute-based rules. |
@@ -283,13 +283,13 @@ grpctransport.RegisterWorkflowServiceServer(srv, svc)
 
 ## Reading instance state
 
-The `runtime` package provides two JSON-serializable projections built from an
+The `runtime/view` package provides two JSON-serializable projections built from an
 `engine.InstanceState`:
 
 | Type | Constructor | Purpose |
 |---|---|---|
-| `runtime.InstanceSnapshot` | `runtime.NewInstanceSnapshot(state, def)` | Full snapshot: tokens, variables, history, tasks, incidents. Omits engine bookkeeping. |
-| `runtime.ActionableView` | `runtime.NewActionableView(state, def)` | Curated view: only open human tasks + allowed next actions (outgoing flows). |
+| `view.InstanceSnapshot` | `view.NewInstanceSnapshot(state, def)` | Full snapshot: tokens, variables, history, tasks, incidents. Omits engine bookkeeping. |
+| `view.ActionableView` | `view.NewActionableView(state, def)` | Curated view: only open human tasks + allowed next actions (outgoing flows). |
 
 The REST handler exposes these via:
 
@@ -331,7 +331,7 @@ a, closer, err := casbinauthz.NewCasbinAuthorizer(casbinauthz.FromDB(ctx, pool))
 defer closer.Close()
 ```
 
-Pass the authorizer to `runtime.NewRunner` via `runtime.WithHumanTasks(resolver, taskStore, a)`
+Pass the authorizer to `runtime.NewProcessDriver` via `runtime.WithHumanTasks(resolver, taskStore, a)`
 (the authorizer is the third argument).
 
 ---
@@ -349,10 +349,12 @@ Timers and deadlines are driven by gocron (behind the `scheduling` abstraction).
 Configure timers on nodes:
 
 ```go
-// UserTask with a 3-day deadline and daily reminders:
+// UserTask with a 3-day deadline and daily reminders. Durations are expr
+// expressions evaluated to a Go duration via time.ParseDuration, so they are
+// backtick-wrapped quoted duration literals ("72h", "24h" — not ISO-8601).
 model.NewUserTask("approve", []string{"manager"},
-    model.WithDeadline("P3D", "escalate-flow", "notify-manager"),
-    model.WithReminder("P1D", "send-reminder"),
+    model.WithDeadline(`"72h"`, "escalate-flow", "notify-manager"),
+    model.WithReminder(`"24h"`, "send-reminder"),
 )
 ```
 
@@ -391,11 +393,11 @@ model.NewDefinition("order", 1).CancelActions("send-cancellation-email")
 
 ### Observability
 
-The `runtime.Runner` emits OpenTelemetry spans, metrics, and `slog`-structured logs
+The `runtime.ProcessDriver` emits OpenTelemetry spans, metrics, and `slog`-structured logs
 around every engine step and service-action invocation:
 
 ```go
-r, err := runtime.NewRunner(
+r, err := runtime.NewProcessDriver(
     cat, store,
     runtime.WithTracerProvider(tp),
     runtime.WithMeterProvider(mp),
@@ -419,18 +421,18 @@ This is sequential chaining of independent instances, driven off the durable ter
 outbox events — **not** the parent→child nesting of a call activity.
 
 A `SuccessorPolicy` callback decides the successor for each terminal outcome; the
-`runtime.Chainer` records the lineage hop and starts the successor with a deterministic
+`chain.Chainer` records the lineage hop and starts the successor with a deterministic
 id, so a redelivered event is a clean no-op (exactly-once effect under at-least-once
 delivery).
 
 ```go
-policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-    if ev.Outcome != runtime.OutcomeCompleted {
-        return runtime.SuccessorDecision{}, false // end the chain
+policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
+    if ev.Outcome != kernel.OutcomeCompleted {
+        return chain.SuccessorDecision{}, false // end the chain
     }
-    return runtime.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
+    return chain.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
 }
-chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 if err != nil {
     log.Fatal(err) // NewChainer rejects a nil starter/policy with ErrNilDependency
 }
@@ -442,7 +444,7 @@ go eventing.NewChainerRunner(chainer).Run(ctx, subscriber)
 
 Terminal outbox events are **status-accurate**: completed → `instance.completed`, failed →
 `instance.failed`, terminated → `instance.terminated`. Chaining lineage is durable and
-queryable (`runtime.ChainLinkStore`, in-memory or Postgres via
+queryable (`kernel.ChainLinkStore`, in-memory or Postgres via
 `persistence.NewChainLinkStore`), and a policy can route on the predecessor definition
 (`ChainEvent.PredecessorDefinitionRef`). See
 [`runtime/README.md`](runtime/README.md#process-instance-chaining) for the full API.
@@ -636,7 +638,7 @@ at-least-once by the outbox relay — no `MessageSink` wiring, no stranding wind
 The event payload is `{"messageName", "correlationKey", "variables"}`, with `instance_id`
 and `definition_ref` as message metadata. Consume it like any other outbox topic. To deliver
 a message intra-engine (resume a parked `ReceiveTask`), mount `eventing.NewMessageHandler`
-on your message router and route to `Runner.DeliverMessage`:
+on your message router and route to `ProcessDriver.DeliverMessage`:
 
 ```go
 handler := eventing.NewMessageHandler(func(ctx context.Context, name, key string, vars map[string]any) error {
@@ -644,7 +646,7 @@ handler := eventing.NewMessageHandler(func(ctx context.Context, name, key string
 })
 ```
 
-`DeliverMessage`'s waiter index is in-memory per `Runner`, so intra-engine correlation works
+`DeliverMessage`'s waiter index is in-memory per `ProcessDriver`, so intra-engine correlation works
 within one process; for cross-process correlation, subscribe `message.*` in your own consumer.
 
 ### Intermediate and boundary events
@@ -905,19 +907,19 @@ instance ends `StatusTerminated`. Observed invocation order:
 ### 5. Human-task approval
 
 A `UserTask` parks the instance until a human claims and completes it. The lifecycle is
-driven through the `humantask` ports and `runtime.TaskService`.
+driven through the `humantask` ports and `task.TaskService`.
 
 ```
 start → approve[UserTask, roles: manager] → end
 ```
 
 ```go
-memSt, err := runtime.NewMemStore()
+memSt, err := kernel.NewMemStore()
 if err != nil {
     log.Fatal(err)
 }
 // This process has no service tasks, so pass an empty catalog (nil is rejected).
-r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
+r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), memSt,
     runtime.WithClock(clk),
     runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 if err != nil {
@@ -927,7 +929,7 @@ if err != nil {
 parked, _ := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
 
 claimable, _ := taskStore.ClaimableBy(ctx, manager)        // discover tasks
-svc, _ := runtime.NewTaskService(taskStore, az, runtime.WithClock(clk))
+svc, _ := task.NewTaskService(taskStore, az, runtime.WithClock(clk))
 
 claimTrg, _ := svc.Claim(ctx, claimable[0].TaskToken, manager)
 r.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed
@@ -965,9 +967,9 @@ def, _  := model.NewDefinition("travel-booking", 1).
     /* ... */ .Build()
 
 // Call activity (separate definition resolved by name):
-reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
-memSt, _ := runtime.NewMemStore()
-r, _   := runtime.NewRunner(cat, memSt, runtime.WithDefinitions(reg))
+reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
+memSt, _ := kernel.NewMemStore()
+r, _   := runtime.NewProcessDriver(cat, memSt, runtime.WithDefinitions(reg))
 ```
 
 **At runtime:** the SubProcess example books a room inside the nested scope and merges
@@ -1003,6 +1005,151 @@ branches only, then continues to `end`. Contrast with the exclusive gateway (exa
 one branch) and the parallel gateway (all branches unconditionally).
 → [`examples/scenarios/inclusive_gateway`](examples/scenarios/inclusive_gateway)
 
+### 8. Instance cancellation & cleanup
+
+`ProcessDriver.CancelInstance` terminates a running instance mid-flight. It runs the
+definition's `CancelActions` (best-effort, in order — a failing one is logged and
+skipped), clears all tokens to `StatusTerminated`, and reconciles the human-task
+projection so a parked task is marked `Cancelled` rather than orphaned in an inbox
+query (ADR-0088).
+
+```
+start → fulfil[UserTask] → end   ── cancel ──▶ [release-inventory, notify-customer] → terminated
+```
+
+```go
+def, _ := model.NewDefinition("order-fulfilment", 1).
+    Add(model.NewStartEvent("start")).
+    Add(model.NewUserTask("fulfil", []string{"fulfiller"})).
+    Add(model.NewEndEvent("end")).
+    Connect("start", "fulfil").Connect("fulfil", "end").
+    CancelActions("release-inventory", "notify-customer").
+    Build()
+
+parked, _ := r.Run(ctx, def, "order-9001", nil)      // parks at "fulfil" (StatusRunning)
+final, _ := r.CancelInstance(ctx, def, "order-9001") // → StatusTerminated
+```
+
+**At runtime:** `CancelInstance` runs `release-inventory` then `notify-customer` (the
+latter may fail without aborting the cancel), clears the token, and the parked task
+transitions to `Cancelled` — it no longer appears in `taskStore.ClaimableBy`.
+→ [`examples/scenarios/instance_cancellation`](examples/scenarios/instance_cancellation)
+
+### 9. Message correlation
+
+A `ReceiveTask` parks until a named message is delivered with a matching correlation key
+(an `expr` expression over the instance variables). Delivery is **point-to-point** —
+`DeliverMessage` resumes only the instance whose key matches.
+
+```
+start → await-payment[ReceiveTask "PaymentReceived", key = orderID] → ship → end
+```
+
+```go
+def, _ := model.NewDefinition("order-shipping", 1).
+    Add(model.NewStartEvent("start")).
+    Add(model.NewReceiveTask("await-payment", "PaymentReceived",
+        model.WithCorrelationKey("orderID"))).
+    Add(model.NewServiceTask("ship", model.WithActionName("ship-order"))).
+    Add(model.NewEndEvent("end")).
+    Connect("start", "await-payment").
+    Connect("await-payment", "ship").Connect("ship", "end").
+    Build()
+
+r.Run(ctx, def, "order-1", map[string]any{"orderID": "order-1"}) // parks on "PaymentReceived"
+r.DeliverMessage(ctx, def, "PaymentReceived", "order-1", nil)    // resumes order-1 only
+```
+
+**At runtime:** two orders park on the same message name; delivering key `"order-1"`
+advances only order 1 through `ship → end`, leaving order 2 waiting for its own key.
+→ [`examples/scenarios/message_correlation`](examples/scenarios/message_correlation)
+
+### 10. Signal broadcast
+
+An `IntermediateCatchEvent` with a signal name parks until the signal is published to a
+`SignalBus`. Delivery is **fan-out** — one `bus.Publish` resumes every instance awaiting
+that name. The bus needs a deliver callback into the driver and the driver needs the bus,
+so a forward-reference wires the cycle.
+
+```
+start → await["market-open" catch] → trade[Service] → end        (× N instances)
+```
+
+```go
+var r *runtime.ProcessDriver
+bus, _ := signal.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
+    _, err := r.Deliver(ctx, def, id, trg)
+    return err
+})
+r, _ = runtime.NewProcessDriver(cat, store, runtime.WithSignalBus(bus))
+
+r.Run(ctx, def, "desk-A", nil)       // parks awaiting "market-open"
+r.Run(ctx, def, "desk-B", nil)
+bus.Publish(ctx, "market-open", nil) // resumes BOTH desks
+```
+
+**At runtime:** each parked catcher is auto-subscribed to the bus after it parks; a single
+`Publish` fans the signal out to all of them and each runs its service task to completion.
+→ [`examples/scenarios/signal_broadcast`](examples/scenarios/signal_broadcast)
+
+### 11. Retry with recovery
+
+`WithRetryPolicy` turns a retryable action failure into a scheduled retry instead of an
+incident. Retries are **not** automatic: a failed attempt parks the instance on a backoff
+timer, so a scheduler tick (driven here by a fake clock) fires the next attempt.
+
+```
+start → charge[Service "charge-card", retry ≤5, backoff ×2] → end
+```
+
+```go
+Add(model.NewServiceTask("charge", model.WithActionName("charge-card"),
+    model.WithRetryPolicy(&model.RetryPolicy{
+        MaxAttempts: 5, InitialInterval: time.Second, BackoffCoef: 2.0,
+    })))
+// r wired with WithClock(fc), WithScheduler(sched), WithJitterSource(...)
+r.Run(ctx, def, "pay-1", nil)             // attempt 1 fails → parks on retry timer
+for attempts < 3 {                        // advance + tick until it recovers
+    fc.Advance(time.Minute)
+    sched.Tick(ctx)
+}
+```
+
+**At runtime:** the action fails twice then succeeds on attempt 3; advancing the clock and
+ticking the scheduler between attempts drives the exponential backoff, and the instance
+reaches `StatusCompleted` with no incident raised.
+→ [`examples/scenarios/retry_recovery`](examples/scenarios/retry_recovery)
+
+### 12. In-wait reminders
+
+`WithReminder(every, action)` schedules a recurring in-wait action that fires once per
+interval **while** a task is open, re-arming itself each time. It stops automatically once
+the task is completed, cancelled, or breached — distinct from the one-shot `WithDeadline`
+escalation in scenario 3.
+
+```
+start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
+```
+
+```go
+Add(model.NewUserTask("review", []string{"reviewer"},
+    model.WithReminder(`"30m"`, "nudge-reviewer")))
+// r wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
+r.Run(ctx, def, "review-77", nil)                            // parks; first reminder armed
+for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire
+// reviewer then claims + completes → further ticks fire nothing
+```
+
+**At runtime:** three ticks fire three `nudge-reviewer` reminders while the reviewer sits
+on the task; once the task completes the recurring timer goes stale and no further
+reminders run.
+→ [`examples/scenarios/inwait_reminder`](examples/scenarios/inwait_reminder)
+
+> The tour above is a curated subset. Other runnable scenarios under
+> [`examples/scenarios/`](examples/scenarios) include `attribute_authz` (ABAC + Casbin
+> eligibility) and `admin_monitoring` (instance listing, incident resolve, dead-letter
+> redrive).
+
 ---
 
 ## Persistence backends
@@ -1029,7 +1176,7 @@ db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=forei
 db.SetMaxOpenConns(1) // single-writer serialisation (required)
 persistence.MigrateSQLite(ctx, db)
 store, _ := persistence.OpenSQLite(ctx, db)
-runner, _ := runtime.NewRunner(cat, store)
+runner, _ := runtime.NewProcessDriver(cat, store)
 ```
 
 See [`examples/sqlite_wiring/`](examples/sqlite_wiring/) for the complete reference wiring.
@@ -1057,8 +1204,8 @@ clean production embedding ergonomic (ADR-0054):
   chainer) keep their idiomatic stop story: you start their goroutines and stop them by
   cancelling the context you passed.
 
-- **Single-replica caching guard.** Pairing `runtime.NewCachingStore` with
-  `runtime.AlwaysOwn` is single-writer / single-replica **only** — across replicas it is
+- **Single-replica caching guard.** Pairing `kernel.NewCachingStore` with
+  `kernel.AlwaysOwn` is single-writer / single-replica **only** — across replicas it is
   a stale-read footgun. `NewCachingStore` now logs a one-time warning when constructed
   with `AlwaysOwn`; for multi-replica deployments use
   `persistence.NewAdvisoryLockOwnership` so only the owning replica caches an instance.
@@ -1117,7 +1264,7 @@ Process-instance **variables** and **human-task variables** (`HumanTask.Vars`) f
 carry sensitive data (PII, tokens, payment details). Treat them as secrets:
 
 - **The engine does not log variables in cleartext.** The core state machine reads the
-  wall clock and emits no logs; the `runtime.Runner`'s `slog` records identify instances,
+  wall clock and emits no logs; the `runtime.ProcessDriver`'s `slog` records identify instances,
   nodes, actions, and outcomes — they do **not** dump the variable map. This is a
   deliberate invariant; keep it that way if you extend the logging.
 - **Redact in your own resolvers and actions.** When you write a `service.ServiceAction`,
