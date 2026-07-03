@@ -28,6 +28,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -135,18 +136,18 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 	require.NoError(t, err)
 
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.
-	policy := func(ctx context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+	policy := func(ctx context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		switch ev.PredecessorDefinitionRef {
 		case "proc-a:1":
-			return runtime.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
+			return chain.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
 		case "proc-b:1":
-			return runtime.SuccessorDecision{Def: defSB, Vars: ev.Result}, true
+			return chain.SuccessorDecision{Def: defSB, Vars: ev.Result}, true
 		default:
-			return runtime.SuccessorDecision{}, false
+			return chain.SuccessorDecision{}, false
 		}
 	}
 
-	core, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(d.links))
+	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(d.links))
 	require.NoError(t, err)
 	cr := eventing.NewChainerRunner(core)
 

@@ -59,6 +59,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -314,14 +315,14 @@ func run(logger *slog.Logger) error {
 	}
 
 	// SuccessorPolicy: when proc-a:1 completes, start proc-a-succ with carried vars.
-	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		if ev.PredecessorDefinitionRef == "proc-a:1" {
-			return runtime.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
+			return chain.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
 		}
-		return runtime.SuccessorDecision{}, false
+		return chain.SuccessorDecision{}, false
 	}
 
-	core, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(be.links))
+	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(be.links))
 	if err != nil {
 		return fmt.Errorf("chainer: %w", err)
 	}

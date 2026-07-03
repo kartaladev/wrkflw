@@ -1,4 +1,4 @@
-package runtime_test
+package chain_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -41,20 +42,20 @@ func ExampleChainer() {
 	// The policy decides the successor for each terminal outcome. A completed
 	// approval starts fulfillment seeded with the approval's result; any other
 	// outcome ends the chain.
-	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		if ev.Outcome != kernel.OutcomeCompleted {
-			return runtime.SuccessorDecision{}, false
+			return chain.SuccessorDecision{}, false
 		}
-		return runtime.SuccessorDecision{Def: fulfillment, Vars: ev.Result}, true
+		return chain.SuccessorDecision{Def: fulfillment, Vars: ev.Result}, true
 	}
 
-	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 	if err != nil {
 		panic(err)
 	}
 
 	// Simulate the "approval-1" instance completing.
-	_ = chainer.Handle(ctx, runtime.ChainEvent{
+	_ = chainer.Handle(ctx, chain.ChainEvent{
 		PredecessorID: "approval-1",
 		Outcome:       kernel.OutcomeCompleted,
 		Result:        map[string]any{"orderID": "o-7"},

@@ -10,6 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
@@ -76,9 +77,9 @@ func mustCallNotifier(t *testing.T, cl kernel.CallLinkStore, deliver calllink.Ca
 }
 
 // mustChainer builds a Chainer or fails the test.
-func mustChainer(t *testing.T, starter runtime.InstanceStarter, policy runtime.SuccessorPolicy, opts ...runtime.ChainerOption) *runtime.Chainer {
+func mustChainer(t *testing.T, starter chain.InstanceStarter, policy chain.SuccessorPolicy, opts ...chain.ChainerOption) *chain.Chainer {
 	t.Helper()
-	c, err := runtime.NewChainer(starter, policy, opts...)
+	c, err := chain.NewChainer(starter, policy, opts...)
 	require.NoError(t, err)
 	return c
 }

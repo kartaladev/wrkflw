@@ -1,4 +1,4 @@
-package runtime_test
+package chain_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -41,7 +42,7 @@ func fulfillmentDef() *model.ProcessDefinition {
 func TestChainerHandle(t *testing.T) {
 	errTransient := errors.New("db down")
 
-	completedEv := runtime.ChainEvent{
+	completedEv := chain.ChainEvent{
 		PredecessorID:            "p1",
 		PredecessorDefinitionRef: "approval:1",
 		Outcome:                  kernel.OutcomeCompleted,
@@ -50,15 +51,15 @@ func TestChainerHandle(t *testing.T) {
 
 	// successorFor returns a policy that always starts fulfillmentDef with the
 	// event's Result as the successor vars.
-	successorFor := func() runtime.SuccessorPolicy {
-		return func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-			return runtime.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
+	successorFor := func() chain.SuccessorPolicy {
+		return func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
+			return chain.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
 		}
 	}
 
 	tests := map[string]struct {
-		ev          runtime.ChainEvent
-		policy      runtime.SuccessorPolicy
+		ev          chain.ChainEvent
+		policy      chain.SuccessorPolicy
 		prepopulate *kernel.ChainLink
 		noLinks     bool
 		starterErr  error
@@ -66,8 +67,8 @@ func TestChainerHandle(t *testing.T) {
 	}{
 		"no successor (ok=false) does nothing": {
 			ev: completedEv,
-			policy: func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-				return runtime.SuccessorDecision{}, false
+			policy: func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+				return chain.SuccessorDecision{}, false
 			},
 			assert: func(t *testing.T, gotErr error, starter *recordingStarter, links *kernel.MemChainLinkStore) {
 				require.NoError(t, gotErr)
@@ -78,8 +79,8 @@ func TestChainerHandle(t *testing.T) {
 		},
 		"no successor (nil Def) does nothing": {
 			ev: completedEv,
-			policy: func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-				return runtime.SuccessorDecision{Def: nil}, true
+			policy: func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+				return chain.SuccessorDecision{Def: nil}, true
 			},
 			assert: func(t *testing.T, gotErr error, starter *recordingStarter, links *kernel.MemChainLinkStore) {
 				require.NoError(t, gotErr)
@@ -153,9 +154,9 @@ func TestChainerHandle(t *testing.T) {
 				require.NoError(t, links.Record(t.Context(), *tc.prepopulate))
 			}
 			starter := &recordingStarter{err: tc.starterErr}
-			opts := []runtime.ChainerOption{}
+			opts := []chain.ChainerOption{}
 			if !tc.noLinks {
-				opts = append(opts, runtime.WithChainLinks(links))
+				opts = append(opts, chain.WithChainLinks(links))
 			}
 			c := mustChainer(t, starter, tc.policy, opts...)
 			err := c.Handle(t.Context(), tc.ev)
@@ -173,11 +174,11 @@ func TestChainerHandleRetriesStartAfterTransientFailure(t *testing.T) {
 	ctx := t.Context()
 	links := kernel.NewMemChainLinkStore()
 	starter := &recordingStarter{err: errors.New("db down")}
-	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-		return runtime.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
+	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
 	}
-	c := mustChainer(t, starter, policy, runtime.WithChainLinks(links))
-	ev := runtime.ChainEvent{PredecessorID: "p1", Outcome: kernel.OutcomeCompleted}
+	c := mustChainer(t, starter, policy, chain.WithChainLinks(links))
+	ev := chain.ChainEvent{PredecessorID: "p1", Outcome: kernel.OutcomeCompleted}
 
 	// First delivery: the link is recorded, then the start fails transiently.
 	require.Error(t, c.Handle(ctx, ev), "transient start failure must propagate (nack)")
@@ -193,20 +194,20 @@ func TestChainerHandleRetriesStartAfterTransientFailure(t *testing.T) {
 
 // TestChainerSatisfiedByRunner pins the InstanceStarter contract to *runtime.ProcessDriver.
 func TestChainerSatisfiedByRunner(t *testing.T) {
-	var _ runtime.InstanceStarter = (*runtime.ProcessDriver)(nil)
+	var _ chain.InstanceStarter = (*runtime.ProcessDriver)(nil)
 }
 
 // TestNewChainerNilGuards asserts the constructor returns ErrNilDependency on a
 // nil starter or policy — a Chainer is unusable without both.
 func TestNewChainerNilGuards(t *testing.T) {
-	policy := runtime.SuccessorPolicy(func(_ context.Context, _ runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-		return runtime.SuccessorDecision{}, false
+	policy := chain.SuccessorPolicy(func(_ context.Context, _ chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{}, false
 	})
-	_, err := runtime.NewChainer(nil, policy)
+	_, err := chain.NewChainer(nil, policy)
 	require.ErrorIs(t, err, kernel.ErrNilDependency, "nil starter must return ErrNilDependency")
-	_, err = runtime.NewChainer(&recordingStarter{}, nil)
+	_, err = chain.NewChainer(&recordingStarter{}, nil)
 	require.ErrorIs(t, err, kernel.ErrNilDependency, "nil policy must return ErrNilDependency")
-	c, err := runtime.NewChainer(&recordingStarter{}, policy)
+	c, err := chain.NewChainer(&recordingStarter{}, policy)
 	require.NoError(t, err, "valid args must succeed")
 	require.NotNil(t, c, "valid args must return a non-nil Chainer")
 }
@@ -216,16 +217,16 @@ func TestNewChainerNilGuards(t *testing.T) {
 // The guard is verified by exercising Handle on a path that calls clk.Now()
 // (ChainLink.CreatedAt stamping) — a nil clock would panic.
 func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
-	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-		return runtime.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
+	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
 	}
 	links := kernel.NewMemChainLinkStore()
 	starter := &recordingStarter{}
 	c := mustChainer(t, starter, policy,
-		runtime.WithChainLinks(links),
-		runtime.WithChainClock(nil), // must be ignored — default clock.System() must survive
+		chain.WithChainLinks(links),
+		chain.WithChainClock(nil), // must be ignored — default clock.System() must survive
 	)
-	ev := runtime.ChainEvent{
+	ev := chain.ChainEvent{
 		PredecessorID: "p-nil-clk",
 		Outcome:       kernel.OutcomeCompleted,
 		Result:        map[string]any{"k": "v"},
@@ -239,22 +240,22 @@ func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
 func TestNewChainerFailsFast(t *testing.T) {
 	t.Parallel()
 
-	policy := runtime.SuccessorPolicy(func(_ context.Context, _ runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-		return runtime.SuccessorDecision{}, false
+	policy := chain.SuccessorPolicy(func(_ context.Context, _ chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{}, false
 	})
 	starter := &recordingStarter{}
 	type testCase struct {
 		name    string
-		starter runtime.InstanceStarter
-		policy  runtime.SuccessorPolicy
-		assert  func(t *testing.T, c *runtime.Chainer, err error)
+		starter chain.InstanceStarter
+		policy  chain.SuccessorPolicy
+		assert  func(t *testing.T, c *chain.Chainer, err error)
 	}
 	cases := []testCase{
 		{
 			name:    "nil starter",
 			starter: nil,
 			policy:  policy,
-			assert: func(t *testing.T, c *runtime.Chainer, err error) {
+			assert: func(t *testing.T, c *chain.Chainer, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, c)
 			},
@@ -263,7 +264,7 @@ func TestNewChainerFailsFast(t *testing.T) {
 			name:    "nil policy",
 			starter: starter,
 			policy:  nil,
-			assert: func(t *testing.T, c *runtime.Chainer, err error) {
+			assert: func(t *testing.T, c *chain.Chainer, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, c)
 			},
@@ -272,7 +273,7 @@ func TestNewChainerFailsFast(t *testing.T) {
 			name:    "valid args",
 			starter: starter,
 			policy:  policy,
-			assert: func(t *testing.T, c *runtime.Chainer, err error) {
+			assert: func(t *testing.T, c *chain.Chainer, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, c)
 			},
@@ -281,7 +282,7 @@ func TestNewChainerFailsFast(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			c, err := runtime.NewChainer(tc.starter, tc.policy)
+			c, err := chain.NewChainer(tc.starter, tc.policy)
 			tc.assert(t, c, err)
 		})
 	}
