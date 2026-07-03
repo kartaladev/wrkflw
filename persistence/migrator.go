@@ -55,8 +55,15 @@ type MigrationStatus struct {
 // leak across the facade.
 type migrator struct{ inner *store.Migrator }
 
+// ErrNilDependency is returned by the migrator constructors when the connection
+// or pool passed to them is nil (typed-nil included). Use errors.Is(err,
+// persistence.ErrNilDependency) to test for it — consumers cannot import the
+// internal store package directly.
+var ErrNilDependency = store.ErrNilDependency
+
 // NewPostgresMigrator constructs a Migrator over a pgx pool. Returns a wrapped
-// store.ErrNilDependency if pool is nil.
+// ErrNilDependency (matchable via errors.Is(err, persistence.ErrNilDependency))
+// if pool is nil.
 func NewPostgresMigrator(pool *pgxpool.Pool) (Migrator, error) {
 	m, err := store.NewPostgresMigrator(pool)
 	if err != nil {
@@ -65,7 +72,9 @@ func NewPostgresMigrator(pool *pgxpool.Pool) (Migrator, error) {
 	return &migrator{inner: m}, nil
 }
 
-// NewMySQLMigrator constructs a Migrator over a MySQL *sql.DB.
+// NewMySQLMigrator constructs a Migrator over a MySQL *sql.DB. Returns a wrapped
+// ErrNilDependency (matchable via errors.Is(err, persistence.ErrNilDependency))
+// if db is nil.
 func NewMySQLMigrator(db *sql.DB) (Migrator, error) {
 	m, err := store.NewMySQLMigrator(db)
 	if err != nil {
@@ -74,7 +83,9 @@ func NewMySQLMigrator(db *sql.DB) (Migrator, error) {
 	return &migrator{inner: m}, nil
 }
 
-// NewSQLiteMigrator constructs a Migrator over a SQLite *sql.DB.
+// NewSQLiteMigrator constructs a Migrator over a SQLite *sql.DB. Returns a
+// wrapped ErrNilDependency (matchable via errors.Is(err, persistence.ErrNilDependency))
+// if db is nil.
 func NewSQLiteMigrator(db *sql.DB) (Migrator, error) {
 	m, err := store.NewSQLiteMigrator(db)
 	if err != nil {
