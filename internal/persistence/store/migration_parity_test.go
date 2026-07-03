@@ -11,6 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 )
 
@@ -87,20 +88,26 @@ func normalize(s logicalSchema) logicalSchema {
 	return s
 }
 
-// normalizeMySQLTriggerColumn renames the "trigger_" column to "trigger" in the
-// wrkflw_journal table of the given MySQL logical schema. MySQL disallows "trigger"
-// as a column identifier (reserved word), so the migration uses "trigger_"
-// instead. The dialect's JournalTriggerColumn() method returns the correct name at
-// query time; here we normalise the introspected name so the parity comparison is
-// not tripped by this one intentional asymmetry.
+// normalizeMySQLTriggerColumn renames the MySQL-specific journal payload column
+// name back to the canonical name used by Postgres and SQLite. MySQL disallows
+// "trigger" as a column identifier (reserved word), so the migration uses the
+// alias returned by dialect.NewMySQL().JournalTriggerColumn() ("trigger_").
+// The dialect's JournalTriggerColumn() method returns the correct name at query
+// time; here we normalise the introspected name so the parity comparison is not
+// tripped by this one intentional asymmetry.
 func normalizeMySQLTriggerColumn(s logicalSchema) {
+	// mysqlCol is the MySQL-specific column name; canonicalCol is the name used
+	// by Postgres and SQLite. Both are sourced from the dialect package so this
+	// function stays in sync with the migration automatically.
+	mysqlCol := dialect.NewMySQL().JournalTriggerColumn()        // "trigger_"
+	canonicalCol := dialect.NewPostgres().JournalTriggerColumn() // "trigger"
 	journal, ok := s["wrkflw_journal"]
 	if !ok {
 		return
 	}
-	if f, exists := journal["trigger_"]; exists {
-		journal["trigger"] = f
-		delete(journal, "trigger_")
+	if f, exists := journal[mysqlCol]; exists {
+		journal[canonicalCol] = f
+		delete(journal, mysqlCol)
 	}
 }
 
@@ -113,6 +120,7 @@ func introspectPostgres(t *testing.T, pool *pgxpool.Pool) logicalSchema {
 		FROM information_schema.columns
 		WHERE table_schema = 'public' AND table_name LIKE 'wrkflw_%'`)
 	require.NoError(t, err)
+	defer rows.Close()
 	for rows.Next() {
 		var tbl, col string
 		var nullable bool
@@ -122,7 +130,7 @@ func introspectPostgres(t *testing.T, pool *pgxpool.Pool) logicalSchema {
 		}
 		sc[tbl][col] = colFacts{Nullable: nullable}
 	}
-	rows.Close()
+	require.NoError(t, rows.Err(), "postgres columns iteration error")
 	pkRows, err := pool.Query(ctx, `
 		SELECT tc.table_name, kcu.column_name
 		FROM information_schema.table_constraints tc
@@ -131,14 +139,20 @@ func introspectPostgres(t *testing.T, pool *pgxpool.Pool) logicalSchema {
 		WHERE tc.constraint_type = 'PRIMARY KEY'
 		  AND tc.table_schema = 'public' AND tc.table_name LIKE 'wrkflw_%'`)
 	require.NoError(t, err)
+	defer pkRows.Close()
 	for pkRows.Next() {
 		var tbl, col string
 		require.NoError(t, pkRows.Scan(&tbl, &col))
+		// Guard against a PK referencing a table not seen in the columns query
+		// (should never happen but prevents a nil-map panic if it does).
+		if sc[tbl] == nil {
+			sc[tbl] = map[string]colFacts{}
+		}
 		f := sc[tbl][col]
 		f.PrimaryKey = true
 		sc[tbl][col] = f
 	}
-	pkRows.Close()
+	require.NoError(t, pkRows.Err(), "postgres PKs iteration error")
 	return sc
 }
 
@@ -160,6 +174,7 @@ func introspectMySQL(t *testing.T, db *sql.DB) logicalSchema {
 		}
 		sc[tbl][col] = colFacts{Nullable: nullable, PrimaryKey: pk}
 	}
+	require.NoError(t, rows.Err(), "mysql columns iteration error")
 	return sc
 }
 
@@ -174,6 +189,7 @@ func introspectSQLite(t *testing.T, db *sql.DB) logicalSchema {
 		require.NoError(t, tblRows.Scan(&name))
 		tables = append(tables, name)
 	}
+	require.NoError(t, tblRows.Err(), "sqlite table list iteration error")
 	_ = tblRows.Close()
 	sort.Strings(tables)
 	for _, tbl := range tables {
@@ -186,6 +202,7 @@ func introspectSQLite(t *testing.T, db *sql.DB) logicalSchema {
 			require.NoError(t, info.Scan(&name, &notnull, &pk))
 			sc[tbl][name] = colFacts{Nullable: notnull == 0, PrimaryKey: pk > 0}
 		}
+		require.NoError(t, info.Err(), "sqlite pragma_table_info iteration error for table %s", tbl)
 		_ = info.Close()
 	}
 	return sc
