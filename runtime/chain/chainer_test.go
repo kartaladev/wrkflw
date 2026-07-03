@@ -213,11 +213,11 @@ func TestNewChainerNilGuards(t *testing.T) {
 	require.NotNil(t, c, "valid args must return a non-nil Chainer")
 }
 
-// TestWithChainClockNilFallsBackToSystem asserts that passing a nil clock to
+// TestWithClockNilFallsBackToSystem asserts that passing a nil clock to
 // WithClock does NOT overwrite the constructor's clock.System() default.
 // The guard is verified by exercising Handle on a path that calls clk.Now()
 // (ChainLink.CreatedAt stamping) — a nil clock would panic.
-func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
+func TestWithClockNilFallsBackToSystem(t *testing.T) {
 	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		return chain.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
 	}

@@ -442,17 +442,17 @@ func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
 // terminal call links and resumes parked parents (SubInstanceCompleted/Failed)
 // idempotently. Run it in a goroutine (notifier.Run) or drain manually (DrainOnce).
 //
-// opts are forwarded to runtime.NewCallNotifier; use runtime.WithClock
+// opts are forwarded to calllink.NewCallNotifier; use calllink.WithClock
 // to inject a fake clock in tests.
 //
 // For lease-based multi-replica exclusivity (ADR-0031), build the CallLinkStore
 // explicitly via [NewCallLinkStore] with [WithCallLinkLease] and pass it to
-// [runtime.NewCallNotifier] directly:
+// [calllink.NewCallNotifier] directly:
 //
 //	cls := persistence.NewCallLinkStore(pool,
 //	    persistence.WithCallLinkLease("replica-1", 30*time.Second),
 //	)
-//	notifier := runtime.NewCallNotifier(cls, deliver, reg)
+//	notifier := calllink.NewCallNotifier(cls, deliver, reg)
 //
 // Typical wiring:
 //
@@ -466,7 +466,7 @@ func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
 //	go notifier.Run(ctx)
 //
 // reg MUST resolve every parent definition under the exact key "<defID>:<version>";
-// an unresolvable parent leaves its parked parent unresumed (see runtime.NewCallNotifier).
+// an unresolvable parent leaves its parked parent unresumed (see calllink.NewCallNotifier).
 func NewCallNotifier(pool *pgxpool.Pool, deliver calllink.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...calllink.CallNotifierOption) (*calllink.CallNotifier, error) {
 	cls, err := store.NewCallLinkStore(pool, dialect.NewPostgres())
 	if err != nil {
