@@ -30,7 +30,7 @@ func TestRun_SQLiteUpThenStatusThenVersion(t *testing.T) {
 
 	out.Reset()
 	require.Equal(t, 0, run([]string{"-dialect=sqlite", "-dsn=" + dsn, "version"}, &out))
-	assert.Contains(t, out.String(), "1", "version should report head 1")
+	assert.Contains(t, out.String(), "current version: 1", "version should report head 1")
 
 	out.Reset()
 	require.Equal(t, 0, run([]string{"-dialect=sqlite", "-dsn=" + dsn, "status"}, &out))
@@ -69,7 +69,7 @@ func TestRun_SQLiteUpToAndDownTo(t *testing.T) {
 	// version after full rollback → 0
 	out.Reset()
 	require.Equal(t, 0, run([]string{"-dialect=sqlite", "-dsn=" + dsn, "version"}, &out))
-	assert.Contains(t, out.String(), "0")
+	assert.Contains(t, out.String(), "current version: 0")
 }
 
 func TestRun_SQLiteDown(t *testing.T) {

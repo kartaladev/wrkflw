@@ -77,14 +77,22 @@ func openMigrator(ctx context.Context, dialect, dsn string) (persistence.Migrato
 			return nil, func() {}, err
 		}
 		m, err := persistence.NewPostgresMigrator(pool)
-		return m, pool.Close, err
+		if err != nil {
+			pool.Close()
+			return nil, func() {}, err
+		}
+		return m, pool.Close, nil
 	case "mysql":
 		db, err := sql.Open("mysql", dsn)
 		if err != nil {
 			return nil, func() {}, err
 		}
 		m, err := persistence.NewMySQLMigrator(db)
-		return m, func() { _ = db.Close() }, err
+		if err != nil {
+			_ = db.Close()
+			return nil, func() {}, err
+		}
+		return m, func() { _ = db.Close() }, nil
 	case "sqlite":
 		db, err := sql.Open("sqlite", dsn)
 		if err != nil {
@@ -92,7 +100,11 @@ func openMigrator(ctx context.Context, dialect, dsn string) (persistence.Migrato
 		}
 		db.SetMaxOpenConns(1)
 		m, err := persistence.NewSQLiteMigrator(db)
-		return m, func() { _ = db.Close() }, err
+		if err != nil {
+			_ = db.Close()
+			return nil, func() {}, err
+		}
+		return m, func() { _ = db.Close() }, nil
 	default:
 		return nil, func() {}, fmt.Errorf("unknown dialect %q", dialect)
 	}
