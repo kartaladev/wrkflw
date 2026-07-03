@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -63,7 +64,7 @@ func WithScheduler(sched kernel.Scheduler) Option {
 // After each deliverLoop iteration the runner reconciles the instance's
 // AwaitSignal tokens with the bus (via [SignalBus.Sync]) so that a later
 // [SignalBus.Publish] reaches all parked instances.
-func WithSignalBus(bus *SignalBus) Option {
+func WithSignalBus(bus *signal.SignalBus) Option {
 	return func(r *ProcessDriver) { r.sigbus = bus }
 }
 

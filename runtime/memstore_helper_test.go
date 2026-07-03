@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
 
 // mustMemStore builds a MemStore or fails the test. Keeps option-free call sites terse.
@@ -66,9 +67,9 @@ func mustCachingDefinitionRegistry(t *testing.T, backing kernel.DefinitionRegist
 }
 
 // mustSignalBus builds a SignalBus or fails the test.
-func mustSignalBus(t *testing.T, deliver runtime.DeliverFunc, opts ...runtime.SignalBusOption) *runtime.SignalBus {
+func mustSignalBus(t *testing.T, deliver signal.DeliverFunc, opts ...signal.SignalBusOption) *signal.SignalBus {
 	t.Helper()
-	bus, err := runtime.NewSignalBus(deliver, opts...)
+	bus, err := signal.NewSignalBus(deliver, opts...)
 	require.NoError(t, err)
 	return bus
 }

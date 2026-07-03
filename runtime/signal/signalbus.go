@@ -1,4 +1,4 @@
-package runtime
+package signal
 
 import (
 	"context"
@@ -32,10 +32,10 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 //   - The deliver function is injected at construction time as a [DeliverFunc]:
 //     the caller typically wraps runner.Deliver with the definition pre-captured:
 //
-//     bus := runtime.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
+//     bus := NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
 //     _, err := runner.Deliver(ctx, def, id, trg)
 //     return err
-//     }, runtime.WithSignalBusClock(clk))
+//     }, WithSignalBusClock(clk))
 //
 // Concurrency: all internal state is protected by a mutex; the bus is safe for
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).

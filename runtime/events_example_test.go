@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
 
 // signalCatchDef returns: start → signal-catch(name) → end.
@@ -97,7 +98,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, runtime.WithSignalBusClock(fc))
+	}, signal.WithSignalBusClock(fc))
 
 	r = mustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithSignalBus(bus))
 
@@ -174,7 +175,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, runtime.WithSignalBusClock(fc))
+	}, signal.WithSignalBusClock(fc))
 
 	r = mustRunner(t, nil, store,
 		runtime.WithRunnerClock(fc),
@@ -218,7 +219,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, runtime.WithSignalBusClock(fc))
+	}, signal.WithSignalBusClock(fc))
 
 	r = mustRunner(t, nil, store,
 		runtime.WithRunnerClock(fc),

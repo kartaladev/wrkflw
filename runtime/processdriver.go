@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -29,7 +30,7 @@ type ProcessDriver struct {
 	tasks      humantask.TaskStore
 	authz      authz.Authorizer
 	sched      kernel.Scheduler
-	sigbus     *SignalBus
+	sigbus     *signal.SignalBus
 	defsReg    kernel.DefinitionRegistry
 	callLinks  kernel.CallLinkStore
 	timerStore kernel.TimerStore
