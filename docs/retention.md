@@ -1,5 +1,9 @@
 # Data retention runbook
 
+> See also: [`docs/production-checklist.md`](production-checklist.md) — full production
+> checklist covering connection pool sizing, statement timeouts, and all opt-in-but-unsafe
+> MUST-DOs (call-link lease, `WithHistoryCap`, pruning cron).
+
 `wrkflw` is a library, not a daemon — it does **not** run a cron and will never
 prune your database on its own. Several tables grow **unbounded** under normal
 operation; left unattended they eventually degrade or take down Postgres (TOAST

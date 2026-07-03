@@ -1007,6 +1007,11 @@ one branch) and the parallel gateway (all branches unconditionally).
 
 ## Persistence backends
 
+> **Production checklist:** see [`docs/production-checklist.md`](docs/production-checklist.md)
+> for connection pool sizing, statement-timeout guidance per dialect, and the opt-in-but-unsafe
+> MUST-DOs (call-link lease, `WithHistoryCap`, pruning cron) — each with its concrete failure
+> mode. Use `persistence.WarnUnsafeConfig` to get a startup-time reminder in your logs.
+
 The engine supports three SQL backends, all using the same neutral store and migration set:
 
 | Backend | Facade constructors | Notes |
