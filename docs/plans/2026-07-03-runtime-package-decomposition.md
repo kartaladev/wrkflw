@@ -8,9 +8,19 @@
 
 **Tech Stack:** Go 1.25. Behavior-preserving refactor — the existing 68 test files are the safety net. Tooling: `git mv`, `goimports`, `gofmt -r`, `go build`, `go test`, `golangci-lint`.
 
+## Prerequisites
+
+- Check out the working branch first: `git checkout refactor/runtime-decomposition`.
+- **Install `goimports`** (used in every extraction task; not on PATH by default):
+  `go install golang.org/x/tools/cmd/goimports@latest` and ensure
+  `$(go env GOPATH)/bin` is on `PATH`. If you prefer not to install, replace
+  every `goimports -w <f>` in this plan with
+  `go run golang.org/x/tools/cmd/goimports@latest -w <f>`.
+- Confirm a green baseline before starting: `go build ./... && go test ./...`.
+
 ## Global Constraints
 
-- **Go 1.25** — hard requirement.
+- **Go 1.25** — hard requirement (repo currently builds on 1.26; fine).
 - **Behavior-preserving.** No production logic changes. Per TDD discipline, no new tests; the full existing suite must pass **before and after** every task. A "red" state here is a **build failure** (undefined identifier after a move); "green" is `go build ./... && go test ./...` clean.
 - **No `pkg/` prefix** (ADR-0004). New packages are `runtime/<name>` at their natural path.
 - **Breaking change is intended** (pre-v0.1.0). No compatibility shim / no root type aliases. Every `runtime.X` caller migrates to the new package.
