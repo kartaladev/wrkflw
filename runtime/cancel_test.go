@@ -75,6 +75,42 @@ func TestRunnerCancelInstanceRunsCancelActions(t *testing.T) {
 	assert.Equal(t, []string{"notify", "boom"}, ran, "both cancel actions ran in order")
 }
 
+// TestRunnerCancelInstanceCancelsParkedTask verifies the end-to-end reconciliation
+// (ADR-0088): after CancelInstance, a task parked at a UserTask is Cancelled in the
+// TaskStore and no longer surfaces in an inbox (ClaimableBy) query.
+func TestRunnerCancelInstanceCancelsParkedTask(t *testing.T) {
+	fc := clockwork.NewFakeClock()
+	actor := authz.Actor{ID: "sam", Roles: []string{"r"}}
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"r": {actor}})
+	tasks := humantask.NewMemTaskStore()
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
+		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
+	def := cancelDef(nil)
+
+	_, err := r.Run(t.Context(), def, "c3", nil)
+	require.NoError(t, err)
+
+	// Precondition: the task is claimable before cancel.
+	before, err := tasks.ClaimableBy(t.Context(), actor)
+	require.NoError(t, err)
+	require.Len(t, before, 1, "task must be claimable before cancel")
+	token := before[0].TaskToken
+
+	st, err := r.CancelInstance(t.Context(), def, "c3")
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusTerminated, st.Status)
+
+	// The task is now Cancelled in the store and gone from the inbox.
+	got, err := tasks.Get(t.Context(), token)
+	require.NoError(t, err)
+	assert.Equal(t, humantask.Cancelled, got.State, "parked task must be Cancelled after CancelInstance")
+
+	after, err := tasks.ClaimableBy(t.Context(), actor)
+	require.NoError(t, err)
+	assert.Empty(t, after, "a cancelled instance must not leave tasks in the inbox")
+}
+
 // TestRunnerCancelInstanceMissingActionIsBestEffort verifies that an unresolved
 // cancel action name is silently logged and skipped — CancelInstance still returns
 // StatusTerminated with nil error.

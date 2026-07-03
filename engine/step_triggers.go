@@ -155,8 +155,11 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		if err != nil {
 			return StepResult{}, err
 		}
-		// Ordering: [def.CancelActions…, per-node CancelHandlers…, compensation walk…]
-		res.Commands = append(append(cancelActionCmds, nodeCancelCmds...), res.Commands...)
+		// Ordering: [def.CancelActions…, per-node CancelHandlers…, task cancels…, compensation walk…]
+		// Reconcile the human-task projection before the compensation walk so a
+		// cancel-with-compensation instance also closes its parked tasks (ADR-0088).
+		taskCancelCmds := s.cancelOpenTasks()
+		res.Commands = append(append(append(cancelActionCmds, nodeCancelCmds...), taskCancelCmds...), res.Commands...)
 		return res, nil
 	}
 
@@ -173,6 +176,9 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 	// Start from a fresh slice so we never alias cancelActionCmds' backing array
 	// (matches the compensation branch's append(append(...)) idiom).
 	cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
+	// Reconcile the human-task projection: mark every open parked task Cancelled
+	// so a terminated instance no longer surfaces tasks in inbox queries (ADR-0088).
+	cmds = append(cmds, s.cancelOpenTasks()...)
 	cmds = append(cmds, FailInstance{Err: "cancelled"})
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)

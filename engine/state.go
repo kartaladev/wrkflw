@@ -494,6 +494,23 @@ func (s *InstanceState) TaskByToken(taskToken string) *humantask.HumanTask {
 	return nil
 }
 
+// cancelOpenTasks marks every OPEN human task (Unclaimed or Claimed) Cancelled
+// and returns an UpdateTask command for each, so the TaskStore projection is
+// reconciled when the instance is terminated — otherwise a cancelled instance
+// leaves its parked tasks visible in inbox queries (ClaimableBy / AssignedTo).
+// Already-resolved tasks (Completed or Cancelled) are left untouched. Tasks are
+// visited in slice order for deterministic command output. See ADR-0088.
+func (s *InstanceState) cancelOpenTasks() []Command {
+	var cmds []Command
+	for i := range s.Tasks {
+		if s.Tasks[i].IsOpen() {
+			s.Tasks[i].State = humantask.Cancelled
+			cmds = append(cmds, UpdateTask{Task: s.Tasks[i]})
+		}
+	}
+	return cmds
+}
+
 // timerByID returns a pointer to the timerRecord with the given timerID, or nil
 // if no such record exists.
 func (s *InstanceState) timerByID(timerID string) *timerRecord {
