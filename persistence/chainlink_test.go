@@ -12,7 +12,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func TestChainLinkStoreFacade(t *testing.T) {
@@ -23,9 +23,9 @@ func TestChainLinkStoreFacade(t *testing.T) {
 	require.NoError(t, err)
 	ctx := t.Context()
 
-	require.NoError(t, cls.Record(ctx, runtime.ChainLink{
+	require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 		PredecessorID: "p1",
-		Outcome:       runtime.OutcomeCompleted,
+		Outcome:       kernel.OutcomeCompleted,
 		SuccessorID:   "p1-next-completed",
 		StartVars:     map[string]any{"k": "v"},
 	}))
@@ -37,6 +37,6 @@ func TestChainLinkStoreFacade(t *testing.T) {
 
 	// Duplicate (predecessor, outcome) surfaces the re-exported sentinel through
 	// the façade store.
-	err = cls.Record(ctx, runtime.ChainLink{PredecessorID: "p1", Outcome: runtime.OutcomeCompleted, SuccessorID: "other"})
-	require.ErrorIs(t, err, runtime.ErrChainLinkExists)
+	err = cls.Record(ctx, kernel.ChainLink{PredecessorID: "p1", Outcome: kernel.OutcomeCompleted, SuccessorID: "other"})
+	require.ErrorIs(t, err, kernel.ErrChainLinkExists)
 }

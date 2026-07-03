@@ -14,8 +14,8 @@ import (
 const runnerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime"
 
 // runnerObs bundles the runner's telemetry and pre-built process instruments.
-// It is always non-nil after [NewRunner] (defaults to noop providers + slog.Default()).
-type runnerObs struct {
+// It is always non-nil after [NewProcessDriver] (defaults to noop providers + slog.Default()).
+type driverObs struct {
 	tel observability.Telemetry
 
 	instStarted       metric.Int64Counter
@@ -34,7 +34,7 @@ type runnerObs struct {
 // newRunnerObs constructs a runnerObs from the given observability options.
 // Nil options (unset signal options) are silently dropped so [observability.New]
 // only sees real, non-nil options.
-func newRunnerObs(opts ...observability.Option) *runnerObs {
+func newDriverObs(opts ...observability.Option) *driverObs {
 	// Filter out nil options (fields that were never set by a With* option).
 	var real []observability.Option
 	for _, o := range opts {
@@ -43,7 +43,7 @@ func newRunnerObs(opts ...observability.Option) *runnerObs {
 		}
 	}
 	tel := observability.New(runnerInstrumentationName, real...)
-	return &runnerObs{
+	return &driverObs{
 		tel:               tel,
 		instStarted:       tel.Int64Counter("wrkflw_instances_started_total", "Process instances started."),
 		instCompleted:     tel.Int64Counter("wrkflw_instances_completed_total", "Process instances that reached a terminal state."),
@@ -60,7 +60,7 @@ func newRunnerObs(opts ...observability.Option) *runnerObs {
 }
 
 // tracer returns the OTel tracer scoped to the runner's instrumentation name.
-func (o *runnerObs) tracer() trace.Tracer {
+func (o *driverObs) tracer() trace.Tracer {
 	return o.tel.Tracer
 }
 

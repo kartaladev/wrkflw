@@ -20,7 +20,7 @@ import (
 
 // TestOpenSQLite verifies that OpenSQLite returns a working Store over an
 // in-process SQLite database: the probe passes, and a Create+Load round-trip
-// via runtime.Runner succeeds (UTC timestamps, correct snapshot).
+// via runtime.ProcessDriver succeeds (UTC timestamps, correct snapshot).
 func TestOpenSQLite(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
 
@@ -42,7 +42,7 @@ func TestOpenSQLite(t *testing.T) {
 		},
 	}
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), s)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), s)
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "i-sqlite-e2e", map[string]any{"backend": "sqlite"})
 	require.NoError(t, err, "Runner.Run must succeed on SQLite store")
@@ -58,7 +58,7 @@ func TestOpenSQLite(t *testing.T) {
 
 // TestOpenSQLiteErrUnsupported verifies the end-to-end fail-loud contract for
 // SQLite advisory locking: NewSQLiteAdvisoryLockOwnership returns a valid
-// runtime.Ownership whose Acquire method returns dialect.ErrUnsupported. This
+// kernel.Ownership whose Acquire method returns dialect.ErrUnsupported. This
 // proves the full wiring from facade → store.AdvisoryLockOwnership →
 // store.sqliteLocker → dialect.ErrUnsupported, not just that the sentinel
 // equals itself.

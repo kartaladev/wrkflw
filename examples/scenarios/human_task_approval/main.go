@@ -32,6 +32,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -57,12 +60,12 @@ func main() {
 	az := authz.RoleAuthorizer{}
 	clk := clock.System()
 
-	memSt, err := runtime.NewMemStore()
+	memSt, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 	// No service-action catalog needed; pass an empty catalog.
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), memSt,
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), memSt,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	if err != nil {
@@ -79,7 +82,7 @@ func main() {
 		log.Fatal("run:", err)
 	}
 	fmt.Printf("parked at %q (status=%s)\n",
-		parked.Tokens[0].NodeID, runtime.StatusString(parked.Status))
+		parked.Tokens[0].NodeID, view.StatusString(parked.Status))
 
 	// 2. Discover claimable tasks for the manager.
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
@@ -92,7 +95,7 @@ func main() {
 	taskToken := claimable[0].TaskToken
 	fmt.Printf("manager %q sees %d claimable task(s)\n", manager.ID, len(claimable))
 
-	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(clk))
+	svc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(clk))
 	if err != nil {
 		log.Fatal("task service:", err)
 	}
@@ -121,6 +124,6 @@ func main() {
 	if final.Status == engine.StatusCompleted {
 		fmt.Printf("instance completed — approved=%v\n", final.Variables["approved"])
 	} else {
-		fmt.Printf("unexpected status: %s\n", runtime.StatusString(final.Status))
+		fmt.Printf("unexpected status: %s\n", view.StatusString(final.Status))
 	}
 }

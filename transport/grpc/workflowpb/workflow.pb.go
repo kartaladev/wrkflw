@@ -2795,7 +2795,7 @@ func (*ListTimersRequest) Descriptor() ([]byte, []int) {
 	return file_workflow_proto_rawDescGZIP(), []int{45}
 }
 
-// Timer is the gRPC projection of a single runtime.ArmedTimer.
+// Timer is the gRPC projection of a single kernel.ArmedTimer.
 type Timer struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`

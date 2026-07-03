@@ -14,7 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestStoreLoadCommitSpans verifies that Load and Commit emit the expected
@@ -105,7 +105,7 @@ func TestStoreLoadErrorSpan(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = s.Load(t.Context(), "no-such-instance")
-	require.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+	require.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 
 	var loadSpan sdktrace.ReadOnlySpan
 	for _, sp := range sr.Ended() {
@@ -134,7 +134,7 @@ func TestStoreCommitConcurrentUpdateNotSpanError(t *testing.T) {
 
 	// Commit with a stale (wrong) expected token → version mismatch.
 	_, err = s.Commit(t.Context(), 999, appliedStep("obs-cas-1", "cas.topic2"))
-	require.ErrorIs(t, err, runtime.ErrConcurrentUpdate)
+	require.ErrorIs(t, err, kernel.ErrConcurrentUpdate)
 
 	var commitSpan sdktrace.ReadOnlySpan
 	for _, sp := range sr.Ended() {

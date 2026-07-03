@@ -15,13 +15,13 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // Compile-time checks that *Store satisfies both persistence ports.
 var (
-	_ runtime.Store         = (*Store)(nil)
-	_ runtime.JournalReader = (*Store)(nil)
+	_ kernel.Store         = (*Store)(nil)
+	_ kernel.JournalReader = (*Store)(nil)
 )
 
 // outboxNotifyChannel is the wake channel the relay listens on (ADR-0022). The
@@ -44,7 +44,7 @@ func (s *Store) timeArgP(t *time.Time) any {
 // version is set to 1; journal seq is 1; outbox dedup_key is "<id>:1:<i>".
 // All writes are performed atomically in one transaction (joining an ambient
 // one if present, otherwise beginning a fresh leaf).
-func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.Token, error) {
+func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
 	const version int64 = 1
 
 	q, err := transaction.JoinOrBegin(ctx, s.conn)
@@ -79,7 +79,7 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 		timeArg(s.dialect, now),
 	); err != nil {
 		if s.dialect.IsUniqueViolation(err) {
-			return 0, runtime.ErrInstanceExists
+			return 0, kernel.ErrInstanceExists
 		}
 		return 0, fmt.Errorf("workflow-store: create: insert instance: %w", err)
 	}
@@ -108,16 +108,16 @@ func (s *Store) Create(ctx context.Context, step runtime.AppliedStep) (runtime.T
 		return 0, s.mapConflict(fmt.Errorf("workflow-store: create: commit: %w", err))
 	}
 	committed = true
-	return runtime.Token(version), nil
+	return kernel.Token(version), nil
 }
 
 // Load returns the persisted snapshot and the current optimistic-concurrency
-// token for the given instance. Returns runtime.ErrInstanceNotFound when no row
+// token for the given instance. Returns kernel.ErrInstanceNotFound when no row
 // exists for id. It reads through the pool (no ambient transaction).
 //
 // Emits a "wrkflw.store.load" OTel span and records a data point in the
 // wrkflw_store_duration_seconds histogram with attribute op=load.
-func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runtime.Token, error) {
+func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Token, error) {
 	ctx, span := s.tel.Tracer.Start(ctx, "wrkflw.store.load")
 	defer span.End()
 	start := time.Now()
@@ -136,9 +136,9 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 	if errors.Is(err, sql.ErrNoRows) {
 		// Both drivers surface a no-rows scan error that matches sql.ErrNoRows:
 		// database/sql returns it directly; pgx.ErrNoRows wraps it (pgx v5).
-		span.RecordError(runtime.ErrInstanceNotFound)
-		span.SetStatus(otelcodes.Error, runtime.ErrInstanceNotFound.Error())
-		return engine.InstanceState{}, 0, runtime.ErrInstanceNotFound
+		span.RecordError(kernel.ErrInstanceNotFound)
+		span.SetStatus(otelcodes.Error, kernel.ErrInstanceNotFound.Error())
+		return engine.InstanceState{}, 0, kernel.ErrInstanceNotFound
 	}
 	if err != nil {
 		wrapped := fmt.Errorf("workflow-store: load %q: %w", id, err)
@@ -154,7 +154,7 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 		span.SetStatus(otelcodes.Error, wrapped.Error())
 		return engine.InstanceState{}, 0, wrapped
 	}
-	return stateOut, runtime.Token(version), nil
+	return stateOut, kernel.Token(version), nil
 }
 
 // Commit atomically applies one step against a running instance:
@@ -163,7 +163,7 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 //   - INSERT each event into wrkflw_outbox,
 //   - flip call link / apply timer ops when the step carries them.
 //
-// Returns runtime.ErrConcurrentUpdate when the expected token is stale (another
+// Returns kernel.ErrConcurrentUpdate when the expected token is stale (another
 // writer advanced the instance first) or when the backend raises a transient
 // serialization/deadlock error (classified via dialect.IsRetryableConflict).
 //
@@ -172,7 +172,7 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, runt
 // mismatch (optimistic-CAS conflict) is recorded as attribute
 // wrkflw.concurrent_update=true and does NOT mark the span as Error — it is
 // expected, retryable control flow that must not pollute error-rate dashboards.
-func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
+func (s *Store) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
 	ctx, span := s.tel.Tracer.Start(ctx, "wrkflw.store.commit")
 	defer span.End()
 	start := time.Now()
@@ -237,7 +237,7 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		// attribute rather than marking the span as an error, so normal retries
 		// don't pollute trace-derived error-rate dashboards.
 		span.SetAttributes(attribute.Bool("wrkflw.concurrent_update", true))
-		return 0, runtime.ErrConcurrentUpdate
+		return 0, kernel.ErrConcurrentUpdate
 	}
 
 	next := int64(expected) + 1 // 1:1 with journal seq (journal seq == version after commit)
@@ -277,7 +277,7 @@ func (s *Store) Commit(ctx context.Context, expected runtime.Token, step runtime
 		return 0, mapped
 	}
 	committed = true
-	return runtime.Token(next), nil
+	return kernel.Token(next), nil
 }
 
 // Entries returns the recorded trigger history for the given instance id,
@@ -309,11 +309,11 @@ func (s *Store) Entries(ctx context.Context, id string) ([]engine.Trigger, error
 }
 
 // mapConflict translates a transient serialization/deadlock error into
-// runtime.ErrConcurrentUpdate (via dialect.IsRetryableConflict) so callers do
+// kernel.ErrConcurrentUpdate (via dialect.IsRetryableConflict) so callers do
 // not depend on any driver package. All other errors pass through unchanged.
 func (s *Store) mapConflict(err error) error {
 	if s.dialect.IsRetryableConflict(err) {
-		return runtime.ErrConcurrentUpdate
+		return kernel.ErrConcurrentUpdate
 	}
 	return err
 }
@@ -321,7 +321,7 @@ func (s *Store) mapConflict(err error) error {
 // maybeNotify issues a transactional wake statement when the dialect supports
 // it (Postgres), notify emission is enabled, and the step produced outbox
 // events. Errors propagate so the whole step rolls back.
-func (s *Store) maybeNotify(ctx context.Context, q database.Querier, events []runtime.OutboxEvent) error {
+func (s *Store) maybeNotify(ctx context.Context, q database.Querier, events []kernel.OutboxEvent) error {
 	if !s.emitNotify || len(events) == 0 {
 		return nil
 	}
@@ -338,7 +338,7 @@ func (s *Store) maybeNotify(ctx context.Context, q database.Querier, events []ru
 // writeJournal inserts one row into wrkflw_journal on q. seq must equal the new
 // version written to wrkflw_instances by Create/Commit. The payload column name
 // is dialect-specific ("trigger" on PG/SQLite, "trigger_" on MySQL).
-func (s *Store) writeJournal(ctx context.Context, q database.Querier, step runtime.AppliedStep, seq int64, appliedAt time.Time) error {
+func (s *Store) writeJournal(ctx context.Context, q database.Querier, step kernel.AppliedStep, seq int64, appliedAt time.Time) error {
 	data, kind, err := MarshalTrigger(step.Trigger)
 	if err != nil {
 		return err
@@ -358,7 +358,7 @@ func (s *Store) writeJournal(ctx context.Context, q database.Querier, step runti
 // writeOutbox inserts one row per event into wrkflw_outbox on q. The dedup_key
 // is "<instanceID>:<seq>:<eventIndex>" — globally unique per applied step
 // because (instanceID, seq) is unique per journal row.
-func (s *Store) writeOutbox(ctx context.Context, q database.Querier, instanceID string, seq int64, events []runtime.OutboxEvent, createdAt time.Time) error {
+func (s *Store) writeOutbox(ctx context.Context, q database.Querier, instanceID string, seq int64, events []kernel.OutboxEvent, createdAt time.Time) error {
 	for i, ev := range events {
 		payload, err := json.Marshal(ev.Payload)
 		if err != nil {
@@ -379,7 +379,7 @@ func (s *Store) writeOutbox(ctx context.Context, q database.Querier, instanceID 
 // insertCallLink writes a new wrkflw_call_links row with status='running' on q.
 // Called during Create when the applied step carries a NewCallLink — atomic with
 // the child instance INSERT (ADR-0025 crash-safety seam).
-func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link runtime.CallLink, createdAt time.Time) error {
+func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link kernel.CallLink, createdAt time.Time) error {
 	if _, err := q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_call_links
 		   (child_instance_id, parent_instance_id, parent_command_id, parent_def_id, parent_def_version, depth, status, created_at)
@@ -400,7 +400,7 @@ func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link run
 // upsertTimer writes (or updates) a wrkflw_timers row on q, atomic with the
 // state commit (ADR-0027). Re-arming the same (instance, timer) overwrites the
 // row via the dialect's UpsertTimer conflict clause.
-func (s *Store) upsertTimer(ctx context.Context, q database.Querier, tm runtime.ArmedTimer) error {
+func (s *Store) upsertTimer(ctx context.Context, q database.Querier, tm kernel.ArmedTimer) error {
 	_, err := q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
 		 VALUES (?,?,?,?,?,?)`+s.dialect.UpsertTimer()),
@@ -424,7 +424,7 @@ func (s *Store) deleteTimer(ctx context.Context, q database.Querier, instanceID,
 }
 
 // applyTimerOps applies a step's timer arms and cancels on q.
-func (s *Store) applyTimerOps(ctx context.Context, q database.Querier, step runtime.AppliedStep) error {
+func (s *Store) applyTimerOps(ctx context.Context, q database.Querier, step kernel.AppliedStep) error {
 	for _, a := range step.TimerArms {
 		if err := s.upsertTimer(ctx, q, a); err != nil {
 			return err
@@ -443,7 +443,7 @@ func (s *Store) applyTimerOps(ctx context.Context, q database.Querier, step runt
 // Commit when the applied step carries a CallOutcome — atomic with the snapshot
 // UPDATE (ADR-0025). For a root instance (no link row) the UPDATE affects zero
 // rows, which is a clean no-op; zero rows must NOT be treated as an error.
-func (s *Store) flipCallLink(ctx context.Context, q database.Querier, childInstanceID string, outcome runtime.CallOutcome, updatedAt time.Time) error {
+func (s *Store) flipCallLink(ctx context.Context, q database.Querier, childInstanceID string, outcome kernel.CallOutcome, updatedAt time.Time) error {
 	_ = updatedAt // no updated_at column on call_links flip; retained for signature parity
 	status := "failed"
 	if outcome.Completed {

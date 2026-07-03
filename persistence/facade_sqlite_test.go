@@ -23,6 +23,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // sqliteMinimalDef returns the simplest process definition for SQLite tests.
@@ -72,7 +74,7 @@ func TestNewSQLiteTimerStore_ListArmed(t *testing.T) {
 
 	now := time.Unix(1700000000, 0).UTC()
 	fireAt := now.Add(time.Hour)
-	step := runtime.AppliedStep{
+	step := kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: "sqlite-timer-instance-1",
 			DefID:      "d",
@@ -81,7 +83,7 @@ func TestNewSQLiteTimerStore_ListArmed(t *testing.T) {
 			StartedAt:  now,
 		},
 		Trigger: engine.NewStartInstance(now, nil),
-		TimerArms: []runtime.ArmedTimer{
+		TimerArms: []kernel.ArmedTimer{
 			{
 				InstanceID: "sqlite-timer-instance-1",
 				TimerID:    "t1",
@@ -144,7 +146,7 @@ func TestNewSQLiteRelay_OutboxStatsViaFacadeInterface(t *testing.T) {
 
 	// callViaInterface drives the relay through the persistence.Relay interface
 	// to confirm OutboxStats is reachable without a type assertion.
-	callViaInterface := func(r persistence.Relay) (runtime.OutboxStats, error) {
+	callViaInterface := func(r persistence.Relay) (kernel.OutboxStats, error) {
 		return r.OutboxStats(t.Context())
 	}
 
@@ -167,7 +169,7 @@ func TestNewSQLiteCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), sqliteMinimalDef(), "sqlite-parent-cls-1", nil)
 	require.NoError(t, err)
@@ -213,9 +215,9 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	at := time.Now().UTC().Truncate(time.Millisecond)
 
-	link := runtime.ChainLink{
+	link := kernel.ChainLink{
 		PredecessorID:            "sqlite-pred-1",
-		Outcome:                  runtime.Outcome("success"),
+		Outcome:                  kernel.Outcome("success"),
 		SuccessorID:              "sqlite-succ-1",
 		PredecessorDefinitionRef: "def-a:1",
 		SuccessorDefinitionRef:   "def-b:2",
@@ -230,7 +232,7 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "sqlite-pred-1", got.PredecessorID)
-	assert.Equal(t, runtime.Outcome("success"), got.Outcome)
+	assert.Equal(t, kernel.Outcome("success"), got.Outcome)
 	assert.Equal(t, "sqlite-succ-1", got.SuccessorID)
 
 	// ListByPredecessor.
@@ -250,7 +252,7 @@ func TestNewSQLiteLister_ListsInstances(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	for _, id := range []string{"sqlite-lst-inst-a", "sqlite-lst-inst-b"} {
 		_, err := r.Run(t.Context(), sqliteMinimalDef(), id, nil)
@@ -259,7 +261,7 @@ func TestNewSQLiteLister_ListsInstances(t *testing.T) {
 
 	lister, err := persistence.NewSQLiteLister(db)
 	require.NoError(t, err)
-	page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+	page, err := lister.List(t.Context(), kernel.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 2, "isolated DB must contain exactly the two seeded instances")
 
@@ -283,7 +285,7 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	require.NoError(t, err)
 
 	def := sqliteMinimalDef()
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), def, "sqlite-notifier-parent-1", nil)
 	require.NoError(t, err)
@@ -302,7 +304,7 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	}}
 
 	var deliverCalled int
-	deliverFn := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		deliverCalled++
 		return nil
 	})

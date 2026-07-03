@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // instanceDefRef renders the "defID:version" reference of an instance, carried
@@ -29,18 +30,18 @@ func instanceDefRef(st engine.InstanceState) string {
 // (StatusTerminated) used to publish "instance.failed", and an admin
 // full-rollback termination (also StatusTerminated, no terminal command) used to
 // publish nothing.
-func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds []engine.Command) []OutboxEvent {
+func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds []engine.Command) []kernel.OutboxEvent {
 	if !isTerminal(st.Status) || isTerminal(prevStatus) {
 		return nil
 	}
 	def := instanceDefRef(st)
 	switch st.Status {
 	case engine.StatusCompleted:
-		return []OutboxEvent{{Topic: "instance.completed", Payload: copyVarsForOutcome(st.Variables), InstanceID: st.InstanceID, DefinitionRef: def}}
+		return []kernel.OutboxEvent{{Topic: "instance.completed", Payload: copyVarsForOutcome(st.Variables), InstanceID: st.InstanceID, DefinitionRef: def}}
 	case engine.StatusFailed:
-		return []OutboxEvent{{Topic: "instance.failed", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, DefinitionRef: def}}
+		return []kernel.OutboxEvent{{Topic: "instance.failed", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, DefinitionRef: def}}
 	case engine.StatusTerminated:
-		return []OutboxEvent{{Topic: "instance.terminated", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, DefinitionRef: def}}
+		return []kernel.OutboxEvent{{Topic: "instance.terminated", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, DefinitionRef: def}}
 	default:
 		return nil
 	}
@@ -50,14 +51,14 @@ func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds
 // outbox event so a SendTask message is written atomically in the state-commit tx and
 // relayed at-least-once, exactly like a domain event (ADR-0067). The payload carries the
 // message name, the resolved correlation key, and a copy of the sender's variables.
-func outboundMessageEvents(st engine.InstanceState, cmds []engine.Command) []OutboxEvent {
-	var out []OutboxEvent
+func outboundMessageEvents(st engine.InstanceState, cmds []engine.Command) []kernel.OutboxEvent {
+	var out []kernel.OutboxEvent
 	for _, c := range cmds {
 		m, ok := c.(engine.SendMessage)
 		if !ok {
 			continue
 		}
-		out = append(out, OutboxEvent{
+		out = append(out, kernel.OutboxEvent{
 			Topic:         "message." + m.Name,
 			Payload:       map[string]any{"messageName": m.Name, "correlationKey": m.CorrelationKey, "variables": m.Payload},
 			InstanceID:    st.InstanceID,

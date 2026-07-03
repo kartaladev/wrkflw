@@ -9,7 +9,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestStoreCreateBeginError covers the begin-error branch of Create and Commit:
@@ -60,7 +60,7 @@ func TestStoreWriteErrors(t *testing.T) {
 			drop: "wrkflw_call_links",
 			run: func(t *testing.T, s *store.Store) {
 				step := appliedStep("i", "a")
-				step.NewCallLink = &runtime.CallLink{ChildInstanceID: "i", ParentInstanceID: "p", ParentDefID: "d", ParentDefVersion: 1}
+				step.NewCallLink = &kernel.CallLink{ChildInstanceID: "i", ParentInstanceID: "p", ParentDefID: "d", ParentDefVersion: 1}
 				_, err := s.Create(t.Context(), step)
 				require.Error(t, err)
 			},
@@ -69,7 +69,7 @@ func TestStoreWriteErrors(t *testing.T) {
 			drop: "wrkflw_timers",
 			run: func(t *testing.T, s *store.Store) {
 				step := appliedStep("i", "a")
-				step.TimerArms = []runtime.ArmedTimer{{InstanceID: "i", DefID: "d", DefVersion: 1, TimerID: "t", FireAt: now, Kind: engine.TimerIntermediate}}
+				step.TimerArms = []kernel.ArmedTimer{{InstanceID: "i", DefID: "d", DefVersion: 1, TimerID: "t", FireAt: now, Kind: engine.TimerIntermediate}}
 				_, err := s.Create(t.Context(), step)
 				require.Error(t, err)
 			},
@@ -110,17 +110,17 @@ func TestStoreCommitWriteErrors(t *testing.T) {
 
 	tests := map[string]struct {
 		drop string
-		mut  func(step *runtime.AppliedStep)
+		mut  func(step *kernel.AppliedStep)
 	}{
 		"commit write-journal error": {drop: "wrkflw_journal"},
 		"commit write-outbox error":  {drop: "wrkflw_outbox"},
 		"commit call-link error": {
 			drop: "wrkflw_call_links",
-			mut:  func(s *runtime.AppliedStep) { s.CallOutcome = &runtime.CallOutcome{Completed: true} },
+			mut:  func(s *kernel.AppliedStep) { s.CallOutcome = &kernel.CallOutcome{Completed: true} },
 		},
 		"commit timer-cancel error": {
 			drop: "wrkflw_timers",
-			mut:  func(s *runtime.AppliedStep) { s.TimerCancels = []string{"t"} },
+			mut:  func(s *kernel.AppliedStep) { s.TimerCancels = []string{"t"} },
 		},
 	}
 

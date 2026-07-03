@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // seedInstance inserts a minimal instance via Store.Create for use in Lister tests.
 func seedInstance(t *testing.T, s *store.Store, id string, status engine.Status, at time.Time) {
 	t.Helper()
-	_, err := s.Create(t.Context(), runtime.AppliedStep{
+	_, err := s.Create(t.Context(), kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: id,
 			DefID:      "d",
@@ -30,7 +30,7 @@ func seedInstance(t *testing.T, s *store.Store, id string, status engine.Status,
 // seedInstanceWithIncidents inserts an instance with incidents embedded in its snapshot.
 func seedInstanceWithIncidents(t *testing.T, s *store.Store, id string, at time.Time, incidents []engine.Incident) {
 	t.Helper()
-	_, err := s.Create(t.Context(), runtime.AppliedStep{
+	_, err := s.Create(t.Context(), kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: id,
 			DefID:      "d",
@@ -52,14 +52,14 @@ func TestListerOrdering(t *testing.T) {
 		require.NoError(t, err)
 		lister, err := store.NewLister(b.conn, b.dialect)
 		require.NoError(t, err)
-		var _ runtime.InstanceLister = lister // compile-time interface check
+		var _ kernel.InstanceLister = lister // compile-time interface check
 
 		base := time.Date(2026, 6, 21, 8, 0, 0, 0, time.UTC)
 		seedInstance(t, s, "a", engine.StatusRunning, base)
 		seedInstance(t, s, "b", engine.StatusRunning, base.Add(time.Minute))
 		seedInstance(t, s, "c", engine.StatusRunning, base.Add(2*time.Minute))
 
-		page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+		page, err := lister.List(t.Context(), kernel.InstanceFilter{})
 		require.NoError(t, err, "%s: list", b.name)
 		require.Len(t, page.Items, 3, "%s: want 3 items", b.name)
 		assert.Equal(t, "c", page.Items[0].InstanceID, "%s: want c first", b.name)
@@ -85,7 +85,7 @@ func TestListerStatusFilter(t *testing.T) {
 		seedInstance(t, s, "c1", engine.StatusCompleted, base.Add(time.Minute))
 		seedInstance(t, s, "c2", engine.StatusCompleted, base.Add(2*time.Minute))
 
-		page, err := lister.List(t.Context(), runtime.InstanceFilter{Status: &completed})
+		page, err := lister.List(t.Context(), kernel.InstanceFilter{Status: &completed})
 		require.NoError(t, err, "%s: list", b.name)
 		require.Len(t, page.Items, 2, "%s: want 2 completed", b.name)
 		for _, it := range page.Items {
@@ -111,7 +111,7 @@ func TestListerKeyset_TwoPageWalk(t *testing.T) {
 		seedInstance(t, s, "i3", engine.StatusRunning, base.Add(2*time.Minute))
 
 		// page 1: limit=2
-		p1, err := lister.List(t.Context(), runtime.InstanceFilter{Status: &running, Limit: 2})
+		p1, err := lister.List(t.Context(), kernel.InstanceFilter{Status: &running, Limit: 2})
 		require.NoError(t, err, "%s: page1", b.name)
 		require.Len(t, p1.Items, 2, "%s: page1 want 2 items", b.name)
 		assert.Equal(t, "i3", p1.Items[0].InstanceID, "%s: page1[0] want i3", b.name)
@@ -120,7 +120,7 @@ func TestListerKeyset_TwoPageWalk(t *testing.T) {
 		assert.NotEmpty(t, p1.NextCursor, "%s: page1 want NextCursor", b.name)
 
 		// page 2: use cursor from page 1
-		p2, err := lister.List(t.Context(), runtime.InstanceFilter{Status: &running, Limit: 2, Cursor: p1.NextCursor})
+		p2, err := lister.List(t.Context(), kernel.InstanceFilter{Status: &running, Limit: 2, Cursor: p1.NextCursor})
 		require.NoError(t, err, "%s: page2", b.name)
 		require.Len(t, p2.Items, 1, "%s: page2 want 1 item", b.name)
 		assert.Equal(t, "i1", p2.Items[0].InstanceID, "%s: page2[0] want i1", b.name)
@@ -146,7 +146,7 @@ func TestListerKeyset_TieBoundary(t *testing.T) {
 		seen := make(map[string]int)
 		var cursor string
 		for {
-			page, err := lister.List(t.Context(), runtime.InstanceFilter{Limit: 2, Cursor: cursor})
+			page, err := lister.List(t.Context(), kernel.InstanceFilter{Limit: 2, Cursor: cursor})
 			require.NoError(t, err, "%s: list page", b.name)
 			for _, it := range page.Items {
 				seen[it.InstanceID]++
@@ -177,7 +177,7 @@ func TestListerDefaultLimit(t *testing.T) {
 				base.Add(time.Duration(i)*time.Minute))
 		}
 
-		page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+		page, err := lister.List(t.Context(), kernel.InstanceFilter{})
 		require.NoError(t, err, "%s: list", b.name)
 		require.Len(t, page.Items, 3, "%s: want 3 items", b.name)
 		assert.False(t, page.HasMore, "%s: want HasMore=false", b.name)
@@ -193,7 +193,7 @@ func TestListerProjectsFields(t *testing.T) {
 		require.NoError(t, err)
 
 		at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
-		_, err = s.Create(t.Context(), runtime.AppliedStep{
+		_, err = s.Create(t.Context(), kernel.AppliedStep{
 			State: engine.InstanceState{
 				InstanceID: "proj-1",
 				DefID:      "mydef",
@@ -205,7 +205,7 @@ func TestListerProjectsFields(t *testing.T) {
 		})
 		require.NoError(t, err, "%s: create", b.name)
 
-		page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+		page, err := lister.List(t.Context(), kernel.InstanceFilter{})
 		require.NoError(t, err, "%s: list", b.name)
 		require.Len(t, page.Items, 1, "%s: want 1 item", b.name)
 		it := page.Items[0]
@@ -231,7 +231,7 @@ func TestListerStartedAtUTC(t *testing.T) {
 		at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 		seedInstance(t, s, "utc-chk", engine.StatusRunning, at)
 
-		page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+		page, err := lister.List(t.Context(), kernel.InstanceFilter{})
 		require.NoError(t, err, "%s: list", b.name)
 		require.Len(t, page.Items, 1)
 
@@ -261,11 +261,11 @@ func TestListerIncidentCount(t *testing.T) {
 		// Instance with no incidents.
 		seedInstance(t, s, "no-incident", engine.StatusRunning, base.Add(time.Minute))
 
-		page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+		page, err := lister.List(t.Context(), kernel.InstanceFilter{})
 		require.NoError(t, err, "%s: list", b.name)
 		require.Len(t, page.Items, 2, "%s: want 2 items", b.name)
 
-		byID := make(map[string]runtime.InstanceSummary, len(page.Items))
+		byID := make(map[string]kernel.InstanceSummary, len(page.Items))
 		for _, it := range page.Items {
 			byID[it.InstanceID] = it
 		}
@@ -295,7 +295,7 @@ func TestListerIncludeTotal(t *testing.T) {
 
 		t.Run("IncludeTotal=true with status filter independent of Limit", func(t *testing.T) {
 			t.Parallel()
-			page, err := lister.List(t.Context(), runtime.InstanceFilter{
+			page, err := lister.List(t.Context(), kernel.InstanceFilter{
 				Status:       &completed,
 				Limit:        1,
 				IncludeTotal: true,
@@ -307,7 +307,7 @@ func TestListerIncludeTotal(t *testing.T) {
 
 		t.Run("IncludeTotal=false returns TotalCount=0", func(t *testing.T) {
 			t.Parallel()
-			page, err := lister.List(t.Context(), runtime.InstanceFilter{
+			page, err := lister.List(t.Context(), kernel.InstanceFilter{
 				Status:       &completed,
 				Limit:        10,
 				IncludeTotal: false,
@@ -318,7 +318,7 @@ func TestListerIncludeTotal(t *testing.T) {
 
 		t.Run("IncludeTotal=true no status filter counts all", func(t *testing.T) {
 			t.Parallel()
-			page, err := lister.List(t.Context(), runtime.InstanceFilter{
+			page, err := lister.List(t.Context(), kernel.InstanceFilter{
 				Limit:        1,
 				IncludeTotal: true,
 			})

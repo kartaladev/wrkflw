@@ -34,6 +34,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 // failError is a plain error returned by the failing "ship" action.
@@ -90,11 +92,11 @@ func main() {
 	})
 
 	clk := clock.System()
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(clk))
+	r, err := runtime.NewProcessDriver(cat, store, runtime.WithRunnerClock(clk))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -109,7 +111,7 @@ func main() {
 		log.Fatal("run:", err)
 	}
 	fmt.Printf("forward outcome: status=%s (ship failure caught by boundary)\n",
-		runtime.StatusString(st.Status))
+		view.StatusString(st.Status))
 
 	fmt.Println("Operator triggers full rollback:")
 	trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
@@ -118,7 +120,7 @@ func main() {
 		log.Fatal("deliver compensate:", err)
 	}
 
-	fmt.Printf("rollback outcome: status=%s\n", runtime.StatusString(final.Status))
+	fmt.Printf("rollback outcome: status=%s\n", view.StatusString(final.Status))
 	fmt.Printf("invocation order: %v\n", invoked)
 	fmt.Println("(compensations ran in reverse: refund before cancel-booking)")
 }

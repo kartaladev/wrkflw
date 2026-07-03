@@ -13,13 +13,13 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// Compile-time checks: *CallLinkStore satisfies [runtime.CallLinkStore] and
-// [runtime.CallLineageReader].
-var _ runtime.CallLinkStore = (*CallLinkStore)(nil)
-var _ runtime.CallLineageReader = (*CallLinkStore)(nil)
+// Compile-time checks: *CallLinkStore satisfies [kernel.CallLinkStore] and
+// [kernel.CallLineageReader].
+var _ kernel.CallLinkStore = (*CallLinkStore)(nil)
+var _ kernel.CallLineageReader = (*CallLinkStore)(nil)
 
 // CallLinkOption is a functional option for [CallLinkStore].
 type CallLinkOption func(*CallLinkStore)
@@ -55,7 +55,7 @@ func WithCallLinkClock(clk clock.Clock) CallLinkOption {
 }
 
 // CallLinkStore is the vendor-neutral, dialect-parametrised
-// [runtime.CallLinkStore] and [runtime.CallLineageReader]. It covers the
+// [kernel.CallLinkStore] and [kernel.CallLineageReader]. It covers the
 // read/claim side of the parent↔child call-activity correlation; the write side
 // is fused into [Store.Create] and [Store.Commit] (ADR-0025).
 //
@@ -115,7 +115,7 @@ func NewCallLinkStore(conn any, d dialect.Dialect, opts ...CallLinkOption) (*Cal
 //
 // When leaseTTL <= 0 (default) a plain SELECT is used (no stamp, no locking —
 // backward-compatible). A limit <= 0 means "no limit" (all matching rows).
-func (s *CallLinkStore) ClaimPending(ctx context.Context, limit int) ([]runtime.PendingNotify, error) {
+func (s *CallLinkStore) ClaimPending(ctx context.Context, limit int) ([]kernel.PendingNotify, error) {
 	if s.leaseTTL > 0 {
 		return s.claimPendingLeased(ctx, limit)
 	}
@@ -123,7 +123,7 @@ func (s *CallLinkStore) ClaimPending(ctx context.Context, limit int) ([]runtime.
 }
 
 // claimPendingPlain is the original plain-SELECT path (ttl <= 0).
-func (s *CallLinkStore) claimPendingPlain(ctx context.Context, limit int) ([]runtime.PendingNotify, error) {
+func (s *CallLinkStore) claimPendingPlain(ctx context.Context, limit int) ([]kernel.PendingNotify, error) {
 	const baseQuery = `
 		SELECT child_instance_id, parent_instance_id, parent_command_id,
 		       parent_def_id, parent_def_version, depth,
@@ -160,7 +160,7 @@ func (s *CallLinkStore) claimPendingPlain(ctx context.Context, limit int) ([]run
 //   - SupportsReturning && SupportsSkipLocked → Postgres path
 //   - !SupportsReturning && SupportsSkipLocked → MySQL path
 //   - SupportsReturning && !SupportsSkipLocked → SQLite path
-func (s *CallLinkStore) claimPendingLeased(ctx context.Context, limit int) ([]runtime.PendingNotify, error) {
+func (s *CallLinkStore) claimPendingLeased(ctx context.Context, limit int) ([]kernel.PendingNotify, error) {
 	now := s.clk.Now().UTC()
 	cutoff := now.Add(-s.leaseTTL)
 
@@ -179,7 +179,7 @@ func (s *CallLinkStore) claimPendingLeased(ctx context.Context, limit int) ([]ru
 // UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED [LIMIT n]) … RETURNING …
 // This is a single atomic round-trip that both stamps claimed_at/claimed_by
 // and returns the claimed rows.
-func (s *CallLinkStore) claimLeasedReturning(ctx context.Context, now, cutoff time.Time, limit int) ([]runtime.PendingNotify, error) {
+func (s *CallLinkStore) claimLeasedReturning(ctx context.Context, now, cutoff time.Time, limit int) ([]kernel.PendingNotify, error) {
 	const queryNoLimit = `
 		UPDATE wrkflw_call_links AS c
 		   SET claimed_at = ?, claimed_by = ?
@@ -237,8 +237,8 @@ func (s *CallLinkStore) claimLeasedReturning(ctx context.Context, now, cutoff ti
 // claimLeasedSelectUpdate implements the MySQL leased-claim path:
 // Inside a transaction: SELECT … FOR UPDATE SKIP LOCKED (with optional LIMIT),
 // collect the rows, UPDATE claimed_at/claimed_by on the locked IDs, return.
-func (s *CallLinkStore) claimLeasedSelectUpdate(ctx context.Context, now, cutoff time.Time, limit int) ([]runtime.PendingNotify, error) {
-	var pending []runtime.PendingNotify
+func (s *CallLinkStore) claimLeasedSelectUpdate(ctx context.Context, now, cutoff time.Time, limit int) ([]kernel.PendingNotify, error) {
+	var pending []kernel.PendingNotify
 
 	q, err := transaction.JoinOrBegin(ctx, s.conn)
 	if err != nil {
@@ -318,7 +318,7 @@ func (s *CallLinkStore) claimLeasedSelectUpdate(ctx context.Context, now, cutoff
 // SQLite has no FOR UPDATE SKIP LOCKED and is single-writer (SetMaxOpenConns(1)).
 // A plain UPDATE … WHERE child_instance_id = (SELECT … LIMIT 1) … RETURNING …
 // is correct under the single-writer contract; concurrency is NOT asserted for SQLite.
-func (s *CallLinkStore) claimLeasedSQLite(ctx context.Context, now, cutoff time.Time, limit int) ([]runtime.PendingNotify, error) {
+func (s *CallLinkStore) claimLeasedSQLite(ctx context.Context, now, cutoff time.Time, limit int) ([]kernel.PendingNotify, error) {
 	const queryNoLimit = `
 		UPDATE wrkflw_call_links
 		   SET claimed_at = ?, claimed_by = ?
@@ -370,11 +370,11 @@ func (s *CallLinkStore) claimLeasedSQLite(ctx context.Context, now, cutoff time.
 }
 
 // scanPendingRows scans a [database.Rows] result set into a slice of
-// [runtime.PendingNotify]. The column projection must be:
+// [kernel.PendingNotify]. The column projection must be:
 // child_instance_id, parent_instance_id, parent_command_id,
 // parent_def_id, parent_def_version, depth, status, output, error.
-func (s *CallLinkStore) scanPendingRows(rows database.Rows, op string) ([]runtime.PendingNotify, error) {
-	var pending []runtime.PendingNotify
+func (s *CallLinkStore) scanPendingRows(rows database.Rows, op string) ([]kernel.PendingNotify, error) {
+	var pending []kernel.PendingNotify
 	for rows.Next() {
 		var (
 			childID    string
@@ -407,8 +407,8 @@ func (s *CallLinkStore) scanPendingRows(rows database.Rows, op string) ([]runtim
 			errStr = *errText
 		}
 
-		pending = append(pending, runtime.PendingNotify{
-			Link: runtime.CallLink{
+		pending = append(pending, kernel.PendingNotify{
+			Link: kernel.CallLink{
 				ChildInstanceID:  childID,
 				ParentInstanceID: parentID,
 				ParentCommandID:  commandID,
@@ -416,7 +416,7 @@ func (s *CallLinkStore) scanPendingRows(rows database.Rows, op string) ([]runtim
 				ParentDefVersion: defVersion,
 				Depth:            depth,
 			},
-			Outcome: runtime.CallOutcome{
+			Outcome: kernel.CallOutcome{
 				Completed: status == "completed",
 				Output:    output,
 				Err:       errStr,
@@ -453,10 +453,10 @@ func (s *CallLinkStore) MarkNotified(ctx context.Context, childInstanceID string
 // LookupChild returns the call link for a child instance. It returns
 // (link, true, nil) when found, and (CallLink{}, false, nil) when no row
 // exists for the given childInstanceID (i.e. it is a root instance).
-func (s *CallLinkStore) LookupChild(ctx context.Context, childInstanceID string) (runtime.CallLink, bool, error) {
+func (s *CallLinkStore) LookupChild(ctx context.Context, childInstanceID string) (kernel.CallLink, bool, error) {
 	q, err := database.From(s.conn)
 	if err != nil {
-		return runtime.CallLink{}, false, fmt.Errorf("workflow-store: call links: lookup: conn: %w", err)
+		return kernel.CallLink{}, false, fmt.Errorf("workflow-store: call links: lookup: conn: %w", err)
 	}
 
 	var (
@@ -476,12 +476,12 @@ func (s *CallLinkStore) LookupChild(ctx context.Context, childInstanceID string)
 	).Scan(&childID, &parentID, &commandID, &defID, &defVersion, &depth)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return runtime.CallLink{}, false, nil
+			return kernel.CallLink{}, false, nil
 		}
-		return runtime.CallLink{}, false, fmt.Errorf("workflow-store: call links: lookup: %w", err)
+		return kernel.CallLink{}, false, fmt.Errorf("workflow-store: call links: lookup: %w", err)
 	}
 
-	return runtime.CallLink{
+	return kernel.CallLink{
 		ChildInstanceID:  childID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  commandID,
@@ -495,7 +495,7 @@ func (s *CallLinkStore) LookupChild(ctx context.Context, childInstanceID string)
 // parent_instance_id matches parentInstanceID and whose status is 'running',
 // ordered by child_instance_id for deterministic results.
 // Returns a non-nil empty slice when no running children exist.
-func (s *CallLinkStore) ListRunningChildren(ctx context.Context, parentInstanceID string) ([]runtime.CallLink, error) {
+func (s *CallLinkStore) ListRunningChildren(ctx context.Context, parentInstanceID string) ([]kernel.CallLink, error) {
 	q, err := database.From(s.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: call links: list running children: conn: %w", err)
@@ -515,7 +515,7 @@ func (s *CallLinkStore) ListRunningChildren(ctx context.Context, parentInstanceI
 	}
 	defer func() { _ = rows.Close() }()
 
-	var links []runtime.CallLink
+	var links []kernel.CallLink
 	for rows.Next() {
 		var (
 			childID    string
@@ -528,7 +528,7 @@ func (s *CallLinkStore) ListRunningChildren(ctx context.Context, parentInstanceI
 		if err := rows.Scan(&childID, &parentID, &commandID, &defID, &defVersion, &depth); err != nil {
 			return nil, fmt.Errorf("workflow-store: call links: list running children: scan: %w", err)
 		}
-		links = append(links, runtime.CallLink{
+		links = append(links, kernel.CallLink{
 			ChildInstanceID:  childID,
 			ParentInstanceID: parentID,
 			ParentCommandID:  commandID,
@@ -543,15 +543,15 @@ func (s *CallLinkStore) ListRunningChildren(ctx context.Context, parentInstanceI
 
 	// Non-nil empty slice per the CallLinkStore contract.
 	if links == nil {
-		links = []runtime.CallLink{}
+		links = []kernel.CallLink{}
 	}
 	return links, nil
 }
 
-// ParentOf returns the [runtime.CallLink] describing the parent call
+// ParentOf returns the [kernel.CallLink] describing the parent call
 // relationship for childID. Returns (nil, nil) when childID is a root instance
-// (no row in wrkflw_call_links). Implements [runtime.CallLineageReader].
-func (s *CallLinkStore) ParentOf(ctx context.Context, childID string) (*runtime.CallLink, error) {
+// (no row in wrkflw_call_links). Implements [kernel.CallLineageReader].
+func (s *CallLinkStore) ParentOf(ctx context.Context, childID string) (*kernel.CallLink, error) {
 	q, err := database.From(s.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: call links: parent of: conn: %w", err)
@@ -578,7 +578,7 @@ func (s *CallLinkStore) ParentOf(ctx context.Context, childID string) (*runtime.
 		}
 		return nil, fmt.Errorf("workflow-store: call links: parent of: %w", err)
 	}
-	return &runtime.CallLink{
+	return &kernel.CallLink{
 		ChildInstanceID:  childInstID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  commandID,
@@ -588,10 +588,10 @@ func (s *CallLinkStore) ParentOf(ctx context.Context, childID string) (*runtime.
 	}, nil
 }
 
-// ChildrenOf returns all [runtime.CallLink]s whose parent_instance_id equals
+// ChildrenOf returns all [kernel.CallLink]s whose parent_instance_id equals
 // parentID, ordered by (created_at, child_instance_id). Returns an empty
-// (non-nil) slice when no children exist. Implements [runtime.CallLineageReader].
-func (s *CallLinkStore) ChildrenOf(ctx context.Context, parentID string) ([]runtime.CallLink, error) {
+// (non-nil) slice when no children exist. Implements [kernel.CallLineageReader].
+func (s *CallLinkStore) ChildrenOf(ctx context.Context, parentID string) ([]kernel.CallLink, error) {
 	q, err := database.From(s.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: call links: children of: conn: %w", err)
@@ -610,7 +610,7 @@ func (s *CallLinkStore) ChildrenOf(ctx context.Context, parentID string) ([]runt
 	}
 	defer func() { _ = rows.Close() }()
 
-	links := []runtime.CallLink{}
+	links := []kernel.CallLink{}
 	for rows.Next() {
 		var (
 			childInstID  string
@@ -623,7 +623,7 @@ func (s *CallLinkStore) ChildrenOf(ctx context.Context, parentID string) ([]runt
 		if err := rows.Scan(&childInstID, &parentInstID, &commandID, &defID, &defVersion, &depth); err != nil {
 			return nil, fmt.Errorf("workflow-store: call links: children of: scan: %w", err)
 		}
-		links = append(links, runtime.CallLink{
+		links = append(links, kernel.CallLink{
 			ChildInstanceID:  childInstID,
 			ParentInstanceID: parentInstID,
 			ParentCommandID:  commandID,

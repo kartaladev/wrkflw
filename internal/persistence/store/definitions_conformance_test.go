@@ -10,7 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // Compile-time assertion: *store.DefinitionStore must satisfy the public facade
@@ -88,7 +88,7 @@ func TestDefinitionStorePutGetRoundTrip(t *testing.T) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
 		require.NoError(t, err)
 		// compile-time interface checks
-		var _ runtime.DefinitionRegistry = ds
+		var _ kernel.DefinitionRegistry = ds
 
 		def := &model.ProcessDefinition{ID: "d-rr", Version: 1}
 		require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: PutDefinition", b.name)
@@ -154,7 +154,7 @@ func TestDefinitionStoreUpsertOverwrite(t *testing.T) {
 }
 
 // TestDefinitionStoreGetNotFound verifies that GetDefinition wraps
-// runtime.ErrDefinitionNotFound when no row matches (defID, version).
+// kernel.ErrDefinitionNotFound when no row matches (defID, version).
 func TestDefinitionStoreGetNotFound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
@@ -162,13 +162,13 @@ func TestDefinitionStoreGetNotFound(t *testing.T) {
 
 		_, err = ds.GetDefinition(t.Context(), "no-such-def", 99)
 		require.Error(t, err, "%s: GetDefinition missing must error", b.name)
-		require.ErrorIs(t, err, runtime.ErrDefinitionNotFound,
+		require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
 			"%s: must wrap ErrDefinitionNotFound; got %v", b.name, err)
 	})
 }
 
 // TestDefinitionStoreLookupNotFound verifies that Lookup wraps
-// runtime.ErrDefinitionNotFound for both exact and latest forms.
+// kernel.ErrDefinitionNotFound for both exact and latest forms.
 func TestDefinitionStoreLookupNotFound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
@@ -176,12 +176,12 @@ func TestDefinitionStoreLookupNotFound(t *testing.T) {
 
 		// Exact ref not found.
 		_, err = ds.Lookup(t.Context(), "no-such:1")
-		require.ErrorIs(t, err, runtime.ErrDefinitionNotFound,
+		require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
 			"%s: exact Lookup must wrap ErrDefinitionNotFound; got %v", b.name, err)
 
 		// Latest ref not found.
 		_, err = ds.Lookup(t.Context(), "no-such-either")
-		require.ErrorIs(t, err, runtime.ErrDefinitionNotFound,
+		require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
 			"%s: latest Lookup must wrap ErrDefinitionNotFound; got %v", b.name, err)
 	})
 }

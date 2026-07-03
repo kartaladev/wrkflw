@@ -9,7 +9,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestOpenPostgresReturnsInterface verifies that OpenPostgres accepts exactly
@@ -25,11 +25,11 @@ func TestOpenPostgresReturnsInterface(t *testing.T) {
 	store, err := persistence.OpenPostgres(t.Context(), pool)
 	require.NoError(t, err)
 
-	// The returned value must satisfy persistence.Store (which embeds runtime.Store
-	// and runtime.JournalReader). Verify via type assertions — if the interface is
+	// The returned value must satisfy persistence.Store (which embeds kernel.Store
+	// and kernel.JournalReader). Verify via type assertions — if the interface is
 	// not satisfied the assertions panic and the test fails.
-	_ = store.(runtime.Store)
-	_ = store.(runtime.JournalReader)
+	_ = store.(kernel.Store)
+	_ = store.(kernel.JournalReader)
 
 	assert.NotNil(t, store)
 }

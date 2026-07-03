@@ -18,6 +18,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // recordingHandler is a minimal slog.Handler that captures every emitted record
@@ -95,7 +96,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	store := mustMemStore(t)
 
 	rec := &recordingHandler{}

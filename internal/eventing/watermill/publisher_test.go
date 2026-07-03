@@ -8,7 +8,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/require"
 	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // fakePub captures the topic and messages of the last Publish call.
@@ -31,11 +31,11 @@ func (f *fakePub) Close() error { return nil }
 
 func TestPublishMapsEventToMessage(t *testing.T) {
 	tests := map[string]struct {
-		event  runtime.OutboxEvent
+		event  kernel.OutboxEvent
 		assert func(t *testing.T, fp *fakePub, err error)
 	}{
 		"dedup key becomes the message UUID and payload is JSON": {
-			event: runtime.OutboxEvent{
+			event: kernel.OutboxEvent{
 				Topic:         "instance.completed",
 				Payload:       map[string]any{"ok": true},
 				DedupKey:      "inst-1:3:0",
@@ -54,14 +54,14 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 			},
 		},
 		"empty dedup key gets a generated non-empty UUID": {
-			event: runtime.OutboxEvent{Topic: "instance.failed", Payload: map[string]any{"error": "boom"}},
+			event: kernel.OutboxEvent{Topic: "instance.failed", Payload: map[string]any{"error": "boom"}},
 			assert: func(t *testing.T, fp *fakePub, err error) {
 				require.NoError(t, err)
 				require.NotEmpty(t, fp.msgs[0].UUID)
 			},
 		},
 		"publisher error is wrapped and returned": {
-			event: runtime.OutboxEvent{Topic: "instance.completed", Payload: map[string]any{}},
+			event: kernel.OutboxEvent{Topic: "instance.completed", Payload: map[string]any{}},
 			assert: func(t *testing.T, _ *fakePub, err error) {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "instance.completed")
@@ -82,13 +82,13 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 }
 
 func TestPublisherImplementsRuntimePublisher(t *testing.T) {
-	var _ runtime.Publisher = (*watermillpub.Publisher)(nil)
+	var _ kernel.Publisher = (*watermillpub.Publisher)(nil)
 }
 
 func TestPublishMarshalErrorPropagates(t *testing.T) {
 	// A channel cannot be JSON-marshalled; this exercises the marshal-error path.
 	pub := watermillpub.NewPublisher(&fakePub{})
-	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic:   "instance.broken",
 		Payload: map[string]any{"bad": make(chan int)},
 	})
@@ -100,7 +100,7 @@ func TestNewPublisherWithLogger(t *testing.T) {
 	// Verify WithLogger option is accepted and a Publish call still works.
 	fp := &fakePub{}
 	pub := watermillpub.NewPublisher(fp, watermillpub.WithLogger(slog.Default()))
-	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic: "instance.started", Payload: map[string]any{"ok": true}, DedupKey: "i:4:0",
 	})
 	require.NoError(t, err)

@@ -19,7 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 const facadeLeaseTTL = 30 * time.Second
@@ -27,11 +27,11 @@ const facadeLeaseTTL = 30 * time.Second
 // seedFacadeTerminalLink inserts a terminal call link via the internal
 // postgres.Store (the write side), so the read-side façade lease tests have a
 // seeded row without duplicating the write path in the public API.
-func seedFacadeTerminalLink(t *testing.T, pgStore *store.Store, pool *pgxpool.Pool, childID string, outcome runtime.CallOutcome) {
+func seedFacadeTerminalLink(t *testing.T, pgStore *store.Store, pool *pgxpool.Pool, childID string, outcome kernel.CallOutcome) {
 	t.Helper()
 	_ = pool // accepted to mirror the internal test helper signature
 
-	link := &runtime.CallLink{
+	link := &kernel.CallLink{
 		ChildInstanceID:  childID,
 		ParentInstanceID: "parent-" + childID,
 		ParentCommandID:  "cmd-" + childID,
@@ -41,7 +41,7 @@ func seedFacadeTerminalLink(t *testing.T, pgStore *store.Store, pool *pgxpool.Po
 	}
 	now := time.Unix(1700000000, 0).UTC()
 
-	createStep := runtime.AppliedStep{
+	createStep := kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: childID,
 			DefID:      "def-facade-parent",
@@ -55,7 +55,7 @@ func seedFacadeTerminalLink(t *testing.T, pgStore *store.Store, pool *pgxpool.Po
 	tok, err := pgStore.Create(t.Context(), createStep)
 	require.NoError(t, err)
 
-	termStep := runtime.AppliedStep{
+	termStep := kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: childID,
 			DefID:      "def-facade-parent",
@@ -111,7 +111,7 @@ func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 		pgStore, err := store.New(pool, dialect.NewPostgres())
 		require.NoError(t, err)
 		seedFacadeTerminalLink(t, pgStore, pool, "facade-lease-child-1",
-			runtime.CallOutcome{Completed: true})
+			kernel.CallOutcome{Completed: true})
 
 		// Owner A claims — must see the seeded link.
 		first, err := storeA.ClaimPending(t.Context(), 10)

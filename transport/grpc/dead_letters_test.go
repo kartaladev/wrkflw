@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
@@ -23,13 +23,13 @@ import (
 
 // dlaStub is a configurable service.DeadLetterAdmin test double.
 type dlaStub struct {
-	listFn    func(ctx context.Context, limit int) ([]runtime.DeadLetter, error)
+	listFn    func(ctx context.Context, limit int) ([]monitor.DeadLetter, error)
 	redriveFn func(ctx context.Context, ids ...int64) (int, error)
 	gotLimit  int
 	gotIDs    []int64
 }
 
-func (s *dlaStub) ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error) {
+func (s *dlaStub) ListDeadLettered(ctx context.Context, limit int) ([]monitor.DeadLetter, error) {
 	s.gotLimit = limit
 	return s.listFn(ctx, limit)
 }
@@ -61,8 +61,8 @@ func TestServerListDeadLetters(t *testing.T) {
 	t.Run("wired returns items and normalizes limit", func(t *testing.T) {
 		t.Parallel()
 		created := time.Now()
-		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
-			return []runtime.DeadLetter{{ID: 7, InstanceID: "p1", Topic: "instance.completed", RetryCount: 5, LastError: "boom", CreatedAt: created}}, nil
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
+			return []monitor.DeadLetter{{ID: 7, InstanceID: "p1", Topic: "instance.completed", RetryCount: 5, LastError: "boom", CreatedAt: created}}, nil
 		}}
 		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithDeadLetterAdmin(dla))
 		resp, err := client.ListDeadLetters(t.Context(), &workflowpb.ListDeadLettersRequest{Limit: 0})
@@ -83,7 +83,7 @@ func TestServerListDeadLetters(t *testing.T) {
 
 	t.Run("admin error maps to Internal", func(t *testing.T) {
 		t.Parallel()
-		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
 			return nil, errors.New("workflow-postgres: relay: list dead-lettered: boom")
 		}}
 		client := newStubHarnessWithOpts(t, &resolveStub{}, grpctransport.WithDeadLetterAdmin(dla))

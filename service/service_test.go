@@ -17,16 +17,18 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
 // harness wires a real in-memory engine for the service tests.
 type harness struct {
-	runner *runtime.Runner
-	tasks  *runtime.TaskService
-	reg    *runtime.MapDefinitionRegistry
-	store  *runtime.MemStore
-	lister runtime.InstanceLister
+	runner *runtime.ProcessDriver
+	tasks  *task.TaskService
+	reg    *kernel.MapDefinitionRegistry
+	store  *kernel.MemStore
+	lister kernel.InstanceLister
 	clk    *clockwork.FakeClock
 	// taskStore is directly accessible for verification.
 	taskStore *humantask.MemTaskStore
@@ -116,7 +118,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	})
 	az := authz.RoleAuthorizer{}
 
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 
 	// Build the action catalog with a simple "greet" action.
@@ -124,7 +126,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 		"greet": greetAction{},
 	})
 
-	r, err := runtime.NewRunner(
+	r, err := runtime.NewProcessDriver(
 		cat,
 		store,
 		runtime.WithRunnerClock(fc),
@@ -139,9 +141,9 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 		// Also register by ID alone for convenience.
 		defsMap[d.ID] = d
 	}
-	reg := runtime.NewMapDefinitionRegistry(defsMap)
+	reg := kernel.NewMapDefinitionRegistry(defsMap)
 
-	svc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	svc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 
 	require.NoError(t, err)
 	return &harness{
@@ -193,7 +195,7 @@ func TestStartInstanceUnknownDefRef(t *testing.T) {
 		InstanceID: "inst-x",
 	})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrDefinitionNotFound)
+	assert.ErrorIs(t, err, kernel.ErrDefinitionNotFound)
 }
 
 // TestGetInstance verifies GetInstance returns the state for a started instance
@@ -219,7 +221,7 @@ func TestGetInstance(t *testing.T) {
 	// GetInstance for unknown ID.
 	_, err = svc.GetInstance(t.Context(), "no-such-id")
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+	assert.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 }
 
 // TestDeliverSignal verifies that DeliverSignal resumes a parked instance.
@@ -256,7 +258,7 @@ func TestDeliverSignalInstanceNotFound(t *testing.T) {
 		Signal:     "approved",
 	})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+	assert.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 }
 
 // TestHumanTaskLifecycle verifies ClaimTask, CompleteTask, and ReassignTask
@@ -371,7 +373,7 @@ func TestListInstances(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	page, err := svc.ListInstances(ctx, runtime.InstanceFilter{Limit: 10})
+	page, err := svc.ListInstances(ctx, kernel.InstanceFilter{Limit: 10})
 	require.NoError(t, err)
 	assert.Len(t, page.Items, 2)
 	assert.False(t, page.HasMore)
@@ -389,7 +391,7 @@ func TestDeliverMessageUnknownDefRef(t *testing.T) {
 		CorrelationKey: "100",
 	})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrDefinitionNotFound)
+	assert.ErrorIs(t, err, kernel.ErrDefinitionNotFound)
 }
 
 // TestReassignTaskUnauthorized verifies that ReassignTask propagates
@@ -444,7 +446,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 	require.Equal(t, engine.StatusRunning, parked.Status)
 
 	// Build a registry WITHOUT the definition so resolveDefinition fails.
-	emptyReg := runtime.NewMapDefinitionRegistry(nil)
+	emptyReg := kernel.NewMapDefinitionRegistry(nil)
 	svc := service.New(h.runner, h.tasks, emptyReg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 
 	_, err = svc.DeliverSignal(ctx, service.DeliverSignalRequest{
@@ -452,7 +454,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 		Signal:     "approved",
 	})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, runtime.ErrDefinitionNotFound)
+	assert.ErrorIs(t, err, kernel.ErrDefinitionNotFound)
 }
 
 // TestNewEngineDefaultClockNoPanic verifies that New works without a clock

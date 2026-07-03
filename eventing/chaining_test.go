@@ -17,6 +17,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // capturingStarter is an ad-hoc InstanceStarter double that records calls and
@@ -41,15 +43,15 @@ func (s *capturingStarter) startedIDs() []string {
 	return append([]string(nil), s.ids...)
 }
 
-func chainCore(t *testing.T, starter runtime.InstanceStarter, capture *[]runtime.ChainEvent, mu *sync.Mutex) *runtime.Chainer {
+func chainCore(t *testing.T, starter chain.InstanceStarter, capture *[]chain.ChainEvent, mu *sync.Mutex) *chain.Chainer {
 	t.Helper()
-	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		mu.Lock()
 		*capture = append(*capture, ev)
 		mu.Unlock()
-		return runtime.SuccessorDecision{Def: &model.ProcessDefinition{ID: "succ", Version: 1}, Vars: ev.Result}, true
+		return chain.SuccessorDecision{Def: &model.ProcessDefinition{ID: "succ", Version: 1}, Vars: ev.Result}, true
 	}
-	c, err := runtime.NewChainer(starter, policy)
+	c, err := chain.NewChainer(starter, policy)
 	require.NoError(t, err)
 	return c
 }
@@ -58,15 +60,15 @@ func TestChainHandlerProjection(t *testing.T) {
 	tests := map[string]struct {
 		topic  string
 		body   string
-		assert func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent)
+		assert func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent)
 	}{
 		"completed topic projects OutcomeCompleted with vars": {
 			topic: "instance.completed",
 			body:  `{"orderID":"o-7"}`,
-			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
+			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err)
 				require.Len(t, seen, 1)
-				assert.Equal(t, runtime.OutcomeCompleted, seen[0].Outcome)
+				assert.Equal(t, kernel.OutcomeCompleted, seen[0].Outcome)
 				assert.Equal(t, "p1", seen[0].PredecessorID)
 				assert.Equal(t, "approval:1", seen[0].PredecessorDefinitionRef, "def metadata must project into PredecessorDefinitionRef (ADR-0047)")
 				assert.Equal(t, map[string]any{"orderID": "o-7"}, seen[0].Result)
@@ -76,27 +78,27 @@ func TestChainHandlerProjection(t *testing.T) {
 		"failed topic projects OutcomeFailed": {
 			topic: "instance.failed",
 			body:  `{"error":"boom"}`,
-			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
+			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err)
 				require.Len(t, seen, 1)
-				assert.Equal(t, runtime.OutcomeFailed, seen[0].Outcome)
+				assert.Equal(t, kernel.OutcomeFailed, seen[0].Outcome)
 				assert.Equal(t, []string{"p1-next-failed"}, starter.startedIDs())
 			},
 		},
 		"terminated topic projects OutcomeTerminated": {
 			topic: "instance.terminated",
 			body:  `{"error":"cancelled"}`,
-			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
+			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err)
 				require.Len(t, seen, 1)
-				assert.Equal(t, runtime.OutcomeTerminated, seen[0].Outcome)
+				assert.Equal(t, kernel.OutcomeTerminated, seen[0].Outcome)
 				assert.Equal(t, []string{"p1-next-terminated"}, starter.startedIDs())
 			},
 		},
 		"unknown topic is acked without chaining": {
 			topic: "instance.someotherthing",
 			body:  `{}`,
-			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
+			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err, "unknown topic must ack, not error")
 				assert.Empty(t, seen, "policy must not be consulted for a non-terminal topic")
 				assert.Empty(t, starter.startedIDs())
@@ -105,7 +107,7 @@ func TestChainHandlerProjection(t *testing.T) {
 		"malformed payload is acked without chaining": {
 			topic: "instance.completed",
 			body:  `{not json`,
-			assert: func(t *testing.T, err error, starter *capturingStarter, seen []runtime.ChainEvent) {
+			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err, "poison payload must ack (no infinite re-delivery loop)")
 				assert.Empty(t, seen)
 			},
@@ -115,7 +117,7 @@ func TestChainHandlerProjection(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			var mu sync.Mutex
-			var seen []runtime.ChainEvent
+			var seen []chain.ChainEvent
 			starter := &capturingStarter{}
 			h := eventing.NewChainHandler(chainCore(t, starter, &seen, &mu))
 
@@ -126,7 +128,7 @@ func TestChainHandlerProjection(t *testing.T) {
 			err := h(msg)
 
 			mu.Lock()
-			seenCopy := append([]runtime.ChainEvent(nil), seen...)
+			seenCopy := append([]chain.ChainEvent(nil), seen...)
 			mu.Unlock()
 			tc.assert(t, err, starter, seenCopy)
 		})
@@ -137,7 +139,7 @@ func TestChainHandlerProjection(t *testing.T) {
 // returned (so the broker re-delivers), not swallowed.
 func TestChainHandlerTransientErrorNacks(t *testing.T) {
 	var mu sync.Mutex
-	var seen []runtime.ChainEvent
+	var seen []chain.ChainEvent
 	starter := &capturingStarter{err: errors.New("db down")}
 	h := eventing.NewChainHandler(chainCore(t, starter, &seen, &mu))
 
@@ -158,10 +160,10 @@ func (e errSubscriber) Close() error { return nil }
 // TestChainerRunSubscribeError asserts Run surfaces a Subscribe failure (and, by
 // subscribing all topics before starting any goroutine, does not leak workers).
 func TestChainerRunSubscribeError(t *testing.T) {
-	policy := func(context.Context, runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-		return runtime.SuccessorDecision{}, false
+	policy := func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{}, false
 	}
-	core, err := runtime.NewChainer(&capturingStarter{}, policy)
+	core, err := chain.NewChainer(&capturingStarter{}, policy)
 	require.NoError(t, err)
 	cr := eventing.NewChainerRunner(core)
 
@@ -179,10 +181,10 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	defer cancel()
 
 	clk := clockwork.NewFakeClock()
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	links := runtime.NewMemChainLinkStore()
-	runner, err := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clk))
+	links := kernel.NewMemChainLinkStore()
+	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clk))
 	require.NoError(t, err)
 
 	succ := &model.ProcessDefinition{
@@ -190,10 +192,10 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 		Nodes: []model.Node{model.NewStartEvent("s"), model.NewEndEvent("e")},
 		Flows: []model.SequenceFlow{{ID: "f", Source: "s", Target: "e"}},
 	}
-	policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
-		return runtime.SuccessorDecision{Def: succ, Vars: ev.Result}, true
+	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{Def: succ, Vars: ev.Result}, true
 	}
-	core, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links), runtime.WithChainClock(clk))
+	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links), chain.WithChainClock(clk))
 	require.NoError(t, err)
 
 	pub, sub, closer := eventing.NewGoChannelPublisher()
@@ -206,7 +208,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	// GoChannel is non-persistent: publishing before Run subscribes drops the
 	// message. Republish on each tick until the (idempotent) chaining lands.
 	require.Eventually(t, func() bool {
-		_ = pub.Publish(ctx, runtime.OutboxEvent{
+		_ = pub.Publish(ctx, kernel.OutboxEvent{
 			Topic:      "instance.completed",
 			Payload:    map[string]any{"orderID": "o-9"},
 			InstanceID: "p1",

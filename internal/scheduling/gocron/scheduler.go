@@ -19,7 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 )
 
-// GocronScheduler is a production runtime.Scheduler backed by gocron v2. It
+// GocronScheduler is a production kernel.Scheduler backed by gocron v2. It
 // shares the engine's clockwork time source so one fake-clock advance drives
 // both engine timestamps and timer firing (ADR-0003, ADR-0009).
 type GocronScheduler struct {

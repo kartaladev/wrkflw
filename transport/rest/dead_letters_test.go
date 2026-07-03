@@ -11,20 +11,20 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
 
 // dlaStub is a configurable service.DeadLetterAdmin test double.
 type dlaStub struct {
-	listFn    func(ctx context.Context, limit int) ([]runtime.DeadLetter, error)
+	listFn    func(ctx context.Context, limit int) ([]monitor.DeadLetter, error)
 	redriveFn func(ctx context.Context, ids ...int64) (int, error)
 	gotLimit  int
 	gotIDs    []int64
 }
 
-func (s *dlaStub) ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error) {
+func (s *dlaStub) ListDeadLettered(ctx context.Context, limit int) ([]monitor.DeadLetter, error) {
 	s.gotLimit = limit
 	return s.listFn(ctx, limit)
 }
@@ -57,8 +57,8 @@ func TestRESTListDeadLetters(t *testing.T) {
 	t.Run("wired + admin-allow returns items, normalizes limit", func(t *testing.T) {
 		t.Parallel()
 		created := time.Now()
-		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
-			return []runtime.DeadLetter{{ID: 7, InstanceID: "p1", Topic: "t", RetryCount: 5, LastError: "boom", CreatedAt: created}}, nil
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
+			return []monitor.DeadLetter{{ID: 7, InstanceID: "p1", Topic: "t", RetryCount: 5, LastError: "boom", CreatedAt: created}}, nil
 		}}
 		h := rest.NewHandler(&dlqStubService{}, rest.WithAdminMiddleware(allowAdmin), rest.WithDeadLetterAdmin(dla))
 		rec := doReq(t, h, http.MethodGet, "/admin/dead-letters", "")
@@ -69,7 +69,7 @@ func TestRESTListDeadLetters(t *testing.T) {
 
 	t.Run("default-deny without admin middleware -> 403", func(t *testing.T) {
 		t.Parallel()
-		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) { return nil, nil }}
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) { return nil, nil }}
 		h := rest.NewHandler(&dlqStubService{}, rest.WithDeadLetterAdmin(dla))
 		rec := doReq(t, h, http.MethodGet, "/admin/dead-letters", "")
 		assert.Equal(t, http.StatusForbidden, rec.Code)
@@ -84,7 +84,7 @@ func TestRESTListDeadLetters(t *testing.T) {
 
 	t.Run("bad limit -> 400", func(t *testing.T) {
 		t.Parallel()
-		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) { return nil, nil }}
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) { return nil, nil }}
 		h := rest.NewHandler(&dlqStubService{}, rest.WithAdminMiddleware(allowAdmin), rest.WithDeadLetterAdmin(dla))
 		rec := doReq(t, h, http.MethodGet, "/admin/dead-letters?limit=abc", "")
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -92,7 +92,7 @@ func TestRESTListDeadLetters(t *testing.T) {
 
 	t.Run("admin error -> 500", func(t *testing.T) {
 		t.Parallel()
-		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
+		dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
 			return nil, errors.New("workflow-postgres: relay: list dead-lettered: boom")
 		}}
 		h := rest.NewHandler(&dlqStubService{}, rest.WithAdminMiddleware(allowAdmin), rest.WithDeadLetterAdmin(dla))
@@ -165,8 +165,8 @@ func TestRESTDeadLetterViewCategory(t *testing.T) {
 		t.Run("lastError="+tc.lastError, func(t *testing.T) {
 			t.Parallel()
 			created := time.Now()
-			dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]runtime.DeadLetter, error) {
-				return []runtime.DeadLetter{{
+			dla := &dlaStub{listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
+				return []monitor.DeadLetter{{
 					ID: 1, InstanceID: "p1", Topic: "t", RetryCount: 1,
 					LastError: tc.lastError, CreatedAt: created,
 				}}, nil

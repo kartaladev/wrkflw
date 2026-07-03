@@ -30,6 +30,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
 // casbinPolicy is the inline policy CSV used for the casbin RBAC demo.
@@ -41,16 +43,16 @@ const casbinPolicy = `
 p, approver, finance-task, claim
 `
 
-func mustMemStore() *runtime.MemStore {
-	m, err := runtime.NewMemStore()
+func mustMemStore() *kernel.MemStore {
+	m, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 	return m
 }
 
-func mustRunner(cat action.Catalog, store runtime.Store, opts ...runtime.Option) *runtime.Runner {
-	r, err := runtime.NewRunner(cat, store, opts...)
+func mustRunner(cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
+	r, err := runtime.NewProcessDriver(cat, store, opts...)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -106,7 +108,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- EU instance: should be ALLOWED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
+		r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 		if err != nil {
@@ -119,7 +121,7 @@ func demoAttributeAuthz(ctx context.Context) {
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
 
-		svc, err := runtime.NewTaskService(taskStore, az)
+		svc, err := task.NewTaskService(taskStore, az)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
@@ -149,7 +151,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- US instance: should be DENIED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewRunner(action.NewMapCatalog(nil), mustMemStore(),
+		r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 		if err != nil {
@@ -162,7 +164,7 @@ func demoAttributeAuthz(ctx context.Context) {
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
 
-		svc, err := runtime.NewTaskService(taskStore, az)
+		svc, err := task.NewTaskService(taskStore, az)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
@@ -232,7 +234,7 @@ func demoCasbinRBAC(ctx context.Context) {
 			log.Fatal("run (allow):", runErr)
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
-		svc, err := runtime.NewTaskService(taskStore, casbinAz)
+		svc, err := task.NewTaskService(taskStore, casbinAz)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
@@ -255,7 +257,7 @@ func demoCasbinRBAC(ctx context.Context) {
 			log.Fatal("run (deny):", runErr)
 		}
 		taskToken := parked.Tokens[0].AwaitCommand
-		svc, err := runtime.NewTaskService(taskStore, casbinAz)
+		svc, err := task.NewTaskService(taskStore, casbinAz)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}

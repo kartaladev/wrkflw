@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestPerformInvokeActionFireAndForget verifies that perform() runs a
@@ -63,9 +64,9 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 				}),
 			})
 			fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC))
-			st, err := NewMemStore()
+			st, err := kernel.NewMemStore()
 			require.NoError(t, err)
-			r, err := NewRunner(cat, st, WithRunnerClock(fc))
+			r, err := NewProcessDriver(cat, st, WithRunnerClock(fc))
 			require.NoError(t, err)
 
 			cmd := engine.InvokeAction{

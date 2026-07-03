@@ -7,7 +7,7 @@ package persistence
 // no LISTEN/NOTIFY mechanism (no relay notifier). Outbox relay and timer stores
 // work via poll-only paths identical to the MySQL backend.
 //
-// Consumers who need multi-replica exclusivity (runtime.CachingStore +
+// Consumers who need multi-replica exclusivity (kernel.CachingStore +
 // Ownership) must use the Postgres or MySQL backend. The SQLite backend is
 // well-suited for embedded single-process deployments, CLI tools, integration
 // tests, and local development where a network database is unavailable.
@@ -20,7 +20,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // SQLiteRelayOption configures a SQLite Relay returned by NewSQLiteRelay. It is
@@ -35,9 +36,9 @@ type SQLiteRelayOption = RelayOption
 // MySQLCallLinkOption).
 type SQLiteCallLinkOption = store.CallLinkOption
 
-// OpenSQLite constructs a SQLite-backed runtime.Store + JournalReader over db.
+// OpenSQLite constructs a SQLite-backed kernel.Store + JournalReader over db.
 //
-// The returned Store satisfies both runtime.Store and runtime.JournalReader,
+// The returned Store satisfies both kernel.Store and kernel.JournalReader,
 // identical to the interface returned by [OpenPostgres] and [OpenMySQL].
 // [MigrateSQLite] must be called before OpenSQLite so the required tables exist
 // (or use [dbtest.RunTestSQLite] in tests, which auto-migrates).
@@ -60,7 +61,7 @@ type SQLiteCallLinkOption = store.CallLinkOption
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	store, _ := persistence.OpenSQLite(ctx, db, persistence.WithHistoryCap(50))
-//	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 //	if err != nil { log.Fatal(err) }
 func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (Store, error) {
 	q, err := database.From(db)
@@ -92,14 +93,14 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 	return store.MigrateSQLite(ctx, db)
 }
 
-// NewSQLiteAdvisoryLockOwnership returns a fail-loud [runtime.Ownership] for
+// NewSQLiteAdvisoryLockOwnership returns a fail-loud [kernel.Ownership] for
 // SQLite deployments. SQLite provides no distributed advisory locking
-// mechanism: [runtime.Ownership.Acquire] returns [dialect.ErrUnsupported] on
-// every call; [runtime.Ownership.Release] is a no-op (returns nil) for a lock
+// mechanism: [kernel.Ownership.Acquire] returns [dialect.ErrUnsupported] on
+// every call; [kernel.Ownership.Release] is a no-op (returns nil) for a lock
 // that was never held.
 //
 // This constructor exists so SQLite consumers can satisfy the ownership
-// parameter required by [runtime.NewCachingStore] while making the
+// parameter required by [kernel.NewCachingStore] while making the
 // unsupported-locking contract explicit. Ownership-dependent flows must guard
 // against [dialect.ErrUnsupported] and skip the exclusivity path when running
 // on SQLite.
@@ -114,9 +115,9 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 //	owner, closer, _ := persistence.NewSQLiteAdvisoryLockOwnership()
 //	defer closer.Close()
 //	store, _ := persistence.OpenSQLite(ctx, db)
-//	cachingStore, err := runtime.NewCachingStore(store, owner)
+//	cachingStore, err := kernel.NewCachingStore(store, owner)
 //	// Acquire will return (false, dialect.ErrUnsupported) — guard accordingly.
-func NewSQLiteAdvisoryLockOwnership() (runtime.Ownership, io.Closer, error) {
+func NewSQLiteAdvisoryLockOwnership() (kernel.Ownership, io.Closer, error) {
 	o, err := store.NewSQLiteOwnership()
 	if err != nil {
 		return nil, nil, err
@@ -124,7 +125,7 @@ func NewSQLiteAdvisoryLockOwnership() (runtime.Ownership, io.Closer, error) {
 	return o, o, nil
 }
 
-// NewSQLiteTimerStore returns a runtime.TimerStore backed by SQLite, for
+// NewSQLiteTimerStore returns a kernel.TimerStore backed by SQLite, for
 // Runner.RehydrateTimers. The db must already have migrations applied.
 // Mirrors [NewMySQLTimerStore] for MySQL and [NewTimerStore] for Postgres.
 //
@@ -137,7 +138,7 @@ func NewSQLiteAdvisoryLockOwnership() (runtime.Ownership, io.Closer, error) {
 //	persistence.MigrateSQLite(ctx, db)
 //	ts := persistence.NewSQLiteTimerStore(db)
 //	armed, err := ts.ListArmed(ctx)
-func NewSQLiteTimerStore(db *sql.DB) (runtime.TimerStore, error) {
+func NewSQLiteTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewSQLite())
 }
 
@@ -169,7 +170,7 @@ func NewSQLiteTimerStore(db *sql.DB) (runtime.TimerStore, error) {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewSQLiteRelay(db *sql.DB, pub runtime.Publisher, opts ...SQLiteRelayOption) (Relay, error) {
+func NewSQLiteRelay(db *sql.DB, pub kernel.Publisher, opts ...SQLiteRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -178,7 +179,7 @@ func NewSQLiteRelay(db *sql.DB, pub runtime.Publisher, opts ...SQLiteRelayOption
 	return store.NewRelay(db, dialect.NewSQLite(), pub, cfg.opts...)
 }
 
-// NewSQLiteCallLinkStore constructs the SQLite-backed runtime.CallLinkStore (read/claim
+// NewSQLiteCallLinkStore constructs the SQLite-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, LookupChild, and ListRunningChildren
 // over the wrkflw_call_links table. The write side is fused into Store.Create /
 // Store.Commit (ADR-0025); use [OpenSQLite] for that.
@@ -199,11 +200,11 @@ func NewSQLiteRelay(db *sql.DB, pub runtime.Publisher, opts ...SQLiteRelayOption
 //	persistence.MigrateSQLite(ctx, db)
 //	cls := persistence.NewSQLiteCallLinkStore(db)
 //	pending, err := cls.ClaimPending(ctx, 100)
-func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (runtime.CallLinkStore, error) {
+func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (kernel.CallLinkStore, error) {
 	return store.NewCallLinkStore(db, dialect.NewSQLite(), opts...)
 }
 
-// NewSQLiteChainLinkStore constructs the SQLite-backed runtime.ChainLinkStore for
+// NewSQLiteChainLinkStore constructs the SQLite-backed kernel.ChainLinkStore for
 // process-instance chaining lineage (ADR-0045): Record persists one
 // predecessor->successor hop; LookupBySuccessor and ListByPredecessor serve
 // ancestry/audit queries. MigrateSQLite must have been applied before the first call.
@@ -216,14 +217,14 @@ func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (runtime.C
 //	persistence.MigrateSQLite(ctx, db)
 //	links := persistence.NewSQLiteChainLinkStore(db)
 //	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
-func NewSQLiteChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
+func NewSQLiteChainLinkStore(db *sql.DB) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewSQLite())
 }
 
-// NewSQLiteLister constructs the SQLite-backed runtime.InstanceLister for
+// NewSQLiteLister constructs the SQLite-backed kernel.InstanceLister for
 // admin-list and monitoring use-cases. It executes a keyset-cursor-paginated
 // query over wrkflw_instances and projects only the columns in
-// runtime.InstanceSummary (no full snapshot read).
+// kernel.InstanceSummary (no full snapshot read).
 //
 // MigrateSQLite must have been applied before the first call to List.
 //
@@ -234,8 +235,8 @@ func NewSQLiteChainLinkStore(db *sql.DB) (runtime.ChainLinkStore, error) {
 //	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
 //	persistence.MigrateSQLite(ctx, db)
 //	lister := persistence.NewSQLiteLister(db)
-//	page, err := lister.List(ctx, runtime.InstanceFilter{Limit: 20})
-func NewSQLiteLister(db *sql.DB) (runtime.InstanceLister, error) {
+//	page, err := lister.List(ctx, kernel.InstanceFilter{Limit: 20})
+func NewSQLiteLister(db *sql.DB) (kernel.InstanceLister, error) {
 	return store.NewLister(db, dialect.NewSQLite())
 }
 
@@ -260,16 +261,16 @@ func NewSQLiteLister(db *sql.DB) (runtime.InstanceLister, error) {
 //	persistence.MigrateSQLite(ctx, db)
 //	notifier := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
-func NewSQLiteCallNotifier(db *sql.DB, deliver runtime.CallDeliverFunc, reg runtime.DefinitionRegistry, opts ...runtime.CallNotifierOption) (*runtime.CallNotifier, error) {
+func NewSQLiteCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg kernel.DefinitionRegistry, opts ...calllink.CallNotifierOption) (*calllink.CallNotifier, error) {
 	cls, err := store.NewCallLinkStore(db, dialect.NewSQLite())
 	if err != nil {
 		return nil, err
 	}
-	return runtime.NewCallNotifier(cls, deliver, reg, opts...)
+	return calllink.NewCallNotifier(cls, deliver, reg, opts...)
 }
 
 // NewSQLiteDefinitionStore constructs the durable SQLite-backed definition store.
-// It satisfies runtime.DefinitionRegistry via its Lookup method, which resolves
+// It satisfies kernel.DefinitionRegistry via its Lookup method, which resolves
 // a DefRef of the form "defID:version" (exact match) or "defID" (latest version).
 //
 // Use this together with [NewCachingDefinitionRegistry] to cache hot definitions.

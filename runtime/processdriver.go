@@ -1,0 +1,312 @@
+package runtime
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+// ProcessDriver is the reference single-process driver loop.
+type ProcessDriver struct {
+	cat        action.Catalog
+	clk        clock.Clock
+	store      kernel.Store
+	resolver   humantask.ActorResolver
+	tasks      humantask.TaskStore
+	authz      authz.Authorizer
+	sched      kernel.Scheduler
+	sigbus     *signal.SignalBus
+	defsReg    kernel.DefinitionRegistry
+	callLinks  kernel.CallLinkStore
+	timerStore kernel.TimerStore
+	// jitter supplies the random fraction used to de-synchronize retry backoff.
+	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
+	// trigger so that engine replay remains deterministic.
+	jitter kernel.JitterSource
+
+	// actionTimeout bounds how long a single service-action invocation may run
+	// before its context is cancelled. Defaults to defaultActionTimeout; a
+	// non-positive value disables the bound. Set via [WithActionTimeout].
+	actionTimeout time.Duration
+
+	// defaultRetryPolicy is the fallback retry policy applied to any action-bearing
+	// node that declares no RetryPolicy of its own. When nil, retry is disabled by
+	// default and a failed action behaves as before (error boundary or instance failure).
+	// Set via [WithDefaultRetryPolicy].
+	defaultRetryPolicy *model.RetryPolicy
+
+	// conditionEval, when non-nil, is the expression evaluator the runner passes
+	// into engine.Step via StepOptions.Evaluator for every step. When nil (the
+	// default) the engine uses its pure, wall-clock-free package-global evaluator,
+	// preserving deterministic replay. A long-lived evaluator is held here so its
+	// compile cache is reused across steps. Set via [WithExpressionTimeout] or
+	// [WithConditionEvaluator] (ADR-0056).
+	conditionEval engine.ConditionEvaluator
+
+	// logOpt, tpOpt, mpOpt are staged observability options collected by the
+	// With* option functions and passed together to newRunnerObs after the option
+	// loop. They are nil when the corresponding With* option was not provided.
+	logOpt observability.Option
+	tpOpt  observability.Option
+	mpOpt  observability.Option
+
+	// obs carries the logger/tracer/meter and the pre-built process instruments.
+	// Always non-nil after NewRunner (defaults to noop providers + slog.Default()).
+	obs *driverObs
+
+	// msgMu guards msgWaiters.
+	msgMu sync.Mutex
+	// msgWaiters maps a (messageName, correlationKey) pair to the instance ID
+	// that is waiting on it. Message catch events are 1:1 (each correlation key
+	// routes to exactly one instance), so a simple map suffices.
+	msgWaiters map[msgKey]string
+}
+
+// NewProcessDriver constructs a ProcessDriver with the two required core ports (cat, store)
+// and any optional capability bundles supplied as functional options.
+//
+// Required ports:
+//   - cat: the service-action catalog (may be nil for processes with no service tasks).
+//   - store: the transactional persistence port (snapshot + journal + outbox).
+//     See [Store]; the in-memory [MemStore] is the reference fake.
+//
+// The time source defaults to [clock.System]. Inject a fake clock in tests via
+// [WithRunnerClock] for deterministic timestamps (ADR-0003).
+//
+// ADR-0007 amends ADR-0005: the former store/jnl/out positionals collapse to
+// one transactional Store, so snapshot, journal, and outbox commit atomically
+// per applied trigger.
+//
+// Optional capabilities are supplied via functional options; the full set of
+// With* functions returning [Option] is (see each for details):
+//   - Node-kind capabilities: [WithHumanTasks], [WithScheduler], [WithSignalBus],
+//     [WithDefinitions], [WithCallLinkStore], [WithTimerStore].
+//   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
+//     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
+//   - Time source: [WithRunnerClock] (default [clock.System]).
+//   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
+func NewProcessDriver(
+	cat action.Catalog,
+	store kernel.Store,
+	opts ...Option,
+) (*ProcessDriver, error) {
+	if cat == nil {
+		return nil, fmt.Errorf("%w: catalog", kernel.ErrNilDependency)
+	}
+	if store == nil {
+		return nil, fmt.Errorf("%w: store", kernel.ErrNilDependency)
+	}
+	r := &ProcessDriver{
+		cat:           cat,
+		clk:           clock.System(),
+		store:         store,
+		jitter:        kernel.NewJitterSource(),
+		actionTimeout: defaultActionTimeout,
+		msgWaiters:    make(map[msgKey]string),
+	}
+	for _, o := range opts {
+		o(r)
+	}
+	r.obs = newDriverObs(r.logOpt, r.tpOpt, r.mpOpt)
+	return r, nil
+}
+
+// Run starts an instance and drives it to a terminal state or until the engine
+// parks (e.g. awaiting a human task). It returns the state at the point it stopped.
+func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
+		attribute.String("wrkflw.instance_id", instanceID),
+		attribute.String("wrkflw.def_id", def.ID),
+		attribute.Int("wrkflw.def_version", def.Version),
+	))
+	defer span.End()
+	st := engine.InstanceState{InstanceID: instanceID}
+	out, err := r.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(r.clk.Now(), vars))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetAttributes(attribute.String("wrkflw.status", statusName(out.Status)))
+	}
+	return out, err
+}
+
+// Deliver loads the current instance state, applies one trigger via engine.Step,
+// saves the new state, records the trigger in the journal, and performs the
+// resulting commands (feeding follow-up triggers back through the loop).
+//
+// It is the entry point for external triggers such as HumanClaimed and
+// HumanCompleted that arrive after Run has returned (parked at a human task),
+// and for TimerFired triggers delivered by the scheduler's fire callback.
+//
+// Authorization contract: human-task triggers (HumanClaimed, HumanReassigned,
+// HumanCompleted) MUST originate from TaskService, which performs authorization
+// before returning the trigger. Delivering such a trigger from any other source
+// bypasses authorization entirely — the engine core is authorization-unaware by
+// design. It is the caller's responsibility to ensure human-task triggers pass
+// through TaskService.
+func (r *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Deliver", trace.WithAttributes(
+		attribute.String("wrkflw.instance_id", instanceID),
+		attribute.String("wrkflw.trigger", triggerName(trg)),
+	))
+	defer span.End()
+	st, token, err := r.store.Load(ctx, instanceID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return engine.InstanceState{}, fmt.Errorf("workflow-runtime: deliver: load: %w", err)
+	}
+	out, err := r.deliverLoop(ctx, def, st, token, false, nil, trg)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return out, err
+}
+
+// deliverLoop applies triggers from queue and then any follow-up triggers emitted
+// by perform (action results, etc.) until all commands are resolved or the engine
+// parks. It encapsulates the Step→terminalOutboxEvent→Create/Commit→perform cycle
+// shared by Run and Deliver.
+//
+// token is the current optimistic-concurrency token; create=true on the very
+// first step (Run path, no row yet) and false on all subsequent steps.
+//
+// firstCallLink, when non-nil, is attached to the FIRST applied step's
+// AppliedStep.NewCallLink (the create step) and then cleared. All existing
+// callers (Run, Deliver) pass nil — no behavior change for them. The internal
+// runChild helper passes the link so the child's Create records it atomically.
+//
+// After each committed save, if a SignalBus or message waiters are configured,
+// the loop reconciles them so that a future [SignalBus.Publish] reaches this
+// instance.
+func (r *ProcessDriver) deliverLoop(
+	ctx context.Context,
+	def *model.ProcessDefinition,
+	st engine.InstanceState,
+	token kernel.Token,
+	create bool,
+	firstCallLink *kernel.CallLink,
+	trg engine.Trigger,
+) (engine.InstanceState, error) {
+	queue := []engine.Trigger{trg}
+
+	for len(queue) > 0 {
+		t := queue[0]
+		queue = queue[1:]
+
+		prevStatus := st.Status
+		prevIncidents := len(st.Incidents)
+
+		stepCtx, span := r.obs.tracer().Start(ctx, "wrkflw.step", trace.WithAttributes(
+			attribute.String("wrkflw.instance_id", st.InstanceID),
+			attribute.String("wrkflw.def_id", def.ID),
+			attribute.String("wrkflw.trigger", triggerName(t)),
+		))
+		start := r.clk.Now()
+		res, err := engine.Step(def, st, t, engine.StepOptions{
+			DefaultRetryPolicy: r.defaultRetryPolicy,
+			Evaluator:          r.conditionEval,
+		})
+		r.obs.stepDuration.Record(stepCtx, r.clk.Now().Sub(start).Seconds(),
+			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			span.End()
+			return st, fmt.Errorf("workflow-runtime: step: %w", err)
+		}
+		st = res.State
+		span.SetAttributes(
+			attribute.Int("wrkflw.command_count", len(res.Commands)),
+			attribute.String("wrkflw.status", statusName(st.Status)),
+		)
+		span.End()
+
+		if create {
+			r.obs.instStarted.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+			r.obs.instActive.Add(ctx, 1)
+		}
+		if isTerminal(st.Status) && !isTerminal(prevStatus) {
+			r.obs.instCompleted.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("def", def.ID),
+				attribute.String("status", statusName(st.Status)),
+			))
+			r.obs.instActive.Add(ctx, -1)
+		}
+		if len(st.Incidents) > prevIncidents {
+			r.obs.incidentsRaised.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+		}
+
+		events := terminalOutboxEvent(prevStatus, st, res.Commands)
+		events = append(events, outboundMessageEvents(st, res.Commands)...)
+
+		// Compute a CallOutcome when this step transitions the instance into a
+		// terminal status AND a CallLinkStore is configured. The Store's Commit
+		// implementation uses this to flip the call link to terminal atomically
+		// (one transaction / one MemStore lock). For root instances the Store
+		// treats a missing link as a no-op, so setting CallOutcome unconditionally
+		// on terminal is safe even without special-casing here.
+		var outcome *kernel.CallOutcome
+		if r.callLinks != nil && isTerminal(st.Status) && !isTerminal(prevStatus) {
+			switch st.Status {
+			case engine.StatusCompleted:
+				outcome = &kernel.CallOutcome{Completed: true, Output: copyVarsForOutcome(st.Variables)}
+			default: // StatusFailed, StatusTerminated, or any other terminal
+				outcome = &kernel.CallOutcome{Completed: false, Err: terminalErr(st)}
+			}
+		}
+
+		var timerArms []kernel.ArmedTimer
+		var timerCancels []string
+		if r.timerStore != nil {
+			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID)
+		}
+
+		appliedStep := kernel.AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome, TimerArms: timerArms, TimerCancels: timerCancels}
+
+		if create {
+			// Attach the firstCallLink to the Create step (child async path only).
+			// After the first iteration this is nil for all callers.
+			appliedStep.NewCallLink = firstCallLink
+			firstCallLink = nil // consumed; cleared so subsequent steps don't carry it
+			token, err = r.store.Create(ctx, appliedStep)
+			create = false
+		} else {
+			token, err = r.store.Commit(ctx, token, appliedStep)
+		}
+		if err != nil {
+			return st, fmt.Errorf("workflow-runtime: commit: %w", err)
+		}
+
+		// Reconcile signal-bus and message waiters after each committed save.
+		r.syncWaiters(st)
+
+		for _, c := range res.Commands {
+			next, err := r.perform(stepCtx, def, st, c)
+			if err != nil {
+				return st, err
+			}
+			if next != nil {
+				queue = append(queue, next)
+			}
+		}
+	}
+	return st, nil
+}

@@ -13,6 +13,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
 
 // signalCatchDef returns: start → signal-catch(name) → end.
@@ -92,11 +94,11 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	// Use a forward-reference (pointer-forward) pattern so the same runner (with
 	// its signal bus) handles deliveries. This ensures subscriptions/msgWaiters
 	// are always in sync — not a separate ephemeral runner.
-	var r *runtime.Runner
+	var r *runtime.ProcessDriver
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, runtime.WithSignalBusClock(fc))
+	}, signal.WithSignalBusClock(fc))
 
 	r = mustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithSignalBus(bus))
 
@@ -164,16 +166,16 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := mustMemStore(t)
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
 	// dependency with a forward reference via a pointer.
-	var r *runtime.Runner
+	var r *runtime.ProcessDriver
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, runtime.WithSignalBusClock(fc))
+	}, signal.WithSignalBusClock(fc))
 
 	r = mustRunner(t, nil, store,
 		runtime.WithRunnerClock(fc),
@@ -210,14 +212,14 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := mustMemStore(t)
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
-	var r *runtime.Runner
+	var r *runtime.ProcessDriver
 	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
-	}, runtime.WithSignalBusClock(fc))
+	}, signal.WithSignalBusClock(fc))
 
 	r = mustRunner(t, nil, store,
 		runtime.WithRunnerClock(fc),

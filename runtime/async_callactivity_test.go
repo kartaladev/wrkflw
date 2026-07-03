@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // asyncChildDef builds a child definition whose single task is a human task —
@@ -62,11 +63,11 @@ func asyncParentDef() *model.ProcessDefinition {
 func TestAsyncCallActivityParentParks(t *testing.T) {
 	ctx := t.Context()
 
-	cl := runtime.NewMemCallLinkStore()
-	store := mustMemStore(t, runtime.WithCallLinks(cl))
+	cl := kernel.NewMemCallLinkStore()
+	store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 	child := asyncChildDef()
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"async-child": child,
 	})
 
@@ -227,8 +228,8 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 	t.Run("Completed", func(t *testing.T) {
 		ctx := t.Context()
 
-		cl := runtime.NewMemCallLinkStore()
-		store := mustMemStore(t, runtime.WithCallLinks(cl))
+		cl := kernel.NewMemCallLinkStore()
+		store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 		childOutput := map[string]any{"result": "ok", "score": 42}
 		cat := action.NewMapCatalog(map[string]action.ServiceAction{
@@ -237,7 +238,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 
 		child := asyncImmediateChildDef()
 		parent := asyncImmediateParentDef()
-		reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 			"async-imm-child": child,
 		})
 
@@ -269,8 +270,8 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 	t.Run("Failed", func(t *testing.T) {
 		ctx := t.Context()
 
-		cl := runtime.NewMemCallLinkStore()
-		store := mustMemStore(t, runtime.WithCallLinks(cl))
+		cl := kernel.NewMemCallLinkStore()
+		store := mustMemStore(t, kernel.WithCallLinks(cl))
 
 		cat := action.NewMapCatalog(map[string]action.ServiceAction{
 			"fail-action": &failAction{msg: "child service error"},
@@ -278,7 +279,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 
 		child := asyncFailingChildDef()
 		parent := asyncFailingParentDef()
-		reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 			"async-fail-child": child,
 		})
 

@@ -44,6 +44,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -101,13 +103,13 @@ func main() {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"reviewer": {reviewer},
 	})
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(clk))
-	store, err := runtime.NewMemStore()
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	store, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewRunner(cat, store,
+	r, err := runtime.NewProcessDriver(cat, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
 		runtime.WithScheduler(sched),
@@ -126,7 +128,7 @@ func main() {
 		log.Fatal("run:", err)
 	}
 	fmt.Printf("instance parked at %q (status=%s)\n",
-		parked.Tokens[0].NodeID, runtime.StatusString(parked.Status))
+		parked.Tokens[0].NodeID, view.StatusString(parked.Status))
 
 	// The reviewer never claims the task. Advance the clock past the 1h deadline
 	// and tick the scheduler — this fires the deadline timer.
@@ -144,6 +146,6 @@ func main() {
 			final.Variables["escalated"])
 	} else {
 		fmt.Printf("unexpected outcome: status=%s escalated=%v\n",
-			runtime.StatusString(final.Status), escalated)
+			view.StatusString(final.Status), escalated)
 	}
 }

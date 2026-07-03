@@ -13,8 +13,8 @@
 //     on a configurable poll interval (do NOT pass WithListenNotify).
 //   - No distributed advisory locking: NewSQLiteAdvisoryLockOwnership returns a
 //     fail-loud Ownership whose Acquire always returns (false, ErrUnsupported).
-//     For a single-process deployment, runtime.AlwaysOwn{} is the correct
-//     ownership value for runtime.NewCachingStore — it avoids the error path and
+//     For a single-process deployment, kernel.AlwaysOwn{} is the correct
+//     ownership value for kernel.NewCachingStore — it avoids the error path and
 //     gives the in-process cache its full benefit.
 //   - No multi-replica timer elector: scheduling.NewScheduler with no elector
 //     option (unlike the MySQL/Postgres examples, which pass WithMySQLTimerElector
@@ -50,6 +50,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
@@ -112,7 +115,7 @@ func run(logger *slog.Logger) error {
 		return merr
 	}
 
-	// Open the SQLite-backed runtime.Store (and JournalReader).
+	// Open the SQLite-backed kernel.Store (and JournalReader).
 	store, oerr := persistence.OpenSQLite(workerCtx, db)
 	if oerr != nil {
 		return oerr
@@ -142,8 +145,8 @@ func run(logger *slog.Logger) error {
 	// The closure captures runner by pointer so the forward-reference is safe:
 	// runner is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
-	var runner *runtime.Runner
-	deliver := runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	var runner *runtime.ProcessDriver
+	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		if runner == nil {
 			return nil // not yet wired; should not occur in practice
 		}
@@ -170,7 +173,7 @@ func run(logger *slog.Logger) error {
 	// NewSQLiteAdvisoryLockOwnership returns a fail-loud Ownership whose Acquire
 	// always returns (false, ErrUnsupported) — SQLite has no distributed locking
 	// mechanism. For a single-process deployment the correct ownership is
-	// runtime.AlwaysOwn{}: this process is always the sole writer, so the caching
+	// kernel.AlwaysOwn{}: this process is always the sole writer, so the caching
 	// store can cache every instance it touches without a lock check.
 	//
 	// If you later switch to a multi-process deployment, replace AlwaysOwn with
@@ -187,7 +190,7 @@ func run(logger *slog.Logger) error {
 
 	// Use AlwaysOwn for single-process caching — the fail-loud SQLite ownership
 	// value is not passed to NewCachingStore.
-	cachingStore, err := runtime.NewCachingStore(store, runtime.AlwaysOwn{})
+	cachingStore, err := kernel.NewCachingStore(store, kernel.AlwaysOwn{})
 	if err != nil {
 		return err
 	}
@@ -225,7 +228,7 @@ func run(logger *slog.Logger) error {
 	// definitions survive restarts. For illustrative purposes we also seed a
 	// well-known definition via the map registry; in production you would use
 	// persistence.NewSQLiteDefinitionStore exclusively.
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})
@@ -240,7 +243,7 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err = runtime.NewRunner(cat, cachingStore,
+	runner, err = runtime.NewProcessDriver(cat, cachingStore,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(scheduler),
 		runtime.WithTimerStore(timerStore),
@@ -248,7 +251,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := runtime.NewTaskService(taskStore, az)
+	tasks, err := task.NewTaskService(taskStore, az)
 	if err != nil {
 		return err
 	}

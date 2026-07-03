@@ -17,7 +17,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -347,7 +349,7 @@ func (s *server) GetInstanceSnapshot(ctx context.Context, req *workflowpb.GetIns
 		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
-	snap := runtime.NewInstanceSnapshot(st, def)
+	snap := view.NewInstanceSnapshot(st, def)
 	protoSnap, err := snapshotToProto(snap)
 	if err != nil {
 		recordSpanErr(span, err)
@@ -367,14 +369,14 @@ func (s *server) GetActionableView(ctx context.Context, req *workflowpb.GetInsta
 		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
-	av := runtime.NewActionableView(st, def)
+	av := view.NewActionableView(st, def)
 	return &workflowpb.ActionableViewResponse{Actionable: actionableViewToProto(av)}, nil
 }
 
 // snapshotToProto converts a runtime.InstanceSnapshot to its proto representation.
 // Returns an error when the Variables map contains a value that cannot be
 // represented as a proto Struct.
-func snapshotToProto(snap runtime.InstanceSnapshot) (*workflowpb.InstanceSnapshot, error) {
+func snapshotToProto(snap view.InstanceSnapshot) (*workflowpb.InstanceSnapshot, error) {
 	vars, err := toStruct(snap.Variables)
 	if err != nil {
 		return nil, err
@@ -473,7 +475,7 @@ func snapshotToProto(snap runtime.InstanceSnapshot) (*workflowpb.InstanceSnapsho
 }
 
 // actionableViewToProto converts a runtime.ActionableView to its proto representation.
-func actionableViewToProto(av runtime.ActionableView) *workflowpb.ActionableView {
+func actionableViewToProto(av view.ActionableView) *workflowpb.ActionableView {
 	openTasks := make([]*workflowpb.ActionableTask, len(av.OpenTasks))
 	for i, t := range av.OpenTasks {
 		allowed := make([]*workflowpb.NextAction, len(t.AllowedActions))
@@ -510,7 +512,7 @@ func (s *server) ListDeadLetters(ctx context.Context, req *workflowpb.ListDeadLe
 	if s.deadLetters == nil {
 		return nil, status.Error(codes.Unimplemented, "workflow-grpc: dead-letter admin not configured")
 	}
-	rows, err := s.deadLetters.ListDeadLettered(ctx, runtime.NormalizeLimit(int(req.GetLimit())))
+	rows, err := s.deadLetters.ListDeadLettered(ctx, kernel.NormalizeLimit(int(req.GetLimit())))
 	if err != nil {
 		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
@@ -751,8 +753,8 @@ func (s *server) GetInstanceLineage(ctx context.Context, req *workflowpb.GetInst
 	return instanceLineageToProto(lin), nil
 }
 
-// instanceLineageToProto converts a runtime.InstanceLineage to its proto representation.
-func instanceLineageToProto(lin runtime.InstanceLineage) *workflowpb.InstanceLineage {
+// instanceLineageToProto converts a kernel.InstanceLineage to its proto representation.
+func instanceLineageToProto(lin kernel.InstanceLineage) *workflowpb.InstanceLineage {
 	pb := &workflowpb.InstanceLineage{
 		InstanceId: lin.InstanceID,
 	}
@@ -773,8 +775,8 @@ func instanceLineageToProto(lin runtime.InstanceLineage) *workflowpb.InstanceLin
 	return pb
 }
 
-// callLinkRefToProto converts a runtime.CallLinkRef to its proto representation.
-func callLinkRefToProto(r runtime.CallLinkRef) *workflowpb.CallLinkRef {
+// callLinkRefToProto converts a kernel.CallLinkRef to its proto representation.
+func callLinkRefToProto(r kernel.CallLinkRef) *workflowpb.CallLinkRef {
 	return &workflowpb.CallLinkRef{
 		InstanceId: r.InstanceID,
 		DefId:      r.DefID,
@@ -783,8 +785,8 @@ func callLinkRefToProto(r runtime.CallLinkRef) *workflowpb.CallLinkRef {
 	}
 }
 
-// chainLinkRefToProto converts a runtime.ChainLinkRef to its proto representation.
-func chainLinkRefToProto(r runtime.ChainLinkRef) *workflowpb.ChainLinkRef {
+// chainLinkRefToProto converts a kernel.ChainLinkRef to its proto representation.
+func chainLinkRefToProto(r kernel.ChainLinkRef) *workflowpb.ChainLinkRef {
 	return &workflowpb.ChainLinkRef{
 		InstanceId:    r.InstanceID,
 		DefinitionRef: r.DefinitionRef,
@@ -839,7 +841,7 @@ func protoToRoleBinding(p *workflowpb.RoleBinding) service.RoleBinding {
 
 // deadLetterToProto projects a runtime.DeadLetter onto its gRPC message.
 // The category field is populated via runtime.ClassifyDeadLetter.
-func deadLetterToProto(dl runtime.DeadLetter) *workflowpb.DeadLetter {
+func deadLetterToProto(dl monitor.DeadLetter) *workflowpb.DeadLetter {
 	return &workflowpb.DeadLetter{
 		Id:         dl.ID,
 		InstanceId: dl.InstanceID,
@@ -847,7 +849,7 @@ func deadLetterToProto(dl runtime.DeadLetter) *workflowpb.DeadLetter {
 		RetryCount: int32(dl.RetryCount), //nolint:gosec // bounded retry count
 		LastError:  dl.LastError,
 		CreatedAt:  timestamppb.New(dl.CreatedAt),
-		Category:   runtime.ClassifyDeadLetter(dl.LastError),
+		Category:   monitor.ClassifyDeadLetter(dl.LastError),
 	}
 }
 
@@ -856,7 +858,7 @@ func (s *server) ListInstances(ctx context.Context, req *workflowpb.ListInstance
 	ctx, span := s.startSpan(ctx, "ListInstances")
 	defer span.End()
 
-	filter := runtime.InstanceFilter{
+	filter := kernel.InstanceFilter{
 		Limit:        int(req.GetLimit()),
 		Cursor:       req.GetCursor(),
 		IncludeTotal: req.GetIncludeTotal(),
@@ -929,8 +931,8 @@ func instanceToProto(st engine.InstanceState) (*workflowpb.Instance, error) {
 	return inst, nil
 }
 
-// summaryToProto converts a runtime.InstanceSummary to a workflowpb.InstanceSummary.
-func summaryToProto(s runtime.InstanceSummary) *workflowpb.InstanceSummary {
+// summaryToProto converts a kernel.InstanceSummary to a workflowpb.InstanceSummary.
+func summaryToProto(s kernel.InstanceSummary) *workflowpb.InstanceSummary {
 	sum := &workflowpb.InstanceSummary{
 		InstanceId: s.InstanceID,
 		DefId:      s.DefID,

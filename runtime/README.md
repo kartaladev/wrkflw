@@ -11,7 +11,7 @@ Import path: `github.com/zakyalvan/krtlwrkflw/runtime`
 
 `engine.Step` is a pure function: it takes a definition, a current state, and a
 trigger, and returns a list of commands and a new state. Nothing is persisted,
-nothing is invoked. `runtime.Runner` is the driver that makes it real:
+nothing is invoked. `runtime.ProcessDriver` is the driver that makes it real:
 
 - Calls `engine.Step` in a loop until the instance reaches a terminal state or
   parks at a wait point (user task, catch event, async call activity).
@@ -24,14 +24,35 @@ nothing is invoked. `runtime.Runner` is the driver that makes it real:
 
 The package also provides:
 
-- `MemStore` — in-memory `Store` for development and testing.
-- `CachingStore` — write-through, single-writer LRU cache in front of any
+- `kernel.MemStore` — in-memory `Store` for development and testing.
+- `kernel.CachingStore` — write-through, single-writer LRU cache in front of any
   `Store`.
-- `MemScheduler` — clock-driven in-memory `Scheduler` for tests.
-- `SignalBus` — fan-out signal delivery to parked instances.
-- `NewTaskService` — human-task authorization and trigger production.
-- `NewInstanceSnapshot` / `NewActionableView` — JSON-safe DTOs for reading
-  instance state.
+- `kernel.MemScheduler` — clock-driven in-memory `Scheduler` for tests.
+- `signal.SignalBus` — fan-out signal delivery to parked instances.
+- `task.NewTaskService` — human-task authorization and trigger production.
+- `view.NewInstanceSnapshot` / `view.NewActionableView` — JSON-safe DTOs for
+  reading instance state.
+
+## Package layout
+
+`runtime` is decomposed into concept-oriented sub-packages with a strictly
+one-directional import graph (ADR-0087). Import direction:
+`kernel ← {calllink, chain, signal, task, monitor}`; `kernel, signal ← runtime`
+(root); `view` is an independent leaf.
+
+| Package | Import path | Contains |
+|---|---|---|
+| `runtime` (root) | `.../runtime` | The `ProcessDriver` (token-driving loop) and its options, action resolution, outbox derivation, timer ops, observability, shutdown. |
+| `kernel` | `.../runtime/kernel` | All value types (`Token`, `AppliedStep`, `CallLink`, `Outcome`, …), port interfaces (`Store`, `Scheduler`, `TimerStore`, `CallLinkStore`, `DefinitionRegistry`, `InstanceLister`, …), sentinel errors, and the in-memory reference implementations (`MemStore`, `CachingStore`, `MemScheduler`, `MemCallLinkStore`, `MapDefinitionRegistry`, …). The leaf everything else imports. |
+| `signal` | `.../runtime/signal` | `SignalBus` — fan-out signal delivery to parked instances. |
+| `calllink` | `.../runtime/calllink` | `CallNotifier` — resumes parents of completed async call activities. |
+| `chain` | `.../runtime/chain` | `Chainer` — starts successor instances on terminal events. |
+| `task` | `.../runtime/task` | `TaskService` — human-task authorization and trigger production. |
+| `monitor` | `.../runtime/monitor` | `LineageReader`, outbox/timer stats collectors, dead-letter classification (admin/monitoring). |
+| `view` | `.../runtime/view` | `InstanceSnapshot` / `ActionableView` read-model DTOs and `StatusString`. Independent leaf (imports only `engine`/`model`/`humantask`). |
+
+The reference driver type is `ProcessDriver` (constructed with
+`runtime.NewProcessDriver`); it was named `Runner` before ADR-0087.
 
 ## Quickstart
 
@@ -45,6 +66,7 @@ import (
     "github.com/zakyalvan/krtlwrkflw/engine"
     "github.com/zakyalvan/krtlwrkflw/model"
     "github.com/zakyalvan/krtlwrkflw/runtime"
+    "github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 cat := action.NewMapCatalog(map[string]action.ServiceAction{
@@ -52,9 +74,9 @@ cat := action.NewMapCatalog(map[string]action.ServiceAction{
         return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
     }),
 })
-store, err := runtime.NewMemStore()
+store, err := kernel.NewMemStore()
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewRunner(cat, store) // clock defaults to clock.System()
+r, err := runtime.NewProcessDriver(cat, store) // clock defaults to clock.System()
 if err != nil { log.Fatal(err) }
 
 def := &model.ProcessDefinition{
@@ -77,14 +99,14 @@ st, err := r.Run(context.Background(), def, "inst-1", map[string]any{"name": "Ad
 
 Use `action.NewMapCatalog(nil)` for `cat` when the process has no service tasks (nil is rejected with `ErrNilDependency`).
 
-## Runner construction and options
+## ProcessDriver construction and options
 
 ```go
-func NewRunner(
+func NewProcessDriver(
     cat   action.Catalog, // 1. required — service-action catalog
     store Store,          // 2. required — transactional persistence port
     opts  ...Option,      //    optional capabilities (functional options)
-) (*Runner, error)
+) (*ProcessDriver, error)
 ```
 
 **Positional argument 1 — `cat action.Catalog`.** The service-action catalog
@@ -101,7 +123,7 @@ resolving action names to `ServiceAction` implementations. Required non-nil; pas
 > deterministic timers).
 
 **Optional capabilities (functional options).** The complete set of `With*`
-functions accepted by `NewRunner`:
+functions accepted by `NewProcessDriver`:
 
 | Option | What it enables |
 |---|---|
@@ -124,13 +146,13 @@ functions accepted by `NewRunner`:
 ## Constructor error contract
 
 All stateful `runtime` constructors return `(T, error)`. The error is non-nil when
-a required, non-nilable dependency is nil. The sentinel is `runtime.ErrNilDependency`
+a required, non-nilable dependency is nil. The sentinel is `kernel.ErrNilDependency`
 (`"workflow-runtime: nil required dependency"`), wrapped with the argument name:
 
 ```go
-r, err := runtime.NewRunner(cat, store)
+r, err := runtime.NewProcessDriver(cat, store)
 // err wraps ErrNilDependency if cat==nil ("catalog") or store==nil ("store")
-if errors.Is(err, runtime.ErrNilDependency) { ... }
+if errors.Is(err, kernel.ErrNilDependency) { ... }
 ```
 
 The same rule applies to `NewTaskService`, `NewCachingStore`,
@@ -235,8 +257,8 @@ resolver  := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 })
 az  := authz.RoleAuthorizer{}
 
-memSt, _ := runtime.NewMemStore()
-r, _ := runtime.NewRunner(
+memSt, _ := kernel.NewMemStore()
+r, _ := runtime.NewProcessDriver(
     action.NewMapCatalog(nil), // no service actions for this example
     memSt,
     runtime.WithHumanTasks(resolver, taskStore, az),
@@ -264,7 +286,7 @@ claimable, err := taskStore.ClaimableBy(ctx, manager)
 taskToken := claimable[0].TaskToken
 
 // Authorize and produce a HumanClaimed trigger.
-svc, _ := runtime.NewTaskService(taskStore, az)
+svc, _ := task.NewTaskService(taskStore, az)
 
 claimTrg, err := svc.Claim(ctx, taskToken, manager)
 r.Deliver(ctx, def, "inst-1", claimTrg)
@@ -290,11 +312,11 @@ Wire `WithSignalBus` to enable `ThrowSignal` commands and signal-catch events.
 Construct the bus with a delivery function that routes to the right runner:
 
 ```go
-bus, _ := runtime.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
+bus, _ := signal.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
     _, err := r.Deliver(ctx, def, id, trg)
     return err
 })
-r2, _ := runtime.NewRunner(cat, store, runtime.WithSignalBus(bus))
+r2, _ := runtime.NewProcessDriver(cat, store, runtime.WithSignalBus(bus))
 ```
 
 After each `Run`/`Deliver` iteration the runner calls `SignalBus.Sync` to
@@ -315,8 +337,8 @@ Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
 
 ```go
 fc    := clockwork.NewFakeClockAt(startAt)
-sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
-r, err := runtime.NewRunner(cat, store,
+sched := kernel.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+r, err := runtime.NewProcessDriver(cat, store,
     runtime.WithScheduler(sched),
     runtime.WithRunnerClock(fc)) // share the fake clock for deterministic timers
 if err != nil {
@@ -346,7 +368,7 @@ p := model.RetryPolicy{
     BackoffCoef:     2.0,
     MaxInterval:     30 * time.Second,
 }
-r, err := runtime.NewRunner(cat, store, runtime.WithDefaultRetryPolicy(p))
+r, err := runtime.NewProcessDriver(cat, store, runtime.WithDefaultRetryPolicy(p))
 if err != nil {
     log.Fatal(err)
 }
@@ -363,13 +385,13 @@ Two read-only projections are available after `Run` or `Deliver` returns:
 
 ```go
 // Full JSON-safe snapshot: status, variables, tokens, history, tasks, incidents.
-snap := runtime.NewInstanceSnapshot(st, def)
+snap := view.NewInstanceSnapshot(st, def)
 
 // Actionable view: open tasks + allowed next outgoing flows per task.
-view := runtime.NewActionableView(st, def)
+view := view.NewActionableView(st, def)
 
 // Human-readable status string ("running", "completed", "failed", etc.).
-s := runtime.StatusString(st.Status)
+s := view.StatusString(st.Status)
 ```
 
 #### `InstanceSnapshot`
@@ -429,9 +451,9 @@ Both DTOs are also exposed over the REST transport (`transport/rest`) at
 optimistic-CAS versioning. It is concurrency-safe and does not require a database.
 
 ```go
-store, err := runtime.NewMemStore()
+store, err := kernel.NewMemStore()
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewRunner(cat, store)
+r, err := runtime.NewProcessDriver(cat, store)
 if err != nil { log.Fatal(err) }
 ```
 
@@ -439,10 +461,10 @@ if err != nil { log.Fatal(err) }
 and the runner so the link is visible to both sides:
 
 ```go
-cl    := runtime.NewMemCallLinkStore()
-store, err := runtime.NewMemStore(runtime.WithCallLinks(cl))
+cl    := kernel.NewMemCallLinkStore()
+store, err := kernel.NewMemStore(runtime.WithCallLinks(cl))
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewRunner(cat, store,
+r, err := runtime.NewProcessDriver(cat, store,
     runtime.WithCallLinkStore(cl),
     runtime.WithDefinitions(reg),
 )
@@ -451,10 +473,10 @@ r, err := runtime.NewRunner(cat, store,
 **For timers (restart recovery in tests):** share a `MemTimerStore`:
 
 ```go
-mts   := runtime.NewMemTimerStore()
-store, err := runtime.NewMemStore(runtime.WithTimers(mts))
+mts   := kernel.NewMemTimerStore()
+store, err := kernel.NewMemStore(runtime.WithTimers(mts))
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewRunner(cat, store,
+r, err := runtime.NewProcessDriver(cat, store,
     runtime.WithTimerStore(mts),
     runtime.WithScheduler(sched),
 )
@@ -477,15 +499,15 @@ single-process embedding; multi-replica deployments need a real lease
 (`persistence.NewAdvisoryLockOwnership`).
 
 ```go
-cachingStore, err := runtime.NewCachingStore(
+cachingStore, err := kernel.NewCachingStore(
     pgStore,           // backing Store (e.g. a Postgres/MySQL/SQLite store from persistence; note: SQLite provides only the fail-loud persistence.NewSQLiteAdvisoryLockOwnership, so CachingStore on SQLite is single-process only)
-    runtime.AlwaysOwn{},
+    kernel.AlwaysOwn{},
     runtime.WithCacheTTL(5*time.Minute),
     runtime.WithCacheMaxEntries(1024),
     // clock defaults to clock.System(); override with runtime.WithCachingStoreClock(...)
 )
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewRunner(cat, cachingStore)
+r, err := runtime.NewProcessDriver(cat, cachingStore)
 if err != nil { log.Fatal(err) }
 ```
 
@@ -497,9 +519,9 @@ For hot-path definition resolution, wrap any `DefinitionRegistry` with
 ```go
 // Second arg is the cache TTL (time.Duration); the clock defaults to
 // clock.System() and is overridden with WithCachingDefinitionRegistryClock(...).
-reg, err := runtime.NewCachingDefinitionRegistry(pgDefRegistry, 5*time.Minute)
+reg, err := kernel.NewCachingDefinitionRegistry(pgDefRegistry, 5*time.Minute)
 if err != nil { log.Fatal(err) }
-r, err   := runtime.NewRunner(cat, store, runtime.WithDefinitions(reg))
+r, err   := runtime.NewProcessDriver(cat, store, runtime.WithDefinitions(reg))
 if err != nil { log.Fatal(err) }
 ```
 
@@ -507,7 +529,7 @@ if err != nil { log.Fatal(err) }
 
 The production `Store` implementation lives in the neutral `internal/persistence/store`
 parametrized by an `internal/persistence/dialect` (Postgres, MySQL, or SQLite — ADR-0081/0082).
-It satisfies the `runtime.Store` interface. Wire it via the `persistence` package's exported
+It satisfies the `kernel.Store` interface. Wire it via the `persistence` package's exported
 constructors — consumers do not import `internal/` directly:
 
 - `persistence.OpenPostgres(ctx, pool, opts...)` — Postgres 17 (LISTEN/NOTIFY relay, advisory-lock ownership).
@@ -560,13 +582,13 @@ Three pieces:
   `ErrInstanceExists` give **exactly-once effect** under at-least-once delivery.
 
 ```go
-policy := func(_ context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
     if ev.Outcome != runtime.OutcomeCompleted {
-        return runtime.SuccessorDecision{}, false
+        return chain.SuccessorDecision{}, false
     }
-    return runtime.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
+    return chain.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true
 }
-chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+chainer, err := chain.NewChainer(runner, policy, runtime.WithChainLinks(links))
 if err != nil { log.Fatal(err) }
 ```
 

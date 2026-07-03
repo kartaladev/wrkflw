@@ -23,6 +23,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
@@ -35,7 +37,7 @@ type grpcHarness struct {
 	client workflowpb.WorkflowServiceClient
 	svc    service.Service
 	// expose lister for seeding
-	store *runtime.MemStore
+	store *kernel.MemStore
 }
 
 // greetAction is a minimal service action used in linear-def tests.
@@ -137,14 +139,14 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
 	az := authz.RoleAuthorizer{}
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"greet": serverTestGreetAction{},
 	})
 
-	runner, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
+	runner, err := runtime.NewProcessDriver(cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 	require.NoError(t, err)
 
 	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
@@ -152,8 +154,8 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 		defsMap[defRefFor(d)] = d
 		defsMap[d.ID] = d
 	}
-	reg := runtime.NewMapDefinitionRegistry(defsMap)
-	tasks, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	reg := kernel.NewMapDefinitionRegistry(defsMap)
+	tasks, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 	require.NoError(t, err)
 	svc := service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 

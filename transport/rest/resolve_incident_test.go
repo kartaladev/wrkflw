@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -130,7 +130,7 @@ func TestResolveIncidentRouteNoBody(t *testing.T) {
 // ErrInstanceNotFound the handler responds with 404.
 func TestResolveIncidentRouteNotFound(t *testing.T) {
 	stub := &resolveIncidentStub{
-		err: runtime.ErrInstanceNotFound,
+		err: kernel.ErrInstanceNotFound,
 	}
 	h := rest.NewHandler(stub, rest.WithAdminMiddleware(allowAdmin))
 

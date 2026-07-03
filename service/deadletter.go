@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 // DeadLetterAdmin is the optional admin port for inspecting and redriving
@@ -17,7 +17,7 @@ import (
 // relay straight to a transport's WithDeadLetterAdmin option with no adapter.
 type DeadLetterAdmin interface {
 	// ListDeadLettered returns up to limit dead-lettered outbox rows, oldest first.
-	ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error)
+	ListDeadLettered(ctx context.Context, limit int) ([]monitor.DeadLetter, error)
 	// Redrive resets the given dead rows back to pending and returns the count
 	// re-queued. Passing no ids is a no-op (returns 0, nil).
 	Redrive(ctx context.Context, ids ...int64) (int, error)

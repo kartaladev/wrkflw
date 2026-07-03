@@ -26,6 +26,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
 // collect gathers a ResourceMetrics snapshot from a ManualReader.
@@ -111,28 +112,28 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 	type testCase struct {
 		name   string
 		opt    runtime.Option
-		assert func(t *testing.T, r *runtime.Runner)
+		assert func(t *testing.T, r *runtime.ProcessDriver)
 	}
 
 	cases := []testCase{
 		{
 			name: "with logger",
 			opt:  runtime.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-			assert: func(t *testing.T, r *runtime.Runner) {
+			assert: func(t *testing.T, r *runtime.ProcessDriver) {
 				require.NotNil(t, r)
 			},
 		},
 		{
 			name: "with tracer provider",
 			opt:  runtime.WithTracerProvider(sdktrace.NewTracerProvider()),
-			assert: func(t *testing.T, r *runtime.Runner) {
+			assert: func(t *testing.T, r *runtime.ProcessDriver) {
 				require.NotNil(t, r)
 			},
 		},
 		{
 			name: "with meter provider",
 			opt:  runtime.WithMeterProvider(sdkmetric.NewMeterProvider()),
-			assert: func(t *testing.T, r *runtime.Runner) {
+			assert: func(t *testing.T, r *runtime.ProcessDriver) {
 				require.NotNil(t, r)
 			},
 		},
@@ -151,7 +152,7 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 }
 
 // TestStepSpanAndLifecycleMetrics verifies that running a linear process to
-// completion via [runtime.Runner.Run] produces:
+// completion via [runtime.ProcessDriver.Run] produces:
 //   - at least one "wrkflw.step" span in the OTel trace,
 //   - wrkflw_instances_started_total == 1,
 //   - wrkflw_instances_completed_total{status="completed"} == 1,
@@ -447,8 +448,8 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				runtime.WithMeterProvider(mp),
 			)
 			svc := mustTaskService(t, taskStore, az,
-				runtime.WithTaskServiceClock(clk),
-				runtime.WithTaskServiceMeterProvider(mp))
+				task.WithTaskServiceClock(clk),
+				task.WithTaskServiceMeterProvider(mp))
 
 			def := approvalDef()
 			const instID = "htlc-inst"

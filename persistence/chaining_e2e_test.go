@@ -28,6 +28,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ---- minimal process definitions -----------------------------------------------
@@ -49,9 +51,9 @@ func buildDef(t *testing.T, id string, version int) *model.ProcessDefinition {
 // chainingDialect bundles the objects needed by each dialect sub-test.
 type chainingDialect struct {
 	store  persistence.Store
-	links  runtime.ChainLinkStore
+	links  kernel.ChainLinkStore
 	relay  persistence.Relay
-	pub    runtime.Publisher
+	pub    kernel.Publisher
 	sub    message.Subscriber
 	closer io.Closer
 }
@@ -126,26 +128,26 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 // wireChainerRunner builds the full chaining stack over d and starts the
 // ChainerRunner goroutine. It registers cleanup via t.Cleanup. The returned
 // runner is ready to call Run against.
-func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.Runner {
+func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 
 	catalog := action.NewMapCatalog(nil)
-	runner, err := runtime.NewRunner(catalog, d.store)
+	runner, err := runtime.NewProcessDriver(catalog, d.store)
 	require.NoError(t, err)
 
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.
-	policy := func(ctx context.Context, ev runtime.ChainEvent) (runtime.SuccessorDecision, bool) {
+	policy := func(ctx context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		switch ev.PredecessorDefinitionRef {
 		case "proc-a:1":
-			return runtime.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
+			return chain.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
 		case "proc-b:1":
-			return runtime.SuccessorDecision{Def: defSB, Vars: ev.Result}, true
+			return chain.SuccessorDecision{Def: defSB, Vars: ev.Result}, true
 		default:
-			return runtime.SuccessorDecision{}, false
+			return chain.SuccessorDecision{}, false
 		}
 	}
 
-	core, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(d.links))
+	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(d.links))
 	require.NoError(t, err)
 	cr := eventing.NewChainerRunner(core)
 
@@ -263,7 +265,7 @@ func TestChainingE2E(t *testing.T) {
 			// No successor must have been created.
 			_, _, err = d.store.Load(ctx, "inst-c-next-completed")
 			require.Error(t, err, "no successor must be started for proc-c")
-			assert.ErrorIs(t, err, runtime.ErrInstanceNotFound)
+			assert.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 
 			// No chain link must be recorded either.
 			_, ok, err := d.links.LookupBySuccessor(ctx, "inst-c-next-completed")

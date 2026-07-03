@@ -10,6 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // tag returns a ServiceAction whose Do returns {"tag": name}, used to identify
@@ -58,9 +59,9 @@ func TestResolveInvokeAction(t *testing.T) {
 		"x":     tag("global"),
 		"gonly": tag("global-only"),
 	})
-	st, err := NewMemStore()
+	st, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	r, err := NewRunner(global, st)
+	r, err := NewProcessDriver(global, st)
 	require.NoError(t, err)
 	def := resolveActionScopedDef(t)
 
@@ -143,9 +144,9 @@ func TestResolveActionName(t *testing.T) {
 		"x":     tag("global-x"),
 		"gonly": tag("global-only"),
 	})
-	st2, err := NewMemStore()
+	st2, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	r, err := NewRunner(global, st2)
+	r, err := NewProcessDriver(global, st2)
 	require.NoError(t, err)
 	def := resolveActionScopedDef(t)
 

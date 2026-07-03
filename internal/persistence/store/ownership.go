@@ -11,16 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// Compile-time assertion: AdvisoryLockOwnership must satisfy runtime.Ownership.
-var _ runtime.Ownership = (*AdvisoryLockOwnership)(nil)
+// Compile-time assertion: AdvisoryLockOwnership must satisfy kernel.Ownership.
+var _ kernel.Ownership = (*AdvisoryLockOwnership)(nil)
 
 // ErrOwnershipClosed is returned by Acquire and Release when called after Close.
 var ErrOwnershipClosed = errors.New("workflow-store: ownership: closed")
 
-// AdvisoryLockOwnership implements [runtime.Ownership] for multi-process
+// AdvisoryLockOwnership implements [kernel.Ownership] for multi-process
 // deployments using database-level advisory locks. The concrete locking
 // mechanism is supplied via an injected [dialect.Locker]:
 //
@@ -94,7 +94,7 @@ func NewMySQLOwnership(ctx context.Context, db *sql.DB) (*AdvisoryLockOwnership,
 // is a no-op for an un-held lock.
 //
 // Use this constructor to satisfy the ownership parameter required by
-// [runtime.NewCachingStore] in single-node SQLite deployments. Ownership-dependent
+// [kernel.NewCachingStore] in single-node SQLite deployments. Ownership-dependent
 // flows must guard against [dialect.ErrUnsupported] and skip the ownership path
 // when running on SQLite.
 //

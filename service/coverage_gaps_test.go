@@ -17,7 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -26,8 +26,8 @@ import (
 // errLister is a stub InstanceLister that always returns a sentinel error.
 type errLister struct{ err error }
 
-func (l *errLister) List(_ context.Context, _ runtime.InstanceFilter) (runtime.InstancePage, error) {
-	return runtime.InstancePage{}, l.err
+func (l *errLister) List(_ context.Context, _ kernel.InstanceFilter) (kernel.InstancePage, error) {
+	return kernel.InstancePage{}, l.err
 }
 
 // ---- TestGetInstanceWithDefinition ----
@@ -86,7 +86,7 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 			},
 			assert: func(t *testing.T, r result) {
 				require.Error(t, r.err)
-				assert.ErrorIs(t, r.err, runtime.ErrInstanceNotFound)
+				assert.ErrorIs(t, r.err, kernel.ErrInstanceNotFound)
 			},
 		},
 		{
@@ -102,13 +102,13 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 				require.Equal(t, engine.StatusCompleted, st.Status)
 
 				// Build the service with an EMPTY registry so resolveDefinition fails.
-				emptyReg := runtime.NewMapDefinitionRegistry(nil)
+				emptyReg := kernel.NewMapDefinitionRegistry(nil)
 				svc := service.New(h.runner, h.tasks, emptyReg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
 				return svc, "gwid-nodef-1"
 			},
 			assert: func(t *testing.T, r result) {
 				require.Error(t, r.err)
-				assert.ErrorIs(t, r.err, runtime.ErrDefinitionNotFound)
+				assert.ErrorIs(t, r.err, kernel.ErrDefinitionNotFound)
 			},
 		},
 	}
@@ -165,7 +165,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 			assert: func(t *testing.T, _ engine.InstanceState, err error) {
 				require.Error(t, err)
 				// The error must NOT be ErrDefinitionNotFound (def was found).
-				assert.False(t, errors.Is(err, runtime.ErrDefinitionNotFound),
+				assert.False(t, errors.Is(err, kernel.ErrDefinitionNotFound),
 					"error must NOT be ErrDefinitionNotFound — the definition was resolved")
 			},
 		},
@@ -242,7 +242,7 @@ func TestListInstancesListerError(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		assert func(t *testing.T, page runtime.InstancePage, err error)
+		assert func(t *testing.T, page kernel.InstancePage, err error)
 	}
 
 	sentinel := errors.New("store-unavailable")
@@ -250,7 +250,7 @@ func TestListInstancesListerError(t *testing.T) {
 	cases := []testCase{
 		{
 			name: "lister error propagates from ListInstances",
-			assert: func(t *testing.T, _ runtime.InstancePage, err error) {
+			assert: func(t *testing.T, _ kernel.InstancePage, err error) {
 				require.Error(t, err)
 				assert.ErrorIs(t, err, sentinel)
 			},
@@ -267,7 +267,7 @@ func TestListInstancesListerError(t *testing.T) {
 			// Override the lister with one that always fails.
 			svc := service.New(h.runner, h.tasks, h.reg, h.store, &errLister{err: sentinel}, h.taskStore, service.WithEngineClock(h.clk))
 
-			page, err := svc.ListInstances(t.Context(), runtime.InstanceFilter{Limit: 10})
+			page, err := svc.ListInstances(t.Context(), kernel.InstanceFilter{Limit: 10})
 			tc.assert(t, page, err)
 		})
 	}

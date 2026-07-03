@@ -10,10 +10,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// TimerStore is the vendor-neutral, dialect-parametrised [runtime.TimerStore].
+// TimerStore is the vendor-neutral, dialect-parametrised [kernel.TimerStore].
 // It reads armed timers from wrkflw_timers — written transactionally by [Store]
 // via AppliedStep.TimerArms and TimerCancels (ADR-0027). The read side is
 // intentionally separate so the runtime scheduler can be constructed with just
@@ -35,8 +35,8 @@ type TimerStore struct {
 
 // Compile-time checks that *TimerStore satisfies both runtime ports.
 var (
-	_ runtime.TimerStore       = (*TimerStore)(nil)
-	_ runtime.TimerStatsReader = (*TimerStore)(nil)
+	_ kernel.TimerStore       = (*TimerStore)(nil)
+	_ kernel.TimerStatsReader = (*TimerStore)(nil)
 )
 
 // NewTimerStore constructs a TimerStore over conn using dialect d. conn must be
@@ -66,11 +66,11 @@ func NewTimerStore(conn any, d dialect.Dialect) (*TimerStore, error) {
 	return &TimerStore{conn: conn, dialect: d}, nil
 }
 
-// ListArmed implements [runtime.TimerStore]. It returns all timers currently
+// ListArmed implements [kernel.TimerStore]. It returns all timers currently
 // present in wrkflw_timers, ordered by (fire_at ASC, instance_id ASC,
 // timer_id ASC) for deterministic re-arm order on engine startup or
 // rehydration. FireAt is always UTC-normalised (ADR-0080).
-func (s *TimerStore) ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error) {
+func (s *TimerStore) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error) {
 	q := s.querier()
 
 	rows, err := q.Query(ctx, s.dialect.Rebind(`
@@ -82,7 +82,7 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []runtime.ArmedTimer
+	var out []kernel.ArmedTimer
 	for rows.Next() {
 		a, err := s.scanArmedTimer(rows)
 		if err != nil {
@@ -96,10 +96,10 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]runtime.ArmedTimer, error
 	return out, nil
 }
 
-// Stats implements [runtime.TimerStatsReader]. It returns the total count of
+// Stats implements [kernel.TimerStatsReader]. It returns the total count of
 // armed timers and the earliest fire_at in the wrkflw_timers table.
 // NextFireAt is nil when the table is empty. All timestamps are UTC-normalised.
-func (s *TimerStore) Stats(ctx context.Context) (runtime.TimerStats, error) {
+func (s *TimerStore) Stats(ctx context.Context) (kernel.TimerStats, error) {
 	q := s.querier()
 	if s.dialect.TimestampsAsText() {
 		return s.statsText(ctx, q)
@@ -109,50 +109,50 @@ func (s *TimerStore) Stats(ctx context.Context) (runtime.TimerStats, error) {
 
 // statsNative handles the Stats query for Postgres and MySQL, where fire_at
 // is a native time.Time column. MIN(fire_at) scans into a *time.Time directly.
-func (s *TimerStore) statsNative(ctx context.Context, q database.Querier) (runtime.TimerStats, error) {
+func (s *TimerStore) statsNative(ctx context.Context, q database.Querier) (kernel.TimerStats, error) {
 	var armed int64
 	var nextFireAt *time.Time
 	err := q.QueryRow(ctx, `SELECT count(*), MIN(fire_at) FROM wrkflw_timers`).
 		Scan(&armed, &nextFireAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return runtime.TimerStats{}, fmt.Errorf("workflow-store: timer stats: %w", err)
+		return kernel.TimerStats{}, fmt.Errorf("workflow-store: timer stats: %w", err)
 	}
 	if nextFireAt != nil {
 		t := nextFireAt.UTC()
 		nextFireAt = &t
 	}
-	return runtime.TimerStats{Armed: armed, NextFireAt: nextFireAt}, nil
+	return kernel.TimerStats{Armed: armed, NextFireAt: nextFireAt}, nil
 }
 
 // statsText handles the Stats query for SQLite, where fire_at is an
 // RFC3339Nano TEXT column. MIN(fire_at) is scanned into a *string and then
 // parsed via [parseTimeText] (ADR-0080).
-func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (runtime.TimerStats, error) {
+func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (kernel.TimerStats, error) {
 	var armed int64
 	var nextStr *string
 	err := q.QueryRow(ctx, `SELECT count(*), MIN(fire_at) FROM wrkflw_timers`).
 		Scan(&armed, &nextStr)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return runtime.TimerStats{}, fmt.Errorf("workflow-store: timer stats (text): %w", err)
+		return kernel.TimerStats{}, fmt.Errorf("workflow-store: timer stats (text): %w", err)
 	}
 	var nextFireAt *time.Time
 	if nextStr != nil {
 		t, err := parseTimeText(*nextStr)
 		if err != nil {
-			return runtime.TimerStats{}, fmt.Errorf("workflow-store: timer stats: parse next_fire_at: %w", err)
+			return kernel.TimerStats{}, fmt.Errorf("workflow-store: timer stats: parse next_fire_at: %w", err)
 		}
 		nextFireAt = &t
 	}
-	return runtime.TimerStats{Armed: armed, NextFireAt: nextFireAt}, nil
+	return kernel.TimerStats{Armed: armed, NextFireAt: nextFireAt}, nil
 }
 
-// scanArmedTimer reads one row from the query result into an [runtime.ArmedTimer].
+// scanArmedTimer reads one row from the query result into an [kernel.ArmedTimer].
 // The fire_at column is handled via the time codec: TEXT-timestamp (SQLite) is
 // parsed from the RFC3339Nano string; native paths (Postgres/MySQL) scan into
 // time.Time directly and are then normalised to UTC (ADR-0080).
 func (s *TimerStore) scanArmedTimer(rows interface {
 	Scan(dest ...any) error
-}) (runtime.ArmedTimer, error) {
+}) (kernel.ArmedTimer, error) {
 	var (
 		instanceID string
 		defID      string
@@ -164,13 +164,13 @@ func (s *TimerStore) scanArmedTimer(rows interface {
 	if s.dialect.TimestampsAsText() {
 		var fireAtStr string
 		if err := rows.Scan(&instanceID, &defID, &defVersion, &timerID, &fireAtStr, &kind); err != nil {
-			return runtime.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer (text): %w", err)
+			return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer (text): %w", err)
 		}
 		fireAt, err := parseTimeText(fireAtStr)
 		if err != nil {
-			return runtime.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: parse fire_at: %w", err)
+			return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: parse fire_at: %w", err)
 		}
-		return runtime.ArmedTimer{
+		return kernel.ArmedTimer{
 			InstanceID: instanceID,
 			DefID:      defID,
 			DefVersion: defVersion,
@@ -183,9 +183,9 @@ func (s *TimerStore) scanArmedTimer(rows interface {
 	// Native time.Time path (Postgres / MySQL).
 	var fireAt time.Time
 	if err := rows.Scan(&instanceID, &defID, &defVersion, &timerID, &fireAt, &kind); err != nil {
-		return runtime.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: %w", err)
+		return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: %w", err)
 	}
-	return runtime.ArmedTimer{
+	return kernel.ArmedTimer{
 		InstanceID: instanceID,
 		DefID:      defID,
 		DefVersion: defVersion,

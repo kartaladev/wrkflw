@@ -8,21 +8,21 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // recordingStore wraps an in-memory Store and captures every committed AppliedStep.
 type recordingStore struct {
-	runtime.Store
-	steps []runtime.AppliedStep
+	kernel.Store
+	steps []kernel.AppliedStep
 }
 
-func (s *recordingStore) Create(ctx context.Context, step runtime.AppliedStep) (runtime.Token, error) {
+func (s *recordingStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
 	s.steps = append(s.steps, step)
 	return s.Store.Create(ctx, step)
 }
 
-func (s *recordingStore) Commit(ctx context.Context, expected runtime.Token, step runtime.AppliedStep) (runtime.Token, error) {
+func (s *recordingStore) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
 	s.steps = append(s.steps, step)
 	return s.Store.Commit(ctx, expected, step)
 }
@@ -54,7 +54,7 @@ func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Exactly one message.OrderPlaced event was committed in an AppliedStep.
-	var msgEvents []runtime.OutboxEvent
+	var msgEvents []kernel.OutboxEvent
 	for _, step := range store.steps {
 		for _, ev := range step.Events {
 			if ev.Topic == "message.OrderPlaced" {

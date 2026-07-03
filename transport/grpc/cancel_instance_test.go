@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -58,7 +58,7 @@ func conflictCancelStub() service.Service {
 func notFoundCancelStub() service.Service {
 	return &cancelStub{
 		cancelFn: func(_ context.Context, _ service.CancelInstanceRequest) (engine.InstanceState, error) {
-			return engine.InstanceState{}, fmt.Errorf("workflow-service: cancel instance: %w", runtime.ErrInstanceNotFound)
+			return engine.InstanceState{}, fmt.Errorf("workflow-service: cancel instance: %w", kernel.ErrInstanceNotFound)
 		},
 	}
 }

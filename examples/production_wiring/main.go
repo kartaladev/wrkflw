@@ -44,6 +44,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
@@ -89,13 +91,13 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(scheduler) // *Scheduler is an io.Closer
 
 	// --- Store, relay, and readiness probe (Postgres when DATABASE_URL is set) ---
-	memStore, merr := runtime.NewMemStore()
+	memStore, merr := kernel.NewMemStore()
 	if merr != nil {
 		return merr
 	}
 	var (
-		store       runtime.Store = memStore
-		lister                    = memStore
+		store       kernel.Store = memStore
+		lister                   = memStore
 		readyChecks []rest.HealthCheck
 	)
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
@@ -149,7 +151,7 @@ func run(logger *slog.Logger) error {
 			return map[string]any{"charged": true}, nil
 		}),
 	})
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})
@@ -158,13 +160,13 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewProcessDriver(cat, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	if err != nil {
 		return err
 	}
-	tasks, err := runtime.NewTaskService(taskStore, az)
+	tasks, err := task.NewTaskService(taskStore, az)
 	if err != nil {
 		return err
 	}

@@ -15,7 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 )
@@ -32,14 +32,14 @@ func TestMapToGRPCStatus(t *testing.T) {
 		err  error
 		want codes.Code
 	}{
-		{"instance not found", runtime.ErrInstanceNotFound, codes.NotFound},
-		{"definition not found", runtime.ErrDefinitionNotFound, codes.NotFound},
+		{"instance not found", kernel.ErrInstanceNotFound, codes.NotFound},
+		{"definition not found", kernel.ErrDefinitionNotFound, codes.NotFound},
 		{"task not found", humantask.ErrTaskNotFound, codes.NotFound},
 		{"not authorized", authz.ErrNotAuthorized, codes.PermissionDenied},
-		{"concurrent update", runtime.ErrConcurrentUpdate, codes.Aborted},
-		{"bad cursor", runtime.ErrBadCursor, codes.InvalidArgument},
+		{"concurrent update", kernel.ErrConcurrentUpdate, codes.Aborted},
+		{"bad cursor", kernel.ErrBadCursor, codes.InvalidArgument},
 		{"unknown error", errors.New("boom"), codes.Internal},
-		{"wrapped not found", fmt.Errorf("wrap: %w", runtime.ErrInstanceNotFound), codes.NotFound},
+		{"wrapped not found", fmt.Errorf("wrap: %w", kernel.ErrInstanceNotFound), codes.NotFound},
 		{"conflict state", fmt.Errorf("x: %w", service.ErrConflict), codes.FailedPrecondition},
 		{"engine invalid transition (bare runner)", fmt.Errorf("wrap: %w", engine.ErrInvalidTransition), codes.FailedPrecondition},
 	}
@@ -65,10 +65,10 @@ func TestMapToGRPCStatus_ErrorInfoDetail(t *testing.T) {
 		err        error
 		wantReason string
 	}{
-		{"instance not found", runtime.ErrInstanceNotFound, "not_found"},
+		{"instance not found", kernel.ErrInstanceNotFound, "not_found"},
 		{"not authorized", authz.ErrNotAuthorized, "forbidden"},
-		{"concurrent update", runtime.ErrConcurrentUpdate, "conflict"},
-		{"bad cursor", runtime.ErrBadCursor, "bad_request"},
+		{"concurrent update", kernel.ErrConcurrentUpdate, "conflict"},
+		{"bad cursor", kernel.ErrBadCursor, "bad_request"},
 		{"conflict state", fmt.Errorf("x: %w", service.ErrConflict), "conflict_state"},
 		{"unknown error", errors.New("boom"), "internal_error"},
 	}

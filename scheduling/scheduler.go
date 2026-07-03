@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ErrTimerLockElectorConflict is returned by [NewScheduler] when more than one
@@ -29,7 +29,7 @@ import (
 var ErrTimerLockElectorConflict = errors.New(
 	"workflow-scheduling: WithDistributedTimerLock and WithTimerElector are mutually exclusive — set only one")
 
-// Scheduler is the production, gocron-backed [runtime.Scheduler]. Construct it
+// Scheduler is the production, gocron-backed [kernel.Scheduler]. Construct it
 // with [NewScheduler]; supply the same [clockwork.Clock] instance used to build
 // the runtime via [WithSchedulerClock] so one fake-clock advance drives both
 // engine timestamps and timer firing under test (ADR-0003). When the clock
@@ -51,8 +51,8 @@ type Scheduler struct {
 
 // Compile-time contract assertions.
 var (
-	_ runtime.Scheduler = (*Scheduler)(nil)
-	_ io.Closer         = (*Scheduler)(nil)
+	_ kernel.Scheduler = (*Scheduler)(nil)
+	_ io.Closer        = (*Scheduler)(nil)
 )
 
 // config holds façade-level options.
@@ -116,13 +116,13 @@ func WithElectorHeartbeatInterval(d time.Duration) ElectorOption {
 // WithOnLeadershipAcquired registers a callback invoked each time the elected
 // leader wins (or re-wins, after a heartbeat step-down) leadership. It runs
 // asynchronously and never blocks timer firing. Wire it to
-// [runtime.Runner.RehydrateTimers] so a new leader re-arms the full persisted
+// [runtime.ProcessDriver.RehydrateTimers] so a new leader re-arms the full persisted
 // timer set on leadership acquisition — not only at startup — closing the window
 // where timers armed at runtime would otherwise be lost on the new leader until a
 // restart (Option A, ADR-0072). Because the runner is typically built after the
 // scheduler, capture it in the closure and assign it afterwards:
 //
-//	var runner *runtime.Runner
+//	var runner *runtime.ProcessDriver
 //	s, _ := scheduling.NewScheduler(scheduling.WithTimerElector(pool,
 //		scheduling.WithOnLeadershipAcquired(func(ctx context.Context) {
 //			_ = runner.RehydrateTimers(ctx)

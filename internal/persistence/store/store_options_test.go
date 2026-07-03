@@ -22,7 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // --------------------------------------------------------------------------
@@ -271,8 +271,8 @@ func TestDeduperDroppedTable(t *testing.T) {
 func TestChainLinkStoreUnsupportedConn(t *testing.T) {
 	cls, err := store.NewChainLinkStore(struct{}{}, dialect.NewSQLite())
 	require.NoError(t, err)
-	link := runtime.ChainLink{
-		PredecessorID: "p", Outcome: runtime.OutcomeCompleted, SuccessorID: "s",
+	link := kernel.ChainLink{
+		PredecessorID: "p", Outcome: kernel.OutcomeCompleted, SuccessorID: "s",
 	}
 
 	tests := []struct {

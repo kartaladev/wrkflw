@@ -13,10 +13,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // topicsOf collects the topics of all buffered outbox events in append order.
-func topicsOf(evs []runtime.OutboxEvent) []string {
+func topicsOf(evs []kernel.OutboxEvent) []string {
 	out := make([]string, len(evs))
 	for i, e := range evs {
 		out[i] = e.Topic

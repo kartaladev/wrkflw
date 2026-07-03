@@ -35,7 +35,7 @@ func cancelDef(cancelActions []string) *model.ProcessDefinition {
 	}
 }
 
-func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime.Runner {
+func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime.ProcessDriver {
 	t.Helper()
 	store := mustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})

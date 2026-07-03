@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // allDialects returns one dialect per name. Stores built for pure-function
@@ -34,7 +34,7 @@ func TestMapConflictPassThrough(t *testing.T) {
 				"%s: non-retryable error must pass through unchanged", name)
 			require.NoError(t, s.MapConflictForTest(nil), "%s: nil stays nil", name)
 			// Ensure it does NOT spuriously classify a plain error as a conflict.
-			require.NotErrorIs(t, s.MapConflictForTest(sentinel), runtime.ErrConcurrentUpdate,
+			require.NotErrorIs(t, s.MapConflictForTest(sentinel), kernel.ErrConcurrentUpdate,
 				"%s: plain error must not be treated as concurrent update", name)
 		})
 	}

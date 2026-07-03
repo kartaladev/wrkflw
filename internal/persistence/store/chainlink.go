@@ -10,11 +10,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // ChainLinkStore is the vendor-neutral, dialect-parametrised
-// [runtime.ChainLinkStore] (process-instance chaining lineage, ADR-0045). It
+// [kernel.ChainLinkStore] (process-instance chaining lineage, ADR-0045). It
 // records one predecessor→successor hop per call to [Record]; the
 // (predecessor_instance_id, outcome) primary key is the exactly-once backstop
 // under at-least-once terminal-event delivery.
@@ -31,10 +31,10 @@ type ChainLinkStore struct {
 	dialect dialect.Dialect
 }
 
-// Compile-time checks: *ChainLinkStore satisfies [runtime.ChainLinkStore] and
-// [runtime.ChainLineageReader].
-var _ runtime.ChainLinkStore = (*ChainLinkStore)(nil)
-var _ runtime.ChainLineageReader = (*ChainLinkStore)(nil)
+// Compile-time checks: *ChainLinkStore satisfies [kernel.ChainLinkStore] and
+// [kernel.ChainLineageReader].
+var _ kernel.ChainLinkStore = (*ChainLinkStore)(nil)
+var _ kernel.ChainLineageReader = (*ChainLinkStore)(nil)
 
 // NewChainLinkStore constructs a ChainLinkStore over conn using the supplied
 // dialect d. conn must be either a *pgxpool.Pool (Postgres) or a *sql.DB
@@ -63,10 +63,10 @@ func NewChainLinkStore(conn any, d dialect.Dialect) (*ChainLinkStore, error) {
 
 // Record durably stores one predecessor→successor hop. A unique-constraint
 // violation on (predecessor_instance_id, outcome) maps to
-// [runtime.ErrChainLinkExists] — the exactly-once backstop under at-least-once
+// [kernel.ErrChainLinkExists] — the exactly-once backstop under at-least-once
 // terminal-event delivery. A duplicate Record call is not treated as an error
 // by the Chainer; it simply skips and acks the redelivered event.
-func (c *ChainLinkStore) Record(ctx context.Context, link runtime.ChainLink) error {
+func (c *ChainLinkStore) Record(ctx context.Context, link kernel.ChainLink) error {
 	var startVarsJSON []byte
 	if link.StartVars != nil {
 		var err error
@@ -111,7 +111,7 @@ func (c *ChainLinkStore) Record(ctx context.Context, link runtime.ChainLink) err
 		// Belt-and-suspenders: if the driver surfaces the unique violation as an
 		// error (e.g. under a race between two concurrent Record calls), map it.
 		if c.dialect.IsUniqueViolation(err) {
-			return runtime.ErrChainLinkExists
+			return kernel.ErrChainLinkExists
 		}
 		return fmt.Errorf("workflow-store: chain links: record: %w", err)
 	}
@@ -123,7 +123,7 @@ func (c *ChainLinkStore) Record(ctx context.Context, link runtime.ChainLink) err
 	if n == 0 {
 		// INSERT was silently ignored by the conflict clause — the row already
 		// existed; surface this as ErrChainLinkExists.
-		return runtime.ErrChainLinkExists
+		return kernel.ErrChainLinkExists
 	}
 	return nil
 }
@@ -131,10 +131,10 @@ func (c *ChainLinkStore) Record(ctx context.Context, link runtime.ChainLink) err
 // LookupBySuccessor returns the link whose successor_instance_id equals
 // successorID; ok=false (no error) when no such hop exists (successorID is a
 // chain root).
-func (c *ChainLinkStore) LookupBySuccessor(ctx context.Context, successorID string) (runtime.ChainLink, bool, error) {
+func (c *ChainLinkStore) LookupBySuccessor(ctx context.Context, successorID string) (kernel.ChainLink, bool, error) {
 	q, err := database.From(c.conn)
 	if err != nil {
-		return runtime.ChainLink{}, false, fmt.Errorf("workflow-store: chain links: lookup: conn: %w", err)
+		return kernel.ChainLink{}, false, fmt.Errorf("workflow-store: chain links: lookup: conn: %w", err)
 	}
 
 	row := q.QueryRow(ctx, c.dialect.Rebind(
@@ -147,9 +147,9 @@ func (c *ChainLinkStore) LookupBySuccessor(ctx context.Context, successorID stri
 	link, err := c.scanChainLink(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return runtime.ChainLink{}, false, nil
+			return kernel.ChainLink{}, false, nil
 		}
-		return runtime.ChainLink{}, false, fmt.Errorf("workflow-store: chain links: lookup: %w", err)
+		return kernel.ChainLink{}, false, fmt.Errorf("workflow-store: chain links: lookup: %w", err)
 	}
 	return link, true, nil
 }
@@ -157,7 +157,7 @@ func (c *ChainLinkStore) LookupBySuccessor(ctx context.Context, successorID stri
 // ListByPredecessor returns all hops fanned out from predecessorID, ordered by
 // outcome for deterministic results (admin/audit). Returns a nil slice (no
 // error) when no successors exist.
-func (c *ChainLinkStore) ListByPredecessor(ctx context.Context, predecessorID string) ([]runtime.ChainLink, error) {
+func (c *ChainLinkStore) ListByPredecessor(ctx context.Context, predecessorID string) ([]kernel.ChainLink, error) {
 	q, err := database.From(c.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: chain links: list: conn: %w", err)
@@ -176,7 +176,7 @@ func (c *ChainLinkStore) ListByPredecessor(ctx context.Context, predecessorID st
 	}
 	defer func() { _ = rows.Close() }()
 
-	var links []runtime.ChainLink
+	var links []kernel.ChainLink
 	for rows.Next() {
 		link, err := c.scanChainLink(rows)
 		if err != nil {
@@ -190,12 +190,12 @@ func (c *ChainLinkStore) ListByPredecessor(ctx context.Context, predecessorID st
 	return links, nil
 }
 
-// PredecessorOf returns the [runtime.ChainLink] that produced successorID.
+// PredecessorOf returns the [kernel.ChainLink] that produced successorID.
 // Returns (nil, nil) when successorID was not started by chaining — that is,
 // no row with successor_instance_id = successorID exists in wrkflw_chain_links.
 //
-// Implements [runtime.ChainLineageReader].
-func (c *ChainLinkStore) PredecessorOf(ctx context.Context, successorID string) (*runtime.ChainLink, error) {
+// Implements [kernel.ChainLineageReader].
+func (c *ChainLinkStore) PredecessorOf(ctx context.Context, successorID string) (*kernel.ChainLink, error) {
 	q, err := database.From(c.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: chain links: predecessor of: conn: %w", err)
@@ -218,13 +218,13 @@ func (c *ChainLinkStore) PredecessorOf(ctx context.Context, successorID string) 
 	return &link, nil
 }
 
-// SuccessorsOf returns all [runtime.ChainLink]s fanned out from predecessorID,
+// SuccessorsOf returns all [kernel.ChainLink]s fanned out from predecessorID,
 // ordered by outcome for deterministic results. Returns an empty (non-nil) slice
 // when no successors exist — the caller must not treat a nil result as distinct
 // from an empty result.
 //
-// Implements [runtime.ChainLineageReader].
-func (c *ChainLinkStore) SuccessorsOf(ctx context.Context, predecessorID string) ([]runtime.ChainLink, error) {
+// Implements [kernel.ChainLineageReader].
+func (c *ChainLinkStore) SuccessorsOf(ctx context.Context, predecessorID string) ([]kernel.ChainLink, error) {
 	q, err := database.From(c.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: chain links: successors of: conn: %w", err)
@@ -245,7 +245,7 @@ func (c *ChainLinkStore) SuccessorsOf(ctx context.Context, predecessorID string)
 
 	// Non-nil empty slice: the interface contract requires callers to receive an
 	// empty (not nil) slice when no successors exist.
-	links := []runtime.ChainLink{}
+	links := []kernel.ChainLink{}
 	for rows.Next() {
 		link, err := c.scanChainLink(rows)
 		if err != nil {
@@ -266,7 +266,7 @@ type chainLinkScanner interface {
 	Scan(dest ...any) error
 }
 
-// scanChainLink reads one row into a [runtime.ChainLink]. The column projection
+// scanChainLink reads one row into a [kernel.ChainLink]. The column projection
 // must be: predecessor_instance_id, outcome, successor_instance_id,
 // predecessor_definition_ref, successor_definition_ref, start_vars, created_at.
 //
@@ -274,9 +274,9 @@ type chainLinkScanner interface {
 // TEXT as RFC3339Nano ([dialect.Dialect.TimestampsAsText] == true) and requires
 // [parseTimeText]; Postgres and MySQL scan into time.Time natively and are then
 // normalised to UTC.
-func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (runtime.ChainLink, error) {
+func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (kernel.ChainLink, error) {
 	var (
-		link          runtime.ChainLink
+		link          kernel.ChainLink
 		outcome       string
 		startVarsJSON []byte
 	)
@@ -288,11 +288,11 @@ func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (runtime.ChainLink,
 			&link.PredecessorDefinitionRef, &link.SuccessorDefinitionRef,
 			&startVarsJSON, &createdAtStr,
 		); err != nil {
-			return runtime.ChainLink{}, err
+			return kernel.ChainLink{}, err
 		}
 		t, err := parseTimeText(createdAtStr)
 		if err != nil {
-			return runtime.ChainLink{}, fmt.Errorf("workflow-store: chain links: parse created_at: %w", err)
+			return kernel.ChainLink{}, fmt.Errorf("workflow-store: chain links: parse created_at: %w", err)
 		}
 		link.CreatedAt = t // already UTC from parseTimeText
 	} else {
@@ -302,15 +302,15 @@ func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (runtime.ChainLink,
 			&link.PredecessorDefinitionRef, &link.SuccessorDefinitionRef,
 			&startVarsJSON, &link.CreatedAt,
 		); err != nil {
-			return runtime.ChainLink{}, err
+			return kernel.ChainLink{}, err
 		}
 		link.CreatedAt = link.CreatedAt.UTC() // normalise to UTC (ADR-0080)
 	}
 
-	link.Outcome = runtime.Outcome(outcome)
+	link.Outcome = kernel.Outcome(outcome)
 	if len(startVarsJSON) > 0 {
 		if err := json.Unmarshal(startVarsJSON, &link.StartVars); err != nil {
-			return runtime.ChainLink{}, fmt.Errorf("workflow-store: chain links: unmarshal start vars: %w", err)
+			return kernel.ChainLink{}, fmt.Errorf("workflow-store: chain links: unmarshal start vars: %w", err)
 		}
 	}
 	return link, nil

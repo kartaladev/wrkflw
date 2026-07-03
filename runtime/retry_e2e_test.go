@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // retryE2EDef returns a process with one service-task node "task" (action "a")
@@ -54,7 +55,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 
 	T := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(T)
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 
 	// fixedJitter{1.0}: Fraction() always returns 1.0, so FireAt = clk.Now() + 1.0×Backoff(attempt).
 	// Attempt 0: Backoff(0) = InitialInterval×BackoffCoef^0 = 1s×1 = 1s → FireAt = T+1s.

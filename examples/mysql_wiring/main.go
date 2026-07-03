@@ -40,6 +40,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
@@ -94,7 +97,7 @@ func run(logger *slog.Logger) error {
 		return merr
 	}
 
-	// Open the MySQL-backed runtime.Store (and JournalReader).
+	// Open the MySQL-backed kernel.Store (and JournalReader).
 	store, oerr := persistence.OpenMySQL(workerCtx, db)
 	if oerr != nil {
 		return oerr
@@ -121,8 +124,8 @@ func run(logger *slog.Logger) error {
 	// The closure captures runner by pointer so the forward-reference is safe:
 	// runner is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
-	var runner *runtime.Runner
-	deliver := runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	var runner *runtime.ProcessDriver
+	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		if runner == nil {
 			return nil // not yet wired; should not occur in practice
 		}
@@ -154,7 +157,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(ownerCloser)
 
 	// Wrap the store in the caching store so hot instances are served from memory.
-	cachingStore, err := runtime.NewCachingStore(store, ownership)
+	cachingStore, err := kernel.NewCachingStore(store, ownership)
 	if err != nil {
 		return fmt.Errorf("caching store: %w", err)
 	}
@@ -199,7 +202,7 @@ func run(logger *slog.Logger) error {
 	// definitions survive restarts. For illustrative purposes we also seed a
 	// well-known definition via the map registry; in production you would use
 	// persistence.NewMySQLDefinitionStore exclusively.
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})
@@ -214,7 +217,7 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err = runtime.NewRunner(cat, cachingStore,
+	runner, err = runtime.NewProcessDriver(cat, cachingStore,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(scheduler),
 		runtime.WithTimerStore(timerStore),
@@ -222,7 +225,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := runtime.NewTaskService(taskStore, az)
+	tasks, err := task.NewTaskService(taskStore, az)
 	if err != nil {
 		return err
 	}

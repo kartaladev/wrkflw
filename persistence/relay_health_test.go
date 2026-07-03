@@ -10,17 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
 
-// fakeStatsReader is an in-test fake implementing runtime.OutboxStatsReader.
+// fakeStatsReader is an in-test fake implementing kernel.OutboxStatsReader.
 type fakeStatsReader struct {
-	stats runtime.OutboxStats
+	stats kernel.OutboxStats
 	err   error
 }
 
-func (f fakeStatsReader) OutboxStats(_ context.Context) (runtime.OutboxStats, error) {
+func (f fakeStatsReader) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
 	return f.stats, f.err
 }
 
@@ -31,7 +31,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		reader runtime.OutboxStatsReader
+		reader kernel.OutboxStatsReader
 		opts   []persistence.RelayBacklogOption
 		ctx    func(ctx context.Context) context.Context // nil → identity
 		assert func(t *testing.T, err error)
@@ -40,14 +40,14 @@ func TestRelayBacklogCheck(t *testing.T) {
 	cases := []testCase{
 		{
 			name:   "name is relay-backlog",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Pending: 0, Dead: 0}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Pending: 0, Dead: 0}},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
 			},
 		},
 		{
 			name:   "both thresholds disabled (0): dead=999 pending=999 never fails",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Pending: 999, Dead: 999}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Pending: 999, Dead: 999}},
 			// no WithMaxDead / WithMaxPending → defaults 0 = disabled
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -55,7 +55,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "under maxDead threshold: ok",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Dead: 4}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Dead: 4}},
 			opts:   []persistence.RelayBacklogOption{persistence.WithMaxDead(5)},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "dead equals maxDead: ok (boundary)",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Dead: 5}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Dead: 5}},
 			opts:   []persistence.RelayBacklogOption{persistence.WithMaxDead(5)},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "dead exceeds maxDead: error",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Dead: 6}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Dead: 6}},
 			opts:   []persistence.RelayBacklogOption{persistence.WithMaxDead(5)},
 			assert: func(t *testing.T, err error) {
 				require.Error(t, err)
@@ -81,7 +81,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "under maxPending threshold: ok",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Pending: 99}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Pending: 99}},
 			opts:   []persistence.RelayBacklogOption{persistence.WithMaxPending(100)},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "pending equals maxPending: ok (boundary)",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Pending: 100}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Pending: 100}},
 			opts:   []persistence.RelayBacklogOption{persistence.WithMaxPending(100)},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -97,7 +97,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "pending exceeds maxPending: error",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Pending: 101}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Pending: 101}},
 			opts:   []persistence.RelayBacklogOption{persistence.WithMaxPending(100)},
 			assert: func(t *testing.T, err error) {
 				require.Error(t, err)
@@ -107,7 +107,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "both dead and pending exceeded: error",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{Dead: 10, Pending: 200}},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{Dead: 10, Pending: 200}},
 			opts: []persistence.RelayBacklogOption{
 				persistence.WithMaxDead(5),
 				persistence.WithMaxPending(100),
@@ -128,7 +128,7 @@ func TestRelayBacklogCheck(t *testing.T) {
 		},
 		{
 			name:   "cancelled context is honoured",
-			reader: fakeStatsReader{stats: runtime.OutboxStats{}, err: context.Canceled},
+			reader: fakeStatsReader{stats: kernel.OutboxStats{}, err: context.Canceled},
 			ctx: func(ctx context.Context) context.Context {
 				cctx, cancel := context.WithTimeout(ctx, time.Millisecond)
 				cancel() // cancel immediately

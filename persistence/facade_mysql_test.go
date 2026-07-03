@@ -25,15 +25,17 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // facadePub is a thread-safe recording publisher for facade tests.
 type facadePub struct {
 	mu     sync.Mutex
-	events []runtime.OutboxEvent
+	events []kernel.OutboxEvent
 }
 
-func (p *facadePub) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+func (p *facadePub) Publish(_ context.Context, ev kernel.OutboxEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.events = append(p.events, ev)
@@ -71,7 +73,7 @@ func TestOpenMySQL_RoundTrip(t *testing.T) {
 	require.NotNil(t, store)
 
 	def := mysqlMinimalDef()
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "mysql-rt-1", map[string]any{"key": "val"})
 	require.NoError(t, err)
@@ -113,7 +115,7 @@ func TestNewMySQLTimerStore_ListArmed(t *testing.T) {
 	// Arm a timer by committing a step that includes a TimerArm.
 	now := time.Unix(1700000000, 0).UTC()
 	fireAt := now.Add(time.Hour)
-	step := runtime.AppliedStep{
+	step := kernel.AppliedStep{
 		State: engine.InstanceState{
 			InstanceID: "timer-instance-1",
 			DefID:      "d",
@@ -122,7 +124,7 @@ func TestNewMySQLTimerStore_ListArmed(t *testing.T) {
 			StartedAt:  now,
 		},
 		Trigger: engine.NewStartInstance(now, nil),
-		TimerArms: []runtime.ArmedTimer{
+		TimerArms: []kernel.ArmedTimer{
 			{
 				InstanceID: "timer-instance-1",
 				TimerID:    "t1",
@@ -157,7 +159,7 @@ func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	require.NotNil(t, store)
 
 	// Drive a minimal process to confirm the option is wired through.
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), &model.ProcessDefinition{
 		ID:      "hist-mysql-1",
@@ -287,7 +289,7 @@ func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seed a parent instance.
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), mysqlMinimalDef(), "parent-cls-1", nil)
 	require.NoError(t, err)
@@ -332,9 +334,9 @@ func TestNewMySQLChainLinkStore_RecordAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	at := time.Now().UTC().Truncate(time.Millisecond)
 
-	link := runtime.ChainLink{
+	link := kernel.ChainLink{
 		PredecessorID:            "pred-1",
-		Outcome:                  runtime.Outcome("success"),
+		Outcome:                  kernel.Outcome("success"),
 		SuccessorID:              "succ-1",
 		PredecessorDefinitionRef: "def-a:1",
 		SuccessorDefinitionRef:   "def-b:2",
@@ -349,7 +351,7 @@ func TestNewMySQLChainLinkStore_RecordAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "pred-1", got.PredecessorID)
-	assert.Equal(t, runtime.Outcome("success"), got.Outcome)
+	assert.Equal(t, kernel.Outcome("success"), got.Outcome)
 	assert.Equal(t, "succ-1", got.SuccessorID)
 
 	// ListByPredecessor.
@@ -368,7 +370,7 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	for _, id := range []string{"lst-inst-a", "lst-inst-b"} {
 		_, err := r.Run(t.Context(), mysqlMinimalDef(), id, nil)
@@ -377,7 +379,7 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 
 	lister, err := persistence.NewMySQLLister(db)
 	require.NoError(t, err)
-	page, err := lister.List(t.Context(), runtime.InstanceFilter{})
+	page, err := lister.List(t.Context(), kernel.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 2, "isolated DB must contain exactly the two seeded instances")
 
@@ -392,7 +394,7 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 }
 
 // TestNewMySQLAdvisoryLockOwnership_AcquireAndClose verifies the facade ctor
-// returns a runtime.Ownership that can Acquire an instance and Close cleanly.
+// returns a kernel.Ownership that can Acquire an instance and Close cleanly.
 func TestNewMySQLAdvisoryLockOwnership_AcquireAndClose(t *testing.T) {
 	t.Parallel()
 	db := dbtest.RunTestMySQL(t)
@@ -570,7 +572,7 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 
 	// Create a parent process instance (the definition "mysql-minimal" id:version 1).
 	def := mysqlMinimalDef()
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), def, "notifier-parent-1", nil)
 	require.NoError(t, err)
@@ -590,7 +592,7 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 	}}
 
 	var deliverCalled int
-	deliverFn := runtime.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		deliverCalled++
 		return nil
 	})

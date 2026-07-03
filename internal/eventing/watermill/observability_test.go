@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -52,7 +52,7 @@ func collectCounter(t *testing.T, reader *metric.ManualReader) []metricdata.Data
 func TestPublishRecordsSpanAndCounter(t *testing.T) {
 	sr, reader, pub := newObs(t)
 
-	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic: "instance.completed", Payload: map[string]any{"ok": true}, InstanceID: "inst-9",
 	})
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestPublishFailureRecordsSpanErrorAndCounter(t *testing.T) {
 		watermillpub.WithTracerProvider(tp),
 		watermillpub.WithMeterProvider(mp))
 
-	err := pub.Publish(t.Context(), runtime.OutboxEvent{
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
 		Topic: "instance.completed", Payload: map[string]any{"ok": true}, InstanceID: "inst-9",
 	})
 	require.Error(t, err)

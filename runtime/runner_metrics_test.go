@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // counterValueEmit is like counterValue (defined in observability_test.go) but
@@ -169,7 +170,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	cat := action.NewMapCatalog(nil)
-	sched := runtime.NewMemScheduler(runtime.WithMemSchedulerClock(fc))
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	store := mustMemStore(t)
 
 	r := mustRunner(t, cat, store,

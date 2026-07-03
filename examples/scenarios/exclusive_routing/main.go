@@ -21,6 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func main() {
@@ -67,11 +68,11 @@ func main() {
 		}),
 	})
 
-	memSt, err := runtime.NewMemStore()
+	memSt, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewRunner(cat, memSt)
+	r, err := runtime.NewProcessDriver(cat, memSt)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}

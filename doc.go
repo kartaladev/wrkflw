@@ -7,7 +7,7 @@
 //
 // The engine ([engine]) is a pure token state machine: [engine.Step] maps
 // (definition, state, trigger) → (commands, new state) with no I/O and no clock
-// reads. [runtime.Runner] is the reference driver that executes commands
+// reads. [runtime.ProcessDriver] is the reference driver that executes commands
 // (schedule timers, invoke service actions, create human tasks), persists each
 // applied step atomically, and feeds the resulting triggers back through the loop.
 // All domain events are written into the transactional outbox alongside the state
@@ -18,9 +18,9 @@
 // For most consumers the entry sequence is: (1) author a [model.ProcessDefinition]
 // with [model.NewDefinition] (Go) or [model.ParseYAML]/[model.LoadYAML] (YAML),
 // calling [model.DefinitionLoader.Build] in both cases; (2) construct a
-// [runtime.Runner] with [runtime.NewRunner](catalog, store, opts) — all required
-// deps are non-nil interfaces; passing nil returns [runtime.ErrNilDependency];
-// (3) call [runtime.Runner.Run] to start an instance and [runtime.Runner.Deliver]
+// [runtime.ProcessDriver] with [runtime.NewProcessDriver](catalog, store, opts) — all required
+// deps are non-nil interfaces; passing nil returns [kernel.ErrNilDependency];
+// (3) call [runtime.ProcessDriver.Run] to start an instance and [runtime.ProcessDriver.Deliver]
 // to resume it after a human-task claim, timer fire, or signal.
 //
 //   - model        Define a process: nodes, gateways, sequence flows, the

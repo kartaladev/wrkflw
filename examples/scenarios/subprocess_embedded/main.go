@@ -28,6 +28,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -70,11 +72,11 @@ func main() {
 		}),
 	})
 
-	memSt, err := runtime.NewMemStore()
+	memSt, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewRunner(cat, memSt)
+	r, err := runtime.NewProcessDriver(cat, memSt)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -90,6 +92,6 @@ func main() {
 		fmt.Println("  hotel confirmation:", state.Variables["confirmation"])
 		fmt.Println("  email sent:", state.Variables["emailed"])
 	} else {
-		fmt.Printf("unexpected status: %s\n", runtime.StatusString(state.Status))
+		fmt.Printf("unexpected status: %s\n", view.StatusString(state.Status))
 	}
 }

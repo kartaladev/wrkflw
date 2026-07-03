@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func TestTimerOpsFor(t *testing.T) {
@@ -15,13 +16,13 @@ func TestTimerOpsFor(t *testing.T) {
 		name   string
 		cmds   []engine.Command
 		trg    engine.Trigger
-		assert func(t *testing.T, arms []ArmedTimer, cancels []string)
+		assert func(t *testing.T, arms []kernel.ArmedTimer, cancels []string)
 	}{
 		{
 			name: "ScheduleTimer becomes an arm",
 			cmds: []engine.Command{engine.ScheduleTimer{TimerID: "t1", FireAt: at, Kind: engine.TimerIntermediate}},
 			trg:  engine.NewStartInstance(at, nil),
-			assert: func(t *testing.T, arms []ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
 				assert.Len(t, arms, 1)
 				assert.Equal(t, "t1", arms[0].TimerID)
 				assert.Equal(t, at, arms[0].FireAt)
@@ -32,7 +33,7 @@ func TestTimerOpsFor(t *testing.T) {
 			name: "CancelTimer becomes a cancel",
 			cmds: []engine.Command{engine.CancelTimer{TimerID: "t1"}},
 			trg:  engine.NewStartInstance(at, nil),
-			assert: func(t *testing.T, arms []ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
 				assert.Empty(t, arms)
 				assert.Equal(t, []string{"t1"}, cancels)
 			},
@@ -41,7 +42,7 @@ func TestTimerOpsFor(t *testing.T) {
 			name: "TimerFired trigger cancels the fired timer",
 			cmds: nil,
 			trg:  engine.NewTimerFired(at, "t1"),
-			assert: func(t *testing.T, arms []ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
 				assert.Empty(t, arms)
 				assert.Equal(t, []string{"t1"}, cancels)
 			},

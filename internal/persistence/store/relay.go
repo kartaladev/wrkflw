@@ -19,10 +19,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
-// Relay drains wrkflw_outbox and hands each event to a [runtime.Publisher]
+// Relay drains wrkflw_outbox and hands each event to a [kernel.Publisher]
 // (at-least-once delivery). It branches on dialect capabilities to claim due
 // pending rows without double-publishing:
 //
@@ -44,7 +45,7 @@ import (
 type Relay struct {
 	conn    any
 	d       dialect.Dialect
-	pub     runtime.Publisher
+	pub     kernel.Publisher
 	clk     clock.Clock
 	poll    time.Duration
 	batch   int
@@ -80,7 +81,7 @@ type Relay struct {
 
 // compile-time interface checks.
 var (
-	_ runtime.OutboxStatsReader = (*Relay)(nil)
+	_ kernel.OutboxStatsReader = (*Relay)(nil)
 )
 
 // RelayOption configures a [Relay] built by [NewRelay].
@@ -180,7 +181,7 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 // each event via pub. conn must be a *pgxpool.Pool (Postgres) or *sql.DB
 // (MySQL / SQLite); d is the matching [dialect.Dialect].
 // Returns [ErrNilDependency] when conn is nil or d is nil.
-func NewRelay(conn any, d dialect.Dialect, pub runtime.Publisher, opts ...RelayOption) (*Relay, error) {
+func NewRelay(conn any, d dialect.Dialect, pub kernel.Publisher, opts ...RelayOption) (*Relay, error) {
 	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
@@ -361,7 +362,7 @@ func (r *Relay) beginDrainTx(ctx context.Context) (transaction.Querier, context.
 type claimRow struct {
 	id         int64
 	retryCount int
-	event      runtime.OutboxEvent
+	event      kernel.OutboxEvent
 }
 
 // claimInTx selects due pending rows on the already-open Querier q.
@@ -431,7 +432,7 @@ func scanClaimRows(rows database.Rows) ([]claimRow, error) {
 		if err := json.Unmarshal(rawPayload, &payload); err != nil {
 			return nil, fmt.Errorf("workflow-store: relay: unmarshal payload id=%d: %w", id, err)
 		}
-		out = append(out, claimRow{id: id, retryCount: retryCount, event: runtime.OutboxEvent{
+		out = append(out, claimRow{id: id, retryCount: retryCount, event: kernel.OutboxEvent{
 			Topic:         topic,
 			Payload:       payload,
 			DedupKey:      dedupKey,
@@ -531,7 +532,7 @@ func (r *Relay) Run(ctx context.Context) error {
 // after exhausting MaxDeliveryAttempts consecutive publish failures.
 //
 // Use Redrive to re-queue selected rows for re-delivery.
-func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.DeadLetter, error) {
+func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]monitor.DeadLetter, error) {
 	q, err := database.From(r.conn)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: relay: list dead-lettered: conn: %w", err)
@@ -548,9 +549,9 @@ func (r *Relay) ListDeadLettered(ctx context.Context, limit int) ([]runtime.Dead
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []runtime.DeadLetter
+	var out []monitor.DeadLetter
 	for rows.Next() {
-		var dl runtime.DeadLetter
+		var dl monitor.DeadLetter
 		if r.d.TimestampsAsText() {
 			var createdAtStr string
 			if err := rows.Scan(&dl.ID, &dl.InstanceID, &dl.Topic, &dl.RetryCount, &dl.LastError, &createdAtStr); err != nil {
@@ -632,18 +633,18 @@ func (r *Relay) Redrive(ctx context.Context, ids ...int64) (int, error) {
 // MySQL and SQLite return an integer. We scan into float64 for all dialects —
 // pgx coerces its numeric to float64 cleanly, and Go's database/sql converts
 // integer values to float64 without loss for the typical age range.
-func (r *Relay) OutboxStats(ctx context.Context) (runtime.OutboxStats, error) {
+func (r *Relay) OutboxStats(ctx context.Context) (kernel.OutboxStats, error) {
 	q, err := database.From(r.conn)
 	if err != nil {
-		return runtime.OutboxStats{}, fmt.Errorf("workflow-store: relay: outbox stats: conn: %w", err)
+		return kernel.OutboxStats{}, fmt.Errorf("workflow-store: relay: outbox stats: conn: %w", err)
 	}
 	var pending, dead int64
 	var ageSec float64
 	err = q.QueryRow(ctx, r.d.OutboxStatsQuery()).Scan(&pending, &dead, &ageSec)
 	if err != nil {
-		return runtime.OutboxStats{}, fmt.Errorf("workflow-store: relay: outbox stats: %w", err)
+		return kernel.OutboxStats{}, fmt.Errorf("workflow-store: relay: outbox stats: %w", err)
 	}
-	return runtime.OutboxStats{
+	return kernel.OutboxStats{
 		Pending:          pending,
 		Dead:             dead,
 		OldestPendingAge: time.Duration(ageSec * float64(time.Second)),

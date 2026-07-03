@@ -19,7 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -33,23 +33,23 @@ const errorDomain = "github.com/zakyalvan/krtlwrkflw"
 // transport. Sentinels are matched via errors.Is so wrapped errors classify
 // correctly.
 //
-//   - runtime.ErrInstanceNotFound / runtime.ErrDefinitionNotFound / humantask.ErrTaskNotFound → NotFound / "not_found"
+//   - kernel.ErrInstanceNotFound / kernel.ErrDefinitionNotFound / humantask.ErrTaskNotFound → NotFound / "not_found"
 //   - authz.ErrNotAuthorized → PermissionDenied / "forbidden"
-//   - runtime.ErrConcurrentUpdate → Aborted / "conflict"
-//   - runtime.ErrBadCursor → InvalidArgument / "bad_request"
+//   - kernel.ErrConcurrentUpdate → Aborted / "conflict"
+//   - kernel.ErrBadCursor → InvalidArgument / "bad_request"
 //   - service.ErrConflict / engine.ErrInvalidTransition → FailedPrecondition / "conflict_state"
 //   - everything else → Internal / "internal_error"
 func classifyError(err error) (codes.Code, string) {
 	switch {
-	case errors.Is(err, runtime.ErrInstanceNotFound),
-		errors.Is(err, runtime.ErrDefinitionNotFound),
+	case errors.Is(err, kernel.ErrInstanceNotFound),
+		errors.Is(err, kernel.ErrDefinitionNotFound),
 		errors.Is(err, humantask.ErrTaskNotFound):
 		return codes.NotFound, "not_found"
 	case errors.Is(err, authz.ErrNotAuthorized):
 		return codes.PermissionDenied, "forbidden"
-	case errors.Is(err, runtime.ErrConcurrentUpdate):
+	case errors.Is(err, kernel.ErrConcurrentUpdate):
 		return codes.Aborted, "conflict"
-	case errors.Is(err, runtime.ErrBadCursor):
+	case errors.Is(err, kernel.ErrBadCursor):
 		return codes.InvalidArgument, "bad_request"
 	case errors.Is(err, service.ErrConflict),
 		errors.Is(err, engine.ErrInvalidTransition):

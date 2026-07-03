@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // noRetryServiceTaskDef returns a process with a single service-task node that
@@ -183,7 +184,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	incID := st.Incidents[0].ID
 
 	// MemStore lister must report IncidentCount==1 while the incident is open.
-	page, err := store.List(t.Context(), runtime.InstanceFilter{})
+	page, err := store.List(t.Context(), kernel.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
 	assert.Equal(t, 1, page.Items[0].IncidentCount, "MemStore lister: want IncidentCount==1 before resolve")
@@ -195,7 +196,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, st2.Status, "instance must complete after resolve+reinvoke")
 
 	// MemStore lister must report IncidentCount==0 after resolve.
-	page2, err := store.List(t.Context(), runtime.InstanceFilter{})
+	page2, err := store.List(t.Context(), kernel.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page2.Items, 1)
 	assert.Equal(t, 0, page2.Items[0].IncidentCount, "MemStore lister: want IncidentCount==0 after resolve")

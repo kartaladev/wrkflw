@@ -14,6 +14,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
 )
@@ -34,18 +36,18 @@ func verifyToken(token string) (string, error) {
 // buildService constructs a minimal service.Service for the example.
 func buildService() service.Service {
 	fc := clockwork.NewFakeClock()
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	if err != nil {
 		panic(err)
 	}
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
-	runner, err := runtime.NewRunner(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 	if err != nil {
 		panic(err)
 	}
-	reg := runtime.NewMapDefinitionRegistry(nil)
-	tasks, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	reg := kernel.NewMapDefinitionRegistry(nil)
+	tasks, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 	if err != nil {
 		panic(err)
 	}

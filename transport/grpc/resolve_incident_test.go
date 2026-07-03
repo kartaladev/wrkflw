@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -50,7 +50,7 @@ func TestServerResolveIncident(t *testing.T) {
 		{
 			name: "not-found maps to NotFound",
 			fn: func(_ context.Context, _ service.ResolveIncidentRequest) (engine.InstanceState, error) {
-				return engine.InstanceState{}, fmt.Errorf("workflow-service: %w", runtime.ErrInstanceNotFound)
+				return engine.InstanceState{}, fmt.Errorf("workflow-service: %w", kernel.ErrInstanceNotFound)
 			},
 			assert: func(t *testing.T, _ *workflowpb.InstanceResponse, err error) {
 				assert.Equal(t, codes.NotFound, status.Code(err))

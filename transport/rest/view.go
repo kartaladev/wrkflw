@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // InstanceView is the stable JSON projection of an engine.InstanceState.
@@ -82,7 +82,7 @@ func NewInstanceView(st engine.InstanceState) InstanceView {
 	}
 }
 
-// callLinkRefView is the snake_case REST projection of a runtime.CallLinkRef.
+// callLinkRefView is the snake_case REST projection of a kernel.CallLinkRef.
 type callLinkRefView struct {
 	InstanceID string `json:"instance_id"`
 	DefID      string `json:"def_id"`
@@ -90,14 +90,14 @@ type callLinkRefView struct {
 	Depth      int    `json:"depth"`
 }
 
-// chainLinkRefView is the snake_case REST projection of a runtime.ChainLinkRef.
+// chainLinkRefView is the snake_case REST projection of a kernel.ChainLinkRef.
 type chainLinkRefView struct {
 	InstanceID    string `json:"instance_id"`
 	DefinitionRef string `json:"definition_ref"`
 	Outcome       string `json:"outcome"`
 }
 
-// lineageView is the snake_case REST projection of a runtime.InstanceLineage.
+// lineageView is the snake_case REST projection of a kernel.InstanceLineage.
 // call_parent and chain_predecessor are omitted when nil; call_children and
 // chain_successors are always serialized as arrays (never null).
 type lineageView struct {
@@ -108,10 +108,10 @@ type lineageView struct {
 	ChainSuccessors  []chainLinkRefView `json:"chain_successors"`
 }
 
-// newLineageView maps a runtime.InstanceLineage to the snake_case lineageView
+// newLineageView maps a kernel.InstanceLineage to the snake_case lineageView
 // DTO. call_children and chain_successors are initialized to empty slices so
 // they serialize as [] rather than null.
-func newLineageView(l runtime.InstanceLineage) lineageView {
+func newLineageView(l kernel.InstanceLineage) lineageView {
 	v := lineageView{
 		InstanceID:      l.InstanceID,
 		CallChildren:    make([]callLinkRefView, len(l.CallChildren)),

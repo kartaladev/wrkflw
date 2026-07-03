@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -68,9 +69,9 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched.Close() })
 
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	r, err := runtime.NewRunner(cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
+	r, err := runtime.NewProcessDriver(cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
 	require.NoError(t, err)
 
 	def := timerIntermediateE2EDef()

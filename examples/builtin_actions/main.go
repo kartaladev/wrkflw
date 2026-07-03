@@ -33,6 +33,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // customerDB is an in-memory stand-in for a real data store.
@@ -165,11 +166,11 @@ func main() {
 		"audit":    auditAction,
 	})
 
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewRunner(cat, store)
+	r, err := runtime.NewProcessDriver(cat, store)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}

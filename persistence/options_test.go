@@ -45,7 +45,7 @@ func TestWithHistoryCapReturnsOption(t *testing.T) {
 	require.NotNil(t, store)
 
 	// Drive a minimal process through the store to confirm the option is wired.
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), minimalDef(), "hist-cap-1", nil)
 	require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestWithOutboxNotifyReturnsOption(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, store)
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), minimalDef(), "notify-opt-1", map[string]any{"x": 1})
 	require.NoError(t, err)

@@ -14,6 +14,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -38,7 +40,7 @@ func Example_responseShapes() {
 	// ── 1. In-memory wiring ──────────────────────────────────────────────────
 
 	fc := clockwork.NewFakeClock()
-	store, err := runtime.NewMemStore()
+	store, err := kernel.NewMemStore()
 	if err != nil {
 		panic(err)
 	}
@@ -48,7 +50,7 @@ func Example_responseShapes() {
 	})
 	az := authz.RoleAuthorizer{}
 	cat := action.NewMapCatalog(nil)
-	runner, err := runtime.NewRunner(cat, store,
+	runner, err := runtime.NewProcessDriver(cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -70,11 +72,11 @@ func Example_responseShapes() {
 		},
 	}
 
-	reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"approval:1": def,
 		"approval":   def,
 	})
-	taskSvc, err := runtime.NewTaskService(taskStore, az, runtime.WithTaskServiceClock(fc))
+	taskSvc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
 	if err != nil {
 		panic(err)
 	}

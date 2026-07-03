@@ -10,10 +10,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// Lister is the vendor-neutral, dialect-parametrised runtime.InstanceLister. It
+// Lister is the vendor-neutral, dialect-parametrised kernel.InstanceLister. It
 // executes keyset-cursor-paginated queries over wrkflw_instances, projecting only
 // the columns needed for the InstanceSummary admin-list shape.
 //
@@ -28,8 +28,8 @@ type Lister struct {
 	dialect dialect.Dialect
 }
 
-// Compile-time check: *Lister satisfies runtime.InstanceLister.
-var _ runtime.InstanceLister = (*Lister)(nil)
+// Compile-time check: *Lister satisfies kernel.InstanceLister.
+var _ kernel.InstanceLister = (*Lister)(nil)
 
 // NewLister constructs a Lister over conn using dialect d. conn must be either a
 // *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite); any other type will
@@ -69,10 +69,10 @@ func (l *Lister) querier() database.Querier {
 //
 // Items are ordered by (started_at DESC, instance_id DESC). When filter.Status
 // is non-nil, only instances with that status are included. filter.Cursor is
-// the opaque token produced by [runtime.EncodeCursor]; an empty cursor means
-// "start from the beginning". Limit is clamped via [runtime.NormalizeLimit].
-func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runtime.InstancePage, error) {
-	limit := runtime.NormalizeLimit(filter.Limit)
+// the opaque token produced by [kernel.EncodeCursor]; an empty cursor means
+// "start from the beginning". Limit is clamped via [kernel.NormalizeLimit].
+func (l *Lister) List(ctx context.Context, filter kernel.InstanceFilter) (kernel.InstancePage, error) {
+	limit := kernel.NormalizeLimit(filter.Limit)
 	fetch := limit + 1 // fetch one extra to detect HasMore
 
 	// Decode cursor (optional).
@@ -83,9 +83,9 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 	)
 	if filter.Cursor != "" {
 		var err error
-		cursorTime, cursorID, err = runtime.DecodeCursor(filter.Cursor)
+		cursorTime, cursorID, err = kernel.DecodeCursor(filter.Cursor)
 		if err != nil {
-			return runtime.InstancePage{}, fmt.Errorf("workflow-store: lister: decode cursor: %w", err)
+			return kernel.InstancePage{}, fmt.Errorf("workflow-store: lister: decode cursor: %w", err)
 		}
 		hasCursor = true
 	}
@@ -133,20 +133,20 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 	q := l.querier()
 	rows, err := q.Query(ctx, l.dialect.Rebind(querySQL), queryArgs...)
 	if err != nil {
-		return runtime.InstancePage{}, fmt.Errorf("workflow-store: lister: query: %w", err)
+		return kernel.InstancePage{}, fmt.Errorf("workflow-store: lister: query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	items := make([]runtime.InstanceSummary, 0, fetch)
+	items := make([]kernel.InstanceSummary, 0, fetch)
 	for rows.Next() {
 		summary, err := l.scanSummaryRow(rows)
 		if err != nil {
-			return runtime.InstancePage{}, err
+			return kernel.InstancePage{}, err
 		}
 		items = append(items, summary)
 	}
 	if err := rows.Err(); err != nil {
-		return runtime.InstancePage{}, fmt.Errorf("workflow-store: lister: rows: %w", err)
+		return kernel.InstancePage{}, fmt.Errorf("workflow-store: lister: rows: %w", err)
 	}
 
 	hasMore := len(items) > limit
@@ -157,10 +157,10 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 	var nextCursor string
 	if hasMore && len(items) > 0 {
 		last := items[len(items)-1]
-		nextCursor = runtime.EncodeCursor(last.StartedAt, last.InstanceID)
+		nextCursor = kernel.EncodeCursor(last.StartedAt, last.InstanceID)
 	}
 
-	page := runtime.InstancePage{
+	page := kernel.InstancePage{
 		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
@@ -169,7 +169,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 	if filter.IncludeTotal {
 		total, err := l.countInstances(ctx, q, filter.Status)
 		if err != nil {
-			return runtime.InstancePage{}, err
+			return kernel.InstancePage{}, err
 		}
 		page.TotalCount = total
 	}
@@ -181,7 +181,7 @@ func (l *Lister) List(ctx context.Context, filter runtime.InstanceFilter) (runti
 // It handles the dialect split for time columns: when [dialect.Dialect.TimestampsAsText]
 // is true (SQLite), started_at / ended_at are stored as RFC3339Nano TEXT strings
 // and must be parsed; on Postgres / MySQL the driver returns time.Time natively.
-func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, error) {
+func (l *Lister) scanSummaryRow(rows database.Rows) (kernel.InstanceSummary, error) {
 	var (
 		instanceID    string
 		defID         string
@@ -204,19 +204,19 @@ func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, er
 			&startedAtStr, &endedAtStr,
 			&incidentCount,
 		); err != nil {
-			return runtime.InstanceSummary{}, fmt.Errorf("workflow-store: lister: scan (text-timestamp): %w", err)
+			return kernel.InstanceSummary{}, fmt.Errorf("workflow-store: lister: scan (text-timestamp): %w", err)
 		}
 
 		t, err := parseTimeText(startedAtStr)
 		if err != nil {
-			return runtime.InstanceSummary{}, err
+			return kernel.InstanceSummary{}, err
 		}
 		startedAt = t
 
 		if endedAtStr != nil {
 			t2, err := parseTimeText(*endedAtStr)
 			if err != nil {
-				return runtime.InstanceSummary{}, err
+				return kernel.InstanceSummary{}, err
 			}
 			endedAt = &t2
 		}
@@ -227,7 +227,7 @@ func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, er
 			&startedAt, &endedAt,
 			&incidentCount,
 		); err != nil {
-			return runtime.InstanceSummary{}, fmt.Errorf("workflow-store: lister: scan: %w", err)
+			return kernel.InstanceSummary{}, fmt.Errorf("workflow-store: lister: scan: %w", err)
 		}
 		// Normalise to UTC (Postgres may return host-zone TIMESTAMPTZ;
 		// MySQL may return the connection timezone).
@@ -238,7 +238,7 @@ func (l *Lister) scanSummaryRow(rows database.Rows) (runtime.InstanceSummary, er
 		}
 	}
 
-	return runtime.InstanceSummary{
+	return kernel.InstanceSummary{
 		InstanceID:    instanceID,
 		DefID:         defID,
 		DefVersion:    defVersion,

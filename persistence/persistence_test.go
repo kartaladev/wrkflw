@@ -1,5 +1,5 @@
 // Package persistence_test is the black-box end-to-end test for the consumer-facing
-// persistence façade. It drives a real runtime.Runner against a Postgres container
+// persistence façade. It drives a real runtime.ProcessDriver against a Postgres container
 // to prove that Tasks 1–8 compose correctly on real Postgres.
 package persistence_test
 
@@ -22,6 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // minimalStartEndDefinition returns the simplest possible process: start → end.
@@ -43,10 +44,10 @@ func minimalStartEndDefinition() *model.ProcessDefinition {
 
 // capturingPublisher records every OutboxEvent published to it.
 type capturingPublisher struct {
-	events []runtime.OutboxEvent
+	events []kernel.OutboxEvent
 }
 
-func (c *capturingPublisher) Publish(_ context.Context, ev runtime.OutboxEvent) error {
+func (c *capturingPublisher) Publish(_ context.Context, ev kernel.OutboxEvent) error {
 	c.events = append(c.events, ev)
 	return nil
 }
@@ -55,7 +56,7 @@ func (c *capturingPublisher) Publish(_ context.Context, ev runtime.OutboxEvent) 
 //  1. Spins up a real Postgres container via RunTestDatabase.
 //  2. Applies the schema with persistence.Migrate.
 //  3. Opens a Postgres-backed store with persistence.OpenPostgres.
-//  4. Drives a minimal start→end process through runtime.Runner.
+//  4. Drives a minimal start→end process through runtime.ProcessDriver.
 //  5. Asserts: terminal status is Completed, the snapshot round-trips, journal
 //     entries are recorded, and the wrkflw_outbox has an instance.completed row.
 //
@@ -72,7 +73,7 @@ func TestOpenPostgresEndToEnd(t *testing.T) {
 
 	def := minimalStartEndDefinition()
 
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "i-e2e", map[string]any{"k": "v"})
 	require.NoError(t, err)
@@ -131,7 +132,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	require.NoError(t, persistence.Migrate(t.Context(), pool))
 
 	// NewDefinitionStore must return a non-nil *postgres.DefinitionStore that
-	// satisfies runtime.DefinitionRegistry.
+	// satisfies kernel.DefinitionRegistry.
 	ds, err := persistence.NewDefinitionStore(pool)
 	require.NoError(t, err)
 	require.NotNil(t, ds)
@@ -191,7 +192,7 @@ func TestNewRelayDrainsOutbox(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run a process to generate an outbox event.
-	r, err := runtime.NewRunner(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), minimalStartEndDefinition(), "i-relay", nil)
 	require.NoError(t, err)

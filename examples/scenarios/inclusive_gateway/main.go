@@ -30,6 +30,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -71,11 +73,11 @@ func main() {
 		"fraud-check":   mk("fraud-check", "fraud_checked"),
 	})
 
-	memSt, err := runtime.NewMemStore()
+	memSt, err := kernel.NewMemStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewRunner(cat, memSt)
+	r, err := runtime.NewProcessDriver(cat, memSt)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -97,6 +99,6 @@ func main() {
 		_, ranFraud := state.Variables["fraud_checked"]
 		fmt.Println("  fraud_checked:  ", ranFraud, "(skipped — flagged was false)")
 	} else {
-		fmt.Printf("unexpected status: %s\n", runtime.StatusString(state.Status))
+		fmt.Printf("unexpected status: %s\n", view.StatusString(state.Status))
 	}
 }

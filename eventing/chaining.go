@@ -9,15 +9,16 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // chainTopics are the three status-accurate terminal topics a chaining consumer
 // subscribes (ADR-0046). The map also drives topic→Outcome projection.
-var chainTopics = map[string]runtime.Outcome{
-	"instance.completed":  runtime.OutcomeCompleted,
-	"instance.failed":     runtime.OutcomeFailed,
-	"instance.terminated": runtime.OutcomeTerminated,
+var chainTopics = map[string]kernel.Outcome{
+	"instance.completed":  kernel.OutcomeCompleted,
+	"instance.failed":     kernel.OutcomeFailed,
+	"instance.terminated": kernel.OutcomeTerminated,
 }
 
 // NewChainHandler adapts the broker-agnostic runtime.Chainer core to a watermill
@@ -38,7 +39,7 @@ var chainTopics = map[string]runtime.Outcome{
 //   - non-terminal / unknown topic              → nil (ack, ignored)
 //   - malformed JSON body                        → nil (ack + log; never loop)
 //   - transient core failure                     → error (nack → re-delivered)
-func NewChainHandler(core *runtime.Chainer) message.NoPublishHandlerFunc {
+func NewChainHandler(core *chain.Chainer) message.NoPublishHandlerFunc {
 	logger := slog.Default()
 	return func(msg *message.Message) error {
 		outcome, ok := chainTopics[msg.Metadata.Get("topic")]
@@ -55,7 +56,7 @@ func NewChainHandler(core *runtime.Chainer) message.NoPublishHandlerFunc {
 				return nil // poison payload: ack so the broker does not loop on it
 			}
 		}
-		ev := runtime.ChainEvent{
+		ev := chain.ChainEvent{
 			PredecessorID:            msg.Metadata.Get("instance_id"),
 			PredecessorDefinitionRef: msg.Metadata.Get("definition_ref"),
 			Outcome:                  outcome,
@@ -77,7 +78,7 @@ type Chainer struct {
 
 // NewChainerRunner builds a Chainer runner over the chaining core. Pass
 // WithLogger to set the structured logger (default slog.Default()).
-func NewChainerRunner(core *runtime.Chainer, opts ...Option) *Chainer {
+func NewChainerRunner(core *chain.Chainer, opts ...Option) *Chainer {
 	var o options
 	for _, fn := range opts {
 		fn(&o)
