@@ -11,6 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -153,7 +154,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 			t.Parallel()
 			clk := newFakeClock(baseTime)
 			backing := &countingRegistry{def: baseDef}
-			c := mustCachingDefinitionRegistry(t, backing, ttl, kernel.WithCachingDefinitionRegistryClock(clk))
+			c := runtimetest.MustCachingDefinitionRegistry(t, backing, ttl, kernel.WithCachingDefinitionRegistryClock(clk))
 			tc.assert(t, backing, clk, c)
 		})
 	}
@@ -171,7 +172,7 @@ func TestCachingDefinitionRegistry_NonErrNotCached(t *testing.T) {
 	t.Parallel()
 	sentinel := errors.New("transient error")
 	backing := &countingRegistry{err: sentinel}
-	c := mustCachingDefinitionRegistry(t, backing, time.Minute)
+	c := runtimetest.MustCachingDefinitionRegistry(t, backing, time.Minute)
 
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.ErrorIs(t, err, sentinel)
@@ -186,7 +187,7 @@ func TestCachingDefinitionRegistry_NonErrNotCached(t *testing.T) {
 func TestNewCachingDefinitionRegistryDefaultUsesSystemClock(t *testing.T) {
 	t.Parallel()
 	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
-	c := mustCachingDefinitionRegistry(t, backing, time.Minute) // no clock option
+	c := runtimetest.MustCachingDefinitionRegistry(t, backing, time.Minute) // no clock option
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
 	_, err = c.Lookup(t.Context(), "d:1") // within TTL → cache hit, no second backing call
@@ -200,7 +201,7 @@ func TestNewCachingDefinitionRegistryWithClockOption(t *testing.T) {
 	t.Parallel()
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
 	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
-	c := mustCachingDefinitionRegistry(t, backing, time.Minute, kernel.WithCachingDefinitionRegistryClock(fake))
+	c := runtimetest.MustCachingDefinitionRegistry(t, backing, time.Minute, kernel.WithCachingDefinitionRegistryClock(fake))
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
 	fake.Advance(2 * time.Minute) // past TTL → next lookup re-hits backing

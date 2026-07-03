@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -17,7 +18,7 @@ func runningChild(id string) engine.InstanceState {
 
 func TestMemStoreRecordsCallLinkOnCreate(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	link := &kernel.CallLink{
 		ChildInstanceID:  "p-sub-c1",
@@ -52,7 +53,7 @@ func TestWithMemCallLinkClockNilFallsBackToSystem(t *testing.T) {
 	)
 
 	// Insert a terminal-but-unnotified link to exercise the clock path.
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 	link := &kernel.CallLink{
 		ChildInstanceID:  "nil-clk-child",
 		ParentInstanceID: "nil-clk-parent",
@@ -85,7 +86,7 @@ func TestWithMemCallLinkClockNilFallsBackToSystem(t *testing.T) {
 
 func TestMemStoreFlipsCallLinkOnTerminalCommit(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	tok, err := store.Create(t.Context(), kernel.AppliedStep{
 		State:       runningChild("p-sub-c1"),

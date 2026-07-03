@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -131,9 +132,9 @@ func TestSagaCompensationRollback(t *testing.T) {
 	// structurally satisfies clock.Clock (it implements Now() time.Time).
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC))
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
-	runner := mustRunner(t, cat, store, runtime.WithRunnerClock(fakeClock))
+	runner := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fakeClock))
 
 	def := sagaDef()
 
@@ -216,9 +217,9 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 		"recover-action": &recordingAction{name: "recover-action", rec: rec},
 	})
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
-	runner := mustRunner(t, cat, store)
+	runner := runtimetest.MustRunner(t, cat, store)
 
 	def := boundaryErrorDef()
 

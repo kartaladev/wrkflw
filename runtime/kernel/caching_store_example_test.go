@@ -7,28 +7,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
-
-// signalCatchDef returns: start → signal-catch(name) → end.
-// The instance parks at the signal-catch node until a SignalReceived trigger arrives.
-func signalCatchDef(signalName string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
-		ID:      "signal-catch-" + signalName,
-		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait-signal", model.WithSignalName(signalName)),
-			model.NewEndEvent("end"),
-		},
-		Flows: []model.SequenceFlow{
-			{ID: "f1", Source: "start", Target: "wait-signal"},
-			{ID: "f2", Source: "wait-signal", Target: "end"},
-		},
-	}
-}
 
 // ExampleNewCachingStore shows how a library consumer wires a [kernel.CachingStore]
 // as the store for a [runtime.ProcessDriver]. In this configuration:
@@ -58,7 +40,7 @@ func ExampleNewCachingStore() {
 		panic(err)
 	}
 
-	def := signalCatchDef("approved")
+	def := runtimetest.SignalCatchDef("approved")
 
 	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	if err != nil {

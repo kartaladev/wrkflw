@@ -12,24 +12,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
-
-// approvalDef returns a minimal process: start → userTask("approve", role "manager") → end.
-func approvalDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
-		ID:      "approval",
-		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"manager"}),
-			model.NewEndEvent("end"),
-		},
-		Flows: []model.SequenceFlow{
-			{ID: "f1", Source: "start", Target: "approve"},
-			{ID: "f2", Source: "approve", Target: "end"},
-		},
-	}
-}
 
 // TestHumanTaskEndToEnd tests the full human-task lifecycle:
 //
@@ -50,13 +34,13 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 		"manager": {manager},
 	})
 	az := authz.RoleAuthorizer{}
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
-	r := mustRunner(t, nil, store,
+	r := runtimetest.MustRunner(t, nil, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
-	def := approvalDef()
+	def := runtimetest.ApprovalDef()
 	const instanceID = "inst-1"
 
 	// --- Run: parks at the user task ---
@@ -77,7 +61,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	taskToken := task.TaskToken
 
 	// --- TaskService.Claim → Deliver ---
-	svc := mustTaskService(t, taskStore, az)
+	svc := runtimetest.MustTaskService(t, taskStore, az)
 
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)
 	require.NoError(t, err)
@@ -140,10 +124,10 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
-	r := mustRunner(t, nil, mustMemStore(t))
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
-	_, err := r.Deliver(ctx, approvalDef(), "non-existent", trg)
+	_, err := r.Deliver(ctx, runtimetest.ApprovalDef(), "non-existent", trg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow-runtime: deliver: load:")
 }
@@ -163,13 +147,13 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := mustRunner(t, nil, mustMemStore(t),
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
 	// Start with non-nil process variables so the snapshot is meaningful.
 	instanceVars := map[string]any{"region": "EU", "priority": 1}
-	_, err := r.Run(ctx, approvalDef(), "snap-inst-1", instanceVars)
+	_, err := r.Run(ctx, runtimetest.ApprovalDef(), "snap-inst-1", instanceVars)
 	require.NoError(t, err)
 
 	// After Run parks, the task must be in the store with Vars populated.
@@ -255,9 +239,9 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 			// Each sub-test gets its own isolated stores so they do not share state.
 			taskStore := humantask.NewMemTaskStore()
 			az := authz.RoleAuthorizer{}
-			store := mustMemStore(t)
+			store := runtimetest.MustMemStore(t)
 
-			r := mustRunner(t, nil, store,
+			r := runtimetest.MustRunner(t, nil, store,
 				runtime.WithHumanTasks(resolver, taskStore, az),
 			)
 
@@ -281,7 +265,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 
 			// Step 3: Claim — the TaskService evaluates the EligibilityExpr against
 			// the snapshotted vars. Result depends on whether region matches the predicate.
-			svc := mustTaskService(t, taskStore, az)
+			svc := runtimetest.MustTaskService(t, taskStore, az)
 			_, err = svc.Claim(ctx, taskToken, approver)
 			tc.assertErr(t, err)
 		})

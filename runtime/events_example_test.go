@@ -13,27 +13,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
-
-// signalCatchDef returns: start → signal-catch(name) → end.
-// The instance parks at the signal-catch node until a SignalReceived trigger arrives.
-func signalCatchDef(signalName string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
-		ID:      "signal-catch-" + signalName,
-		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait-signal", model.WithSignalName(signalName)),
-			model.NewEndEvent("end"),
-		},
-		Flows: []model.SequenceFlow{
-			{ID: "f1", Source: "start", Target: "wait-signal"},
-			{ID: "f2", Source: "wait-signal", Target: "end"},
-		},
-	}
-}
 
 // messageCatchDef returns: start → message-catch(name, correlationKey="orderId") → end.
 func messageCatchDef(msgName string) *model.ProcessDefinition {
@@ -87,20 +70,20 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
-	def := signalCatchDef("approved")
+	def := runtimetest.SignalCatchDef("approved")
 
 	// Use a forward-reference (pointer-forward) pattern so the same runner (with
 	// its signal bus) handles deliveries. This ensures subscriptions/msgWaiters
 	// are always in sync — not a separate ephemeral runner.
 	var r *runtime.ProcessDriver
-	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithSignalBusClock(fc))
 
-	r = mustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithSignalBus(bus))
+	r = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := r.Run(ctx, def, "inst-1", nil)
@@ -149,7 +132,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	r := mustRunner(t, nil, mustMemStore(t), runtime.WithRunnerClock(clockwork.NewFakeClock()))
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t), runtime.WithRunnerClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
 	_, err := r.Run(t.Context(), def, "i1", nil)
@@ -165,19 +148,19 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
 	// dependency with a forward reference via a pointer.
 	var r *runtime.ProcessDriver
-	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithSignalBusClock(fc))
 
-	r = mustRunner(t, nil, store,
+	r = runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
@@ -211,17 +194,17 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	var r *runtime.ProcessDriver
-	bus := mustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
+	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
 		_, err := r.Deliver(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithSignalBusClock(fc))
 
-	r = mustRunner(t, nil, store,
+	r = runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
@@ -260,10 +243,10 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	ctx := t.Context()
 	fc := clockwork.NewFakeClock()
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	def := messageCatchDef("order-shipped")
 
-	r := mustRunner(t, nil, store, runtime.WithRunnerClock(fc))
+	r := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(fc))
 
 	// Start two instances with different orderId values.
 	_, err := r.Run(ctx, def, "order-100", map[string]any{"orderId": "100"})

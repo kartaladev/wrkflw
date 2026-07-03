@@ -10,29 +10,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
-
-// timerIntermediateDef returns: start → intermediate-catch(1h timer) → service("greet") → end.
-func timerIntermediateDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
-		ID:      "timer-intermediate",
-		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
-			model.NewServiceTask("greet", model.WithActionName("greet")),
-			model.NewEndEvent("end"),
-		},
-		Flows: []model.SequenceFlow{
-			{ID: "f1", Source: "start", Target: "wait1h"},
-			{ID: "f2", Source: "wait1h", Target: "greet"},
-			{ID: "f3", Source: "greet", Target: "end"},
-		},
-	}
-}
 
 func TestMemTimerStore(t *testing.T) {
 	base := time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC)
@@ -96,7 +77,7 @@ func TestMemTimerStore(t *testing.T) {
 
 func TestMemStoreRecordsTimerOps(t *testing.T) {
 	mts := kernel.NewMemTimerStore()
-	store := mustMemStore(t, kernel.WithTimers(mts))
+	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
 	at := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
 	st := engine.InstanceState{InstanceID: "i1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning, StartedAt: at}
 
@@ -129,13 +110,13 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := kernel.NewMemTimerStore()
-	store := mustMemStore(t, kernel.WithTimers(mts))
+	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
-	r := mustRunner(t, action.NewMapCatalog(nil), store,
+	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 
-	def := timerIntermediateDef() // reuse the helper in runtime/timer_example_test.go (1h intermediate timer)
+	def := runtimetest.TimerIntermediateDef() // reuse the helper in runtime/timer_example_test.go (1h intermediate timer)
 	_, err := r.Run(t.Context(), def, "tr-1", nil)
 	require.NoError(t, err)
 

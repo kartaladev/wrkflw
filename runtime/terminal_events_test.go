@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -30,10 +31,10 @@ func topicsOf(evs []kernel.OutboxEvent) []string {
 // "instance.terminated" event — NOT the old, status-inaccurate "instance.failed".
 func TestCancelEmitsInstanceTerminated(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := mustRunner(t, action.NewMapCatalog(nil), store,
+	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, tasks, nil))
 
@@ -66,8 +67,8 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 // completing instance still emits exactly one "instance.completed".
 func TestCompleteEmitsInstanceCompleted(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	store := mustMemStore(t)
-	r := mustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
 
 	def := &model.ProcessDefinition{
 		ID: "complete-evt", Version: 1,

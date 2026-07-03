@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // cancelDef parks at a human task so Run returns with the instance Running;
@@ -37,10 +38,10 @@ func cancelDef(cancelActions []string) *model.ProcessDefinition {
 
 func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime.ProcessDriver {
 	t.Helper()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	return mustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	return runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 }
 
 // TestRunnerCancelInstanceRunsCancelActions verifies that:

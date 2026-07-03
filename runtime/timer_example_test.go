@@ -16,27 +16,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
-
-// timerIntermediateDef returns: start → timer-catch("1h") → service("greet") → end.
-func timerIntermediateDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
-		ID:      "timer-intermediate",
-		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
-			model.NewServiceTask("greet", model.WithActionName("greet")),
-			model.NewEndEvent("end"),
-		},
-		Flows: []model.SequenceFlow{
-			{ID: "f1", Source: "start", Target: "wait1h"},
-			{ID: "f2", Source: "wait1h", Target: "greet"},
-			{ID: "f3", Source: "greet", Target: "end"},
-		},
-	}
-}
 
 // TestRunnerTimerIntermediateFiresUnderFakeClock verifies the full fake-clock
 // timer-intermediate e2e path:
@@ -59,11 +41,11 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	})
 
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
-	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
 
-	def := timerIntermediateDef()
+	def := runtimetest.TimerIntermediateDef()
 	const instanceID = "timer-e2e-1"
 
 	// Run → parks at the intermediate timer node.
@@ -137,9 +119,9 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
-	r := mustRunner(t, cat, store,
+	r := runtimetest.MustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),

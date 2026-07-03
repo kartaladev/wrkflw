@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -90,7 +91,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	})
 
 	clk := clock.System()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	// Build the definition registry with the child def.
 	child := childDef()
@@ -98,7 +99,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 		"child": child,
 	})
 
-	runner := mustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
 
 	parent := parentCallDef()
 	st, err := runner.Run(ctx, parent, "parent-i1", map[string]any{"x": 42})
@@ -142,7 +143,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	})
 
 	clk := clock.System()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	// Child def uses a failing action.
 	failingChild := &model.ProcessDefinition{
@@ -176,7 +177,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		"failing-child": failingChild,
 	})
 
-	runner := mustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
 
 	st, err := runner.Run(ctx, failingParent, "parent-fail-i1", nil)
 	require.NoError(t, err)
@@ -241,7 +242,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	parkingChild := parkingChildDef()
 	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
@@ -253,7 +254,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	// persist the task, and return nil/nil — leaving childSt.Status == StatusRunning.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -333,14 +334,14 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	def := selfRefDef()
 	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"self-ref": def,
 	})
 
-	runner := mustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
 
 	// This must not panic / stack-overflow. The depth guard must kick in and
 	// fail the parent instance with a descriptive error.
@@ -375,10 +376,10 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	// No WithDefinitions option.
-	runner := mustRunner(t, nil, store, runtime.WithRunnerClock(clk))
+	runner := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(clk))
 
 	parent := parentCallDef()
 	_, err := runner.Run(ctx, parent, "no-reg-i1", nil)

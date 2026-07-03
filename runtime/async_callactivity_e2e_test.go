@@ -29,6 +29,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -104,7 +105,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	// ── wiring ───────────────────────────────────────────────────────────────
 	clk := clock.System()
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	gcDef := e2eGrandchildDef()
 	cDef := e2eChildDef()
@@ -128,7 +129,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		"e2e-parent:1":     pDef,
 	})
 
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -139,7 +140,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := mustCallNotifier(t, cl, deliverFn, reg)
+	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; parks because grandchild parks at human task ─────
 	const parentID = "e2e-nested-parent-i1"
@@ -175,7 +176,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	require.Len(t, claimable, 1, "exactly one human task must be pending (grandchild's task)")
 	taskToken := claimable[0].TaskToken
 
-	svc := mustTaskService(t, tasks, az)
+	svc := runtimetest.MustTaskService(t, tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"gcResult": "done"})
 	require.NoError(t, err)
 
@@ -226,7 +227,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 
 	clk := clock.System()
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{
 		"fail-action": &failAction{msg: "e2e child service error"},
@@ -243,7 +244,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		"async-fail-parent:1": parent,
 	})
 
-	runner := mustRunner(t, cat, store,
+	runner := runtimetest.MustRunner(t, cat, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -253,7 +254,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
-	notifier := mustCallNotifier(t, cl, deliverFn, reg)
+	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; child fails immediately during its first burst ────
 	const parentID = "e2e-fail-parent-i1"
@@ -329,7 +330,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 
 	clk := clock.System()
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	def := selfCallDef()
 
@@ -341,7 +342,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		"self-call:1": def,
 	})
 
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -351,7 +352,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		_, err := runner.Deliver(ctx2, def2, instanceID, trg)
 		return err
 	})
-	notifier := mustCallNotifier(t, cl, deliverFn, reg)
+	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run the self-calling root ─────────────────────────────────────
 	// During Run, each child synchronously spawns its own child (via runChild
@@ -469,7 +470,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 
 	clk := clock.System()
 	// Standard MemStore — NO call-link tracking.
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	// Child that parks at a human task; parent calls it via a call activity.
 	child := asyncChildDef()
@@ -483,7 +484,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 
 	// Runner built WITHOUT WithCallLinkStore → synchronous call-activity path.
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),

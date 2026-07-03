@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -158,7 +159,7 @@ func TestChainerHandle(t *testing.T) {
 			if !tc.noLinks {
 				opts = append(opts, chain.WithChainLinks(links))
 			}
-			c := mustChainer(t, starter, tc.policy, opts...)
+			c := runtimetest.MustChainer(t, starter, tc.policy, opts...)
 			err := c.Handle(t.Context(), tc.ev)
 			tc.assert(t, err, starter, links)
 		})
@@ -177,7 +178,7 @@ func TestChainerHandleRetriesStartAfterTransientFailure(t *testing.T) {
 	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		return chain.SuccessorDecision{Def: fulfillmentDef(), Vars: ev.Result}, true
 	}
-	c := mustChainer(t, starter, policy, chain.WithChainLinks(links))
+	c := runtimetest.MustChainer(t, starter, policy, chain.WithChainLinks(links))
 	ev := chain.ChainEvent{PredecessorID: "p1", Outcome: kernel.OutcomeCompleted}
 
 	// First delivery: the link is recorded, then the start fails transiently.
@@ -222,7 +223,7 @@ func TestWithChainClockNilFallsBackToSystem(t *testing.T) {
 	}
 	links := kernel.NewMemChainLinkStore()
 	starter := &recordingStarter{}
-	c := mustChainer(t, starter, policy,
+	c := runtimetest.MustChainer(t, starter, policy,
 		chain.WithChainLinks(links),
 		chain.WithChainClock(nil), // must be ignored — default clock.System() must survive
 	)

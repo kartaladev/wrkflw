@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -49,7 +50,7 @@ func retryE2EDef() *model.ProcessDefinition {
 //	Advance 1s → Tick → attempt 2, fail → parks on retry timer (T+3s)
 //	Advance 2s → Tick → attempt 3, succeed → StatusCompleted
 //
-// The fake clock and fixedJitter{1.0} make every fire-at time deterministic.
+// The fake clock and runtimetest.FixedJitter{F: 1.0} make every fire-at time deterministic.
 func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	ctx := t.Context()
 
@@ -57,10 +58,10 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(T)
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 
-	// fixedJitter{1.0}: Fraction() always returns 1.0, so FireAt = clk.Now() + 1.0×Backoff(attempt).
+	// runtimetest.FixedJitter{F: 1.0}: Fraction() always returns 1.0, so FireAt = clk.Now() + 1.0×Backoff(attempt).
 	// Attempt 0: Backoff(0) = InitialInterval×BackoffCoef^0 = 1s×1 = 1s → FireAt = T+1s.
 	// Attempt 1: Backoff(1) = InitialInterval×BackoffCoef^1 = 1s×2 = 2s → FireAt = (T+1s)+2s = T+3s.
-	jitter := fixedJitter{f: 1.0}
+	jitter := runtimetest.FixedJitter{F: 1.0}
 
 	// attempts counts how many times action "a" has been invoked.
 	// We use a plain int because the closure is captured by reference (pointer via &attempts).
@@ -75,8 +76,8 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 		}),
 	})
 
-	store := mustMemStore(t)
-	runner := mustRunner(t, cat, store,
+	store := runtimetest.MustMemStore(t)
+	runner := runtimetest.MustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(jitter),

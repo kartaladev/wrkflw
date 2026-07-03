@@ -7,13 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// seedMemCallLink seeds one running call-link into a MemCallLinkStore using the
-// existing SeedCallLink test-export helper.
-func seedMemCallLink(s *kernel.MemCallLinkStore, childID, parentID string) {
-	s.Seed(kernel.CallLink{
+// seedMemCallLink seeds one running call-link into a MemCallLinkStore via the
+// shared runtimetest.SeedCallLink helper (public MemStore path).
+func seedMemCallLink(t *testing.T, s *kernel.MemCallLinkStore, childID, parentID string) {
+	t.Helper()
+	runtimetest.SeedCallLink(t, s, kernel.CallLink{
 		ChildInstanceID:  childID,
 		ParentInstanceID: parentID,
 		ParentCommandID:  "cmd-" + childID,
@@ -21,7 +23,6 @@ func seedMemCallLink(s *kernel.MemCallLinkStore, childID, parentID string) {
 		ParentDefVersion: 1,
 		Depth:            1,
 	})
-
 }
 
 // TestMemCallLinkStore_ParentOf tests the ParentOf lineage read on
@@ -32,7 +33,7 @@ func TestMemCallLinkStore_ParentOf(t *testing.T) {
 	t.Run("returns the call link when child has a parent", func(t *testing.T) {
 		t.Parallel()
 		cls := kernel.NewMemCallLinkStore()
-		seedMemCallLink(cls, "child-1", "parent-1")
+		seedMemCallLink(t, cls, "child-1", "parent-1")
 
 		got, err := cls.ParentOf(t.Context(), "child-1")
 		require.NoError(t, err)
@@ -59,9 +60,9 @@ func TestMemCallLinkStore_ChildrenOf(t *testing.T) {
 	t.Run("returns all children ordered by child_instance_id", func(t *testing.T) {
 		t.Parallel()
 		cls := kernel.NewMemCallLinkStore()
-		seedMemCallLink(cls, "child-zzz", "parent-A")
-		seedMemCallLink(cls, "child-aaa", "parent-A")
-		seedMemCallLink(cls, "child-other", "parent-B")
+		seedMemCallLink(t, cls, "child-zzz", "parent-A")
+		seedMemCallLink(t, cls, "child-aaa", "parent-A")
+		seedMemCallLink(t, cls, "child-other", "parent-B")
 
 		children, err := cls.ChildrenOf(t.Context(), "parent-A")
 		require.NoError(t, err)

@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -52,28 +53,28 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 	cases := []struct {
 		name             string
 		withDefaultRetry bool
-		assert           func(t *testing.T, st engine.InstanceState, sched *recordingScheduler, T time.Time)
+		assert           func(t *testing.T, st engine.InstanceState, sched *runtimetest.RecordingScheduler, T time.Time)
 	}{
 		{
 			name:             "with default policy enables retry",
 			withDefaultRetry: true,
-			assert: func(t *testing.T, st engine.InstanceState, sched *recordingScheduler, T time.Time) {
+			assert: func(t *testing.T, st engine.InstanceState, sched *runtimetest.RecordingScheduler, T time.Time) {
 				t.Helper()
-				assert.True(t, sched.scheduled, "expected scheduler to capture a retry timer")
+				assert.True(t, sched.Scheduled, "expected scheduler to capture a retry timer")
 				assert.Equal(t, engine.StatusRunning, st.Status,
 					"instance must park (StatusRunning), not fail")
 				// attempt 0: backoff = InitialInterval × BackoffCoef^0 = 1s; jitter = 1.0 → 1s
 				wantFireAt := T.Add(time.Second)
-				assert.True(t, sched.fireAt.Equal(wantFireAt),
-					"fireAt must equal T+1s (attempt-0 backoff 1s × jitter 1.0), got %v", sched.fireAt)
+				assert.True(t, sched.FireAt.Equal(wantFireAt),
+					"fireAt must equal T+1s (attempt-0 backoff 1s × jitter 1.0), got %v", sched.FireAt)
 			},
 		},
 		{
 			name:             "without default policy fails instance",
 			withDefaultRetry: false,
-			assert: func(t *testing.T, st engine.InstanceState, sched *recordingScheduler, _ time.Time) {
+			assert: func(t *testing.T, st engine.InstanceState, sched *runtimetest.RecordingScheduler, _ time.Time) {
 				t.Helper()
-				assert.False(t, sched.scheduled, "scheduler must NOT be called when no retry policy is set")
+				assert.False(t, sched.Scheduled, "scheduler must NOT be called when no retry policy is set")
 				assert.Equal(t, engine.StatusFailed, st.Status,
 					"instance must fail when no retry policy is configured")
 			},
@@ -91,11 +92,11 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 				}),
 			})
 
-			sched := &recordingScheduler{}
+			sched := &runtimetest.RecordingScheduler{}
 
 			var opts []runtime.Option
 			opts = append(opts, runtime.WithScheduler(sched))
-			opts = append(opts, runtime.WithJitterSource(fixedJitter{1.0}))
+			opts = append(opts, runtime.WithJitterSource(runtimetest.FixedJitter{F: 1.0}))
 			if tc.withDefaultRetry {
 				opts = append(opts, runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 					MaxAttempts:     3,
@@ -105,7 +106,7 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 				}))
 			}
 
-			runner := mustRunner(t, cat, mustMemStore(t), append([]runtime.Option{runtime.WithRunnerClock(clk)}, opts...)...)
+			runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), append([]runtime.Option{runtime.WithRunnerClock(clk)}, opts...)...)
 			def := noRetryServiceTaskDef()
 
 			st, err := runner.Run(t.Context(), def, "p", nil)
@@ -162,8 +163,8 @@ func TestRunnerResolveIncident(t *testing.T) {
 		}),
 	})
 
-	store := mustMemStore(t)
-	runner := mustRunner(t, cat, store,
+	store := runtimetest.MustMemStore(t)
+	runner := runtimetest.MustRunner(t, cat, store,
 		runtime.WithRunnerClock(clk),
 		// MaxAttempts=1: first failure parks as incident, no retry timer scheduled.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{

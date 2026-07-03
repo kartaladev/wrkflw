@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // retryContractDef returns a minimal process that parks a service task named "a"
@@ -57,10 +58,10 @@ func TestActionFailedHonoursRetryContract(t *testing.T) {
 				return nil, tc.actErr
 			})
 
-			store := mustMemStore(t)
+			store := runtimetest.MustMemStore(t)
 			cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": act})
 			// No retry policy: ActionFailed is terminal → instance reaches StatusFailed.
-			runner := mustRunner(t, cat, store)
+			runner := runtimetest.MustRunner(t, cat, store)
 
 			const instanceID = "rc-1"
 			st, err := runner.Run(t.Context(), retryContractDef(), instanceID, nil)

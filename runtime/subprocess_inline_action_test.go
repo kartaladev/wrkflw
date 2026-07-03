@@ -26,6 +26,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // TestInlineActionInsideSubProcessRunsE2E reproduces I-1: a ServiceTask carrying
@@ -67,8 +68,8 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 
 	// Empty global catalog: the inline action is the ONLY way "inner-svc" resolves.
 	cat := action.NewMapCatalog(map[string]action.ServiceAction{})
-	store := mustMemStore(t)
-	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc))
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc))
 
 	st, err := r.Run(t.Context(), def, "inline-sub-i1", nil)
 	require.NoError(t, err)

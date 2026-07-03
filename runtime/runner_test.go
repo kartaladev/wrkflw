@@ -16,6 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -44,8 +45,8 @@ func (s *commitErrStore) Commit(_ context.Context, _ kernel.Token, _ kernel.Appl
 // causes the runner to produce FailInstance (recorded in the store's outbox).
 func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	cat := action.NewMapCatalog(nil)
-	store := mustMemStore(t)
-	r := mustRunner(t, cat, store)
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -62,8 +63,8 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 			return nil, errors.New("greet exploded")
 		}),
 	})
-	store := mustMemStore(t)
-	r := mustRunner(t, cat, store)
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, cat, store)
 
 	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -82,7 +83,7 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := mustRunner(t, cat, errStore{mustMemStore(t)})
+	r := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -99,7 +100,7 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	})
 	// commitErrStore: Create succeeds (first step), Commit fails (second step when
 	// ActionCompleted is delivered).
-	r := mustRunner(t, cat, &commitErrStore{mustMemStore(t)})
+	r := runtimetest.MustRunner(t, cat, &commitErrStore{runtimetest.MustMemStore(t)})
 
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -130,7 +131,7 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 // error — rather than panicking — when it reaches an AwaitHuman command.
 func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 	// Build a Runner with no human-task option (nil resolver and nil tasks).
-	r := mustRunner(t, action.NewMapCatalog(nil), mustMemStore(t))
+	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t))
 	// WithHumanTasks intentionally omitted to test error path.
 
 	_, err := r.Run(t.Context(), userTaskOnlyDef(), "i1", nil)
@@ -160,7 +161,7 @@ func timerOnlyDef() *model.ProcessDefinition {
 // if no Scheduler is configured, attempting to perform a ScheduleTimer returns a
 // descriptive error rather than panicking.
 func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
-	r := mustRunner(t, nil, mustMemStore(t))
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
 	// WithScheduler intentionally omitted.
 
 	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
@@ -208,7 +209,7 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 	// CancelTimer nil-guard separately by reading the runner.go source
 	// (same guard pattern), but we also add an integration assertion here:
 	// the error messages for both cases must contain "no Scheduler configured".
-	r := mustRunner(t, nil, mustMemStore(t))
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
 	// WithScheduler intentionally omitted.
 	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
 	require.Error(t, err)
@@ -275,11 +276,11 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 	startAt := time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	inner := mustMemStore(t)
+	inner := runtimetest.MustMemStore(t)
 	store := &onceConflictStore{inner: inner}
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 
-	r := mustRunner(t, nil, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
+	r := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
 
 	def := conflictTimerDef()
 	const instanceID = "conflict-timer-1"
@@ -316,7 +317,7 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
-	r := mustRunner(t, cat, errStore{mustMemStore(t)})
+	r := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
 	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
@@ -332,7 +333,7 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 		}),
 	})
 	before := time.Now()
-	r := mustRunner(t, cat, mustMemStore(t))
+	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
 	st, err := r.Run(t.Context(), linearDef(), "i-sys-1", nil)
 	after := time.Now()
 	require.NoError(t, err)
@@ -351,7 +352,7 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})
-	r := mustRunner(t, cat, mustMemStore(t), runtime.WithRunnerClock(fake))
+	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithRunnerClock(fake))
 	st, err := r.Run(t.Context(), linearDef(), "i-fake-1", nil)
 	require.NoError(t, err)
 	// StartedAt is stamped from r.clk.Now() = fake.Now() = time.Unix(1000, 0).
@@ -361,7 +362,7 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 
 func TestNewRunnerFailsFast(t *testing.T) {
 	t.Parallel()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	cat := action.NewMapCatalog(nil)
 	cases := []struct {
 		name   string

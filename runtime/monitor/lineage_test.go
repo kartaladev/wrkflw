@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
@@ -164,7 +165,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			},
 		}
 
-		reader := mustLineageReader(t, calls, chains)
+		reader := runtimetest.MustLineageReader(t, calls, chains)
 		lin, err := reader.Lineage(t.Context(), "inst-A")
 		require.NoError(t, err)
 
@@ -213,7 +214,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return []kernel.ChainLink{}, nil },
 		}
 
-		reader := mustLineageReader(t, calls, chains)
+		reader := runtimetest.MustLineageReader(t, calls, chains)
 		lin, err := reader.Lineage(t.Context(), "root-inst")
 		require.NoError(t, err)
 
@@ -238,7 +239,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, nil },
 		}
 
-		reader := mustLineageReader(t, calls, chains)
+		reader := runtimetest.MustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)
@@ -256,7 +257,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, nil },
 		}
 
-		reader := mustLineageReader(t, calls, chains)
+		reader := runtimetest.MustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)
@@ -274,7 +275,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, nil },
 		}
 
-		reader := mustLineageReader(t, calls, chains)
+		reader := runtimetest.MustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)
@@ -292,7 +293,7 @@ func TestLineageReader_Lineage(t *testing.T) {
 			successorsOf:  func(_ context.Context, _ string) ([]kernel.ChainLink, error) { return nil, boom },
 		}
 
-		reader := mustLineageReader(t, calls, chains)
+		reader := runtimetest.MustLineageReader(t, calls, chains)
 		_, err := reader.Lineage(t.Context(), "any")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, boom)

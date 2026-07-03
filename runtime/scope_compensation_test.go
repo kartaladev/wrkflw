@@ -23,6 +23,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // scopeCompensationDef returns a process definition:
@@ -90,8 +91,8 @@ func TestCompensationThrowRunsSubProcessCompensationE2E(t *testing.T) {
 		}),
 	})
 
-	store := mustMemStore(t)
-	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc))
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc))
 
 	def := scopeCompensationDef()
 	const instanceID = "scope-comp-i1"

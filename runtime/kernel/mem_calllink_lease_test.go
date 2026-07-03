@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -47,8 +48,7 @@ func TestMemCallLinkStoreLease(t *testing.T) {
 					kernel.WithMemCallLinkClock(fc),
 				)
 				link := makeCallLink("child-1", "parent-1")
-				s.Seed(link)
-				s.SeedTerminal("child-1", kernel.CallOutcome{})
+				runtimetest.SeedTerminalCallLink(t, s, link, kernel.CallOutcome{})
 
 				got, err := s.ClaimPending(t.Context(), 10)
 				require.NoError(t, err)
@@ -65,8 +65,7 @@ func TestMemCallLinkStoreLease(t *testing.T) {
 					kernel.WithMemCallLinkClock(fc),
 				)
 				link := makeCallLink("child-2", "parent-2")
-				s.Seed(link)
-				s.SeedTerminal("child-2", kernel.CallOutcome{})
+				runtimetest.SeedTerminalCallLink(t, s, link, kernel.CallOutcome{})
 
 				// First claim — gets the link.
 				first, err := s.ClaimPending(t.Context(), 10)
@@ -88,8 +87,7 @@ func TestMemCallLinkStoreLease(t *testing.T) {
 					kernel.WithMemCallLinkClock(fc),
 				)
 				link := makeCallLink("child-3", "parent-3")
-				s.Seed(link)
-				s.SeedTerminal("child-3", kernel.CallOutcome{})
+				runtimetest.SeedTerminalCallLink(t, s, link, kernel.CallOutcome{})
 
 				// First claim holds the lease.
 				first, err := s.ClaimPending(t.Context(), 10)
@@ -115,8 +113,7 @@ func TestMemCallLinkStoreLease(t *testing.T) {
 					kernel.WithMemCallLinkClock(fc),
 				)
 				link := makeCallLink("child-4", "parent-4")
-				s.Seed(link)
-				s.SeedTerminal("child-4", kernel.CallOutcome{})
+				runtimetest.SeedTerminalCallLink(t, s, link, kernel.CallOutcome{})
 
 				// Mark notified before any claim.
 				require.NoError(t, s.MarkNotified(t.Context(), "child-4"))
@@ -139,8 +136,7 @@ func TestMemCallLinkStoreLease(t *testing.T) {
 				// No lease options — backward-compat path.
 				s := kernel.NewMemCallLinkStore()
 				link := makeCallLink("child-5", "parent-5")
-				s.Seed(link)
-				s.SeedTerminal("child-5", kernel.CallOutcome{})
+				runtimetest.SeedTerminalCallLink(t, s, link, kernel.CallOutcome{})
 
 				first, err := s.ClaimPending(t.Context(), 10)
 				require.NoError(t, err)
