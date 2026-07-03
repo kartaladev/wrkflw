@@ -53,13 +53,13 @@ Split the flat `runtime` package into **8 packages** with a strict,
 one-directional import graph. The shared value types, port interfaces, and the
 **in-memory reference implementation** collapse into a single kernel package
 (`runtime/kernel`); the code with real behavioral logic moves into small, focused,
-concept-oriented packages; and the `Runner` stays at the module root.
+concept-oriented packages; and the `ProcessDriver` (renamed from `Runner`) stays at the module root.
 
 ### Target packages
 
 | Package | Contents | Internal imports |
 |---|---|---|
-| `runtime` (root) | the `Runner`/driver, split by concern (below); `resolve_action.go`, `outbox.go`, `observability.go`; `timerOpsFor` (folded in from timer-ops); `ShutdownGroup` | `kernel`, `signal` |
+| `runtime` (root) | the `ProcessDriver`/driver (renamed from `Runner`), split by concern (below); `resolve_action.go`, `outbox.go`, `observability.go`; `timerOpsFor` (folded in from timer-ops); `ShutdownGroup` | `kernel`, `signal` |
 | `runtime/kernel` | **kernel + in-memory reference implementation.** All value types (`Token`, `AppliedStep`, `OutboxEvent`, `CallLink`, `CallOutcome`, `PendingNotify`, `ArmedTimer`, `ChainLink`, `Outcome` + consts); all port interfaces (`Store`, `JournalReader`, `Scheduler`, `TimerStore`, `CallLinkStore`, `ChainLinkStore`, `DefinitionRegistry`, `InstanceLister`, `Ownership`, `Publisher`, `JitterSource`, `OutboxStatsReader`, `TimerStatsReader`, `CallLineageReader`, `ChainLineageReader`); DTOs (`InstanceFilter/Summary/Page`, `OutboxStats`, `TimerStats`, `CallLinkRef`, `ChainLinkRef`, `InstanceLineage`); cursor helpers (`EncodeCursor`/`DecodeCursor`/`NormalizeLimit`); `AlwaysOwn`; `NewJitterSource`; all sentinel errors; and the reference impls `MemStore`, `CachingStore`, `MemCallLinkStore`, `MemTimerStore`, `MemScheduler`, `MemChainLinkStore`, `MapDefinitionRegistry`, `CachingDefinitionRegistry` | — (external only) |
 | `runtime/calllink` | `CallNotifier` (background parent-resume delivery worker) | `kernel` |
 | `runtime/chain` | `Chainer`, `SuccessorPolicy`, `InstanceStarter`, `ChainEvent`, `SuccessorDecision` | `kernel` |
@@ -78,25 +78,29 @@ view          (independent leaf — engine/model only)
 
 Cycles are broken because `kernel` owns every shared value type and port
 interface **and** the reference impls that were the source of the back-edges;
-`kernel` imports nothing internal. The `Runner` uses port *interfaces*
+`kernel` imports nothing internal. The `ProcessDriver` uses port *interfaces*
 (`kernel.Store`, `kernel.CallLinkStore`, `kernel.TimerStore`, `kernel.DefinitionRegistry`)
 rather than the `Mem*` impls, so the root imports only `kernel` + `signal` (the
 latter for the concrete `*SignalBus` held via `WithSignalBus`). `monitor`
 depends only on `kernel` because the lineage-reader interfaces and their `Mem*`
 implementations both live in `kernel`.
 
-### `runner.go` split (all remain `package runtime`)
+### Driver split + rename (all remain `package runtime`)
+
+The driver type is **renamed `Runner` → `ProcessDriver`** (`NewRunner` →
+`NewProcessDriver`), and `runner.go` is split by concern. The `Option`
+functional-option type keeps its name (`runtime.Option` does not stutter).
 
 | New file | Holds |
 |---|---|
-| `runner.go` | `Runner` struct, `NewRunner`, `Run`, `Deliver`, `deliverLoop` |
-| `runner_options.go` | `Option` + all `With*` options + defaults (`defaultActionTimeout`, etc.) |
-| `runner_child.go` | `runChild`, `callDepth`/`withCallDepth`, `callDepthKey`, `maxCallDepth` |
-| `runner_waiters.go` | `syncWaiters`, `syncSignalBus`, `syncMsgWaiters`, `findMessageWaiter`, `msgKey` |
-| `runner_message.go` | `DeliverMessage` |
-| `runner_incident.go` | `ResolveIncident` |
-| `runner_cancel.go` | `CancelInstance`, `propagateCancel` |
-| `runner_action.go` | `actionContext`, `safeActionDo`, `copyVarsForOutcome`, `terminalErr` |
+| `processdriver.go` | `ProcessDriver` struct, `NewProcessDriver`, `Run`, `Deliver`, `deliverLoop` |
+| `processdriver_options.go` | `Option` + all `With*` options + defaults (`defaultActionTimeout`, etc.) |
+| `processdriver_child.go` | `runChild`, `callDepth`/`withCallDepth`, `callDepthKey`, `maxCallDepth` |
+| `processdriver_waiters.go` | `syncWaiters`, `syncSignalBus`, `syncMsgWaiters`, `findMessageWaiter`, `msgKey` |
+| `processdriver_message.go` | `DeliverMessage` |
+| `processdriver_incident.go` | `ResolveIncident` |
+| `processdriver_cancel.go` | `CancelInstance`, `propagateCancel` |
+| `processdriver_action.go` | `actionContext`, `safeActionDo`, `copyVarsForOutcome`, `terminalErr` |
 | `timerops.go` | `timerOpsFor` (moved from the timer cluster into the root, its only caller) |
 
 Existing `resolve_action.go`, `outbox.go`, `observability.go` stay as-is.
@@ -114,7 +118,7 @@ the non-`kernel` relocations (everything not listed maps to `kernel`):
 | `runtime.TaskService`, `NewTaskService`, `TaskServiceOption`, `With*` | `task` |
 | `runtime.Chainer`, `NewChainer`, `ChainEvent`, `SuccessorPolicy`, `SuccessorDecision`, `InstanceStarter`, `ChainerOption`, `WithChain*` | `chain` |
 | `runtime.CallNotifier`, `NewCallNotifier`, `CallDeliverFunc`, `CallNotifierOption`, `WithCallNotifier*` | `calllink` |
-| `runtime.Runner`, `NewRunner`, `Option`, `With*`, `ShutdownGroup`, `ShutdownFunc` | `runtime` (unchanged) |
+| `runtime.ProcessDriver`, `NewProcessDriver`, `Option`, `With*`, `ShutdownGroup`, `ShutdownFunc` | `runtime` (unchanged) |
 | everything else (`Store`, `Token`, `AppliedStep`, `OutboxEvent`, `MemStore`, `CachingStore`, `MemCallLinkStore`, `MemTimerStore`, `MemChainLinkStore`, `MemScheduler`, `Map/CachingDefinitionRegistry`, `CallLink`, `CallOutcome`, `ChainLink`, `Outcome`+consts, `ArmedTimer`, `Ownership`, `AlwaysOwn`, `Publisher`, `JitterSource`, cursor funcs, `InstanceFilter/Summary/Page/Lister`, `OutboxStats/TimerStats`+readers, `CallLinkRef/ChainLinkRef/InstanceLineage`, `CallLineageReader/ChainLineageReader`, `DefinitionRegistry`, all `Err*` sentinels) | `kernel` |
 
 ## Consequences
