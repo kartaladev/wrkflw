@@ -21,6 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 const casbinFinancePolicy = `
@@ -61,7 +62,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	r := mustRunner(t, nil, mustMemStore(t),
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 
@@ -80,7 +81,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 		"task.Eligibility.Privileges must carry the builder-set privilege")
 
 	// Claim must succeed for the approver.
-	svc := mustTaskService(t, taskStore, casbinAz)
+	svc := runtimetest.MustTaskService(t, taskStore, casbinAz)
 	_, claimErr := svc.Claim(ctx, taskToken, approver)
 	assert.NoError(t, claimErr, "approver with matching casbin policy should be ALLOWED")
 }
@@ -100,7 +101,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	r := mustRunner(t, nil, mustMemStore(t),
+	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 
@@ -111,7 +112,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	taskToken := parked.Tokens[0].AwaitCommand
 
 	// Claim must be denied for the viewer.
-	svc := mustTaskService(t, taskStore, casbinAz)
+	svc := runtimetest.MustTaskService(t, taskStore, casbinAz)
 	_, claimErr := svc.Claim(ctx, taskToken, viewer)
 	require.Error(t, claimErr, "viewer without matching casbin policy should be DENIED")
 	assert.True(t, errors.Is(claimErr, authz.ErrNotAuthorized),

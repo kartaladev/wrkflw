@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -32,7 +33,7 @@ func newTracingCallNotifier(t *testing.T) (*calllink.CallNotifier, *tracetest.Sp
 		"batch-span-parent:1": {ID: "batch-span-parent", Version: 1},
 	})
 
-	n := mustCallNotifier(t, cl, deliver, reg,
+	n := runtimetest.MustCallNotifier(t, cl, deliver, reg,
 		calllink.WithCallNotifierTracerProvider(tp),
 	)
 	return n, sr
@@ -70,7 +71,7 @@ func TestCallNotifierBatchSpan(t *testing.T) {
 	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	n2 := mustCallNotifier(t, cl, deliver, reg,
+	n2 := runtimetest.MustCallNotifier(t, cl, deliver, reg,
 		calllink.WithCallNotifierTracerProvider(tp2),
 	)
 
@@ -154,7 +155,7 @@ func TestCallNotifierLinksNotifiedCounter(t *testing.T) {
 			deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 				return nil
 			})
-			n := mustCallNotifier(t, cl, deliver, reg,
+			n := runtimetest.MustCallNotifier(t, cl, deliver, reg,
 				calllink.WithCallNotifierMeterProvider(mp),
 			)
 
@@ -202,13 +203,13 @@ func TestCallNotifierTelemetryOptionsAdditive(t *testing.T) {
 	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
 
 	// All existing callers pass no telemetry options — must compile and not panic.
-	n := mustCallNotifier(t, cl, deliver, reg)
+	n := runtimetest.MustCallNotifier(t, cl, deliver, reg)
 	require.NotNil(t, n)
 
 	// Callers may supply any subset of the new options.
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
-	n2 := mustCallNotifier(t, cl, deliver, reg,
+	n2 := runtimetest.MustCallNotifier(t, cl, deliver, reg,
 		calllink.WithCallNotifierTracerProvider(tp),
 	)
 	require.NotNil(t, n2)
@@ -217,12 +218,12 @@ func TestCallNotifierTelemetryOptionsAdditive(t *testing.T) {
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
 
-	n3 := mustCallNotifier(t, cl, deliver, reg,
+	n3 := runtimetest.MustCallNotifier(t, cl, deliver, reg,
 		calllink.WithCallNotifierMeterProvider(mp),
 	)
 	require.NotNil(t, n3)
 
-	n4 := mustCallNotifier(t, cl, deliver, reg,
+	n4 := runtimetest.MustCallNotifier(t, cl, deliver, reg,
 		calllink.WithCallNotifierTracerProvider(tp),
 		calllink.WithCallNotifierMeterProvider(mp),
 	)

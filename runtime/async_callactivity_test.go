@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -64,7 +65,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	ctx := t.Context()
 
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	child := asyncChildDef()
 	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
@@ -75,7 +76,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -229,7 +230,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		ctx := t.Context()
 
 		cl := kernel.NewMemCallLinkStore()
-		store := mustMemStore(t, kernel.WithCallLinks(cl))
+		store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 		childOutput := map[string]any{"result": "ok", "score": 42}
 		cat := action.NewMapCatalog(map[string]action.ServiceAction{
@@ -242,7 +243,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-imm-child": child,
 		})
 
-		runner := mustRunner(t, cat, store,
+		runner := runtimetest.MustRunner(t, cat, store,
 			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)
@@ -271,7 +272,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		ctx := t.Context()
 
 		cl := kernel.NewMemCallLinkStore()
-		store := mustMemStore(t, kernel.WithCallLinks(cl))
+		store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 		cat := action.NewMapCatalog(map[string]action.ServiceAction{
 			"fail-action": &failAction{msg: "child service error"},
@@ -283,7 +284,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 			"async-fail-child": child,
 		})
 
-		runner := mustRunner(t, cat, store,
+		runner := runtimetest.MustRunner(t, cat, store,
 			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)

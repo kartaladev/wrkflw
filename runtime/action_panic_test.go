@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // panicTaskDef builds start → task("p") → end with no retry policy, so a single
@@ -42,7 +43,7 @@ func TestRunnerRecoversActionPanic(t *testing.T) {
 			panic("action blew up")
 		}),
 	})
-	r := mustRunner(t, cat, mustMemStore(t), runtime.WithRunnerClock(fc))
+	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithRunnerClock(fc))
 
 	// Must not panic.
 	st, err := r.Run(t.Context(), panicTaskDef(), "p1", nil)

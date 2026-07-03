@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -90,7 +91,7 @@ func cancelPropRunner(t *testing.T, store *kernel.MemStore, cl *kernel.MemCallLi
 	reg := cancelPropRegistry(defs)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	return mustRunner(t, nil, store,
+	return runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -114,7 +115,7 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 	ctx := t.Context()
 
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("prop-child")
 	parentDef := cancelPropParentDef("prop-parent", "prop-child")
@@ -151,7 +152,7 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	ctx := t.Context()
 
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	// grandchild parks at human task
 	grandchildDef := cancelPropChildDef("prop-grandchild")
@@ -204,7 +205,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	ctx := t.Context()
 
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("prop-missing-child")
 	parentDef := cancelPropParentDef("prop-missing-parent", "prop-missing-child")
@@ -224,7 +225,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	})
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	fullRunner := mustRunner(t, nil, store,
+	fullRunner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(fullReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -241,7 +242,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 		"prop-missing-parent": parentDef,
 		// "prop-missing-child" intentionally absent
 	})
-	partialRunner := mustRunner(t, nil, store,
+	partialRunner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(partialReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -270,7 +271,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	// Since record/markTerminal are unexported, we populate via store.Create/Commit
 	// using a minimal runner setup.
 
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 	childA := cancelPropChildDef("list-child-a")
 	childB := cancelPropChildDef("list-child-b")
 	childC := cancelPropChildDef("list-child-c") // different parent
@@ -296,7 +297,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 		"list-parent-c":  parentC,
 	}
 	reg := cancelPropRegistry(fullDefs)
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -362,7 +363,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 func TestCancelPropagationNoCallLinks(t *testing.T) {
 	ctx := t.Context()
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	// Simple process: start → human task → end. Parks at the human task.
 	parentDef := &model.ProcessDefinition{
@@ -382,7 +383,7 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 	// Runner WITHOUT WithCallLinkStore — propagation gate disabled.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
 
@@ -403,7 +404,7 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 	ctx := t.Context()
 
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("ctx-child")
 	parentDef := cancelPropParentDef("ctx-parent", "ctx-child")
@@ -431,7 +432,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	ctx := t.Context()
 
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	childDef := cancelPropChildDef("no-reg-child")
 	parentDef := cancelPropParentDef("no-reg-parent", "no-reg-child")
@@ -456,7 +457,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	// be skipped entirely (r.defsReg == nil).
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	noRegRunner := mustRunner(t, nil, store,
+	noRegRunner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 		// intentionally NO WithDefinitions
@@ -495,7 +496,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	ctx := t.Context()
 
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	// D: leaf grandchild that parks at a human task.
 	dDef := cancelPropChildDef("dmnd-d")
@@ -526,7 +527,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 
 	// The runner used for initial Run must use cl (not countingCL) so that call links
 	// are recorded in cl's internal store. The cancel runner uses countingCL.
-	setupRunner := mustRunner(t, nil, store,
+	setupRunner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -577,7 +578,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	})
 
 	// Build the cancel runner with the counting wrapper so we observe the guard.
-	cancelRunner := mustRunner(t, nil, store,
+	cancelRunner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(countingCL),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),

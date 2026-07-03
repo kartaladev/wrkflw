@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // timeoutTaskDef builds start → task("t") → end with no retry policy, so a single
@@ -108,7 +109,7 @@ func TestRunner_ActionTimeout(t *testing.T) {
 			o := &obs{}
 			cat := action.NewMapCatalog(map[string]action.ServiceAction{"t": tc.newAction(o)})
 			opts := append([]runtime.Option{runtime.WithRunnerClock(clockwork.NewFakeClock())}, tc.opts...)
-			r := mustRunner(t, cat, mustMemStore(t), opts...)
+			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), opts...)
 
 			st, err := r.Run(t.Context(), timeoutTaskDef(), "p1", nil)
 			require.NoError(t, err)

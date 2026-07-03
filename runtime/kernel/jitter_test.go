@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -27,26 +28,6 @@ func TestJitterSourceInRange(t *testing.T) {
 		}
 	}
 }
-
-// recordingScheduler is a Scheduler stub that records the first scheduled fire-at
-// time WITHOUT firing the callback. This lets us inspect the jittered delay without
-// triggering retry loops.
-type recordingScheduler struct {
-	fireAt    time.Time
-	scheduled bool
-}
-
-func (s *recordingScheduler) Schedule(_ string, at time.Time, _ func()) {
-	s.fireAt = at
-	s.scheduled = true
-}
-
-func (s *recordingScheduler) Cancel(string) {}
-
-// fixedJitter is a deterministic JitterSource that always returns the same fraction.
-type fixedJitter struct{ f float64 }
-
-func (j fixedJitter) Fraction() float64 { return j.f }
 
 // retryDef builds a process definition with a single service-task node "task"
 // whose RetryPolicy will attempt a retry on failure.
@@ -91,11 +72,11 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 		}),
 	})
 
-	sched := &recordingScheduler{}
-	runner := mustRunner(t, cat, mustMemStore(t),
+	sched := &runtimetest.RecordingScheduler{}
+	runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithRunnerClock(clk),
 		runtime.WithScheduler(sched),
-		runtime.WithJitterSource(fixedJitter{0.5}),
+		runtime.WithJitterSource(runtimetest.FixedJitter{F: 0.5}),
 	)
 
 	def := retryOnceTaskDef()
@@ -104,10 +85,10 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 	// the scheduler captured the fireAt. We only care that the scheduler was called.
 	_ = err
 
-	require.True(t, sched.scheduled, "expected the scheduler to have been called for the retry timer")
+	require.True(t, sched.Scheduled, "expected the scheduler to have been called for the retry timer")
 
 	// attempt 0 → backoff = InitialInterval × BackoffCoef^0 = 1s; jitter = 0.5 → 500ms
 	want := T.Add(500 * time.Millisecond)
-	assert.True(t, sched.fireAt.Equal(want),
-		"expected fireAt %v, got %v (delta %v)", want, sched.fireAt, sched.fireAt.Sub(want))
+	assert.True(t, sched.FireAt.Equal(want),
+		"expected fireAt %v, got %v (delta %v)", want, sched.FireAt, sched.FireAt.Sub(want))
 }

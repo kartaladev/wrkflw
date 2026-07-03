@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -22,7 +23,7 @@ func newInstanceState(id string, st engine.Status, at time.Time) engine.Instance
 // seedMemStore creates a MemStore and inserts each InstanceState via Create, returning the store.
 func seedMemStore(t *testing.T, states ...engine.InstanceState) *kernel.MemStore {
 	t.Helper()
-	ms := mustMemStore(t)
+	ms := runtimetest.MustMemStore(t)
 	for _, st := range states {
 		now := st.StartedAt
 		_, err := ms.Create(t.Context(), kernel.AppliedStep{

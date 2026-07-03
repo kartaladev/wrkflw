@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -138,7 +139,7 @@ func TestActionFailuresCounter(t *testing.T) {
 				}),
 			})
 
-			r := mustRunner(t, cat, mustMemStore(t),
+			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithMeterProvider(mp),
 			)
 
@@ -171,9 +172,9 @@ func TestTimerFiredCounter(t *testing.T) {
 
 	cat := action.NewMapCatalog(nil)
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
-	r := mustRunner(t, cat, store,
+	r := runtimetest.MustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithMeterProvider(mp),

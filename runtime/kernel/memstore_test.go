@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -20,7 +21,7 @@ func step(id, topic string) kernel.AppliedStep {
 }
 
 func TestMemStoreCreateLoadRoundTrip(t *testing.T) {
-	ms := mustMemStore(t)
+	ms := runtimetest.MustMemStore(t)
 	tok, err := ms.Create(t.Context(), step("i1", "instance.completed"))
 	require.NoError(t, err)
 
@@ -31,7 +32,7 @@ func TestMemStoreCreateLoadRoundTrip(t *testing.T) {
 }
 
 func TestMemStoreCreateDuplicate(t *testing.T) {
-	ms := mustMemStore(t)
+	ms := runtimetest.MustMemStore(t)
 	_, err := ms.Create(t.Context(), step("dup", "a"))
 	require.NoError(t, err)
 
@@ -48,7 +49,7 @@ func TestMemStoreCreateDuplicate(t *testing.T) {
 }
 
 func TestMemStoreLoadMissing(t *testing.T) {
-	ms := mustMemStore(t)
+	ms := runtimetest.MustMemStore(t)
 	_, _, err := ms.Load(t.Context(), "nope")
 	require.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 }
@@ -109,7 +110,7 @@ func TestMemStoreCommit(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			tc.assert(t, mustMemStore(t))
+			tc.assert(t, runtimetest.MustMemStore(t))
 		})
 	}
 }
@@ -161,7 +162,7 @@ func TestMemStoreConcurrentSafe(t *testing.T) {
 		numCommits = 10
 	)
 
-	ms := mustMemStore(t)
+	ms := runtimetest.MustMemStore(t)
 	ctx := t.Context()
 
 	var wg sync.WaitGroup

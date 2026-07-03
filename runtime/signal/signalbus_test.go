@@ -12,17 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
-
-// mustSignalBus builds a SignalBus or fails the test.
-func mustSignalBus(t *testing.T, deliver signal.DeliverFunc, opts ...signal.SignalBusOption) *signal.SignalBus {
-	t.Helper()
-	bus, err := signal.NewSignalBus(deliver, opts...)
-	require.NoError(t, err)
-	return bus
-}
 
 // deliverRecord tracks what was delivered to which instance.
 type deliverRecord struct {
@@ -58,7 +51,7 @@ func TestSignalBusPublishDeliversToAllSubscribers(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
 
-	bus := mustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
+	bus := runtimetest.MustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
 	bus.Subscribe("inst-b", "approved")
 	bus.Subscribe("inst-a", "approved")
 	bus.Subscribe("inst-c", "approved")
@@ -86,7 +79,7 @@ func TestSignalBusPublishDeliversToAllSubscribers(t *testing.T) {
 func TestSignalBusPublishNoWaitersIsNoop(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
-	bus := mustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
+	bus := runtimetest.MustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
 
 	err := bus.Publish(ctx, "nonexistent", nil)
 	require.NoError(t, err)
@@ -98,7 +91,7 @@ func TestSignalBusPublishNoWaitersIsNoop(t *testing.T) {
 func TestSignalBusUnsubscribeRemovesWaiter(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
-	bus := mustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
+	bus := runtimetest.MustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
 
 	bus.Subscribe("inst-a", "approved")
 	bus.Subscribe("inst-b", "approved")
@@ -114,7 +107,7 @@ func TestSignalBusUnsubscribeRemovesWaiter(t *testing.T) {
 func TestSignalBusSyncReconciles(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
-	bus := mustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
+	bus := runtimetest.MustSignalBus(t, rec.deliver, signal.WithSignalBusClock(clockwork.NewFakeClock()))
 
 	// Initial subscriptions.
 	bus.Subscribe("inst-a", "sig-old")
@@ -140,7 +133,7 @@ func TestSignalBusPublishDeliverErrorPropagates(t *testing.T) {
 	ctx := context.Background()
 	errDeliver := errors.New("deliver: forced failure")
 
-	bus := mustSignalBus(t, func(_ context.Context, _ string, _ engine.Trigger) error {
+	bus := runtimetest.MustSignalBus(t, func(_ context.Context, _ string, _ engine.Trigger) error {
 		return errDeliver
 	}, signal.WithSignalBusClock(clockwork.NewFakeClock()))
 	bus.Subscribe("inst-a", "approved")
@@ -158,7 +151,7 @@ func TestSignalBusPublishBestEffortDeliversAll(t *testing.T) {
 	errFirst := errors.New("deliver: first instance failed")
 
 	delivered := make(map[string]bool)
-	bus := mustSignalBus(t, func(_ context.Context, instanceID string, _ engine.Trigger) error {
+	bus := runtimetest.MustSignalBus(t, func(_ context.Context, instanceID string, _ engine.Trigger) error {
 		if instanceID == "inst-a" {
 			return errFirst
 		}
@@ -182,7 +175,7 @@ func TestSignalBusIsSafeForConcurrentUse(t *testing.T) {
 	ctx := context.Background()
 	rec := &deliverRecord{}
 	fc := clockwork.NewFakeClock()
-	bus := mustSignalBus(t, rec.deliver, signal.WithSignalBusClock(fc))
+	bus := runtimetest.MustSignalBus(t, rec.deliver, signal.WithSignalBusClock(fc))
 
 	var wg sync.WaitGroup
 	for i := range 50 {
@@ -206,7 +199,7 @@ func TestSignalBusPublishStampsViaClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(knownTime)
 
 	var captured engine.Trigger
-	bus := mustSignalBus(t, func(_ context.Context, _ string, trg engine.Trigger) error {
+	bus := runtimetest.MustSignalBus(t, func(_ context.Context, _ string, trg engine.Trigger) error {
 		captured = trg
 		return nil
 	}, signal.WithSignalBusClock(fc))
@@ -228,7 +221,7 @@ func TestNewSignalBusDefaultUsesSystemClock(t *testing.T) {
 		got = trg.OccurredAt()
 		return nil
 	}
-	bus := mustSignalBus(t, deliver)
+	bus := runtimetest.MustSignalBus(t, deliver)
 	bus.Subscribe("inst-1", "sig")
 	before := time.Now()
 	require.NoError(t, bus.Publish(t.Context(), "sig", nil))
@@ -243,7 +236,7 @@ func TestNewSignalBusWithClockOption(t *testing.T) {
 		got = trg.OccurredAt()
 		return nil
 	}
-	bus := mustSignalBus(t, deliver, signal.WithSignalBusClock(fake))
+	bus := runtimetest.MustSignalBus(t, deliver, signal.WithSignalBusClock(fake))
 	bus.Subscribe("inst-1", "sig")
 	require.NoError(t, bus.Publish(t.Context(), "sig", nil))
 	assert.Equal(t, time.Unix(1000, 0).UTC(), got.UTC())

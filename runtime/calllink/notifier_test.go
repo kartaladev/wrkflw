@@ -16,6 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -72,7 +73,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	// ── wiring ───────────────────────────────────────────────────────────────
 	clk := clock.System()
 	cl := kernel.NewMemCallLinkStore()
-	store := mustMemStore(t, kernel.WithCallLinks(cl))
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	worker := authz.Actor{ID: "bob", Roles: []string{"worker"}}
 	child := notifierChildDef()
@@ -91,7 +92,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 
-	runner := mustRunner(t, nil, store,
+	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -119,7 +120,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	taskToken := claimable[0].TaskToken
 
 	// ── Step 2: complete the human task → child completes, link flips ────────
-	svc := mustTaskService(t, tasks, az)
+	svc := runtimetest.MustTaskService(t, tasks, az)
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"childResult": "done"})
 	require.NoError(t, err)
 
@@ -139,7 +140,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 		return err2
 	})
 
-	notifier := mustCallNotifier(t, cl, deliverFn, reg)
+	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
 
 	notified, err := notifier.DrainOnce(ctx)
 	require.NoError(t, err)
@@ -166,7 +167,7 @@ func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	})
 	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
 
-	n := mustCallNotifier(t, cl, deliver, reg)
+	n := runtimetest.MustCallNotifier(t, cl, deliver, reg)
 	assert.NotNil(t, n)
 }
 
@@ -191,7 +192,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 		"opt-parent:1": parentDef,
 	})
 
-	n := mustCallNotifier(t, cl, deliver, reg, calllink.WithCallNotifierClock(fake))
+	n := runtimetest.MustCallNotifier(t, cl, deliver, reg, calllink.WithCallNotifierClock(fake))
 	require.NotNil(t, n)
 
 	// Seed a terminal call link so DrainOnce delivers a trigger.

@@ -26,6 +26,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
@@ -143,7 +144,7 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			r := mustRunner(t, action.NewMapCatalog(nil), mustMemStore(t),
+			r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t),
 				tc.opt,
 			)
 			tc.assert(t, r)
@@ -169,7 +170,7 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 		}),
 	})
 
-	r := mustRunner(t, cat, mustMemStore(t),
+	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 	)
@@ -295,7 +296,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			cat := action.NewMapCatalog(map[string]action.ServiceAction{
 				"charge": action.Func(tc.actionFunc),
 			})
-			r := mustRunner(t, cat, mustMemStore(t),
+			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
 
 			_, _ = r.Run(t.Context(), paymentDef(), "i1", map[string]any{})
@@ -341,7 +342,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		},
 	}
 
-	runner := mustRunner(t, cat, mustMemStore(t),
+	runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithRunnerClock(clk),
 		runtime.WithMeterProvider(mp),
 		// MaxAttempts=1: first failure parks immediately as an incident.
@@ -442,16 +443,16 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			az := authz.RoleAuthorizer{}
 			clk := clock.System()
 
-			r := mustRunner(t, nil, mustMemStore(t),
+			r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
 				runtime.WithRunnerClock(clk),
 				runtime.WithHumanTasks(resolver, taskStore, az),
 				runtime.WithMeterProvider(mp),
 			)
-			svc := mustTaskService(t, taskStore, az,
+			svc := runtimetest.MustTaskService(t, taskStore, az,
 				task.WithTaskServiceClock(clk),
 				task.WithTaskServiceMeterProvider(mp))
 
-			def := approvalDef()
+			def := runtimetest.ApprovalDef()
 			const instID = "htlc-inst"
 
 			// Run parks at the user task → emits {event=created}.
@@ -522,8 +523,8 @@ func TestDeliverSpan(t *testing.T) {
 		},
 	}
 
-	store := mustMemStore(t)
-	runner := mustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithTracerProvider(tp))
+	store := runtimetest.MustMemStore(t)
+	runner := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithTracerProvider(tp))
 
 	// Run parks at the catch-message node.
 	parked, err := runner.Run(t.Context(), msgDef, "del-obs-1", nil)

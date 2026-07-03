@@ -24,6 +24,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // cancelHandlerDef returns:
@@ -66,10 +67,10 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 		}),
 	})
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i1"
@@ -99,10 +100,10 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 		}),
 	})
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := mustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i2"
@@ -121,11 +122,11 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	// Empty catalog — "cleanup" will not resolve.
-	r := mustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i3"

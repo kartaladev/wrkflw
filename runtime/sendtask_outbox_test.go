@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -48,8 +49,8 @@ func buildOrderPlacedSendTaskDef() *model.ProcessDefinition {
 // and that Run succeeds without any MessageSink configured.
 func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	def := buildOrderPlacedSendTaskDef()
-	store := &recordingStore{Store: mustMemStore(t)}
-	r := mustRunner(t, nil, store) // NO MessageSink — must not error
+	store := &recordingStore{Store: runtimetest.MustMemStore(t)}
+	r := runtimetest.MustRunner(t, nil, store) // NO MessageSink — must not error
 	_, err := r.Run(t.Context(), def, "i-1", map[string]any{"k": "v"})
 	require.NoError(t, err)
 

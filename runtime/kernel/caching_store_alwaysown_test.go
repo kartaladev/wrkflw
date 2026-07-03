@@ -10,6 +10,7 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -65,8 +66,8 @@ func TestNewCachingStoreAlwaysOwnWarning(t *testing.T) {
 			var buf syncBuffer
 			logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-			mustCachingStore(t,
-				mustMemStore(t),
+			runtimetest.MustCachingStore(t,
+				runtimetest.MustMemStore(t),
 				tc.owner,
 				kernel.WithCachingStoreClock(clockwork.NewFakeClock()),
 				kernel.WithCacheLogger(logger),

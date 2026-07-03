@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // messageBoundaryDef returns a definition whose host UserTask("review") parks
@@ -45,14 +46,14 @@ func messageBoundaryDef() *model.ProcessDefinition {
 func TestDeliverMessageFiresBoundary(t *testing.T) {
 	ctx := t.Context()
 	fc := clockwork.NewFakeClock()
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	r := mustRunner(t, nil, store,
+	r := runtimetest.MustRunner(t, nil, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 

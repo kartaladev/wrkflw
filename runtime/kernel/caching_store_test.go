@@ -12,6 +12,7 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -45,9 +46,9 @@ func runningState(id string) engine.InstanceState {
 func startTrg() engine.Trigger { return engine.NewStartInstance(time.Unix(0, 0).UTC(), nil) }
 
 func TestCachingStoreServesOwnedLoadFromCache(t *testing.T) {
-	cs := &countingStore{backing: mustMemStore(t)}
+	cs := &countingStore{backing: runtimetest.MustMemStore(t)}
 	clk := clockwork.NewFakeClock()
-	store := mustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clk))
+	store := runtimetest.MustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clk))
 
 	id := "c1"
 	_, err := store.Create(t.Context(), kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -66,8 +67,8 @@ func TestCachingStoreServesOwnedLoadFromCache(t *testing.T) {
 }
 
 func TestCachingStoreBypassesWhenNotOwned(t *testing.T) {
-	cs := &countingStore{backing: mustMemStore(t)}
-	store := mustCachingStore(t, cs, neverOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()))
+	cs := &countingStore{backing: runtimetest.MustMemStore(t)}
+	store := runtimetest.MustCachingStore(t, cs, neverOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()))
 
 	id := "c2"
 	_, err := store.Create(t.Context(), kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -82,9 +83,9 @@ func TestCachingStoreBypassesWhenNotOwned(t *testing.T) {
 }
 
 func TestCachingStoreEvictsOnConcurrentUpdate(t *testing.T) {
-	mem := mustMemStore(t)
+	mem := runtimetest.MustMemStore(t)
 	cs := &countingStore{backing: mem}
-	store := mustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()))
+	store := runtimetest.MustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()))
 
 	id := "c3"
 	tok, err := store.Create(t.Context(), kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -106,9 +107,9 @@ func TestCachingStoreEvictsOnConcurrentUpdate(t *testing.T) {
 }
 
 func TestCachingStoreTTLExpiryForcesReload(t *testing.T) {
-	cs := &countingStore{backing: mustMemStore(t)}
+	cs := &countingStore{backing: runtimetest.MustMemStore(t)}
 	clk := clockwork.NewFakeClock()
-	store := mustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCacheTTL(time.Minute), kernel.WithCachingStoreClock(clk))
+	store := runtimetest.MustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCacheTTL(time.Minute), kernel.WithCachingStoreClock(clk))
 
 	id := "ttl1"
 	_, err := store.Create(t.Context(), kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -125,8 +126,8 @@ func TestCachingStoreTTLExpiryForcesReload(t *testing.T) {
 }
 
 func TestCachingStoreLRUEvictsBeyondMax(t *testing.T) {
-	cs := &countingStore{backing: mustMemStore(t)}
-	store := mustCachingStore(t, cs, kernel.AlwaysOwn{},
+	cs := &countingStore{backing: runtimetest.MustMemStore(t)}
+	store := runtimetest.MustCachingStore(t, cs, kernel.AlwaysOwn{},
 		kernel.WithCachingStoreClock(clockwork.NewFakeClock()),
 		kernel.WithCacheMaxEntries(2), kernel.WithCacheTTL(time.Hour))
 
@@ -146,8 +147,8 @@ func TestCachingStoreLRUEvictsBeyondMax(t *testing.T) {
 }
 
 func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
-	mem := mustMemStore(t)
-	store := mustCachingStore(t, mem, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()), kernel.WithCacheTTL(time.Hour))
+	mem := runtimetest.MustMemStore(t)
+	store := runtimetest.MustCachingStore(t, mem, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()), kernel.WithCacheTTL(time.Hour))
 
 	id := "race1"
 	tok, err := store.Create(t.Context(), kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -171,8 +172,8 @@ func TestCachingStoreConcurrentLoadCommitStayCoherent(t *testing.T) {
 }
 
 func TestCachingStoreReleaseEvicts(t *testing.T) {
-	cs := &countingStore{backing: mustMemStore(t)}
-	store := mustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()), kernel.WithCacheTTL(time.Hour))
+	cs := &countingStore{backing: runtimetest.MustMemStore(t)}
+	store := runtimetest.MustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCachingStoreClock(clockwork.NewFakeClock()), kernel.WithCacheTTL(time.Hour))
 
 	id := "rel1"
 	_, err := store.Create(t.Context(), kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -195,16 +196,16 @@ func TestCachingStoreReleaseEvicts(t *testing.T) {
 
 func TestNewCachingStoreDefaultClockNoPanic(t *testing.T) {
 	// No clock option → defaults to clock.System(); construction + a basic op must not panic.
-	cs := &countingStore{backing: mustMemStore(t)}
-	s := mustCachingStore(t, cs, kernel.AlwaysOwn{})
+	cs := &countingStore{backing: runtimetest.MustMemStore(t)}
+	s := runtimetest.MustCachingStore(t, cs, kernel.AlwaysOwn{})
 	assert.NotNil(t, s)
 }
 
 func TestNewCachingStoreWithClockOption(t *testing.T) {
 	// WithCachingStoreClock injects a fake clock; advancing past TTL must force a backing reload.
-	cs := &countingStore{backing: mustMemStore(t)}
+	cs := &countingStore{backing: runtimetest.MustMemStore(t)}
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	s := mustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCacheTTL(time.Minute), kernel.WithCachingStoreClock(fake))
+	s := runtimetest.MustCachingStore(t, cs, kernel.AlwaysOwn{}, kernel.WithCacheTTL(time.Minute), kernel.WithCachingStoreClock(fake))
 	assert.NotNil(t, s)
 
 	id := "clkopt1"
@@ -228,7 +229,7 @@ func TestNewCachingStoreWithClockOption(t *testing.T) {
 func TestNewCachingStoreFailsFast(t *testing.T) {
 	t.Parallel()
 
-	mem := mustMemStore(t)
+	mem := runtimetest.MustMemStore(t)
 	type testCase struct {
 		name    string
 		backing kernel.Store

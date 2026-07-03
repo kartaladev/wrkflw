@@ -18,6 +18,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -97,12 +98,12 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
-	store := mustMemStore(t)
+	store := runtimetest.MustMemStore(t)
 
 	rec := &recordingHandler{}
 	logger := slog.New(rec)
 
-	r := mustRunner(t, cat, store,
+	r := runtimetest.MustRunner(t, cat, store,
 		runtime.WithRunnerClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),
