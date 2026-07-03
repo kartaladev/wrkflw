@@ -129,7 +129,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	r, err := runtime.NewProcessDriver(
 		cat,
 		store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
 
-	svc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
+	svc, err := task.NewTaskService(taskStore, az, task.WithClock(fc))
 
 	require.NoError(t, err)
 	return &harness{

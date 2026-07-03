@@ -63,9 +63,9 @@ func WithTaskServiceMeterProvider(mp metric.MeterProvider) TaskServiceOption {
 	}
 }
 
-// WithTaskServiceClock sets the time source used to stamp task-lifecycle triggers.
+// WithClock sets the time source used to stamp task-lifecycle triggers.
 // Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithTaskServiceClock(clk clock.Clock) TaskServiceOption {
+func WithClock(clk clock.Clock) TaskServiceOption {
 	return func(c *taskServiceConfig) {
 		if clk != nil {
 			c.clk = clk
@@ -75,7 +75,7 @@ func WithTaskServiceClock(clk clock.Clock) TaskServiceOption {
 
 // NewTaskService constructs a TaskService with the given task store, authorizer,
 // and optional [TaskServiceOption] values. The clock defaults to [clock.System];
-// inject a fake clock via [WithTaskServiceClock] in tests.
+// inject a fake clock via [WithClock] in tests.
 //
 // The variadic opts are additive; callers that do not need custom observability
 // or a custom clock can omit them entirely.

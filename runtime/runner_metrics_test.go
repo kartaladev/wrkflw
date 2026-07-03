@@ -175,7 +175,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithMeterProvider(mp),
 	)

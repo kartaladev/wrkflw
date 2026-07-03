@@ -114,7 +114,7 @@ the non-`kernel` relocations (everything not listed maps to `kernel`):
 |---|---|
 | `runtime.InstanceSnapshot`, `NewInstanceSnapshot`, `ActionableView`, `NewActionableView`, `NextAction`, `ActionableTask`, view sub-DTOs | `view` |
 | `runtime.LineageReader`, `NewLineageReader`, `OutboxStatsCollector`, `NewOutboxStatsCollector`, `TimerStatsCollector`, `NewTimerStatsCollector`, `DeadLetter`, `ClassifyDeadLetter` | `monitor` |
-| `runtime.SignalBus`, `NewSignalBus`, `DeliverFunc`, `WithSignalBusClock` | `signal` |
+| `runtime.SignalBus`, `NewSignalBus`, `DeliverFunc`, `WithClock` | `signal` |
 | `runtime.TaskService`, `NewTaskService`, `TaskServiceOption`, `With*` | `task` |
 | `runtime.Chainer`, `NewChainer`, `ChainEvent`, `SuccessorPolicy`, `SuccessorDecision`, `InstanceStarter`, `ChainerOption`, `WithChain*` | `chain` |
 | `runtime.CallNotifier`, `NewCallNotifier`, `CallDeliverFunc`, `CallNotifierOption`, `WithCallNotifier*` | `calllink` |

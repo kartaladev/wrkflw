@@ -93,7 +93,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 
 	runner := runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -171,7 +171,7 @@ func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	assert.NotNil(t, n)
 }
 
-// TestNewCallNotifierWithClockOption verifies that WithCallNotifierClock injects
+// TestNewCallNotifierWithClockOption verifies that WithClock injects
 // a fake clock whose time flows into delivered trigger timestamps (ADR-0003).
 func TestNewCallNotifierWithClockOption(t *testing.T) {
 	ctx := t.Context()
@@ -192,7 +192,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 		"opt-parent:1": parentDef,
 	})
 
-	n := runtimetest.MustCallNotifier(t, cl, deliver, reg, calllink.WithCallNotifierClock(fake))
+	n := runtimetest.MustCallNotifier(t, cl, deliver, reg, calllink.WithClock(fake))
 	require.NotNil(t, n)
 
 	// Seed a terminal call link so DrainOnce delivers a trigger.

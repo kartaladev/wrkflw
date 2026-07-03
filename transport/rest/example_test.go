@@ -51,7 +51,7 @@ func Example_responseShapes() {
 	az := authz.RoleAuthorizer{}
 	cat := action.NewMapCatalog(nil)
 	runner, err := runtime.NewProcessDriver(cat, store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	if err != nil {
@@ -76,7 +76,7 @@ func Example_responseShapes() {
 		"approval:1": def,
 		"approval":   def,
 	})
-	taskSvc, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
+	taskSvc, err := task.NewTaskService(taskStore, az, task.WithClock(fc))
 	if err != nil {
 		panic(err)
 	}

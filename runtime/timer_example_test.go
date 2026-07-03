@@ -43,7 +43,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(fc), runtime.WithScheduler(sched))
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
 
 	def := runtimetest.TimerIntermediateDef()
 	const instanceID = "timer-e2e-1"
@@ -122,7 +122,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),
 	)

@@ -42,12 +42,12 @@ func buildService() service.Service {
 	}
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(fc))
 	if err != nil {
 		panic(err)
 	}
 	reg := kernel.NewMapDefinitionRegistry(nil)
-	tasks, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
+	tasks, err := task.NewTaskService(taskStore, az, task.WithClock(fc))
 	if err != nil {
 		panic(err)
 	}

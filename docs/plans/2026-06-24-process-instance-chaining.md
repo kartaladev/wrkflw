@@ -92,7 +92,7 @@ per terminal status; add `instance.terminated`; fix cancel→failed + full-rollb
       Run → FAIL.
 - [ ] **GREEN** — `runtime/chainer.go`: `Outcome`/`ChainEvent`/`SuccessorDecision`/
       `SuccessorPolicy`/`InstanceStarter`/`Chainer`/`NewChainer`/`ChainerOption`
-      (`WithChainLinks`, `WithChainLogger`, `WithChainClock`) + `Handle` per spec §4.3.
+      (`WithChainLinks`, `WithChainLogger`, `WithClock`) + `Handle` per spec §4.3.
       Confirm `*Runner` satisfies `InstanceStarter` (compile-time `var _`).
 - [ ] **Observability** — span `wrkflw.chain.handle` + counter
       `wrkflw_chain_started_total{outcome}` (noop default; mirror runner obs).

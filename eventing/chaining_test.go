@@ -184,7 +184,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(clk))
+	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clk))
 	require.NoError(t, err)
 
 	succ := &model.ProcessDefinition{
@@ -195,7 +195,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		return chain.SuccessorDecision{Def: succ, Vars: ev.Result}, true
 	}
-	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links), chain.WithChainClock(clk))
+	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links), chain.WithClock(clk))
 	require.NoError(t, err)
 
 	pub, sub, closer := eventing.NewGoChannelPublisher()

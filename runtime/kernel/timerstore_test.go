@@ -113,7 +113,7 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
 	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
-		runtime.WithRunnerClock(fc),
+		runtime.WithClock(fc),
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 
 	def := runtimetest.TimerIntermediateDef() // reuse the helper in runtime/timer_example_test.go (1h intermediate timer)

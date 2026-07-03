@@ -249,7 +249,7 @@ func NewSQLiteLister(db *sql.DB) (kernel.InstanceLister, error) {
 // Postgres facade constructor). The underlying runtime.CallNotifier is
 // dialect-agnostic: this constructor simply builds the SQLite-backed CallLinkStore
 // and passes it to runtime.NewCallNotifier. opts are forwarded to
-// runtime.NewCallNotifier; use runtime.WithCallNotifierClock to inject a fake clock
+// runtime.NewCallNotifier; use runtime.WithClock to inject a fake clock
 // in tests.
 //
 // SQLite is single-node and in-process; the notifier is well-suited for embedded

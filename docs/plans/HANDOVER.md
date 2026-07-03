@@ -173,10 +173,10 @@ and pick up the next work. Read it top to bottom before starting.
 > positional `clk clock.Clock` parameter was moved to a `With<Component>Clock(clk)` functional option that
 > defaults to `clock.System()` (nil-guarded — explicit `nil` falls back to system). **BREAKING** constructor
 > signatures (advise against the old positional forms):
-> - `runtime.NewRunner(cat, store, opts...)` — **`clk` removed; `store` is now arg 2** → `WithRunnerClock`.
-> - `runtime.NewSignalBus(deliver, opts...)` — **`deliver` is now arg 1** → `WithSignalBusClock`.
-> - `runtime.NewMemScheduler(opts...)` → `WithMemSchedulerClock`; `runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)` → `WithCachingDefinitionRegistryClock`; `runtime.NewCachingStore(backing, owner, opts...)` → `WithCachingStoreClock`; `runtime.NewCallNotifier(cl, deliver, reg, opts...)` → `WithCallNotifierClock`; `runtime.NewTaskService(store, az, opts...)` → `WithTaskServiceClock`; `service.New(...6 args..., opts...)` → `WithEngineClock`; `persistence.NewCachingDefinitionRegistry`/`NewCallNotifier` facades drop positional `clk`, forward opts.
-> - The 4 pre-existing options (`WithChainClock`, `WithMemCallLinkClock`, postgres relay `WithClock`, `WithCallLinkClock`) gained the nil-guard.
+> - `runtime.NewRunner(cat, store, opts...)` — **`clk` removed; `store` is now arg 2** → `WithClock`.
+> - `runtime.NewSignalBus(deliver, opts...)` — **`deliver` is now arg 1** → `WithClock`.
+> - `runtime.NewMemScheduler(opts...)` → `WithMemSchedulerClock`; `runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)` → `WithCachingDefinitionRegistryClock`; `runtime.NewCachingStore(backing, owner, opts...)` → `WithCachingStoreClock`; `runtime.NewCallNotifier(cl, deliver, reg, opts...)` → `WithClock`; `runtime.NewTaskService(store, az, opts...)` → `WithClock`; `service.New(...6 args..., opts...)` → `WithEngineClock`; `persistence.NewCachingDefinitionRegistry`/`NewCallNotifier` facades drop positional `clk`, forward opts.
+> - The 4 pre-existing options (`WithClock`, `WithMemCallLinkClock`, postgres relay `WithClock`, `WithCallLinkClock`) gained the nil-guard.
 > - **EXCLUDED (still positional):** the `clockwork.Clock` gocron seam — `scheduling.NewScheduler`, `internal/scheduling/gocron.NewGocronScheduler`, `WithElectorClock` (different type; could be a follow-up).
 > - **Footgun (ADR-0066 Consequences):** omitting the clock in a test now silently uses wall time (no compile error); determinism-sensitive tests must pass `With…Clock(fake)`. Whole-branch review confirmed every existing fake clock was correctly re-threaded.
 >

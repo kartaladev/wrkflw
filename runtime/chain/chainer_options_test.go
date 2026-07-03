@@ -28,7 +28,7 @@ func TestChainerObservabilityOptionsHandleSuccessor(t *testing.T) {
 
 	c, err := chain.NewChainer(starter, policy,
 		chain.WithChainLinks(links),
-		chain.WithChainClock(clock.System()),
+		chain.WithClock(clock.System()),
 		chain.WithChainLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		chain.WithChainTracerProvider(tracenoop.NewTracerProvider()),
 		chain.WithChainMeterProvider(metricnoop.NewMeterProvider()),

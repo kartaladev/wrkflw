@@ -99,7 +99,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 		"child": child,
 	})
 
-	runner := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	parent := parentCallDef()
 	st, err := runner.Run(ctx, parent, "parent-i1", map[string]any{"x": 42})
@@ -177,7 +177,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		"failing-child": failingChild,
 	})
 
-	runner := runtimetest.MustRunner(t, cat, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	st, err := runner.Run(ctx, failingParent, "parent-fail-i1", nil)
 	require.NoError(t, err)
@@ -255,7 +255,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	runner := runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
@@ -341,7 +341,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 		"self-ref": def,
 	})
 
-	runner := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(clk), runtime.WithDefinitions(reg))
+	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	// This must not panic / stack-overflow. The depth guard must kick in and
 	// fail the parent instance with a descriptive error.
@@ -379,7 +379,7 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	// No WithDefinitions option.
-	runner := runtimetest.MustRunner(t, nil, store, runtime.WithRunnerClock(clk))
+	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk))
 
 	parent := parentCallDef()
 	_, err := runner.Run(ctx, parent, "no-reg-i1", nil)

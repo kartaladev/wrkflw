@@ -256,7 +256,7 @@ func TestNewTaskServiceDefaultClockNoPanic(t *testing.T) {
 	assert.NotNil(t, svc)
 }
 
-// TestNewTaskServiceWithClockOption verifies that WithTaskServiceClock injects
+// TestNewTaskServiceWithClockOption verifies that WithClock injects
 // a fake clock whose time flows through to task-lifecycle trigger timestamps.
 func TestNewTaskServiceWithClockOption(t *testing.T) {
 	ctx := t.Context()
@@ -272,7 +272,7 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 	}))
 
 	az := authz.AllowAll{}
-	svc := runtimetest.MustTaskService(t, store, az, task.WithTaskServiceClock(fake))
+	svc := runtimetest.MustTaskService(t, store, az, task.WithClock(fake))
 	assert.NotNil(t, svc)
 
 	// Claim stamps the trigger's At field from the clock; verify fake time flows through.

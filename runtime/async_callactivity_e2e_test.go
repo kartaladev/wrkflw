@@ -130,7 +130,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	})
 
 	runner := runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, az),
@@ -245,7 +245,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 	})
 
 	runner := runtimetest.MustRunner(t, cat, store,
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 	)
@@ -343,7 +343,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	})
 
 	runner := runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 	)
@@ -485,7 +485,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 
 	// Runner built WITHOUT WithCallLinkStore → synchronous call-activity path.
 	runner := runtimetest.MustRunner(t, nil, store,
-		runtime.WithRunnerClock(clk),
+		runtime.WithClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)

@@ -34,10 +34,10 @@ func minimalSvc(t *testing.T) service.Service {
 	require.NoError(t, err)
 	taskStore := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithRunnerClock(fc))
+	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(fc))
 	require.NoError(t, err)
 	reg := kernel.NewMapDefinitionRegistry(nil)
-	tasks, err := task.NewTaskService(taskStore, az, task.WithTaskServiceClock(fc))
+	tasks, err := task.NewTaskService(taskStore, az, task.WithClock(fc))
 	require.NoError(t, err)
 	return service.New(runner, tasks, reg, store, store, taskStore, service.WithEngineClock(fc))
 }
