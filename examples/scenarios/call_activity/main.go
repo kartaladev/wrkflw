@@ -28,6 +28,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -90,6 +91,6 @@ func main() {
 		fmt.Println("loan origination completed!")
 		fmt.Println("  credit_score (merged from child):", state.Variables["credit_score"])
 	} else {
-		fmt.Printf("unexpected status: %s\n", runtime.StatusString(state.Status))
+		fmt.Printf("unexpected status: %s\n", view.StatusString(state.Status))
 	}
 }

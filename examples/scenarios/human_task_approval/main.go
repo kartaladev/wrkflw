@@ -34,6 +34,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -81,7 +82,7 @@ func main() {
 		log.Fatal("run:", err)
 	}
 	fmt.Printf("parked at %q (status=%s)\n",
-		parked.Tokens[0].NodeID, runtime.StatusString(parked.Status))
+		parked.Tokens[0].NodeID, view.StatusString(parked.Status))
 
 	// 2. Discover claimable tasks for the manager.
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
@@ -123,6 +124,6 @@ func main() {
 	if final.Status == engine.StatusCompleted {
 		fmt.Printf("instance completed — approved=%v\n", final.Variables["approved"])
 	} else {
-		fmt.Printf("unexpected status: %s\n", runtime.StatusString(final.Status))
+		fmt.Printf("unexpected status: %s\n", view.StatusString(final.Status))
 	}
 }

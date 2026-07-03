@@ -3,7 +3,7 @@ package rest
 import (
 	"net/http"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 // handleGetInstanceSnapshot serves GET /instances/{id}/snapshot.
@@ -19,7 +19,7 @@ func (h *handler) handleGetInstanceSnapshot(w http.ResponseWriter, r *http.Reque
 		WriteHTTPError(w, err)
 		return
 	}
-	h.writeJSON(w, r, http.StatusOK, runtime.NewInstanceSnapshot(st, def))
+	h.writeJSON(w, r, http.StatusOK, view.NewInstanceSnapshot(st, def))
 }
 
 // handleGetActionableView serves GET /instances/{id}/actionable.
@@ -35,5 +35,5 @@ func (h *handler) handleGetActionableView(w http.ResponseWriter, r *http.Request
 		WriteHTTPError(w, err)
 		return
 	}
-	h.writeJSON(w, r, http.StatusOK, runtime.NewActionableView(st, def))
+	h.writeJSON(w, r, http.StatusOK, view.NewActionableView(st, def))
 }

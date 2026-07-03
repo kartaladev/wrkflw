@@ -35,6 +35,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 // failError is a plain error returned by the failing "ship" action.
@@ -110,7 +111,7 @@ func main() {
 		log.Fatal("run:", err)
 	}
 	fmt.Printf("forward outcome: status=%s (ship failure caught by boundary)\n",
-		runtime.StatusString(st.Status))
+		view.StatusString(st.Status))
 
 	fmt.Println("Operator triggers full rollback:")
 	trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
@@ -119,7 +120,7 @@ func main() {
 		log.Fatal("deliver compensate:", err)
 	}
 
-	fmt.Printf("rollback outcome: status=%s\n", runtime.StatusString(final.Status))
+	fmt.Printf("rollback outcome: status=%s\n", view.StatusString(final.Status))
 	fmt.Printf("invocation order: %v\n", invoked)
 	fmt.Println("(compensations ran in reverse: refund before cancel-booking)")
 }

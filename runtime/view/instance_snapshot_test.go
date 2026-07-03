@@ -1,4 +1,4 @@
-package runtime_test
+package view_test
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 // TestStatusString verifies that StatusString maps every engine.Status value to
@@ -25,7 +25,7 @@ func TestStatusString(t *testing.T) {
 		engine.StatusTerminated:   "terminated",
 	}
 	for in, want := range cases {
-		if got := runtime.StatusString(in); got != want {
+		if got := view.StatusString(in); got != want {
 			t.Errorf("StatusString(%v) = %q, want %q", in, got, want)
 		}
 	}
@@ -33,7 +33,7 @@ func TestStatusString(t *testing.T) {
 
 // TestStatusString_Unknown verifies that an out-of-range Status maps to "unknown".
 func TestStatusString_Unknown(t *testing.T) {
-	if got := runtime.StatusString(engine.Status(99)); got != "unknown" {
+	if got := view.StatusString(engine.Status(99)); got != "unknown" {
 		t.Errorf("StatusString(99) = %q, want %q", got, "unknown")
 	}
 }
@@ -65,7 +65,7 @@ func TestNewInstanceSnapshot(t *testing.T) {
 			CreatedAt: time.Date(2026, 6, 23, 11, 0, 0, 0, time.UTC),
 		}},
 	}
-	snap := runtime.NewInstanceSnapshot(st, nil)
+	snap := view.NewInstanceSnapshot(st, nil)
 
 	if snap.InstanceID != "i1" || snap.Status != "completed" || snap.DefVersion != 2 {
 		t.Fatalf("snap = %+v", snap)
@@ -132,12 +132,12 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 	cases := []struct {
 		name   string
 		def    func() *model.ProcessDefinition
-		assert func(t *testing.T, snap runtime.InstanceSnapshot)
+		assert func(t *testing.T, snap view.InstanceSnapshot)
 	}{
 		{
 			name: "nil_def_leaves_fields_empty",
 			def:  func() *model.ProcessDefinition { return nil },
-			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				if snap.ScopedActions != nil {
 					t.Errorf("ScopedActions = %v, want nil", snap.ScopedActions)
@@ -163,7 +163,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				// Scoped action name exposed.
 				if len(snap.ScopedActions) != 1 || snap.ScopedActions[0] != "my-action" {
@@ -203,7 +203,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				if snap.ScopedActions != nil {
 					t.Errorf("ScopedActions = %v, want nil", snap.ScopedActions)
@@ -241,7 +241,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				if len(snap.ActionBindings) != 1 {
 					t.Fatalf("ActionBindings = %v, want 1 entry", snap.ActionBindings)
@@ -277,7 +277,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				if len(snap.ActionBindings) != 1 {
 					t.Fatalf("ActionBindings = %v, want 1 entry", snap.ActionBindings)
@@ -315,7 +315,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, snap runtime.InstanceSnapshot) {
+			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				if len(snap.ScopedActions) != 1 || snap.ScopedActions[0] != "svc-x" {
 					t.Errorf("ScopedActions = %v, want [svc-x]", snap.ScopedActions)
@@ -342,7 +342,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			snap := runtime.NewInstanceSnapshot(st, tc.def())
+			snap := view.NewInstanceSnapshot(st, tc.def())
 			tc.assert(t, snap)
 		})
 	}

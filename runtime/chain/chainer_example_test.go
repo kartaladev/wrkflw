@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 // ExampleChainer shows process-instance chaining (ADR-0045): when one instance
@@ -62,7 +63,7 @@ func ExampleChainer() {
 	})
 
 	st, _, _ := store.Load(ctx, "approval-1-next-completed")
-	fmt.Printf("successor %s is %s\n", st.InstanceID, runtime.StatusString(st.Status))
+	fmt.Printf("successor %s is %s\n", st.InstanceID, view.StatusString(st.Status))
 
 	link, _, _ := links.LookupBySuccessor(ctx, "approval-1-next-completed")
 	fmt.Printf("lineage: %s --%s--> %s\n", link.PredecessorID, link.Outcome, link.SuccessorID)

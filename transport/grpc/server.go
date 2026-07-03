@@ -17,9 +17,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
@@ -349,7 +349,7 @@ func (s *server) GetInstanceSnapshot(ctx context.Context, req *workflowpb.GetIns
 		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
-	snap := runtime.NewInstanceSnapshot(st, def)
+	snap := view.NewInstanceSnapshot(st, def)
 	protoSnap, err := snapshotToProto(snap)
 	if err != nil {
 		recordSpanErr(span, err)
@@ -369,14 +369,14 @@ func (s *server) GetActionableView(ctx context.Context, req *workflowpb.GetInsta
 		recordSpanErr(span, err)
 		return nil, mapToGRPCStatus(err)
 	}
-	av := runtime.NewActionableView(st, def)
+	av := view.NewActionableView(st, def)
 	return &workflowpb.ActionableViewResponse{Actionable: actionableViewToProto(av)}, nil
 }
 
 // snapshotToProto converts a runtime.InstanceSnapshot to its proto representation.
 // Returns an error when the Variables map contains a value that cannot be
 // represented as a proto Struct.
-func snapshotToProto(snap runtime.InstanceSnapshot) (*workflowpb.InstanceSnapshot, error) {
+func snapshotToProto(snap view.InstanceSnapshot) (*workflowpb.InstanceSnapshot, error) {
 	vars, err := toStruct(snap.Variables)
 	if err != nil {
 		return nil, err
@@ -475,7 +475,7 @@ func snapshotToProto(snap runtime.InstanceSnapshot) (*workflowpb.InstanceSnapsho
 }
 
 // actionableViewToProto converts a runtime.ActionableView to its proto representation.
-func actionableViewToProto(av runtime.ActionableView) *workflowpb.ActionableView {
+func actionableViewToProto(av view.ActionableView) *workflowpb.ActionableView {
 	openTasks := make([]*workflowpb.ActionableTask, len(av.OpenTasks))
 	for i, t := range av.OpenTasks {
 		allowed := make([]*workflowpb.NextAction, len(t.AllowedActions))

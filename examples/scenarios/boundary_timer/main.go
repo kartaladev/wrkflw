@@ -45,6 +45,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -127,7 +128,7 @@ func main() {
 		log.Fatal("run:", err)
 	}
 	fmt.Printf("instance parked at %q (status=%s)\n",
-		parked.Tokens[0].NodeID, runtime.StatusString(parked.Status))
+		parked.Tokens[0].NodeID, view.StatusString(parked.Status))
 
 	// The reviewer never claims the task. Advance the clock past the 1h deadline
 	// and tick the scheduler — this fires the deadline timer.
@@ -145,6 +146,6 @@ func main() {
 			final.Variables["escalated"])
 	} else {
 		fmt.Printf("unexpected outcome: status=%s escalated=%v\n",
-			runtime.StatusString(final.Status), escalated)
+			view.StatusString(final.Status), escalated)
 	}
 }

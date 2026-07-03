@@ -31,6 +31,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -98,6 +99,6 @@ func main() {
 		_, ranFraud := state.Variables["fraud_checked"]
 		fmt.Println("  fraud_checked:  ", ranFraud, "(skipped — flagged was false)")
 	} else {
-		fmt.Printf("unexpected status: %s\n", runtime.StatusString(state.Status))
+		fmt.Printf("unexpected status: %s\n", view.StatusString(state.Status))
 	}
 }

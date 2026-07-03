@@ -1,4 +1,4 @@
-package runtime_test
+package view_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 // TestNewActionableView verifies that NewActionableView produces a curated
@@ -41,7 +41,7 @@ func TestNewActionableView(t *testing.T) {
 		},
 	}
 
-	v := runtime.NewActionableView(st, def)
+	v := view.NewActionableView(st, def)
 
 	if v.Status != "running" || len(v.OpenTasks) != 1 {
 		t.Fatalf("view = %+v", v)
@@ -77,7 +77,7 @@ func TestNewActionableView_NilDef(t *testing.T) {
 			{TaskToken: "tk2", NodeID: "approve", State: humantask.Unclaimed},
 		},
 	}
-	v := runtime.NewActionableView(st, nil)
+	v := view.NewActionableView(st, nil)
 	if len(v.OpenTasks) != 1 {
 		t.Fatalf("expected 1 open task, got %d", len(v.OpenTasks))
 	}
@@ -98,7 +98,7 @@ func TestNewActionableView_ClosedTasksExcluded(t *testing.T) {
 			{TaskToken: "tk-cancel", NodeID: "sign", State: humantask.Cancelled},
 		},
 	}
-	v := runtime.NewActionableView(st, nil)
+	v := view.NewActionableView(st, nil)
 	if len(v.OpenTasks) != 1 {
 		t.Fatalf("expected 1 open task, got %d: %+v", len(v.OpenTasks), v.OpenTasks)
 	}
