@@ -104,3 +104,45 @@ func TestPrunerFacade(t *testing.T) {
 		})
 	}
 }
+
+// TestPruner_PruneTimers_ThroughInterface verifies that PruneTimers is reachable
+// through the public persistence.Pruner interface — the method must be part of the
+// interface contract, not just on the concrete type. Seeds two wrkflw_timers rows
+// (one before, one after the cutoff) and asserts only the pre-cutoff row is deleted.
+func TestPruner_PruneTimers_ThroughInterface(t *testing.T) {
+	t.Parallel()
+
+	pool := dbtest.RunTestDatabase(t)
+	require.NoError(t, persistence.Migrate(t.Context(), pool))
+
+	concreteP, err := persistence.NewPruner(pool)
+	require.NoError(t, err)
+
+	// Interface-typed on purpose: the test validates the method is on the interface.
+	var p persistence.Pruner = concreteP
+
+	cutoff := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	before := cutoff.Add(-1 * time.Hour) // strictly before cutoff → should be pruned
+	after := cutoff.Add(1 * time.Hour)   // after cutoff → must survive
+
+	_, err = pool.Exec(t.Context(),
+		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
+		 VALUES ('inst-prune','timer-old',$1,1,'def1',1)`, before)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(t.Context(),
+		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
+		 VALUES ('inst-prune','timer-new',$1,1,'def1',1)`, after)
+	require.NoError(t, err)
+
+	n, err := p.PruneTimers(t.Context(), cutoff)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n, "only the pre-cutoff timer is pruned")
+
+	// Verify the post-cutoff row survived.
+	var remaining int
+	row := pool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM wrkflw_timers WHERE instance_id='inst-prune'`)
+	require.NoError(t, row.Scan(&remaining))
+	assert.Equal(t, 1, remaining, "post-cutoff timer must survive")
+}
