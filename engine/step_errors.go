@@ -5,7 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).
@@ -56,7 +57,7 @@ import (
 // raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
 // unhandled error parks the failing token as a [TokenIncident] and keeps the
 // instance running (admin-resumable) instead of setting StatusFailed.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
+func propagateError(top *definition.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
 	// ── Step 1: Direct-attachment check ──────────────────────────────────────
 	// Only when the caller provides an originating node (ActionFailed path).
 	// Inspect the failing token's OWN scope definition for a boundary error event
@@ -68,9 +69,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
 		}
 
-		var directHandler *model.BoundaryEvent
+		var directHandler *event.BoundaryEvent
 		for _, raw := range ownDef.Nodes {
-			n, isBnd := raw.(model.BoundaryEvent)
+			n, isBnd := raw.(event.BoundaryEvent)
 			if !isBnd {
 				continue
 			}
@@ -163,9 +164,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 
 		// Scan the parent def for a boundary error event attached to activityNodeID
 		// that matches errorCode (specific or catch-all).
-		var handler *model.BoundaryEvent
+		var handler *event.BoundaryEvent
 		for _, raw := range parentDef.Nodes {
-			n, isBnd := raw.(model.BoundaryEvent)
+			n, isBnd := raw.(event.BoundaryEvent)
 			if !isBnd {
 				continue
 			}

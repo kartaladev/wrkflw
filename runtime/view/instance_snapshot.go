@@ -4,9 +4,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // StatusString converts an engine.Status to its canonical string representation.
@@ -194,7 +194,7 @@ type InstanceSnapshot struct {
 // When def is non-nil, ScopedActions and ActionBindings are populated from the
 // definition's scoped catalog and service-action node wiring. Pass nil when the
 // definition is unavailable; both fields will be omitted.
-func NewInstanceSnapshot(st engine.InstanceState, def *model.ProcessDefinition) InstanceSnapshot {
+func NewInstanceSnapshot(st engine.InstanceState, def *definition.ProcessDefinition) InstanceSnapshot {
 	tokens := make([]TokenView, 0, len(st.Tokens))
 	for _, t := range st.Tokens {
 		tokens = append(tokens, TokenView{
@@ -264,19 +264,19 @@ func NewInstanceSnapshot(st engine.InstanceState, def *model.ProcessDefinition) 
 		var bindings []ActionBindingView
 		for _, n := range def.Nodes {
 			switch n.Kind() {
-			case model.KindServiceTask:
+			case definition.KindServiceTask:
 				bindings = append(bindings, ActionBindingView{
 					NodeID:   n.ID(),
 					NodeKind: "serviceTask",
-					Action:   model.ActionOf(n),
-					Inline:   model.InlineActionOf(n) != nil,
+					Action:   definition.ActionOf(n),
+					Inline:   definition.InlineActionOf(n) != nil,
 				})
-			case model.KindBusinessRuleTask:
+			case definition.KindBusinessRuleTask:
 				bindings = append(bindings, ActionBindingView{
 					NodeID:   n.ID(),
 					NodeKind: "businessRuleTask",
-					Action:   model.ActionOf(n),
-					Inline:   model.InlineActionOf(n) != nil,
+					Action:   definition.ActionOf(n),
+					Inline:   definition.InlineActionOf(n) != nil,
 				})
 			}
 		}

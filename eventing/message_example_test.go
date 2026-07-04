@@ -3,8 +3,8 @@ package eventing_test
 import (
 	"context"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
@@ -12,7 +12,7 @@ import (
 func ExampleNewMessageHandler() {
 	// Given a runner and the receiver definition (the process that has a ReceiveTask):
 	var runner *runtime.ProcessDriver
-	var receiverDef *model.ProcessDefinition
+	var receiverDef *definition.ProcessDefinition
 
 	handler := eventing.NewMessageHandler(func(ctx context.Context, name, key string, payload map[string]any) error {
 		// Route intra-engine: wake the instance parked on (name, key) in receiverDef.

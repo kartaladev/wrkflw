@@ -18,10 +18,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -370,7 +370,7 @@ func TestDefinitionStoreDroppedTable(t *testing.T) {
 
 		ds, err := store.NewDefinitionStore(db, dialect.NewSQLite())
 		require.NoError(t, err)
-		err = ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d1", Version: 1})
+		err = ds.PutDefinition(t.Context(), &definition.ProcessDefinition{ID: "d1", Version: 1})
 		require.Error(t, err, "PutDefinition must error after table dropped")
 	})
 

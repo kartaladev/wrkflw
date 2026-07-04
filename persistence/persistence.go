@@ -31,10 +31,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
@@ -54,11 +54,11 @@ type Store interface {
 // implementation; consumers interact with it only through this interface.
 type DefinitionStore interface {
 	// PutDefinition upserts a process definition (idempotent on (ID, Version)).
-	PutDefinition(ctx context.Context, def *model.ProcessDefinition) error
+	PutDefinition(ctx context.Context, def *definition.ProcessDefinition) error
 	// Lookup resolves a DefRef string ("defID:version" or "defID") to a definition.
 	// Returns kernel.ErrDefinitionNotFound when no matching row exists.
 	// ctx is propagated to the underlying SQL query for cancellation support.
-	Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error)
+	Lookup(ctx context.Context, defRef string) (*definition.ProcessDefinition, error)
 }
 
 // Relay is the stable public interface for the transactional outbox drain.
@@ -457,7 +457,7 @@ func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
 // Typical wiring:
 //
 //	notifier := persistence.NewCallNotifier(pool,
-//	    runtime.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, id string, trg engine.Trigger) error {
+//	    runtime.CallDeliverFunc(func(ctx context.Context, def *definition.ProcessDefinition, id string, trg engine.Trigger) error {
 //	        _, err := runner.Deliver(ctx, def, id, trg)
 //	        return err
 //	    }),

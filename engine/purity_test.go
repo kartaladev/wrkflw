@@ -12,7 +12,7 @@ import (
 // TestCorePurityNoOTel asserts the pure core never imports OpenTelemetry.
 // Observability lives strictly in the runtime and outer layers (spec §1).
 func TestCorePurityNoOTel(t *testing.T) {
-	for _, dir := range []string{".", "../model"} {
+	for _, dir := range []string{".", "../definition"} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("read %s: %v", dir, err)

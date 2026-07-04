@@ -20,9 +20,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -33,15 +35,15 @@ import (
 //
 // The user task parks the instance (StatusRunning). On cancel the engine emits
 // InvokeCancelAction{Name:"cleanup"} for the active "approve" node.
-func cancelHandlerDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func cancelHandlerDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "cancel-handler-def", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"reviewer"}, model.WithCancelHandler("cleanup")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"reviewer"}, activity.WithCancelHandler("cleanup")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},

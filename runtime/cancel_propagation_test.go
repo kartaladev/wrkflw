@@ -11,9 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -22,16 +24,16 @@ import (
 // cancelPropParentDef builds a parent definition with a call activity pointing at childDefRef.
 //
 //	parent-start → call (KindCallActivity) → parent-end
-func cancelPropParentDef(id, childDefRef string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func cancelPropParentDef(id, childDefRef string) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      id,
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("p-start"),
-			model.NewCallActivity("call", childDefRef),
-			model.NewEndEvent("p-end"),
+		Nodes: []definition.Node{
+			event.NewStart("p-start"),
+			activity.NewCallActivity("call", childDefRef),
+			event.NewEnd("p-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "p-start", Target: "call"},
 			{ID: "pf2", Source: "call", Target: "p-end"},
 		},
@@ -41,16 +43,16 @@ func cancelPropParentDef(id, childDefRef string) *model.ProcessDefinition {
 // cancelPropChildDef builds a child definition that parks at a human task.
 //
 //	child-start → child-human (KindUserTask) → child-end
-func cancelPropChildDef(id string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func cancelPropChildDef(id string) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      id,
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("c-start"),
-			model.NewUserTask("c-human", nil),
-			model.NewEndEvent("c-end"),
+		Nodes: []definition.Node{
+			event.NewStart("c-start"),
+			activity.NewUserTask("c-human", nil),
+			event.NewEnd("c-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "c-start", Target: "c-human"},
 			{ID: "cf2", Source: "c-human", Target: "c-end"},
 		},
@@ -86,7 +88,7 @@ func (c *countingCallLinkStore) listCount(parentID string) int {
 // cancelPropRunner builds a Runner with CallLinks + Definitions + HumanTasks wired.
 // The registry is populated with BOTH plain "defID" keys (for StartSubInstance
 // DefRef lookup) and "defID:version" keys (for propagateCancel's def resolution).
-func cancelPropRunner(t *testing.T, store *kernel.MemStore, cl *kernel.MemCallLinkStore, defs map[string]*model.ProcessDefinition) *runtime.ProcessDriver {
+func cancelPropRunner(t *testing.T, store *kernel.MemStore, cl *kernel.MemCallLinkStore, defs map[string]*definition.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 	reg := cancelPropRegistry(defs)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
@@ -100,8 +102,8 @@ func cancelPropRunner(t *testing.T, store *kernel.MemStore, cl *kernel.MemCallLi
 
 // cancelPropRegistry builds a MapDefinitionRegistry with both plain and versioned
 // keys for each definition, matching the convention used in e2e tests.
-func cancelPropRegistry(defs map[string]*model.ProcessDefinition) *kernel.MapDefinitionRegistry {
-	full := make(map[string]*model.ProcessDefinition, len(defs)*2)
+func cancelPropRegistry(defs map[string]*definition.ProcessDefinition) *kernel.MapDefinitionRegistry {
+	full := make(map[string]*definition.ProcessDefinition, len(defs)*2)
 	for k, v := range defs {
 		full[k] = v
 		full[fmt.Sprintf("%s:%d", v.ID, v.Version)] = v
@@ -120,7 +122,7 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 	childDef := cancelPropChildDef("prop-child")
 	parentDef := cancelPropParentDef("prop-parent", "prop-child")
 
-	runner := cancelPropRunner(t, store, cl, map[string]*model.ProcessDefinition{
+	runner := cancelPropRunner(t, store, cl, map[string]*definition.ProcessDefinition{
 		"prop-child":  childDef,
 		"prop-parent": parentDef,
 	})
@@ -161,7 +163,7 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	// parent calls child
 	parentDef := cancelPropParentDef("prop-parent-gc", "prop-child-gc")
 
-	runner := cancelPropRunner(t, store, cl, map[string]*model.ProcessDefinition{
+	runner := cancelPropRunner(t, store, cl, map[string]*definition.ProcessDefinition{
 		"prop-grandchild": grandchildDef,
 		"prop-child-gc":   childDef,
 		"prop-parent-gc":  parentDef,
@@ -219,7 +221,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	// registry that omits the child def.
 
 	// First: full runner to get parent + child both Running.
-	fullReg := cancelPropRegistry(map[string]*model.ProcessDefinition{
+	fullReg := cancelPropRegistry(map[string]*definition.ProcessDefinition{
 		"prop-missing-child":  childDef,
 		"prop-missing-parent": parentDef,
 	})
@@ -238,7 +240,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 
 	// Now build a runner whose registry OMITS the child def (simulates missing def).
 	// Note: the parent's plain + versioned keys are registered, but child is absent.
-	partialReg := cancelPropRegistry(map[string]*model.ProcessDefinition{
+	partialReg := cancelPropRegistry(map[string]*definition.ProcessDefinition{
 		"prop-missing-parent": parentDef,
 		// "prop-missing-child" intentionally absent
 	})
@@ -289,7 +291,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	fullDefs := map[string]*model.ProcessDefinition{
+	fullDefs := map[string]*definition.ProcessDefinition{
 		"list-child-a":   childA,
 		"list-child-b":   childB,
 		"list-child-c":   childC,
@@ -366,15 +368,15 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	// Simple process: start → human task → end. Parks at the human task.
-	parentDef := &model.ProcessDefinition{
+	parentDef := &definition.ProcessDefinition{
 		ID:      "no-cl-parent",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("human", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("human", nil),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "human"},
 			{ID: "f2", Source: "human", Target: "end"},
 		},
@@ -409,7 +411,7 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 	childDef := cancelPropChildDef("ctx-child")
 	parentDef := cancelPropParentDef("ctx-parent", "ctx-child")
 
-	runner := cancelPropRunner(t, store, cl, map[string]*model.ProcessDefinition{
+	runner := cancelPropRunner(t, store, cl, map[string]*definition.ProcessDefinition{
 		"ctx-child":  childDef,
 		"ctx-parent": parentDef,
 	})
@@ -438,7 +440,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	parentDef := cancelPropParentDef("no-reg-parent", "no-reg-child")
 
 	// Use a full runner to start parent+child so the child is running.
-	fullRunner := cancelPropRunner(t, store, cl, map[string]*model.ProcessDefinition{
+	fullRunner := cancelPropRunner(t, store, cl, map[string]*definition.ProcessDefinition{
 		"no-reg-child":  childDef,
 		"no-reg-parent": parentDef,
 	})
@@ -515,7 +517,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	// processes it, so ListRunningChildren(D) is called exactly once.
 	countingCL := newCountingCallLinkStore(cl)
 
-	defs := map[string]*model.ProcessDefinition{
+	defs := map[string]*definition.ProcessDefinition{
 		"dmnd-d":      dDef,
 		"dmnd-b":      bDef,
 		"dmnd-c":      cDef,

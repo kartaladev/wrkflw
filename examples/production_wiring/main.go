@@ -39,9 +39,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -136,10 +138,10 @@ func run(logger *slog.Logger) error {
 	}
 
 	// --- A demo definition + catalog so the engine can actually run instances ---
-	def, err := model.NewDefinition("order", 1).
-		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"))).
-		Add(model.NewEndEvent("e")).
+	def, err := definition.NewDefinition("order", 1).
+		Add(event.NewStart("s")).
+		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
 		Build()
@@ -151,7 +153,7 @@ func run(logger *slog.Logger) error {
 			return map[string]any{"charged": true}, nil
 		}),
 	})
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})

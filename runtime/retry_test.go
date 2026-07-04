@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -24,17 +26,17 @@ import (
 // supplied via WithDefaultRetryPolicy enables retry on this task.
 //
 //	start → task → end
-func noRetryServiceTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func noRetryServiceTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "no-node-retry",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
 			// RetryPolicy intentionally omitted — no node-level policy.
-			model.NewServiceTask("task", model.WithActionName("a")),
-			model.NewEndEvent("end"),
+			activity.NewServiceTask("task", activity.WithActionName("a")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -98,7 +100,7 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 			opts = append(opts, runtime.WithScheduler(sched))
 			opts = append(opts, runtime.WithJitterSource(runtimetest.FixedJitter{F: 1.0}))
 			if tc.withDefaultRetry {
-				opts = append(opts, runtime.WithDefaultRetryPolicy(model.RetryPolicy{
+				opts = append(opts, runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
 					MaxAttempts:     3,
 					InitialInterval: time.Second,
 					BackoffCoef:     2,
@@ -122,19 +124,19 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 // without scheduling a retry timer.
 //
 //	start → task → end
-func incidentTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func incidentTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "incident-test",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
 			// RetryPolicy intentionally omitted — default policy of MaxAttempts=1
 			// causes the first failure to exhaust the budget immediately, parking
 			// the instance as an incident rather than scheduling a retry.
-			model.NewServiceTask("task", model.WithActionName("a")),
-			model.NewEndEvent("end"),
+			activity.NewServiceTask("task", activity.WithActionName("a")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -167,7 +169,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	runner := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(clk),
 		// MaxAttempts=1: first failure parks as incident, no retry timer scheduled.
-		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: time.Second,
 			BackoffCoef:     1,

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // CancelInstance terminates a running instance by delivering a CancelRequested
@@ -15,7 +15,7 @@ import (
 // a DefinitionRegistry are both configured, running async child instances are
 // cancelled recursively (best-effort: errors are logged, never returned). Returns
 // the terminated parent InstanceState. See ADR-0028, ADR-0032.
-func (r *ProcessDriver) CancelInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string) (engine.InstanceState, error) {
+func (r *ProcessDriver) CancelInstance(ctx context.Context, def *definition.ProcessDefinition, instanceID string) (engine.InstanceState, error) {
 	// Parent-first: terminate the parent before propagating to children so that
 	// no CallNotifier can resume a child-completed parent during propagation.
 	st, err := r.Deliver(ctx, def, instanceID, engine.NewCancelRequested(r.clk.Now()))

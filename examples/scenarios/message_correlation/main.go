@@ -25,8 +25,10 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -38,12 +40,12 @@ func main() {
 	// The correlation key is an expr expression over the instance variables here
 	// `orderID` resolves to each instance's own order id, so each parked
 	// ReceiveTask is addressable by that value.
-	def, err := model.NewDefinition("order-shipping", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewReceiveTask("await-payment", "PaymentReceived",
-			model.WithCorrelationKey("orderID"))).
-		Add(model.NewServiceTask("ship", model.WithActionName("ship-order"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("order-shipping", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
+			activity.WithCorrelationKey("orderID"))).
+		Add(activity.NewServiceTask("ship", activity.WithActionName("ship-order"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "await-payment").
 		Connect("await-payment", "ship").
 		Connect("ship", "end").

@@ -6,11 +6,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"go.opentelemetry.io/otel/metric"
@@ -74,7 +74,7 @@ func WithSignalBus(bus *signal.SignalBus) Option {
 // error rather than panicking.
 //
 // The registry resolves DefRef strings (as stored on KindCallActivity nodes)
-// to *model.ProcessDefinition values. Use [NewMapDefinitionRegistry] to build
+// to *definition.ProcessDefinition values. Use [NewMapDefinitionRegistry] to build
 // an in-memory registry from a plain map.
 func WithDefinitions(reg kernel.DefinitionRegistry) Option {
 	return func(r *ProcessDriver) { r.defsReg = reg }
@@ -111,7 +111,7 @@ func WithJitterSource(src kernel.JitterSource) Option {
 //
 // The policy value is copied on each call, so subsequent mutations by the caller do
 // not affect the ProcessDriver.
-func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
+func WithDefaultRetryPolicy(p definition.RetryPolicy) Option {
 	return func(r *ProcessDriver) { r.defaultRetryPolicy = &p }
 }
 

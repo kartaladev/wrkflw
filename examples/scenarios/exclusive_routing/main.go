@@ -18,8 +18,11 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -28,19 +31,19 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process definition once; run it multiple times with different vars.
-	def, err := model.NewDefinition("loan-approval", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("check-credit", model.WithActionName("check-credit"))).
-		Add(model.NewExclusiveGateway("route")).
-		Add(model.NewServiceTask("manual-review", model.WithActionName("manual-review"))).
-		Add(model.NewServiceTask("auto-approve", model.WithActionName("auto-approve"))).
-		Add(model.NewServiceTask("reject", model.WithActionName("reject"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("loan-approval", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("check-credit", activity.WithActionName("check-credit"))).
+		Add(gateway.NewExclusive("route")).
+		Add(activity.NewServiceTask("manual-review", activity.WithActionName("manual-review"))).
+		Add(activity.NewServiceTask("auto-approve", activity.WithActionName("auto-approve"))).
+		Add(activity.NewServiceTask("reject", activity.WithActionName("reject"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "check-credit").
 		Connect("check-credit", "route").
-		Connect("route", "manual-review", model.WithCondition("amount > 50000")).
-		Connect("route", "auto-approve", model.WithCondition("amount <= 50000")).
-		Connect("route", "reject", model.AsDefault()).
+		Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
+		Connect("route", "auto-approve", definition.WithCondition("amount <= 50000")).
+		Connect("route", "reject", definition.AsDefault()).
 		Connect("manual-review", "end").
 		Connect("auto-approve", "end").
 		Connect("reject", "end").

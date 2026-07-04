@@ -16,9 +16,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // TestUnhandledFailureReconcilesOpenTasks: a parallel fork parks a UserTask on
@@ -30,17 +33,17 @@ func TestUnhandledFailureReconcilesOpenTasks(t *testing.T) {
 	at := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 
 	// start → fork → (user[UserTask] | svc[Service "boom"]) → join → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "f-unhandled", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
-			model.NewUserTask("user", []string{"r"}),
-			model.NewServiceTask("svc", model.WithActionName("boom")),
-			model.NewParallelGateway("join"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewUserTask("user", []string{"r"}),
+			activity.NewServiceTask("svc", activity.WithActionName("boom")),
+			gateway.NewParallel("join"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},
 			{ID: "f1", Source: "fork", Target: "user"},
 			{ID: "f2", Source: "fork", Target: "svc"},
@@ -89,18 +92,18 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 	at := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 
 	// start → charge[Service comp:refund] → fork → (user | svc "boom") → join → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "f-comp", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("charge", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewParallelGateway("fork"),
-			model.NewUserTask("user", []string{"r"}),
-			model.NewServiceTask("svc", model.WithActionName("boom")),
-			model.NewParallelGateway("join"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("charge", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			gateway.NewParallel("fork"),
+			activity.NewUserTask("user", []string{"r"}),
+			activity.NewServiceTask("svc", activity.WithActionName("boom")),
+			gateway.NewParallel("join"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "charge"},
 			{ID: "f1", Source: "charge", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "user"},
@@ -168,17 +171,17 @@ func TestSubInstanceFailureReconcilesOpenTasks(t *testing.T) {
 	at := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 
 	// start → fork → (user[UserTask] | call[CallActivity "child"]) → join → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "f-sub", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
-			model.NewUserTask("user", []string{"r"}),
-			model.NewCallActivity("call", "child"),
-			model.NewParallelGateway("join"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewUserTask("user", []string{"r"}),
+			activity.NewCallActivity("call", "child"),
+			gateway.NewParallel("join"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},
 			{ID: "f1", Source: "fork", Target: "user"},
 			{ID: "f2", Source: "fork", Target: "call"},

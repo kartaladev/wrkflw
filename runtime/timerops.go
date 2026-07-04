@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -43,7 +43,7 @@ func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVer
 // armTimer registers timerID on the scheduler with the engine's standard
 // fire callback: deliver a TimerFired trigger, retrying on optimistic-CAS
 // conflicts. Used by perform(ScheduleTimer) and RehydrateTimers.
-func (r *ProcessDriver) armTimer(def *model.ProcessDefinition, instanceID, timerID string, fireAt time.Time) {
+func (r *ProcessDriver) armTimer(def *definition.ProcessDefinition, instanceID, timerID string, fireAt time.Time) {
 	r.sched.Schedule(timerID, fireAt, func() {
 		// This callback runs from the scheduler's goroutine (or Tick caller).
 		// Use a background context: the originating request context may have

@@ -25,8 +25,10 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -36,10 +38,10 @@ func main() {
 	ctx := context.Background()
 
 	// The nested definition embedded inside the sub-process node.
-	hotel, err := model.NewDefinition("hotel-reservation", 1).
-		Add(model.NewStartEvent("hotel-start")).
-		Add(model.NewServiceTask("book-room", model.WithActionName("book-room"))).
-		Add(model.NewEndEvent("hotel-end")).
+	hotel, err := definition.NewDefinition("hotel-reservation", 1).
+		Add(event.NewStart("hotel-start")).
+		Add(activity.NewServiceTask("book-room", activity.WithActionName("book-room"))).
+		Add(event.NewEnd("hotel-end")).
 		Connect("hotel-start", "book-room").
 		Connect("book-room", "hotel-end").
 		Build()
@@ -48,11 +50,11 @@ func main() {
 	}
 
 	// The parent definition embeds the nested definition as a SubProcess.
-	def, err := model.NewDefinition("travel-booking", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewSubProcess("reserve-hotel", hotel)).
-		Add(model.NewServiceTask("send-confirmation", model.WithActionName("send-confirmation"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("travel-booking", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewSubProcess("reserve-hotel", hotel)).
+		Add(activity.NewServiceTask("send-confirmation", activity.WithActionName("send-confirmation"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "reserve-hotel").
 		Connect("reserve-hotel", "send-confirmation").
 		Connect("send-confirmation", "end").

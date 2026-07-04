@@ -27,8 +27,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // parallelErrorEndFirstNoHandlerDef builds a process where the ErrorEndEvent
@@ -51,18 +54,18 @@ import (
 // Fixed behaviour: errorEndEventStrategy returns halt=true, drive() exits
 // immediately via `return cmds, nil`; no InvokeAction appears after
 // FailInstance.
-func parallelErrorEndFirstNoHandlerDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func parallelErrorEndFirstNoHandlerDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-par-errend-first", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
 			// err-end FIRST so forkParallel places its token before svc-a.
-			model.NewErrorEndEvent("err-end", "FATAL"),
-			model.NewServiceTask("svc-a", model.WithActionName("svc-a")),
+			event.NewErrorEnd("err-end", "FATAL"),
+			activity.NewServiceTask("svc-a", activity.WithActionName("svc-a")),
 			// NO boundary error handler anywhere.
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-fork", Source: "start", Target: "fork"},
 			// err-end branch is listed first → token placed first by forkParallel.
 			{ID: "f-fork-err", Source: "fork", Target: "err-end"},

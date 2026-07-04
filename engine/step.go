@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // StepMode selects how far one Step advances.
@@ -24,7 +24,7 @@ type StepOptions struct {
 	Mode StepMode
 	// DefaultRetryPolicy is the fallback retry policy applied when a node does
 	// not carry its own RetryPolicy. nil means retry is disabled by default.
-	DefaultRetryPolicy *model.RetryPolicy
+	DefaultRetryPolicy *definition.RetryPolicy
 	// Evaluator overrides the expression evaluator the engine uses for gateway
 	// conditions, timer/deadline durations, and correlation keys. When nil (the
 	// default) the engine uses its pure, wall-clock-free package-global
@@ -50,11 +50,11 @@ type StepResult struct {
 // Step applies one trigger to the instance state and returns the new state plus
 // the commands the runtime must perform. It is pure: it does not mutate st.
 //
-// The engine assumes the definition has passed [model.Validate]; in particular,
+// The engine assumes the definition has passed [definition.Validate]; in particular,
 // an exclusive gateway is assumed to have at most one unconditional non-default
 // outgoing flow — the engine takes the first matching flow in definition order
 // and does not detect ambiguous multi-unconditional configurations.
-func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
+func Step(def *definition.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	s := cloneState(st)
 	sp := &s
 
@@ -105,7 +105,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 // definition (tdef) is resolved via defForScope against the token's ScopeID so
 // that tokens inside a sub-process scope resolve nodes/flows against the nested
 // definition rather than the top-level one.
-func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func drive(def *definition.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for {
 		tok := s.firstActive()

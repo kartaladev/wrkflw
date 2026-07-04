@@ -11,7 +11,7 @@
 //     via casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(...)). A small inline policy CSV
 //     grants the "approver" role the "finance-task claim" privilege. An actor
 //     with that role is allowed; an actor without it is denied. The UserTask is
-//     defined using model.WithEligibilityPrivileges so the privilege authz flows
+//     defined using activity.WithEligibilityPrivileges so the privilege authz flows
 //     through the normal definition→engine→TaskService.Claim path.
 //
 // This is a reference wiring example — not a shipped binary.
@@ -26,9 +26,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -77,17 +79,17 @@ func main() {
 func demoAttributeAuthz(ctx context.Context) {
 	// Process definition: start → approve[UserTask, role "approver",
 	// EligibilityExpr vars["region"] == "EU"] → end.
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID:      "region-approval",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"approver"},
-				model.WithEligibilityExpr(`vars["region"] == "EU"`),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"approver"},
+				activity.WithEligibilityExpr(`vars["region"] == "EU"`),
 			),
-			model.NewEndEvent("end"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
@@ -184,7 +186,7 @@ func demoAttributeAuthz(ctx context.Context) {
 // actors are tested through TaskService.Claim: one with the "approver" role
 // (ALLOW) and one without (DENY).
 //
-// The UserTask is now defined via model.WithEligibilityPrivileges so the privilege
+// The UserTask is now defined via activity.WithEligibilityPrivileges so the privilege
 // flows through the normal definition→engine→runner→TaskService.Claim path.
 func demoCasbinRBAC(ctx context.Context) {
 	// Build a casbin-backed authorizer from the inline policy CSV.
@@ -198,17 +200,17 @@ func demoCasbinRBAC(ctx context.Context) {
 	// Process definition: start → finance-review[UserTask, privilege "finance-task claim"] → end.
 	// WithEligibilityPrivileges wires the privilege into AuthzSpec.Privileges so
 	// the casbin Authorizer evaluates it at Claim time.
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID:      "finance-approval",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("finance-review", nil,
-				model.WithEligibilityPrivileges("finance-task claim"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("finance-review", nil,
+				activity.WithEligibilityPrivileges("finance-task claim"),
 			),
-			model.NewEndEvent("end"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "finance-review"},
 			{ID: "f2", Source: "finance-review", Target: "end"},
 		},

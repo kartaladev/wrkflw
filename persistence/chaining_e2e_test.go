@@ -22,10 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
@@ -35,11 +36,11 @@ import (
 // ---- minimal process definitions -----------------------------------------------
 
 // buildDef is a helper to build a trivial start→end process definition.
-func buildDef(t *testing.T, id string, version int) *model.ProcessDefinition {
+func buildDef(t *testing.T, id string, version int) *definition.ProcessDefinition {
 	t.Helper()
-	def, err := model.NewDefinition(id, version).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition(id, version).
+		Add(event.NewStart("start")).
+		Add(event.NewEnd("end")).
 		Connect("start", "end").
 		Build()
 	require.NoError(t, err)
@@ -128,7 +129,7 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 // wireChainerRunner builds the full chaining stack over d and starts the
 // ChainerRunner goroutine. It registers cleanup via t.Cleanup. The returned
 // runner is ready to call Run against.
-func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.ProcessDriver {
+func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *definition.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 
 	catalog := action.NewMapCatalog(nil)

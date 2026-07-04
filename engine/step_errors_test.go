@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,32 +27,32 @@ import (
 //	Root: start → sub(sp) → recover → end
 //	      sp has boundary error "E1" → recover
 //	Nested (sp): start → svc → errorEnd(E1)
-func errorEndCaughtByBoundaryDef() *model.ProcessDefinition {
-	nestedDef := &model.ProcessDefinition{
+func errorEndCaughtByBoundaryDef() *definition.ProcessDefinition {
+	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-nested", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("inner-action")),
-			model.NewErrorEndEvent("inner-err-end", "E1"),
+		Nodes: []definition.Node{
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+			event.NewErrorEnd("inner-err-end", "E1"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "fi2", Source: "inner-svc", Target: "inner-err-end"},
 		},
 	}
 
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "p-err-boundary", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sp", nestedDef),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
 			// Boundary error event on sp, catches "E1"
-			model.NewBoundaryEvent("bnd-err", "sp", model.WithBoundaryErrorCode("E1")),
-			model.NewServiceTask("recover", model.WithActionName("recover-action")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end-ok"),
+			event.NewBoundary("bnd-err", "sp", event.WithBoundaryErrorCode("E1")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-ok"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
 			{ID: "f-sp-end", Source: "sp", Target: "end-ok"},
 			{ID: "f-bnd-recover", Source: "bnd-err", Target: "recover"},
@@ -64,15 +66,15 @@ func errorEndCaughtByBoundaryDef() *model.ProcessDefinition {
 //	Root: start → errorEnd(E2)
 //
 // No boundary error handler → should fail instance.
-func unhandledErrorDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func unhandledErrorDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-unhandled-err", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("svc-action")),
-			model.NewErrorEndEvent("err-end", "E2"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
+			event.NewErrorEnd("err-end", "E2"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "err-end"},
 		},
@@ -84,26 +86,26 @@ func unhandledErrorDef() *model.ProcessDefinition {
 //	Root: start → sub(sp) → end
 //	Nested (sp): start → errorEnd(E3)
 //	No boundary error handler on sp → fails instance.
-func unhandledErrorInSubprocessDef() *model.ProcessDefinition {
-	nestedDef := &model.ProcessDefinition{
+func unhandledErrorInSubprocessDef() *definition.ProcessDefinition {
+	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-nested-nohandler", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewErrorEndEvent("inner-err-end", "E3"),
+		Nodes: []definition.Node{
+			event.NewStart("inner-start"),
+			event.NewErrorEnd("inner-err-end", "E3"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-err-end"},
 		},
 	}
 
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "p-unhandled-err-sp", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sp", nestedDef),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
 			{ID: "f-sp-end", Source: "sp", Target: "end"},
 		},
@@ -118,32 +120,32 @@ func unhandledErrorInSubprocessDef() *model.ProcessDefinition {
 //
 // When svc fails with ActionFailed, the error propagates to the boundary error
 // handler on the sub-process → recovery path is taken.
-func actionFailedBoundaryDef() *model.ProcessDefinition {
-	nestedDef := &model.ProcessDefinition{
+func actionFailedBoundaryDef() *definition.ProcessDefinition {
+	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-af-nested", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("work-action")),
-			model.NewEndEvent("inner-end"),
+		Nodes: []definition.Node{
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("work-action")),
+			event.NewEnd("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "fi2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
 
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "p-af-boundary", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sp", nestedDef),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
 			// Catch-all boundary error (ErrorCode == "") catches any error thrown from sp
-			model.NewBoundaryEvent("bnd-err", "sp", model.WithBoundaryErrorCode("")),
-			model.NewServiceTask("recover", model.WithActionName("recover-action")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end-ok"),
+			event.NewBoundary("bnd-err", "sp", event.WithBoundaryErrorCode("")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-ok"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
 			{ID: "f-sp-end", Source: "sp", Target: "end-ok"},
 			{ID: "f-bnd-recover", Source: "bnd-err", Target: "recover"},
@@ -221,15 +223,15 @@ func TestErrorEndCaughtByBoundary(t *testing.T) {
 func TestUnhandledErrorFailsInstance(t *testing.T) {
 	tests := []struct {
 		name       string
-		buildDef   func() *model.ProcessDefinition
-		stepsToErr func(def *model.ProcessDefinition, at time.Time) (engine.InstanceState, string, error)
+		buildDef   func() *definition.ProcessDefinition
+		stepsToErr func(def *definition.ProcessDefinition, at time.Time) (engine.InstanceState, string, error)
 		errorCode  string
 	}{
 		{
 			name:      "root-level error end with no handler",
 			errorCode: "E2",
 			buildDef:  unhandledErrorDef,
-			stepsToErr: func(def *model.ProcessDefinition, at time.Time) (engine.InstanceState, string, error) {
+			stepsToErr: func(def *definition.ProcessDefinition, at time.Time) (engine.InstanceState, string, error) {
 				// Start → svc parks
 				r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 					engine.NewStartInstance(at, nil), engine.StepOptions{})
@@ -253,7 +255,7 @@ func TestUnhandledErrorFailsInstance(t *testing.T) {
 			name:      "sub-process error end with no boundary handler",
 			errorCode: "E3",
 			buildDef:  unhandledErrorInSubprocessDef,
-			stepsToErr: func(def *model.ProcessDefinition, at time.Time) (engine.InstanceState, string, error) {
+			stepsToErr: func(def *definition.ProcessDefinition, at time.Time) (engine.InstanceState, string, error) {
 				// Start → inner-start → inner-err-end all in one drive (no service task)
 				r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 					engine.NewStartInstance(at, nil), engine.StepOptions{})
@@ -283,19 +285,19 @@ func TestUnhandledErrorFailsInstance(t *testing.T) {
 // When svc's ActionFailed fires (errorCode="E1"), the boundary attached directly to
 // svc (at root level, no sub-process scope) should catch the error, route to
 // recover, and NOT fail the instance.
-func directBoundaryOnRootSvcDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func directBoundaryOnRootSvcDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-direct-bnd", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("svc-action")),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
 			// Direct boundary error event on svc (specific error code "E1")
-			model.NewBoundaryEvent("bnd-svc-err", "svc", model.WithBoundaryErrorCode("E1")),
-			model.NewServiceTask("recover", model.WithActionName("recover-action")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end-recover"),
+			event.NewBoundary("bnd-svc-err", "svc", event.WithBoundaryErrorCode("E1")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recover"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-svc", Source: "start", Target: "svc"},
 			{ID: "f-svc-end", Source: "svc", Target: "end"},
 			{ID: "f-bnd-recover", Source: "bnd-svc-err", Target: "recover"},
@@ -308,19 +310,19 @@ func directBoundaryOnRootSvcDef() *model.ProcessDefinition {
 //
 //	Root: start → svc → end
 //	      svc has a catch-all boundary error event (ErrorCode=="") → recover → end-recover
-func directBoundaryCatchAllOnRootSvcDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func directBoundaryCatchAllOnRootSvcDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-direct-bnd-catchall", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("svc-action")),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
 			// Catch-all boundary error event on svc
-			model.NewBoundaryEvent("bnd-svc-err", "svc", model.WithBoundaryErrorCode("")),
-			model.NewServiceTask("recover", model.WithActionName("recover-action")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end-recover"),
+			event.NewBoundary("bnd-svc-err", "svc", event.WithBoundaryErrorCode("")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recover"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-svc", Source: "start", Target: "svc"},
 			{ID: "f-svc-end", Source: "svc", Target: "end"},
 			{ID: "f-bnd-recover", Source: "bnd-svc-err", Target: "recover"},
@@ -338,19 +340,19 @@ func directBoundaryCatchAllOnRootSvcDef() *model.ProcessDefinition {
 // When inner-svc's ActionFailed fires, the boundary attached DIRECTLY to inner-svc
 // (inside the sub-process scope) should catch the error. Only inner-svc's token is
 // consumed; the sub-process scope stays open with inner-recover running.
-func directBoundaryOnInnerSvcInSubprocessDef() *model.ProcessDefinition {
-	nestedDef := &model.ProcessDefinition{
+func directBoundaryOnInnerSvcInSubprocessDef() *definition.ProcessDefinition {
+	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-direct-bnd-inner", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("inner-action")),
+		Nodes: []definition.Node{
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
 			// Boundary attached directly to inner-svc (specific error code)
-			model.NewBoundaryEvent("inner-bnd", "inner-svc", model.WithBoundaryErrorCode("INNER_ERR")),
-			model.NewServiceTask("inner-recover", model.WithActionName("inner-recover-action")),
-			model.NewEndEvent("inner-end"),
-			model.NewEndEvent("inner-end-recover"),
+			event.NewBoundary("inner-bnd", "inner-svc", event.WithBoundaryErrorCode("INNER_ERR")),
+			activity.NewServiceTask("inner-recover", activity.WithActionName("inner-recover-action")),
+			event.NewEnd("inner-end"),
+			event.NewEnd("inner-end-recover"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "fi-start-svc", Source: "inner-start", Target: "inner-svc"},
 			{ID: "fi-svc-end", Source: "inner-svc", Target: "inner-end"},
 			{ID: "fi-bnd-recover", Source: "inner-bnd", Target: "inner-recover"},
@@ -358,14 +360,14 @@ func directBoundaryOnInnerSvcInSubprocessDef() *model.ProcessDefinition {
 		},
 	}
 
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "p-direct-bnd-inner", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sp", nestedDef),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
 			{ID: "f-sp-end", Source: "sp", Target: "end"},
 		},
@@ -666,18 +668,18 @@ func TestActionFailedPropagatesToBoundaryError(t *testing.T) {
 //
 //	Root: start → svc(Action:"work") → end
 //	      svc has a timer boundary (30s) → timeout-path → end-timeout
-func cancelWithTimerDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func cancelWithTimerDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-cancel", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("work")),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("work")),
 			// Timer boundary on svc (30-second deadline).
-			model.NewBoundaryEvent("bnd-timer", "svc", model.WithBoundaryTimer(`"30s"`)),
-			model.NewEndEvent("timeout-end"),
-			model.NewEndEvent("end"),
+			event.NewBoundary("bnd-timer", "svc", event.WithBoundaryTimer(`"30s"`)),
+			event.NewEnd("timeout-end"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start-svc", Source: "start", Target: "svc"},
 			{ID: "f-svc-end", Source: "svc", Target: "end"},
 			{ID: "f-bnd-end", Source: "bnd-timer", Target: "timeout-end"},
@@ -690,15 +692,15 @@ func cancelWithTimerDef() *model.ProcessDefinition {
 // arm (simpler scenario).
 //
 //	Root: start → userTask → end
-func cancelUserTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func cancelUserTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-cancel-ut", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("userTask", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
 			{ID: "f2", Source: "userTask", Target: "end"},
 		},
@@ -881,15 +883,15 @@ func TestCancelRequestedTerminates(t *testing.T) {
 // This is the Task-3 review fix folded into Task 4.
 func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 	// Build a simple process with one compensable service task.
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "p-comp-unknown", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewUserTask("userTask", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "userTask"},
 			{ID: "f3", Source: "userTask", Target: "end"},
@@ -925,14 +927,14 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestCancelRequestedEmitsCancelActions(t *testing.T) {
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "d", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("work")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("work")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},
@@ -967,10 +969,10 @@ func TestCancelRequestedEmitsCancelActions(t *testing.T) {
 }
 
 func TestCancelRequestedNoCancelActionsUnchanged(t *testing.T) {
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "d", Version: 1,
-		Nodes: []model.Node{model.NewStartEvent("start"), model.NewEndEvent("end")},
-		Flows: []model.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+		Nodes: []definition.Node{event.NewStart("start"), event.NewEnd("end")},
+		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 	st := engine.InstanceState{
 		InstanceID: "i1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning,

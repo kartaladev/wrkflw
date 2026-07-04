@@ -9,8 +9,10 @@ import (
 	"os"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -19,13 +21,13 @@ func main() {
 	ctx := context.Background()
 
 	// --- Define a process (Go builder) ---
-	def, err := model.NewDefinition("order-fulfillment", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"),
-			model.WithCompensation("refund-card"),
+	def, err := definition.NewDefinition("order-fulfillment", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
+			activity.WithCompensation("refund-card"),
 		)).
-		Add(model.NewUserTask("approve", []string{"manager"})).
-		Add(model.NewEndEvent("end")).
+		Add(activity.NewUserTask("approve", []string{"manager"})).
+		Add(event.NewEnd("end")).
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").
@@ -52,7 +54,7 @@ flows:
   - { id: f1, source: s, target: charge }
   - { id: f2, source: charge, target: e }
 `
-	yamlLd, err := model.ParseYAML([]byte(yamlSrc))
+	yamlLd, err := definition.ParseYAML([]byte(yamlSrc))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "yaml parse:", err)
 		os.Exit(1)
@@ -65,10 +67,10 @@ flows:
 	fmt.Printf("yaml def %q v%d with %d nodes\n", yamlDef.ID, yamlDef.Version, len(yamlDef.Nodes))
 
 	// --- Run it ---
-	simpleDef, _ := model.NewDefinition("order", 1).
-		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"))).
-		Add(model.NewEndEvent("e")).
+	simpleDef, _ := definition.NewDefinition("order", 1).
+		Add(event.NewStart("s")).
+		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
 		Build()

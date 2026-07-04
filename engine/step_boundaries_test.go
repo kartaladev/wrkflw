@@ -8,26 +8,28 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // interruptingMessageBoundaryDef returns a definition:
 //
 //	Start → UserTask("work") → End
 //	               ↑ interrupting message boundary "cancel" → escalate → End2
-func interruptingMessageBoundaryDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func interruptingMessageBoundaryDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-bnd-msg-int", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("work", nil),
-			model.NewBoundaryEvent("bnd-msg", "work", model.WithBoundaryMessage("cancel", "")),
-			model.NewServiceTask("escalate", model.WithActionName("escalate-action")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end2"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("work", nil),
+			event.NewBoundary("bnd-msg", "work", event.WithBoundaryMessage("cancel", "")),
+			activity.NewServiceTask("escalate", activity.WithActionName("escalate-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-escalate", Source: "bnd-msg", Target: "escalate"},
@@ -125,19 +127,19 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 	// Definition: UserTask("work") with a message boundary "cancel" correlated on
 	// the instance variable orderId (expr expression). Start vars set orderId=42,
 	// so the resolved correlation key is "42".
-	newDef := func() *model.ProcessDefinition {
-		return &model.ProcessDefinition{
+	newDef := func() *definition.ProcessDefinition {
+		return &definition.ProcessDefinition{
 			ID: "p-bnd-msg-corr", Version: 1,
-			Nodes: []model.Node{
-				model.NewStartEvent("start"),
-				model.NewUserTask("work", nil),
-				model.NewBoundaryEvent("bnd-msg", "work",
-					model.WithBoundaryMessage("cancel", "string(orderId)")),
-				model.NewServiceTask("escalate", model.WithActionName("escalate-action")),
-				model.NewEndEvent("end"),
-				model.NewEndEvent("end2"),
+			Nodes: []definition.Node{
+				event.NewStart("start"),
+				activity.NewUserTask("work", nil),
+				event.NewBoundary("bnd-msg", "work",
+					event.WithBoundaryMessage("cancel", "string(orderId)")),
+				activity.NewServiceTask("escalate", activity.WithActionName("escalate-action")),
+				event.NewEnd("end"),
+				event.NewEnd("end2"),
 			},
-			Flows: []model.SequenceFlow{
+			Flows: []definition.SequenceFlow{
 				{ID: "f-start", Source: "start", Target: "work"},
 				{ID: "f-work-end", Source: "work", Target: "end"},
 				{ID: "f-bnd-escalate", Source: "bnd-msg", Target: "escalate"},
@@ -202,19 +204,19 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 //
 //	Start → UserTask("work") → End
 //	               ↑ non-interrupting message boundary "notify" → notify-svc → End2
-func nonInterruptingMessageBoundaryDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func nonInterruptingMessageBoundaryDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-bnd-msg-nonint", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("work", nil),
-			model.NewBoundaryEvent("bnd-msg", "work",
-				model.WithBoundaryMessage("notify", ""), model.BoundaryNonInterrupting()),
-			model.NewServiceTask("notify-svc", model.WithActionName("notify-action")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end2"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("work", nil),
+			event.NewBoundary("bnd-msg", "work",
+				event.WithBoundaryMessage("notify", ""), event.WithBoundaryNonInterrupting()),
+			activity.NewServiceTask("notify-svc", activity.WithActionName("notify-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-notify", Source: "bnd-msg", Target: "notify-svc"},

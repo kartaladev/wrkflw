@@ -37,8 +37,10 @@ import (
 	"database/sql"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -134,10 +136,10 @@ func run() error {
 // incident so it stays running) and pages through them via the SQLite lister.
 func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// Simple linear definition: start → greet → end.
-	def, err := model.NewDefinition("greet", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("greet", model.WithActionName("say-hello"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("greet", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("greet", activity.WithActionName("say-hello"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "greet").
 		Connect("greet", "end").
 		Build()
@@ -210,10 +212,10 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 // (MaxAttempts=1 so no retry, incident raised immediately) then calls
 // ResolveIncident to resume the instance to completion.
 func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) error {
-	def, err := model.NewDefinition("incident-demo", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("risky-op", model.WithActionName("risky"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("incident-demo", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("risky-op", activity.WithActionName("risky"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "risky-op").
 		Connect("risky-op", "end").
 		Build()
@@ -237,7 +239,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
 	runner, err := runtime.NewProcessDriver(cat, store,
-		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: 0,
 			BackoffCoef:     1,
@@ -304,10 +306,10 @@ func (failPublisher) Publish(_ context.Context, _ kernel.OutboxEvent) error {
 //   - confirms OutboxStats.Dead == 0 after redrive (row is pending again).
 func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// A simple definition that completes immediately → emits a terminal outbox event.
-	def, err := model.NewDefinition("dl-demo", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("work", model.WithActionName("work"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("dl-demo", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("work", activity.WithActionName("work"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "work").
 		Connect("work", "end").
 		Build()

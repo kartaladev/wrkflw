@@ -14,9 +14,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -75,16 +77,16 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 		}),
 	})
 
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID:      "deadline-fireforget",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("review", []string{"reviewer"}, model.WithDeadline(`"30m"`, "escalate", "notify")),
-			model.NewEndEvent("end-normal"),
-			model.NewEndEvent("end-escalated"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(`"30m"`, "escalate", "notify")),
+			event.NewEnd("end-normal"),
+			event.NewEnd("end-escalated"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
 			{ID: "f2", Source: "review", Target: "end-normal"},
 			{ID: "escalate", Source: "review", Target: "end-escalated"},

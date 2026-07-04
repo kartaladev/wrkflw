@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // handleDeadlineFired processes a TimerFired event for a deadline timer. It is called
@@ -20,7 +20,7 @@ import (
 //     (c) marks the task Cancelled and emits UpdateTask,
 //     (d) cancels any other timers (e.g. reminders) for the same task,
 //     (e) removes the deadline timer record and drives forward.
-func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func handleDeadlineFired(def *definition.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Find the parked token. If the token is gone (task completed, instance
 	// advanced), the deadline fired late → clean no-op.
 	tok := s.tokenAwaiting(rec.TaskToken)
@@ -52,7 +52,7 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	if !ok {
 		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: node %q not found in definition", rec.NodeID)
 	}
-	_, deadlineFlow, deadlineAction := model.DeadlineOf(node)
+	_, deadlineFlow, deadlineAction := definition.DeadlineOf(node)
 	if deadlineFlow == "" {
 		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: node %q has no DeadlineFlow defined", rec.NodeID)
 	}
@@ -126,7 +126,7 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 //     (2) removes the fired reminder record and schedules the next reminder at
 //     firedAt + every (new timer id from the counter), recording the new
 //     timerRecord; the token does NOT move.
-func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, firedAt time.Time, eval ConditionEvaluator) (StepResult, error) {
+func handleReminderFired(def *definition.ProcessDefinition, s *InstanceState, rec timerRecord, firedAt time.Time, eval ConditionEvaluator) (StepResult, error) {
 	// If the parked token is gone (task completed/cancelled and advanced), the
 	// reminder fired late → clean no-op, remove the stale record.
 	tok := s.tokenAwaiting(rec.TaskToken)
@@ -157,7 +157,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		return StepResult{}, fmt.Errorf("workflow-engine: reminder fired: node %q not found in definition", rec.NodeID)
 	}
 
-	reminderEvery, reminderAction := model.ReminderOf(node)
+	reminderEvery, reminderAction := definition.ReminderOf(node)
 
 	var cmds []Command
 
@@ -209,7 +209,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 //
 // The caller is responsible for any pre-work specific to each path (e.g.
 // removing the consumed timer record before calling this for the retry path).
-func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, eval ConditionEvaluator) ([]Command, error) {
+func reinvokeServiceAction(def *definition.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	tdef, err := defForScope(def, s, tok.ScopeID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-engine: reinvoke: %w", err)
@@ -225,7 +225,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 	cmds := []Command{InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
+		Inline:    definition.InlineActionOf(node),
 		Scoped:    tdef.ScopedCatalog(),
 		Input:     serviceActionInput(s, node),
 	}}
@@ -251,7 +251,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 //     the node (mirroring the service-task drive path), re-parks the token on
 //     the new command ID, and re-arms any boundary events (which Task 5 cancelled
 //     on failure) so deadline and reminder timers are active for the retry attempt.
-func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func handleRetryFired(def *definition.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Find the parked token. The token was parked with AwaitCommand == rec.TimerID
 	// by Task 5 (ActionFailed retry path). If absent, the timer fired after the
 	// instance advanced via another path (race / duplicate): clean no-op.

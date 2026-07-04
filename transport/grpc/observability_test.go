@@ -21,8 +21,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -33,7 +33,7 @@ import (
 
 // newObsGRPCHarness is a focused bufconn harness that accepts variadic grpctransport.Option
 // values, allowing tests to inject a custom TracerProvider.
-func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model.ProcessDefinition) workflowpb.WorkflowServiceClient {
+func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*definition.ProcessDefinition) workflowpb.WorkflowServiceClient {
 	t.Helper()
 
 	fc := clockwork.NewFakeClock()
@@ -50,7 +50,7 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 	runner, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 	require.NoError(t, err)
 
-	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
+	defsMap := make(map[string]*definition.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {
 		defsMap[defRefFor(d)] = d
 		defsMap[d.ID] = d

@@ -8,9 +8,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -177,16 +179,16 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 // role "approver", EligibilityExpr vars["region"] == "EU") → end.
 // The EligibilityExpr is mapped to AuthzSpec.Attribute by the engine so that
 // attribute-based authorization is enforced at Claim time over snapshotted vars.
-func approvalWithEligibilityExprDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func approvalWithEligibilityExprDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "approval-with-attr",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"approver"}, model.WithEligibilityExpr(`vars["region"] == "EU"`)),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"approver"}, activity.WithEligibilityExpr(`vars["region"] == "EU"`)),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},

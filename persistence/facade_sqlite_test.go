@@ -18,9 +18,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
@@ -28,15 +29,15 @@ import (
 )
 
 // sqliteMinimalDef returns the simplest process definition for SQLite tests.
-func sqliteMinimalDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func sqliteMinimalDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "sqlite-minimal",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 }
 
@@ -299,12 +300,12 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	`, "sqlite-notifier-child-1", "sqlite-notifier-parent-1", "cmd-sqlite-notifier", "sqlite-minimal", 1, 0)
 	require.NoError(t, err)
 
-	reg := &staticReg{defs: map[string]*model.ProcessDefinition{
+	reg := &staticReg{defs: map[string]*definition.ProcessDefinition{
 		"sqlite-minimal:1": def,
 	}}
 
 	var deliverCalled int
-	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *definition.ProcessDefinition, _ string, _ engine.Trigger) error {
 		deliverCalled++
 		return nil
 	})
@@ -335,7 +336,7 @@ func TestNewSQLiteDefinitionStore_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID:            "sqlite-facade-def-1",
 		Version:       1,
 		CancelActions: []string{"rollback"},

@@ -1,0 +1,240 @@
+{
+  "id": "golden",
+  "version": 7,
+  "nodes": [
+    {
+      "id": "start",
+      "kind": "startEvent",
+      "name": "Start",
+      "timerDuration": "1h",
+      "signalName": "go",
+      "messageName": "kickoff",
+      "correlationKey": "orderId"
+    },
+    {
+      "id": "charge",
+      "kind": "serviceTask",
+      "name": "Charge",
+      "action": "charge-card",
+      "deadlineDuration": "2h",
+      "deadlineFlow": "sla-flow",
+      "deadlineAction": "notify-ops",
+      "reminderEvery": "30m",
+      "reminderAction": "ping",
+      "retryPolicy": {
+        "MaxAttempts": 5,
+        "InitialInterval": 2000000000,
+        "BackoffCoef": 2,
+        "MaxInterval": 90000000000,
+        "MaxElapsed": 600000000000,
+        "NonRetryableErrors": [
+          "fatal",
+          "denied"
+        ]
+      },
+      "recoveryFlow": "charge-\u003efallback",
+      "compensationAction": "refund-card",
+      "cancelHandler": "abort-charge"
+    },
+    {
+      "id": "approve",
+      "kind": "userTask",
+      "name": "Approve",
+      "candidateRoles": [
+        "manager",
+        "director"
+      ],
+      "eligibilityPrivileges": [
+        "finance-task claim",
+        "finance-task complete"
+      ],
+      "eligibilityExpr": "vars[\"region\"] == \"EU\""
+    },
+    {
+      "id": "await",
+      "kind": "receiveTask",
+      "name": "Await Payment",
+      "messageName": "payment-confirmed",
+      "correlationKey": "orderId"
+    },
+    {
+      "id": "notify",
+      "kind": "sendTask",
+      "name": "Notify",
+      "messageName": "shipment-ready",
+      "correlationKey": "orderId"
+    },
+    {
+      "id": "score",
+      "kind": "businessRuleTask",
+      "name": "Score",
+      "action": "risk-score"
+    },
+    {
+      "id": "packing",
+      "kind": "subProcess",
+      "name": "Packing",
+      "subprocess": {
+        "id": "sub",
+        "version": 1,
+        "nodes": [
+          {
+            "id": "sub-start",
+            "kind": "startEvent"
+          },
+          {
+            "id": "sub-end",
+            "kind": "endEvent"
+          }
+        ],
+        "flows": [
+          {
+            "ID": "sf1",
+            "Source": "sub-start",
+            "Target": "sub-end",
+            "Condition": "",
+            "IsDefault": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "fulfil",
+      "kind": "callActivity",
+      "name": "Fulfil",
+      "defRef": "fulfilment-def"
+    },
+    {
+      "id": "compensator",
+      "kind": "eventSubProcess",
+      "name": "Compensator",
+      "nonInterrupting": true,
+      "subprocess": {
+        "id": "sub",
+        "version": 1,
+        "nodes": [
+          {
+            "id": "sub-start",
+            "kind": "startEvent"
+          },
+          {
+            "id": "sub-end",
+            "kind": "endEvent"
+          }
+        ],
+        "flows": [
+          {
+            "ID": "sf1",
+            "Source": "sub-start",
+            "Target": "sub-end",
+            "Condition": "",
+            "IsDefault": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "wait",
+      "kind": "intermediateCatchEvent",
+      "name": "Wait",
+      "timerDuration": "15m",
+      "deadlineDuration": "4h",
+      "deadlineFlow": "wait-\u003eesc",
+      "deadlineAction": "escalate",
+      "reminderEvery": "1h",
+      "reminderAction": "nudge",
+      "signalName": "resume",
+      "messageName": "go-on",
+      "correlationKey": "orderId"
+    },
+    {
+      "id": "emit",
+      "kind": "intermediateThrowEvent",
+      "name": "Emit",
+      "compensateRef": "charge",
+      "signalName": "done"
+    },
+    {
+      "id": "timeout",
+      "kind": "boundaryEvent",
+      "name": "Timeout",
+      "timerDuration": "5m",
+      "signalName": "abort",
+      "messageName": "cancel",
+      "correlationKey": "orderId",
+      "errorCode": "E_TIMEOUT",
+      "attachedTo": "charge",
+      "nonInterrupting": true
+    },
+    {
+      "id": "xor",
+      "kind": "exclusiveGateway",
+      "name": "XOR"
+    },
+    {
+      "id": "and",
+      "kind": "parallelGateway",
+      "name": "AND"
+    },
+    {
+      "id": "or",
+      "kind": "inclusiveGateway",
+      "name": "OR"
+    },
+    {
+      "id": "race",
+      "kind": "eventBasedGateway",
+      "name": "RACE"
+    },
+    {
+      "id": "kill",
+      "kind": "terminateEndEvent",
+      "name": "Kill"
+    },
+    {
+      "id": "boom",
+      "kind": "errorEndEvent",
+      "name": "Boom",
+      "errorCode": "E_BOOM"
+    },
+    {
+      "id": "end",
+      "kind": "endEvent",
+      "name": "End"
+    }
+  ],
+  "flows": [
+    {
+      "ID": "f1",
+      "Source": "start",
+      "Target": "charge",
+      "Condition": "",
+      "IsDefault": false
+    },
+    {
+      "ID": "f2",
+      "Source": "charge",
+      "Target": "xor",
+      "Condition": "",
+      "IsDefault": false
+    },
+    {
+      "ID": "f3",
+      "Source": "xor",
+      "Target": "approve",
+      "Condition": "amount \u003e 100",
+      "IsDefault": false
+    },
+    {
+      "ID": "f4",
+      "Source": "xor",
+      "Target": "end",
+      "Condition": "",
+      "IsDefault": true
+    }
+  ],
+  "cancelActions": [
+    "cancel-a",
+    "cancel-b"
+  ]
+}

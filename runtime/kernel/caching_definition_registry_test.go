@@ -10,7 +10,7 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -18,13 +18,13 @@ import (
 // countingRegistry is a fake DefinitionRegistry that counts Lookup calls.
 type countingRegistry struct {
 	calls atomic.Int64
-	def   *model.ProcessDefinition
+	def   *definition.ProcessDefinition
 	err   error
 	// block is an optional channel; if non-nil, Lookup blocks until it is closed.
 	block chan struct{}
 }
 
-func (c *countingRegistry) Lookup(_ context.Context, _ string) (*model.ProcessDefinition, error) {
+func (c *countingRegistry) Lookup(_ context.Context, _ string) (*definition.ProcessDefinition, error) {
 	if c.block != nil {
 		<-c.block
 	}
@@ -55,7 +55,7 @@ func (f *fakeClock) Advance(d time.Duration) {
 func TestCachingDefinitionRegistry(t *testing.T) {
 	t.Parallel()
 
-	baseDef := &model.ProcessDefinition{ID: "d", Version: 1}
+	baseDef := &definition.ProcessDefinition{ID: "d", Version: 1}
 	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	ttl := time.Minute
 
@@ -138,7 +138,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 				require.NoError(t, err)
 
 				// Change the def the backing returns for a second key.
-				backing.def = &model.ProcessDefinition{ID: "e", Version: 2}
+				backing.def = &definition.ProcessDefinition{ID: "e", Version: 2}
 
 				got, err := c.Lookup(t.Context(), "e:2")
 				require.NoError(t, err)
@@ -186,7 +186,7 @@ func TestCachingDefinitionRegistry_NonErrNotCached(t *testing.T) {
 // option defaults to clock.System() and the registry still caches correctly.
 func TestNewCachingDefinitionRegistryDefaultUsesSystemClock(t *testing.T) {
 	t.Parallel()
-	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
+	backing := &countingRegistry{def: &definition.ProcessDefinition{ID: "d", Version: 1}}
 	c := runtimetest.MustCachingDefinitionRegistry(t, backing, time.Minute) // no clock option
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
@@ -200,7 +200,7 @@ func TestNewCachingDefinitionRegistryDefaultUsesSystemClock(t *testing.T) {
 func TestNewCachingDefinitionRegistryWithClockOption(t *testing.T) {
 	t.Parallel()
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
+	backing := &countingRegistry{def: &definition.ProcessDefinition{ID: "d", Version: 1}}
 	c := runtimetest.MustCachingDefinitionRegistry(t, backing, time.Minute, kernel.WithCachingDefinitionRegistryClock(fake))
 	_, err := c.Lookup(t.Context(), "d:1")
 	require.NoError(t, err)
@@ -213,7 +213,7 @@ func TestNewCachingDefinitionRegistryWithClockOption(t *testing.T) {
 func TestNewCachingDefinitionRegistryFailsFast(t *testing.T) {
 	t.Parallel()
 
-	goodBacking := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}
+	goodBacking := &countingRegistry{def: &definition.ProcessDefinition{ID: "d", Version: 1}}
 	type testCase struct {
 		name    string
 		backing kernel.DefinitionRegistry

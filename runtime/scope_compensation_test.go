@@ -20,8 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -36,29 +38,29 @@ import (
 // The compensation throw refers to "sub". After the sub-process completes
 // normally, inner-svc is archived under "sub". When compThrow fires, it runs
 // cancel-book then resumes past the throw straight to end.
-func scopeCompensationDef() *model.ProcessDefinition {
-	nested := &model.ProcessDefinition{
+func scopeCompensationDef() *definition.ProcessDefinition {
+	nested := &definition.ProcessDefinition{
 		ID: "scope-comp-nested", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("book"), model.WithCompensation("cancel-book")),
-			model.NewEndEvent("inner-end"),
+		Nodes: []definition.Node{
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensation("cancel-book")),
+			event.NewEnd("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "scope-comp-def", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sub", nested),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
 			// Compensation throw: runs ArchivedCompensations["sub"] then resumes.
-			model.NewIntermediateThrowEvent("compThrow", model.WithCompensateRef("sub")),
-			model.NewEndEvent("end"),
+			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "compThrow"},
 			{ID: "f3", Source: "compThrow", Target: "end"},

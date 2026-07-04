@@ -10,9 +10,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -22,16 +24,16 @@ import (
 // so the child will park (StatusRunning) instead of completing.
 //
 //	child-start → child-human (KindUserTask) → child-end
-func asyncChildDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func asyncChildDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "async-child",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("child-start"),
-			model.NewUserTask("child-human", nil),
-			model.NewEndEvent("child-end"),
+		Nodes: []definition.Node{
+			event.NewStart("child-start"),
+			activity.NewUserTask("child-human", nil),
+			event.NewEnd("child-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "acf1", Source: "child-start", Target: "child-human"},
 			{ID: "acf2", Source: "child-human", Target: "child-end"},
 		},
@@ -41,16 +43,16 @@ func asyncChildDef() *model.ProcessDefinition {
 // asyncParentDef builds a parent definition with a call activity that invokes asyncChildDef.
 //
 //	parent-start → call (KindCallActivity, DefRef:"async-child") → parent-end
-func asyncParentDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func asyncParentDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "async-parent",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("parent-start"),
-			model.NewCallActivity("call", "async-child"),
-			model.NewEndEvent("parent-end"),
+		Nodes: []definition.Node{
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "async-child"),
+			event.NewEnd("parent-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "apf1", Source: "parent-start", Target: "call"},
 			{ID: "apf2", Source: "call", Target: "parent-end"},
 		},
@@ -68,7 +70,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	child := asyncChildDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"async-child": child,
 	})
 
@@ -129,16 +131,16 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 // StatusCompleted in the first burst.
 //
 //	child-start → child-work (KindServiceTask, Action:"complete-action") → child-end
-func asyncImmediateChildDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func asyncImmediateChildDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "async-imm-child",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("child-start"),
-			model.NewServiceTask("child-work", model.WithActionName("complete-action")),
-			model.NewEndEvent("child-end"),
+		Nodes: []definition.Node{
+			event.NewStart("child-start"),
+			activity.NewServiceTask("child-work", activity.WithActionName("complete-action")),
+			event.NewEnd("child-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "icf1", Source: "child-start", Target: "child-work"},
 			{ID: "icf2", Source: "child-work", Target: "child-end"},
 		},
@@ -146,16 +148,16 @@ func asyncImmediateChildDef() *model.ProcessDefinition {
 }
 
 // asyncImmediateParentDef returns a parent that calls asyncImmediateChildDef.
-func asyncImmediateParentDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func asyncImmediateParentDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "async-imm-parent",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("parent-start"),
-			model.NewCallActivity("call", "async-imm-child"),
-			model.NewEndEvent("parent-end"),
+		Nodes: []definition.Node{
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "async-imm-child"),
+			event.NewEnd("parent-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "ipf1", Source: "parent-start", Target: "call"},
 			{ID: "ipf2", Source: "call", Target: "parent-end"},
 		},
@@ -166,16 +168,16 @@ func asyncImmediateParentDef() *model.ProcessDefinition {
 // named "fail-action" that returns an error, so the child reaches StatusFailed.
 //
 //	child-start → child-work (KindServiceTask, Action:"fail-action") → child-end
-func asyncFailingChildDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func asyncFailingChildDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "async-fail-child",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("child-start"),
-			model.NewServiceTask("child-work", model.WithActionName("fail-action")),
-			model.NewEndEvent("child-end"),
+		Nodes: []definition.Node{
+			event.NewStart("child-start"),
+			activity.NewServiceTask("child-work", activity.WithActionName("fail-action")),
+			event.NewEnd("child-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "fcf1", Source: "child-start", Target: "child-work"},
 			{ID: "fcf2", Source: "child-work", Target: "child-end"},
 		},
@@ -183,16 +185,16 @@ func asyncFailingChildDef() *model.ProcessDefinition {
 }
 
 // asyncFailingParentDef returns a parent that calls asyncFailingChildDef.
-func asyncFailingParentDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func asyncFailingParentDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "async-fail-parent",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("parent-start"),
-			model.NewCallActivity("call", "async-fail-child"),
-			model.NewEndEvent("parent-end"),
+		Nodes: []definition.Node{
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "async-fail-child"),
+			event.NewEnd("parent-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "fpf1", Source: "parent-start", Target: "call"},
 			{ID: "fpf2", Source: "call", Target: "parent-end"},
 		},
@@ -239,7 +241,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 
 		child := asyncImmediateChildDef()
 		parent := asyncImmediateParentDef()
-		reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 			"async-imm-child": child,
 		})
 
@@ -280,7 +282,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 
 		child := asyncFailingChildDef()
 		parent := asyncFailingParentDef()
-		reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+		reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 			"async-fail-child": child,
 		})
 

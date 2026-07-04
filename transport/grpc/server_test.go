@@ -19,9 +19,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -49,16 +51,16 @@ func (serverTestGreetAction) Do(_ context.Context, in map[string]any) (map[strin
 }
 
 // linearDef is a simple start → serviceTask(greet) → end definition.
-func serverLinearDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func serverLinearDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "greeting",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("greet", model.WithActionName("greet")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},
@@ -66,16 +68,16 @@ func serverLinearDef() *model.ProcessDefinition {
 }
 
 // approvalDef returns start → userTask("approve", role "manager") → end.
-func serverApprovalDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func serverApprovalDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "approval",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"manager"}),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"manager"}),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
@@ -83,37 +85,37 @@ func serverApprovalDef() *model.ProcessDefinition {
 }
 
 // signalDef returns start → signal-catch(name) → end.
-func serverSignalDef(signalName string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func serverSignalDef(signalName string) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "signal-catch-" + signalName,
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait-signal", model.WithSignalName(signalName)),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			event.NewCatch("wait-signal", event.WithCatchSignal(signalName)),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-signal"},
 			{ID: "f2", Source: "wait-signal", Target: "end"},
 		},
 	}
 }
 
-func defRefFor(def *model.ProcessDefinition) string {
+func defRefFor(def *definition.ProcessDefinition) string {
 	return fmt.Sprintf("%s:%d", def.ID, def.Version)
 }
 
 // serverMessageDef returns start → message-catch(msgName, orderId) → end.
-func serverMessageDef(msgName string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func serverMessageDef(msgName string) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "message-catch-" + msgName,
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait-msg", model.WithMessageNameAndKey(msgName, "orderId")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-msg"},
 			{ID: "f2", Source: "wait-msg", Target: "end"},
 		},
@@ -130,7 +132,7 @@ func mustStruct(m map[string]any) *structpb.Struct {
 }
 
 // newGRPCHarness sets up the service + gRPC server over bufconn.
-func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness {
+func newGRPCHarness(t *testing.T, defs ...*definition.ProcessDefinition) *grpcHarness {
 	t.Helper()
 
 	fc := clockwork.NewFakeClock()
@@ -149,7 +151,7 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 	runner, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 	require.NoError(t, err)
 
-	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
+	defsMap := make(map[string]*definition.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {
 		defsMap[defRefFor(d)] = d
 		defsMap[d.ID] = d

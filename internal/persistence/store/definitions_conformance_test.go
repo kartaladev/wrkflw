@@ -7,8 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -21,56 +24,56 @@ var _ persistence.DefinitionStore = (*store.DefinitionStore)(nil)
 
 // richConformanceDefinition builds a realistic ProcessDefinition with multiple
 // typed nodes and sequence flows to exercise the JSON round-trip on all dialects.
-// All fields of model.ProcessDefinition and its nested types must survive the
+// All fields of definition.ProcessDefinition and its nested types must survive the
 // round-trip; the equality assertion in the rich-round-trip test case validates
 // this exhaustively.
-func richConformanceDefinition() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func richConformanceDefinition() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "order-process",
 		Version: 2,
-		Nodes: []model.Node{
-			model.NewStartEvent("start",
-				model.WithName("Order Received"),
-				model.WithStartSignal("sig-order"),
-				model.WithStartMessage("msg-order", "vars.orderID"),
+		Nodes: []definition.Node{
+			event.NewStart("start",
+				event.WithName("Order Received"),
+				event.WithStartSignal("sig-order"),
+				event.WithStartMessage("msg-order", "vars.orderID"),
 			),
-			model.NewUserTask("review", []string{"reviewer", "manager"},
-				model.WithName("Review Order"),
-				model.WithEligibilityExpr("vars.amount > 100"),
-				model.WithDeadline("PT24H", "sla-breach", "notify-manager"),
-				model.WithReminder("PT6H", "send-reminder"),
-				model.WithCompensation("cancel-review"),
+			activity.NewUserTask("review", []string{"reviewer", "manager"},
+				activity.WithName("Review Order"),
+				activity.WithEligibilityExpr("vars.amount > 100"),
+				activity.WithDeadline("PT24H", "sla-breach", "notify-manager"),
+				activity.WithReminder("PT6H", "send-reminder"),
+				activity.WithCompensation("cancel-review"),
 			),
-			model.NewExclusiveGateway("approve", "Approved?"),
-			model.NewServiceTask("fulfill", model.WithActionName("fulfillment-service"),
-				model.WithName("Fulfill Order"),
-				model.WithCompensation("rollback-fulfillment"),
+			gateway.NewExclusive("approve", "Approved?"),
+			activity.NewServiceTask("fulfill", activity.WithActionName("fulfillment-service"),
+				activity.WithName("Fulfill Order"),
+				activity.WithCompensation("rollback-fulfillment"),
 			),
-			model.NewSubProcess("sub", &model.ProcessDefinition{
+			activity.NewSubProcess("sub", &definition.ProcessDefinition{
 				ID:      "nested",
 				Version: 1,
-				Nodes: []model.Node{
-					model.NewStartEvent("n-start"),
-					model.NewEndEvent("n-end"),
+				Nodes: []definition.Node{
+					event.NewStart("n-start"),
+					event.NewEnd("n-end"),
 				},
-				Flows: []model.SequenceFlow{
+				Flows: []definition.SequenceFlow{
 					{ID: "nf1", Source: "n-start", Target: "n-end"},
 				},
-			}, model.WithName("Nested Sub")),
-			model.NewBoundaryEvent("boundary-err", "fulfill",
-				model.WithBoundaryErrorCode("FULFILLMENT_ERROR"),
+			}, activity.WithName("Nested Sub")),
+			event.NewBoundary("boundary-err", "fulfill",
+				event.WithBoundaryErrorCode("FULFILLMENT_ERROR"),
 			),
-			model.NewBoundaryEvent("boundary-sig", "review",
-				model.BoundaryNonInterrupting(),
-				model.WithBoundarySignal("sig-cancel"),
+			event.NewBoundary("boundary-sig", "review",
+				event.WithBoundaryNonInterrupting(),
+				event.WithBoundarySignal("sig-cancel"),
 			),
-			model.NewCallActivity("call", "sub-def:3",
-				model.WithName("Call Sub-process"),
+			activity.NewCallActivity("call", "sub-def:3",
+				activity.WithName("Call Sub-process"),
 			),
-			model.NewEndEvent("end", "Done"),
-			model.NewErrorEndEvent("err-end", "ORDER_ERROR"),
+			event.NewEnd("end", "Done"),
+			event.NewErrorEnd("err-end", "ORDER_ERROR"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
 			{ID: "f2", Source: "review", Target: "approve"},
 			{ID: "f3", Source: "approve", Target: "fulfill", Condition: "vars.approved == true", IsDefault: false},
@@ -90,7 +93,7 @@ func TestDefinitionStorePutGetRoundTrip(t *testing.T) {
 		// compile-time interface checks
 		var _ kernel.DefinitionRegistry = ds
 
-		def := &model.ProcessDefinition{ID: "d-rr", Version: 1}
+		def := &definition.ProcessDefinition{ID: "d-rr", Version: 1}
 		require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: PutDefinition", b.name)
 
 		got, err := ds.GetDefinition(t.Context(), "d-rr", 1)
@@ -106,7 +109,7 @@ func TestDefinitionStoreLookupExact(t *testing.T) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
 		require.NoError(t, err)
 
-		def := &model.ProcessDefinition{ID: "d-lx", Version: 1}
+		def := &definition.ProcessDefinition{ID: "d-lx", Version: 1}
 		require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: PutDefinition", b.name)
 
 		got, err := ds.Lookup(t.Context(), "d-lx:1")
@@ -123,8 +126,8 @@ func TestDefinitionStoreLookupLatest(t *testing.T) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
 		require.NoError(t, err)
 
-		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d-ll", Version: 1}))
-		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d-ll", Version: 2}))
+		require.NoError(t, ds.PutDefinition(t.Context(), &definition.ProcessDefinition{ID: "d-ll", Version: 1}))
+		require.NoError(t, ds.PutDefinition(t.Context(), &definition.ProcessDefinition{ID: "d-ll", Version: 2}))
 
 		got, err := ds.Lookup(t.Context(), "d-ll")
 		require.NoError(t, err, "%s: Lookup latest", b.name)
@@ -140,8 +143,8 @@ func TestDefinitionStoreUpsertOverwrite(t *testing.T) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
 		require.NoError(t, err)
 
-		first := &model.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-first"}}
-		second := &model.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-second"}}
+		first := &definition.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-first"}}
+		second := &definition.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-second"}}
 
 		require.NoError(t, ds.PutDefinition(t.Context(), first), "%s: first put", b.name)
 		require.NoError(t, ds.PutDefinition(t.Context(), second), "%s: second put (upsert)", b.name)
@@ -209,7 +212,7 @@ func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 
 		// Seed a real definition so the query would otherwise succeed.
 		require.NoError(t,
-			ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "cancel-ctx-" + b.name, Version: 1}),
+			ds.PutDefinition(t.Context(), &definition.ProcessDefinition{ID: "cancel-ctx-" + b.name, Version: 1}),
 			"%s: seed definition", b.name,
 		)
 

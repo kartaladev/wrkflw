@@ -7,7 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -29,15 +31,15 @@ func (s *recordingStore) Commit(ctx context.Context, expected kernel.Token, step
 }
 
 // buildOrderPlacedSendTaskDef constructs: start → sendTask("OrderPlaced") → end.
-func buildOrderPlacedSendTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func buildOrderPlacedSendTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-send-outbox", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSendTask("send", "OrderPlaced"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewSendTask("send", "OrderPlaced"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "send"},
 			{ID: "f2", Source: "send", Target: "end"},
 		},

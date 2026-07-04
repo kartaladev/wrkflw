@@ -13,7 +13,7 @@ adapters are mountable handlers a consumer registers in their own server.
 ## What it is
 
 - **Library-first.** The product is the module's public root packages — `engine/`,
-  `model/`, `runtime/`, etc. A consumer imports them and embeds the engine in their app.
+  `definition/`, `runtime/`, etc. A consumer imports them and embeds the engine in their app.
   Every feature must be reachable through the public API; no feature lives exclusively
   in a binary or example.
 - **Mountable transports, no owned main.** REST (`http.Handler`) and gRPC
@@ -62,21 +62,22 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/build"
 )
 
 func main() {
-	// Fluent per-node-type builder methods (AddStartEvent, AddServiceTask, …)
-	// are the preferred form; each mirrors its New<Kind> constructor and appends
-	// the node. The generic .Add(node) still works for dynamically-built nodes.
-	def, err := model.NewDefinition("order-fulfillment", 1).
-		AddStartEvent("start").
+	// Node kinds live in BPMN-family packages (event, gateway, activity). The
+	// fluent build.New(...) chain offers one terse AddX per kind; the generic
+	// definition.NewDefinition(...).Add(node) form also works for dynamic nodes.
+	def, err := build.New("order-fulfillment", 1).
+		AddStart("start").
 		AddServiceTask("charge",
-			model.WithActionName("charge-card"),
-			model.WithCompensation("refund-card"),
+			activity.WithActionName("charge-card"),
+			activity.WithCompensation("refund-card"),
 		).
 		AddUserTask("approve", []string{"manager"}).
-		AddEndEvent("end").
+		AddEnd("end").
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").
@@ -103,26 +104,26 @@ score := action.Func(func(_ context.Context, in map[string]any) (map[string]any,
     return map[string]any{"score": 42}, nil
 })
 
-def, _ := model.NewDefinition("loan", 1).
+def, _ := definition.NewDefinition("loan", 1).
     RegisterAction("score", score).                   // def-scoped, by name
-    Add(model.NewStartEvent("start")).
-    Add(model.NewServiceTask("risk",
-        model.WithActionName("score"),                // resolves scoped → global
+    Add(event.NewStart("start")).
+    Add(activity.NewServiceTask("risk",
+        activity.WithActionName("score"),             // resolves scoped → global
     )).
-    Add(model.NewServiceTask("notify",
-        model.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+    Add(activity.NewServiceTask("notify",
+        activity.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
             return in, nil                            // node-local inline
         }),
     )).
-    Add(model.NewServiceTask("archive")).             // default-by-id → looks up "archive"
-    Add(model.NewEndEvent("end")).
+    Add(activity.NewServiceTask("archive")).          // default-by-id → looks up "archive"
+    Add(event.NewEnd("end")).
     Connect("start", "risk").Connect("risk", "notify").
     Connect("notify", "archive").Connect("archive", "end").
     Build()
 ```
 
 `WithActionName` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
-returns `model.ErrActionInlineAndNameConflict` if both are set. See
+returns `definition.ErrActionInlineAndNameConflict` if both are set. See
 `runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
 
 ### Author in YAML
@@ -147,7 +148,7 @@ flows:
 
 ```go
 data, _ := os.ReadFile("order.yaml")
-ld, err := model.ParseYAML(data)
+ld, err := definition.ParseYAML(data)
 if err != nil { log.Fatal(err) }
 def, err := ld.Build()
 ```
@@ -163,8 +164,10 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -172,10 +175,10 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, _ := model.NewDefinition("order", 1).
-		Add(model.NewStartEvent("s")).
-		Add(model.NewServiceTask("charge", model.WithActionName("charge-card"))).
-		Add(model.NewEndEvent("e")).
+	def, _ := definition.NewDefinition("order", 1).
+		Add(event.NewStart("s")).
+		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
 		Build()
@@ -210,8 +213,8 @@ For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
 
 | Form | Function | Notes |
 |---|---|---|
-| Go builder | `model.NewDefinition(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Fluent `Add<Kind>` methods (one per node kind) mirror the `New<Kind>` constructors; the generic `.Add(node)` remains for dynamic nodes. |
-| YAML | `model.ParseYAML(data)` / `model.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator; returns `DefinitionLoader` — call `.Build()` (optionally after `.RegisterAction(...)`) to obtain `*ProcessDefinition` |
+| Go builder | `build.New(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Node kinds live in `definition/{event,gateway,activity}`; the fluent `build` package has one `Add<Kind>` per kind, or use `definition.NewDefinition(...).Add(node)` for dynamic nodes. |
+| YAML | `definition.ParseYAML(data)` / `definition.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator; returns `DefinitionLoader` — call `.Build()` (optionally after `.RegisterAction(...)`) to obtain `*ProcessDefinition` |
 
 ---
 
@@ -221,7 +224,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 
 | Package | Role |
 |---|---|
-| `model` | Process-definition types: nodes, gateways, sequence flows, `ProcessDefinition`. Pure data + validation; no I/O. |
+| `definition` | Process-definition types: `Node`, `ProcessDefinition`, builder, validation, serialization. Node kinds live in family subpackages `definition/{event,gateway,activity}` (+ `definition/build` fluent, `definition/kinds` bundle). Pure data + validation; no I/O. |
 | `engine` | Core token state machine. Pure of transport, storage, and event-bus specifics — depends on interfaces only. |
 | `runtime` | Reference driver `ProcessDriver` that wires the engine to persistence, scheduling, and actions, plus lifecycle helpers (`ShutdownGroup`). Supporting pieces live in sub-packages: `runtime/kernel` (in-memory `MemStore`/`CachingStore`, schedulers, definition registry, ownership), `runtime/view` (snapshot DTOs), `runtime/chain` (instance chaining), `runtime/task` (human-task service), plus `runtime/signal`, `runtime/calllink`, `runtime/monitor`. |
 | `action` | Service-action catalog (`Catalog`, `ServiceAction`, `MapCatalog`, `Func` adapter). |
@@ -352,9 +355,9 @@ Configure timers on nodes:
 // UserTask with a 3-day deadline and daily reminders. Durations are expr
 // expressions evaluated to a Go duration via time.ParseDuration, so they are
 // backtick-wrapped quoted duration literals ("72h", "24h" — not ISO-8601).
-model.NewUserTask("approve", []string{"manager"},
-    model.WithDeadline(`"72h"`, "escalate-flow", "notify-manager"),
-    model.WithReminder(`"24h"`, "send-reminder"),
+activity.NewUserTask("approve", []string{"manager"},
+    activity.WithDeadline(`"72h"`, "escalate-flow", "notify-manager"),
+    activity.WithReminder(`"24h"`, "send-reminder"),
 )
 ```
 
@@ -368,9 +371,9 @@ Attach an optional compensation action to any activity. When the engine rolls ba
 process (e.g. after a downstream failure), it runs compensation actions in reverse order.
 
 ```go
-model.NewServiceTask("charge",
-    model.WithActionName("charge-card"),
-    model.WithCompensation("refund-card"),
+activity.NewServiceTask("charge",
+    activity.WithActionName("charge-card"),
+    activity.WithCompensation("refund-card"),
 )
 ```
 
@@ -378,13 +381,13 @@ Cancellation actions (run best-effort when the whole instance is cancelled) are 
 the definition:
 
 ```go
-model.NewDefinition("order", 1).CancelActions("send-cancellation-email")
+definition.NewDefinition("order", 1).CancelActions("send-cancellation-email")
 ```
 
 ### Resilience
 
-- **Retry:** configure `model.WithRetryPolicy(p)` on any activity node.
-- **Recovery flow:** `model.WithRecoveryFlow(flowID)` routes the token to an alternative
+- **Retry:** configure `activity.WithRetryPolicy(p)` on any activity node.
+- **Recovery flow:** `activity.WithRecoveryFlow(flowID)` routes the token to an alternative
   path on repeated failure.
 - **Incidents and DLQ:** failed tokens that exhaust retries become incidents. Admins
   resolve them via `POST /admin/instances/{id}/incidents/{incidentID}/resolve` or
@@ -479,7 +482,7 @@ Pure unit tests (engine core, model validation, in-memory runner) need no Docker
 
 ```
 .                   # Single go.mod; root packages are the public library API
-model/              # Process-definition types (public)
+definition/              # Process-definition types (public; leaves: event/gateway/activity)
 engine/             # Token state machine (public)
 runtime/            # Reference driver + DTOs (public)
 action/             # Service-action catalog (public)
@@ -523,7 +526,7 @@ in `CLAUDE.md`.
 ## Node types
 
 A process definition is a graph of **nodes** connected by **sequence flows**. Every
-node is a value built with a `model.New*` constructor and implements the `model.Node`
+node is a value built with a `definition.New*` constructor and implements the `definition.Node`
 interface (`Kind() NodeKind`, `ID() string`, `Name() string`). Never construct the
 struct types directly — use the constructors. There are 19 node kinds, grouped below.
 
@@ -538,20 +541,20 @@ same set of functional options:
 
 | Option | Configures |
 |---|---|
-| `model.WithName(string)` | Human-readable display name. |
-| `model.WithRetryPolicy(*model.RetryPolicy)` | Per-node retry policy (see below). |
-| `model.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
-| `model.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
-| `model.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
-| `model.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
-| `model.WithReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
+| `definition.WithName(string)` | Human-readable display name. |
+| `activity.WithRetryPolicy(*definition.RetryPolicy)` | Per-node retry policy (see below). |
+| `activity.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
+| `activity.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
+| `activity.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
+| `activity.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
+| `activity.WithReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
 Two options are **compile-enforced** to a single constructor:
 
-- `model.WithEligibilityExpr(expr string)` — **`NewUserTask` only**. Attribute-based
+- `activity.WithEligibilityExpr(expr string)` — **`NewUserTask` only**. Attribute-based
   eligibility predicate (evaluated by authz over `vars[...]`). Passing it to any other
   constructor is a compile error.
-- `model.WithCorrelationKey(key string)` — **`NewReceiveTask` only**. Correlation-key
+- `activity.WithCorrelationKey(key string)` — **`NewReceiveTask` only**. Correlation-key
   expression. Passing it elsewhere is a compile error.
 
 > **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
@@ -562,7 +565,7 @@ Two options are **compile-enforced** to a single constructor:
 `RetryPolicy` fields:
 
 ```go
-model.RetryPolicy{
+definition.RetryPolicy{
     MaxAttempts:        5,                 // includes the first attempt; 0 = unlimited
     InitialInterval:    1 * time.Second,
     BackoffCoef:        2.0,               // exponential multiplier
@@ -576,10 +579,10 @@ model.RetryPolicy{
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **StartEvent** | Entry point of a process (or the trigger of an EventSubProcess). | `model.NewStartEvent(id string, opts ...) Node` |
-| **EndEvent** | Normal completion of one branch. | `model.NewEndEvent(id string, name ...string) Node` |
-| **TerminateEndEvent** | Terminates the whole instance, including parallel branches. | `model.NewTerminateEndEvent(id string, name ...string) Node` |
-| **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `model.NewErrorEndEvent(id, errorCode string, name ...string) Node` |
+| **StartEvent** | Entry point of a process (or the trigger of an EventSubProcess). | `event.NewStart(id string, opts ...) Node` |
+| **EndEvent** | Normal completion of one branch. | `event.NewEnd(id string, name ...string) Node` |
+| **TerminateEndEvent** | Terminates the whole instance, including parallel branches. | `event.NewTerminateEnd(id string, name ...string) Node` |
+| **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `event.NewErrorEnd(id, errorCode string, name ...string) Node` |
 
 `NewStartEvent` options (only meaningful when the start is an EventSubProcess trigger):
 `WithName(string)`, `WithStartSignal(name)`, `WithStartMessage(msg, key)`,
@@ -587,24 +590,24 @@ model.RetryPolicy{
 (catch-all) error.
 
 ```go
-model.NewStartEvent("start")
-model.NewEndEvent("end", "Order complete")
-model.NewTerminateEndEvent("kill-all")
-model.NewErrorEndEvent("insufficient-funds", "FUNDS_ERROR")
+event.NewStart("start")
+event.NewEnd("end", "Order complete")
+event.NewTerminateEnd("kill-all")
+event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 ```
 
 ### Activities
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **ServiceTask** | Runs a named service action. | `model.NewServiceTask(id string, opts ...) Node` |
-| **UserTask** | Waits for a human to complete a work item. | `model.NewUserTask(id string, roles []string, opts ...) Node` |
-| **ReceiveTask** | Waits for an inbound correlated message. | `model.NewReceiveTask(id, messageName string, opts ...) Node` |
-| **SendTask** | Sends an outbound message. | `model.NewSendTask(id, messageName string, opts ...) Node` |
-| **BusinessRuleTask** | Runs a named business-rule action. | `model.NewBusinessRuleTask(id string, opts ...) Node` |
-| **SubProcess** | Runs an *embedded* nested definition as a scope. | `model.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
-| **CallActivity** | Calls a *separate* top-level definition by name. | `model.NewCallActivity(id, defRef string, opts ...) Node` |
-| **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `model.NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
+| **ServiceTask** | Runs a named service action. | `activity.NewServiceTask(id string, opts ...) Node` |
+| **UserTask** | Waits for a human to complete a work item. | `activity.NewUserTask(id string, roles []string, opts ...) Node` |
+| **ReceiveTask** | Waits for an inbound correlated message. | `activity.NewReceiveTask(id, messageName string, opts ...) Node` |
+| **SendTask** | Sends an outbound message. | `activity.NewSendTask(id, messageName string, opts ...) Node` |
+| **BusinessRuleTask** | Runs a named business-rule action. | `activity.NewBusinessRuleTask(id string, opts ...) Node` |
+| **SubProcess** | Runs an *embedded* nested definition as a scope. | `activity.NewSubProcess(id string, sub *definition.ProcessDefinition, opts ...) Node` |
+| **CallActivity** | Calls a *separate* top-level definition by name. | `activity.NewCallActivity(id, defRef string, opts ...) Node` |
+| **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `event.NewEventSubProcess(id string, sub *definition.ProcessDefinition, opts ...) Node` |
 
 All activity constructors take the shared activity options above. `NewUserTask` also
 takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
@@ -612,21 +615,21 @@ takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
 is interrupting) — its nested start event carries the trigger.
 
 ```go
-model.NewServiceTask("charge",
-    model.WithActionName("charge-card"),
-    model.WithCompensation("refund-card"),
-    model.WithRetryPolicy(&retry),
+activity.NewServiceTask("charge",
+    activity.WithActionName("charge-card"),
+    activity.WithCompensation("refund-card"),
+    activity.WithRetryPolicy(&retry),
 )
-model.NewUserTask("approve", []string{"manager"},
-    model.WithDeadline(`"3h"`, "escalate-flow", "notify-manager"),
-    model.WithEligibilityExpr(`vars["region"] == "EU"`),
+activity.NewUserTask("approve", []string{"manager"},
+    activity.WithDeadline(`"3h"`, "escalate-flow", "notify-manager"),
+    activity.WithEligibilityExpr(`vars["region"] == "EU"`),
 )
-model.NewReceiveTask("await-payment", "payment-received",
-    model.WithCorrelationKey("orderId"),
+activity.NewReceiveTask("await-payment", "payment-received",
+    activity.WithCorrelationKey("orderId"),
 )
-model.NewSubProcess("reserve-hotel", hotelDef)
-model.NewCallActivity("credit-check", "credit-check")        // resolved via a DefinitionRegistry
-model.NewEventSubProcess("on-cancel", cancelHandlerDef, model.WithESPNonInterrupting())
+activity.NewSubProcess("reserve-hotel", hotelDef)
+activity.NewCallActivity("credit-check", "credit-check")        // resolved via a DefinitionRegistry
+event.NewEventSubProcess("on-cancel", cancelHandlerDef, event.WithEventSubProcessNonInterrupting())
 ```
 
 ### SendTask delivery (transactional outbox)
@@ -653,9 +656,9 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **IntermediateCatchEvent** | Pauses until a timer, signal, or message arrives. | `model.NewIntermediateCatchEvent(id string, opts ...) Node` |
-| **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `model.NewIntermediateThrowEvent(id string, opts ...) Node` |
-| **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `model.NewBoundaryEvent(id, attachedTo string, opts ...) Node` |
+| **IntermediateCatchEvent** | Pauses until a timer, signal, or message arrives. | `event.NewCatch(id string, opts ...) Node` |
+| **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `event.NewThrow(id string, opts ...) Node` |
+| **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
 `NewIntermediateCatchEvent` options: `WithTimerDuration(dur)`, `WithSignalName(name)`,
 `WithMessageNameAndKey(msg, key)`, `WithICEDeadline(dur, flow, action)`,
@@ -670,9 +673,9 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 > fired by the engine (message boundaries since ADR-0053).
 
 ```go
-model.NewIntermediateCatchEvent("wait-1h", model.WithTimerDuration(`"1h"`))
-model.NewIntermediateThrowEvent("compensate", model.WithCompensateRef("reserve-hotel"))
-model.NewBoundaryEvent("review-timeout", "review", model.WithBoundaryTimer(`"1h"`))
+event.NewCatch("wait-1h", event.WithCatchTimer(`"1h"`))
+event.NewThrow("compensate", event.WithCompensateRef("reserve-hotel"))
+event.NewBoundary("review-timeout", "review", event.WithBoundaryTimer(`"1h"`))
 ```
 
 ### Gateways
@@ -683,16 +686,16 @@ conditions.
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **ExclusiveGateway** | XOR. Split: first matching flow (or the default). Merge: pass-through. | `model.NewExclusiveGateway(id string, name ...string) Node` |
-| **ParallelGateway** | AND. Split: activate all outgoing. Join: wait for all incoming. | `model.NewParallelGateway(id string, name ...string) Node` |
-| **InclusiveGateway** | OR. Split: every matching flow. Join: wait for the active matching branches. | `model.NewInclusiveGateway(id string, name ...string) Node` |
-| **EventBasedGateway** | Race: routes to whichever following catch event fires first. | `model.NewEventBasedGateway(id string, name ...string) Node` |
+| **ExclusiveGateway** | XOR. Split: first matching flow (or the default). Merge: pass-through. | `gateway.NewExclusive(id string, name ...string) Node` |
+| **ParallelGateway** | AND. Split: activate all outgoing. Join: wait for all incoming. | `gateway.NewParallel(id string, name ...string) Node` |
+| **InclusiveGateway** | OR. Split: every matching flow. Join: wait for the active matching branches. | `gateway.NewInclusive(id string, name ...string) Node` |
+| **EventBasedGateway** | Race: routes to whichever following catch event fires first. | `gateway.NewEventBased(id string, name ...string) Node` |
 
 ```go
-model.NewExclusiveGateway("route")
-model.NewParallelGateway("fork")
-model.NewInclusiveGateway("split")
-model.NewEventBasedGateway("await")
+gateway.NewExclusive("route")
+gateway.NewParallel("fork")
+gateway.NewInclusive("split")
+gateway.NewEventBased("await")
 ```
 
 ### DefinitionBuilder
@@ -700,17 +703,17 @@ model.NewEventBasedGateway("await")
 Assemble nodes and flows with the fluent builder, then `Build()` (which validates):
 
 ```go
-def, err := model.NewDefinition("order-fulfillment", 1).
-    Add(model.NewStartEvent("start")).
-    Add(model.NewExclusiveGateway("route")).
-    Add(model.NewServiceTask("manual-review", model.WithActionName("manual-review"))).
-    Add(model.NewServiceTask("auto-approve", model.WithActionName("auto-approve"))).
-    Add(model.NewServiceTask("reject", model.WithActionName("reject"))).
-    Add(model.NewEndEvent("end")).
+def, err := definition.NewDefinition("order-fulfillment", 1).
+    Add(event.NewStart("start")).
+    Add(gateway.NewExclusive("route")).
+    Add(activity.NewServiceTask("manual-review", activity.WithActionName("manual-review"))).
+    Add(activity.NewServiceTask("auto-approve", activity.WithActionName("auto-approve"))).
+    Add(activity.NewServiceTask("reject", activity.WithActionName("reject"))).
+    Add(event.NewEnd("end")).
     Connect("start", "route").
-    Connect("route", "manual-review", model.WithCondition("amount > 50000")).
-    Connect("route", "auto-approve", model.WithCondition("amount <= 50000")).
-    Connect("route", "reject", model.AsDefault()).
+    Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
+    Connect("route", "auto-approve", definition.WithCondition("amount <= 50000")).
+    Connect("route", "reject", definition.AsDefault()).
     Connect("manual-review", "end").
     Connect("auto-approve", "end").
     Connect("reject", "end").
@@ -720,24 +723,24 @@ def, err := model.NewDefinition("order-fulfillment", 1).
 
 | Builder method | Purpose |
 |---|---|
-| `model.NewDefinition(id, version)` | Start a builder. |
+| `definition.NewDefinition(id, version)` | Start a builder. |
 | `.Add(node)` | Append a node. |
 | `.Connect(fromID, toID, opts...)` | Add a sequence flow (ID auto = `"from->to"`). |
 | `.CancelActions(names...)` | Best-effort actions run when the instance is cancelled. |
-| `.Build()` | Assemble + validate; returns `(*model.ProcessDefinition, error)`. |
+| `.Build()` | Assemble + validate; returns `(*definition.ProcessDefinition, error)`. |
 
-Flow options for `.Connect`: `model.WithFlowID(id)`, `model.WithCondition(expr)`,
-`model.AsDefault()`.
+Flow options for `.Connect`: `definition.WithFlowID(id)`, `definition.WithCondition(expr)`,
+`definition.AsDefault()`.
 
 > **Flow conditions use bare variable keys.** A condition is evaluated by expr-lang
-> directly against the process-variable map, so write `model.WithCondition("amount > 100")`
+> directly against the process-variable map, so write `definition.WithCondition("amount > 100")`
 > — **not** `vars.amount`. (Only `WithEligibilityExpr` on a UserTask uses the
 > `vars[...]` form, because it is evaluated by authz.)
 
 ### YAML authoring
 
-Definitions can also be authored in YAML and loaded with `model.ParseYAML(data)` or
-`model.LoadYAML(r)`. Each node carries a `kind` discriminator (lowerCamelCase):
+Definitions can also be authored in YAML and loaded with `definition.ParseYAML(data)` or
+`definition.LoadYAML(r)`. Each node carries a `kind` discriminator (lowerCamelCase):
 
 ```yaml
 id: order
@@ -791,14 +794,14 @@ start → fork[Parallel] → pick-items[Service]  ┐
 ```
 
 ```go
-def, _ := model.NewDefinition("order-fulfillment", 1).
-    Add(model.NewStartEvent("start")).
-    Add(model.NewParallelGateway("fork")).
-    Add(model.NewServiceTask("pick-items", model.WithActionName("pick-items"))).
-    Add(model.NewServiceTask("charge-card", model.WithActionName("charge-card"))).
-    Add(model.NewParallelGateway("join")).
-    Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
-    Add(model.NewEndEvent("end")).
+def, _ := definition.NewDefinition("order-fulfillment", 1).
+    Add(event.NewStart("start")).
+    Add(gateway.NewParallel("fork")).
+    Add(activity.NewServiceTask("pick-items", activity.WithActionName("pick-items"))).
+    Add(activity.NewServiceTask("charge-card", activity.WithActionName("charge-card"))).
+    Add(gateway.NewParallel("join")).
+    Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+    Add(event.NewEnd("end")).
     Connect("start", "fork").
     Connect("fork", "pick-items").
     Connect("fork", "charge-card").
@@ -827,9 +830,9 @@ start → check-credit[Service] → route[Exclusive]
 ```
 
 ```go
-Connect("route", "manual-review", model.WithCondition("amount > 50000")).
-Connect("route", "auto-approve",  model.WithCondition("amount <= 50000")).
-Connect("route", "reject",        model.AsDefault()).
+Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
+Connect("route", "auto-approve",  definition.WithCondition("amount <= 50000")).
+Connect("route", "reject",        definition.AsDefault()).
 ```
 
 **At runtime:** the example runs the same definition twice — `amount=75000` routes to
@@ -852,12 +855,12 @@ start → review[UserTask, deadline "1h" → flow "review-overdue", action "noti
 ```
 
 ```go
-Add(model.NewUserTask("review", []string{"reviewer"},
-    model.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"))). // fire-once breach action
-Add(model.NewServiceTask("escalate", model.WithActionName("reassign"))).
+Add(activity.NewUserTask("review", []string{"reviewer"},
+    activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"))). // fire-once breach action
+Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
 // ...
 Connect("review", "approved-end").                                  // normal path
-Connect("review", "escalate", model.WithFlowID("review-overdue")).  // deadline flow
+Connect("review", "escalate", definition.WithFlowID("review-overdue")).  // deadline flow
 Connect("escalate", "escalated-end").
 ```
 
@@ -886,10 +889,10 @@ then: deliver CompensateRequested("") → refund, then cancel-booking → termin
 ```
 
 ```go
-Add(model.NewServiceTask("book", model.WithActionName("book"), model.WithCompensation("cancel-booking"))).
-Add(model.NewServiceTask("pay", model.WithActionName("pay"), model.WithCompensation("refund"))).
-Add(model.NewServiceTask("ship", model.WithActionName("ship"))).
-Add(model.NewBoundaryEvent("ship-err", "ship", model.WithBoundaryErrorCode(""))).
+Add(activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensation("cancel-booking"))).
+Add(activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensation("refund"))).
+Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+Add(event.NewBoundary("ship-err", "ship", event.WithBoundaryErrorCode(""))).
 // ... after the forward run completes via the boundary path:
 trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
 final, _ := r.Deliver(ctx, def, instanceID, trg)
@@ -961,13 +964,13 @@ CallActivity: parent-start → call[CallActivity → "credit-check"] → parent-
 
 ```go
 // Embedded sub-process:
-hotel, _ := model.NewDefinition("hotel-reservation", 1). /* ... */ .Build()
-def, _  := model.NewDefinition("travel-booking", 1).
-    Add(model.NewSubProcess("reserve-hotel", hotel)).
+hotel, _ := definition.NewDefinition("hotel-reservation", 1). /* ... */ .Build()
+def, _  := definition.NewDefinition("travel-booking", 1).
+    Add(activity.NewSubProcess("reserve-hotel", hotel)).
     /* ... */ .Build()
 
 // Call activity (separate definition resolved by name):
-reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
+reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{"credit-check": child})
 memSt, _ := kernel.NewMemStore()
 r, _   := runtime.NewProcessDriver(cat, memSt, runtime.WithDefinitions(reg))
 ```
@@ -994,9 +997,9 @@ start → assess[Service] → split[Inclusive]
 ```
 
 ```go
-Connect("split", "notify-risk",   model.WithCondition("score < 600")).
-Connect("split", "senior-review", model.WithCondition("amount > 10000")).
-Connect("split", "fraud-check",   model.WithCondition("flagged == true")).
+Connect("split", "notify-risk",   definition.WithCondition("score < 600")).
+Connect("split", "senior-review", definition.WithCondition("amount > 10000")).
+Connect("split", "fraud-check",   definition.WithCondition("flagged == true")).
 ```
 
 **At runtime:** with `score=580`, `amount=25000`, `flagged=false`, the split activates
@@ -1018,10 +1021,10 @@ start → fulfil[UserTask] → end   ── cancel ──▶ [release-inventory,
 ```
 
 ```go
-def, _ := model.NewDefinition("order-fulfilment", 1).
-    Add(model.NewStartEvent("start")).
-    Add(model.NewUserTask("fulfil", []string{"fulfiller"})).
-    Add(model.NewEndEvent("end")).
+def, _ := definition.NewDefinition("order-fulfilment", 1).
+    Add(event.NewStart("start")).
+    Add(activity.NewUserTask("fulfil", []string{"fulfiller"})).
+    Add(event.NewEnd("end")).
     Connect("start", "fulfil").Connect("fulfil", "end").
     CancelActions("release-inventory", "notify-customer").
     Build()
@@ -1046,12 +1049,12 @@ start → await-payment[ReceiveTask "PaymentReceived", key = orderID] → ship �
 ```
 
 ```go
-def, _ := model.NewDefinition("order-shipping", 1).
-    Add(model.NewStartEvent("start")).
-    Add(model.NewReceiveTask("await-payment", "PaymentReceived",
-        model.WithCorrelationKey("orderID"))).
-    Add(model.NewServiceTask("ship", model.WithActionName("ship-order"))).
-    Add(model.NewEndEvent("end")).
+def, _ := definition.NewDefinition("order-shipping", 1).
+    Add(event.NewStart("start")).
+    Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
+        activity.WithCorrelationKey("orderID"))).
+    Add(activity.NewServiceTask("ship", activity.WithActionName("ship-order"))).
+    Add(event.NewEnd("end")).
     Connect("start", "await-payment").
     Connect("await-payment", "ship").Connect("ship", "end").
     Build()
@@ -1103,8 +1106,8 @@ start → charge[Service "charge-card", retry ≤5, backoff ×2] → end
 ```
 
 ```go
-Add(model.NewServiceTask("charge", model.WithActionName("charge-card"),
-    model.WithRetryPolicy(&model.RetryPolicy{
+Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
+    activity.WithRetryPolicy(&definition.RetryPolicy{
         MaxAttempts: 5, InitialInterval: time.Second, BackoffCoef: 2.0,
     })))
 // r wired with WithClock(fc), WithScheduler(sched), WithJitterSource(...)
@@ -1132,8 +1135,8 @@ start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
 ```
 
 ```go
-Add(model.NewUserTask("review", []string{"reviewer"},
-    model.WithReminder(`"30m"`, "nudge-reviewer")))
+Add(activity.NewUserTask("review", []string{"reviewer"},
+    activity.WithReminder(`"30m"`, "nudge-reviewer")))
 // r wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
 r.Run(ctx, def, "review-77", nil)                            // parks; first reminder armed
 for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire

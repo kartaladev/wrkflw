@@ -15,9 +15,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -34,7 +36,7 @@ type testHarness struct {
 	clk       *clockwork.FakeClock
 }
 
-func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarness, service.Service) {
+func newTestHarness(t *testing.T, defs ...*definition.ProcessDefinition) (*testHarness, service.Service) {
 	t.Helper()
 	fc := clockwork.NewFakeClock()
 	taskStore := humantask.NewMemTaskStore()
@@ -49,7 +51,7 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 	})
 	r, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))
 	require.NoError(t, err)
-	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
+	defsMap := make(map[string]*definition.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {
 		defsMap[fmt.Sprintf("%s:%d", d.ID, d.Version)] = d
 		defsMap[d.ID] = d
@@ -68,60 +70,60 @@ func (greetServiceAction) Do(_ context.Context, in map[string]any) (map[string]a
 	return map[string]any{"greeting": "hi " + name}, nil
 }
 
-func linearProcess() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func linearProcess() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "greeting", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("greet", model.WithActionName("greet")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},
 	}
 }
 
-func approvalProcess() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func approvalProcess() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "approval", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"manager"}),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"manager"}),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
 	}
 }
 
-func signalProcess(signalName string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func signalProcess(signalName string) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "signal-catch-" + signalName, Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait", model.WithSignalName(signalName)),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			event.NewCatch("wait", event.WithCatchSignal(signalName)),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},
 			{ID: "f2", Source: "wait", Target: "end"},
 		},
 	}
 }
 
-func messageProcess(msgName string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func messageProcess(msgName string) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "message-catch-" + msgName, Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait-msg", model.WithMessageNameAndKey(msgName, "orderId")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-msg"},
 			{ID: "f2", Source: "wait-msg", Target: "end"},
 		},

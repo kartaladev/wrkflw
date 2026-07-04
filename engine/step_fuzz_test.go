@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // FuzzStep feeds varied, fuzzer-generated process definitions and trigger
@@ -24,7 +26,7 @@ import (
 //
 // The harness derives a small, flat, sequential process definition from the
 // fuzz bytes (a tiny grammar over node kinds), validates it with
-// [model.Validate], and — only if it is well-formed — drives a sequence of
+// [definition.Validate], and — only if it is well-formed — drives a sequence of
 // triggers (also derived from the fuzz bytes) through Step. Inputs that do not
 // validate are skipped: Step's contract assumes a validated definition, so
 // feeding it garbage definitions would test nothing meaningful.
@@ -42,7 +44,7 @@ func FuzzStep(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		def := buildDef(data)
-		if err := model.Validate(def); err != nil {
+		if err := definition.Validate(def); err != nil {
 			// Not a well-formed definition: Step's precondition is not met.
 			t.Skip()
 		}
@@ -93,8 +95,8 @@ func isEngineSentinel(err error) bool {
 // bytes. The first node is always a start event and the last is always an end
 // event so the chain has valid endpoints; the interior nodes' kinds are chosen
 // byte-by-byte. Sequence flows wire each node to its successor in order.
-func buildDef(data []byte) *model.ProcessDefinition {
-	nodes := []model.Node{model.NewStartEvent("n0")}
+func buildDef(data []byte) *definition.ProcessDefinition {
+	nodes := []definition.Node{event.NewStart("n0")}
 
 	// Interior nodes: at most 6, chosen from the fuzz bytes.
 	maxInterior := min(len(data), 6)
@@ -102,29 +104,29 @@ func buildDef(data []byte) *model.ProcessDefinition {
 		id := nodeID(i + 1)
 		switch data[i] % 4 {
 		case 0:
-			nodes = append(nodes, model.NewServiceTask(id, model.WithActionName("act")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act")))
 		case 1:
-			nodes = append(nodes, model.NewUserTask(id, []string{"role"}))
+			nodes = append(nodes, activity.NewUserTask(id, []string{"role"}))
 		case 2:
-			nodes = append(nodes, model.NewServiceTask(id, model.WithActionName("act2")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act2")))
 		default:
-			nodes = append(nodes, model.NewServiceTask(id, model.WithActionName("act3")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act3")))
 		}
 	}
 
 	endID := nodeID(len(nodes))
-	nodes = append(nodes, model.NewEndEvent(endID))
+	nodes = append(nodes, event.NewEnd(endID))
 
-	flows := make([]model.SequenceFlow, 0, len(nodes)-1)
+	flows := make([]definition.SequenceFlow, 0, len(nodes)-1)
 	for i := 0; i < len(nodes)-1; i++ {
-		flows = append(flows, model.SequenceFlow{
+		flows = append(flows, definition.SequenceFlow{
 			ID:     flowID(i),
 			Source: nodeID(i),
 			Target: nodeID(i + 1),
 		})
 	}
 
-	return &model.ProcessDefinition{ID: "fuzzdef", Version: 1, Nodes: nodes, Flows: flows}
+	return &definition.ProcessDefinition{ID: "fuzzdef", Version: 1, Nodes: nodes, Flows: flows}
 }
 
 // driveTriggers derives a sequence of triggers from the fuzz bytes. It always

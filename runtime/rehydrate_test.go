@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -23,7 +23,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	mts := kernel.NewMemTimerStore()
 	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
 	def := runtimetest.TimerIntermediateDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		def.ID + ":1": def, // key format "DefID:DefVersion" — match def.ID/def.Version
 	})
 

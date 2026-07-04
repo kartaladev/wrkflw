@@ -7,25 +7,28 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 )
 
 // inclusiveForkDef: start -> or -{a>0}-> ta ; -{b>0}-> tb ; -default-> tc ; each -> its end
-func inclusiveForkDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func inclusiveForkDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "or", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewInclusiveGateway("or"),
-			model.NewServiceTask("ta", model.WithActionName("a")),
-			model.NewServiceTask("tb", model.WithActionName("b")),
-			model.NewServiceTask("tc", model.WithActionName("c")),
-			model.NewEndEvent("ea"),
-			model.NewEndEvent("eb"),
-			model.NewEndEvent("ec"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			gateway.NewInclusive("or"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			activity.NewServiceTask("tb", activity.WithActionName("b")),
+			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			event.NewEnd("ea"),
+			event.NewEnd("eb"),
+			event.NewEnd("ec"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},
 			{ID: "f2", Source: "or", Target: "ta", Condition: "a > 0"},
 			{ID: "f3", Source: "or", Target: "tb", Condition: "b > 0"},
@@ -79,17 +82,17 @@ func TestInclusiveForkFallsBackToDefault(t *testing.T) {
 // that the presence of such a taken flow suppresses the default.
 func TestInclusiveForkUnconditionalFlowSuppressesDefault(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "or2", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewInclusiveGateway("or"),
-			model.NewServiceTask("ta", model.WithActionName("a")), // unconditional (empty condition)
-			model.NewServiceTask("tb", model.WithActionName("b")), // default
-			model.NewEndEvent("ea"),
-			model.NewEndEvent("eb"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			gateway.NewInclusive("or"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")), // unconditional (empty condition)
+			activity.NewServiceTask("tb", activity.WithActionName("b")), // default
+			event.NewEnd("ea"),
+			event.NewEnd("eb"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},
 			{ID: "f2", Source: "or", Target: "ta", Condition: ""}, // empty = always taken
 			{ID: "f3", Source: "or", Target: "tb", IsDefault: true},
@@ -110,20 +113,20 @@ func TestInclusiveForkUnconditionalFlowSuppressesDefault(t *testing.T) {
 //	ta,tb,tc -> orjoin -> post -> end.
 //
 // post is a ServiceTask after the join so we can count how many times the join fires.
-func orDiamondDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func orDiamondDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "ord", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewInclusiveGateway("orsplit"),
-			model.NewServiceTask("ta", model.WithActionName("a")),
-			model.NewServiceTask("tb", model.WithActionName("b")),
-			model.NewServiceTask("tc", model.WithActionName("c")),
-			model.NewInclusiveGateway("orjoin"),
-			model.NewServiceTask("post", model.WithActionName("post")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			gateway.NewInclusive("orsplit"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			activity.NewServiceTask("tb", activity.WithActionName("b")),
+			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			gateway.NewInclusive("orjoin"),
+			activity.NewServiceTask("post", activity.WithActionName("post")),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},
 			{ID: "f2", Source: "orsplit", Target: "ta", Condition: "a > 0"},
 			{ID: "f3", Source: "orsplit", Target: "tb", Condition: "b > 0"},
@@ -204,15 +207,15 @@ func TestNodesThatCanReachIsAccurate(t *testing.T) {
 
 func TestInclusiveForkNoMatchNoDefaultErrors(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "or", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewInclusiveGateway("or"),
-			model.NewServiceTask("ta", model.WithActionName("a")),
-			model.NewEndEvent("ea"),
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			gateway.NewInclusive("or"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			event.NewEnd("ea"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},
 			{ID: "f2", Source: "or", Target: "ta", Condition: "a > 0"},
 			{ID: "f3", Source: "ta", Target: "ea"},

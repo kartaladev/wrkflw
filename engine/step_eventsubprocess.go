@@ -5,7 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // armEventSubprocesses scans the given definition for KindEventSubProcess nodes
@@ -22,10 +23,10 @@ import (
 // only (delivery arrives via SignalReceived/MessageReceived).
 //
 // Definition-scan order is deterministic; arms are appended in that order.
-func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
+func armEventSubprocesses(def *definition.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
-		n, ok := raw.(model.EventSubProcess)
+		n, ok := raw.(event.EventSubProcess)
 		if !ok {
 			continue
 		}
@@ -44,8 +45,8 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 			NonInterrupting:     n.NonInterrupting,
 		}
 
-		// startNode is a model.Node; assert to StartEvent to read trigger fields.
-		if se, isSE := startNode.(model.StartEvent); isSE {
+		// startNode is a definition.Node; assert to StartEvent to read trigger fields.
+		if se, isSE := startNode.(event.StartEvent); isSE {
 			if se.SignalName != "" {
 				arm.Signal = se.SignalName
 			} else if se.TimerDuration != "" {
@@ -104,7 +105,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 //  3. Remove ONLY this arm (one-shot).
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
-func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func fireEventSubprocessArm(def *definition.ProcessDefinition, s *InstanceState, ea eventSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Verify the enclosing scope is still active. For root scope (empty enclosingScopeID),
 	// the scope is always "active" as long as the instance is running.
 	if ea.EnclosingScopeID != "" {
@@ -132,7 +133,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// Node missing: defensive no-op.
 		return nil, nil
 	}
-	espNode, isESP := espRaw.(model.EventSubProcess)
+	espNode, isESP := espRaw.(event.EventSubProcess)
 	if !isESP || espNode.Subprocess == nil {
 		// Not an EventSubProcess or has no nested def: defensive no-op.
 		return nil, nil

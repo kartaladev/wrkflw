@@ -27,8 +27,11 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -37,20 +40,20 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, err := model.NewDefinition("application-screening", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("assess", model.WithActionName("assess"))).
-		Add(model.NewInclusiveGateway("split")).
-		Add(model.NewServiceTask("notify-risk", model.WithActionName("notify-risk"))).
-		Add(model.NewServiceTask("senior-review", model.WithActionName("senior-review"))).
-		Add(model.NewServiceTask("fraud-check", model.WithActionName("fraud-check"))).
-		Add(model.NewInclusiveGateway("join")).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("application-screening", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("assess", activity.WithActionName("assess"))).
+		Add(gateway.NewInclusive("split")).
+		Add(activity.NewServiceTask("notify-risk", activity.WithActionName("notify-risk"))).
+		Add(activity.NewServiceTask("senior-review", activity.WithActionName("senior-review"))).
+		Add(activity.NewServiceTask("fraud-check", activity.WithActionName("fraud-check"))).
+		Add(gateway.NewInclusive("join")).
+		Add(event.NewEnd("end")).
 		Connect("start", "assess").
 		Connect("assess", "split").
-		Connect("split", "notify-risk", model.WithCondition("score < 600")).
-		Connect("split", "senior-review", model.WithCondition("amount > 10000")).
-		Connect("split", "fraud-check", model.WithCondition("flagged == true")).
+		Connect("split", "notify-risk", definition.WithCondition("score < 600")).
+		Connect("split", "senior-review", definition.WithCondition("amount > 10000")).
+		Connect("split", "fraud-check", definition.WithCondition("flagged == true")).
 		Connect("notify-risk", "join").
 		Connect("senior-review", "join").
 		Connect("fraud-check", "join").

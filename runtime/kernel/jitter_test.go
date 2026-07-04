@@ -11,7 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -33,20 +35,20 @@ func TestJitterSourceInRange(t *testing.T) {
 // whose RetryPolicy will attempt a retry on failure.
 //
 //	start → task → end
-func retryOnceTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func retryOnceTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "retry-test", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("task", model.WithActionName("a"), model.WithRetryPolicy(&model.RetryPolicy{
+		Nodes: []definition.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(&definition.RetryPolicy{
 				MaxAttempts:     3,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,
 				MaxInterval:     time.Minute,
 			})),
-			model.NewEndEvent("end"),
+			event.NewEnd("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
