@@ -1,7 +1,6 @@
 package gin_test
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	ginlib "github.com/gin-gonic/gin"
+	"go.uber.org/mock/gomock"
 
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
@@ -16,89 +16,7 @@ import (
 	ginadapter "github.com/zakyalvan/krtlwrkflw/transport/http/gin"
 )
 
-// ─── Admin fake implementations ───────────────────────────────────────────────
-
-// fakeDeadLetterAdmin satisfies service.DeadLetterAdmin for tests.
-type fakeDeadLetterAdmin struct {
-	items []monitor.DeadLetter
-	err   error
-}
-
-func (f *fakeDeadLetterAdmin) ListDeadLettered(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-	return f.items, f.err
-}
-
-func (f *fakeDeadLetterAdmin) Redrive(_ context.Context, _ ...int64) (int, error) {
-	return len(f.items), f.err
-}
-
-// fakePolicyAdmin satisfies service.PolicyAdmin for tests.
-type fakePolicyAdmin struct {
-	policies []service.PolicyRule
-	bindings []service.RoleBinding
-	err      error
-}
-
-func (f *fakePolicyAdmin) ListPolicies(_ context.Context) ([]service.PolicyRule, error) {
-	return f.policies, f.err
-}
-
-func (f *fakePolicyAdmin) AddPolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return true, f.err
-}
-
-func (f *fakePolicyAdmin) RemovePolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return true, f.err
-}
-
-func (f *fakePolicyAdmin) ListRoles(_ context.Context) ([]service.RoleBinding, error) {
-	return f.bindings, f.err
-}
-
-func (f *fakePolicyAdmin) AddRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return true, f.err
-}
-
-func (f *fakePolicyAdmin) RemoveRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return true, f.err
-}
-
-// fakeRelayStatsAdmin satisfies service.RelayStatsAdmin for tests.
-type fakeRelayStatsAdmin struct {
-	stats kernel.OutboxStats
-	err   error
-}
-
-func (f *fakeRelayStatsAdmin) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
-	return f.stats, f.err
-}
-
-// fakeTimerAdmin satisfies service.TimerAdmin for tests.
-type fakeTimerAdmin struct {
-	stats kernel.TimerStats
-	armed []kernel.ArmedTimer
-	err   error
-}
-
-func (f *fakeTimerAdmin) Stats(_ context.Context) (kernel.TimerStats, error) {
-	return f.stats, f.err
-}
-
-func (f *fakeTimerAdmin) ListArmed(_ context.Context) ([]kernel.ArmedTimer, error) {
-	return f.armed, f.err
-}
-
-// fakeLineageAdmin satisfies service.LineageAdmin for tests.
-type fakeLineageAdmin struct {
-	lineage kernel.InstanceLineage
-	err     error
-}
-
-func (f *fakeLineageAdmin) Lineage(_ context.Context, _ string) (kernel.InstanceLineage, error) {
-	return f.lineage, f.err
-}
-
-// Keep errors imported.
+// Keep errors imported for test helper usage.
 var _ = errors.New
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -149,8 +67,9 @@ func TestAdminRoutes_ResolveIncident(t *testing.T) {
 func TestAdminRoutes_DeadLetters_WhenPresent(t *testing.T) {
 	t.Parallel()
 
-	fakeDL := &fakeDeadLetterAdmin{
-		items: []monitor.DeadLetter{
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(
+		[]monitor.DeadLetter{
 			{
 				ID:         1,
 				InstanceID: "inst-1",
@@ -159,12 +78,11 @@ func TestAdminRoutes_DeadLetters_WhenPresent(t *testing.T) {
 				LastError:  "timeout",
 				CreatedAt:  time.Now(),
 			},
-		},
-	}
+		}, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:         fakeAdminSvc{},
-		DeadLetters: fakeDL,
+		DeadLetters: m,
 	})
 
 	resp := get(t, srv, "/admin/dead-letters")
@@ -181,11 +99,12 @@ func TestAdminRoutes_DeadLetters_WhenPresent(t *testing.T) {
 func TestAdminRoutes_DeadLetters_Redrive(t *testing.T) {
 	t.Parallel()
 
-	fakeDL := &fakeDeadLetterAdmin{}
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().Redrive(gomock.Any(), int64(1), int64(2)).Return(2, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:         fakeAdminSvc{},
-		DeadLetters: fakeDL,
+		DeadLetters: m,
 	})
 
 	resp := post(t, srv, "/admin/dead-letters/redrive", map[string]any{"ids": []int64{1, 2}})
@@ -197,15 +116,15 @@ func TestAdminRoutes_DeadLetters_Redrive(t *testing.T) {
 func TestAdminRoutes_Policies_List(t *testing.T) {
 	t.Parallel()
 
-	fakePol := &fakePolicyAdmin{
-		policies: []service.PolicyRule{
+	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m.EXPECT().ListPolicies(gomock.Any()).Return(
+		[]service.PolicyRule{
 			{Subject: "alice", Object: "process-*", Action: "start"},
-		},
-	}
+		}, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:      fakeAdminSvc{},
-		Policies: fakePol,
+		Policies: m,
 	})
 
 	resp := get(t, srv, "/admin/policies")
@@ -222,11 +141,13 @@ func TestAdminRoutes_Policies_List(t *testing.T) {
 func TestAdminRoutes_Policies_AddRemove(t *testing.T) {
 	t.Parallel()
 
-	fakePol := &fakePolicyAdmin{}
+	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil)
+	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:      fakeAdminSvc{},
-		Policies: fakePol,
+		Policies: m,
 	})
 
 	// Add policy.
@@ -257,15 +178,15 @@ func TestAdminRoutes_Policies_AddRemove(t *testing.T) {
 func TestAdminRoutes_RoleBindings(t *testing.T) {
 	t.Parallel()
 
-	fakePol := &fakePolicyAdmin{
-		bindings: []service.RoleBinding{
-			{User: "bob", Role: "viewer"},
-		},
-	}
+	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m.EXPECT().ListRoles(gomock.Any()).Return(
+		[]service.RoleBinding{{User: "bob", Role: "viewer"}}, nil)
+	m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(true, nil)
+	m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(true, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:      fakeAdminSvc{},
-		Policies: fakePol,
+		Policies: m,
 	})
 
 	// List.
@@ -298,13 +219,13 @@ func TestAdminRoutes_RoleBindings(t *testing.T) {
 func TestAdminRoutes_RelayStats(t *testing.T) {
 	t.Parallel()
 
-	fakeRS := &fakeRelayStatsAdmin{
-		stats: kernel.OutboxStats{Pending: 5, Dead: 1, OldestPendingAge: 30 * time.Second},
-	}
+	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m.EXPECT().OutboxStats(gomock.Any()).Return(
+		kernel.OutboxStats{Pending: 5, Dead: 1, OldestPendingAge: 30 * time.Second}, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:        fakeAdminSvc{},
-		RelayStats: fakeRS,
+		RelayStats: m,
 	})
 
 	resp := get(t, srv, "/admin/relay-stats")
@@ -321,22 +242,24 @@ func TestAdminRoutes_RelayStats(t *testing.T) {
 func TestAdminRoutes_Timers(t *testing.T) {
 	t.Parallel()
 
-	fakeT := &fakeTimerAdmin{
-		stats: kernel.TimerStats{Armed: 2},
-		armed: []kernel.ArmedTimer{
+	fireAt := time.Now().Add(time.Minute)
+
+	m := service.NewMockTimerAdmin(gomock.NewController(t))
+	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 2}, nil)
+	m.EXPECT().ListArmed(gomock.Any()).Return(
+		[]kernel.ArmedTimer{
 			{
 				InstanceID: "inst-1",
 				DefID:      "def-a",
 				DefVersion: 1,
 				TimerID:    "t1",
-				FireAt:     time.Now().Add(time.Minute),
+				FireAt:     fireAt,
 			},
-		},
-	}
+		}, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:    fakeAdminSvc{},
-		Timers: fakeT,
+		Timers: m,
 	})
 
 	resp := get(t, srv, "/admin/timers")
@@ -353,17 +276,17 @@ func TestAdminRoutes_Timers(t *testing.T) {
 func TestAdminRoutes_Lineage(t *testing.T) {
 	t.Parallel()
 
-	fakeL := &fakeLineageAdmin{
-		lineage: kernel.InstanceLineage{
+	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m.EXPECT().Lineage(gomock.Any(), "inst-lineage-1").Return(
+		kernel.InstanceLineage{
 			InstanceID:      "inst-lineage-1",
 			CallChildren:    []kernel.CallLinkRef{},
 			ChainSuccessors: []kernel.ChainLinkRef{},
-		},
-	}
+		}, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
 		Svc:     fakeAdminSvc{},
-		Lineage: fakeL,
+		Lineage: m,
 	})
 
 	resp := get(t, srv, "/admin/instances/inst-lineage-1/lineage")

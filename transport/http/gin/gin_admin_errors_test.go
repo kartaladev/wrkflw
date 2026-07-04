@@ -2,71 +2,65 @@
 package gin_test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	ginlib "github.com/gin-gonic/gin"
+	"go.uber.org/mock/gomock"
 
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	ginadapter "github.com/zakyalvan/krtlwrkflw/transport/http/gin"
 )
 
-// ─── Fakes that return errors ─────────────────────────────────────────────────
+// ─── Mock factories that return errors ───────────────────────────────────────
 
-type errDeadLetterAdmin struct{}
-
-func (e errDeadLetterAdmin) ListDeadLettered(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-	return nil, fmt.Errorf("dead-letter backend error")
-}
-func (e errDeadLetterAdmin) Redrive(_ context.Context, _ ...int64) (int, error) {
-	return 0, fmt.Errorf("dead-letter backend error")
-}
-
-type errPolicyAdmin struct{}
-
-func (e errPolicyAdmin) ListPolicies(_ context.Context) ([]service.PolicyRule, error) {
-	return nil, fmt.Errorf("policy backend error")
-}
-func (e errPolicyAdmin) AddPolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return false, fmt.Errorf("policy backend error")
-}
-func (e errPolicyAdmin) RemovePolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return false, fmt.Errorf("policy backend error")
-}
-func (e errPolicyAdmin) ListRoles(_ context.Context) ([]service.RoleBinding, error) {
-	return nil, fmt.Errorf("policy backend error")
-}
-func (e errPolicyAdmin) AddRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return false, fmt.Errorf("policy backend error")
-}
-func (e errPolicyAdmin) RemoveRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return false, fmt.Errorf("policy backend error")
+func newErrDeadLetterAdminGin(t *testing.T) service.DeadLetterAdmin {
+	t.Helper()
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("dead-letter backend error")).AnyTimes()
+	// Redrive is variadic. Set expectations for 0 ids (empty redrive) and 1 id (our test sends 1).
+	redriveErr := fmt.Errorf("dead-letter backend error")
+	m.EXPECT().Redrive(gomock.Any()).Return(0, redriveErr).AnyTimes()
+	m.EXPECT().Redrive(gomock.Any(), gomock.Any()).Return(0, redriveErr).AnyTimes()
+	return m
 }
 
-type errRelayStatsAdmin struct{}
-
-func (e errRelayStatsAdmin) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
-	return kernel.OutboxStats{}, fmt.Errorf("relay stats error")
+func newErrPolicyAdminGin(t *testing.T) service.PolicyAdmin {
+	t.Helper()
+	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m.EXPECT().ListPolicies(gomock.Any()).Return(nil, fmt.Errorf("policy backend error")).AnyTimes()
+	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("policy backend error")).AnyTimes()
+	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("policy backend error")).AnyTimes()
+	m.EXPECT().ListRoles(gomock.Any()).Return(nil, fmt.Errorf("policy backend error")).AnyTimes()
+	m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("policy backend error")).AnyTimes()
+	m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("policy backend error")).AnyTimes()
+	return m
 }
 
-type errTimerAdmin struct{}
-
-func (e errTimerAdmin) Stats(_ context.Context) (kernel.TimerStats, error) {
-	return kernel.TimerStats{}, fmt.Errorf("timer stats error")
-}
-func (e errTimerAdmin) ListArmed(_ context.Context) ([]kernel.ArmedTimer, error) {
-	return nil, fmt.Errorf("timer list error")
+func newErrRelayStatsAdminGin(t *testing.T) service.RelayStatsAdmin {
+	t.Helper()
+	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, fmt.Errorf("relay stats error")).AnyTimes()
+	return m
 }
 
-type errLineageAdmin struct{}
+func newErrTimerAdminGin(t *testing.T) service.TimerAdmin {
+	t.Helper()
+	m := service.NewMockTimerAdmin(gomock.NewController(t))
+	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, fmt.Errorf("timer stats error")).AnyTimes()
+	m.EXPECT().ListArmed(gomock.Any()).Return(nil, fmt.Errorf("timer list error")).AnyTimes()
+	return m
+}
 
-func (e errLineageAdmin) Lineage(_ context.Context, _ string) (kernel.InstanceLineage, error) {
-	return kernel.InstanceLineage{}, fmt.Errorf("lineage error")
+func newErrLineageAdminGin(t *testing.T) service.LineageAdmin {
+	t.Helper()
+	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m.EXPECT().Lineage(gomock.Any(), gomock.Any()).Return(kernel.InstanceLineage{}, fmt.Errorf("lineage error")).AnyTimes()
+	return m
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -74,7 +68,7 @@ func (e errLineageAdmin) Lineage(_ context.Context, _ string) (kernel.InstanceLi
 func TestAdminRoutes_DeadLetters_ListError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, DeadLetters: errDeadLetterAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, DeadLetters: newErrDeadLetterAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -87,7 +81,7 @@ func TestAdminRoutes_DeadLetters_ListError(t *testing.T) {
 func TestAdminRoutes_DeadLetters_RedriveError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, DeadLetters: errDeadLetterAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, DeadLetters: newErrDeadLetterAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -100,7 +94,9 @@ func TestAdminRoutes_DeadLetters_RedriveError(t *testing.T) {
 func TestAdminRoutes_DeadLetters_RedriveBadJSON(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, DeadLetters: &fakeDeadLetterAdmin{}}.Customize(r)
+	// Bad-JSON test: handler returns 400 before calling Redrive; only set list expectation.
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, DeadLetters: m}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -114,7 +110,7 @@ func TestAdminRoutes_DeadLetters_RedriveBadJSON(t *testing.T) {
 func TestAdminRoutes_Policies_ListError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -127,7 +123,7 @@ func TestAdminRoutes_Policies_ListError(t *testing.T) {
 func TestAdminRoutes_Policies_AddBadJSON(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -140,7 +136,7 @@ func TestAdminRoutes_Policies_AddBadJSON(t *testing.T) {
 func TestAdminRoutes_Policies_AddError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -155,7 +151,7 @@ func TestAdminRoutes_Policies_AddError(t *testing.T) {
 func TestAdminRoutes_Policies_DeleteBadJSON(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -173,7 +169,7 @@ func TestAdminRoutes_Policies_DeleteBadJSON(t *testing.T) {
 func TestAdminRoutes_Policies_DeleteError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -193,7 +189,7 @@ func TestAdminRoutes_Policies_DeleteError(t *testing.T) {
 func TestAdminRoutes_RoleBindings_ListError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -206,7 +202,7 @@ func TestAdminRoutes_RoleBindings_ListError(t *testing.T) {
 func TestAdminRoutes_RoleBindings_AddBadJSON(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -219,7 +215,7 @@ func TestAdminRoutes_RoleBindings_AddBadJSON(t *testing.T) {
 func TestAdminRoutes_RoleBindings_AddError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -232,7 +228,7 @@ func TestAdminRoutes_RoleBindings_AddError(t *testing.T) {
 func TestAdminRoutes_RoleBindings_DeleteBadJSON(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -250,7 +246,7 @@ func TestAdminRoutes_RoleBindings_DeleteBadJSON(t *testing.T) {
 func TestAdminRoutes_RoleBindings_DeleteError(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: errPolicyAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Policies: newErrPolicyAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -268,7 +264,7 @@ func TestAdminRoutes_RoleBindings_DeleteError(t *testing.T) {
 func TestAdminRoutes_RelayStats_Error(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, RelayStats: errRelayStatsAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, RelayStats: newErrRelayStatsAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -281,7 +277,7 @@ func TestAdminRoutes_RelayStats_Error(t *testing.T) {
 func TestAdminRoutes_Timers_Error(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Timers: errTimerAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Timers: newErrTimerAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -294,7 +290,7 @@ func TestAdminRoutes_Timers_Error(t *testing.T) {
 func TestAdminRoutes_Lineage_Error(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
-	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Lineage: errLineageAdmin{}}.Customize(r)
+	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, Lineage: newErrLineageAdminGin(t)}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
