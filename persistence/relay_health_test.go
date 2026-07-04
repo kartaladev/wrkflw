@@ -11,7 +11,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
+	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
 )
 
 // fakeStatsReader is an in-test fake implementing kernel.OutboxStatsReader.
@@ -151,8 +151,8 @@ func TestRelayBacklogCheck(t *testing.T) {
 
 			check := persistence.NewRelayBacklogCheck(tc.reader, tc.opts...)
 
-			// Must structurally satisfy rest.HealthCheck (compile-time assertion).
-			var _ rest.HealthCheck = check
+			// Must structurally satisfy httpcore.HealthCheck (compile-time assertion).
+			var _ httpcore.HealthCheck = check
 
 			if tc.name == "name is relay-backlog" {
 				assert.Equal(t, "relay-backlog", check.Name())

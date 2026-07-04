@@ -48,7 +48,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
-	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
+	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
 )
 
 func main() {
@@ -239,13 +240,12 @@ func run(logger *slog.Logger) error {
 	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)
 
 	// --- Health probe (MySQL ping) ---
-	readyChecks := []rest.HealthCheck{persistence.NewMySQLPingCheck(db)}
+	readyChecks := []httpcore.HealthCheck{persistence.NewMySQLPingCheck(db)}
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---
 	mux := http.NewServeMux()
-	mux.Handle("/", rest.NewHandler(svc))
-	mux.Handle("/healthz", rest.NewHealthHandler(readyChecks...))
-	mux.Handle("/readyz", rest.NewHealthHandler(readyChecks...))
+	stdlib.Mount(mux, svc)
+	stdlib.MountHealth(mux, readyChecks...)
 
 	srv := &http.Server{
 		Addr:              ":8080",

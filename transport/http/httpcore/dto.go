@@ -1,7 +1,7 @@
 package httpcore
 
 // Actor carries identity and role membership for task-related requests.
-// It mirrors the inline actorBody structs used in transport/rest/handler.go.
+// It mirrors the original inline actorBody request structs.
 type Actor struct {
 	ID    string   `json:"id"`
 	Roles []string `json:"roles"`
@@ -53,7 +53,7 @@ type ReassignInput struct {
 	By   Actor  `json:"by"`
 }
 
-// --- Admin DTOs (mirror transport/rest/admin.go request bodies) ---
+// --- Admin DTOs (the admin request bodies) ---
 
 // PolicyRuleInput is the request body for POST /admin/policies and
 // DELETE /admin/policies. The rest handler reads all three fields without

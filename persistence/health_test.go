@@ -10,7 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
-	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
+	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
 )
 
 func TestPingCheck(t *testing.T) {
@@ -66,9 +66,9 @@ func TestPingCheck(t *testing.T) {
 			}
 
 			check := tc.check()
-			// PingCheck must satisfy the rest.HealthCheck contract so it can be
-			// registered with rest.NewHealthHandler.
-			var _ rest.HealthCheck = check
+			// PingCheck must satisfy the httpcore.HealthCheck contract so it can be
+			// registered with stdlib.MountHealth.
+			var _ httpcore.HealthCheck = check
 			assert.NotEmpty(t, check.Name())
 
 			tc.assert(t, check.Check(ctx))
@@ -95,7 +95,7 @@ func TestPingCheckNilPool(t *testing.T) {
 }
 
 // TestMySQLPingCheck_Healthy asserts that NewMySQLPingCheck over a live *sql.DB
-// satisfies rest.HealthCheck, reports the default name "mysql", and pings successfully.
+// satisfies httpcore.HealthCheck, reports the default name "mysql", and pings successfully.
 func TestMySQLPingCheck_Healthy(t *testing.T) {
 	t.Parallel()
 
@@ -103,8 +103,8 @@ func TestMySQLPingCheck_Healthy(t *testing.T) {
 
 	check := persistence.NewMySQLPingCheck(db)
 
-	// Must satisfy the same rest.HealthCheck contract as the pgx PingCheck.
-	var _ rest.HealthCheck = check
+	// Must satisfy the same httpcore.HealthCheck contract as the pgx PingCheck.
+	var _ httpcore.HealthCheck = check
 
 	assert.Equal(t, "mysql", check.Name())
 	require.NoError(t, check.Check(t.Context()))
@@ -121,7 +121,7 @@ func TestMySQLPingCheckNilDB(t *testing.T) {
 }
 
 // TestSQLitePingCheck_Healthy asserts that NewSQLitePingCheck over a live *sql.DB
-// (SQLite) satisfies rest.HealthCheck, reports the default name "sqlite", and pings
+// (SQLite) satisfies httpcore.HealthCheck, reports the default name "sqlite", and pings
 // successfully.
 func TestSQLitePingCheck_Healthy(t *testing.T) {
 	t.Parallel()
@@ -130,8 +130,8 @@ func TestSQLitePingCheck_Healthy(t *testing.T) {
 
 	check := persistence.NewSQLitePingCheck(db)
 
-	// Must satisfy the same rest.HealthCheck contract as the pgx PingCheck.
-	var _ rest.HealthCheck = check
+	// Must satisfy the same httpcore.HealthCheck contract as the pgx PingCheck.
+	var _ httpcore.HealthCheck = check
 
 	assert.Equal(t, "sqlite", check.Name())
 	require.NoError(t, check.Check(t.Context()))

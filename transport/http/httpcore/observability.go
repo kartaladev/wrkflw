@@ -30,7 +30,7 @@ type Instrumentation struct {
 // NewInstrumentation builds an [Instrumentation] from the observability
 // providers stored in cfg. Nil providers fall back to the OTel globals (via
 // [observability.New]). The metric names and span naming follow the same
-// conventions as the legacy transport/rest traceMiddleware so that consumers
+// conventions as the original REST traceMiddleware so that consumers
 // migrating between the two transports see identical telemetry:
 //
 //   - counter:   wrkflw_rest_requests_total
