@@ -1,5 +1,7 @@
 package service
 
+//go:generate mockgen -source=policyadmin.go -package=service -destination=policyadmin_mock.go -typed
+
 import "context"
 
 // PolicyRule represents a single casbin policy line (p, subject, object, action).
