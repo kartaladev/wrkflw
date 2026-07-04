@@ -16,12 +16,9 @@
 // value-for-value. The normalisation step re-encodes the decoded JSON, so map
 // key ordering is canonical.
 //
-// Known divergence:
-//
-//	POST /messages 202 — fiber's SendStatus(202) writes the HTTP status text
-//	"Accepted" as the response body when the body would otherwise be empty;
-//	stdlib and gin write an empty body. Only the HTTP status code is compared for
-//	this case. All other cases compare both status and normalised JSON body.
+// All cases compare both the HTTP status and the normalised body across the
+// three adapters — including POST /messages 202, which emits an empty body on
+// every adapter (fiber uses c.Status(202).Send(nil), not c.SendStatus).
 package parity_test
 
 import (
@@ -416,14 +413,10 @@ func TestParity_PostSignals_200(t *testing.T) {
 	}
 }
 
-// TestParity_PostMessages_202 verifies that POST /messages returns 202 across all
-// adapters.
-//
-// Body parity is NOT asserted here because fiber's SendStatus(202) writes the
-// status-text "Accepted" as the response body when the httpcore function returns
-// a nil body; stdlib and gin write an empty body. This is a known intentional
-// behaviour difference in the fiber adapter (uses c.SendStatus which appends the
-// HTTP status text for informational statuses). Status parity is sufficient.
+// TestParity_PostMessages_202 verifies that POST /messages returns 202 with an
+// empty body across ALL three adapters. The fiber adapter uses
+// c.Status(202).Send(nil) (not c.SendStatus, which would append the status text
+// "Accepted" as the body), so full body parity holds.
 func TestParity_PostMessages_202(t *testing.T) {
 	t.Parallel()
 
@@ -451,8 +444,8 @@ func TestParity_PostMessages_202(t *testing.T) {
 		t.Fatalf("stdlib: want 202 got %d (body=%s)", s.status, s.rawBody)
 	}
 
-	// bodyParity=false: fiber writes "Accepted" text, stdlib/gin write empty body.
-	assertParity(t, "POST /messages 202", s, g, f, false)
+	// All three adapters emit an empty body on 202 → full body parity.
+	assertParity(t, "POST /messages 202", s, g, f, true)
 }
 
 // TestParity_PostTasksClaim_200 verifies that POST /tasks/{token}/claim returns

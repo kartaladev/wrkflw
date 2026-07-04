@@ -108,7 +108,9 @@ func (g MessageRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOp
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
-			return c.SendStatus(status)
+			// Status + empty body (NOT c.SendStatus, which writes the status text
+			// "Accepted" as the body) so /messages matches stdlib/gin byte-for-byte.
+			return c.Status(status).Send(nil)
 		}))
 }
 
