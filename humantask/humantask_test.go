@@ -26,6 +26,51 @@ func TestTaskState_Values(t *testing.T) {
 	}
 }
 
+func TestTaskState_String(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		state  humantask.TaskState
+		assert func(t *testing.T, got string)
+	}
+
+	cases := []testCase{
+		{
+			name:   "unclaimed",
+			state:  humantask.Unclaimed,
+			assert: func(t *testing.T, got string) { assert.Equal(t, "unclaimed", got) },
+		},
+		{
+			name:   "claimed",
+			state:  humantask.Claimed,
+			assert: func(t *testing.T, got string) { assert.Equal(t, "claimed", got) },
+		},
+		{
+			name:   "completed",
+			state:  humantask.Completed,
+			assert: func(t *testing.T, got string) { assert.Equal(t, "completed", got) },
+		},
+		{
+			name:   "cancelled",
+			state:  humantask.Cancelled,
+			assert: func(t *testing.T, got string) { assert.Equal(t, "cancelled", got) },
+		},
+		{
+			name:   "out-of-range maps to unknown",
+			state:  humantask.TaskState(99),
+			assert: func(t *testing.T, got string) { assert.Equal(t, "unknown", got) },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.state.String())
+		})
+	}
+}
+
 func TestErrTaskNotFound_IsError(t *testing.T) {
 	assert.Error(t, humantask.ErrTaskNotFound)
 	assert.Contains(t, humantask.ErrTaskNotFound.Error(), "not found")

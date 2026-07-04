@@ -149,7 +149,7 @@ func main() {
 	if err != nil {
 		log.Fatal("get task:", err)
 	}
-	fmt.Printf("human task %q state: %s\n", task.TaskToken, taskStateString(task.State))
+	fmt.Printf("human task %q state: %s\n", task.TaskToken, task.State.String())
 
 	if final.Status == engine.StatusTerminated &&
 		len(final.Tokens) == 0 &&
@@ -157,21 +157,5 @@ func main() {
 		fmt.Println("OK: instance terminated, tokens cleared, cleanup attempted, task cancelled")
 	} else {
 		fmt.Println("unexpected outcome")
-	}
-}
-
-// taskStateString renders a humantask.TaskState for display.
-func taskStateString(s humantask.TaskState) string {
-	switch s {
-	case humantask.Unclaimed:
-		return "unclaimed"
-	case humantask.Claimed:
-		return "claimed"
-	case humantask.Completed:
-		return "completed"
-	case humantask.Cancelled:
-		return "cancelled"
-	default:
-		return "unknown"
 	}
 }

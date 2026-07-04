@@ -82,7 +82,7 @@ func NewActionableView(st engine.InstanceState, def *model.ProcessDefinition) Ac
 		openTasks = append(openTasks, ActionableTask{
 			TaskToken:      t.TaskToken,
 			NodeID:         t.NodeID,
-			State:          taskStateString(t.State),
+			State:          t.State.String(),
 			ClaimedBy:      t.ClaimedBy,
 			Candidates:     t.Candidates,
 			AllowedActions: allowedActions,

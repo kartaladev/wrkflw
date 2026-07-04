@@ -6,7 +6,6 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
 // StatusString converts an engine.Status to its canonical string representation.
@@ -41,23 +40,6 @@ func tokenStateString(s engine.TokenState) string {
 		return "atJoin"
 	case engine.TokenIncident:
 		return "incident"
-	default:
-		return "unknown"
-	}
-}
-
-// taskStateString converts a humantask.TaskState to its canonical string representation.
-// Out-of-range values map to "unknown".
-func taskStateString(s humantask.TaskState) string {
-	switch s {
-	case humantask.Unclaimed:
-		return "unclaimed"
-	case humantask.Claimed:
-		return "claimed"
-	case humantask.Completed:
-		return "completed"
-	case humantask.Cancelled:
-		return "cancelled"
 	default:
 		return "unknown"
 	}
@@ -224,7 +206,7 @@ func NewInstanceSnapshot(st engine.InstanceState, def *model.ProcessDefinition) 
 		tasks = append(tasks, TaskView{
 			TaskToken:  t.TaskToken,
 			NodeID:     t.NodeID,
-			State:      taskStateString(t.State),
+			State:      t.State.String(),
 			ClaimedBy:  t.ClaimedBy,
 			Candidates: t.Candidates,
 			CreatedAt:  t.CreatedAt,
