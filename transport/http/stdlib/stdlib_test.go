@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -92,7 +94,7 @@ func newDeleteRequest(t *testing.T, path string, body any) *http.Request {
 }
 
 // ---------------------------------------------------------------------------
-// Fakes
+// Fakes / stubs
 
 var errInternal = errors.New("db connection refused: internal secret dsn info")
 
@@ -107,26 +109,21 @@ func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartIns
 	return engine.InstanceState{}, s.err
 }
 
-// alwaysPoliciesAdmin is a PolicyAdmin that always succeeds.
-type alwaysPoliciesAdmin struct{}
-
-func (alwaysPoliciesAdmin) AddPolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) RemovePolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) ListPolicies(_ context.Context) ([]service.PolicyRule, error) {
-	return []service.PolicyRule{{Subject: "alice", Object: "instances", Action: "read"}}, nil
-}
-func (alwaysPoliciesAdmin) AddRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) RemoveRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) ListRoles(_ context.Context) ([]service.RoleBinding, error) {
-	return []service.RoleBinding{{User: "alice", Role: "manager"}}, nil
+// newAlwaysPoliciesAdmin returns a MockPolicyAdmin configured to succeed on
+// every call, suitable for tests that wire a Policies dep to exercise routing
+// without caring about specific policy data.
+func newAlwaysPoliciesAdmin(t *testing.T) service.PolicyAdmin {
+	t.Helper()
+	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().ListPolicies(gomock.Any()).Return(
+		[]service.PolicyRule{{Subject: "alice", Object: "instances", Action: "read"}}, nil).AnyTimes()
+	m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().ListRoles(gomock.Any()).Return(
+		[]service.RoleBinding{{User: "alice", Role: "manager"}}, nil).AnyTimes()
+	return m
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +342,7 @@ func TestAdminRoutes_WithPolicies(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(mux)
+	stdlib.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(mux)
 
 	rr := do(mux, newGetRequest(t, "/admin/policies"))
 	if rr.Code != http.StatusOK {

@@ -7,73 +7,67 @@ import (
 	"net/http"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
 )
 
 // ---------------------------------------------------------------------------
-// Error-injecting stub implementations.
+// Mock factories for error-injecting admin deps.
 
 var errInternalAdmin = errors.New("admin store error")
 
-// errDeadLetterAdmin returns errors on every call.
-type errDeadLetterAdmin struct{ err error }
-
-func (s *errDeadLetterAdmin) ListDeadLettered(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-	return nil, s.err
-}
-func (s *errDeadLetterAdmin) Redrive(_ context.Context, _ ...int64) (int, error) {
-	return 0, s.err
-}
-
-// errPoliciesAdmin returns errors on every call.
-type errPoliciesAdmin struct{ err error }
-
-func (s *errPoliciesAdmin) AddPolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return false, s.err
-}
-func (s *errPoliciesAdmin) RemovePolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return false, s.err
-}
-func (s *errPoliciesAdmin) ListPolicies(_ context.Context) ([]service.PolicyRule, error) {
-	return nil, s.err
-}
-func (s *errPoliciesAdmin) AddRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return false, s.err
-}
-func (s *errPoliciesAdmin) RemoveRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return false, s.err
-}
-func (s *errPoliciesAdmin) ListRoles(_ context.Context) ([]service.RoleBinding, error) {
-	return nil, s.err
+// newErrDeadLetterAdmin returns a MockDeadLetterAdmin that returns errInternalAdmin on every call.
+func newErrDeadLetterAdmin(t *testing.T) service.DeadLetterAdmin {
+	t.Helper()
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, errInternalAdmin).AnyTimes()
+	// Redrive is variadic — use DoAndReturn to accept any number of id args.
+	m.EXPECT().Redrive(gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ ...int64) (int, error) { return 0, errInternalAdmin }).AnyTimes()
+	return m
 }
 
-// errRelayStatsAdmin always returns an error.
-type errRelayStatsAdmin struct{ err error }
-
-func (s *errRelayStatsAdmin) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
-	return kernel.OutboxStats{}, s.err
+// newErrPoliciesAdmin returns a MockPolicyAdmin that returns errInternalAdmin on every call.
+func newErrPoliciesAdmin(t *testing.T) service.PolicyAdmin {
+	t.Helper()
+	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, errInternalAdmin).AnyTimes()
+	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, errInternalAdmin).AnyTimes()
+	m.EXPECT().ListPolicies(gomock.Any()).Return(nil, errInternalAdmin).AnyTimes()
+	m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(false, errInternalAdmin).AnyTimes()
+	m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(false, errInternalAdmin).AnyTimes()
+	m.EXPECT().ListRoles(gomock.Any()).Return(nil, errInternalAdmin).AnyTimes()
+	return m
 }
 
-// errTimerAdmin always returns an error.
-type errTimerAdmin struct{ err error }
-
-func (s *errTimerAdmin) Stats(_ context.Context) (kernel.TimerStats, error) {
-	return kernel.TimerStats{}, s.err
-}
-func (s *errTimerAdmin) ListArmed(_ context.Context) ([]kernel.ArmedTimer, error) {
-	return nil, s.err
+// newErrRelayStatsAdmin returns a MockRelayStatsAdmin that returns errInternalAdmin on every call.
+func newErrRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
+	t.Helper()
+	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, errInternalAdmin).AnyTimes()
+	return m
 }
 
-// errLineageAdmin always returns an error.
-type errLineageAdmin struct{ err error }
+// newErrTimerAdmin returns a MockTimerAdmin that returns errInternalAdmin on every call.
+func newErrTimerAdmin(t *testing.T) service.TimerAdmin {
+	t.Helper()
+	m := service.NewMockTimerAdmin(gomock.NewController(t))
+	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, errInternalAdmin).AnyTimes()
+	m.EXPECT().ListArmed(gomock.Any()).Return(nil, errInternalAdmin).AnyTimes()
+	return m
+}
 
-func (s *errLineageAdmin) Lineage(_ context.Context, _ string) (kernel.InstanceLineage, error) {
-	return kernel.InstanceLineage{}, s.err
+// newErrLineageAdmin returns a MockLineageAdmin that returns errInternalAdmin on every call.
+func newErrLineageAdmin(t *testing.T) service.LineageAdmin {
+	t.Helper()
+	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m.EXPECT().Lineage(gomock.Any(), gomock.Any()).Return(kernel.InstanceLineage{}, errInternalAdmin).AnyTimes()
+	return m
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +246,7 @@ func TestAdminRoutes_DeadLetters_WithLimit(t *testing.T) {
 
 	_, svc := transporttest.NewHarness(t)
 	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, DeadLetters: &stubDeadLetterAdmin{}}.Customize(mux)
+	stdlib.AdminRoutes{Svc: svc, DeadLetters: newStubDeadLetterAdmin(t)}.Customize(mux)
 
 	rr := do(mux, newGetRequest(t, "/admin/dead-letters?limit=5"))
 	if rr.Code != http.StatusOK {
@@ -269,11 +263,11 @@ func TestAdminRoutes_ServiceErrors(t *testing.T) {
 	mux := http.NewServeMux()
 	stdlib.AdminRoutes{
 		Svc:         svc,
-		DeadLetters: &errDeadLetterAdmin{errInternalAdmin},
-		Policies:    &errPoliciesAdmin{errInternalAdmin},
-		RelayStats:  &errRelayStatsAdmin{errInternalAdmin},
-		Timers:      &errTimerAdmin{errInternalAdmin},
-		Lineage:     &errLineageAdmin{errInternalAdmin},
+		DeadLetters: newErrDeadLetterAdmin(t),
+		Policies:    newErrPoliciesAdmin(t),
+		RelayStats:  newErrRelayStatsAdmin(t),
+		Timers:      newErrTimerAdmin(t),
+		Lineage:     newErrLineageAdmin(t),
 	}.Customize(mux)
 
 	tests := []struct {

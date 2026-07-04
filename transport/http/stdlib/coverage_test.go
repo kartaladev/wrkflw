@@ -7,49 +7,53 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
 )
 
 // ---------------------------------------------------------------------------
-// Stub implementations for optional admin deps.
+// Mock factories for stub (no-op / success) admin deps.
 
-// stubDeadLetterAdmin is a no-op DeadLetterAdmin.
-type stubDeadLetterAdmin struct{}
-
-func (s *stubDeadLetterAdmin) ListDeadLettered(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-	return nil, nil
-}
-func (s *stubDeadLetterAdmin) Redrive(_ context.Context, _ ...int64) (int, error) {
-	return 0, nil
-}
-
-// stubRelayStatsAdmin is a no-op RelayStatsAdmin.
-type stubRelayStatsAdmin struct{}
-
-func (s *stubRelayStatsAdmin) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
-	return kernel.OutboxStats{}, nil
+// newStubDeadLetterAdmin returns a MockDeadLetterAdmin that always succeeds with
+// empty results on ListDeadLettered. Redrive expectations must be set up per-test.
+func newStubDeadLetterAdmin(t *testing.T) *service.MockDeadLetterAdmin {
+	t.Helper()
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	return m
 }
 
-// stubTimerAdmin is a no-op TimerAdmin.
-type stubTimerAdmin struct{}
-
-func (s *stubTimerAdmin) Stats(_ context.Context) (kernel.TimerStats, error) {
-	return kernel.TimerStats{}, nil
-}
-func (s *stubTimerAdmin) ListArmed(_ context.Context) ([]kernel.ArmedTimer, error) {
-	return nil, nil
+// newStubRelayStatsAdmin returns a MockRelayStatsAdmin that always succeeds with zero stats.
+func newStubRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
+	t.Helper()
+	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, nil).AnyTimes()
+	return m
 }
 
-// stubLineageAdmin is a no-op LineageAdmin.
-type stubLineageAdmin struct{}
+// newStubTimerAdmin returns a MockTimerAdmin that always succeeds with empty results.
+func newStubTimerAdmin(t *testing.T) service.TimerAdmin {
+	t.Helper()
+	m := service.NewMockTimerAdmin(gomock.NewController(t))
+	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, nil).AnyTimes()
+	m.EXPECT().ListArmed(gomock.Any()).Return(nil, nil).AnyTimes()
+	return m
+}
 
-func (s *stubLineageAdmin) Lineage(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
-	return kernel.InstanceLineage{InstanceID: instanceID}, nil
+// newStubLineageAdmin returns a MockLineageAdmin that always succeeds with a root lineage.
+func newStubLineageAdmin(t *testing.T) service.LineageAdmin {
+	t.Helper()
+	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m.EXPECT().Lineage(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
+			return kernel.InstanceLineage{InstanceID: instanceID}, nil
+		}).AnyTimes()
+	return m
 }
 
 // errReader always returns an error when Read is called — used to simulate malformed JSON.
@@ -341,8 +345,11 @@ func TestAdminRoutes_DeadLetters_WithDep(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	stub := &stubDeadLetterAdmin{}
-	stdlib.AdminRoutes{Svc: svc, DeadLetters: stub}.Customize(mux)
+	// Build mock inline so we can set specific expectations for each call.
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, nil)
+	m.EXPECT().Redrive(gomock.Any(), int64(1), int64(2)).Return(2, nil)
+	stdlib.AdminRoutes{Svc: svc, DeadLetters: m}.Customize(mux)
 
 	// GET /admin/dead-letters
 	rr := do(mux, newGetRequest(t, "/admin/dead-letters"))
@@ -364,8 +371,10 @@ func TestAdminRoutes_DeadLetters_BadJSON_Redrive(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	stub := &stubDeadLetterAdmin{}
-	stdlib.AdminRoutes{Svc: svc, DeadLetters: stub}.Customize(mux)
+	// Bad-JSON test: the handler parses the body first, returns 400 before calling Redrive.
+	// So no Redrive expectation needed; ListDeadLettered is also not called on this route.
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	stdlib.AdminRoutes{Svc: svc, DeadLetters: m}.Customize(mux)
 
 	req, err := http.NewRequest(http.MethodPost, "/admin/dead-letters/redrive", errReader{})
 	if err != nil {
@@ -387,7 +396,7 @@ func TestAdminRoutes_Policies_All(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(mux)
+	stdlib.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(mux)
 
 	// POST /admin/policies (add)
 	rrAdd := do(mux, newPostRequest(t, "/admin/policies", map[string]any{
@@ -435,7 +444,7 @@ func TestAdminRoutes_Policies_BadJSON(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(mux)
+	stdlib.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(mux)
 
 	tests := []struct {
 		method string
@@ -469,7 +478,7 @@ func TestAdminRoutes_RelayStats(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, RelayStats: &stubRelayStatsAdmin{}}.Customize(mux)
+	stdlib.AdminRoutes{Svc: svc, RelayStats: newStubRelayStatsAdmin(t)}.Customize(mux)
 
 	rr := do(mux, newGetRequest(t, "/admin/relay-stats"))
 	if rr.Code != http.StatusOK {
@@ -499,7 +508,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, Timers: &stubTimerAdmin{}}.Customize(mux)
+	stdlib.AdminRoutes{Svc: svc, Timers: newStubTimerAdmin(t)}.Customize(mux)
 
 	rr := do(mux, newGetRequest(t, "/admin/timers"))
 	if rr.Code != http.StatusOK {
@@ -529,8 +538,7 @@ func TestAdminRoutes_Lineage(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	mux := http.NewServeMux()
-	la := &stubLineageAdmin{}
-	stdlib.AdminRoutes{Svc: svc, Lineage: la}.Customize(mux)
+	stdlib.AdminRoutes{Svc: svc, Lineage: newStubLineageAdmin(t)}.Customize(mux)
 
 	rr := do(mux, newGetRequest(t, "/admin/instances/some-instance/lineage"))
 	if rr.Code != http.StatusOK {
