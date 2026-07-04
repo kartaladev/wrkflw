@@ -14,11 +14,11 @@ import (
 	"testing"
 
 	fiberlib "github.com/gofiber/fiber/v3"
+	"go.uber.org/mock/gomock"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/fiber"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -116,7 +116,7 @@ func newDeleteRequest(t *testing.T, path string, body any) *http.Request {
 }
 
 // ---------------------------------------------------------------------------
-// Fakes
+// Non-admin fakes (service.Service stub — NOT replaced by mockgen)
 
 var errInternal = errors.New("db connection refused: internal secret dsn info")
 
@@ -131,64 +131,63 @@ func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartIns
 	return engine.InstanceState{}, s.err
 }
 
-// alwaysPoliciesAdmin is a PolicyAdmin that always succeeds.
-type alwaysPoliciesAdmin struct{}
+// ---------------------------------------------------------------------------
+// Admin mock factories
 
-func (alwaysPoliciesAdmin) AddPolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) RemovePolicy(_ context.Context, _ service.PolicyRule) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) ListPolicies(_ context.Context) ([]service.PolicyRule, error) {
-	return []service.PolicyRule{{Subject: "alice", Object: "instances", Action: "read"}}, nil
-}
-func (alwaysPoliciesAdmin) AddRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) RemoveRole(_ context.Context, _ service.RoleBinding) (bool, error) {
-	return true, nil
-}
-func (alwaysPoliciesAdmin) ListRoles(_ context.Context) ([]service.RoleBinding, error) {
-	return []service.RoleBinding{{User: "alice", Role: "manager"}}, nil
+// newAlwaysPoliciesAdmin returns a MockPolicyAdmin configured to always succeed.
+func newAlwaysPoliciesAdmin(t *testing.T) service.PolicyAdmin {
+	t.Helper()
+	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().ListPolicies(gomock.Any()).Return(
+		[]service.PolicyRule{{Subject: "alice", Object: "instances", Action: "read"}}, nil).AnyTimes()
+	m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	m.EXPECT().ListRoles(gomock.Any()).Return(
+		[]service.RoleBinding{{User: "alice", Role: "manager"}}, nil).AnyTimes()
+	return m
 }
 
-// alwaysDeadLetterAdmin always returns empty dead letters and zero redriven.
-type alwaysDeadLetterAdmin struct{}
-
-func (alwaysDeadLetterAdmin) ListDeadLettered(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-	return []monitor.DeadLetter{}, nil
-}
-func (alwaysDeadLetterAdmin) Redrive(_ context.Context, _ ...int64) (int, error) {
-	return 0, nil
-}
-
-// alwaysRelayStatsAdmin returns zero stats.
-type alwaysRelayStatsAdmin struct{}
-
-func (alwaysRelayStatsAdmin) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
-	return kernel.OutboxStats{}, nil
+// newAlwaysDeadLetterAdmin returns a MockDeadLetterAdmin that always succeeds with empty results.
+// It does NOT register a Redrive expectation — tests that invoke Redrive must set it up inline.
+func newAlwaysDeadLetterAdmin(t *testing.T) service.DeadLetterAdmin {
+	t.Helper()
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	return m
 }
 
-// alwaysTimerAdmin returns empty stats and nil arms.
-type alwaysTimerAdmin struct{}
-
-func (alwaysTimerAdmin) Stats(_ context.Context) (kernel.TimerStats, error) {
-	return kernel.TimerStats{}, nil
-}
-func (alwaysTimerAdmin) ListArmed(_ context.Context) ([]kernel.ArmedTimer, error) {
-	return []kernel.ArmedTimer{}, nil
+// newAlwaysRelayStatsAdmin returns a MockRelayStatsAdmin that always succeeds with zero stats.
+func newAlwaysRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
+	t.Helper()
+	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, nil).AnyTimes()
+	return m
 }
 
-// alwaysLineageAdmin returns a root lineage.
-type alwaysLineageAdmin struct{}
+// newAlwaysTimerAdmin returns a MockTimerAdmin that always succeeds with empty results.
+func newAlwaysTimerAdmin(t *testing.T) service.TimerAdmin {
+	t.Helper()
+	m := service.NewMockTimerAdmin(gomock.NewController(t))
+	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, nil).AnyTimes()
+	m.EXPECT().ListArmed(gomock.Any()).Return([]kernel.ArmedTimer{}, nil).AnyTimes()
+	return m
+}
 
-func (alwaysLineageAdmin) Lineage(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
-	return kernel.InstanceLineage{
-		InstanceID:      instanceID,
-		CallChildren:    []kernel.CallLinkRef{},
-		ChainSuccessors: []kernel.ChainLinkRef{},
-	}, nil
+// newAlwaysLineageAdmin returns a MockLineageAdmin that always succeeds with a root lineage.
+func newAlwaysLineageAdmin(t *testing.T) service.LineageAdmin {
+	t.Helper()
+	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m.EXPECT().Lineage(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
+			return kernel.InstanceLineage{
+				InstanceID:      instanceID,
+				CallChildren:    []kernel.CallLinkRef{},
+				ChainSuccessors: []kernel.ChainLinkRef{},
+			}, nil
+		}).AnyTimes()
+	return m
 }
 
 // ---------------------------------------------------------------------------
@@ -720,7 +719,7 @@ func TestPoliciesAdmin_WithPolicies(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newGetRequest(t, "/admin/policies"))
 	if status != http.StatusOK {
@@ -735,7 +734,7 @@ func TestDeleteAdminPolicy(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newDeleteRequest(t, "/admin/policies", map[string]any{
 		"subject": "alice",
@@ -754,7 +753,7 @@ func TestListRoleBindings(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newGetRequest(t, "/admin/role-bindings"))
 	if status != http.StatusOK {
@@ -769,7 +768,7 @@ func TestAdminDeadLetters_List(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, DeadLetters: alwaysDeadLetterAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, DeadLetters: newAlwaysDeadLetterAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newGetRequest(t, "/admin/dead-letters"))
 	if status != http.StatusOK {
@@ -783,8 +782,12 @@ func TestAdminDeadLetters_Redrive(t *testing.T) {
 
 	_, svc := transporttest.NewHarness(t)
 
+	// Use inline mock to set specific expectations for the exact ids in this test.
+	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m.EXPECT().Redrive(gomock.Any(), int64(1), int64(2), int64(3)).Return(3, nil)
+
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, DeadLetters: alwaysDeadLetterAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, DeadLetters: m}.Customize(app)
 
 	status, body := appDo(t, app, newPostRequest(t, "/admin/dead-letters/redrive", map[string]any{
 		"ids": []int64{1, 2, 3},
@@ -801,7 +804,7 @@ func TestAdminRelayStats(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, RelayStats: alwaysRelayStatsAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, RelayStats: newAlwaysRelayStatsAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newGetRequest(t, "/admin/relay-stats"))
 	if status != http.StatusOK {
@@ -816,7 +819,7 @@ func TestAdminTimers(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Timers: alwaysTimerAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Timers: newAlwaysTimerAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newGetRequest(t, "/admin/timers"))
 	if status != http.StatusOK {
@@ -831,7 +834,7 @@ func TestAdminLineage(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Lineage: alwaysLineageAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Lineage: newAlwaysLineageAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newGetRequest(t, "/admin/instances/some-id/lineage"))
 	if status != http.StatusOK {
@@ -846,7 +849,7 @@ func TestAddRoleBinding(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newPostRequest(t, "/admin/role-bindings", map[string]any{
 		"user": "alice",
@@ -864,7 +867,7 @@ func TestDeleteRoleBinding(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newDeleteRequest(t, "/admin/role-bindings", map[string]any{
 		"user": "alice",
@@ -882,7 +885,7 @@ func TestAddPolicy(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	app := newApp()
-	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+	fiber.AdminRoutes{Svc: svc, Policies: newAlwaysPoliciesAdmin(t)}.Customize(app)
 
 	status, body := appDo(t, app, newPostRequest(t, "/admin/policies", map[string]any{
 		"subject": "alice",
