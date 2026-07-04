@@ -57,10 +57,9 @@
 //
 // # Expose it (mount in your server)
 //
-//   - transport    REST http.Handler factories and gRPC service registrations
-//     a consumer mounts in their own server (transport/rest,
-//     transport/grpc). Transport adapters are thin translators over service.Service;
-//     the engine core never imports them.
+//   - transport    HTTP transport adapters under transport/http that a consumer
+//     mounts in their own server. Transport adapters are thin translators over
+//     service.Service; the engine core never imports them.
 //   - service      The application-layer Service façade consumed by transports:
 //     StartInstance, GetInstance, ClaimTask, CompleteTask, ResolveIncident, etc.
 //     Also defines optional admin ports (DeadLetterAdmin, TimerAdmin, LineageAdmin).
