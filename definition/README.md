@@ -23,15 +23,15 @@ describe the shape of a workflow; the `runtime` and `engine` packages execute it
 ## Overview
 
 `definition` holds the in-memory representation of a **process definition** — the
-reusable template from which process instances are created. Concepts mirror BPMN
-(tasks, gateways, events, sequence flows) but this package is **not
-BPMN-compatible** and makes no attempt to round-trip arbitrary BPMN2 XML.
+reusable template from which process instances are created. It models a workflow
+as tasks, gateways, events, and sequence flows; it is a self-contained model, not
+tied to any external workflow standard or XML interchange format.
 
 Key design properties:
 
 - **Pure data + validation.** `ProcessDefinition` and every `Node` type are plain
   Go values. No I/O, no goroutines, no heavy dependencies.
-- **One concrete type per node kind, grouped by BPMN family.** `Node` is an
+- **One concrete type per node kind, grouped by node family.** `Node` is an
   interface; each kind is a struct that lives in one of three leaf packages —
   `definition/event`, `definition/gateway`, `definition/activity`. Construct nodes
   with the family `New*` constructors — never construct the structs directly.
