@@ -14,7 +14,8 @@
 - **TDD strict** (CLAUDE.md rule #6): every new exported symbol and behavioural change is preceded by a **visible failing test** run via `go test`. No implementation before red. No batching test+impl in one edit.
 - Never import gin/fiber outside their own adapter subpackage; `httpcore` and `stdlib` pull **zero** third-party transport deps.
 - Never import watermill/casbin/gocron/clockwork from transport code — go through existing abstractions.
-- Prefer **black-box tests** (`package <name>_test`). Table-driven tests use the project `table-test` skill (assert-closure form, `ctx` modifier, `t.Context()`). Mocks via `use-mockgen`.
+- Prefer **black-box tests** (`package <name>_test`). Table-driven tests use the project `table-test` skill (assert-closure form, `ctx` modifier, `t.Context()`).
+- **Test `service.Service` with the REAL in-memory service** (`service.New(...)`) via the shared `internal/transporttest` harness (created in Task 5, modeled on `transport/rest/handler_test.go:newTestHarness`). Do NOT gomock `service.Service` — the codebase convention is real-over-mocks. Small hand-written in-mem fakes are acceptable only for admin sub-interfaces the real service doesn't implement. (This overrides any gomock scaffolding shown in individual task example code.)
 - Coverage ≥85% line on every touched package. `golangci-lint run ./...` clean. `go test ./...` green. `go build ./...` green (incl. `examples/`).
 - Conventional Commits scoped `transport`/`grpc`/`docs`. Every commit ends with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Commit per logical change.
 - Error sentinel messages use the `workflow-` prefix convention (e.g. `workflow-httpcore: ...`).
@@ -628,7 +629,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Source of truth:** the bodies of `transport/rest/handler.go` `handle*` methods. Extract the service-call + mapping (drop the decode/write, which move to adapters). Validation moves INTO these funcs via `Validate(&in)` (Task 4) — call it at the top of each func that takes a request DTO, replacing the hand-rolled `if field == ""` checks, so every framework enforces identical rules and 400 bodies.
 
-- [ ] **Step 1: Write the failing test** — table-driven against a mock `service.Service` (generate via `use-mockgen` if not present: `mockgen` the `service.Service` interface into `service/mock_service_test.go`... place per `use-mockgen`). Assert-closure form.
+- [ ] **Step 1: Write the failing test** — table-driven against a **real in-memory `service.Service`** (project convention is real-over-mocks; do NOT gomock `service.Service`). First create a reusable helper `internal/transporttest/harness.go` (package `transporttest`, a regular `.go` file so it's importable by every `transport/http/*` test package — precedent: `database.RunTestDatabase(t)`), modeled on `transport/rest/handler_test.go`'s `newTestHarness` + its process-def helpers (`linearProcess`, `approvalProcess`). It should expose a constructor returning a ready `service.Service` (via `service.New(...)`) plus a way to register a definition and start/seed an instance, and a `*clockwork.FakeClock`. Then write `endpoints_test.go` (assert-closure form) using it. The example test code below is illustrative of the ASSERTIONS only — replace the gomock scaffolding with the in-mem harness.
 
 ```go
 package httpcore_test
@@ -775,7 +776,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   func AdminInstanceLineage(ctx context.Context, a service.LineageAdmin, instanceID string) (int, any, error)
   ```
 
-- [ ] **Step 1: Write the failing test** — table-driven against mocks for `service.Service` + one admin sub-interface (e.g. `PolicyAdmin`). Cover: AddPolicy success (200/201), ResolveIncident success, CancelInstance success. Assert-closure form, `t.Context()`.
+- [ ] **Step 1: Write the failing test** — use the real in-mem `internal/transporttest` harness (Task 5) for `service.Service`. For the admin sub-interfaces (`PolicyAdmin`, `DeadLetterAdmin`, etc.), a small hand-written in-mem fake is acceptable where the harness's real service does not already implement them (check first — `service.New` may already satisfy some). Do NOT gomock. Cover: AddPolicy success, ResolveIncident success, CancelInstance success. Assert-closure form, `t.Context()`.
 - [ ] **Step 2: Run — expect FAIL.** `go test ./transport/http/httpcore/... -run TestAdmin 2>&1 | head -20`
 - [ ] **Step 3: Implement** by relocating `transport/rest/admin.go` handler bodies (drop decode/write). For funcs taking a body DTO (AddPolicy/RemovePolicy/AddRoleBinding/RemoveRoleBinding/RedriveDeadLetters), call `Validate(&in)` at the top (admin DTOs carry `validate:` tags per Task 4), replacing any hand-rolled required-field checks. Keyset pagination cursor parsing that today lives in the handler moves into `ListInstancesQuery` construction at the adapter (adapter parses query params → `ListInstancesQuery`; func consumes it).
 - [ ] **Step 4: Run — expect PASS** (extend table to all funcs; ≥85%).
