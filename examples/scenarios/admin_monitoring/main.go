@@ -47,23 +47,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// statusName returns a human-readable label for engine.Status values.
-// engine.Status is a plain int (no String() method), so we map explicitly.
-func statusName(s engine.Status) string {
-	switch s {
-	case engine.StatusRunning:
-		return "running"
-	case engine.StatusCompleted:
-		return "completed"
-	case engine.StatusFailed:
-		return "failed"
-	case engine.StatusTerminated:
-		return "terminated"
-	default:
-		return fmt.Sprintf("status(%d)", int(s))
-	}
-}
-
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	slog.SetDefault(logger)
@@ -165,7 +148,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 		if err != nil {
 			return fmt.Errorf("run %s: %w", id, err)
 		}
-		fmt.Printf("  started %s → %s\n", id, statusName(st.Status))
+		fmt.Printf("  started %s → %s\n", id, st.Status.String())
 	}
 
 	lister, err := persistence.NewSQLiteLister(db)
@@ -180,7 +163,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 	}
 	fmt.Printf("\n  Page 1 (limit 2), total=%d, hasMore=%v:\n", page1.TotalCount, page1.HasMore)
 	for _, s := range page1.Items {
-		fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, statusName(s.Status))
+		fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, s.Status.String())
 	}
 
 	if page1.HasMore {
@@ -190,7 +173,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 		}
 		fmt.Printf("  Page 2 (cursor), hasMore=%v:\n", page2.HasMore)
 		for _, s := range page2.Items {
-			fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, statusName(s.Status))
+			fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, s.Status.String())
 		}
 	}
 
@@ -263,7 +246,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	incidentID := parked.Incidents[0].ID
 	fmt.Printf("  INCIDENT RAISED on %s  id=%s  error=%q\n",
 		instanceID, incidentID, parked.Incidents[0].Error)
-	fmt.Printf("  instance status=%s  incident_count=%d\n", statusName(parked.Status), len(parked.Incidents))
+	fmt.Printf("  instance status=%s  incident_count=%d\n", parked.Status.String(), len(parked.Incidents))
 
 	// Operator resolves the incident and grants 1 additional attempt.
 	// ResolveIncident delivers a ResolveIncident trigger → the engine clears the
@@ -275,10 +258,10 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	}
 
 	fmt.Printf("  INCIDENT RESOLVED → status=%s  incidents_remaining=%d\n",
-		statusName(resolved.Status), len(resolved.Incidents))
+		resolved.Status.String(), len(resolved.Incidents))
 
 	if resolved.Status != engine.StatusCompleted {
-		return fmt.Errorf("expected StatusCompleted after resolve; got %s", statusName(resolved.Status))
+		return fmt.Errorf("expected StatusCompleted after resolve; got %s", resolved.Status.String())
 	}
 
 	return nil
@@ -333,7 +316,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) 
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
-	fmt.Printf("  instance %s → %s (outbox row inserted)\n", st.InstanceID, statusName(st.Status))
+	fmt.Printf("  instance %s → %s (outbox row inserted)\n", st.InstanceID, st.Status.String())
 
 	// Build a relay with the failing publisher and MaxDeliveryAttempts=1 so a
 	// single DrainOnce call quarantines every row it touches.

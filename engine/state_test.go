@@ -12,6 +12,36 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Status.String
+// ---------------------------------------------------------------------------
+
+func TestStatus_String(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		status Status
+		assert func(t *testing.T, got string)
+	}
+
+	cases := []testCase{
+		{"running", StatusRunning, func(t *testing.T, got string) { assert.Equal(t, "running", got) }},
+		{"completed", StatusCompleted, func(t *testing.T, got string) { assert.Equal(t, "completed", got) }},
+		{"failed", StatusFailed, func(t *testing.T, got string) { assert.Equal(t, "failed", got) }},
+		{"compensating", StatusCompensating, func(t *testing.T, got string) { assert.Equal(t, "compensating", got) }},
+		{"terminated", StatusTerminated, func(t *testing.T, got string) { assert.Equal(t, "terminated", got) }},
+		{"out-of-range maps to unknown", Status(99), func(t *testing.T, got string) { assert.Equal(t, "unknown", got) }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.status.String())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // cloneState: compensationCursor outcome fields
 // ---------------------------------------------------------------------------
 

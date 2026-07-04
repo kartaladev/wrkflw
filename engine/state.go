@@ -206,6 +206,28 @@ const (
 	StatusTerminated
 )
 
+// String returns the canonical lowercase name of the status ("running",
+// "completed", "failed", "compensating", "terminated"); out-of-range values map
+// to "unknown". It implements [fmt.Stringer], so a Status formats correctly with
+// %s/%v, and is the canonical source of the string form used by the runtime view
+// DTOs (see runtime/view.StatusString).
+func (s Status) String() string {
+	switch s {
+	case StatusRunning:
+		return "running"
+	case StatusCompleted:
+		return "completed"
+	case StatusFailed:
+		return "failed"
+	case StatusCompensating:
+		return "compensating"
+	case StatusTerminated:
+		return "terminated"
+	default:
+		return "unknown"
+	}
+}
+
 // TokenState is the execution state of a single token.
 type TokenState int
 

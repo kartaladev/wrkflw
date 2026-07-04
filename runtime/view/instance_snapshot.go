@@ -8,24 +8,12 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
-// StatusString converts an engine.Status to its canonical string representation.
-// The mapping mirrors the private statusString in transport/rest.
-// Out-of-range values map to "unknown".
+// StatusString converts an engine.Status to its canonical string representation
+// ("running"/"completed"/"failed"/"compensating"/"terminated"; out-of-range →
+// "unknown"). It delegates to engine.Status.String, the canonical source; it is
+// retained as a named helper for the view DTO mapping and existing callers.
 func StatusString(s engine.Status) string {
-	switch s {
-	case engine.StatusRunning:
-		return "running"
-	case engine.StatusCompleted:
-		return "completed"
-	case engine.StatusFailed:
-		return "failed"
-	case engine.StatusCompensating:
-		return "compensating"
-	case engine.StatusTerminated:
-		return "terminated"
-	default:
-		return "unknown"
-	}
+	return s.String()
 }
 
 // tokenStateString converts an engine.TokenState to its canonical string representation.
