@@ -151,6 +151,76 @@ func TestAdminListInstances(t *testing.T) {
 				}
 			},
 		},
+		"status=completed filter → 200": {
+			setup: func(svc service.Service) {
+				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+					DefRef: "greeting", InstanceID: "admin-list-completed-1", Vars: map[string]any{"name": "z"},
+				})
+				if err != nil {
+					t.Fatalf("StartInstance: %v", err)
+				}
+			},
+			q: httpcore.ListInstancesQuery{Status: "completed"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if status != http.StatusOK {
+					t.Fatalf("want 200, got %d", status)
+				}
+				if body == nil {
+					t.Fatal("want non-nil body")
+				}
+			},
+		},
+		"status=running filter → 200 empty": {
+			setup: func(_ service.Service) {},
+			q:     httpcore.ListInstancesQuery{Status: "running"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if status != http.StatusOK {
+					t.Fatalf("want 200, got %d", status)
+				}
+			},
+		},
+		"status=failed filter → 200 empty": {
+			setup: func(_ service.Service) {},
+			q:     httpcore.ListInstancesQuery{Status: "failed"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if status != http.StatusOK {
+					t.Fatalf("want 200, got %d", status)
+				}
+			},
+		},
+		"status=compensating filter → 200 empty": {
+			setup: func(_ service.Service) {},
+			q:     httpcore.ListInstancesQuery{Status: "compensating"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if status != http.StatusOK {
+					t.Fatalf("want 200, got %d", status)
+				}
+			},
+		},
+		"status=terminated filter → 200 empty": {
+			setup: func(_ service.Service) {},
+			q:     httpcore.ListInstancesQuery{Status: "terminated"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if status != http.StatusOK {
+					t.Fatalf("want 200, got %d", status)
+				}
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -923,6 +993,24 @@ func TestAdminTimers(t *testing.T) {
 				}
 			},
 		},
+		"listArmed error → propagated": {
+			ta: &fakeTimerAdmin{
+				statsFn: func(_ context.Context) (kernel.TimerStats, error) {
+					return kernel.TimerStats{Armed: 0}, nil
+				},
+				listArmedFn: func(_ context.Context) ([]kernel.ArmedTimer, error) {
+					return nil, errors.New("list error")
+				},
+			},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err == nil {
+					t.Fatal("want error from listArmed")
+				}
+				if status != 0 || body != nil {
+					t.Fatalf("want (0, nil) on error, got (%d, %v)", status, body)
+				}
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -955,6 +1043,33 @@ func TestAdminInstanceLineage(t *testing.T) {
 				},
 			},
 			instanceID: "inst-root",
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if status != http.StatusOK {
+					t.Fatalf("want 200, got %d", status)
+				}
+				if body == nil {
+					t.Fatal("want non-nil body")
+				}
+			},
+		},
+		"instance with call parent → 200 parent populated": {
+			la: &fakeLineageAdmin{
+				lineageFn: func(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
+					return kernel.InstanceLineage{
+						InstanceID: instanceID,
+						CallParent: &kernel.CallLinkRef{
+							InstanceID: "parent-inst", DefID: "parent-def", DefVersion: 1, Depth: 0,
+						},
+						CallChildren:    []kernel.CallLinkRef{{InstanceID: "child-inst", DefID: "", DefVersion: 0, Depth: 1}},
+						ChainPredecessor: &kernel.ChainLinkRef{InstanceID: "pred-inst", DefinitionRef: "pred-def:1", Outcome: "approved"},
+						ChainSuccessors: []kernel.ChainLinkRef{{InstanceID: "succ-inst", DefinitionRef: "succ-def:1", Outcome: "done"}},
+					}, nil
+				},
+			},
+			instanceID: "inst-with-parent",
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
