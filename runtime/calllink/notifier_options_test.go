@@ -13,19 +13,19 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // minimalDef is a trivial single-node definition; the notifier only needs a
-// non-nil *model.ProcessDefinition to pass to the deliver callback.
-func minimalDef(id string) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+// non-nil *definition.ProcessDefinition to pass to the deliver callback.
+func minimalDef(id string) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      id,
 		Version: 1,
-		Nodes:   []model.Node{model.NewStartEvent("start")},
+		Nodes:   []definition.Node{definition.NewStartEvent("start")},
 	}
 }
 
@@ -54,7 +54,7 @@ func seedTerminalLink(t *testing.T, cl *kernel.MemCallLinkStore, child, parent s
 // branch, then asserts the second drain does not redeliver already-notified links.
 func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"parent:1": minimalDef("parent"),
 	})
 
@@ -64,7 +64,7 @@ func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 	runtimetest.SeedTerminalCallLink(t, cl, kernel.CallLink{ChildInstanceID: "c-skip", ParentInstanceID: "p-skip", ParentCommandID: "p-skip-c1", ParentDefID: "missing", ParentDefVersion: 1, Depth: 1}, kernel.CallOutcome{Completed: true})
 
 	var completed, failed int
-	deliver := func(_ context.Context, def *model.ProcessDefinition, _ string, trg engine.Trigger) error {
+	deliver := func(_ context.Context, def *definition.ProcessDefinition, _ string, trg engine.Trigger) error {
 		require.NotNil(t, def)
 		switch trg.(type) {
 		case engine.SubInstanceCompleted:
@@ -106,12 +106,12 @@ func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 // drain has already returned, so the late delivery must come from the ticker.
 func TestCallNotifierRunRedrainsOnTick(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"parent:1": minimalDef("parent"),
 	})
 
 	var delivered atomic.Int64
-	deliver := func(context.Context, *model.ProcessDefinition, string, engine.Trigger) error {
+	deliver := func(context.Context, *definition.ProcessDefinition, string, engine.Trigger) error {
 		delivered.Add(1)
 		return nil
 	}
@@ -146,7 +146,7 @@ func TestCallNotifierRunRedrainsOnTick(t *testing.T) {
 func TestCallNotifierRunHonorsCancelledContext(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
 	reg := kernel.NewMapDefinitionRegistry(nil)
-	deliver := func(context.Context, *model.ProcessDefinition, string, engine.Trigger) error { return nil }
+	deliver := func(context.Context, *definition.ProcessDefinition, string, engine.Trigger) error { return nil }
 	n, err := calllink.NewCallNotifier(cl, deliver, reg)
 	require.NoError(t, err)
 

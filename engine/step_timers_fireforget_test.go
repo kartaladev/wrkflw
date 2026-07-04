@@ -7,21 +7,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // fireForgetDeadlineDef returns a user task with a 3h deadline whose breach runs
 // the "notify" action and routes the token down the "escalate" flow to an end event.
-func fireForgetDeadlineDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func fireForgetDeadlineDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-ff-deadline", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("userTask", []string{"manager"}, model.WithDeadline(`"3h"`, "escalate", "notify")),
-			model.NewEndEvent("normalEnd"),
-			model.NewEndEvent("escalateNode"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify")),
+			definition.NewEndEvent("normalEnd"),
+			definition.NewEndEvent("escalateNode"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
 			{ID: "f2", Source: "userTask", Target: "normalEnd"},
 			{ID: "escalate", Source: "userTask", Target: "escalateNode"},
@@ -31,16 +31,16 @@ func fireForgetDeadlineDef() *model.ProcessDefinition {
 
 // fireForgetReminderDef returns a user task with a 1h reminder ("remind") and a
 // 3h deadline. Firing the reminder emits a fire-once reminder InvokeAction.
-func fireForgetReminderDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func fireForgetReminderDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-ff-reminder", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("userTask", []string{"manager"}, model.WithDeadline(`"3h"`, "escalate", "notify"), model.WithReminder(`"1h"`, "remind")),
-			model.NewEndEvent("normalEnd"),
-			model.NewEndEvent("escalateNode"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify"), definition.WithReminder(`"1h"`, "remind")),
+			definition.NewEndEvent("normalEnd"),
+			definition.NewEndEvent("escalateNode"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
 			{ID: "f2", Source: "userTask", Target: "normalEnd"},
 			{ID: "escalate", Source: "userTask", Target: "escalateNode"},
@@ -68,7 +68,7 @@ func TestFireOnceLifecycleActionsAreFireAndForget(t *testing.T) {
 
 	type testCase struct {
 		name       string
-		def        *model.ProcessDefinition
+		def        *definition.ProcessDefinition
 		timerKind  TimerKind
 		fireAt     time.Time
 		actionName string

@@ -19,7 +19,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -28,19 +28,19 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process definition once; run it multiple times with different vars.
-	def, err := model.NewDefinition("loan-approval", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("check-credit", model.WithActionName("check-credit"))).
-		Add(model.NewExclusiveGateway("route")).
-		Add(model.NewServiceTask("manual-review", model.WithActionName("manual-review"))).
-		Add(model.NewServiceTask("auto-approve", model.WithActionName("auto-approve"))).
-		Add(model.NewServiceTask("reject", model.WithActionName("reject"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("loan-approval", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewServiceTask("check-credit", definition.WithActionName("check-credit"))).
+		Add(definition.NewExclusiveGateway("route")).
+		Add(definition.NewServiceTask("manual-review", definition.WithActionName("manual-review"))).
+		Add(definition.NewServiceTask("auto-approve", definition.WithActionName("auto-approve"))).
+		Add(definition.NewServiceTask("reject", definition.WithActionName("reject"))).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "check-credit").
 		Connect("check-credit", "route").
-		Connect("route", "manual-review", model.WithCondition("amount > 50000")).
-		Connect("route", "auto-approve", model.WithCondition("amount <= 50000")).
-		Connect("route", "reject", model.AsDefault()).
+		Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
+		Connect("route", "auto-approve", definition.WithCondition("amount <= 50000")).
+		Connect("route", "reject", definition.AsDefault()).
 		Connect("manual-review", "end").
 		Connect("auto-approve", "end").
 		Connect("reject", "end").

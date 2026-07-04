@@ -26,7 +26,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -38,16 +38,16 @@ import (
 // e2eGrandchildDef is the leaf: parks at a human task.
 //
 //	gc-start → gc-task (KindUserTask, role "worker") → gc-end
-func e2eGrandchildDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func e2eGrandchildDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "e2e-grandchild",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("gc-start"),
-			model.NewUserTask("gc-task", []string{"worker"}),
-			model.NewEndEvent("gc-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("gc-start"),
+			definition.NewUserTask("gc-task", []string{"worker"}),
+			definition.NewEndEvent("gc-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "gcf1", Source: "gc-start", Target: "gc-task"},
 			{ID: "gcf2", Source: "gc-task", Target: "gc-end"},
 		},
@@ -57,16 +57,16 @@ func e2eGrandchildDef() *model.ProcessDefinition {
 // e2eChildDef calls the grandchild via a call activity.
 //
 //	c-start → c-call (KindCallActivity, DefRef:"e2e-grandchild") → c-end
-func e2eChildDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func e2eChildDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "e2e-child",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("c-start"),
-			model.NewCallActivity("c-call", "e2e-grandchild"),
-			model.NewEndEvent("c-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("c-start"),
+			definition.NewCallActivity("c-call", "e2e-grandchild"),
+			definition.NewEndEvent("c-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "c-start", Target: "c-call"},
 			{ID: "cf2", Source: "c-call", Target: "c-end"},
 		},
@@ -76,16 +76,16 @@ func e2eChildDef() *model.ProcessDefinition {
 // e2eParentDef calls the child via a call activity.
 //
 //	p-start → p-call (KindCallActivity, DefRef:"e2e-child") → p-end
-func e2eParentDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func e2eParentDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "e2e-parent",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("p-start"),
-			model.NewCallActivity("p-call", "e2e-child"),
-			model.NewEndEvent("p-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("p-start"),
+			definition.NewCallActivity("p-call", "e2e-child"),
+			definition.NewEndEvent("p-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "p-start", Target: "p-call"},
 			{ID: "pf2", Source: "p-call", Target: "p-end"},
 		},
@@ -120,7 +120,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 
 	// Registry: definitions are looked up by "defID:version" format for the notifier,
 	// and by plain "defID" for runtime call-activity DefRef resolution.
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"e2e-grandchild":   gcDef,
 		"e2e-child":        cDef,
 		"e2e-parent":       pDef,
@@ -136,7 +136,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		runtime.WithHumanTasks(resolver, tasks, az),
 	)
 
-	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *definition.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
@@ -238,7 +238,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 
 	// Register under both plain "defID" (for call activity resolution) and
 	// "defID:version" (for notifier parent-def lookup).
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"async-fail-child":    child,
 		"async-fail-parent":   parent,
 		"async-fail-parent:1": parent,
@@ -250,7 +250,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 		runtime.WithDefinitions(reg),
 	)
 
-	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *definition.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err := runner.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
@@ -296,16 +296,16 @@ func TestFailurePathCallActivity(t *testing.T) {
 // a self-referencing cycle that would loop forever without the depth guard.
 //
 //	self-start → self-call (KindCallActivity, DefRef:"self-call") → self-end
-func selfCallDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func selfCallDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "self-call",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("self-start"),
-			model.NewCallActivity("self-call", "self-call"),
-			model.NewEndEvent("self-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("self-start"),
+			definition.NewCallActivity("self-call", "self-call"),
+			definition.NewEndEvent("self-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "sf1", Source: "self-start", Target: "self-call"},
 			{ID: "sf2", Source: "self-call", Target: "self-end"},
 		},
@@ -337,7 +337,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	// The registry must answer for:
 	// - "self-call"   (call activity DefRef resolution during child spawning)
 	// - "self-call:1" (parent def lookup by CallNotifier)
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"self-call":   def,
 		"self-call:1": def,
 	})
@@ -348,7 +348,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 		runtime.WithDefinitions(reg),
 	)
 
-	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def2 *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def2 *definition.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err := runner.Deliver(ctx2, def2, instanceID, trg)
 		return err
 	})
@@ -476,7 +476,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	child := asyncChildDef()
 	parent := asyncParentDef()
 
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"async-child": child,
 	})
 

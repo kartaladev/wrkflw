@@ -12,7 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -23,15 +23,15 @@ import (
 //	child-start → child-svc (ServiceTask "set-output") → child-end
 //
 // "set-output" returns {"output": "from-child"}.
-func childDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func childDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "child", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("child-start"),
-			model.NewServiceTask("child-svc", model.WithActionName("set-output")),
-			model.NewEndEvent("child-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("child-start"),
+			definition.NewServiceTask("child-svc", definition.WithActionName("set-output")),
+			definition.NewEndEvent("child-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-svc"},
 			{ID: "cf2", Source: "child-svc", Target: "child-end"},
 		},
@@ -41,15 +41,15 @@ func childDef() *model.ProcessDefinition {
 // parentCallDef builds a parent definition:
 //
 //	parent-start → call (KindCallActivity, DefRef:"child") → parent-end
-func parentCallDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func parentCallDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "parent", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("parent-start"),
-			model.NewCallActivity("call", "child"),
-			model.NewEndEvent("parent-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("parent-start"),
+			definition.NewCallActivity("call", "child"),
+			definition.NewEndEvent("parent-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
 			{ID: "pf2", Source: "call", Target: "parent-end"},
 		},
@@ -95,7 +95,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 
 	// Build the definition registry with the child def.
 	child := childDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"child": child,
 	})
 
@@ -146,34 +146,34 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	// Child def uses a failing action.
-	failingChild := &model.ProcessDefinition{
+	failingChild := &definition.ProcessDefinition{
 		ID: "failing-child", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("child-start"),
-			model.NewServiceTask("child-svc", model.WithActionName("failing-action")),
-			model.NewEndEvent("child-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("child-start"),
+			definition.NewServiceTask("child-svc", definition.WithActionName("failing-action")),
+			definition.NewEndEvent("child-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-svc"},
 			{ID: "cf2", Source: "child-svc", Target: "child-end"},
 		},
 	}
 
 	// Parent def calls "failing-child".
-	failingParent := &model.ProcessDefinition{
+	failingParent := &definition.ProcessDefinition{
 		ID: "parent-fail", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("parent-start"),
-			model.NewCallActivity("call", "failing-child"),
-			model.NewEndEvent("parent-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("parent-start"),
+			definition.NewCallActivity("call", "failing-child"),
+			definition.NewEndEvent("parent-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
 			{ID: "pf2", Source: "call", Target: "parent-end"},
 		},
 	}
 
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"failing-child": failingChild,
 	})
 
@@ -193,15 +193,15 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 //
 // Without a resolver wired, the runner cannot proceed and the child stays
 // StatusRunning (parked). This is the definition for Fix 1 RED test.
-func parkingChildDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func parkingChildDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "parking-child", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("child-start"),
-			model.NewUserTask("child-user", nil),
-			model.NewEndEvent("child-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("child-start"),
+			definition.NewUserTask("child-user", nil),
+			definition.NewEndEvent("child-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-user"},
 			{ID: "cf2", Source: "child-user", Target: "child-end"},
 		},
@@ -209,15 +209,15 @@ func parkingChildDef() *model.ProcessDefinition {
 }
 
 // parkingParentDef builds a parent that calls the parking child.
-func parkingParentDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func parkingParentDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "parking-parent", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("parent-start"),
-			model.NewCallActivity("call", "parking-child"),
-			model.NewEndEvent("parent-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("parent-start"),
+			definition.NewCallActivity("call", "parking-child"),
+			definition.NewEndEvent("parent-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
 			{ID: "pf2", Source: "call", Target: "parent-end"},
 		},
@@ -245,7 +245,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	parkingChild := parkingChildDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"parking-child": parkingChild,
 	})
 
@@ -305,15 +305,15 @@ func contains(s, sub string) bool {
 // (A → call[DefRef:"self-ref"] → end). Running it causes unbounded synchronous
 // recursion in the current implementation. Fix 2 adds a depth guard that returns
 // a descriptive error instead of stack-overflowing.
-func selfRefDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func selfRefDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "self-ref", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("sr-start"),
-			model.NewCallActivity("sr-call", "self-ref"),
-			model.NewEndEvent("sr-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("sr-start"),
+			definition.NewCallActivity("sr-call", "self-ref"),
+			definition.NewEndEvent("sr-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "sf1", Source: "sr-start", Target: "sr-call"},
 			{ID: "sf2", Source: "sr-call", Target: "sr-end"},
 		},
@@ -337,7 +337,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	def := selfRefDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"self-ref": def,
 	})
 

@@ -24,7 +24,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -37,30 +37,30 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 
 	var ran atomic.Bool
 
-	nested := &model.ProcessDefinition{
+	nested := &definition.ProcessDefinition{
 		ID: "inline-sub-nested", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionFunc(
+		Nodes: []definition.Node{
+			definition.NewStartEvent("inner-start"),
+			definition.NewServiceTask("inner-svc", definition.WithActionFunc(
 				func(_ context.Context, in map[string]any) (map[string]any, error) {
 					ran.Store(true)
 					return map[string]any{"done": true}, nil
 				})),
-			model.NewEndEvent("inner-end"),
+			definition.NewEndEvent("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "inline-sub-def", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sub", nested),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewSubProcess("sub", nested),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "end"},
 		},

@@ -1,18 +1,18 @@
-package model_test
+package definition_test
 
 import (
 	"reflect"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // minimalSubDef returns a minimal valid sub-process definition (start→end).
-func minimalSubDef(t *testing.T) *model.ProcessDefinition {
+func minimalSubDef(t *testing.T) *definition.ProcessDefinition {
 	t.Helper()
-	def, err := model.NewDefinition("sub", 1).
-		Add(model.NewStartEvent("ss")).
-		Add(model.NewEndEvent("se")).
+	def, err := definition.NewDefinition("sub", 1).
+		Add(definition.NewStartEvent("ss")).
+		Add(definition.NewEndEvent("se")).
 		Connect("ss", "se").
 		Build()
 	if err != nil {
@@ -22,7 +22,7 @@ func minimalSubDef(t *testing.T) *model.ProcessDefinition {
 }
 
 // nodeByID returns the node with the given ID from a definition, or fails.
-func nodeByID(t *testing.T, def *model.ProcessDefinition, id string) model.Node {
+func nodeByID(t *testing.T, def *definition.ProcessDefinition, id string) definition.Node {
 	t.Helper()
 	for _, n := range def.Nodes {
 		if n.ID() == id {
@@ -42,19 +42,19 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 
 	type testCase struct {
 		name  string
-		build func(t *testing.T) *model.ProcessDefinition
+		build func(t *testing.T) *definition.ProcessDefinition
 		// nodeID to look up and assert on
 		nodeID string
-		assert func(t *testing.T, n model.Node)
+		assert func(t *testing.T, n definition.Node)
 	}
 
 	cases := []testCase{
 		{
 			name:   "AddStartEvent",
 			nodeID: "s",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEndEvent("e").
 					Connect("s", "e").
@@ -64,8 +64,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindStartEvent {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindStartEvent {
 					t.Errorf("Kind() = %v, want KindStartEvent", n.Kind())
 				}
 			},
@@ -73,9 +73,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddEndEvent",
 			nodeID: "e",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEndEvent("e").
 					Connect("s", "e").
@@ -85,8 +85,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindEndEvent {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindEndEvent {
 					t.Errorf("Kind() = %v, want KindEndEvent", n.Kind())
 				}
 			},
@@ -94,9 +94,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddTerminateEndEvent",
 			nodeID: "te",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddTerminateEndEvent("te").
 					Connect("s", "te").
@@ -106,8 +106,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindTerminateEndEvent {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindTerminateEndEvent {
 					t.Errorf("Kind() = %v, want KindTerminateEndEvent", n.Kind())
 				}
 			},
@@ -115,9 +115,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddErrorEndEvent",
 			nodeID: "ee",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddErrorEndEvent("ee", "ERR_X").
 					Connect("s", "ee").
@@ -127,13 +127,13 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindErrorEndEvent {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindErrorEndEvent {
 					t.Errorf("Kind() = %v, want KindErrorEndEvent", n.Kind())
 				}
-				ee, ok := n.(model.ErrorEndEvent)
+				ee, ok := n.(definition.ErrorEndEvent)
 				if !ok {
-					t.Fatalf("node is %T, want model.ErrorEndEvent", n)
+					t.Fatalf("node is %T, want definition.ErrorEndEvent", n)
 				}
 				if ee.ErrorCode != "ERR_X" {
 					t.Errorf("ErrorCode = %q, want ERR_X", ee.ErrorCode)
@@ -143,9 +143,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddExclusiveGateway",
 			nodeID: "gw",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddExclusiveGateway("gw").
 					AddEndEvent("e").
@@ -157,8 +157,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindExclusiveGateway {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindExclusiveGateway {
 					t.Errorf("Kind() = %v, want KindExclusiveGateway", n.Kind())
 				}
 			},
@@ -166,9 +166,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddParallelGateway",
 			nodeID: "gw",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddParallelGateway("gw").
 					AddEndEvent("e").
@@ -180,8 +180,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindParallelGateway {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindParallelGateway {
 					t.Errorf("Kind() = %v, want KindParallelGateway", n.Kind())
 				}
 			},
@@ -189,9 +189,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddInclusiveGateway",
 			nodeID: "gw",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddInclusiveGateway("gw").
 					AddEndEvent("e").
@@ -203,8 +203,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindInclusiveGateway {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindInclusiveGateway {
 					t.Errorf("Kind() = %v, want KindInclusiveGateway", n.Kind())
 				}
 			},
@@ -212,13 +212,13 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddEventBasedGateway",
 			nodeID: "gw",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
 				// EventBasedGateway must target catch events.
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEventBasedGateway("gw").
-					AddIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H")).
+					AddIntermediateCatchEvent("ice", definition.WithTimerDuration("PT1H")).
 					AddEndEvent("e").
 					Connect("s", "gw").
 					Connect("gw", "ice").
@@ -229,8 +229,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindEventBasedGateway {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindEventBasedGateway {
 					t.Errorf("Kind() = %v, want KindEventBasedGateway", n.Kind())
 				}
 			},
@@ -238,9 +238,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddServiceTask",
 			nodeID: "t",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddServiceTask("t").
 					AddEndEvent("e").
@@ -252,8 +252,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindServiceTask {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindServiceTask {
 					t.Errorf("Kind() = %v, want KindServiceTask", n.Kind())
 				}
 			},
@@ -261,9 +261,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddUserTask",
 			nodeID: "t",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddUserTask("t", []string{"manager"}).
 					AddEndEvent("e").
@@ -275,8 +275,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindUserTask {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindUserTask {
 					t.Errorf("Kind() = %v, want KindUserTask", n.Kind())
 				}
 			},
@@ -284,9 +284,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddReceiveTask",
 			nodeID: "t",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddReceiveTask("t", "order.placed").
 					AddEndEvent("e").
@@ -298,13 +298,13 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindReceiveTask {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindReceiveTask {
 					t.Errorf("Kind() = %v, want KindReceiveTask", n.Kind())
 				}
-				rt, ok := n.(model.ReceiveTask)
+				rt, ok := n.(definition.ReceiveTask)
 				if !ok {
-					t.Fatalf("node is %T, want model.ReceiveTask", n)
+					t.Fatalf("node is %T, want definition.ReceiveTask", n)
 				}
 				if rt.MessageName != "order.placed" {
 					t.Errorf("MessageName = %q, want order.placed", rt.MessageName)
@@ -314,9 +314,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddSendTask",
 			nodeID: "t",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddSendTask("t", "order.confirmed").
 					AddEndEvent("e").
@@ -328,13 +328,13 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindSendTask {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindSendTask {
 					t.Errorf("Kind() = %v, want KindSendTask", n.Kind())
 				}
-				st, ok := n.(model.SendTask)
+				st, ok := n.(definition.SendTask)
 				if !ok {
-					t.Fatalf("node is %T, want model.SendTask", n)
+					t.Fatalf("node is %T, want definition.SendTask", n)
 				}
 				if st.MessageName != "order.confirmed" {
 					t.Errorf("MessageName = %q, want order.confirmed", st.MessageName)
@@ -344,9 +344,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddBusinessRuleTask",
 			nodeID: "t",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddBusinessRuleTask("t").
 					AddEndEvent("e").
@@ -358,8 +358,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindBusinessRuleTask {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindBusinessRuleTask {
 					t.Errorf("Kind() = %v, want KindBusinessRuleTask", n.Kind())
 				}
 			},
@@ -367,9 +367,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddSubProcess",
 			nodeID: "t",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddSubProcess("t", sub).
 					AddEndEvent("e").
@@ -381,8 +381,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindSubProcess {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindSubProcess {
 					t.Errorf("Kind() = %v, want KindSubProcess", n.Kind())
 				}
 			},
@@ -390,9 +390,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddCallActivity",
 			nodeID: "t",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddCallActivity("t", "other-def").
 					AddEndEvent("e").
@@ -404,13 +404,13 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindCallActivity {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindCallActivity {
 					t.Errorf("Kind() = %v, want KindCallActivity", n.Kind())
 				}
-				ca, ok := n.(model.CallActivity)
+				ca, ok := n.(definition.CallActivity)
 				if !ok {
-					t.Fatalf("node is %T, want model.CallActivity", n)
+					t.Fatalf("node is %T, want definition.CallActivity", n)
 				}
 				if ca.DefRef != "other-def" {
 					t.Errorf("DefRef = %q, want other-def", ca.DefRef)
@@ -420,9 +420,9 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddEventSubProcess",
 			nodeID: "esp",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEventSubProcess("esp", sub).
 					AddEndEvent("e").
@@ -434,8 +434,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindEventSubProcess {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindEventSubProcess {
 					t.Errorf("Kind() = %v, want KindEventSubProcess", n.Kind())
 				}
 			},
@@ -443,11 +443,11 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddIntermediateCatchEvent",
 			nodeID: "ice",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
-					AddIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H")).
+					AddIntermediateCatchEvent("ice", definition.WithTimerDuration("PT1H")).
 					AddEndEvent("e").
 					Connect("s", "ice").
 					Connect("ice", "e").
@@ -457,8 +457,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindIntermediateCatchEvent {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindIntermediateCatchEvent {
 					t.Errorf("Kind() = %v, want KindIntermediateCatchEvent", n.Kind())
 				}
 			},
@@ -466,11 +466,11 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddIntermediateThrowEvent",
 			nodeID: "ite",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
-					AddIntermediateThrowEvent("ite", model.WithThrowSignal("sig")).
+					AddIntermediateThrowEvent("ite", definition.WithThrowSignal("sig")).
 					AddEndEvent("e").
 					Connect("s", "ite").
 					Connect("ite", "e").
@@ -480,8 +480,8 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindIntermediateThrowEvent {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindIntermediateThrowEvent {
 					t.Errorf("Kind() = %v, want KindIntermediateThrowEvent", n.Kind())
 				}
 			},
@@ -489,13 +489,13 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 		{
 			name:   "AddBoundaryEvent",
 			nodeID: "be",
-			build: func(t *testing.T) *model.ProcessDefinition {
+			build: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
 				// BoundaryEvent must attach to an activity node (here "task").
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
-					AddServiceTask("task", model.WithActionName("do")).
-					AddBoundaryEvent("be", "task", model.WithBoundaryTimer("PT30M")).
+					AddServiceTask("task", definition.WithActionName("do")).
+					AddBoundaryEvent("be", "task", definition.WithBoundaryTimer("PT30M")).
 					AddEndEvent("e").
 					AddEndEvent("be-end").
 					Connect("s", "task").
@@ -507,13 +507,13 @@ func TestBuilderFluentAddMethods(t *testing.T) {
 				}
 				return def
 			},
-			assert: func(t *testing.T, n model.Node) {
-				if n.Kind() != model.KindBoundaryEvent {
+			assert: func(t *testing.T, n definition.Node) {
+				if n.Kind() != definition.KindBoundaryEvent {
 					t.Errorf("Kind() = %v, want KindBoundaryEvent", n.Kind())
 				}
-				be, ok := n.(model.BoundaryEvent)
+				be, ok := n.(definition.BoundaryEvent)
 				if !ok {
-					t.Fatalf("node is %T, want model.BoundaryEvent", n)
+					t.Fatalf("node is %T, want definition.BoundaryEvent", n)
 				}
 				if be.AttachedTo != "task" {
 					t.Errorf("AttachedTo = %q, want task", be.AttachedTo)
@@ -543,8 +543,8 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 
 	t.Run("AddStartEvent_WithName", func(t *testing.T) {
 		t.Parallel()
-		def, err := model.NewDefinition("p", 1).
-			AddStartEvent("s", model.WithName("Entry Point")).
+		def, err := definition.NewDefinition("p", 1).
+			AddStartEvent("s", definition.WithName("Entry Point")).
 			AddEndEvent("e").
 			Connect("s", "e").
 			Build()
@@ -559,9 +559,9 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 
 	t.Run("AddServiceTask_WithActionName", func(t *testing.T) {
 		t.Parallel()
-		def, err := model.NewDefinition("p", 1).
+		def, err := definition.NewDefinition("p", 1).
 			AddStartEvent("s").
-			AddServiceTask("t", model.WithActionName("do-work")).
+			AddServiceTask("t", definition.WithActionName("do-work")).
 			AddEndEvent("e").
 			Connect("s", "t").
 			Connect("t", "e").
@@ -570,14 +570,14 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 			t.Fatalf("Build: %v", err)
 		}
 		n := nodeByID(t, def, "t")
-		if model.ActionOf(n) != "do-work" {
-			t.Errorf("ActionOf() = %q, want do-work", model.ActionOf(n))
+		if definition.ActionOf(n) != "do-work" {
+			t.Errorf("ActionOf() = %q, want do-work", definition.ActionOf(n))
 		}
 	})
 
 	t.Run("AddUserTask_roles", func(t *testing.T) {
 		t.Parallel()
-		def, err := model.NewDefinition("p", 1).
+		def, err := definition.NewDefinition("p", 1).
 			AddStartEvent("s").
 			AddUserTask("t", []string{"manager", "admin"}).
 			AddEndEvent("e").
@@ -588,9 +588,9 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 			t.Fatalf("Build: %v", err)
 		}
 		n := nodeByID(t, def, "t")
-		ut, ok := n.(model.UserTask)
+		ut, ok := n.(definition.UserTask)
 		if !ok {
-			t.Fatalf("node is %T, want model.UserTask", n)
+			t.Fatalf("node is %T, want definition.UserTask", n)
 		}
 		if len(ut.CandidateRoles) != 2 || ut.CandidateRoles[0] != "manager" || ut.CandidateRoles[1] != "admin" {
 			t.Errorf("CandidateRoles = %v, want [manager admin]", ut.CandidateRoles)
@@ -599,7 +599,7 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 
 	t.Run("AddReceiveTask_messageName", func(t *testing.T) {
 		t.Parallel()
-		def, err := model.NewDefinition("p", 1).
+		def, err := definition.NewDefinition("p", 1).
 			AddStartEvent("s").
 			AddReceiveTask("t", "payment.received").
 			AddEndEvent("e").
@@ -610,9 +610,9 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 			t.Fatalf("Build: %v", err)
 		}
 		n := nodeByID(t, def, "t")
-		rt, ok := n.(model.ReceiveTask)
+		rt, ok := n.(definition.ReceiveTask)
 		if !ok {
-			t.Fatalf("node is %T, want model.ReceiveTask", n)
+			t.Fatalf("node is %T, want definition.ReceiveTask", n)
 		}
 		if rt.MessageName != "payment.received" {
 			t.Errorf("MessageName = %q, want payment.received", rt.MessageName)
@@ -621,7 +621,7 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 
 	t.Run("AddSendTask_messageName", func(t *testing.T) {
 		t.Parallel()
-		def, err := model.NewDefinition("p", 1).
+		def, err := definition.NewDefinition("p", 1).
 			AddStartEvent("s").
 			AddSendTask("t", "invoice.issued").
 			AddEndEvent("e").
@@ -632,9 +632,9 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 			t.Fatalf("Build: %v", err)
 		}
 		n := nodeByID(t, def, "t")
-		st, ok := n.(model.SendTask)
+		st, ok := n.(definition.SendTask)
 		if !ok {
-			t.Fatalf("node is %T, want model.SendTask", n)
+			t.Fatalf("node is %T, want definition.SendTask", n)
 		}
 		if st.MessageName != "invoice.issued" {
 			t.Errorf("MessageName = %q, want invoice.issued", st.MessageName)
@@ -643,9 +643,9 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 
 	t.Run("AddBusinessRuleTask_WithActionName", func(t *testing.T) {
 		t.Parallel()
-		def, err := model.NewDefinition("p", 1).
+		def, err := definition.NewDefinition("p", 1).
 			AddStartEvent("s").
-			AddBusinessRuleTask("t", model.WithActionName("credit-check")).
+			AddBusinessRuleTask("t", definition.WithActionName("credit-check")).
 			AddEndEvent("e").
 			Connect("s", "t").
 			Connect("t", "e").
@@ -654,8 +654,8 @@ func TestBuilderFluentOptionThreading(t *testing.T) {
 			t.Fatalf("Build: %v", err)
 		}
 		n := nodeByID(t, def, "t")
-		if model.ActionOf(n) != "credit-check" {
-			t.Errorf("ActionOf() = %q, want credit-check", model.ActionOf(n))
+		if definition.ActionOf(n) != "credit-check" {
+			t.Errorf("ActionOf() = %q, want credit-check", definition.ActionOf(n))
 		}
 	})
 }
@@ -681,18 +681,18 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		name   string
 		nodeID string
 		// buildFluent builds the minimal valid graph using the AddX fluent method.
-		buildFluent func(t *testing.T) *model.ProcessDefinition
+		buildFluent func(t *testing.T) *definition.ProcessDefinition
 		// buildAdd builds the same graph using Add(NewX(...)).
-		buildAdd func(t *testing.T) *model.ProcessDefinition
+		buildAdd func(t *testing.T) *definition.ProcessDefinition
 	}
 
 	cases := []testCase{
 		{
 			name:   "AddStartEvent",
 			nodeID: "s",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEndEvent("e").
 					Connect("s", "e").
@@ -702,11 +702,11 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "e").
 					Build()
 				if err != nil {
@@ -718,9 +718,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddEndEvent",
 			nodeID: "e",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEndEvent("e").
 					Connect("s", "e").
@@ -730,11 +730,11 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "e").
 					Build()
 				if err != nil {
@@ -746,9 +746,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddTerminateEndEvent",
 			nodeID: "te",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddTerminateEndEvent("te").
 					Connect("s", "te").
@@ -758,11 +758,11 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewTerminateEndEvent("te")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewTerminateEndEvent("te")).
 					Connect("s", "te").
 					Build()
 				if err != nil {
@@ -774,9 +774,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddErrorEndEvent",
 			nodeID: "ee",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddErrorEndEvent("ee", "ERR_X").
 					Connect("s", "ee").
@@ -786,11 +786,11 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewErrorEndEvent("ee", "ERR_X")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewErrorEndEvent("ee", "ERR_X")).
 					Connect("s", "ee").
 					Build()
 				if err != nil {
@@ -802,9 +802,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddExclusiveGateway",
 			nodeID: "gw",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddExclusiveGateway("gw").
 					AddEndEvent("e").
@@ -816,12 +816,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewExclusiveGateway("gw")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewExclusiveGateway("gw")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "gw").
 					Connect("gw", "e").
 					Build()
@@ -834,9 +834,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddParallelGateway",
 			nodeID: "gw",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddParallelGateway("gw").
 					AddEndEvent("e").
@@ -848,12 +848,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewParallelGateway("gw")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewParallelGateway("gw")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "gw").
 					Connect("gw", "e").
 					Build()
@@ -866,9 +866,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddInclusiveGateway",
 			nodeID: "gw",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddInclusiveGateway("gw").
 					AddEndEvent("e").
@@ -880,12 +880,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewInclusiveGateway("gw")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewInclusiveGateway("gw")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "gw").
 					Connect("gw", "e").
 					Build()
@@ -898,12 +898,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddEventBasedGateway",
 			nodeID: "gw",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEventBasedGateway("gw").
-					AddIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H")).
+					AddIntermediateCatchEvent("ice", definition.WithTimerDuration("PT1H")).
 					AddEndEvent("e").
 					Connect("s", "gw").
 					Connect("gw", "ice").
@@ -914,13 +914,13 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewEventBasedGateway("gw")).
-					Add(model.NewIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H"))).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewEventBasedGateway("gw")).
+					Add(definition.NewIntermediateCatchEvent("ice", definition.WithTimerDuration("PT1H"))).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "gw").
 					Connect("gw", "ice").
 					Connect("ice", "e").
@@ -934,9 +934,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddServiceTask",
 			nodeID: "t",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddServiceTask("t").
 					AddEndEvent("e").
@@ -948,12 +948,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewServiceTask("t")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewServiceTask("t")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "t").
 					Connect("t", "e").
 					Build()
@@ -966,9 +966,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddUserTask",
 			nodeID: "t",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddUserTask("t", []string{"manager"}).
 					AddEndEvent("e").
@@ -980,12 +980,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewUserTask("t", []string{"manager"})).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewUserTask("t", []string{"manager"})).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "t").
 					Connect("t", "e").
 					Build()
@@ -998,9 +998,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddReceiveTask",
 			nodeID: "t",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddReceiveTask("t", "order.placed").
 					AddEndEvent("e").
@@ -1012,12 +1012,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewReceiveTask("t", "order.placed")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewReceiveTask("t", "order.placed")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "t").
 					Connect("t", "e").
 					Build()
@@ -1030,9 +1030,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddSendTask",
 			nodeID: "t",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddSendTask("t", "order.confirmed").
 					AddEndEvent("e").
@@ -1044,12 +1044,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewSendTask("t", "order.confirmed")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewSendTask("t", "order.confirmed")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "t").
 					Connect("t", "e").
 					Build()
@@ -1062,9 +1062,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddBusinessRuleTask",
 			nodeID: "t",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddBusinessRuleTask("t").
 					AddEndEvent("e").
@@ -1076,12 +1076,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewBusinessRuleTask("t")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewBusinessRuleTask("t")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "t").
 					Connect("t", "e").
 					Build()
@@ -1094,9 +1094,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddSubProcess",
 			nodeID: "t",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddSubProcess("t", sub).
 					AddEndEvent("e").
@@ -1108,12 +1108,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewSubProcess("t", sub)).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewSubProcess("t", sub)).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "t").
 					Connect("t", "e").
 					Build()
@@ -1126,9 +1126,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddCallActivity",
 			nodeID: "t",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddCallActivity("t", "other-def").
 					AddEndEvent("e").
@@ -1140,12 +1140,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewCallActivity("t", "other-def")).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewCallActivity("t", "other-def")).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "t").
 					Connect("t", "e").
 					Build()
@@ -1158,9 +1158,9 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddEventSubProcess",
 			nodeID: "esp",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
 					AddEventSubProcess("esp", sub).
 					AddEndEvent("e").
@@ -1172,12 +1172,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewEventSubProcess("esp", sub)).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewEventSubProcess("esp", sub)).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "esp").
 					Connect("esp", "e").
 					Build()
@@ -1190,11 +1190,11 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddIntermediateCatchEvent",
 			nodeID: "ice",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
-					AddIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H")).
+					AddIntermediateCatchEvent("ice", definition.WithTimerDuration("PT1H")).
 					AddEndEvent("e").
 					Connect("s", "ice").
 					Connect("ice", "e").
@@ -1204,12 +1204,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewIntermediateCatchEvent("ice", model.WithTimerDuration("PT1H"))).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewIntermediateCatchEvent("ice", definition.WithTimerDuration("PT1H"))).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "ice").
 					Connect("ice", "e").
 					Build()
@@ -1222,11 +1222,11 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddIntermediateThrowEvent",
 			nodeID: "ite",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
-					AddIntermediateThrowEvent("ite", model.WithThrowSignal("sig")).
+					AddIntermediateThrowEvent("ite", definition.WithThrowSignal("sig")).
 					AddEndEvent("e").
 					Connect("s", "ite").
 					Connect("ite", "e").
@@ -1236,12 +1236,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewIntermediateThrowEvent("ite", model.WithThrowSignal("sig"))).
-					Add(model.NewEndEvent("e")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewIntermediateThrowEvent("ite", definition.WithThrowSignal("sig"))).
+					Add(definition.NewEndEvent("e")).
 					Connect("s", "ite").
 					Connect("ite", "e").
 					Build()
@@ -1254,12 +1254,12 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 		{
 			name:   "AddBoundaryEvent",
 			nodeID: "be",
-			buildFluent: func(t *testing.T) *model.ProcessDefinition {
+			buildFluent: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
+				def, err := definition.NewDefinition("p", 1).
 					AddStartEvent("s").
-					AddServiceTask("task", model.WithActionName("do")).
-					AddBoundaryEvent("be", "task", model.WithBoundaryTimer("PT30M")).
+					AddServiceTask("task", definition.WithActionName("do")).
+					AddBoundaryEvent("be", "task", definition.WithBoundaryTimer("PT30M")).
 					AddEndEvent("e").
 					AddEndEvent("be-end").
 					Connect("s", "task").
@@ -1271,14 +1271,14 @@ func TestBuilderFluentEquivalentToAdd(t *testing.T) {
 				}
 				return def
 			},
-			buildAdd: func(t *testing.T) *model.ProcessDefinition {
+			buildAdd: func(t *testing.T) *definition.ProcessDefinition {
 				t.Helper()
-				def, err := model.NewDefinition("p", 1).
-					Add(model.NewStartEvent("s")).
-					Add(model.NewServiceTask("task", model.WithActionName("do"))).
-					Add(model.NewBoundaryEvent("be", "task", model.WithBoundaryTimer("PT30M"))).
-					Add(model.NewEndEvent("e")).
-					Add(model.NewEndEvent("be-end")).
+				def, err := definition.NewDefinition("p", 1).
+					Add(definition.NewStartEvent("s")).
+					Add(definition.NewServiceTask("task", definition.WithActionName("do"))).
+					Add(definition.NewBoundaryEvent("be", "task", definition.WithBoundaryTimer("PT30M"))).
+					Add(definition.NewEndEvent("e")).
+					Add(definition.NewEndEvent("be-end")).
 					Connect("s", "task").
 					Connect("task", "e").
 					Connect("be", "be-end").

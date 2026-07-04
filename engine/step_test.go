@@ -8,18 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
-func linearDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func linearDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p1", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("greet", model.WithActionName("greet")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("greet", definition.WithActionName("greet")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},

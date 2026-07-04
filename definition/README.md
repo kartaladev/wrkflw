@@ -1,6 +1,6 @@
-# model
+# definition
 
-Package `model` is the **process-definition authoring layer** for
+Package `definition` is the **process-definition authoring layer** for
 `github.com/zakyalvan/krtlwrkflw`. It is pure data plus validation — it imports
 only the Go standard library. Consumers use it to describe the shape of a
 workflow; the `runtime` and `engine` packages execute it.
@@ -21,7 +21,7 @@ workflow; the `runtime` and `engine` packages execute it.
 
 ## Overview
 
-`model` holds the in-memory representation of a **process definition** — the
+`definition` holds the in-memory representation of a **process definition** — the
 reusable template from which process instances are created. Concepts mirror BPMN
 (tasks, gateways, events, sequence flows) but this package is **not BPMN-compatible**
 and makes no attempt to load or round-trip arbitrary BPMN2 XML documents.
@@ -496,7 +496,7 @@ flows:
 
 ## DefinitionBuilder vs DefinitionLoader
 
-`model` exposes two interface types for assembling a `*ProcessDefinition`. They
+`definition` exposes two interface types for assembling a `*ProcessDefinition`. They
 share one underlying `definitionCore` and differ only in their method set.
 
 ### `DefinitionBuilder` — full authoring surface

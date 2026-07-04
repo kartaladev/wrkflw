@@ -1,27 +1,27 @@
-package model_test
+package definition_test
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 func TestServiceTaskConstructorAndAccessors(t *testing.T) {
-	n := model.NewServiceTask("pay",
-		model.WithActionName("charge-card"),
-		model.WithCompensation("refund-card"),
-		model.WithRecoveryFlow("to-manual"),
+	n := definition.NewServiceTask("pay",
+		definition.WithActionName("charge-card"),
+		definition.WithCompensation("refund-card"),
+		definition.WithRecoveryFlow("to-manual"),
 	)
-	if n.Kind() != model.KindServiceTask {
+	if n.Kind() != definition.KindServiceTask {
 		t.Fatalf("Kind() = %v, want KindServiceTask", n.Kind())
 	}
 	if n.ID() != "pay" {
 		t.Fatalf("ID() = %q, want pay", n.ID())
 	}
-	st, ok := n.(model.ServiceTask)
+	st, ok := n.(definition.ServiceTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.ServiceTask", n)
+		t.Fatalf("node is %T, want definition.ServiceTask", n)
 	}
 	if st.Action != "charge-card" || st.CompensationAction != "refund-card" || st.RecoveryFlow != "to-manual" {
 		t.Fatalf("fields = %+v", st)
@@ -29,8 +29,8 @@ func TestServiceTaskConstructorAndAccessors(t *testing.T) {
 }
 
 func TestStartEventConstructor(t *testing.T) {
-	n := model.NewStartEvent("start")
-	if n.Kind() != model.KindStartEvent {
+	n := definition.NewStartEvent("start")
+	if n.Kind() != definition.KindStartEvent {
 		t.Fatalf("Kind() = %v, want KindStartEvent", n.Kind())
 	}
 	if n.ID() != "start" {
@@ -42,34 +42,34 @@ func TestStartEventConstructor(t *testing.T) {
 }
 
 func TestStartEventConstructorWithName(t *testing.T) {
-	n := model.NewStartEvent("s", model.WithName("Start Process"))
+	n := definition.NewStartEvent("s", definition.WithName("Start Process"))
 	if n.Name() != "Start Process" {
 		t.Fatalf("Name() = %q, want 'Start Process'", n.Name())
 	}
 }
 
 func TestEndEventConstructor(t *testing.T) {
-	n := model.NewEndEvent("end")
-	if n.Kind() != model.KindEndEvent {
+	n := definition.NewEndEvent("end")
+	if n.Kind() != definition.KindEndEvent {
 		t.Fatalf("Kind() = %v, want KindEndEvent", n.Kind())
 	}
 }
 
 func TestTerminateEndEventConstructor(t *testing.T) {
-	n := model.NewTerminateEndEvent("t-end")
-	if n.Kind() != model.KindTerminateEndEvent {
+	n := definition.NewTerminateEndEvent("t-end")
+	if n.Kind() != definition.KindTerminateEndEvent {
 		t.Fatalf("Kind() = %v, want KindTerminateEndEvent", n.Kind())
 	}
 }
 
 func TestErrorEndEventConstructor(t *testing.T) {
-	n := model.NewErrorEndEvent("err-end", "ERR_PAYMENT")
-	if n.Kind() != model.KindErrorEndEvent {
+	n := definition.NewErrorEndEvent("err-end", "ERR_PAYMENT")
+	if n.Kind() != definition.KindErrorEndEvent {
 		t.Fatalf("Kind() = %v, want KindErrorEndEvent", n.Kind())
 	}
-	ee, ok := n.(model.ErrorEndEvent)
+	ee, ok := n.(definition.ErrorEndEvent)
 	if !ok {
-		t.Fatalf("node is %T, want model.ErrorEndEvent", n)
+		t.Fatalf("node is %T, want definition.ErrorEndEvent", n)
 	}
 	if ee.ErrorCode != "ERR_PAYMENT" {
 		t.Fatalf("ErrorCode = %q, want ERR_PAYMENT", ee.ErrorCode)
@@ -77,17 +77,17 @@ func TestErrorEndEventConstructor(t *testing.T) {
 }
 
 func TestUserTaskConstructor(t *testing.T) {
-	n := model.NewUserTask("task-1", []string{"manager", "admin"},
-		model.WithEligibilityExpr("amount > 1000"),
-		model.WithDeadline("P1D", "sla-breach", "notify-manager"),
-		model.WithReminder("PT4H", "send-reminder"),
+	n := definition.NewUserTask("task-1", []string{"manager", "admin"},
+		definition.WithEligibilityExpr("amount > 1000"),
+		definition.WithDeadline("P1D", "sla-breach", "notify-manager"),
+		definition.WithReminder("PT4H", "send-reminder"),
 	)
-	if n.Kind() != model.KindUserTask {
+	if n.Kind() != definition.KindUserTask {
 		t.Fatalf("Kind() = %v, want KindUserTask", n.Kind())
 	}
-	ut, ok := n.(model.UserTask)
+	ut, ok := n.(definition.UserTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.UserTask", n)
+		t.Fatalf("node is %T, want definition.UserTask", n)
 	}
 	if ut.EligibilityExpr != "amount > 1000" {
 		t.Fatalf("EligibilityExpr = %q", ut.EligibilityExpr)
@@ -104,16 +104,16 @@ func TestUserTaskConstructor(t *testing.T) {
 }
 
 func TestReceiveTaskConstructor(t *testing.T) {
-	n := model.NewReceiveTask("recv", "payment.received",
-		model.WithCorrelationKey("order.id"),
-		model.WithCancelHandler("cancel-payment"),
+	n := definition.NewReceiveTask("recv", "payment.received",
+		definition.WithCorrelationKey("order.id"),
+		definition.WithCancelHandler("cancel-payment"),
 	)
-	if n.Kind() != model.KindReceiveTask {
+	if n.Kind() != definition.KindReceiveTask {
 		t.Fatalf("Kind() = %v, want KindReceiveTask", n.Kind())
 	}
-	rt, ok := n.(model.ReceiveTask)
+	rt, ok := n.(definition.ReceiveTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.ReceiveTask", n)
+		t.Fatalf("node is %T, want definition.ReceiveTask", n)
 	}
 	if rt.MessageName != "payment.received" {
 		t.Fatalf("MessageName = %q", rt.MessageName)
@@ -127,13 +127,13 @@ func TestReceiveTaskConstructor(t *testing.T) {
 }
 
 func TestSendTaskConstructor(t *testing.T) {
-	n := model.NewSendTask("send", "order.shipped")
-	if n.Kind() != model.KindSendTask {
+	n := definition.NewSendTask("send", "order.shipped")
+	if n.Kind() != definition.KindSendTask {
 		t.Fatalf("Kind() = %v, want KindSendTask", n.Kind())
 	}
-	st, ok := n.(model.SendTask)
+	st, ok := n.(definition.SendTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.SendTask", n)
+		t.Fatalf("node is %T, want definition.SendTask", n)
 	}
 	if st.MessageName != "order.shipped" {
 		t.Fatalf("MessageName = %q", st.MessageName)
@@ -141,10 +141,10 @@ func TestSendTaskConstructor(t *testing.T) {
 }
 
 func TestSendTaskCorrelationKey(t *testing.T) {
-	n := model.NewSendTask("send", "order.shipped", model.WithCorrelationKey(`vars.orderID`))
-	st, ok := n.(model.SendTask)
+	n := definition.NewSendTask("send", "order.shipped", definition.WithCorrelationKey(`vars.orderID`))
+	st, ok := n.(definition.SendTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.SendTask", n)
+		t.Fatalf("node is %T, want definition.SendTask", n)
 	}
 	if st.CorrelationKey != `vars.orderID` {
 		t.Fatalf("CorrelationKey = %q, want %q", st.CorrelationKey, `vars.orderID`)
@@ -152,13 +152,13 @@ func TestSendTaskCorrelationKey(t *testing.T) {
 }
 
 func TestBusinessRuleTaskConstructor(t *testing.T) {
-	n := model.NewBusinessRuleTask("brt", model.WithActionName("apply-discount"))
-	if n.Kind() != model.KindBusinessRuleTask {
+	n := definition.NewBusinessRuleTask("brt", definition.WithActionName("apply-discount"))
+	if n.Kind() != definition.KindBusinessRuleTask {
 		t.Fatalf("Kind() = %v, want KindBusinessRuleTask", n.Kind())
 	}
-	brt, ok := n.(model.BusinessRuleTask)
+	brt, ok := n.(definition.BusinessRuleTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.BusinessRuleTask", n)
+		t.Fatalf("node is %T, want definition.BusinessRuleTask", n)
 	}
 	if brt.Action != "apply-discount" {
 		t.Fatalf("Action = %q", brt.Action)
@@ -166,14 +166,14 @@ func TestBusinessRuleTaskConstructor(t *testing.T) {
 }
 
 func TestSubProcessConstructor(t *testing.T) {
-	sub := &model.ProcessDefinition{ID: "sub", Version: 1}
-	n := model.NewSubProcess("sp", sub)
-	if n.Kind() != model.KindSubProcess {
+	sub := &definition.ProcessDefinition{ID: "sub", Version: 1}
+	n := definition.NewSubProcess("sp", sub)
+	if n.Kind() != definition.KindSubProcess {
 		t.Fatalf("Kind() = %v, want KindSubProcess", n.Kind())
 	}
-	sp, ok := n.(model.SubProcess)
+	sp, ok := n.(definition.SubProcess)
 	if !ok {
-		t.Fatalf("node is %T, want model.SubProcess", n)
+		t.Fatalf("node is %T, want definition.SubProcess", n)
 	}
 	if sp.Subprocess != sub {
 		t.Fatal("Subprocess pointer not preserved")
@@ -181,13 +181,13 @@ func TestSubProcessConstructor(t *testing.T) {
 }
 
 func TestCallActivityConstructor(t *testing.T) {
-	n := model.NewCallActivity("ca", "external-v2")
-	if n.Kind() != model.KindCallActivity {
+	n := definition.NewCallActivity("ca", "external-v2")
+	if n.Kind() != definition.KindCallActivity {
 		t.Fatalf("Kind() = %v, want KindCallActivity", n.Kind())
 	}
-	ca, ok := n.(model.CallActivity)
+	ca, ok := n.(definition.CallActivity)
 	if !ok {
-		t.Fatalf("node is %T, want model.CallActivity", n)
+		t.Fatalf("node is %T, want definition.CallActivity", n)
 	}
 	if ca.DefRef != "external-v2" {
 		t.Fatalf("DefRef = %q", ca.DefRef)
@@ -195,14 +195,14 @@ func TestCallActivityConstructor(t *testing.T) {
 }
 
 func TestEventSubProcessConstructor(t *testing.T) {
-	sub := &model.ProcessDefinition{ID: "esp-sub", Version: 1}
-	n := model.NewEventSubProcess("esp", sub)
-	if n.Kind() != model.KindEventSubProcess {
+	sub := &definition.ProcessDefinition{ID: "esp-sub", Version: 1}
+	n := definition.NewEventSubProcess("esp", sub)
+	if n.Kind() != definition.KindEventSubProcess {
 		t.Fatalf("Kind() = %v, want KindEventSubProcess", n.Kind())
 	}
-	esp, ok := n.(model.EventSubProcess)
+	esp, ok := n.(definition.EventSubProcess)
 	if !ok {
-		t.Fatalf("node is %T, want model.EventSubProcess", n)
+		t.Fatalf("node is %T, want definition.EventSubProcess", n)
 	}
 	if esp.Subprocess != sub {
 		t.Fatal("Subprocess pointer not preserved")
@@ -210,17 +210,17 @@ func TestEventSubProcessConstructor(t *testing.T) {
 }
 
 func TestIntermediateCatchEventConstructor(t *testing.T) {
-	n := model.NewIntermediateCatchEvent("ice",
-		model.WithTimerDuration("PT1H"),
-		model.WithICEDeadline("P1D", "sla-flow", "sla-act"),
-		model.WithICEReminder("PT2H", "remind-act"),
+	n := definition.NewIntermediateCatchEvent("ice",
+		definition.WithTimerDuration("PT1H"),
+		definition.WithICEDeadline("P1D", "sla-flow", "sla-act"),
+		definition.WithICEReminder("PT2H", "remind-act"),
 	)
-	if n.Kind() != model.KindIntermediateCatchEvent {
+	if n.Kind() != definition.KindIntermediateCatchEvent {
 		t.Fatalf("Kind() = %v, want KindIntermediateCatchEvent", n.Kind())
 	}
-	ice, ok := n.(model.IntermediateCatchEvent)
+	ice, ok := n.(definition.IntermediateCatchEvent)
 	if !ok {
-		t.Fatalf("node is %T, want model.IntermediateCatchEvent", n)
+		t.Fatalf("node is %T, want definition.IntermediateCatchEvent", n)
 	}
 	if ice.TimerDuration != "PT1H" {
 		t.Fatalf("TimerDuration = %q", ice.TimerDuration)
@@ -231,10 +231,10 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 }
 
 func TestIntermediateCatchEventSignal(t *testing.T) {
-	n := model.NewIntermediateCatchEvent("ice-sig", model.WithSignalName("my.signal"))
-	ice, ok := n.(model.IntermediateCatchEvent)
+	n := definition.NewIntermediateCatchEvent("ice-sig", definition.WithSignalName("my.signal"))
+	ice, ok := n.(definition.IntermediateCatchEvent)
 	if !ok {
-		t.Fatalf("node is %T, want model.IntermediateCatchEvent", n)
+		t.Fatalf("node is %T, want definition.IntermediateCatchEvent", n)
 	}
 	if ice.SignalName != "my.signal" {
 		t.Fatalf("SignalName = %q", ice.SignalName)
@@ -242,12 +242,12 @@ func TestIntermediateCatchEventSignal(t *testing.T) {
 }
 
 func TestIntermediateCatchEventMessage(t *testing.T) {
-	n := model.NewIntermediateCatchEvent("ice-msg",
-		model.WithMessageNameAndKey("payment.received", "order.id"),
+	n := definition.NewIntermediateCatchEvent("ice-msg",
+		definition.WithMessageNameAndKey("payment.received", "order.id"),
 	)
-	ice, ok := n.(model.IntermediateCatchEvent)
+	ice, ok := n.(definition.IntermediateCatchEvent)
 	if !ok {
-		t.Fatalf("node is %T, want model.IntermediateCatchEvent", n)
+		t.Fatalf("node is %T, want definition.IntermediateCatchEvent", n)
 	}
 	if ice.MessageName != "payment.received" {
 		t.Fatalf("MessageName = %q", ice.MessageName)
@@ -258,15 +258,15 @@ func TestIntermediateCatchEventMessage(t *testing.T) {
 }
 
 func TestIntermediateThrowEventConstructor(t *testing.T) {
-	n := model.NewIntermediateThrowEvent("ite",
-		model.WithThrowSignal("order.shipped"),
+	n := definition.NewIntermediateThrowEvent("ite",
+		definition.WithThrowSignal("order.shipped"),
 	)
-	if n.Kind() != model.KindIntermediateThrowEvent {
+	if n.Kind() != definition.KindIntermediateThrowEvent {
 		t.Fatalf("Kind() = %v, want KindIntermediateThrowEvent", n.Kind())
 	}
-	ite, ok := n.(model.IntermediateThrowEvent)
+	ite, ok := n.(definition.IntermediateThrowEvent)
 	if !ok {
-		t.Fatalf("node is %T, want model.IntermediateThrowEvent", n)
+		t.Fatalf("node is %T, want definition.IntermediateThrowEvent", n)
 	}
 	if ite.SignalName != "order.shipped" {
 		t.Fatalf("SignalName = %q", ite.SignalName)
@@ -274,12 +274,12 @@ func TestIntermediateThrowEventConstructor(t *testing.T) {
 }
 
 func TestIntermediateThrowEventCompensateRef(t *testing.T) {
-	n := model.NewIntermediateThrowEvent("comp-throw",
-		model.WithCompensateRef("my-task"),
+	n := definition.NewIntermediateThrowEvent("comp-throw",
+		definition.WithCompensateRef("my-task"),
 	)
-	ite, ok := n.(model.IntermediateThrowEvent)
+	ite, ok := n.(definition.IntermediateThrowEvent)
 	if !ok {
-		t.Fatalf("node is %T, want model.IntermediateThrowEvent", n)
+		t.Fatalf("node is %T, want definition.IntermediateThrowEvent", n)
 	}
 	if ite.CompensateRef != "my-task" {
 		t.Fatalf("CompensateRef = %q", ite.CompensateRef)
@@ -287,16 +287,16 @@ func TestIntermediateThrowEventCompensateRef(t *testing.T) {
 }
 
 func TestBoundaryEventConstructor(t *testing.T) {
-	n := model.NewBoundaryEvent("bnd", "task-1",
-		model.WithBoundarySignal("cancel.signal"),
-		model.BoundaryNonInterrupting(),
+	n := definition.NewBoundaryEvent("bnd", "task-1",
+		definition.WithBoundarySignal("cancel.signal"),
+		definition.BoundaryNonInterrupting(),
 	)
-	if n.Kind() != model.KindBoundaryEvent {
+	if n.Kind() != definition.KindBoundaryEvent {
 		t.Fatalf("Kind() = %v, want KindBoundaryEvent", n.Kind())
 	}
-	be, ok := n.(model.BoundaryEvent)
+	be, ok := n.(definition.BoundaryEvent)
 	if !ok {
-		t.Fatalf("node is %T, want model.BoundaryEvent", n)
+		t.Fatalf("node is %T, want definition.BoundaryEvent", n)
 	}
 	if be.AttachedTo != "task-1" {
 		t.Fatalf("AttachedTo = %q", be.AttachedTo)
@@ -311,13 +311,13 @@ func TestBoundaryEventConstructor(t *testing.T) {
 
 func TestGatewayConstructors(t *testing.T) {
 	cases := []struct {
-		n    model.Node
-		kind model.NodeKind
+		n    definition.Node
+		kind definition.NodeKind
 	}{
-		{model.NewExclusiveGateway("xor"), model.KindExclusiveGateway},
-		{model.NewParallelGateway("par"), model.KindParallelGateway},
-		{model.NewInclusiveGateway("inc"), model.KindInclusiveGateway},
-		{model.NewEventBasedGateway("ebg"), model.KindEventBasedGateway},
+		{definition.NewExclusiveGateway("xor"), definition.KindExclusiveGateway},
+		{definition.NewParallelGateway("par"), definition.KindParallelGateway},
+		{definition.NewInclusiveGateway("inc"), definition.KindInclusiveGateway},
+		{definition.NewEventBasedGateway("ebg"), definition.KindEventBasedGateway},
 	}
 	for _, tc := range cases {
 		if tc.n.Kind() != tc.kind {
@@ -328,42 +328,42 @@ func TestGatewayConstructors(t *testing.T) {
 
 func TestWithNameOnActivities(t *testing.T) {
 	// WithName option should work on all kinds.
-	n := model.NewServiceTask("st", model.WithActionName("act"), model.WithName("My Task"))
+	n := definition.NewServiceTask("st", definition.WithActionName("act"), definition.WithName("My Task"))
 	if n.Name() != "My Task" {
 		t.Fatalf("Name() = %q, want 'My Task'", n.Name())
 	}
 
-	n2 := model.NewUserTask("ut", nil, model.WithName("User Step"))
+	n2 := definition.NewUserTask("ut", nil, definition.WithName("User Step"))
 	if n2.Name() != "User Step" {
 		t.Fatalf("Name() = %q, want 'User Step'", n2.Name())
 	}
 
-	n3 := model.NewBoundaryEvent("bnd", "host", model.WithName("Timer Boundary"))
+	n3 := definition.NewBoundaryEvent("bnd", "host", definition.WithName("Timer Boundary"))
 	if n3.Name() != "Timer Boundary" {
 		t.Fatalf("Name() = %q, want 'Timer Boundary'", n3.Name())
 	}
 
-	n4 := model.NewIntermediateCatchEvent("ice", model.WithName("Wait"))
+	n4 := definition.NewIntermediateCatchEvent("ice", definition.WithName("Wait"))
 	if n4.Name() != "Wait" {
 		t.Fatalf("Name() = %q, want 'Wait'", n4.Name())
 	}
 }
 
 func TestRetryPolicyOption(t *testing.T) {
-	p := &model.RetryPolicy{MaxAttempts: 5}
-	n := model.NewServiceTask("st", model.WithActionName("act"), model.WithRetryPolicy(p))
-	st, _ := n.(model.ServiceTask)
+	p := &definition.RetryPolicy{MaxAttempts: 5}
+	n := definition.NewServiceTask("st", definition.WithActionName("act"), definition.WithRetryPolicy(p))
+	st, _ := n.(definition.ServiceTask)
 	if st.RetryPolicy != p {
 		t.Fatal("RetryPolicy not set")
 	}
 }
 
 func TestEventSubProcessNonInterrupting(t *testing.T) {
-	sub := &model.ProcessDefinition{ID: "esp-ni-sub", Version: 1}
-	n := model.NewEventSubProcess("esp-ni", sub, model.WithESPNonInterrupting())
-	esp, ok := n.(model.EventSubProcess)
+	sub := &definition.ProcessDefinition{ID: "esp-ni-sub", Version: 1}
+	n := definition.NewEventSubProcess("esp-ni", sub, definition.WithESPNonInterrupting())
+	esp, ok := n.(definition.EventSubProcess)
 	if !ok {
-		t.Fatalf("node is %T, want model.EventSubProcess", n)
+		t.Fatalf("node is %T, want definition.EventSubProcess", n)
 	}
 	if !esp.NonInterrupting {
 		t.Fatal("NonInterrupting should be true when WithESPNonInterrupting is used")
@@ -373,15 +373,15 @@ func TestEventSubProcessNonInterrupting(t *testing.T) {
 // TestUserTaskCombinedOptions verifies that WithEligibilityExpr, WithName, and
 // WithRetryPolicy can all be combined on NewUserTask and that each field is set.
 func TestUserTaskCombinedOptions(t *testing.T) {
-	p := &model.RetryPolicy{MaxAttempts: 1}
-	n := model.NewUserTask("u", []string{"reviewer"},
-		model.WithEligibilityExpr("vars.score > 50"),
-		model.WithName("Review Task"),
-		model.WithRetryPolicy(p),
+	p := &definition.RetryPolicy{MaxAttempts: 1}
+	n := definition.NewUserTask("u", []string{"reviewer"},
+		definition.WithEligibilityExpr("vars.score > 50"),
+		definition.WithName("Review Task"),
+		definition.WithRetryPolicy(p),
 	)
-	ut, ok := n.(model.UserTask)
+	ut, ok := n.(definition.UserTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.UserTask", n)
+		t.Fatalf("node is %T, want definition.UserTask", n)
 	}
 	if ut.EligibilityExpr != "vars.score > 50" {
 		t.Errorf("EligibilityExpr = %q, want %q", ut.EligibilityExpr, "vars.score > 50")
@@ -397,15 +397,15 @@ func TestUserTaskCombinedOptions(t *testing.T) {
 // TestReceiveTaskCombinedOptions verifies that WithCorrelationKey, WithName, and
 // WithRetryPolicy can all be combined on NewReceiveTask and that each field is set.
 func TestReceiveTaskCombinedOptions(t *testing.T) {
-	p := &model.RetryPolicy{MaxAttempts: 2}
-	n := model.NewReceiveTask("recv-combo", "order.confirmed",
-		model.WithCorrelationKey("order.id"),
-		model.WithName("Wait For Confirmation"),
-		model.WithRetryPolicy(p),
+	p := &definition.RetryPolicy{MaxAttempts: 2}
+	n := definition.NewReceiveTask("recv-combo", "order.confirmed",
+		definition.WithCorrelationKey("order.id"),
+		definition.WithName("Wait For Confirmation"),
+		definition.WithRetryPolicy(p),
 	)
-	rt, ok := n.(model.ReceiveTask)
+	rt, ok := n.(definition.ReceiveTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.ReceiveTask", n)
+		t.Fatalf("node is %T, want definition.ReceiveTask", n)
 	}
 	if rt.CorrelationKey != "order.id" {
 		t.Errorf("CorrelationKey = %q, want %q", rt.CorrelationKey, "order.id")
@@ -423,12 +423,12 @@ func TestReceiveTaskCombinedOptions(t *testing.T) {
 // a non-UserTask constructor is a compile-time error (not tested here, by design).
 func TestWithEligibilityPrivileges(t *testing.T) {
 	privs := []string{"finance-task claim", "finance-task read"}
-	n := model.NewUserTask("approve", []string{"approver"},
-		model.WithEligibilityPrivileges(privs...),
+	n := definition.NewUserTask("approve", []string{"approver"},
+		definition.WithEligibilityPrivileges(privs...),
 	)
-	ut, ok := n.(model.UserTask)
+	ut, ok := n.(definition.UserTask)
 	if !ok {
-		t.Fatalf("node is %T, want model.UserTask", n)
+		t.Fatalf("node is %T, want definition.UserTask", n)
 	}
 	if len(ut.EligibilityPrivileges) != 2 {
 		t.Fatalf("EligibilityPrivileges len = %d, want 2; got %v", len(ut.EligibilityPrivileges), ut.EligibilityPrivileges)
@@ -442,24 +442,24 @@ func TestWithEligibilityPrivileges(t *testing.T) {
 // a JSON marshal/unmarshal round-trip (via nodeWire).
 func TestWithEligibilityPrivilegesRoundTrip(t *testing.T) {
 	privs := []string{"doc read"}
-	n := model.NewUserTask("u2", nil, model.WithEligibilityPrivileges(privs...))
-	def := &model.ProcessDefinition{
+	n := definition.NewUserTask("u2", nil, definition.WithEligibilityPrivileges(privs...))
+	def := &definition.ProcessDefinition{
 		ID:      "p",
 		Version: 1,
-		Nodes:   []model.Node{n},
-		Flows:   []model.SequenceFlow{},
+		Nodes:   []definition.Node{n},
+		Flows:   []definition.SequenceFlow{},
 	}
 	data, err := json.Marshal(def)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	var decoded model.ProcessDefinition
+	var decoded definition.ProcessDefinition
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	ut, ok := decoded.Nodes[0].(model.UserTask)
+	ut, ok := decoded.Nodes[0].(definition.UserTask)
 	if !ok {
-		t.Fatalf("decoded node is %T, want model.UserTask", decoded.Nodes[0])
+		t.Fatalf("decoded node is %T, want definition.UserTask", decoded.Nodes[0])
 	}
 	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "doc read" {
 		t.Fatalf("EligibilityPrivileges = %v, want [doc read]", ut.EligibilityPrivileges)
@@ -467,25 +467,25 @@ func TestWithEligibilityPrivilegesRoundTrip(t *testing.T) {
 }
 
 func TestEventSubProcessNonInterruptingRoundTrip(t *testing.T) {
-	inner := &model.ProcessDefinition{
+	inner := &definition.ProcessDefinition{
 		ID:      "inner",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("s"),
-			model.NewEndEvent("e"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("s"),
+			definition.NewEndEvent("e"),
 		},
-		Flows: []model.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+		Flows: []definition.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
 	}
-	outer := &model.ProcessDefinition{
+	outer := &definition.ProcessDefinition{
 		ID:      "outer",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewEventSubProcess("esp-ni", inner,
-				model.WithESPNonInterrupting(),
-				model.WithName("Non-Interrupting ESP"),
+		Nodes: []definition.Node{
+			definition.NewEventSubProcess("esp-ni", inner,
+				definition.WithESPNonInterrupting(),
+				definition.WithName("Non-Interrupting ESP"),
 			),
 		},
-		Flows: []model.SequenceFlow{},
+		Flows: []definition.SequenceFlow{},
 	}
 
 	data, err := json.Marshal(outer)
@@ -493,7 +493,7 @@ func TestEventSubProcessNonInterruptingRoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	var decoded model.ProcessDefinition
+	var decoded definition.ProcessDefinition
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -501,9 +501,9 @@ func TestEventSubProcessNonInterruptingRoundTrip(t *testing.T) {
 	if len(decoded.Nodes) != 1 {
 		t.Fatalf("expected 1 node, got %d", len(decoded.Nodes))
 	}
-	esp, ok := decoded.Nodes[0].(model.EventSubProcess)
+	esp, ok := decoded.Nodes[0].(definition.EventSubProcess)
 	if !ok {
-		t.Fatalf("decoded node is %T, want model.EventSubProcess", decoded.Nodes[0])
+		t.Fatalf("decoded node is %T, want definition.EventSubProcess", decoded.Nodes[0])
 	}
 	if !esp.NonInterrupting {
 		t.Fatal("NonInterrupting not preserved through JSON round-trip")

@@ -11,20 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // retryDef builds a one-service-task definition with an optional node-level
 // retry policy. Shape: start → task(service) → end.
-func retryDef(p *model.RetryPolicy) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func retryDef(p *definition.RetryPolicy) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("task", model.WithActionName("a"), model.WithRetryPolicy(p)),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRetryPolicy(p)),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -72,7 +72,7 @@ func findTokenByNodeID(t *testing.T, tokens []engine.Token, nodeID string) engin
 // node with a retry policy and remaining budget schedules a TimerRetry command
 // with the correct FireAt (backoff × JitterFraction) and increments RetryAttempts.
 func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
-	policy := &model.RetryPolicy{
+	policy := &definition.RetryPolicy{
 		MaxAttempts:     3,
 		InitialInterval: time.Second,
 		BackoffCoef:     2.0,
@@ -116,7 +116,7 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 // engine re-emits an InvokeAction for the same node, effectively re-invoking
 // the action as if it were the first attempt.
 func TestStepRetryTimerReinvokesAction(t *testing.T) {
-	def := retryDef(&model.RetryPolicy{
+	def := retryDef(&definition.RetryPolicy{
 		MaxAttempts:     3,
 		InitialInterval: time.Second,
 		BackoffCoef:     2.0,
@@ -195,16 +195,16 @@ func TestStepNoPolicyKeepsLegacyBehaviour(t *testing.T) {
 // recoveryFlowDef builds a service task with a RecoveryFlow "rf" → "recover"
 // service task, plus a terminal node policy. On terminal exhaustion the engine
 // should route the failing token down "rf" instead of raising an incident.
-func recoveryFlowDef(p *model.RetryPolicy) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func recoveryFlowDef(p *definition.RetryPolicy) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("task", model.WithActionName("a"), model.WithRecoveryFlow("rf"), model.WithRetryPolicy(p)),
-			model.NewServiceTask("recover", model.WithActionName("compensate")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRecoveryFlow("rf"), definition.WithRetryPolicy(p)),
+			definition.NewServiceTask("recover", definition.WithActionName("compensate")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 			{ID: "rf", Source: "task", Target: "recover"},
@@ -216,18 +216,18 @@ func recoveryFlowDef(p *model.RetryPolicy) *model.ProcessDefinition {
 // policy AND a direct error boundary "bnd" → "recover". On terminal exhaustion
 // (no RecoveryFlow) the boundary must still catch the error — proving precedence
 // (2) survives the presence of a policy.
-func boundaryWithPolicyDef(p *model.RetryPolicy) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func boundaryWithPolicyDef(p *definition.RetryPolicy) *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("task", model.WithActionName("a"), model.WithRetryPolicy(p)),
-			model.NewBoundaryEvent("bnd", "task"),
-			model.NewServiceTask("recover", model.WithActionName("compensate")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end-recover"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRetryPolicy(p)),
+			definition.NewBoundaryEvent("bnd", "task"),
+			definition.NewServiceTask("recover", definition.WithActionName("compensate")),
+			definition.NewEndEvent("end"),
+			definition.NewEndEvent("end-recover"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 			{ID: "f-bnd", Source: "bnd", Target: "recover"},
@@ -249,7 +249,7 @@ func hasInvokeActionForName(cmds []engine.Command, name string) bool {
 
 // hasInvokeActionForNode reports whether any InvokeAction command targets the
 // action of the node with the given ID in def.
-func hasInvokeActionForNode(t *testing.T, r engine.StepResult, def *model.ProcessDefinition, nodeID string) bool {
+func hasInvokeActionForNode(t *testing.T, r engine.StepResult, def *definition.ProcessDefinition, nodeID string) bool {
 	t.Helper()
 	node, ok := def.Node(nodeID)
 	if !ok {
@@ -258,7 +258,7 @@ func hasInvokeActionForNode(t *testing.T, r engine.StepResult, def *model.Proces
 	// Mirror the engine's main-action lookup key: explicit action name, or the
 	// node id when none is set (default-by-id). Avoids a panic on non-ServiceTask
 	// nodes and a wrong empty-string match for default-by-id nodes.
-	name := model.ActionOf(node)
+	name := definition.ActionOf(node)
 	if name == "" {
 		name = node.ID()
 	}
@@ -269,7 +269,7 @@ func hasInvokeActionForNode(t *testing.T, r engine.StepResult, def *model.Proces
 // trigger for an existing incident clears the incident and re-emits an
 // InvokeAction for the parked node.
 func TestStepResolveIncidentReinvokes(t *testing.T) {
-	def := retryDef(&model.RetryPolicy{MaxAttempts: 1})
+	def := retryDef(&definition.RetryPolicy{MaxAttempts: 1})
 
 	// Drive start → InvokeAction for "task".
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
@@ -297,7 +297,7 @@ func TestStepResolveIncidentReinvokes(t *testing.T) {
 // TestStepResolveUnknownIncidentNoop verifies that delivering a ResolveIncident
 // for an unknown incident ID is a clean no-op (no commands, no error).
 func TestStepResolveUnknownIncidentNoop(t *testing.T) {
-	def := retryDef(&model.RetryPolicy{MaxAttempts: 1})
+	def := retryDef(&definition.RetryPolicy{MaxAttempts: 1})
 	base := engine.InstanceState{InstanceID: "p"}
 
 	r, err := engine.Step(def, base,
@@ -348,7 +348,7 @@ func firstScheduleTimer(t *testing.T, cmds []engine.Command) engine.ScheduleTime
 //  2. After a retryable failure the re-invocation carries the SAME key
 //     (stable across retries — no attempt number suffix).
 func TestInvokeActionCarriesStableIdempotencyKey(t *testing.T) {
-	def := retryDef(&model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2})
+	def := retryDef(&definition.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2})
 
 	// Drive start → service task.
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
@@ -386,11 +386,11 @@ func TestStepExhaustion(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		def    *model.ProcessDefinition
+		def    *definition.ProcessDefinition
 		assert func(t *testing.T, r engine.StepResult)
 	}
 
-	terminal := &model.RetryPolicy{MaxAttempts: 1} // first failure is terminal
+	terminal := &definition.RetryPolicy{MaxAttempts: 1} // first failure is terminal
 
 	cases := []testCase{
 		{

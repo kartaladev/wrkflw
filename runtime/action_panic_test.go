@@ -10,22 +10,22 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
 // panicTaskDef builds start → task("p") → end with no retry policy, so a single
 // action failure drives the instance terminal (StatusFailed).
-func panicTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func panicTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "panic-test", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("task", model.WithActionName("p")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("task", definition.WithActionName("p")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},

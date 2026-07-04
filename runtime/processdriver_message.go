@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // DeliverMessage finds the single process instance that is currently waiting for
@@ -17,7 +17,7 @@ import (
 // requiring an enumeration API on Store.
 //
 // def is required to call Deliver on the matched instance.
-func (r *ProcessDriver) DeliverMessage(ctx context.Context, def *model.ProcessDefinition, name, correlationKey string, payload map[string]any) error {
+func (r *ProcessDriver) DeliverMessage(ctx context.Context, def *definition.ProcessDefinition, name, correlationKey string, payload map[string]any) error {
 	instanceID, found := r.findMessageWaiter(name, correlationKey)
 	if !found {
 		return nil

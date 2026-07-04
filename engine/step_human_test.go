@@ -10,22 +10,22 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // userTaskDef returns a linear definition with a single user-task node between
 // start and end.
 //
 //	Start → UserTask(approve) → End
-func userTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func userTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-ht", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"manager"}, model.WithEligibilityExpr(`actor.ID != ""`)),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("approve", []string{"manager"}, definition.WithEligibilityExpr(`actor.ID != ""`)),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
@@ -34,7 +34,7 @@ func userTaskDef() *model.ProcessDefinition {
 
 // startUserTask is a helper that drives the instance from zero to the parked
 // user-task state and returns that StepResult.
-func startUserTask(t *testing.T, def *model.ProcessDefinition, at time.Time) engine.StepResult {
+func startUserTask(t *testing.T, def *definition.ProcessDefinition, at time.Time) engine.StepResult {
 	t.Helper()
 	r, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"region": "APAC"}), engine.StepOptions{})
@@ -87,21 +87,21 @@ func TestUserTaskEmitsAwaitHumanAndParks(t *testing.T) {
 }
 
 // TestUserTaskPrivilegesFlowToAwaitHuman verifies that EligibilityPrivileges set
-// via model.WithEligibilityPrivileges flow through to the AwaitHuman command's
+// via definition.WithEligibilityPrivileges flow through to the AwaitHuman command's
 // Eligibility.Privileges field and the HumanTask stored in engine state.
 func TestUserTaskPrivilegesFlowToAwaitHuman(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
 	privs := []string{"finance-task claim"}
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "p-priv", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", nil,
-				model.WithEligibilityPrivileges(privs...),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("approve", nil,
+				definition.WithEligibilityPrivileges(privs...),
 			),
-			model.NewEndEvent("end"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
@@ -130,15 +130,15 @@ func TestUserTaskTaskSeqIncrements(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
 
 	// Definition with two sequential user tasks.
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "p-ht2", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("task1", []string{"a"}),
-			model.NewUserTask("task2", []string{"b"}),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("task1", []string{"a"}),
+			definition.NewUserTask("task2", []string{"b"}),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task1"},
 			{ID: "f2", Source: "task1", Target: "task2"},
 			{ID: "f3", Source: "task2", Target: "end"},

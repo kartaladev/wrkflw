@@ -6,15 +6,15 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // stepCtx carries the repeated inputs to the node-kind dispatch layer.
 // tdef is the scope-resolved process definition for the current token;
 // def is the top-level definition. Both are provided by drive().
 type stepCtx struct {
-	def  *model.ProcessDefinition
-	tdef *model.ProcessDefinition
+	def  *definition.ProcessDefinition
+	tdef *definition.ProcessDefinition
 	s    *InstanceState
 	at   time.Time
 	mode StepMode
@@ -49,37 +49,37 @@ type nodeStrategy interface {
 	// Strategies that want stopped=false on a consumed token (e.g. EndEvent
 	// sub-process "break" paths where a continuation token was placed) must leave
 	// tok.State == TokenActive.
-	enter(c *stepCtx, tok *Token, node model.Node) (cmds []Command, halt bool, err error)
+	enter(c *stepCtx, tok *Token, node definition.Node) (cmds []Command, halt bool, err error)
 }
 
 // nodeStrategies maps each arm-bearing NodeKind to its strategy.
 // Kinds NOT in this map (KindTerminateEndEvent,
 // KindBoundaryEvent, KindEventSubProcess, KindUnspecified)
 // fall through to the post-dispatch logic in drive() unchanged.
-var nodeStrategies = map[model.NodeKind]nodeStrategy{
-	model.KindServiceTask:            serviceTaskStrategy{},
-	model.KindBusinessRuleTask:       businessRuleTaskStrategy{},
-	model.KindReceiveTask:            receiveTaskStrategy{},
-	model.KindSendTask:               sendTaskStrategy{},
-	model.KindStartEvent:             startEventStrategy{},
-	model.KindEndEvent:               endEventStrategy{},
-	model.KindSubProcess:             subProcessStrategy{},
-	model.KindUserTask:               userTaskStrategy{},
-	model.KindIntermediateCatchEvent: intermediateCatchEventStrategy{},
-	model.KindErrorEndEvent:          errorEndEventStrategy{},
-	model.KindExclusiveGateway:       exclusiveGatewayStrategy{},
-	model.KindParallelGateway:        parallelGatewayStrategy{},
-	model.KindInclusiveGateway:       inclusiveGatewayStrategy{},
-	model.KindEventBasedGateway:      eventBasedGatewayStrategy{},
-	model.KindCallActivity:           callActivityStrategy{},
-	model.KindIntermediateThrowEvent: intermediateThrowEventStrategy{},
+var nodeStrategies = map[definition.NodeKind]nodeStrategy{
+	definition.KindServiceTask:            serviceTaskStrategy{},
+	definition.KindBusinessRuleTask:       businessRuleTaskStrategy{},
+	definition.KindReceiveTask:            receiveTaskStrategy{},
+	definition.KindSendTask:               sendTaskStrategy{},
+	definition.KindStartEvent:             startEventStrategy{},
+	definition.KindEndEvent:               endEventStrategy{},
+	definition.KindSubProcess:             subProcessStrategy{},
+	definition.KindUserTask:               userTaskStrategy{},
+	definition.KindIntermediateCatchEvent: intermediateCatchEventStrategy{},
+	definition.KindErrorEndEvent:          errorEndEventStrategy{},
+	definition.KindExclusiveGateway:       exclusiveGatewayStrategy{},
+	definition.KindParallelGateway:        parallelGatewayStrategy{},
+	definition.KindInclusiveGateway:       inclusiveGatewayStrategy{},
+	definition.KindEventBasedGateway:      eventBasedGatewayStrategy{},
+	definition.KindCallActivity:           callActivityStrategy{},
+	definition.KindIntermediateThrowEvent: intermediateThrowEventStrategy{},
 }
 
 // serviceTaskStrategy handles KindServiceTask node entry.
 type serviceTaskStrategy struct{}
 
-func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	if _, ok := node.(model.ServiceTask); !ok {
+func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	if _, ok := node.(definition.ServiceTask); !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
 	}
@@ -88,7 +88,7 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
+		Inline:    definition.InlineActionOf(node),
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
@@ -109,8 +109,8 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 // boundary events.
 type businessRuleTaskStrategy struct{}
 
-func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	if _, ok := node.(model.BusinessRuleTask); !ok {
+func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	if _, ok := node.(definition.BusinessRuleTask); !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
 	}
@@ -119,7 +119,7 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
+		Inline:    definition.InlineActionOf(node),
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
@@ -139,8 +139,8 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 // boundary events attached to the ReceiveTask host.
 type receiveTaskStrategy struct{}
 
-func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	rt, ok := node.(model.ReceiveTask)
+func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	rt, ok := node.(definition.ReceiveTask)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -166,8 +166,8 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 // owns routing (intra-engine delivery, external publish, or both); ADR-0060.
 type sendTaskStrategy struct{}
 
-func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	st, ok := node.(model.SendTask)
+func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	st, ok := node.(definition.SendTask)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -189,7 +189,7 @@ func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // startEventStrategy handles KindStartEvent node entry.
 type startEventStrategy struct{}
 
-func (startEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+func (startEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
 	c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 	// tok.State stays TokenActive (auto-advance): drive() derives stopped=false.
 	return nil, false, nil
@@ -203,7 +203,7 @@ func (startEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 // stopped=false and keeps advancing the next active token.
 type endEventStrategy struct{}
 
-func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+func (endEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
 	var cmds []Command
 	// An EndEvent behaves differently depending on whether the token is at the
 	// root scope or inside a sub-process scope:
@@ -255,7 +255,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
 			if pErr == nil {
 				if espNode, ok2 := parentDef.Node(subNodeID); ok2 {
-					_, isEventSubProcess = espNode.(model.EventSubProcess)
+					_, isEventSubProcess = espNode.(definition.EventSubProcess)
 				}
 			}
 
@@ -417,7 +417,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 				// it in the parent scope. The snapshot is taken after the scope is
 				// closed (consistent: the sub-process completed at this point).
 				if spNode, spOK := parentDef.Node(subNodeID); spOK {
-					if sp, spIsSubProc := spNode.(model.SubProcess); spIsSubProc && sp.CompensationAction != "" {
+					if sp, spIsSubProc := spNode.(definition.SubProcess); spIsSubProc && sp.CompensationAction != "" {
 						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensationAction, c.at, copyVars(c.s.Variables))
 					}
 				}
@@ -443,8 +443,8 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // subProcessStrategy handles KindSubProcess node entry.
 type subProcessStrategy struct{}
 
-func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	sp, ok := node.(model.SubProcess)
+func (subProcessStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	sp, ok := node.(definition.SubProcess)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -454,7 +454,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	// start node, and consume the sub-process activity token (it is "inside" now).
 	if sp.Subprocess == nil {
 		// Defensive: a KindSubProcess without a Subprocess definition cannot
-		// execute; park to avoid infinite drive loop. model.Validate prevents this.
+		// execute; park to avoid infinite drive loop. definition.Validate prevents this.
 		tok.State = TokenWaitingCommand
 		return cmds, false, nil
 	}
@@ -483,8 +483,8 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 // userTaskStrategy handles KindUserTask node entry.
 type userTaskStrategy struct{}
 
-func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ut, ok := node.(model.UserTask)
+func (userTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	ut, ok := node.(definition.UserTask)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -570,8 +570,8 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // intermediateCatchEventStrategy handles KindIntermediateCatchEvent node entry.
 type intermediateCatchEventStrategy struct{}
 
-func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ice, ok := node.(model.IntermediateCatchEvent)
+func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	ice, ok := node.(definition.IntermediateCatchEvent)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -619,8 +619,8 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 // errorEndEventStrategy handles KindErrorEndEvent node entry.
 type errorEndEventStrategy struct{}
 
-func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	eee, ok := node.(model.ErrorEndEvent)
+func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	eee, ok := node.(definition.ErrorEndEvent)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -652,7 +652,7 @@ func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]C
 // exclusiveGatewayStrategy handles KindExclusiveGateway node entry.
 type exclusiveGatewayStrategy struct{}
 
-func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
 	target, err := selectExclusiveTarget(c.tdef, c.s, node, c.eval)
 	if err != nil {
 		// cmds is carried here for a future error-handling plan (Plan 8);
@@ -668,7 +668,7 @@ func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 // parallelGatewayStrategy handles KindParallelGateway node entry.
 type parallelGatewayStrategy struct{}
 
-func (parallelGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+func (parallelGatewayStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
 	if len(c.tdef.Incoming(node.ID())) > 1 {
 		c.s.tryParallelJoin(c.tdef, tok, node, tok.ScopeID, c.at)
 		// tryParallelJoin always sets tok.State = TokenAtJoin first, then
@@ -697,7 +697,7 @@ func (parallelGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([
 // inclusiveGatewayStrategy handles KindInclusiveGateway node entry.
 type inclusiveGatewayStrategy struct{}
 
-func (inclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+func (inclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
 	if len(c.tdef.Incoming(node.ID())) > 1 {
 		c.s.tryInclusiveJoin(c.tdef, tok, node, tok.ScopeID, c.at)
 		// tryInclusiveJoin always sets tok.State = TokenAtJoin first, then
@@ -727,7 +727,7 @@ func (inclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 // eventBasedGatewayStrategy handles KindEventBasedGateway node entry.
 type eventBasedGatewayStrategy struct{}
 
-func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
 	var cmds []Command
 	// Event-based gateway: arm all outgoing catch-event branches simultaneously.
 	// The gateway token is parked; the first armed event to fire wins and
@@ -750,7 +750,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 		if !ok {
 			continue
 		}
-		ce, ok := catchNodeRaw.(model.IntermediateCatchEvent)
+		ce, ok := catchNodeRaw.(definition.IntermediateCatchEvent)
 		if !ok {
 			continue
 		}
@@ -791,8 +791,8 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 // callActivityStrategy handles KindCallActivity node entry.
 type callActivityStrategy struct{}
 
-func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ca, ok := node.(model.CallActivity)
+func (callActivityStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	ca, ok := node.(definition.CallActivity)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -822,8 +822,8 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 // intermediateThrowEventStrategy handles KindIntermediateThrowEvent node entry.
 type intermediateThrowEventStrategy struct{}
 
-func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ite, ok := node.(model.IntermediateThrowEvent)
+func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
+	ite, ok := node.(definition.IntermediateThrowEvent)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil

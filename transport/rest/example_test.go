@@ -12,7 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -59,20 +59,20 @@ func Example_responseShapes() {
 	}
 
 	// approval: start → approve (UserTask, candidates: ["manager"]) → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "approval", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("approve", []string{"manager"}),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("approve", []string{"manager"}),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
 	}
 
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
 		"approval:1": def,
 		"approval":   def,
 	})

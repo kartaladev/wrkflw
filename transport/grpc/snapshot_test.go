@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
 
@@ -28,14 +28,14 @@ func snapNoopFn(_ context.Context, in map[string]any) (map[string]any, error) {
 // Tasks execute in sequence: named-svc → inline-svc → default-svc → end.
 // named-svc and inline-svc resolve successfully; default-svc will fail with
 // an incident (no "default-svc" in any catalog) but the instance is stored.
-func snapshotDef() *model.ProcessDefinition {
-	def, err := model.NewDefinition("snap-def", 1).
+func snapshotDef() *definition.ProcessDefinition {
+	def, err := definition.NewDefinition("snap-def", 1).
 		RegisterAction("scoped-svc", action.Func(snapNoopFn)).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("named-svc", model.WithActionName("scoped-svc"))).
-		Add(model.NewServiceTask("inline-svc", model.WithActionFunc(snapNoopFn))).
-		Add(model.NewServiceTask("default-svc")).
-		Add(model.NewEndEvent("end")).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewServiceTask("named-svc", definition.WithActionName("scoped-svc"))).
+		Add(definition.NewServiceTask("inline-svc", definition.WithActionFunc(snapNoopFn))).
+		Add(definition.NewServiceTask("default-svc")).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "named-svc").
 		Connect("named-svc", "inline-svc").
 		Connect("inline-svc", "default-svc").

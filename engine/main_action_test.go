@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 func TestMainActionName(t *testing.T) {
@@ -13,35 +13,35 @@ func TestMainActionName(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		node   model.Node
+		node   definition.Node
 		assert func(t *testing.T, got string)
 	}
 
 	cases := []testCase{
 		{
 			name: "explicit name on service task",
-			node: model.NewServiceTask("s", model.WithActionName("pay")),
+			node: definition.NewServiceTask("s", definition.WithActionName("pay")),
 			assert: func(t *testing.T, got string) {
 				assert.Equal(t, "pay", got)
 			},
 		},
 		{
 			name: "default to node id for service task",
-			node: model.NewServiceTask("s"),
+			node: definition.NewServiceTask("s"),
 			assert: func(t *testing.T, got string) {
 				assert.Equal(t, "s", got)
 			},
 		},
 		{
 			name: "explicit name on business rule task",
-			node: model.NewBusinessRuleTask("b", model.WithActionName("rule")),
+			node: definition.NewBusinessRuleTask("b", definition.WithActionName("rule")),
 			assert: func(t *testing.T, got string) {
 				assert.Equal(t, "rule", got)
 			},
 		},
 		{
 			name: "default to node id for business rule task",
-			node: model.NewBusinessRuleTask("b"),
+			node: definition.NewBusinessRuleTask("b"),
 			assert: func(t *testing.T, got string) {
 				assert.Equal(t, "b", got)
 			},

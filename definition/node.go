@@ -1,4 +1,4 @@
-package model
+package definition
 
 import "github.com/zakyalvan/krtlwrkflw/action"
 

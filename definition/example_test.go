@@ -1,23 +1,23 @@
-package model_test
+package definition_test
 
 import (
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // ExampleDefinitionBuilder demonstrates how a consumer builds a small process
 // definition using the fluent DefinitionBuilder together with the node
 // constructors. This example is also executed by "go test" to verify the output.
 func ExampleDefinitionBuilder() {
-	def, err := model.NewDefinition("order-fulfillment", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge",
-			model.WithActionName("charge-card"),
-			model.WithCompensation("refund-card"),
+	def, err := definition.NewDefinition("order-fulfillment", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewServiceTask("charge",
+			definition.WithActionName("charge-card"),
+			definition.WithCompensation("refund-card"),
 		)).
-		Add(model.NewUserTask("approve", []string{"manager"})).
-		Add(model.NewEndEvent("end")).
+		Add(definition.NewUserTask("approve", []string{"manager"})).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").

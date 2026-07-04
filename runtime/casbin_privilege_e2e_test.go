@@ -19,7 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -30,18 +30,18 @@ p, approver, finance-task, claim
 
 // financePrivilegeDef returns a process: start → userTask("review") [no roles,
 // privilege "finance-task claim"] → end.
-func financePrivilegeDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func financePrivilegeDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "finance-approval",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("review", nil,
-				model.WithEligibilityPrivileges("finance-task claim"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("review", nil,
+				definition.WithEligibilityPrivileges("finance-task claim"),
 			),
-			model.NewEndEvent("end"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
 			{ID: "f2", Source: "review", Target: "end"},
 		},

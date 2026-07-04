@@ -13,7 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -40,17 +40,17 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
 
 	// start → fork → (user[UserTask] | svc[Service "boom"]) → join → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "fail-e2e", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
-			model.NewUserTask("user", []string{"r"}),
-			model.NewServiceTask("svc", model.WithActionName("boom")),
-			model.NewParallelGateway("join"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewParallelGateway("fork"),
+			definition.NewUserTask("user", []string{"r"}),
+			definition.NewServiceTask("svc", definition.WithActionName("boom")),
+			definition.NewParallelGateway("join"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},
 			{ID: "f1", Source: "fork", Target: "user"},
 			{ID: "f2", Source: "fork", Target: "svc"},

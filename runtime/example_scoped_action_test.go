@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // ExampleDefinitionBuilder_RegisterAction shows the three ways to bind an action
@@ -15,15 +15,15 @@ func ExampleDefinitionBuilder_RegisterAction() {
 	score := action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
 		return map[string]any{"score": 42}, nil
 	})
-	def, err := model.NewDefinition("loan", 1).
+	def, err := definition.NewDefinition("loan", 1).
 		RegisterAction("score", score). // def-scoped, by name
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("risk", model.WithActionName("score"))). // scoped→global
-		Add(model.NewServiceTask("notify", model.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewServiceTask("risk", definition.WithActionName("score"))). // scoped→global
+		Add(definition.NewServiceTask("notify", definition.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return in, nil // node-local inline
 		}))).
-		Add(model.NewServiceTask("archive")). // default-by-id → looks up "archive"
-		Add(model.NewEndEvent("end")).
+		Add(definition.NewServiceTask("archive")). // default-by-id → looks up "archive"
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "risk").Connect("risk", "notify").
 		Connect("notify", "archive").Connect("archive", "end").
 		Build()

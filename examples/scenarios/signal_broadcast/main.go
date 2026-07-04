@@ -29,7 +29,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
@@ -39,11 +39,11 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, err := model.NewDefinition("trading-desk", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewIntermediateCatchEvent("await", model.WithSignalName("market-open"))).
-		Add(model.NewServiceTask("trade", model.WithActionName("place-trade"))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("trading-desk", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewIntermediateCatchEvent("await", definition.WithSignalName("market-open"))).
+		Add(definition.NewServiceTask("trade", definition.WithActionName("place-trade"))).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "await").
 		Connect("await", "trade").
 		Connect("trade", "end").

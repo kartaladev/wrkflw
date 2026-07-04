@@ -1,4 +1,4 @@
-package model
+package definition
 
 // AddStartEvent adds a StartEvent node to the definition. See NewStartEvent.
 func (b *definitionBuilder) AddStartEvent(id string, opts ...startEventOption) DefinitionBuilder {

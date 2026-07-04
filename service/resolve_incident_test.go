@@ -15,7 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -24,15 +24,15 @@ import (
 
 // incidentDef returns start → serviceTask("failing") → end.
 // The action in the catalog fails on first call and succeeds on subsequent calls.
-func incidentDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func incidentDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "incident-test", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("task", model.WithActionName("failing")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("task", definition.WithActionName("failing")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -66,7 +66,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	r, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		// MaxAttempts=1 → first failure becomes an incident.
-		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: time.Second,
 			BackoffCoef:     1,
@@ -76,7 +76,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	require.NoError(t, err)
 
 	def := incidentDef()
-	defsMap := map[string]*model.ProcessDefinition{
+	defsMap := map[string]*definition.ProcessDefinition{
 		defRefFor(def): def,
 		def.ID:         def,
 	}
@@ -130,7 +130,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 
 	r, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
-		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: time.Second,
 			BackoffCoef:     1,
@@ -140,7 +140,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	require.NoError(t, err)
 
 	def := incidentDef()
-	defsMap := map[string]*model.ProcessDefinition{
+	defsMap := map[string]*definition.ProcessDefinition{
 		defRefFor(def): def,
 		def.ID:         def,
 	}

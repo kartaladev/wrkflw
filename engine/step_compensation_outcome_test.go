@@ -15,22 +15,22 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // oneCompensableDef returns a minimal definition with one compensable service task
 // (CompensationAction "refund") so that beginCompensation has one record to emit.
 //
 //	start → svc(CompensationAction:"refund") → end
-func oneCompensableDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func oneCompensableDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "one-comp", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},

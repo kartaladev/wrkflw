@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // handleStartInstance processes a StartInstance trigger: initialises instance
 // state, places the start token, arms top-level event sub-processes, and drives
 // forward from the start node.
-func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t StartInstance, opt StepOptions) (StepResult, error) {
+func handleStartInstance(def *definition.ProcessDefinition, s *InstanceState, t StartInstance, opt StepOptions) (StepResult, error) {
 	s.Status = StatusRunning
 	s.StartedAt = t.OccurredAt()
 	s.DefID = def.ID
@@ -38,7 +38,7 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 // handleActionCompleted processes an ActionCompleted trigger: resumes the token
 // waiting for the completed command, records compensation if applicable, merges
 // output variables, and drives forward.
-func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t ActionCompleted, opt StepOptions) (StepResult, error) {
+func handleActionCompleted(def *definition.ProcessDefinition, s *InstanceState, t ActionCompleted, opt StepOptions) (StepResult, error) {
 	// If the engine is in compensation mode AND this ActionCompleted corresponds
 	// to the in-flight compensation action (cursor.ActiveCmdID), advance the
 	// compensation cursor rather than doing normal token routing. This keeps
@@ -85,7 +85,7 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 
 // handleCancelRequested processes a CancelRequested trigger: terminates the
 // instance, running compensation first when records exist.
-func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t CancelRequested, opt StepOptions) (StepResult, error) {
+func handleCancelRequested(def *definition.ProcessDefinition, s *InstanceState, t CancelRequested, opt StepOptions) (StepResult, error) {
 	// Admin trigger: terminate the instance, optionally running compensation first.
 	// Emit InvokeCancelAction (fire-and-forget) for each entry in def.CancelActions
 	// regardless of whether compensation records exist (ADR-0028 unchanged).
@@ -187,7 +187,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 
 // handleCompensateRequested processes a CompensateRequested trigger: initiates
 // the admin/debug reverse-order compensation walk.
-func handleCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, opt StepOptions) (StepResult, error) {
+func handleCompensateRequested(def *definition.ProcessDefinition, s *InstanceState, t CompensateRequested, opt StepOptions) (StepResult, error) {
 	// Admin/debug reverse-order compensation trigger.
 	// 1. Set status to StatusCompensating.
 	// 2. Build the compensation cursor pointing at the first (most-recent) record
@@ -198,7 +198,7 @@ func handleCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t
 
 // handleActionFailed processes an ActionFailed trigger: handles retry scheduling,
 // recovery flows, boundary error propagation, and compensation advancement.
-func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t ActionFailed, opt StepOptions) (StepResult, error) {
+func handleActionFailed(def *definition.ProcessDefinition, s *InstanceState, t ActionFailed, opt StepOptions) (StepResult, error) {
 	// Best-effort compensation: if the engine is compensating and the failed
 	// command is the active compensation action, skip that record and advance
 	// the walk rather than re-entering propagateError/retry (ADR-0034 §2.5).
@@ -346,7 +346,7 @@ func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, err
 // deadline/in-wait/retry timer records, and finally standalone intermediate timers.
 //
 // The TimerDeadline/TimerInWait/TimerRetry sub-dispatch is preserved exactly as today.
-func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFired, opt StepOptions) (StepResult, error) {
+func handleTimerFired(def *definition.ProcessDefinition, s *InstanceState, t TimerFired, opt StepOptions) (StepResult, error) {
 	// Dispatch order:
 	// 1) event-based gateway arm (first-event-wins routing).
 	// 2) boundary event arm (interrupting/non-interrupting).
@@ -424,7 +424,7 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 
 // handleHumanCompleted processes a HumanCompleted trigger: merges output,
 // completes the task, advances the token, cancels guarding timers, and drives forward.
-func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t HumanCompleted, opt StepOptions) (StepResult, error) {
+func handleHumanCompleted(def *definition.ProcessDefinition, s *InstanceState, t HumanCompleted, opt StepOptions) (StepResult, error) {
 	tok := s.tokenAwaiting(t.TaskToken)
 	if tok == nil {
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
@@ -473,7 +473,7 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 // handleSignalReceived processes a SignalReceived trigger: dispatches in priority
 // order through event-gateway arms, boundary arms, event sub-process arms, and
 // standalone parked-signal tokens (broadcast semantics).
-func handleSignalReceived(def *model.ProcessDefinition, s *InstanceState, t SignalReceived, opt StepOptions) (StepResult, error) {
+func handleSignalReceived(def *definition.ProcessDefinition, s *InstanceState, t SignalReceived, opt StepOptions) (StepResult, error) {
 	// Broadcast semantics within the instance: resume every token that is
 	// awaiting this signal name. Tokens are processed in slice order for
 	// determinism. A signal that matches no token (and no gateway arm, no
@@ -578,7 +578,7 @@ func handleSignalReceived(def *model.ProcessDefinition, s *InstanceState, t Sign
 
 // handleSubInstanceCompleted processes a SubInstanceCompleted trigger: resumes
 // the parent token at the call-activity node, merges child output, and drives forward.
-func handleSubInstanceCompleted(def *model.ProcessDefinition, s *InstanceState, t SubInstanceCompleted, opt StepOptions) (StepResult, error) {
+func handleSubInstanceCompleted(def *definition.ProcessDefinition, s *InstanceState, t SubInstanceCompleted, opt StepOptions) (StepResult, error) {
 	// A child process instance (started by StartSubInstance) has finished
 	// successfully. Resume the parent token that was parked at the call-activity
 	// node, merge the child's output variables into the parent, then drive forward.
@@ -636,7 +636,7 @@ func handleSubInstanceFailed(s *InstanceState, t SubInstanceFailed) (StepResult,
 // handleMessageReceived processes a MessageReceived trigger: dispatches in
 // priority order through event-gateway arms, event sub-process arms, and
 // the standalone parked-message token (point-to-point semantics).
-func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t MessageReceived, opt StepOptions) (StepResult, error) {
+func handleMessageReceived(def *definition.ProcessDefinition, s *InstanceState, t MessageReceived, opt StepOptions) (StepResult, error) {
 	// Point-to-point semantics: resume the single token whose AwaitMessage
 	// matches the name AND whose AwaitMessageKey matches the correlation key.
 	// A message that matches no token (and no gateway arm, no boundary arm, and
@@ -718,7 +718,7 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 
 // handleResolveIncident processes a ResolveIncident trigger: clears a parked
 // incident, grants additional retry budget, and re-invokes the stalled action.
-func handleResolveIncident(def *model.ProcessDefinition, s *InstanceState, t ResolveIncident, opt StepOptions) (StepResult, error) {
+func handleResolveIncident(def *definition.ProcessDefinition, s *InstanceState, t ResolveIncident, opt StepOptions) (StepResult, error) {
 	// Admin trigger: clear a parked incident, grant additional retry budget,
 	// and re-invoke the stalled service action so the process can continue.
 	//

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -18,7 +18,7 @@ import (
 
 // startCall records one InstanceStarter.Run invocation.
 type startCall struct {
-	def  *model.ProcessDefinition
+	def  *definition.ProcessDefinition
 	id   string
 	vars map[string]any
 }
@@ -31,13 +31,13 @@ type recordingStarter struct {
 	state engine.InstanceState
 }
 
-func (s *recordingStarter) Run(_ context.Context, def *model.ProcessDefinition, id string, vars map[string]any) (engine.InstanceState, error) {
+func (s *recordingStarter) Run(_ context.Context, def *definition.ProcessDefinition, id string, vars map[string]any) (engine.InstanceState, error) {
 	s.calls = append(s.calls, startCall{def: def, id: id, vars: vars})
 	return s.state, s.err
 }
 
-func fulfillmentDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{ID: "fulfillment", Version: 1}
+func fulfillmentDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{ID: "fulfillment", Version: 1}
 }
 
 func TestChainerHandle(t *testing.T) {

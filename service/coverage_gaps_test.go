@@ -16,7 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
@@ -39,7 +39,7 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 
 	type result struct {
 		st  engine.InstanceState
-		def *model.ProcessDefinition
+		def *definition.ProcessDefinition
 		err error
 	}
 
@@ -144,7 +144,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		def    func() *model.ProcessDefinition
+		def    func() *definition.ProcessDefinition
 		assert func(t *testing.T, st engine.InstanceState, err error)
 	}
 
@@ -154,12 +154,12 @@ func TestStartInstanceRunnerError(t *testing.T) {
 			// (no start event → cannot bootstrap token). This exercises the
 			// runner.Run error branch in StartInstance.
 			name: "runner error propagates from StartInstance",
-			def: func() *model.ProcessDefinition {
-				return &model.ProcessDefinition{
+			def: func() *definition.ProcessDefinition {
+				return &definition.ProcessDefinition{
 					ID:      "broken",
 					Version: 1,
-					Nodes:   []model.Node{}, // no start event
-					Flows:   []model.SequenceFlow{},
+					Nodes:   []definition.Node{}, // no start event
+					Flows:   []definition.SequenceFlow{},
 				}
 			},
 			assert: func(t *testing.T, _ engine.InstanceState, err error) {

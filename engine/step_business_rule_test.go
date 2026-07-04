@@ -10,7 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
@@ -22,21 +22,21 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		def    *model.ProcessDefinition
+		def    *definition.ProcessDefinition
 		assert func(t *testing.T, ia engine.InvokeAction)
 	}
 
 	cases := []testCase{
 		{
 			name: "service task default-by-id: Name equals node id, no inline",
-			def: &model.ProcessDefinition{
+			def: &definition.ProcessDefinition{
 				ID: "p-svc-default", Version: 1,
-				Nodes: []model.Node{
-					model.NewStartEvent("start"),
-					model.NewServiceTask("work"), // no WithActionName → default-by-id
-					model.NewEndEvent("end"),
+				Nodes: []definition.Node{
+					definition.NewStartEvent("start"),
+					definition.NewServiceTask("work"), // no WithActionName → default-by-id
+					definition.NewEndEvent("end"),
 				},
-				Flows: []model.SequenceFlow{
+				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "work"},
 					{ID: "f2", Source: "work", Target: "end"},
 				},
@@ -48,14 +48,14 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 		},
 		{
 			name: "service task explicit name: Name is explicit, no inline",
-			def: &model.ProcessDefinition{
+			def: &definition.ProcessDefinition{
 				ID: "p-svc-explicit", Version: 1,
-				Nodes: []model.Node{
-					model.NewStartEvent("start"),
-					model.NewServiceTask("work", model.WithActionName("pay")),
-					model.NewEndEvent("end"),
+				Nodes: []definition.Node{
+					definition.NewStartEvent("start"),
+					definition.NewServiceTask("work", definition.WithActionName("pay")),
+					definition.NewEndEvent("end"),
 				},
-				Flows: []model.SequenceFlow{
+				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "work"},
 					{ID: "f2", Source: "work", Target: "end"},
 				},
@@ -67,14 +67,14 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 		},
 		{
 			name: "service task inline: carries the inline action on the command",
-			def: &model.ProcessDefinition{
+			def: &definition.ProcessDefinition{
 				ID: "p-svc-inline", Version: 1,
-				Nodes: []model.Node{
-					model.NewStartEvent("start"),
-					model.NewServiceTask("work", model.WithAction(inlineAction)),
-					model.NewEndEvent("end"),
+				Nodes: []definition.Node{
+					definition.NewStartEvent("start"),
+					definition.NewServiceTask("work", definition.WithAction(inlineAction)),
+					definition.NewEndEvent("end"),
 				},
-				Flows: []model.SequenceFlow{
+				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "work"},
 					{ID: "f2", Source: "work", Target: "end"},
 				},
@@ -86,14 +86,14 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 		},
 		{
 			name: "business rule task explicit name: Name is explicit, no inline",
-			def: &model.ProcessDefinition{
+			def: &definition.ProcessDefinition{
 				ID: "p-br-explicit", Version: 1,
-				Nodes: []model.Node{
-					model.NewStartEvent("start"),
-					model.NewBusinessRuleTask("rule", model.WithActionName("decide")),
-					model.NewEndEvent("end"),
+				Nodes: []definition.Node{
+					definition.NewStartEvent("start"),
+					definition.NewBusinessRuleTask("rule", definition.WithActionName("decide")),
+					definition.NewEndEvent("end"),
 				},
-				Flows: []model.SequenceFlow{
+				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "rule"},
 					{ID: "f2", Source: "rule", Target: "end"},
 				},
@@ -105,14 +105,14 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 		},
 		{
 			name: "business rule task default-by-id: Name equals node id, no inline",
-			def: &model.ProcessDefinition{
+			def: &definition.ProcessDefinition{
 				ID: "p-br-default", Version: 1,
-				Nodes: []model.Node{
-					model.NewStartEvent("start"),
-					model.NewBusinessRuleTask("brule"), // no WithActionName → default-by-id
-					model.NewEndEvent("end"),
+				Nodes: []definition.Node{
+					definition.NewStartEvent("start"),
+					definition.NewBusinessRuleTask("brule"), // no WithActionName → default-by-id
+					definition.NewEndEvent("end"),
 				},
-				Flows: []model.SequenceFlow{
+				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "brule"},
 					{ID: "f2", Source: "brule", Target: "end"},
 				},
@@ -124,14 +124,14 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 		},
 		{
 			name: "business rule task inline: carries the inline action on the command",
-			def: &model.ProcessDefinition{
+			def: &definition.ProcessDefinition{
 				ID: "p-br-inline", Version: 1,
-				Nodes: []model.Node{
-					model.NewStartEvent("start"),
-					model.NewBusinessRuleTask("brule", model.WithAction(inlineAction)),
-					model.NewEndEvent("end"),
+				Nodes: []definition.Node{
+					definition.NewStartEvent("start"),
+					definition.NewBusinessRuleTask("brule", definition.WithAction(inlineAction)),
+					definition.NewEndEvent("end"),
 				},
-				Flows: []model.SequenceFlow{
+				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "brule"},
 					{ID: "f2", Source: "brule", Target: "end"},
 				},

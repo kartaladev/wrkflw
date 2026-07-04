@@ -1,4 +1,4 @@
-package model
+package definition
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 
 // ErrActionInlineAndNameConflict is returned by Build when a node carries both
 // an inline action (WithAction/WithActionFunc) and an action name (WithActionName).
-var ErrActionInlineAndNameConflict = errors.New("workflow-model: node has both an inline action and an action name")
+var ErrActionInlineAndNameConflict = errors.New("workflow-definition: node has both an inline action and an action name")
 
 // ErrDuplicateScopedAction is returned by Build when RegisterAction registered
 // the same name twice.
-var ErrDuplicateScopedAction = errors.New("workflow-model: duplicate scoped action name")
+var ErrDuplicateScopedAction = errors.New("workflow-definition: duplicate scoped action name")
 
 // DefinitionLoader is a post-parse handle returned by ParseYAML and LoadYAML.
 // The structural declaration (nodes, flows) is already loaded; callers register

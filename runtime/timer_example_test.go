@@ -14,7 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -77,17 +77,17 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 
 // deadlineUserTaskDef returns: start → userTask(DeadlineDuration="PT30M", DeadlineFlow="escalate",
 // DeadlineAction="notify-escalation") → end; with an escalation path to an alt-end.
-func deadlineUserTaskDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func deadlineUserTaskDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "deadline-user-task",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("review", []string{"reviewer"}, model.WithDeadline(`"30m"`, "escalate", "notify-escalation")),
-			model.NewEndEvent("end-normal"),
-			model.NewEndEvent("end-escalated"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("review", []string{"reviewer"}, definition.WithDeadline(`"30m"`, "escalate", "notify-escalation")),
+			definition.NewEndEvent("end-normal"),
+			definition.NewEndEvent("end-escalated"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
 			{ID: "f2", Source: "review", Target: "end-normal"},
 			{ID: "escalate", Source: "review", Target: "end-escalated"},

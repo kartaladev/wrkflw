@@ -1,23 +1,23 @@
 package engine
 
-import "github.com/zakyalvan/krtlwrkflw/model"
+import "github.com/zakyalvan/krtlwrkflw/definition"
 
 // compensationActionOf returns the CompensationAction of an activity node, or "".
-func compensationActionOf(n model.Node) string {
+func compensationActionOf(n definition.Node) string {
 	switch v := n.(type) {
-	case model.ServiceTask:
+	case definition.ServiceTask:
 		return v.CompensationAction
-	case model.UserTask:
+	case definition.UserTask:
 		return v.CompensationAction
-	case model.ReceiveTask:
+	case definition.ReceiveTask:
 		return v.CompensationAction
-	case model.SendTask:
+	case definition.SendTask:
 		return v.CompensationAction
-	case model.BusinessRuleTask:
+	case definition.BusinessRuleTask:
 		return v.CompensationAction
-	case model.SubProcess:
+	case definition.SubProcess:
 		return v.CompensationAction
-	case model.CallActivity:
+	case definition.CallActivity:
 		return v.CompensationAction
 	default:
 		return ""
@@ -25,21 +25,21 @@ func compensationActionOf(n model.Node) string {
 }
 
 // cancelHandlerOf returns the CancelHandler of an activity node, or "".
-func cancelHandlerOf(n model.Node) string {
+func cancelHandlerOf(n definition.Node) string {
 	switch v := n.(type) {
-	case model.ServiceTask:
+	case definition.ServiceTask:
 		return v.CancelHandler
-	case model.UserTask:
+	case definition.UserTask:
 		return v.CancelHandler
-	case model.ReceiveTask:
+	case definition.ReceiveTask:
 		return v.CancelHandler
-	case model.SendTask:
+	case definition.SendTask:
 		return v.CancelHandler
-	case model.BusinessRuleTask:
+	case definition.BusinessRuleTask:
 		return v.CancelHandler
-	case model.SubProcess:
+	case definition.SubProcess:
 		return v.CancelHandler
-	case model.CallActivity:
+	case definition.CallActivity:
 		return v.CancelHandler
 	default:
 		return ""
@@ -47,21 +47,21 @@ func cancelHandlerOf(n model.Node) string {
 }
 
 // recoveryFlowOf returns the RecoveryFlow of an activity node, or "".
-func recoveryFlowOf(n model.Node) string {
+func recoveryFlowOf(n definition.Node) string {
 	switch v := n.(type) {
-	case model.ServiceTask:
+	case definition.ServiceTask:
 		return v.RecoveryFlow
-	case model.UserTask:
+	case definition.UserTask:
 		return v.RecoveryFlow
-	case model.ReceiveTask:
+	case definition.ReceiveTask:
 		return v.RecoveryFlow
-	case model.SendTask:
+	case definition.SendTask:
 		return v.RecoveryFlow
-	case model.BusinessRuleTask:
+	case definition.BusinessRuleTask:
 		return v.RecoveryFlow
-	case model.SubProcess:
+	case definition.SubProcess:
 		return v.RecoveryFlow
-	case model.CallActivity:
+	case definition.CallActivity:
 		return v.RecoveryFlow
 	default:
 		return ""

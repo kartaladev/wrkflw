@@ -12,7 +12,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -22,7 +22,7 @@ import (
 // and [DefinitionStore.GetDefinition] for admin / write paths.
 //
 // Definitions are serialised as JSON into wrkflw_definitions and deserialised
-// by [GetDefinition] and [Lookup]. All fields of [model.ProcessDefinition] and
+// by [GetDefinition] and [Lookup]. All fields of [definition.ProcessDefinition] and
 // its nested types must survive the round-trip — the rich-definition conformance
 // test validates this exhaustively against all three dialects.
 //
@@ -88,7 +88,7 @@ func (ds *DefinitionStore) querier(ctx context.Context) database.Querier {
 // created_at is written as time.Now().UTC(). The column is set on first insert
 // only — the conflict-update clause touches only the definition column — so
 // re-inserts preserve the original creation timestamp.
-func (ds *DefinitionStore) PutDefinition(ctx context.Context, def *model.ProcessDefinition) error {
+func (ds *DefinitionStore) PutDefinition(ctx context.Context, def *definition.ProcessDefinition) error {
 	data, err := json.Marshal(def)
 	if err != nil {
 		return fmt.Errorf("workflow-store: put definition %s:%d: marshal: %w", def.ID, def.Version, err)
@@ -110,7 +110,7 @@ func (ds *DefinitionStore) PutDefinition(ctx context.Context, def *model.Process
 
 // GetDefinition fetches the definition identified by (defID, version).
 // Returns [kernel.ErrDefinitionNotFound] when no row matches.
-func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, version int) (*model.ProcessDefinition, error) {
+func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, version int) (*definition.ProcessDefinition, error) {
 	q := ds.querier(ctx)
 
 	var data []byte
@@ -125,7 +125,7 @@ func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, vers
 		return nil, fmt.Errorf("workflow-store: get definition %s:%d: %w", defID, version, err)
 	}
 
-	var def model.ProcessDefinition
+	var def definition.ProcessDefinition
 	if err := json.Unmarshal(data, &def); err != nil {
 		return nil, fmt.Errorf("workflow-store: get definition %s:%d: unmarshal: %w", defID, version, err)
 	}
@@ -138,7 +138,7 @@ func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, vers
 //
 // Returns [kernel.ErrDefinitionNotFound] when no matching row exists.
 // ctx is propagated to the underlying SQL query for cancellation support.
-func (ds *DefinitionStore) Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error) {
+func (ds *DefinitionStore) Lookup(ctx context.Context, defRef string) (*definition.ProcessDefinition, error) {
 	if id, ver, ok := strings.Cut(defRef, ":"); ok {
 		n, err := strconv.Atoi(ver)
 		if err != nil {
@@ -165,7 +165,7 @@ func (ds *DefinitionStore) Lookup(ctx context.Context, defRef string) (*model.Pr
 		return nil, fmt.Errorf("workflow-store: lookup %q: %w", defRef, err)
 	}
 
-	var def model.ProcessDefinition
+	var def definition.ProcessDefinition
 	if err := json.Unmarshal(data, &def); err != nil {
 		return nil, fmt.Errorf("workflow-store: lookup %q: unmarshal: %w", defRef, err)
 	}

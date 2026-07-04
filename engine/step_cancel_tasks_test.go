@@ -20,7 +20,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // findUpdateTasks returns all UpdateTask commands in cmds.
@@ -46,12 +46,12 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 		name string
 		// setup drives an instance to the point of cancellation and returns the
 		// definition plus the parked state to cancel.
-		setup  func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState)
+		setup  func(t *testing.T) (*definition.ProcessDefinition, engine.InstanceState)
 		assert func(t *testing.T, res engine.StepResult)
 	}
 
 	// startParked runs NewStartInstance and returns the resulting state.
-	startParked := func(t *testing.T, def *model.ProcessDefinition, id string) engine.InstanceState {
+	startParked := func(t *testing.T, def *definition.ProcessDefinition, id string) engine.InstanceState {
 		t.Helper()
 		r0, err := engine.Step(def, engine.InstanceState{InstanceID: id},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
@@ -62,15 +62,15 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 	cases := []testCase{
 		{
 			name: "single open user task is cancelled",
-			setup: func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
-				def := &model.ProcessDefinition{
+			setup: func(t *testing.T) (*definition.ProcessDefinition, engine.InstanceState) {
+				def := &definition.ProcessDefinition{
 					ID: "c-single", Version: 1,
-					Nodes: []model.Node{
-						model.NewStartEvent("start"),
-						model.NewUserTask("user", []string{"r"}),
-						model.NewEndEvent("end"),
+					Nodes: []definition.Node{
+						definition.NewStartEvent("start"),
+						definition.NewUserTask("user", []string{"r"}),
+						definition.NewEndEvent("end"),
 					},
-					Flows: []model.SequenceFlow{
+					Flows: []definition.SequenceFlow{
 						{ID: "f1", Source: "start", Target: "user"},
 						{ID: "f2", Source: "user", Target: "end"},
 					},
@@ -93,18 +93,18 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 		},
 		{
 			name: "two parallel open user tasks are both cancelled",
-			setup: func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
-				def := &model.ProcessDefinition{
+			setup: func(t *testing.T) (*definition.ProcessDefinition, engine.InstanceState) {
+				def := &definition.ProcessDefinition{
 					ID: "c-par", Version: 1,
-					Nodes: []model.Node{
-						model.NewStartEvent("start"),
-						model.NewParallelGateway("fork"),
-						model.NewUserTask("ua", []string{"r"}),
-						model.NewUserTask("ub", []string{"r"}),
-						model.NewParallelGateway("join"),
-						model.NewEndEvent("end"),
+					Nodes: []definition.Node{
+						definition.NewStartEvent("start"),
+						definition.NewParallelGateway("fork"),
+						definition.NewUserTask("ua", []string{"r"}),
+						definition.NewUserTask("ub", []string{"r"}),
+						definition.NewParallelGateway("join"),
+						definition.NewEndEvent("end"),
 					},
-					Flows: []model.SequenceFlow{
+					Flows: []definition.SequenceFlow{
 						{ID: "f0", Source: "start", Target: "fork"},
 						{ID: "f1", Source: "fork", Target: "ua"},
 						{ID: "f2", Source: "fork", Target: "ub"},
@@ -128,15 +128,15 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 		},
 		{
 			name: "no human task emits no UpdateTask",
-			setup: func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
-				def := &model.ProcessDefinition{
+			setup: func(t *testing.T) (*definition.ProcessDefinition, engine.InstanceState) {
+				def := &definition.ProcessDefinition{
 					ID: "c-svc", Version: 1,
-					Nodes: []model.Node{
-						model.NewStartEvent("start"),
-						model.NewServiceTask("svc", model.WithActionName("work")),
-						model.NewEndEvent("end"),
+					Nodes: []definition.Node{
+						definition.NewStartEvent("start"),
+						definition.NewServiceTask("svc", definition.WithActionName("work")),
+						definition.NewEndEvent("end"),
 					},
-					Flows: []model.SequenceFlow{
+					Flows: []definition.SequenceFlow{
 						{ID: "f1", Source: "start", Target: "svc"},
 						{ID: "f2", Source: "svc", Target: "end"},
 					},
@@ -177,15 +177,15 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 	at := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
 
 	// start → compensable-svc → user-task → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "cc-comp", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewUserTask("user", []string{"r"}),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
+			definition.NewUserTask("user", []string{"r"}),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "user"},
 			{ID: "f3", Source: "user", Target: "end"},

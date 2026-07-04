@@ -10,7 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -20,19 +20,19 @@ import (
 //
 //	start → UserTask("review") → end-ok
 //	                ↑ interrupting message boundary "cancel" → end-cancelled
-func messageBoundaryDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func messageBoundaryDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "msg-boundary",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("review", []string{"manager"}),
-			model.NewBoundaryEvent("bnd-cancel", "review",
-				model.WithBoundaryMessage("cancel", "")),
-			model.NewEndEvent("end-ok"),
-			model.NewEndEvent("end-cancelled"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("review", []string{"manager"}),
+			definition.NewBoundaryEvent("bnd-cancel", "review",
+				definition.WithBoundaryMessage("cancel", "")),
+			definition.NewEndEvent("end-ok"),
+			definition.NewEndEvent("end-cancelled"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "review"},
 			{ID: "f-ok", Source: "review", Target: "end-ok"},
 			{ID: "f-cancel", Source: "bnd-cancel", Target: "end-cancelled"},

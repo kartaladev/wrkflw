@@ -2,7 +2,7 @@ package view
 
 import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // NextAction describes a single outgoing sequence flow from a task node —
@@ -56,7 +56,7 @@ type ActionableView struct {
 //
 // If def is nil, AllowedActions on each ActionableTask is nil — no routing
 // information can be derived without the definition.
-func NewActionableView(st engine.InstanceState, def *model.ProcessDefinition) ActionableView {
+func NewActionableView(st engine.InstanceState, def *definition.ProcessDefinition) ActionableView {
 	openTasks := make([]ActionableTask, 0, len(st.Tasks))
 	for _, t := range st.Tasks {
 		if !t.IsOpen() {

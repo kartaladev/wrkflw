@@ -5,7 +5,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
@@ -13,21 +13,21 @@ import (
 // ActionableView containing only open tasks with their allowed next actions
 // derived from the process definition's outgoing flows.
 //
-// Note: model.Validate rejects conditions on flows from non-gateway nodes, so
+// Note: definition.Validate rejects conditions on flows from non-gateway nodes, so
 // the definition routes through an ExclusiveGateway to exercise WithCondition.
 // The task's AllowedActions reflect the task's own outgoing flows (the unconditional
 // flow to the gateway); the gateway's conditional flows are separate.
 func TestNewActionableView(t *testing.T) {
 	// approve → gw (unconditional); gw → e (conditional with FlowID "go-e").
 	// The task's AllowedActions come from def.Outgoing("approve") = [{approve->gw}].
-	def, err := model.NewDefinition("d1", 1).
-		Add(model.NewStartEvent("s")).
-		Add(model.NewUserTask("approve", []string{"manager"})).
-		Add(model.NewExclusiveGateway("gw")).
-		Add(model.NewEndEvent("e")).
+	def, err := definition.NewDefinition("d1", 1).
+		Add(definition.NewStartEvent("s")).
+		Add(definition.NewUserTask("approve", []string{"manager"})).
+		Add(definition.NewExclusiveGateway("gw")).
+		Add(definition.NewEndEvent("e")).
 		Connect("s", "approve").
-		Connect("approve", "gw", model.WithFlowID("approve-gw")).
-		Connect("gw", "e", model.WithFlowID("go-e"), model.WithCondition("vars.ok")).
+		Connect("approve", "gw", definition.WithFlowID("approve-gw")).
+		Connect("gw", "e", definition.WithFlowID("go-e"), definition.WithCondition("vars.ok")).
 		Build()
 	if err != nil {
 		t.Fatalf("build definition: %v", err)

@@ -1,4 +1,4 @@
-package model_test
+package definition_test
 
 import (
 	"encoding/json"
@@ -8,80 +8,80 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 func TestRetryPolicyOf(t *testing.T) {
-	p := &model.RetryPolicy{MaxAttempts: 5}
-	n := model.NewServiceTask("a", model.WithActionName("act"), model.WithRetryPolicy(p))
-	if model.RetryPolicyOf(n) != p {
+	p := &definition.RetryPolicy{MaxAttempts: 5}
+	n := definition.NewServiceTask("a", definition.WithActionName("act"), definition.WithRetryPolicy(p))
+	if definition.RetryPolicyOf(n) != p {
 		t.Fatal("RetryPolicyOf did not return the activity's policy")
 	}
-	if model.RetryPolicyOf(model.NewStartEvent("s")) != nil {
+	if definition.RetryPolicyOf(definition.NewStartEvent("s")) != nil {
 		t.Fatal("non-activity must return nil")
 	}
 	// Test all activity kinds
-	cases := []model.Node{
-		model.NewUserTask("ut", nil, model.WithRetryPolicy(p)),
-		model.NewReceiveTask("rt", "msg", model.WithRetryPolicy(p)),
-		model.NewSendTask("st", "msg", model.WithRetryPolicy(p)),
-		model.NewBusinessRuleTask("brt", model.WithActionName("act"), model.WithRetryPolicy(p)),
-		model.NewSubProcess("sp", nil, model.WithRetryPolicy(p)),
-		model.NewCallActivity("ca", "ref", model.WithRetryPolicy(p)),
+	cases := []definition.Node{
+		definition.NewUserTask("ut", nil, definition.WithRetryPolicy(p)),
+		definition.NewReceiveTask("rt", "msg", definition.WithRetryPolicy(p)),
+		definition.NewSendTask("st", "msg", definition.WithRetryPolicy(p)),
+		definition.NewBusinessRuleTask("brt", definition.WithActionName("act"), definition.WithRetryPolicy(p)),
+		definition.NewSubProcess("sp", nil, definition.WithRetryPolicy(p)),
+		definition.NewCallActivity("ca", "ref", definition.WithRetryPolicy(p)),
 	}
 	for _, c := range cases {
-		require.Equal(t, p, model.RetryPolicyOf(c), "kind %v should return policy", c.Kind())
+		require.Equal(t, p, definition.RetryPolicyOf(c), "kind %v should return policy", c.Kind())
 	}
 	// Non-activity kinds should return nil
-	nonActivities := []model.Node{
-		model.NewStartEvent("s"),
-		model.NewEndEvent("e"),
-		model.NewTerminateEndEvent("te"),
-		model.NewErrorEndEvent("ee", "ERR"),
-		model.NewExclusiveGateway("xor"),
-		model.NewParallelGateway("par"),
-		model.NewInclusiveGateway("inc"),
-		model.NewEventBasedGateway("ebg"),
-		model.NewBoundaryEvent("be", "host"),
-		model.NewIntermediateCatchEvent("ice"),
-		model.NewIntermediateThrowEvent("ite"),
-		model.NewEventSubProcess("esp", nil),
+	nonActivities := []definition.Node{
+		definition.NewStartEvent("s"),
+		definition.NewEndEvent("e"),
+		definition.NewTerminateEndEvent("te"),
+		definition.NewErrorEndEvent("ee", "ERR"),
+		definition.NewExclusiveGateway("xor"),
+		definition.NewParallelGateway("par"),
+		definition.NewInclusiveGateway("inc"),
+		definition.NewEventBasedGateway("ebg"),
+		definition.NewBoundaryEvent("be", "host"),
+		definition.NewIntermediateCatchEvent("ice"),
+		definition.NewIntermediateThrowEvent("ite"),
+		definition.NewEventSubProcess("esp", nil),
 	}
 	for _, c := range nonActivities {
-		require.Nil(t, model.RetryPolicyOf(c), "kind %v should return nil", c.Kind())
+		require.Nil(t, definition.RetryPolicyOf(c), "kind %v should return nil", c.Kind())
 	}
 }
 
 func TestDeadlineOf(t *testing.T) {
 	cases := []struct {
 		name                       string
-		node                       model.Node
+		node                       definition.Node
 		wantDur, wantFlow, wantAct string
 	}{
 		{
 			name:     "service task with deadline",
-			node:     model.NewServiceTask("st", model.WithActionName("act"), model.WithDeadline("P1D", "sla-flow", "sla-act")),
+			node:     definition.NewServiceTask("st", definition.WithActionName("act"), definition.WithDeadline("P1D", "sla-flow", "sla-act")),
 			wantDur:  "P1D",
 			wantFlow: "sla-flow",
 			wantAct:  "sla-act",
 		},
 		{
 			name:     "user task with deadline",
-			node:     model.NewUserTask("ut", nil, model.WithDeadline("PT2H", "ut-flow", "ut-act")),
+			node:     definition.NewUserTask("ut", nil, definition.WithDeadline("PT2H", "ut-flow", "ut-act")),
 			wantDur:  "PT2H",
 			wantFlow: "ut-flow",
 			wantAct:  "ut-act",
 		},
 		{
 			name:     "intermediate catch event with deadline",
-			node:     model.NewIntermediateCatchEvent("ice", model.WithICEDeadline("P2D", "ice-flow", "ice-act")),
+			node:     definition.NewIntermediateCatchEvent("ice", definition.WithICEDeadline("P2D", "ice-flow", "ice-act")),
 			wantDur:  "P2D",
 			wantFlow: "ice-flow",
 			wantAct:  "ice-act",
 		},
 		{
 			name:     "start event returns empty",
-			node:     model.NewStartEvent("s"),
+			node:     definition.NewStartEvent("s"),
 			wantDur:  "",
 			wantFlow: "",
 			wantAct:  "",
@@ -89,7 +89,7 @@ func TestDeadlineOf(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dur, flow, act := model.DeadlineOf(tc.node)
+			dur, flow, act := definition.DeadlineOf(tc.node)
 			assert.Equal(t, tc.wantDur, dur)
 			assert.Equal(t, tc.wantFlow, flow)
 			assert.Equal(t, tc.wantAct, act)
@@ -98,70 +98,70 @@ func TestDeadlineOf(t *testing.T) {
 }
 
 func TestReminderOf(t *testing.T) {
-	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
-	n := model.NewUserTask("ut", nil,
-		model.WithRetryPolicy(p),
-		model.WithReminder("PT4H", "send-reminder"),
+	p := &definition.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
+	n := definition.NewUserTask("ut", nil,
+		definition.WithRetryPolicy(p),
+		definition.WithReminder("PT4H", "send-reminder"),
 	)
-	every, act := model.ReminderOf(n)
+	every, act := definition.ReminderOf(n)
 	assert.Equal(t, "PT4H", every)
 	assert.Equal(t, "send-reminder", act)
 
 	// Non-activity returns empty
-	every, act = model.ReminderOf(model.NewStartEvent("s"))
+	every, act = definition.ReminderOf(definition.NewStartEvent("s"))
 	assert.Equal(t, "", every)
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
-	ice := model.NewIntermediateCatchEvent("ice", model.WithICEReminder("PT2H", "ice-remind"))
-	every, act = model.ReminderOf(ice)
+	ice := definition.NewIntermediateCatchEvent("ice", definition.WithICEReminder("PT2H", "ice-remind"))
+	every, act = definition.ReminderOf(ice)
 	assert.Equal(t, "PT2H", every)
 	assert.Equal(t, "ice-remind", act)
 }
 
 func TestActionOf(t *testing.T) {
-	assert.Equal(t, "charge-card", model.ActionOf(model.NewServiceTask("st", model.WithActionName("charge-card"))))
-	assert.Equal(t, "apply-discount", model.ActionOf(model.NewBusinessRuleTask("brt", model.WithActionName("apply-discount"))))
-	assert.Equal(t, "", model.ActionOf(model.NewUserTask("ut", nil)))
-	assert.Equal(t, "", model.ActionOf(model.NewStartEvent("s")))
+	assert.Equal(t, "charge-card", definition.ActionOf(definition.NewServiceTask("st", definition.WithActionName("charge-card"))))
+	assert.Equal(t, "apply-discount", definition.ActionOf(definition.NewBusinessRuleTask("brt", definition.WithActionName("apply-discount"))))
+	assert.Equal(t, "", definition.ActionOf(definition.NewUserTask("ut", nil)))
+	assert.Equal(t, "", definition.ActionOf(definition.NewStartEvent("s")))
 }
 
 // TestProcessDefinitionJSONRoundTrip verifies that Marshal(def) then Unmarshal
 // produces a definition equal to the original.
 func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
-	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
-	original := &model.ProcessDefinition{
+	p := &definition.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
+	original := &definition.ProcessDefinition{
 		ID:      "order",
 		Version: 2,
-		Nodes: []model.Node{
-			model.NewStartEvent("start", model.WithName("Start")),
-			model.NewServiceTask("charge",
-				model.WithActionName("charge-card"),
-				model.WithCompensation("refund-card"),
-				model.WithRecoveryFlow("f-error"),
-				model.WithRetryPolicy(p),
-				model.WithDeadline("P1D", "sla-flow", "sla-act"),
-				model.WithReminder("PT4H", "remind-act"),
-				model.WithCancelHandler("cancel-charge"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start", definition.WithName("Start")),
+			definition.NewServiceTask("charge",
+				definition.WithActionName("charge-card"),
+				definition.WithCompensation("refund-card"),
+				definition.WithRecoveryFlow("f-error"),
+				definition.WithRetryPolicy(p),
+				definition.WithDeadline("P1D", "sla-flow", "sla-act"),
+				definition.WithReminder("PT4H", "remind-act"),
+				definition.WithCancelHandler("cancel-charge"),
 			),
-			model.NewUserTask("approve", []string{"manager", "admin"},
-				model.WithEligibilityExpr("amount > 1000"),
-				model.WithName("Approve"),
+			definition.NewUserTask("approve", []string{"manager", "admin"},
+				definition.WithEligibilityExpr("amount > 1000"),
+				definition.WithName("Approve"),
 			),
-			model.NewIntermediateCatchEvent("wait",
-				model.WithTimerDuration("PT30M"),
-				model.WithName("Wait"),
+			definition.NewIntermediateCatchEvent("wait",
+				definition.WithTimerDuration("PT30M"),
+				definition.WithName("Wait"),
 			),
-			model.NewIntermediateThrowEvent("signal-done", model.WithThrowSignal("order.done")),
-			model.NewBoundaryEvent("error-bnd", "charge",
-				model.WithBoundaryErrorCode("ERR_PAYMENT"),
+			definition.NewIntermediateThrowEvent("signal-done", definition.WithThrowSignal("order.done")),
+			definition.NewBoundaryEvent("error-bnd", "charge",
+				definition.WithBoundaryErrorCode("ERR_PAYMENT"),
 			),
-			model.NewExclusiveGateway("xor", "Decision"),
-			model.NewEndEvent("end", "End"),
-			model.NewErrorEndEvent("err-end", "ERR_FATAL"),
-			model.NewTerminateEndEvent("term-end"),
+			definition.NewExclusiveGateway("xor", "Decision"),
+			definition.NewEndEvent("end", "End"),
+			definition.NewErrorEndEvent("err-end", "ERR_FATAL"),
+			definition.NewTerminateEndEvent("term-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
 			{ID: "f2", Source: "charge", Target: "approve"},
 			{ID: "f3", Source: "approve", Target: "xor"},
@@ -178,7 +178,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	data, err := json.Marshal(original)
 	require.NoError(t, err, "marshal should not fail")
 
-	var restored model.ProcessDefinition
+	var restored definition.ProcessDefinition
 	require.NoError(t, json.Unmarshal(data, &restored), "unmarshal should not fail")
 
 	// Verify key structural properties
@@ -197,7 +197,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	}
 
 	// Verify ServiceTask fields survived round-trip
-	charge, ok := restored.Nodes[1].(model.ServiceTask)
+	charge, ok := restored.Nodes[1].(definition.ServiceTask)
 	require.True(t, ok)
 	assert.Equal(t, "charge-card", charge.Action)
 	assert.Equal(t, "refund-card", charge.CompensationAction)
@@ -209,7 +209,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, 3, charge.RetryPolicy.MaxAttempts)
 
 	// Verify UserTask fields
-	approve, ok := restored.Nodes[2].(model.UserTask)
+	approve, ok := restored.Nodes[2].(definition.UserTask)
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, approve.CandidateRoles)
 	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
@@ -247,89 +247,89 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 		"flows": []
 	}`
 
-	var def model.ProcessDefinition
+	var def definition.ProcessDefinition
 	require.NoError(t, json.Unmarshal([]byte(legacyJSON), &def))
 
 	assert.Equal(t, "legacy", def.ID)
 	require.Len(t, def.Nodes, 20)
 
 	// Spot-check types
-	_, ok := def.Nodes[0].(model.StartEvent)
+	_, ok := def.Nodes[0].(definition.StartEvent)
 	require.True(t, ok, "nodes[0] should be StartEvent")
 
-	st, ok := def.Nodes[1].(model.ServiceTask)
+	st, ok := def.Nodes[1].(definition.ServiceTask)
 	require.True(t, ok, "nodes[1] should be ServiceTask")
 	assert.Equal(t, "charge-card", st.Action)
 	assert.Equal(t, "refund-card", st.CompensationAction)
 	assert.Equal(t, "cancel-charge", st.CancelHandler)
 
-	ut, ok := def.Nodes[2].(model.UserTask)
+	ut, ok := def.Nodes[2].(definition.UserTask)
 	require.True(t, ok, "nodes[2] should be UserTask")
 	assert.Equal(t, []string{"manager"}, ut.CandidateRoles)
 	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
 
-	ice, ok := def.Nodes[3].(model.IntermediateCatchEvent)
+	ice, ok := def.Nodes[3].(definition.IntermediateCatchEvent)
 	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")
 	assert.Equal(t, "PT1H", ice.TimerDuration)
 
-	ite, ok := def.Nodes[4].(model.IntermediateThrowEvent)
+	ite, ok := def.Nodes[4].(definition.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[4] should be IntermediateThrowEvent")
 	assert.Equal(t, "done", ite.SignalName)
 
-	be, ok := def.Nodes[5].(model.BoundaryEvent)
+	be, ok := def.Nodes[5].(definition.BoundaryEvent)
 	require.True(t, ok, "nodes[5] should be BoundaryEvent")
 	assert.Equal(t, "charge", be.AttachedTo)
 	assert.Equal(t, "ERR", be.ErrorCode)
 
-	sp, ok := def.Nodes[6].(model.SubProcess)
+	sp, ok := def.Nodes[6].(definition.SubProcess)
 	require.True(t, ok, "nodes[6] should be SubProcess")
 	require.NotNil(t, sp.Subprocess)
 	assert.Equal(t, "inner", sp.Subprocess.ID)
 
-	ca, ok := def.Nodes[7].(model.CallActivity)
+	ca, ok := def.Nodes[7].(definition.CallActivity)
 	require.True(t, ok, "nodes[7] should be CallActivity")
 	assert.Equal(t, "ext-process", ca.DefRef)
 
-	_, ok = def.Nodes[8].(model.ExclusiveGateway)
+	_, ok = def.Nodes[8].(definition.ExclusiveGateway)
 	require.True(t, ok, "nodes[8] should be ExclusiveGateway")
 
-	_, ok = def.Nodes[9].(model.ParallelGateway)
+	_, ok = def.Nodes[9].(definition.ParallelGateway)
 	require.True(t, ok, "nodes[9] should be ParallelGateway")
 
-	_, ok = def.Nodes[10].(model.InclusiveGateway)
+	_, ok = def.Nodes[10].(definition.InclusiveGateway)
 	require.True(t, ok, "nodes[10] should be InclusiveGateway")
 
-	_, ok = def.Nodes[11].(model.EventBasedGateway)
+	_, ok = def.Nodes[11].(definition.EventBasedGateway)
 	require.True(t, ok, "nodes[11] should be EventBasedGateway")
 
-	_, ok = def.Nodes[12].(model.EndEvent)
+	_, ok = def.Nodes[12].(definition.EndEvent)
 	require.True(t, ok, "nodes[12] should be EndEvent")
 
-	_, ok = def.Nodes[13].(model.TerminateEndEvent)
+	_, ok = def.Nodes[13].(definition.TerminateEndEvent)
 	require.True(t, ok, "nodes[13] should be TerminateEndEvent")
 
-	ee, ok := def.Nodes[14].(model.ErrorEndEvent)
+	ee, ok := def.Nodes[14].(definition.ErrorEndEvent)
 	require.True(t, ok, "nodes[14] should be ErrorEndEvent")
 	assert.Equal(t, "FATAL", ee.ErrorCode)
 
-	send, ok := def.Nodes[15].(model.SendTask)
+	send, ok := def.Nodes[15].(definition.SendTask)
 	require.True(t, ok, "nodes[15] should be SendTask")
 	assert.Equal(t, "msg.send", send.MessageName)
 
-	recv, ok := def.Nodes[16].(model.ReceiveTask)
+	recv, ok := def.Nodes[16].(definition.ReceiveTask)
 	require.True(t, ok, "nodes[16] should be ReceiveTask")
 	assert.Equal(t, "msg.recv", recv.MessageName)
 	assert.Equal(t, "order.id", recv.CorrelationKey)
 
-	brt, ok := def.Nodes[17].(model.BusinessRuleTask)
+	brt, ok := def.Nodes[17].(definition.BusinessRuleTask)
 	require.True(t, ok, "nodes[17] should be BusinessRuleTask")
 	assert.Equal(t, "apply-discount", brt.Action)
 
-	esp, ok := def.Nodes[18].(model.EventSubProcess)
+	esp, ok := def.Nodes[18].(definition.EventSubProcess)
 	require.True(t, ok, "nodes[18] should be EventSubProcess")
 	require.NotNil(t, esp.Subprocess)
 
-	compThrow, ok := def.Nodes[19].(model.IntermediateThrowEvent)
+	compThrow, ok := def.Nodes[19].(definition.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[19] should be IntermediateThrowEvent")
 	assert.Equal(t, "charge", compThrow.CompensateRef)
 }

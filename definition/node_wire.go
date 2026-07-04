@@ -1,4 +1,4 @@
-package model
+package definition
 
 import (
 	"encoding/json"
@@ -166,7 +166,7 @@ func fromWire(w nodeWire) (Node, error) {
 	case KindEventBasedGateway:
 		return EventBasedGateway{b}, nil
 	default:
-		return nil, fmt.Errorf("workflow-model: unknown node kind %q", w.Kind)
+		return nil, fmt.Errorf("workflow-definition: unknown node kind %q", w.Kind)
 	}
 }
 

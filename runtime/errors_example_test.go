@@ -12,7 +12,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -74,22 +74,22 @@ func (e *sagaActionError) Error() string { return e.msg }
 // trigger CompensateRequested to roll back book+pay in reverse order
 // (refund THEN cancel-booking). Without the boundary, ADR-0034 auto-runs
 // compensation on the unhandled-error terminal path before StatusFailed.
-func sagaDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func sagaDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "saga", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("book", model.WithActionName("book"), model.WithCompensation("cancel-booking")),
-			model.NewServiceTask("pay", model.WithActionName("pay"), model.WithCompensation("refund")),
-			model.NewServiceTask("ship", model.WithActionName("ship")),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("book", definition.WithActionName("book"), definition.WithCompensation("cancel-booking")),
+			definition.NewServiceTask("pay", definition.WithActionName("pay"), definition.WithCompensation("refund")),
+			definition.NewServiceTask("ship", definition.WithActionName("ship")),
 			// Boundary catches ship failure so the unhandled-error auto-compensation
 			// path (ADR-0034) is not triggered; RootCompensations stays intact for
 			// the admin-triggered CompensateRequested below.
-			model.NewBoundaryEvent("ship-err", "ship", model.WithBoundaryErrorCode("")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end-fail"),
+			definition.NewBoundaryEvent("ship-err", "ship", definition.WithBoundaryErrorCode("")),
+			definition.NewEndEvent("end"),
+			definition.NewEndEvent("end-fail"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "book"},
 			{ID: "f2", Source: "book", Target: "pay"},
 			{ID: "f3", Source: "pay", Target: "ship"},
@@ -183,19 +183,19 @@ func TestSagaCompensationRollback(t *testing.T) {
 //	start → risky (ServiceTask "risky-action")
 //	             ↘ (boundary error, catch-all) → recover (ServiceTask "recover-action") → end
 //	       → end  (normal path, if risky succeeds)
-func boundaryErrorDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func boundaryErrorDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "boundary-error-recovery", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("risky", model.WithActionName("risky-action")),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("risky", definition.WithActionName("risky-action")),
 			// KindBoundaryEvent: error boundary attached to "risky", catch-all (ErrorCode=="").
-			model.NewBoundaryEvent("err-boundary", "risky", model.WithBoundaryErrorCode("")),
-			model.NewServiceTask("recover", model.WithActionName("recover-action")),
-			model.NewEndEvent("end"),
-			model.NewEndEvent("end-recovery"),
+			definition.NewBoundaryEvent("err-boundary", "risky", definition.WithBoundaryErrorCode("")),
+			definition.NewServiceTask("recover", definition.WithActionName("recover-action")),
+			definition.NewEndEvent("end"),
+			definition.NewEndEvent("end-recovery"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "risky"},
 			{ID: "f2", Source: "risky", Target: "end"},            // normal path
 			{ID: "f3", Source: "err-boundary", Target: "recover"}, // recovery path

@@ -8,7 +8,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -77,7 +77,7 @@ type Service interface {
 	// Returns kernel.ErrInstanceNotFound when no instance exists for the ID and
 	// kernel.ErrDefinitionNotFound when the registry has no entry for the
 	// instance's DefID:DefVersion key.
-	GetInstanceWithDefinition(ctx context.Context, instanceID string) (engine.InstanceState, *model.ProcessDefinition, error)
+	GetInstanceWithDefinition(ctx context.Context, instanceID string) (engine.InstanceState, *definition.ProcessDefinition, error)
 }
 
 // Engine is the concrete implementation of Service. It wires together the
@@ -119,7 +119,7 @@ func WithEngineClock(clk clock.Clock) EngineOption {
 //
 //   - runner: drives process execution (Run / Deliver / DeliverMessage).
 //   - tasks: authorizes and returns triggers for human-task interactions.
-//   - reg: resolves DefRef strings to *model.ProcessDefinition values.
+//   - reg: resolves DefRef strings to *definition.ProcessDefinition values.
 //     Keys must be in "DefID:DefVersion" format for resolveDefinition to work
 //     on existing instances. Short aliases are also accepted for StartInstance.
 //   - store: loads instance state for GetInstance and definition resolution.
@@ -181,7 +181,7 @@ func (e *Engine) GetInstance(ctx context.Context, instanceID string) (engine.Ins
 // resolves its process definition from the registry. It delegates to the private
 // resolveDefinition helper so that both pieces are fetched atomically from the
 // same store and registry.
-func (e *Engine) GetInstanceWithDefinition(ctx context.Context, instanceID string) (engine.InstanceState, *model.ProcessDefinition, error) {
+func (e *Engine) GetInstanceWithDefinition(ctx context.Context, instanceID string) (engine.InstanceState, *definition.ProcessDefinition, error) {
 	def, st, err := e.resolveDefinition(ctx, instanceID)
 	if err != nil {
 		return engine.InstanceState{}, nil, fmt.Errorf("workflow-service: get instance with definition: %w", err)
@@ -306,7 +306,7 @@ func (e *Engine) CancelInstance(ctx context.Context, req CancelInstanceRequest) 
 // Returns the definition, the current instance state, and any error. Both
 // ErrInstanceNotFound and ErrDefinitionNotFound propagate as-is through the
 // wrapping chain so transport layers can classify them with errors.Is.
-func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*model.ProcessDefinition, engine.InstanceState, error) {
+func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*definition.ProcessDefinition, engine.InstanceState, error) {
 	st, _, err := e.store.Load(ctx, instanceID)
 	if err != nil {
 		return nil, engine.InstanceState{}, err

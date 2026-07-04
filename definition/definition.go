@@ -4,7 +4,7 @@
 // does not aim to load or round-trip arbitrary BPMN2 documents. It is pure data
 // plus validation; it imports only the standard library and the in-repo
 // [action] package (a pure leaf).
-package model
+package definition
 
 import "github.com/zakyalvan/krtlwrkflw/action"
 

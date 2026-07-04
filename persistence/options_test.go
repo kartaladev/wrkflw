@@ -10,22 +10,22 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 // minimalDef returns the simplest process definition: start → end.
 // Used in option tests that need a real runner round-trip.
-func minimalDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func minimalDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "opt-test",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 }
 

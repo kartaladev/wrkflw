@@ -10,7 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
@@ -131,12 +131,12 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 
 	cases := []struct {
 		name   string
-		def    func() *model.ProcessDefinition
+		def    func() *definition.ProcessDefinition
 		assert func(t *testing.T, snap view.InstanceSnapshot)
 	}{
 		{
 			name: "nil_def_leaves_fields_empty",
-			def:  func() *model.ProcessDefinition { return nil },
+			def:  func() *definition.ProcessDefinition { return nil },
 			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				if snap.ScopedActions != nil {
@@ -149,11 +149,11 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "service_task_with_action_name",
-			def: func() *model.ProcessDefinition {
-				def, err := model.NewDefinition("meta-proc", 1).
-					Add(model.NewStartEvent("start")).
-					Add(model.NewServiceTask("svc-named", model.WithActionName("my-action"))).
-					Add(model.NewEndEvent("end")).
+			def: func() *definition.ProcessDefinition {
+				def, err := definition.NewDefinition("meta-proc", 1).
+					Add(definition.NewStartEvent("start")).
+					Add(definition.NewServiceTask("svc-named", definition.WithActionName("my-action"))).
+					Add(definition.NewEndEvent("end")).
 					Connect("start", "svc-named").
 					Connect("svc-named", "end").
 					RegisterAction("my-action", noop()).
@@ -190,11 +190,11 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "service_task_inline_action",
-			def: func() *model.ProcessDefinition {
-				def, err := model.NewDefinition("meta-proc", 1).
-					Add(model.NewStartEvent("start")).
-					Add(model.NewServiceTask("svc-inline", model.WithAction(noop()))).
-					Add(model.NewEndEvent("end")).
+			def: func() *definition.ProcessDefinition {
+				def, err := definition.NewDefinition("meta-proc", 1).
+					Add(definition.NewStartEvent("start")).
+					Add(definition.NewServiceTask("svc-inline", definition.WithAction(noop()))).
+					Add(definition.NewEndEvent("end")).
 					Connect("start", "svc-inline").
 					Connect("svc-inline", "end").
 					Build()
@@ -228,11 +228,11 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "service_task_default_by_id",
-			def: func() *model.ProcessDefinition {
-				def, err := model.NewDefinition("meta-proc", 1).
-					Add(model.NewStartEvent("start")).
-					Add(model.NewServiceTask("svc-default")).
-					Add(model.NewEndEvent("end")).
+			def: func() *definition.ProcessDefinition {
+				def, err := definition.NewDefinition("meta-proc", 1).
+					Add(definition.NewStartEvent("start")).
+					Add(definition.NewServiceTask("svc-default")).
+					Add(definition.NewEndEvent("end")).
 					Connect("start", "svc-default").
 					Connect("svc-default", "end").
 					Build()
@@ -264,11 +264,11 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "business_rule_task",
-			def: func() *model.ProcessDefinition {
-				def, err := model.NewDefinition("meta-proc", 1).
-					Add(model.NewStartEvent("start")).
-					Add(model.NewBusinessRuleTask("brt-node", model.WithActionName("rule-action"))).
-					Add(model.NewEndEvent("end")).
+			def: func() *definition.ProcessDefinition {
+				def, err := definition.NewDefinition("meta-proc", 1).
+					Add(definition.NewStartEvent("start")).
+					Add(definition.NewBusinessRuleTask("brt-node", definition.WithActionName("rule-action"))).
+					Add(definition.NewEndEvent("end")).
 					Connect("start", "brt-node").
 					Connect("brt-node", "end").
 					Build()
@@ -299,12 +299,12 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "mixed_nodes_sorted_by_node_id",
-			def: func() *model.ProcessDefinition {
-				def, err := model.NewDefinition("meta-proc", 1).
-					Add(model.NewStartEvent("start")).
-					Add(model.NewServiceTask("z-svc", model.WithActionName("svc-x"))).
-					Add(model.NewBusinessRuleTask("a-brt")).
-					Add(model.NewEndEvent("end")).
+			def: func() *definition.ProcessDefinition {
+				def, err := definition.NewDefinition("meta-proc", 1).
+					Add(definition.NewStartEvent("start")).
+					Add(definition.NewServiceTask("z-svc", definition.WithActionName("svc-x"))).
+					Add(definition.NewBusinessRuleTask("a-brt")).
+					Add(definition.NewEndEvent("end")).
 					Connect("start", "z-svc").
 					Connect("z-svc", "a-brt").
 					Connect("a-brt", "end").

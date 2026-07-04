@@ -9,7 +9,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -33,14 +33,14 @@ func tagOf(t *testing.T, a action.ServiceAction) string {
 // registers "x" (also in global, to prove scoped precedence) and "scoped-only"
 // (not in global). It is used for the def-fallback case of resolveInvokeAction
 // and the scoped tier of resolveActionName.
-func resolveActionScopedDef(t *testing.T) *model.ProcessDefinition {
+func resolveActionScopedDef(t *testing.T) *definition.ProcessDefinition {
 	t.Helper()
-	def, err := model.NewDefinition("d", 1).
+	def, err := definition.NewDefinition("d", 1).
 		RegisterAction("x", tag("scoped")).
 		RegisterAction("scoped-only", tag("scoped-only")).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("idNode", model.WithActionName("idNode"))).
-		Add(model.NewEndEvent("e")).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewServiceTask("idNode", definition.WithActionName("idNode"))).
+		Add(definition.NewEndEvent("e")).
 		Connect("start", "idNode").
 		Connect("idNode", "e").
 		Build()
@@ -73,7 +73,7 @@ func TestResolveInvokeAction(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		def    *model.ProcessDefinition
+		def    *definition.ProcessDefinition
 		cmd    engine.InvokeAction
 		assert func(t *testing.T, got action.ServiceAction, ok bool)
 	}

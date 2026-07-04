@@ -56,7 +56,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
@@ -290,18 +290,18 @@ func run(logger *slog.Logger) error {
 	defer be.cleanup()
 
 	// ── Define predecessor (proc-a) and successor (proc-a-succ) processes ─────
-	defPA, err := model.NewDefinition("proc-a", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewEndEvent("end")).
+	defPA, err := definition.NewDefinition("proc-a", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "end").
 		Build()
 	if err != nil {
 		return fmt.Errorf("build proc-a: %w", err)
 	}
 
-	defSA, err := model.NewDefinition("proc-a-succ", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewEndEvent("end")).
+	defSA, err := definition.NewDefinition("proc-a-succ", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "end").
 		Build()
 	if err != nil {

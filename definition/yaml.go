@@ -1,4 +1,4 @@
-package model
+package definition
 
 import (
 	"fmt"
@@ -64,20 +64,20 @@ type definitionYAML struct {
 func fromNodeYAML(ny nodeYAML) (Node, error) {
 	kind, ok := nodeKindByName[ny.Kind]
 	if !ok {
-		return nil, fmt.Errorf("workflow-model: unknown node kind %q", ny.Kind)
+		return nil, fmt.Errorf("workflow-definition: unknown node kind %q", ny.Kind)
 	}
 
 	var subDef *ProcessDefinition
 	if ny.Subprocess != nil {
 		core, err := coreFromYAML(ny.Subprocess)
 		if err != nil {
-			return nil, fmt.Errorf("workflow-model: subprocess %q: %w", ny.ID, err)
+			return nil, fmt.Errorf("workflow-definition: subprocess %q: %w", ny.ID, err)
 		}
 		// Subprocess definitions are fully declared inline: build immediately so
 		// the parent node holds a *ProcessDefinition rather than a loader handle.
 		built, err := core.build()
 		if err != nil {
-			return nil, fmt.Errorf("workflow-model: subprocess %q: %w", ny.ID, err)
+			return nil, fmt.Errorf("workflow-definition: subprocess %q: %w", ny.ID, err)
 		}
 		subDef = built
 	}
@@ -140,7 +140,7 @@ func coreFromYAML(dy *definitionYAML) (*definitionCore, error) {
 func ParseYAML(data []byte) (DefinitionLoader, error) {
 	var dy definitionYAML
 	if err := yaml.Unmarshal(data, &dy); err != nil {
-		return nil, fmt.Errorf("workflow-model: parse YAML: %w", err)
+		return nil, fmt.Errorf("workflow-definition: parse YAML: %w", err)
 	}
 	core, err := coreFromYAML(&dy)
 	if err != nil {
@@ -153,7 +153,7 @@ func ParseYAML(data []byte) (DefinitionLoader, error) {
 func LoadYAML(r io.Reader) (DefinitionLoader, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("workflow-model: read YAML: %w", err)
+		return nil, fmt.Errorf("workflow-definition: read YAML: %w", err)
 	}
 	return ParseYAML(data)
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // compensableDef returns a minimal process:
@@ -24,15 +24,15 @@ import (
 //
 // The service task is compensable: when it completes, the engine should append
 // a CompensationRecord into its enclosing scope's Compensations list.
-func compensableDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func compensableDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "comp-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},
@@ -40,15 +40,15 @@ func compensableDef() *model.ProcessDefinition {
 }
 
 // nonCompensableDef returns a process with a service task that has NO CompensationAction.
-func nonCompensableDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func nonCompensableDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "plain-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},
@@ -58,27 +58,27 @@ func nonCompensableDef() *model.ProcessDefinition {
 // compensableSubProcessDef returns a process with a sub-process containing a
 // compensable service task. After the sub-process exits, the compensation record
 // should be in the sub-process scope's Compensations, NOT the root scope.
-func compensableSubProcessDef() *model.ProcessDefinition {
-	nested := &model.ProcessDefinition{
+func compensableSubProcessDef() *definition.ProcessDefinition {
+	nested := &definition.ProcessDefinition{
 		ID: "nested", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("book"), model.WithCompensation("cancel-booking")),
-			model.NewEndEvent("inner-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("inner-start"),
+			definition.NewServiceTask("inner-svc", definition.WithActionName("book"), definition.WithCompensation("cancel-booking")),
+			definition.NewEndEvent("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "outer-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sub", nested),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewSubProcess("sub", nested),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "end"},
 		},
@@ -251,28 +251,28 @@ func TestCompensationRecordInputIsSnapshotNotReference(t *testing.T) {
 //
 // The root user task keeps the instance Running after the sub-process exits, so
 // a CompensateRequested can be issued and must reach the now-hoisted inner record.
-func compensableSubThenRootDef() *model.ProcessDefinition {
-	nested := &model.ProcessDefinition{
+func compensableSubThenRootDef() *definition.ProcessDefinition {
+	nested := &definition.ProcessDefinition{
 		ID: "nested-hoist", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("book-inner"), model.WithCompensation("cancel-inner")),
-			model.NewEndEvent("inner-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("inner-start"),
+			definition.NewServiceTask("inner-svc", definition.WithActionName("book-inner"), definition.WithCompensation("cancel-inner")),
+			definition.NewEndEvent("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "outer-hoist", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sub", nested),
-			model.NewUserTask("rootUserTask", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewSubProcess("sub", nested),
+			definition.NewUserTask("rootUserTask", nil),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "rootUserTask"},
 			{ID: "f3", Source: "rootUserTask", Target: "end"},
@@ -347,29 +347,29 @@ func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 //
 //	Outer: start → sub → end
 //	Inner: inner-start → svc(CompensationAction:"x") → userTask → inner-end
-func openSubProcessWithParkDef() *model.ProcessDefinition {
-	nested := &model.ProcessDefinition{
+func openSubProcessWithParkDef() *definition.ProcessDefinition {
+	nested := &definition.ProcessDefinition{
 		ID: "nested-park", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("svc", model.WithActionName("book"), model.WithCompensation("x")),
-			model.NewUserTask("userTask", nil),
-			model.NewEndEvent("inner-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("inner-start"),
+			definition.NewServiceTask("svc", definition.WithActionName("book"), definition.WithCompensation("x")),
+			definition.NewUserTask("userTask", nil),
+			definition.NewEndEvent("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "svc"},
 			{ID: "if2", Source: "svc", Target: "userTask"},
 			{ID: "if3", Source: "userTask", Target: "inner-end"},
 		},
 	}
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "outer-park", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sub", nested),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewSubProcess("sub", nested),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "end"},
 		},
@@ -436,18 +436,18 @@ func TestCompensableActivityInsideOpenSubProcessScopeRecords(t *testing.T) {
 //
 // The user task keeps the process running after the three compensable steps
 // complete, giving us a stable state to issue CompensateRequested against.
-func threeCompensableDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func threeCompensableDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "three-comp", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("step1", model.WithActionName("a1"), model.WithCompensation("c1")),
-			model.NewServiceTask("step2", model.WithActionName("a2"), model.WithCompensation("c2")),
-			model.NewServiceTask("step3", model.WithActionName("a3"), model.WithCompensation("c3")),
-			model.NewUserTask("userTask", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("step1", definition.WithActionName("a1"), definition.WithCompensation("c1")),
+			definition.NewServiceTask("step2", definition.WithActionName("a2"), definition.WithCompensation("c2")),
+			definition.NewServiceTask("step3", definition.WithActionName("a3"), definition.WithCompensation("c3")),
+			definition.NewUserTask("userTask", nil),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "step1"},
 			{ID: "f2", Source: "step1", Target: "step2"},
 			{ID: "f3", Source: "step2", Target: "step3"},
@@ -627,29 +627,29 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 //
 // Completion order: rootSvc(1) → sub exits (inner-svc hoisted 2) → rootUserTask (parked).
 // Expected reverse-order: inner-comp first (most recent), root-comp second.
-func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
-	nested := &model.ProcessDefinition{
+func rootThenSubProcessCompensableDef() *definition.ProcessDefinition {
+	nested := &definition.ProcessDefinition{
 		ID: "nested-order", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("inner-book"), model.WithCompensation("inner-comp")),
-			model.NewEndEvent("inner-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("inner-start"),
+			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-book"), definition.WithCompensation("inner-comp")),
+			definition.NewEndEvent("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "order-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("rootSvc", model.WithActionName("root-book"), model.WithCompensation("root-comp")),
-			model.NewSubProcess("sub", nested),
-			model.NewUserTask("rootUserTask", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("rootSvc", definition.WithActionName("root-book"), definition.WithCompensation("root-comp")),
+			definition.NewSubProcess("sub", nested),
+			definition.NewUserTask("rootUserTask", nil),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "rootSvc"},
 			{ID: "f2", Source: "rootSvc", Target: "sub"},
 			{ID: "f3", Source: "sub", Target: "rootUserTask"},
@@ -753,40 +753,40 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 //	InnerSub: g-start → grandchildSvc(CompensationAction:"gc-comp") → g-end
 //
 // After both scopes close, the grandchild record must be reachable at root.
-func twoLevelNestedCompensableDef() *model.ProcessDefinition {
-	grandchild := &model.ProcessDefinition{
+func twoLevelNestedCompensableDef() *definition.ProcessDefinition {
+	grandchild := &definition.ProcessDefinition{
 		ID: "grandchild", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("g-start"),
-			model.NewServiceTask("grandchildSvc", model.WithActionName("gc-book"), model.WithCompensation("gc-comp")),
-			model.NewEndEvent("g-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("g-start"),
+			definition.NewServiceTask("grandchildSvc", definition.WithActionName("gc-book"), definition.WithCompensation("gc-comp")),
+			definition.NewEndEvent("g-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "gf1", Source: "g-start", Target: "grandchildSvc"},
 			{ID: "gf2", Source: "grandchildSvc", Target: "g-end"},
 		},
 	}
-	outerNested := &model.ProcessDefinition{
+	outerNested := &definition.ProcessDefinition{
 		ID: "outer-nested", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewSubProcess("innerSub", grandchild),
-			model.NewEndEvent("outer-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("inner-start"),
+			definition.NewSubProcess("innerSub", grandchild),
+			definition.NewEndEvent("outer-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "inner-start", Target: "innerSub"},
 			{ID: "of2", Source: "innerSub", Target: "outer-end"},
 		},
 	}
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "two-level", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("outerSub", outerNested),
-			model.NewUserTask("rootUserTask", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewSubProcess("outerSub", outerNested),
+			definition.NewUserTask("rootUserTask", nil),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "outerSub"},
 			{ID: "f2", Source: "outerSub", Target: "rootUserTask"},
 			{ID: "f3", Source: "rootUserTask", Target: "end"},

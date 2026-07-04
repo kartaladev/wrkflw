@@ -34,7 +34,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -47,12 +47,12 @@ func main() {
 	// The reminder interval is an expr-lang duration string (parsed by
 	// time.ParseDuration), so it is a quoted Go-duration literal. The reminder
 	// action "nudge-reviewer" runs fire-and-forget once per interval.
-	def, err := model.NewDefinition("periodic-review", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewUserTask("review", []string{"reviewer"},
-			model.WithReminder(`"30m"`, "nudge-reviewer"),
+	def, err := definition.NewDefinition("periodic-review", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewUserTask("review", []string{"reviewer"},
+			definition.WithReminder(`"30m"`, "nudge-reviewer"),
 		)).
-		Add(model.NewEndEvent("end")).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "review").
 		Connect("review", "end").
 		Build()

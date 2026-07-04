@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -75,16 +75,16 @@ func TestHandlerGetInstanceSnapshotNotFound(t *testing.T) {
 // actionMetadataProcess returns a definition built via DefinitionBuilder that
 // has a definition-scoped action ("scoped-action") and an inline ServiceTask
 // ("svc-inline"). Used to assert that snapshot responses surface action metadata.
-func actionMetadataProcess(t *testing.T) *model.ProcessDefinition {
+func actionMetadataProcess(t *testing.T) *definition.ProcessDefinition {
 	t.Helper()
 	inlineAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return map[string]any{"done": true}, nil
 	})
-	def, err := model.NewDefinition("action-meta", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("svc-named", model.WithActionName("scoped-action"))).
-		Add(model.NewServiceTask("svc-inline", model.WithAction(inlineAction))).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("action-meta", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewServiceTask("svc-named", definition.WithActionName("scoped-action"))).
+		Add(definition.NewServiceTask("svc-inline", definition.WithAction(inlineAction))).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "svc-named").
 		Connect("svc-named", "svc-inline").
 		Connect("svc-inline", "end").

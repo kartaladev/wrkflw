@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -71,15 +71,15 @@ func indexOfInvokeAction(cmds []engine.Command, name string) int {
 func TestCancelHandler_SingleActiveNode(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "ch-single", Version: 1,
 		CancelActions: []string{"global-cleanup"},
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("user", nil, model.WithCancelHandler("release-hold")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("user", nil, definition.WithCancelHandler("release-hold")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "user"},
 			{ID: "f2", Source: "user", Target: "end"},
 		},
@@ -117,17 +117,17 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
 	// start → parallel-fork → (svc-with-handler | svc-no-handler)
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "ch-parallel", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
-			model.NewServiceTask("svc-a", model.WithActionName("do-a"), model.WithCancelHandler("cleanup-a")),
-			model.NewServiceTask("svc-b", model.WithActionName("do-b")),
-			model.NewParallelGateway("join"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewParallelGateway("fork"),
+			definition.NewServiceTask("svc-a", definition.WithActionName("do-a"), definition.WithCancelHandler("cleanup-a")),
+			definition.NewServiceTask("svc-b", definition.WithActionName("do-b")),
+			definition.NewParallelGateway("join"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},
 			{ID: "f1", Source: "fork", Target: "svc-a"},
 			{ID: "f2", Source: "fork", Target: "svc-b"},
@@ -164,28 +164,28 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
 	// Nested definition: start → inner-svc (with handler) → end
-	innerDef := &model.ProcessDefinition{
+	innerDef := &definition.ProcessDefinition{
 		ID: "inner", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("inner-start"),
-			model.NewServiceTask("inner-svc", model.WithActionName("inner-action"), model.WithCancelHandler("inner-cleanup")),
-			model.NewEndEvent("inner-end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("inner-start"),
+			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-action"), definition.WithCancelHandler("inner-cleanup")),
+			definition.NewEndEvent("inner-end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
 
 	// Outer definition: start → sub-process → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "ch-sub", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSubProcess("sub", innerDef),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewSubProcess("sub", innerDef),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "end"},
 		},
@@ -235,15 +235,15 @@ func TestCancelHandler_WithCompensation(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
 	// start → compensable-svc → user-task (with CancelHandler) → end
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "ch-comp", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewUserTask("user", nil, model.WithCancelHandler("release-hold")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
+			definition.NewUserTask("user", nil, definition.WithCancelHandler("release-hold")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "user"},
 			{ID: "f3", Source: "user", Target: "end"},
@@ -294,15 +294,15 @@ func TestCancelHandler_WithCompensation(t *testing.T) {
 func TestCancelHandler_NoneSet(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "ch-none", Version: 1,
 		CancelActions: []string{"global-cleanup"},
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("user", nil), // no CancelHandler
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("user", nil), // no CancelHandler
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "user"},
 			{ID: "f2", Source: "user", Target: "end"},
 		},
@@ -330,15 +330,15 @@ func TestCancelHandler_NoneSet(t *testing.T) {
 func TestCancelHandler_Determinism(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "ch-det", Version: 1,
 		CancelActions: []string{"def-action"},
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("work"), model.WithCancelHandler("node-cleanup")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("work"), definition.WithCancelHandler("node-cleanup")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},

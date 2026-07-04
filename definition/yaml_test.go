@@ -1,11 +1,11 @@
-package model_test
+package definition_test
 
 import (
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 func TestParseYAML(t *testing.T) {
@@ -13,7 +13,7 @@ func TestParseYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	ld, err := model.ParseYAML(data)
+	ld, err := definition.ParseYAML(data)
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -24,7 +24,7 @@ func TestParseYAML(t *testing.T) {
 	if def.ID != "order" || len(def.Nodes) != 3 {
 		t.Fatalf("def = %+v", def)
 	}
-	st, ok := def.Nodes[1].(model.ServiceTask)
+	st, ok := def.Nodes[1].(definition.ServiceTask)
 	if !ok || st.Action != "charge-card" || st.CompensationAction != "refund-card" {
 		t.Fatalf("node[1] = %#v", def.Nodes[1])
 	}
@@ -35,7 +35,7 @@ func TestParseYAMLFlows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	ld, err := model.ParseYAML(data)
+	ld, err := definition.ParseYAML(data)
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestLoadYAML(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = f.Close() })
 
-	ld, err := model.LoadYAML(f)
+	ld, err := definition.LoadYAML(f)
 	if err != nil {
 		t.Fatalf("LoadYAML: %v", err)
 	}
@@ -82,7 +82,7 @@ nodes:
     action: do-something
 flows: []
 `
-	ld, err := model.ParseYAML([]byte(yamlInput))
+	ld, err := definition.ParseYAML([]byte(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: unexpected parse error: %v", err)
 	}
@@ -107,7 +107,7 @@ cancelActions:
   - cleanup-a
   - cleanup-b
 `
-	ld, err := model.ParseYAML([]byte(yamlInput))
+	ld, err := definition.ParseYAML([]byte(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -144,7 +144,7 @@ flows:
   - { id: f4, source: a, target: e }
   - { id: f5, source: b, target: e }
 `
-	ld, err := model.ParseYAML([]byte(yamlInput))
+	ld, err := definition.ParseYAML([]byte(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -163,7 +163,7 @@ flows:
 }
 
 func TestParseYAMLBadYAML(t *testing.T) {
-	_, err := model.ParseYAML([]byte("not: valid: yaml: ["))
+	_, err := definition.ParseYAML([]byte("not: valid: yaml: ["))
 	if err == nil {
 		t.Fatal("expected parse error for invalid YAML")
 	}
@@ -190,7 +190,7 @@ flows:
 `
 
 	// Parse the YAML and build.
-	ld, err := model.ParseYAML([]byte(yamlInput))
+	ld, err := definition.ParseYAML([]byte(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -201,9 +201,9 @@ flows:
 
 	// Verify the parsed UserTask has the correct eligibilityPrivileges.
 	approveNode := parsed.Nodes[1]
-	ut, ok := approveNode.(model.UserTask)
+	ut, ok := approveNode.(definition.UserTask)
 	if !ok {
-		t.Fatalf("node[1] is %T, want model.UserTask", approveNode)
+		t.Fatalf("node[1] is %T, want definition.UserTask", approveNode)
 	}
 	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "finance-task claim" {
 		t.Fatalf("EligibilityPrivileges = %v, want [finance-task claim]", ut.EligibilityPrivileges)

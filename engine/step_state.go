@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // defForScope returns the ProcessDefinition that a token in the given scope
@@ -15,7 +15,7 @@ import (
 //
 // Returns an error if the scope or its subprocess definition cannot be resolved
 // (defensive; unreachable for a well-formed state that was built by Step).
-func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string) (*model.ProcessDefinition, error) {
+func defForScope(top *definition.ProcessDefinition, s *InstanceState, scopeID string) (*definition.ProcessDefinition, error) {
 	if scopeID == "" {
 		return top, nil
 	}
@@ -32,12 +32,12 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 		return nil, fmt.Errorf("workflow-engine: defForScope: sub-process node %q not found in parent definition", scope.NodeID)
 	}
 	switch n := node.(type) {
-	case model.SubProcess:
+	case definition.SubProcess:
 		if n.Subprocess == nil {
 			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
 		}
 		return n.Subprocess, nil
-	case model.EventSubProcess:
+	case definition.EventSubProcess:
 		if n.Subprocess == nil {
 			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
 		}
@@ -160,7 +160,7 @@ func (s *InstanceState) setVisitActor(tokenID, nodeID, actorID string) {
 	}
 }
 
-func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *Token, at time.Time) {
+func (s *InstanceState) moveAlongSingleFlow(def *definition.ProcessDefinition, tok *Token, at time.Time) {
 	out := def.Outgoing(tok.NodeID)
 	s.closeVisit(tok.ID, tok.NodeID, at)
 	if len(out) == 0 {
@@ -212,16 +212,16 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 // effectiveRetryPolicy returns the retry policy to apply for the given node and
 // step options, plus a boolean indicating whether a policy is in effect.
 // Precedence: node-level policy > StepOptions.DefaultRetryPolicy > none.
-// The returned policy has been normalized via [model.RetryPolicy.Normalize].
-func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, bool) {
-	rp := model.RetryPolicyOf(node)
+// The returned policy has been normalized via [definition.RetryPolicy.Normalize].
+func effectiveRetryPolicy(node definition.Node, opt StepOptions) (definition.RetryPolicy, bool) {
+	rp := definition.RetryPolicyOf(node)
 	switch {
 	case rp != nil:
 		return rp.Normalize(), true
 	case opt.DefaultRetryPolicy != nil:
 		return opt.DefaultRetryPolicy.Normalize(), true
 	default:
-		return model.RetryPolicy{}, false
+		return definition.RetryPolicy{}, false
 	}
 }
 
@@ -258,7 +258,7 @@ func copyVars(in map[string]any) map[string]any {
 // operations on the same node; stamping instanceID:nodeID on them would
 // collide with the primary action's key and could cause an external system to
 // wrongly dedup distinct operations.
-func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
+func serviceActionInput(s *InstanceState, node definition.Node) map[string]any {
 	in := copyVars(s.Variables)
 	if in == nil {
 		in = map[string]any{}

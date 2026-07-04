@@ -11,7 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -38,14 +38,14 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, tasks, nil))
 
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "cancel-evt", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("wait", []string{"r"}),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("wait", []string{"r"}),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},
 			{ID: "f2", Source: "wait", Target: "end"},
 		},
@@ -70,13 +70,13 @@ func TestCompleteEmitsInstanceCompleted(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc))
 
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "complete-evt", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "end"},
 		},
 	}

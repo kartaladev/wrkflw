@@ -10,22 +10,22 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // timerDef returns a linear definition:
 //
 //	Start → TimerCatch("1h") → ServiceTask(notify) → End
-func timerDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func timerDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-timer", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
-			model.NewServiceTask("notify", model.WithActionName("send-notification")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewIntermediateCatchEvent("wait1h", definition.WithTimerDuration(`"1h"`)),
+			definition.NewServiceTask("notify", definition.WithActionName("send-notification")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
 			{ID: "f2", Source: "wait1h", Target: "notify"},
 			{ID: "f3", Source: "notify", Target: "end"},
@@ -153,16 +153,16 @@ func TestTimerFiredStaleTokenIsNoop(t *testing.T) {
 //	userTask → (escalate flow) → escalateNode
 //
 // "escalate" is the flow id from userTask to escalateNode (the alternative end event).
-func deadlineDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func deadlineDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-deadline", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("userTask", []string{"manager"}, model.WithDeadline(`"3h"`, "escalate", "notify")),
-			model.NewEndEvent("normalEnd"),
-			model.NewEndEvent("escalateNode"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify")),
+			definition.NewEndEvent("normalEnd"),
+			definition.NewEndEvent("escalateNode"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
 			{ID: "f2", Source: "userTask", Target: "normalEnd"},
 			{ID: "escalate", Source: "userTask", Target: "escalateNode"},
@@ -341,16 +341,16 @@ func TestUserTaskCompletedBeforeDeadlineIgnoresTimer(t *testing.T) {
 //
 //	Start → userTask → normalEnd
 //	userTask → (escalate flow) → escalateEnd
-func reminderDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func reminderDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "p-reminder", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("userTask", []string{"manager"}, model.WithDeadline(`"3h"`, "escalate", "notify"), model.WithReminder(`"1h"`, "remind")),
-			model.NewEndEvent("normalEnd"),
-			model.NewEndEvent("escalateNode"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify"), definition.WithReminder(`"1h"`, "remind")),
+			definition.NewEndEvent("normalEnd"),
+			definition.NewEndEvent("escalateNode"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
 			{ID: "f2", Source: "userTask", Target: "normalEnd"},
 			{ID: "escalate", Source: "userTask", Target: "escalateNode"},
@@ -552,15 +552,15 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 // This proves the action field is genuinely optional.
 func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
 	// Use a definition with ReminderEvery but no ReminderAction.
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID:      "p-reminder-noaction",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewUserTask("userTask", []string{"manager"}, model.WithReminder(`"1h"`, "")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewUserTask("userTask", []string{"manager"}, definition.WithReminder(`"1h"`, "")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
 			{ID: "f2", Source: "userTask", Target: "end"},
 		},
@@ -689,18 +689,18 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 	// directly (no join) — the important invariant is that two tokens exist
 	// simultaneously: one at userTask (WaitingCommand on taskToken, deadline timer in
 	// s.Timers) and one at serviceTask (WaitingCommand on commandID).
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID:      "p-parallel-deadline",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
-			model.NewUserTask("userTask", []string{"manager"}, model.WithDeadline(`"3h"`, "esc", "notify")),
-			model.NewServiceTask("svcTask", model.WithActionName("work")),
-			model.NewEndEvent("endA"),
-			model.NewEndEvent("endB"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewParallelGateway("fork"),
+			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "esc", "notify")),
+			definition.NewServiceTask("svcTask", definition.WithActionName("work")),
+			definition.NewEndEvent("endA"),
+			definition.NewEndEvent("endB"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "userTask"},
 			{ID: "f3", Source: "fork", Target: "svcTask"},

@@ -12,7 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -20,16 +20,16 @@ import (
 // receiverDef returns a minimal process that parks on a ReceiveTask awaiting "OrderPlaced":
 //
 //	start → receive("OrderPlaced") → end
-func receiverDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func receiverDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "receiver",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewReceiveTask("recv-order", "OrderPlaced"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewReceiveTask("recv-order", "OrderPlaced"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv-order"},
 			{ID: "f2", Source: "recv-order", Target: "end"},
 		},
@@ -39,16 +39,16 @@ func receiverDef() *model.ProcessDefinition {
 // senderDef returns a minimal process that sends "OrderPlaced" via a SendTask:
 //
 //	start → send("OrderPlaced") → end
-func senderDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func senderDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID:      "sender",
 		Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewSendTask("send-order", "OrderPlaced"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewSendTask("send-order", "OrderPlaced"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "send-order"},
 			{ID: "f2", Source: "send-order", Target: "end"},
 		},

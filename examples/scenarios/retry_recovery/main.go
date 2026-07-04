@@ -38,7 +38,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -55,18 +55,18 @@ func main() {
 
 	// The action is charged up to 5 times with exponential backoff. It recovers
 	// on attempt 3, so it never exhausts the budget.
-	def, err := model.NewDefinition("payment", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewServiceTask("charge",
-			model.WithActionName("charge-card"),
-			model.WithRetryPolicy(&model.RetryPolicy{
+	def, err := definition.NewDefinition("payment", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewServiceTask("charge",
+			definition.WithActionName("charge-card"),
+			definition.WithRetryPolicy(&definition.RetryPolicy{
 				MaxAttempts:     5,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,
 				MaxInterval:     time.Minute,
 			}),
 		)).
-		Add(model.NewEndEvent("end")).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "charge").
 		Connect("charge", "end").
 		Build()

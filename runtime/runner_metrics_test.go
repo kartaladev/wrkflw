@@ -15,7 +15,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -62,15 +62,15 @@ func dpEmitMatch(attrs attribute.Set, filter map[string]string) bool {
 
 // failingActionDef builds start → task("fail") → end with no retry policy,
 // so the first (and only) action failure drives the instance to StatusFailed.
-func failingActionDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func failingActionDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "failing-action-metrics", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("task", model.WithActionName("fail")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("task", definition.WithActionName("fail")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -78,15 +78,15 @@ func failingActionDef() *model.ProcessDefinition {
 }
 
 // timerMetricsDef builds start → timer-catch("1h") → end.
-func timerMetricsDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func timerMetricsDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "timer-metrics", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewIntermediateCatchEvent("wait1h", model.WithTimerDuration(`"1h"`)),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewIntermediateCatchEvent("wait1h", definition.WithTimerDuration(`"1h"`)),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
 			{ID: "f2", Source: "wait1h", Target: "end"},
 		},

@@ -12,7 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -21,17 +21,17 @@ import (
 // The conditional flow's expression calls a process-variable function block(),
 // so a test can drive the gateway evaluation into a runaway by supplying a
 // block() that never returns.
-func gatewayBlockDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func gatewayBlockDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "gw-block", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewExclusiveGateway("xor"),
-			model.NewServiceTask("big", model.WithActionName("noop")),
-			model.NewServiceTask("small", model.WithActionName("noop")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewExclusiveGateway("xor"),
+			definition.NewServiceTask("big", definition.WithActionName("noop")),
+			definition.NewServiceTask("small", definition.WithActionName("noop")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
 			{ID: "f2", Source: "xor", Target: "big", Condition: "block()"},
 			{ID: "f3", Source: "xor", Target: "small", IsDefault: true},
@@ -96,17 +96,17 @@ func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 
 // exclusiveRuntimeDef mirrors the engine exclusiveDef but with noop actions so a
 // runtime Runner can execute it end-to-end.
-func exclusiveRuntimeDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func exclusiveRuntimeDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "xor-rt", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewExclusiveGateway("xor"),
-			model.NewServiceTask("big", model.WithActionName("noop")),
-			model.NewServiceTask("small", model.WithActionName("noop")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewExclusiveGateway("xor"),
+			definition.NewServiceTask("big", definition.WithActionName("noop")),
+			definition.NewServiceTask("small", definition.WithActionName("noop")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
 			{ID: "f2", Source: "xor", Target: "big", Condition: "amount > 100"},
 			{ID: "f3", Source: "xor", Target: "small", IsDefault: true},

@@ -30,7 +30,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -40,10 +40,10 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, err := model.NewDefinition("expense-approval", 1).
-		Add(model.NewStartEvent("start")).
-		Add(model.NewUserTask("approve", []string{"manager"})).
-		Add(model.NewEndEvent("end")).
+	def, err := definition.NewDefinition("expense-approval", 1).
+		Add(definition.NewStartEvent("start")).
+		Add(definition.NewUserTask("approve", []string{"manager"})).
+		Add(definition.NewEndEvent("end")).
 		Connect("start", "approve").
 		Connect("approve", "end").
 		Build()

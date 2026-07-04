@@ -8,24 +8,24 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // sendTaskDef: start → send(msg "m") → end. The SendTask optionally carries a
 // correlation-key expression.
-func sendTaskDef(corr string) *model.ProcessDefinition {
-	send := model.NewSendTask("send", "m")
+func sendTaskDef(corr string) *definition.ProcessDefinition {
+	send := definition.NewSendTask("send", "m")
 	if corr != "" {
-		send = model.NewSendTask("send", "m", model.WithCorrelationKey(corr))
+		send = definition.NewSendTask("send", "m", definition.WithCorrelationKey(corr))
 	}
-	return &model.ProcessDefinition{
+	return &definition.ProcessDefinition{
 		ID: "p-send", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
 			send,
-			model.NewEndEvent("end"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "send"},
 			{ID: "f2", Source: "send", Target: "end"},
 		},

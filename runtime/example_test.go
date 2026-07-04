@@ -9,19 +9,19 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
-func linearDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func linearDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "greeting", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("greet", model.WithActionName("greet")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("greet", definition.WithActionName("greet")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},
@@ -29,17 +29,17 @@ func linearDef() *model.ProcessDefinition {
 }
 
 func TestRunnerExecutesParallelDiamond(t *testing.T) {
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "diamond", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
-			model.NewServiceTask("a", model.WithActionName("a")),
-			model.NewServiceTask("b", model.WithActionName("b")),
-			model.NewParallelGateway("join"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewParallelGateway("fork"),
+			definition.NewServiceTask("a", definition.WithActionName("a")),
+			definition.NewServiceTask("b", definition.WithActionName("b")),
+			definition.NewParallelGateway("join"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "a"},
 			{ID: "f3", Source: "fork", Target: "b"},
@@ -73,18 +73,18 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 }
 
 func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "ord", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewInclusiveGateway("orsplit"),
-			model.NewServiceTask("ta", model.WithActionName("a")),
-			model.NewServiceTask("tb", model.WithActionName("b")),
-			model.NewServiceTask("tc", model.WithActionName("c")),
-			model.NewInclusiveGateway("orjoin"),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewInclusiveGateway("orsplit"),
+			definition.NewServiceTask("ta", definition.WithActionName("a")),
+			definition.NewServiceTask("tb", definition.WithActionName("b")),
+			definition.NewServiceTask("tc", definition.WithActionName("c")),
+			definition.NewInclusiveGateway("orjoin"),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},
 			{ID: "f2", Source: "orsplit", Target: "ta", Condition: "a > 0"},
 			{ID: "f3", Source: "orsplit", Target: "tb", Condition: "b > 0"},

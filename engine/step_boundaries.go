@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // armBoundaries finds all KindBoundaryEvent nodes with AttachedTo == hostNode,
@@ -17,17 +17,17 @@ import (
 // A bad TimerDuration expression is returned as a wrapped error — consistent with
 // the intermediate-timer and deadline paths — so callers can fail fast rather than
 // silently no-arming the boundary.
-func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
+func armBoundaries(def *definition.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
-		n, ok := raw.(model.BoundaryEvent)
+		n, ok := raw.(definition.BoundaryEvent)
 		if !ok || n.AttachedTo != hostNode {
 			continue
 		}
 		// Find the boundary's single outgoing flow.
 		outs := def.Outgoing(n.ID())
 		if len(outs) == 0 {
-			continue // unreachable if model.Validate passes
+			continue // unreachable if definition.Validate passes
 		}
 		flowID := outs[0].ID
 
@@ -85,7 +85,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 //  3. Remove ONLY this boundary arm (fired once; do not re-arm — repeating out of scope).
 //  4. Place an additional Active token at the boundary's outgoing flow target.
 //  5. Drive forward (the new token).
-func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func fireBoundaryArm(def *definition.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Find the host token by ID (not by AwaitCommand — the host token parks on
 	// taskToken/cmdID, not on the boundary timer). If the token is gone (already
 	// consumed by another path), this is a late fire — clean no-op.
@@ -113,7 +113,7 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 		}
 	}
 	if flowTarget == "" {
-		// No target: unreachable if model.Validate passes (boundary must have outgoing flow).
+		// No target: unreachable if definition.Validate passes (boundary must have outgoing flow).
 		return nil, fmt.Errorf("workflow-engine: boundary %q: outgoing flow %q not found", ba.BoundaryNode, ba.Flow)
 	}
 

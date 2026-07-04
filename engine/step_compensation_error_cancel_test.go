@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -23,16 +23,16 @@ import (
 // cancelWithCompDef: start → compensable svc → user task (parked) → end
 //
 //	The user task parks execution so CancelRequested finds it mid-flight.
-func cancelWithCompDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func cancelWithCompDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "cancel-comp-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewUserTask("user", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
+			definition.NewUserTask("user", nil),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "user"},
 			{ID: "f3", Source: "user", Target: "end"},
@@ -43,16 +43,16 @@ func cancelWithCompDef() *model.ProcessDefinition {
 // errorWithCompDef: start → compensable svc1 → failing svc2 (no retry/boundary) → end
 //
 //	svc2's ActionFailed propagates unhandled, triggering the terminal path.
-func errorWithCompDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func errorWithCompDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "error-comp-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc1", model.WithActionName("charge"), model.WithCompensation("refund")),
-			model.NewServiceTask("svc2", model.WithActionName("notify")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc1", definition.WithActionName("charge"), definition.WithCompensation("refund")),
+			definition.NewServiceTask("svc2", definition.WithActionName("notify")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc1"},
 			{ID: "f2", Source: "svc1", Target: "svc2"},
 			{ID: "f3", Source: "svc2", Target: "end"},
@@ -63,17 +63,17 @@ func errorWithCompDef() *model.ProcessDefinition {
 // twoCompNodesDef: start → compensable svc1 → compensable svc2 → user task → end
 //
 //	Used for best-effort test: two compensation records, first comp action fails.
-func twoCompNodesDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func twoCompNodesDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "two-comp-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc1", model.WithActionName("step1"), model.WithCompensation("undo1")),
-			model.NewServiceTask("svc2", model.WithActionName("step2"), model.WithCompensation("undo2")),
-			model.NewUserTask("user", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc1", definition.WithActionName("step1"), definition.WithCompensation("undo1")),
+			definition.NewServiceTask("svc2", definition.WithActionName("step2"), definition.WithCompensation("undo2")),
+			definition.NewUserTask("user", nil),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc1"},
 			{ID: "f2", Source: "svc1", Target: "svc2"},
 			{ID: "f3", Source: "svc2", Target: "user"},
@@ -228,15 +228,15 @@ func TestErrorWithCompensation(t *testing.T) {
 func TestEmptyRecordsCancelImmediate(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 	// Non-compensable process: no CompensationAction on svc.
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "no-comp-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge")),
-			model.NewUserTask("user", nil),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge")),
+			definition.NewUserTask("user", nil),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "user"},
 			{ID: "f3", Source: "user", Target: "end"},
@@ -268,14 +268,14 @@ func TestEmptyRecordsCancelImmediate(t *testing.T) {
 // compensation records still sets StatusFailed immediately (unchanged behaviour).
 func TestEmptyRecordsErrorImmediate(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
-	def := &model.ProcessDefinition{
+	def := &definition.ProcessDefinition{
 		ID: "no-comp-err-proc", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("charge")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("charge")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},
@@ -455,28 +455,28 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 	at := time.Date(2026, 6, 23, 11, 0, 0, 0, time.UTC)
 	// Import compensableSubThenRootDef via package-level access is not possible
 	// here (different file). Inline the same definition.
-	nested := func() *model.ProcessDefinition {
-		inner := &model.ProcessDefinition{
+	nested := func() *definition.ProcessDefinition {
+		inner := &definition.ProcessDefinition{
 			ID: "no-double-nested", Version: 1,
-			Nodes: []model.Node{
-				model.NewStartEvent("inner-start"),
-				model.NewServiceTask("inner-svc", model.WithActionName("book-inner"), model.WithCompensation("cancel-inner")),
-				model.NewEndEvent("inner-end"),
+			Nodes: []definition.Node{
+				definition.NewStartEvent("inner-start"),
+				definition.NewServiceTask("inner-svc", definition.WithActionName("book-inner"), definition.WithCompensation("cancel-inner")),
+				definition.NewEndEvent("inner-end"),
 			},
-			Flows: []model.SequenceFlow{
+			Flows: []definition.SequenceFlow{
 				{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 				{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 			},
 		}
-		return &model.ProcessDefinition{
+		return &definition.ProcessDefinition{
 			ID: "no-double-outer", Version: 1,
-			Nodes: []model.Node{
-				model.NewStartEvent("start"),
-				model.NewSubProcess("sub", inner),
-				model.NewUserTask("rootUserTask", nil),
-				model.NewEndEvent("end"),
+			Nodes: []definition.Node{
+				definition.NewStartEvent("start"),
+				definition.NewSubProcess("sub", inner),
+				definition.NewUserTask("rootUserTask", nil),
+				definition.NewEndEvent("end"),
 			},
-			Flows: []model.SequenceFlow{
+			Flows: []definition.SequenceFlow{
 				{ID: "f1", Source: "start", Target: "sub"},
 				{ID: "f2", Source: "sub", Target: "rootUserTask"},
 				{ID: "f3", Source: "rootUserTask", Target: "end"},

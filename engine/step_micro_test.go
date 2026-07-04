@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // microForkDef returns a process definition without end events:
@@ -20,16 +20,16 @@ import (
 // this simpler variant is used for Micro-mode fork tests where we only care
 // about the parallel service tasks and want no end-event noise. Both svc-a and
 // svc-b park awaiting InvokeAction completion.
-func microForkDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func microForkDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "mfork", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewParallelGateway("fork"),
-			model.NewServiceTask("svc-a", model.WithActionName("do-a")),
-			model.NewServiceTask("svc-b", model.WithActionName("do-b")),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewParallelGateway("fork"),
+			definition.NewServiceTask("svc-a", definition.WithActionName("do-a")),
+			definition.NewServiceTask("svc-b", definition.WithActionName("do-b")),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "svc-a"},
 			{ID: "f3", Source: "fork", Target: "svc-b"},
@@ -39,15 +39,15 @@ func microForkDef() *model.ProcessDefinition {
 
 // linearEndDef returns a simple linear process: start → svc → end.
 // Used for the convergence test so we can drive to completion with Micro steps.
-func linearEndDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
+func linearEndDef() *definition.ProcessDefinition {
+	return &definition.ProcessDefinition{
 		ID: "lend", Version: 1,
-		Nodes: []model.Node{
-			model.NewStartEvent("start"),
-			model.NewServiceTask("svc", model.WithActionName("work")),
-			model.NewEndEvent("end"),
+		Nodes: []definition.Node{
+			definition.NewStartEvent("start"),
+			definition.NewServiceTask("svc", definition.WithActionName("work")),
+			definition.NewEndEvent("end"),
 		},
-		Flows: []model.SequenceFlow{
+		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},
