@@ -69,6 +69,17 @@ func TestStartInstance(t *testing.T) {
 				}
 			},
 		},
+		"unknown definition → service error propagated": {
+			in: httpcore.StartInput{DefRef: "no-such-def", InstanceID: "start-err-1"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err == nil {
+					t.Fatal("want error for unknown definition")
+				}
+				if status != 0 || body != nil {
+					t.Fatalf("want (0, nil) on error, got (%d, %v)", status, body)
+				}
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -287,6 +298,18 @@ func TestDeliverSignal(t *testing.T) {
 				}
 			},
 		},
+		"instance not found → service error propagated": {
+			setup: func(_ service.Service) string { return "no-such-instance" },
+			in:    httpcore.SignalInput{Signal: "approved"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err == nil {
+					t.Fatal("want error for missing instance")
+				}
+				if status != 0 || body != nil {
+					t.Fatalf("want (0, nil) on error, got (%d, %v)", status, body)
+				}
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -355,6 +378,18 @@ func TestDeliverMessage(t *testing.T) {
 				}
 				if body != nil {
 					t.Fatalf("want nil body, got %v", body)
+				}
+			},
+		},
+		"unknown definition → service error propagated": {
+			setup: func(_ service.Service) {},
+			in:    httpcore.MessageInput{DefRef: "no-such-def:1", Name: "order-shipped"},
+			assert: func(t *testing.T, status int, body any, err error) {
+				if err == nil {
+					t.Fatal("want error for unknown definition")
+				}
+				if status != 0 || body != nil {
+					t.Fatalf("want (0, nil) on error, got (%d, %v)", status, body)
 				}
 			},
 		},
