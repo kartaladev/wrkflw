@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,8 +28,18 @@ func init() {
 	ginlib.SetMode(ginlib.TestMode)
 }
 
-// post is a test helper that sends a POST with a JSON body to the given server path.
-func post(t *testing.T, srv *httptest.Server, path string, body any) *http.Response {
+// httpResp is a lightweight test-response value that holds the status code
+// and the fully-read body bytes. Using this instead of *http.Response means the
+// underlying connection is released immediately and the bodyclose linter is
+// satisfied without requiring callers to manage Body.Close().
+type httpResp struct {
+	StatusCode int
+	Body       []byte
+}
+
+// post sends a POST with a JSON body to the given server path, reads the full
+// response body, and returns an httpResp.
+func post(t *testing.T, srv *httptest.Server, path string, body any) httpResp {
 	t.Helper()
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -38,26 +49,54 @@ func post(t *testing.T, srv *httptest.Server, path string, body any) *http.Respo
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}
-	return resp
+	defer resp.Body.Close() //nolint:errcheck
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	return httpResp{StatusCode: resp.StatusCode, Body: bodyBytes}
 }
 
-// get is a test helper that sends a GET to the given server path.
-func get(t *testing.T, srv *httptest.Server, path string) *http.Response {
+// get sends a GET to the given server path, reads the full response body, and
+// returns an httpResp.
+func get(t *testing.T, srv *httptest.Server, path string) httpResp {
 	t.Helper()
 	resp, err := srv.Client().Get(srv.URL + path)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}
-	return resp
+	defer resp.Body.Close() //nolint:errcheck
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	return httpResp{StatusCode: resp.StatusCode, Body: bodyBytes}
 }
 
-// decodeJSON decodes the response body into dst.
-func decodeJSON(t *testing.T, resp *http.Response, dst any) {
+// drainClose is a convenience helper used in tests that call srv.Client().Do
+// directly and need to close the body without a bodyclose warning.
+func drainClose(resp *http.Response) {
+	if resp != nil && resp.Body != nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+}
+
+// decodeJSON decodes the response body bytes into dst.
+func decodeJSON(t *testing.T, resp httpResp, dst any) {
 	t.Helper()
-	defer resp.Body.Close()
-	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
+	if err := json.Unmarshal(resp.Body, dst); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
+}
+
+// newJSONRequest builds an HTTP request with the given method, URL, and JSON body.
+func newJSONRequest(t *testing.T, method, url string, body any) (*http.Request, error) {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(t.Context(), method, url, bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
 }
 
 // newSrv mounts InstanceRoutes+TaskRoutes+MessageRoutes onto a fresh gin engine
@@ -438,14 +477,22 @@ func TestAdminRoutes_AbsentByDefault(t *testing.T) {
 	}
 }
 
-// fakeListInstances is a minimal fake for service.Service that only
-// satisfies ListInstances, used to test AdminRoutes in isolation.
+// fakeAdminSvc is a minimal fake for service.Service used to test AdminRoutes
+// in isolation. It implements the methods called by the admin handler funcs.
 type fakeAdminSvc struct {
 	service.Service
 }
 
 func (fakeAdminSvc) ListInstances(_ context.Context, _ kernel.InstanceFilter) (kernel.InstancePage, error) {
 	return kernel.InstancePage{Items: []kernel.InstanceSummary{}}, nil
+}
+
+func (fakeAdminSvc) CancelInstance(_ context.Context, _ service.CancelInstanceRequest) (engine.InstanceState, error) {
+	return engine.InstanceState{}, fmt.Errorf("workflow-kernel: instance not found")
+}
+
+func (fakeAdminSvc) ResolveIncident(_ context.Context, _ service.ResolveIncidentRequest) (engine.InstanceState, error) {
+	return engine.InstanceState{}, fmt.Errorf("workflow-kernel: instance not found")
 }
 
 func TestAdminRoutes_ListInstances_200(t *testing.T) {
