@@ -4,6 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     commit-message:
       prefix: "chore(deps)"
@@ -11,11 +13,6 @@ updates:
       otel:
         patterns:
           - "go.opentelemetry.io/*"
-      grpc-protobuf:
-        patterns:
-          - "google.golang.org/grpc"
-          - "google.golang.org/protobuf"
-          - "google.golang.org/genproto*"
     ignore:
       # gocron is HARD-PINNED to v2.21.2 per CLAUDE.md / ADR — do not let
       # Dependabot bump it. Remove this entry only via an ADR.
@@ -25,5 +22,7 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "chore(ci)"

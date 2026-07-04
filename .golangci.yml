@@ -39,9 +39,6 @@ linters:
         linters:
           - gosec
         text: "G115: integer overflow conversion int -> int16"
-    paths:
-      # Generated protobuf/gRPC code — do not lint.
-      - transport/grpc/workflowpb
 formatters:
   enable:
     - gofmt
@@ -50,6 +47,3 @@ formatters:
       simplify: true
   exclusions:
     generated: lax
-    paths:
-      # Generated protobuf/gRPC code — do not format.
-      - transport/grpc/workflowpb
