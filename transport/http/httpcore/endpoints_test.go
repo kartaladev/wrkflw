@@ -83,7 +83,6 @@ func TestStartInstance(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -136,7 +135,6 @@ func TestGetInstance(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -190,7 +188,6 @@ func TestGetInstanceSnapshot(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -244,7 +241,6 @@ func TestGetActionableView(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -313,7 +309,6 @@ func TestDeliverSignal(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -396,7 +391,6 @@ func TestDeliverMessage(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -449,7 +443,6 @@ func TestClaimTask(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			h, svc := transporttest.NewHarness(t, def)
@@ -513,7 +506,6 @@ func TestCompleteTask(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			h, svc := transporttest.NewHarness(t, def)
@@ -590,7 +582,6 @@ func TestReassignTask(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			h, svc := transporttest.NewHarness(t, def)

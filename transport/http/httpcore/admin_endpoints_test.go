@@ -47,7 +47,7 @@ func (f *fakePolicyAdmin) ListRoles(ctx context.Context) ([]service.RoleBinding,
 
 // fakeDLQAdmin is a hand-written test double for service.DeadLetterAdmin.
 type fakeDLQAdmin struct {
-	listFn   func(ctx context.Context, limit int) ([]monitor.DeadLetter, error)
+	listFn    func(ctx context.Context, limit int) ([]monitor.DeadLetter, error)
 	redriveFn func(ctx context.Context, ids ...int64) (int, error)
 }
 
@@ -69,7 +69,7 @@ func (f *fakeRelayStatsAdmin) OutboxStats(ctx context.Context) (kernel.OutboxSta
 
 // fakeTimerAdmin is a hand-written test double for service.TimerAdmin.
 type fakeTimerAdmin struct {
-	statsFn    func(ctx context.Context) (kernel.TimerStats, error)
+	statsFn     func(ctx context.Context) (kernel.TimerStats, error)
 	listArmedFn func(ctx context.Context) ([]kernel.ArmedTimer, error)
 }
 
@@ -224,7 +224,6 @@ func TestAdminListInstances(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -242,9 +241,9 @@ func TestResolveIncident(t *testing.T) {
 	def := transporttest.LinearProcess()
 
 	tests := map[string]struct {
-		setup      func(svc service.Service) (instanceID, incidentID string)
-		in         httpcore.ResolveIncidentInput
-		assert     func(t *testing.T, status int, body any, err error)
+		setup  func(svc service.Service) (instanceID, incidentID string)
+		in     httpcore.ResolveIncidentInput
+		assert func(t *testing.T, status int, body any, err error)
 	}{
 		"unknown instance → service error propagated": {
 			setup: func(_ service.Service) (string, string) { return "no-such-inst", "inc-1" },
@@ -261,7 +260,6 @@ func TestResolveIncident(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -279,8 +277,8 @@ func TestCancelInstance(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 
 	tests := map[string]struct {
-		setup      func(svc service.Service) string
-		assert     func(t *testing.T, status int, body any, err error)
+		setup  func(svc service.Service) string
+		assert func(t *testing.T, status int, body any, err error)
 	}{
 		"running instance → 200 with body": {
 			setup: func(svc service.Service) string {
@@ -318,7 +316,6 @@ func TestCancelInstance(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
@@ -399,7 +396,6 @@ func TestListDeadLetters(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.ListDeadLetters(t.Context(), tc.dla, tc.q)
@@ -471,7 +467,6 @@ func TestRedriveDeadLetters(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.RedriveDeadLetters(t.Context(), tc.dla, tc.in)
@@ -539,7 +534,6 @@ func TestListPolicies(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.ListPolicies(t.Context(), tc.pa)
@@ -611,7 +605,6 @@ func TestAddPolicy(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.AddPolicy(t.Context(), tc.pa, tc.in)
@@ -683,7 +676,6 @@ func TestRemovePolicy(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.RemovePolicy(t.Context(), tc.pa, tc.in)
@@ -736,7 +728,6 @@ func TestListRoleBindings(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.ListRoleBindings(t.Context(), tc.pa)
@@ -808,7 +799,6 @@ func TestAddRoleBinding(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.AddRoleBinding(t.Context(), tc.pa, tc.in)
@@ -880,7 +870,6 @@ func TestRemoveRoleBinding(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.RemoveRoleBinding(t.Context(), tc.pa, tc.in)
@@ -933,7 +922,6 @@ func TestAdminRelayStats(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.AdminRelayStats(t.Context(), tc.rsa)
@@ -1014,7 +1002,6 @@ func TestAdminTimers(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.AdminTimers(t.Context(), tc.ta)
@@ -1063,9 +1050,9 @@ func TestAdminInstanceLineage(t *testing.T) {
 						CallParent: &kernel.CallLinkRef{
 							InstanceID: "parent-inst", DefID: "parent-def", DefVersion: 1, Depth: 0,
 						},
-						CallChildren:    []kernel.CallLinkRef{{InstanceID: "child-inst", DefID: "", DefVersion: 0, Depth: 1}},
+						CallChildren:     []kernel.CallLinkRef{{InstanceID: "child-inst", DefID: "", DefVersion: 0, Depth: 1}},
 						ChainPredecessor: &kernel.ChainLinkRef{InstanceID: "pred-inst", DefinitionRef: "pred-def:1", Outcome: "approved"},
-						ChainSuccessors: []kernel.ChainLinkRef{{InstanceID: "succ-inst", DefinitionRef: "succ-def:1", Outcome: "done"}},
+						ChainSuccessors:  []kernel.ChainLinkRef{{InstanceID: "succ-inst", DefinitionRef: "succ-def:1", Outcome: "done"}},
 					}, nil
 				},
 			},
@@ -1101,7 +1088,6 @@ func TestAdminInstanceLineage(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			status, body, err := httpcore.AdminInstanceLineage(t.Context(), tc.la, tc.instanceID)

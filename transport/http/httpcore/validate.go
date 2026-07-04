@@ -14,7 +14,7 @@ var validate = validator.New(validator.WithRequiredStructEnabled())
 // Returns nil when v is valid or when v carries no validate tags.
 func Validate(v any) error {
 	if err := validate.Struct(v); err != nil {
-		return fmt.Errorf("%w: %v", ErrBadInput, err)
+		return fmt.Errorf("%w: %w", ErrBadInput, err)
 	}
 	return nil
 }

@@ -21,10 +21,10 @@ const instrumentationScope = "github.com/zakyalvan/krtlwrkflw/transport/http"
 // It is created once per mounted handler group and shared across requests.
 // All fields are guaranteed non-nil after [NewInstrumentation].
 type Instrumentation struct {
-	tracer      trace.Tracer
-	counter     metric.Int64Counter
-	histogram   metric.Float64Histogram
-	propagator  propagation.TextMapPropagator
+	tracer     trace.Tracer
+	counter    metric.Int64Counter
+	histogram  metric.Float64Histogram
+	propagator propagation.TextMapPropagator
 }
 
 // NewInstrumentation builds an [Instrumentation] from the observability
@@ -95,11 +95,6 @@ func (i *Instrumentation) Observe(
 
 	start := time.Now()
 	status := run(ctx)
-
-	// Set the route attribute on the span (already set at start; this is
-	// idempotent and ensures the final value is readable even if the name was
-	// set before routing was known).
-	span.SetAttributes(attribute.String("http.route", routeTemplate))
 
 	attrs := []attribute.KeyValue{
 		attribute.String("http.method", method),

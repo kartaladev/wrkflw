@@ -66,5 +66,5 @@ func TestNewInstanceView_returnType(t *testing.T) {
 	st := engine.InstanceState{InstanceID: "typed-1", Status: engine.StatusCompleted}
 	// The real implementation returns httpcore.InstanceView (concrete type, not any).
 	// Compile-time check: assigning to the named type must work.
-	var _ httpcore.InstanceView = httpcore.NewInstanceView(st)
+	var _ httpcore.InstanceView = httpcore.NewInstanceView(st) //nolint:staticcheck // explicit type asserts NewInstanceView's concrete return type
 }

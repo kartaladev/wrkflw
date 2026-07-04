@@ -2,6 +2,7 @@ package httpcore_test
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"testing"
 
@@ -165,4 +166,33 @@ func TestNewInstrumentation_MethodAttribute(t *testing.T) {
 		}
 	}
 	assert.Equal(t, "PATCH", foundMethod)
+}
+
+// TestResolveConfig_WithLogger verifies that WithLogger sets the Logger field
+// in the resolved CustomizeConfig.
+func TestResolveConfig_WithLogger(t *testing.T) {
+	logger := slog.Default()
+	cfg := httpcore.ResolveConfig(httpcore.WithLogger[int](logger))
+	require.NotNil(t, cfg.Logger, "Logger should be set")
+	require.Equal(t, logger, cfg.Logger, "Logger should match the provided logger")
+}
+
+// TestResolveConfig_WithTracerProvider verifies that WithTracerProvider sets
+// the TracerProvider field in the resolved CustomizeConfig.
+func TestResolveConfig_WithTracerProvider(t *testing.T) {
+	tp := sdktrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+	cfg := httpcore.ResolveConfig(httpcore.WithTracerProvider[int](tp))
+	require.NotNil(t, cfg.TracerProvider, "TracerProvider should be set")
+	require.Equal(t, tp, cfg.TracerProvider, "TracerProvider should match the provided provider")
+}
+
+// TestResolveConfig_WithMeterProvider verifies that WithMeterProvider sets
+// the MeterProvider field in the resolved CustomizeConfig.
+func TestResolveConfig_WithMeterProvider(t *testing.T) {
+	mp := sdkmetric.NewMeterProvider()
+	t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+	cfg := httpcore.ResolveConfig(httpcore.WithMeterProvider[int](mp))
+	require.NotNil(t, cfg.MeterProvider, "MeterProvider should be set")
+	require.Equal(t, mp, cfg.MeterProvider, "MeterProvider should match the provided provider")
 }
