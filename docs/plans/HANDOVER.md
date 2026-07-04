@@ -3,6 +3,22 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
+## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-04 evening) — NEXT: HTTP-only transport refactor
+
+> **State:** `origin/main == main == 97e18c1`, working tree clean, all gates green
+> (`go build ./...`, `go test ./...` 0 fail, `golangci-lint run ./...` 0 issues).
+>
+> **Recently shipped (all MERGED + PUSHED to origin/main):**
+> - **ADR-0091** `definition` core aggregator + `action` rename — ✅ MERGED (merge `a36c44b`). *(The "⏩⏩ ACTIVE BRANCH … definition aggregator UNMERGED" block immediately below is **STALE** — that work is merged.)*
+> - **ADR-0092** `processtest` consumer test harness — ✅ MERGED+PUSHED (merge `b92c681`). New public root package: in-memory deterministic `Harness` + fakes (`SpyCatalog`/`SpyAuthorizer`/`CaptureSender`/`FakeClock`) + `DriveToCompletion`/park handlers; `MemScheduler.NextFireAt`/`Pending`; README + godoc Examples; 93% cov. (README lives in `processtest/`; `examples/` untouched — examples show internal mechanics, not testing.)
+> - **ADR-0093** eventing broker integration (P0-3) — ✅ MERGED+PUSHED (merge `97e18c1`). Docs+example ONLY — the `eventing.NewPublisher(message.Publisher)` seam already existed and every message already carries `instance_id` metadata + `dedup_key` UUID. Shipped `docs/eventing-brokers.md` (Kafka/NATS/Redis/watermill-SQL snippets), `examples/broker_wiring`, `ExampleNewPublisher`. No code/dep change. **ALL P0 release-blockers are now closed.**
+>
+> **Next free ADR: 0094.**
+>
+> **▶ NEXT WORK — HTTP-only transport refactor (NOT STARTED):** completely remove gRPC, HTTP-only, add gin + fiber-v3 `Mount` adapter subpackages (per-framework `Mount(*http.ServeMux)` / `Mount(*gin.RouterGroup)` / `Mount(fiber.Router)`). **Full self-contained handover — gRPC deletion inventory + REST architecture + design constraints + open questions:** [`docs/plans/2026-07-04-http-only-transport-handover.md`](2026-07-04-http-only-transport-handover.md). Then run `superpowers:brainstorming`. gRPC deletion is a CLEAN CUT; REST is already pure stdlib `net/http` + `r.PathValue` (ideal). Subsumes the P1-B transport-hardening backlog item; makes P1-F (grpc `ListInstances` limit) moot.
+>
+> **Backlog:** `docs/plans/2026-06-30-production-readiness-backlog.md` — all P0 done. Remaining after transport: P1-G recursive lineage; P2 DX (BPMN2 XML loader, more built-in actions, validation CLI, YAML round-trip, definition versioning/migration guide, admin UI).
+
 ## ⏩⏩ ACTIVE BRANCH (read FIRST — 2026-07-04): `definition` aggregator + `action` rename
 
 > **⏸ UNMERGED branch `refactor/definition-core-aggregator`** (off `main` @ `6d67925` = ADR-0090 merge), 12 commits, working tree clean, **all gates green**, **awaiting maintainer review then `--no-ff` merge to `main`.**
