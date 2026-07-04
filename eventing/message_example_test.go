@@ -3,8 +3,8 @@ package eventing_test
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
