@@ -232,7 +232,7 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 					q.Limit = lim
 				}
 			}
-			q.IncludeTotal = c.Query("total") == "true"
+			q.IncludeTotal = c.Query("total") == "true" || c.Query("total") == "1"
 			status, body, err := httpcore.AdminListInstances(c.Context(), g.Svc, q)
 			if err != nil {
 				return writeErr(cfg, c, err)
