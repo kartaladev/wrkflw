@@ -99,7 +99,7 @@ var errInternal = errors.New("db connection refused: internal secret dsn info")
 // alwaysErrorService is a minimal service.Service stub that returns err for
 // every operation. Used to verify 5xx responses do not leak raw messages.
 type alwaysErrorService struct {
-	err error
+	err             error
 	service.Service // embed to satisfy unused methods
 }
 
