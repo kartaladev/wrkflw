@@ -17,6 +17,23 @@ var activityKinds = map[NodeKind]bool{
 	KindCallActivity:     true,
 }
 
+// gatewayKinds is the set of gateway NodeKinds (used by the mixed split+join
+// check). errorBoundaryHostKinds is the subset of activityKinds that can throw a
+// BPMN error and therefore may host a boundary error event.
+var (
+	gatewayKinds = map[NodeKind]bool{
+		KindExclusiveGateway:  true,
+		KindInclusiveGateway:  true,
+		KindParallelGateway:   true,
+		KindEventBasedGateway: true,
+	}
+	errorBoundaryHostKinds = map[NodeKind]bool{
+		KindServiceTask:  true,
+		KindSubProcess:   true,
+		KindCallActivity: true,
+	}
+)
+
 var (
 	ErrNoStartEvent        = errors.New("workflow-definition: no start event")
 	ErrMultipleStartEvents = errors.New("workflow-definition: multiple start events")
@@ -181,12 +198,6 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// flows is structurally ambiguous and is rejected. Pure split (1-in/N-out),
 	// pure join (N-in/1-out), and pass-through (1-in/1-out) are all valid.
 	// ADR-0014.
-	gatewayKinds := map[NodeKind]bool{
-		KindExclusiveGateway:  true,
-		KindInclusiveGateway:  true,
-		KindParallelGateway:   true,
-		KindEventBasedGateway: true,
-	}
 	for _, n := range d.Nodes {
 		if !gatewayKinds[n.Kind()] {
 			continue
@@ -264,14 +275,6 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 				errs = append(errs, fmt.Errorf("%w: node %q", ErrUnpairedJoin, n.ID()))
 			}
 		}
-	}
-
-	// errorBoundaryHostKinds is the subset of activityKinds that can throw a
-	// BPMN error and therefore may host a boundary error event.
-	errorBoundaryHostKinds := map[NodeKind]bool{
-		KindServiceTask:  true,
-		KindSubProcess:   true,
-		KindCallActivity: true,
 	}
 
 	// Boundary events: AttachedTo must reference an existing activity node.

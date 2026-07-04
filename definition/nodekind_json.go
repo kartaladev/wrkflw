@@ -5,42 +5,18 @@ import (
 	"fmt"
 )
 
-// nodeKindNames maps each NodeKind constant to its stable JSON name.
-// The names follow BPMN2 lowerCamelCase convention so stored JSONB is human-readable
-// and independent of iota ordering — reordering or inserting a constant in the iota
-// block never corrupts previously persisted process definitions.
-var nodeKindNames = map[NodeKind]string{
-	KindUnspecified:            "unspecified",
-	KindStartEvent:             "startEvent",
-	KindEndEvent:               "endEvent",
-	KindTerminateEndEvent:      "terminateEndEvent",
-	KindErrorEndEvent:          "errorEndEvent",
-	KindServiceTask:            "serviceTask",
-	KindUserTask:               "userTask",
-	KindReceiveTask:            "receiveTask",
-	KindSendTask:               "sendTask",
-	KindBusinessRuleTask:       "businessRuleTask",
-	KindSubProcess:             "subProcess",
-	KindCallActivity:           "callActivity",
-	KindEventSubProcess:        "eventSubProcess",
-	KindIntermediateCatchEvent: "intermediateCatchEvent",
-	KindIntermediateThrowEvent: "intermediateThrowEvent",
-	KindBoundaryEvent:          "boundaryEvent",
-	KindExclusiveGateway:       "exclusiveGateway",
-	KindParallelGateway:        "parallelGateway",
-	KindInclusiveGateway:       "inclusiveGateway",
-	KindEventBasedGateway:      "eventBasedGateway",
-}
-
-// nodeKindByName is the reverse of nodeKindNames, built at init time.
-var nodeKindByName map[string]NodeKind
-
-func init() {
-	nodeKindByName = make(map[string]NodeKind, len(nodeKindNames))
-	for k, v := range nodeKindNames {
-		nodeKindByName[v] = k
-	}
-}
+// nodeKindNames maps each NodeKind constant to its stable JSON name, and
+// nodeKindByName is its reverse. The names follow BPMN2 lowerCamelCase convention
+// so stored JSONB is human-readable and independent of iota ordering — reordering
+// or inserting a constant in the iota block never corrupts previously persisted
+// process definitions.
+//
+// Both maps are populated by [RegisterKind] as the node-family leaf packages
+// register their kinds. KindUnspecified, which has no leaf, is seeded here.
+var (
+	nodeKindNames  = map[NodeKind]string{KindUnspecified: "unspecified"}
+	nodeKindByName = map[string]NodeKind{"unspecified": KindUnspecified}
+)
 
 // String returns the stable lowerCamelCase name of the NodeKind (e.g. "startEvent").
 // It implements fmt.Stringer so NodeKind values format correctly with %s and %v.
