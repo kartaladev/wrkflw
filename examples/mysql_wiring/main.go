@@ -37,6 +37,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -127,7 +128,7 @@ func run(logger *slog.Logger) error {
 	// runner is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
 	var runner *runtime.ProcessDriver
-	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *definition.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		if runner == nil {
 			return nil // not yet wired; should not occur in practice
 		}
@@ -204,7 +205,7 @@ func run(logger *slog.Logger) error {
 	// definitions survive restarts. For illustrative purposes we also seed a
 	// well-known definition via the map registry; in production you would use
 	// persistence.NewMySQLDefinitionStore exclusively.
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})

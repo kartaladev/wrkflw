@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -41,7 +41,7 @@ type ChainEvent struct {
 // SuccessorDecision is what a SuccessorPolicy decides to start. A nil Def means
 // "no successor" (the chain ends).
 type SuccessorDecision struct {
-	Def  *definition.ProcessDefinition
+	Def  *model.ProcessDefinition
 	Vars map[string]any
 }
 
@@ -54,7 +54,7 @@ type SuccessorPolicy func(ctx context.Context, ev ChainEvent) (SuccessorDecision
 // successor. *Runner satisfies it (Run). Kept narrow so the core is
 // unit-testable without a full Runner.
 type InstanceStarter interface {
-	Run(ctx context.Context, def *definition.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error)
+	Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error)
 }
 
 // Chainer is the broker-agnostic process-instance chaining core (ADR-0045). It
@@ -224,6 +224,6 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 }
 
 // defRef renders a "defID:version" reference for a definition.
-func defRef(def *definition.ProcessDefinition) string {
+func defRef(def *model.ProcessDefinition) string {
 	return fmt.Sprintf("%s:%d", def.ID, def.Version)
 }

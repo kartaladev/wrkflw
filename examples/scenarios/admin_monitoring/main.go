@@ -40,6 +40,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -239,7 +240,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
 	runner, err := runtime.NewProcessDriver(cat, store,
-		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: 0,
 			BackoffCoef:     1,

@@ -10,9 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -21,17 +22,17 @@ import (
 
 // timerIntermediateE2EDef returns: start → timer-catch("1h") → service("greet") → end.
 // Mirrors the definition in runtime/timer_example_test.go exactly.
-func timerIntermediateE2EDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func timerIntermediateE2EDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "timer-intermediate",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
 			{ID: "f2", Source: "wait1h", Target: "greet"},
 			{ID: "f3", Source: "greet", Target: "end"},

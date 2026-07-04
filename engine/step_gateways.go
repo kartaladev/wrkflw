@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // forkParallel consumes the incoming token and creates one Active token at each
 // outgoing flow target (definition order). Used for a diverging parallel gateway.
 // scopeID is the gateway token's scope; forked tokens inherit it.
-func (s *InstanceState) forkParallel(def *definition.ProcessDefinition, tok *Token, node definition.Node, scopeID string, at time.Time) {
+func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
 	outs := def.Outgoing(node.ID())
 	s.consumeToken(tok, at)
 	for _, f := range outs {
@@ -23,9 +24,9 @@ func (s *InstanceState) forkParallel(def *definition.ProcessDefinition, tok *Tok
 // If none are true it takes the default flow; if none are true and there is no
 // default it returns ErrNoMatchingFlow.
 // scopeID is the gateway token's scope; forked tokens inherit it.
-func (s *InstanceState) forkInclusive(def *definition.ProcessDefinition, tok *Token, node definition.Node, scopeID string, at time.Time, eval ConditionEvaluator) error {
-	var taken []definition.SequenceFlow
-	var dflt *definition.SequenceFlow
+func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time, eval ConditionEvaluator) error {
+	var taken []flow.SequenceFlow
+	var dflt *flow.SequenceFlow
 	for _, f := range def.Outgoing(node.ID()) {
 		if f.IsDefault {
 			ff := f
@@ -68,7 +69,7 @@ func (s *InstanceState) forkInclusive(def *definition.ProcessDefinition, tok *To
 // sharing the same inner join node ID (e.g. two sub-process instances using the
 // same nested *ProcessDefinition) are independently counted and consumed.
 // Cross-scope token counting would fire joins prematurely and merge executions.
-func (s *InstanceState) tryParallelJoin(def *definition.ProcessDefinition, tok *Token, node definition.Node, scopeID string, at time.Time) {
+func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
 	tok.State = TokenAtJoin
 
 	arrived := 0
@@ -107,7 +108,7 @@ func (s *InstanceState) tryParallelJoin(def *definition.ProcessDefinition, tok *
 // SCOPE-LOCAL INVARIANT: the reachability check and the consume loop both filter
 // by ScopeID == scopeID so that concurrent scopes sharing the same inner node IDs
 // do not cause cross-scope waiting or cross-scope token consumption.
-func (s *InstanceState) tryInclusiveJoin(def *definition.ProcessDefinition, tok *Token, node definition.Node, scopeID string, at time.Time) {
+func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
 	tok.State = TokenAtJoin
 
 	canReach := nodesThatCanReach(def, node.ID())
@@ -140,7 +141,7 @@ func (s *InstanceState) tryInclusiveJoin(def *definition.ProcessDefinition, tok 
 // target is reachable by following sequence flows forward. Implemented as a
 // reverse breadth-first search from target over incoming flows; the visited guard
 // makes it safe on graphs with cycles that do not pass through target.
-func nodesThatCanReach(def *definition.ProcessDefinition, target string) map[string]bool {
+func nodesThatCanReach(def *model.ProcessDefinition, target string) map[string]bool {
 	canReach := make(map[string]bool)
 	var queue []string
 	enqueue := func(n string) {
@@ -165,8 +166,8 @@ func nodesThatCanReach(def *definition.ProcessDefinition, target string) map[str
 // selectExclusiveTarget picks the target of an exclusive gateway: the first
 // outgoing flow (in definition order) with an empty or true condition, else the
 // default flow, else ErrNoMatchingFlow.
-func selectExclusiveTarget(def *definition.ProcessDefinition, s *InstanceState, node definition.Node, eval ConditionEvaluator) (string, error) {
-	var defaultFlow *definition.SequenceFlow
+func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node, eval ConditionEvaluator) (string, error) {
+	var defaultFlow *flow.SequenceFlow
 	for _, f := range def.Outgoing(node.ID()) {
 		if f.IsDefault {
 			ff := f
@@ -205,7 +206,7 @@ func selectExclusiveTarget(def *definition.ProcessDefinition, s *InstanceState, 
 //     cancelling the winner's timer since it already fired). We SKIP cancelling the
 //     winner's timer since it has already fired and no longer exists in the scheduler.
 //   - drive() is called to advance execution beyond the routed target.
-func resolveGatewayWin(def *definition.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func resolveGatewayWin(def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Find the gateway token.
 	tok := s.tokenAwaiting("evtgw:" + ae.GatewayToken)
 	if tok == nil {
@@ -245,7 +246,7 @@ func resolveGatewayWin(def *definition.ProcessDefinition, s *InstanceState, ae a
 		s.openVisit(tok.ID, branchTarget, at)
 	} else {
 		// Fallback: move along the gateway's outgoing flow to the catch node.
-		// definition.Validate rejects a catch node with no outgoing flow, so this
+		// model.Validate rejects a catch node with no outgoing flow, so this
 		// branch is unreachable in a validated definition. It is retained as a
 		// defensive fallback so the engine degrades gracefully rather than
 		// panicking if an unvalidated definition is passed.

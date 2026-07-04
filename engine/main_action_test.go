@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 func TestMainActionName(t *testing.T) {
@@ -14,7 +14,7 @@ func TestMainActionName(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		node   definition.Node
+		node   model.Node
 		assert func(t *testing.T, got string)
 	}
 

@@ -24,6 +24,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
@@ -36,7 +37,7 @@ import (
 // ---- minimal process definitions -----------------------------------------------
 
 // buildDef is a helper to build a trivial start→end process definition.
-func buildDef(t *testing.T, id string, version int) *definition.ProcessDefinition {
+func buildDef(t *testing.T, id string, version int) *model.ProcessDefinition {
 	t.Helper()
 	def, err := definition.NewBuilder(id, version).
 		Add(event.NewStart("start")).
@@ -129,7 +130,7 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 // wireChainerRunner builds the full chaining stack over d and starts the
 // ChainerRunner goroutine. It registers cleanup via t.Cleanup. The returned
 // runner is ready to call Run against.
-func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *definition.ProcessDefinition) *runtime.ProcessDriver {
+func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 
 	catalog := action.NewMapCatalog(nil)

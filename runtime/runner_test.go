@@ -13,9 +13,10 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -112,16 +113,16 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 }
 
 // userTaskOnlyDef returns a process with a single user-task node: start → userTask → end.
-func userTaskOnlyDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func userTaskOnlyDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "user-task-only",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("task1", []string{"manager"}),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task1"},
 			{ID: "f2", Source: "task1", Target: "end"},
 		},
@@ -143,16 +144,16 @@ func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 
 // timerDef returns: start → timer-catch("1h") → end, used to exercise
 // ScheduleTimer / CancelTimer perform paths in the runner.
-func timerOnlyDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func timerOnlyDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "timer-only",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait", event.WithCatchTimer(`"1h"`)),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},
 			{ID: "f2", Source: "wait", Target: "end"},
 		},
@@ -249,16 +250,16 @@ func (s *onceConflictStore) Commit(ctx context.Context, expected kernel.Token, s
 
 // conflictTimerDef returns: start → timer-catch("10s") → end.
 // No service tasks; the timer catch is the only external wait.
-func conflictTimerDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func conflictTimerDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "conflict-timer",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait10s", event.WithCatchTimer(`"10s"`)),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait10s"},
 			{ID: "f2", Source: "wait10s", Target: "end"},
 		},

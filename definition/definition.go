@@ -1,103 +1,41 @@
-// Package definition is the root of the process-definition authoring layer. It
-// is a thin aggregator: the core types and logic live in definition/model, the
-// node kinds in definition/{event,gateway,activity}, sequence flows in
-// definition/flow, and the fluent builder in definition/build. This package
-// re-exports the core public surface and provides NewBuilder — the fluent entry
-// point — so consumers can start from a single, well-named package:
+// Package definition is the root authoring entry point for the
+// process-definition layer. It intentionally holds only the two constructors —
+// NewBuilder (Go) and NewLoader (YAML) — because they are the one place that can
+// import definition/build (which imports the node-family leaf packages) without
+// creating an import cycle.
+//
+// Every other symbol lives in — and is used directly from — its source package:
+//
+//   - types & validation: definition/model (model.Node, model.ProcessDefinition,
+//     model.Validate, model.KindServiceTask, model.RetryPolicy, the accessors,
+//     the ErrX sentinels, …)
+//   - sequence flows:      definition/flow (flow.SequenceFlow, flow.WithCondition, …)
+//   - node constructors:   definition/{event,gateway,activity}
+//   - deserialization:     blank-import definition/kinds
+//
+// Example:
 //
 //	def, err := definition.NewBuilder("order", 1).
 //		AddStartEvent("start").
 //		AddServiceTask("charge", activity.WithActionName("charge-card")).
 //		AddEndEvent("end").
 //		Connect("start", "charge").Connect("charge", "end").
-//		Build()
-//
-// Because this package imports definition/build (which imports every node-family
-// leaf), importing definition also registers every node kind for
-// (de)serialization; deserialization paths that import only definition/model
-// should blank-import definition/kinds.
+//		Build() // returns *model.ProcessDefinition
 package definition
 
 import (
 	"io"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/build"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // NewBuilder starts the fluent builder for a definition with the given id and
-// version. It is the root-package entry point for Go authoring; each AddX method
-// mirrors a node-family constructor, and Build returns a *ProcessDefinition.
+// version. Each AddX method mirrors a node-family constructor; Build returns a
+// *model.ProcessDefinition.
 func NewBuilder(id string, version int) *build.Builder { return build.New(id, version) }
 
-// NewLoader reads a YAML process-definition from r and returns a DefinitionLoader
-// whose structure is already declared. It is the root-package entry point for the
-// YAML authoring form, alongside NewBuilder: register definition-scoped actions
-// via RegisterAction/RegisterActionFunc, then call Build.
-func NewLoader(r io.Reader) (DefinitionLoader, error) { return model.ParseYAML(r) }
-
-// --- re-exported core types (definition/model) ---
-
-type (
-	Node              = model.Node
-	NodeKind          = model.NodeKind
-	ProcessDefinition = model.ProcessDefinition
-	RetryPolicy       = model.RetryPolicy
-	Base              = model.Base
-	ActivityFields    = model.ActivityFields
-	WaitFields        = model.WaitFields
-	TaskAction        = model.TaskAction
-	NodeWire          = model.NodeWire
-	NodeSpec          = model.NodeSpec
-	DefinitionBuilder = model.DefinitionBuilder
-	DefinitionLoader  = model.DefinitionLoader
-)
-
-// SequenceFlow is a directed edge between two nodes; it lives in definition/flow
-// and is re-exported here for convenience.
-type SequenceFlow = flow.SequenceFlow
-
-// --- re-exported functions and accessors (definition/model) ---
-
-var (
-	Validate           = model.Validate
-	NewBase            = model.NewBase
-	DefaultRetryPolicy = model.DefaultRetryPolicy
-	RegisterKind       = model.RegisterKind
-	RetryPolicyOf      = model.RetryPolicyOf
-	DeadlineOf         = model.DeadlineOf
-	ReminderOf         = model.ReminderOf
-	ActionOf           = model.ActionOf
-	InlineActionOf     = model.InlineActionOf
-)
-
-// --- re-exported NodeKind constants (definition/model) ---
-
-const (
-	KindUnspecified            = model.KindUnspecified
-	KindStartEvent             = model.KindStartEvent
-	KindEndEvent               = model.KindEndEvent
-	KindTerminateEndEvent      = model.KindTerminateEndEvent
-	KindErrorEndEvent          = model.KindErrorEndEvent
-	KindServiceTask            = model.KindServiceTask
-	KindUserTask               = model.KindUserTask
-	KindReceiveTask            = model.KindReceiveTask
-	KindSendTask               = model.KindSendTask
-	KindBusinessRuleTask       = model.KindBusinessRuleTask
-	KindSubProcess             = model.KindSubProcess
-	KindCallActivity           = model.KindCallActivity
-	KindEventSubProcess        = model.KindEventSubProcess
-	KindIntermediateCatchEvent = model.KindIntermediateCatchEvent
-	KindIntermediateThrowEvent = model.KindIntermediateThrowEvent
-	KindBoundaryEvent          = model.KindBoundaryEvent
-	KindExclusiveGateway       = model.KindExclusiveGateway
-	KindParallelGateway        = model.KindParallelGateway
-	KindInclusiveGateway       = model.KindInclusiveGateway
-	KindEventBasedGateway      = model.KindEventBasedGateway
-)
-
-// Validation sentinel errors (ErrNoStartEvent, ErrMixedGateway, …) and the
-// builder/registry sentinels (ErrActionInlineAndNameConflict,
-// ErrDuplicateScopedAction, ErrKindNotRegistered) are NOT re-exported here.
-// Check them from definition/model, e.g. errors.Is(err, model.ErrNoStartEvent).
+// NewLoader reads a YAML process-definition from r and returns a
+// model.DefinitionLoader whose structure is already declared. Register
+// definition-scoped actions via RegisterAction/RegisterActionFunc, then call Build.
+func NewLoader(r io.Reader) (model.DefinitionLoader, error) { return model.ParseYAML(r) }

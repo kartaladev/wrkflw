@@ -18,9 +18,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -32,18 +33,18 @@ p, approver, finance-task, claim
 
 // financePrivilegeDef returns a process: start → userTask("review") [no roles,
 // privilege "finance-task claim"] → end.
-func financePrivilegeDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func financePrivilegeDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "finance-approval",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("review", nil,
 				activity.WithEligibilityPrivileges("finance-task claim"),
 			),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
 			{ID: "f2", Source: "review", Target: "end"},
 		},

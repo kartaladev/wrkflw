@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -77,7 +78,7 @@ func TestHandlerGetInstanceSnapshotNotFound(t *testing.T) {
 // actionMetadataProcess returns a definition built via DefinitionBuilder that
 // has a definition-scoped action ("scoped-action") and an inline ServiceTask
 // ("svc-inline"). Used to assert that snapshot responses surface action metadata.
-func actionMetadataProcess(t *testing.T) *definition.ProcessDefinition {
+func actionMetadataProcess(t *testing.T) *model.ProcessDefinition {
 	t.Helper()
 	inlineAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return map[string]any{"done": true}, nil

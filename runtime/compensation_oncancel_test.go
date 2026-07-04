@@ -20,9 +20,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -35,16 +36,16 @@ import (
 //   - ending flow leads to the end event
 //
 // start → charge (KindServiceTask, CompensationAction:"refund") → approve (KindUserTask) → end
-func compensationOnCancelDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func compensationOnCancelDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "comp-cancel-def", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("charge", activity.WithActionName("charge"), activity.WithCompensation("refund")),
 			activity.NewUserTask("approve", []string{"reviewer"}),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
 			{ID: "f2", Source: "charge", Target: "approve"},
 			{ID: "f3", Source: "approve", Target: "end"},

@@ -20,9 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -38,29 +39,29 @@ import (
 // The compensation throw refers to "sub". After the sub-process completes
 // normally, inner-svc is archived under "sub". When compThrow fires, it runs
 // cancel-book then resumes past the throw straight to end.
-func scopeCompensationDef() *definition.ProcessDefinition {
-	nested := &definition.ProcessDefinition{
+func scopeCompensationDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
 		ID: "scope-comp-nested", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensation("cancel-book")),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &definition.ProcessDefinition{
+	return &model.ProcessDefinition{
 		ID: "scope-comp-def", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			// Compensation throw: runs ArchivedCompensations["sub"] then resumes.
 			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "compThrow"},
 			{ID: "f3", Source: "compThrow", Target: "end"},

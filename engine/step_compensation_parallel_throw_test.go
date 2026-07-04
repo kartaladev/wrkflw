@@ -24,9 +24,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -42,14 +43,14 @@ import (
 // The compensation records are NOT produced by sub-processes here; the caller
 // pre-seeds ArchivedCompensations under "ref1".."refN" so both throws reach the
 // compensation-throw branch in the SAME drive pass after the fork.
-func parallelThrowDef(n int) *definition.ProcessDefinition {
-	nodes := []definition.Node{
+func parallelThrowDef(n int) *model.ProcessDefinition {
+	nodes := []model.Node{
 		event.NewStart("start"),
 		gateway.NewParallel("forkGW"),
 		gateway.NewParallel("joinGW"),
 		event.NewEnd("end"),
 	}
-	flows := []definition.SequenceFlow{
+	flows := []flow.SequenceFlow{
 		{ID: "f-start", Source: "start", Target: "forkGW"},
 		{ID: "f-join-end", Source: "joinGW", Target: "end"},
 	}
@@ -58,11 +59,11 @@ func parallelThrowDef(n int) *definition.ProcessDefinition {
 		ref := refName(i)
 		nodes = append(nodes, event.NewThrow(throwID, event.WithCompensateRef(ref)))
 		flows = append(flows,
-			definition.SequenceFlow{ID: "f-fork-" + throwID, Source: "forkGW", Target: throwID},
-			definition.SequenceFlow{ID: "f-" + throwID + "-join", Source: throwID, Target: "joinGW"},
+			flow.SequenceFlow{ID: "f-fork-" + throwID, Source: "forkGW", Target: throwID},
+			flow.SequenceFlow{ID: "f-" + throwID + "-join", Source: throwID, Target: "joinGW"},
 		)
 	}
-	return &definition.ProcessDefinition{
+	return &model.ProcessDefinition{
 		ID: "parallel-throw-proc", Version: 1,
 		Nodes: nodes,
 		Flows: flows,
@@ -81,7 +82,7 @@ func refName(i int) string {
 // throw tokens, seeds ArchivedCompensations for the refs listed in seededRefs
 // (1-based indices), and drives the StartInstance trigger. Branches whose ref is
 // NOT in seededRefs have no archived records and so auto-advance at their throw.
-func startParallelThrows(t *testing.T, def *definition.ProcessDefinition, n int, seededRefs []int, at time.Time) engine.StepResult {
+func startParallelThrows(t *testing.T, def *model.ProcessDefinition, n int, seededRefs []int, at time.Time) engine.StepResult {
 	t.Helper()
 	archive := make(map[string][]engine.CompensationRecord, len(seededRefs))
 	for _, i := range seededRefs {

@@ -8,23 +8,24 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
-func linearDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func linearDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "greeting", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},
@@ -32,9 +33,9 @@ func linearDef() *definition.ProcessDefinition {
 }
 
 func TestRunnerExecutesParallelDiamond(t *testing.T) {
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "diamond", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -42,7 +43,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "a"},
 			{ID: "f3", Source: "fork", Target: "b"},
@@ -76,9 +77,9 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 }
 
 func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "ord", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewInclusive("orsplit"),
 			activity.NewServiceTask("ta", activity.WithActionName("a")),
@@ -87,7 +88,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 			gateway.NewInclusive("orjoin"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},
 			{ID: "f2", Source: "orsplit", Target: "ta", Condition: "a > 0"},
 			{ID: "f3", Source: "orsplit", Target: "tb", Condition: "b > 0"},

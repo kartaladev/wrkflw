@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -22,15 +23,15 @@ import (
 // records the ActionFailed trigger, which the test inspects for Retryable.
 //
 //	start → task("a") → end
-func retryContractDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func retryContractDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "retry-contract", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("task", activity.WithActionName("a")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},

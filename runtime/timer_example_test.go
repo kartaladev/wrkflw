@@ -12,9 +12,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -79,17 +80,17 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 
 // deadlineUserTaskDef returns: start → userTask(DeadlineDuration="PT30M", DeadlineFlow="escalate",
 // DeadlineAction="notify-escalation") → end; with an escalation path to an alt-end.
-func deadlineUserTaskDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func deadlineUserTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "deadline-user-task",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(`"30m"`, "escalate", "notify-escalation")),
 			event.NewEnd("end-normal"),
 			event.NewEnd("end-escalated"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
 			{ID: "f2", Source: "review", Target: "end-normal"},
 			{ID: "escalate", Source: "review", Target: "end-escalated"},

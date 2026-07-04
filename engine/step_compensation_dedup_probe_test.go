@@ -22,25 +22,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // dedupProbeDef: start → svc(CompensationAction "cancel-svc") → userTask → end.
 // svc is a single compensable activity; the userTask parks so we can inspect the
 // recorded compensation without the instance completing.
-func dedupProbeDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func dedupProbeDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "dedup-probe", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensation("cancel-svc")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "userTask"},
 			{ID: "f3", Source: "userTask", Target: "end"},

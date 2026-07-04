@@ -15,9 +15,9 @@
 //
 // # Start here
 //
-// For most consumers the entry sequence is: (1) author a [definition.ProcessDefinition]
+// For most consumers the entry sequence is: (1) author a [model.ProcessDefinition]
 // with [definition.NewBuilder] (Go) or [definition.NewLoader] (YAML),
-// calling [definition.DefinitionLoader.Build] in both cases; (2) construct a
+// calling [model.DefinitionLoader.Build] in both cases; (2) construct a
 // [runtime.ProcessDriver] with [runtime.NewProcessDriver](catalog, store, opts) — all required
 // deps are non-nil interfaces; passing nil returns [kernel.ErrNilDependency];
 // (3) call [runtime.ProcessDriver.Run] to start an instance and [runtime.ProcessDriver.Deliver]

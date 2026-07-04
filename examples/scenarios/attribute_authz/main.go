@@ -26,9 +26,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -79,17 +80,17 @@ func main() {
 func demoAttributeAuthz(ctx context.Context) {
 	// Process definition: start → approve[UserTask, role "approver",
 	// EligibilityExpr vars["region"] == "EU"] → end.
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID:      "region-approval",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", []string{"approver"},
 				activity.WithEligibilityExpr(`vars["region"] == "EU"`),
 			),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
@@ -200,17 +201,17 @@ func demoCasbinRBAC(ctx context.Context) {
 	// Process definition: start → finance-review[UserTask, privilege "finance-task claim"] → end.
 	// WithEligibilityPrivileges wires the privilege into AuthzSpec.Privileges so
 	// the casbin Authorizer evaluates it at Claim time.
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID:      "finance-approval",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("finance-review", nil,
 				activity.WithEligibilityPrivileges("finance-task claim"),
 			),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "finance-review"},
 			{ID: "f2", Source: "finance-review", Target: "end"},
 		},

@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
 
@@ -30,7 +31,7 @@ func snapNoopFn(_ context.Context, in map[string]any) (map[string]any, error) {
 // Tasks execute in sequence: named-svc → inline-svc → default-svc → end.
 // named-svc and inline-svc resolve successfully; default-svc will fail with
 // an incident (no "default-svc" in any catalog) but the instance is stored.
-func snapshotDef() *definition.ProcessDefinition {
+func snapshotDef() *model.ProcessDefinition {
 	def, err := definition.NewBuilder("snap-def", 1).
 		RegisterAction("scoped-svc", action.Func(snapNoopFn)).
 		Add(event.NewStart("start")).

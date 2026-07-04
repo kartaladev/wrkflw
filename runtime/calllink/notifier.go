@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -24,11 +24,11 @@ import (
 //
 // A typical wiring:
 //
-//	fn := CallDeliverFunc(func(ctx context.Context, def *definition.ProcessDefinition, id string, trg engine.Trigger) error {
+//	fn := CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, id string, trg engine.Trigger) error {
 //	    _, err := runner.Deliver(ctx, def, id, trg)
 //	    return err
 //	})
-type CallDeliverFunc func(ctx context.Context, def *definition.ProcessDefinition, instanceID string, trg engine.Trigger) error
+type CallDeliverFunc func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error
 
 // CallNotifier drains terminal call links and resumes the parked parent token
 // with SubInstanceCompleted or SubInstanceFailed (ADR-0024). Delivery is

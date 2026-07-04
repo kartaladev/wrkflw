@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -35,12 +36,12 @@ func TestJitterSourceInRange(t *testing.T) {
 // whose RetryPolicy will attempt a retry on failure.
 //
 //	start → task → end
-func retryOnceTaskDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func retryOnceTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "retry-test", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(&definition.RetryPolicy{
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(&model.RetryPolicy{
 				MaxAttempts:     3,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,
@@ -48,7 +49,7 @@ func retryOnceTaskDef() *definition.ProcessDefinition {
 			})),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},

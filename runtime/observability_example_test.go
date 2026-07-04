@@ -8,9 +8,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -40,15 +41,15 @@ func ExampleProcessDriver_observability() {
 	defer func() { _ = mp.Shutdown(context.Background()) }()
 
 	// Simple start → service-task → end definition.
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID:      "demo",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},

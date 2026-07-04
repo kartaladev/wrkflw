@@ -17,7 +17,7 @@ import (
 // ActionableView containing only open tasks with their allowed next actions
 // derived from the process definition's outgoing flows.
 //
-// Note: definition.Validate rejects conditions on flows from non-gateway nodes, so
+// Note: model.Validate rejects conditions on flows from non-gateway nodes, so
 // the definition routes through an ExclusiveGateway to exercise WithCondition.
 // The task's AllowedActions reflect the task's own outgoing flows (the unconditional
 // flow to the gateway); the gateway's conditional flows are separate.

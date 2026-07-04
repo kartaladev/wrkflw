@@ -5,21 +5,21 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
-// ExampleDefinitionBuilder demonstrates how a consumer builds a small process
-// definition using the fluent DefinitionBuilder together with the node
-// constructors. This example is also executed by "go test" to verify the output.
-func ExampleDefinitionBuilder() {
+// ExampleNewBuilder demonstrates how a consumer builds a small process
+// definition using the fluent builder from definition.NewBuilder together with
+// the node constructors. This example is also executed by "go test" to verify
+// the output.
+func ExampleNewBuilder() {
 	def, err := definition.NewBuilder("order-fulfillment", 1).
-		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("charge",
+		AddStartEvent("start").
+		AddServiceTask("charge",
 			activity.WithActionName("charge-card"),
 			activity.WithCompensation("refund-card"),
-		)).
-		Add(activity.NewUserTask("approve", []string{"manager"})).
-		Add(event.NewEnd("end")).
+		).
+		AddUserTask("approve", []string{"manager"}).
+		AddEndEvent("end").
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").

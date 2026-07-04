@@ -11,8 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
@@ -32,14 +33,14 @@ func TestOpenSQLite(t *testing.T) {
 
 	// Drive a minimal start→end process through the Runner so Create+Commit+Load
 	// are all exercised in a realistic path (mirrors TestOpenPostgresEndToEnd).
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID:      "sqlite-e2e",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "end"},
 		},
 	}

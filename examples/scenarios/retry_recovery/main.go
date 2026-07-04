@@ -40,6 +40,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -61,7 +62,7 @@ func main() {
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge",
 			activity.WithActionName("charge-card"),
-			activity.WithRetryPolicy(&definition.RetryPolicy{
+			activity.WithRetryPolicy(&model.RetryPolicy{
 				MaxAttempts:     5,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,

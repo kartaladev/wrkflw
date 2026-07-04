@@ -18,8 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -29,15 +30,15 @@ import (
 )
 
 // sqliteMinimalDef returns the simplest process definition for SQLite tests.
-func sqliteMinimalDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func sqliteMinimalDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "sqlite-minimal",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+		Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 }
 
@@ -300,12 +301,12 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	`, "sqlite-notifier-child-1", "sqlite-notifier-parent-1", "cmd-sqlite-notifier", "sqlite-minimal", 1, 0)
 	require.NoError(t, err)
 
-	reg := &staticReg{defs: map[string]*definition.ProcessDefinition{
+	reg := &staticReg{defs: map[string]*model.ProcessDefinition{
 		"sqlite-minimal:1": def,
 	}}
 
 	var deliverCalled int
-	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *definition.ProcessDefinition, _ string, _ engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		deliverCalled++
 		return nil
 	})
@@ -336,7 +337,7 @@ func TestNewSQLiteDefinitionStore_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID:            "sqlite-facade-def-1",
 		Version:       1,
 		CancelActions: []string{"rollback"},

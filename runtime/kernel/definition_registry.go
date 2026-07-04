@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // ErrDefinitionNotFound is returned by DefinitionRegistry.Lookup when no
@@ -13,14 +13,14 @@ import (
 var ErrDefinitionNotFound = errors.New("workflow-runtime: definition not found in registry")
 
 // DefinitionRegistry resolves a DefRef string (as stored on a KindCallActivity
-// node) to a *definition.ProcessDefinition. Implementations must be safe for
+// node) to a *model.ProcessDefinition. Implementations must be safe for
 // concurrent read access by multiple goroutines.
 //
 // Contract: Lookup returns (nil, ErrDefinitionNotFound) when the DefRef is not
 // registered. Any other error indicates a transient or structural problem and
 // the caller should propagate it.
 type DefinitionRegistry interface {
-	Lookup(ctx context.Context, defRef string) (*definition.ProcessDefinition, error)
+	Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error)
 }
 
 // MapDefinitionRegistry is an immutable-after-construction, in-memory
@@ -28,7 +28,7 @@ type DefinitionRegistry interface {
 //
 // Construct via NewMapDefinitionRegistry; do not use the zero value.
 type MapDefinitionRegistry struct {
-	m map[string]*definition.ProcessDefinition
+	m map[string]*model.ProcessDefinition
 }
 
 // NewMapDefinitionRegistry constructs a MapDefinitionRegistry from the
@@ -37,8 +37,8 @@ type MapDefinitionRegistry struct {
 //
 // Keys are the DefRef strings referenced by KindCallActivity nodes; values are
 // the corresponding process definitions. Nil definitions are ignored (skipped).
-func NewMapDefinitionRegistry(defs map[string]*definition.ProcessDefinition) *MapDefinitionRegistry {
-	m := make(map[string]*definition.ProcessDefinition, len(defs))
+func NewMapDefinitionRegistry(defs map[string]*model.ProcessDefinition) *MapDefinitionRegistry {
+	m := make(map[string]*model.ProcessDefinition, len(defs))
 	for k, v := range defs {
 		if v != nil {
 			m[k] = v
@@ -49,7 +49,7 @@ func NewMapDefinitionRegistry(defs map[string]*definition.ProcessDefinition) *Ma
 
 // Lookup returns the ProcessDefinition registered under defRef, or
 // ErrDefinitionNotFound if none is registered. ctx is ignored — in-memory lookup.
-func (r *MapDefinitionRegistry) Lookup(_ context.Context, defRef string) (*definition.ProcessDefinition, error) {
+func (r *MapDefinitionRegistry) Lookup(_ context.Context, defRef string) (*model.ProcessDefinition, error) {
 	def, ok := r.m[defRef]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrDefinitionNotFound, defRef)

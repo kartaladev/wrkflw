@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -18,15 +19,15 @@ import (
 
 // minimalDef returns the simplest process definition: start → end.
 // Used in option tests that need a real runner round-trip.
-func minimalDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func minimalDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "opt-test",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+		Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 }
 

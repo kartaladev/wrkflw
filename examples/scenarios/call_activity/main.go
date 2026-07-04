@@ -27,6 +27,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -68,7 +69,7 @@ func main() {
 	})
 
 	// Register the child so the CallActivity can resolve "credit-check".
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"credit-check": child,
 	})
 

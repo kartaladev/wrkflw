@@ -11,10 +11,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -43,9 +44,9 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
 
 	// start → fork → (user[UserTask] | svc[Service "boom"]) → join → end
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "fail-e2e", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			activity.NewUserTask("user", []string{"r"}),
@@ -53,7 +54,7 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},
 			{ID: "f1", Source: "fork", Target: "user"},
 			{ID: "f2", Source: "fork", Target: "svc"},

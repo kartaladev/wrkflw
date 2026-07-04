@@ -7,10 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -23,16 +24,16 @@ import (
 // this simpler variant is used for Micro-mode fork tests where we only care
 // about the parallel service tasks and want no end-event noise. Both svc-a and
 // svc-b park awaiting InvokeAction completion.
-func microForkDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func microForkDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "mfork", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			activity.NewServiceTask("svc-a", activity.WithActionName("do-a")),
 			activity.NewServiceTask("svc-b", activity.WithActionName("do-b")),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "svc-a"},
 			{ID: "f3", Source: "fork", Target: "svc-b"},
@@ -42,15 +43,15 @@ func microForkDef() *definition.ProcessDefinition {
 
 // linearEndDef returns a simple linear process: start → svc → end.
 // Used for the convergence test so we can drive to completion with Micro steps.
-func linearEndDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func linearEndDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "lend", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithActionName("work")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
 			{ID: "f2", Source: "svc", Target: "end"},
 		},

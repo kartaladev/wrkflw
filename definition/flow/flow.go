@@ -1,6 +1,6 @@
 // Package flow holds the sequence-flow (directed edge) type and its functional
 // options for the definition authoring layer. The root definition package
-// re-exports these as definition.SequenceFlow / flow.Option /
+// re-exports these as flow.SequenceFlow / flow.Option /
 // flow.WithFlowID / flow.WithCondition / flow.AsDefault.
 package flow
 

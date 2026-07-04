@@ -8,15 +8,16 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // terminalErr derives a short, human-readable error message from a terminal
@@ -80,7 +81,7 @@ func safeActionDo(ctx context.Context, a action.ServiceAction, in map[string]any
 // fire callbacks that need to call Deliver.
 //
 //nolint:cyclop // the command switch is intentionally exhaustive; each case is simple.
-func (r *ProcessDriver) perform(ctx context.Context, def *definition.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
+func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
 	switch cmd := c.(type) {
 	case engine.InvokeAction:
 		actx, aspan := r.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name,
