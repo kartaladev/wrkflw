@@ -10,8 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
@@ -24,10 +26,10 @@ func timerIntermediateE2EDef() *definition.ProcessDefinition {
 		ID:      "timer-intermediate",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait1h", definition.WithTimerDuration(`"1h"`)),
-			definition.NewServiceTask("greet", definition.WithActionName("greet")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
+			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},

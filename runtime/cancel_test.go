@@ -11,9 +11,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -24,9 +26,9 @@ func cancelDef(cancelActions []string) *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "cancel-def", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("wait", []string{"r"}),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("wait", []string{"r"}),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},

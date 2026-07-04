@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,9 +31,9 @@ func errorEndCaughtByBoundaryDef() *definition.ProcessDefinition {
 	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-action")),
-			definition.NewErrorEndEvent("inner-err-end", "E1"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+			event.NewErrorEnd("inner-err-end", "E1"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-svc"},
@@ -42,13 +44,13 @@ func errorEndCaughtByBoundaryDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-err-boundary", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sp", nestedDef),
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
 			// Boundary error event on sp, catches "E1"
-			definition.NewBoundaryEvent("bnd-err", "sp", definition.WithBoundaryErrorCode("E1")),
-			definition.NewServiceTask("recover", definition.WithActionName("recover-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end-ok"),
+			event.NewBoundary("bnd-err", "sp", event.WithBoundaryErrorCode("E1")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-ok"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
@@ -68,9 +70,9 @@ func unhandledErrorDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-unhandled-err", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("svc-action")),
-			definition.NewErrorEndEvent("err-end", "E2"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
+			event.NewErrorEnd("err-end", "E2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -88,8 +90,8 @@ func unhandledErrorInSubprocessDef() *definition.ProcessDefinition {
 	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-nested-nohandler", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewErrorEndEvent("inner-err-end", "E3"),
+			event.NewStart("inner-start"),
+			event.NewErrorEnd("inner-err-end", "E3"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-err-end"},
@@ -99,9 +101,9 @@ func unhandledErrorInSubprocessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-unhandled-err-sp", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sp", nestedDef),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
@@ -122,9 +124,9 @@ func actionFailedBoundaryDef() *definition.ProcessDefinition {
 	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-af-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("work-action")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("work-action")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-svc"},
@@ -135,13 +137,13 @@ func actionFailedBoundaryDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-af-boundary", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sp", nestedDef),
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
 			// Catch-all boundary error (ErrorCode == "") catches any error thrown from sp
-			definition.NewBoundaryEvent("bnd-err", "sp", definition.WithBoundaryErrorCode("")),
-			definition.NewServiceTask("recover", definition.WithActionName("recover-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end-ok"),
+			event.NewBoundary("bnd-err", "sp", event.WithBoundaryErrorCode("")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-ok"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
@@ -287,13 +289,13 @@ func directBoundaryOnRootSvcDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-direct-bnd", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("svc-action")),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
 			// Direct boundary error event on svc (specific error code "E1")
-			definition.NewBoundaryEvent("bnd-svc-err", "svc", definition.WithBoundaryErrorCode("E1")),
-			definition.NewServiceTask("recover", definition.WithActionName("recover-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end-recover"),
+			event.NewBoundary("bnd-svc-err", "svc", event.WithBoundaryErrorCode("E1")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recover"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start-svc", Source: "start", Target: "svc"},
@@ -312,13 +314,13 @@ func directBoundaryCatchAllOnRootSvcDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-direct-bnd-catchall", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("svc-action")),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
 			// Catch-all boundary error event on svc
-			definition.NewBoundaryEvent("bnd-svc-err", "svc", definition.WithBoundaryErrorCode("")),
-			definition.NewServiceTask("recover", definition.WithActionName("recover-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end-recover"),
+			event.NewBoundary("bnd-svc-err", "svc", event.WithBoundaryErrorCode("")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recover"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start-svc", Source: "start", Target: "svc"},
@@ -342,13 +344,13 @@ func directBoundaryOnInnerSvcInSubprocessDef() *definition.ProcessDefinition {
 	nestedDef := &definition.ProcessDefinition{
 		ID: "sp-direct-bnd-inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-action")),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
 			// Boundary attached directly to inner-svc (specific error code)
-			definition.NewBoundaryEvent("inner-bnd", "inner-svc", definition.WithBoundaryErrorCode("INNER_ERR")),
-			definition.NewServiceTask("inner-recover", definition.WithActionName("inner-recover-action")),
-			definition.NewEndEvent("inner-end"),
-			definition.NewEndEvent("inner-end-recover"),
+			event.NewBoundary("inner-bnd", "inner-svc", event.WithBoundaryErrorCode("INNER_ERR")),
+			activity.NewServiceTask("inner-recover", activity.WithActionName("inner-recover-action")),
+			event.NewEnd("inner-end"),
+			event.NewEnd("inner-end-recover"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "fi-start-svc", Source: "inner-start", Target: "inner-svc"},
@@ -361,9 +363,9 @@ func directBoundaryOnInnerSvcInSubprocessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-direct-bnd-inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sp", nestedDef),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", nestedDef),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start-sp", Source: "start", Target: "sp"},
@@ -670,12 +672,12 @@ func cancelWithTimerDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-cancel", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("work")),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("work")),
 			// Timer boundary on svc (30-second deadline).
-			definition.NewBoundaryEvent("bnd-timer", "svc", definition.WithBoundaryTimer(`"30s"`)),
-			definition.NewEndEvent("timeout-end"),
-			definition.NewEndEvent("end"),
+			event.NewBoundary("bnd-timer", "svc", event.WithBoundaryTimer(`"30s"`)),
+			event.NewEnd("timeout-end"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start-svc", Source: "start", Target: "svc"},
@@ -694,9 +696,9 @@ func cancelUserTaskDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-cancel-ut", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("userTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -884,10 +886,10 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "p-comp-unknown", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
-			definition.NewUserTask("userTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -928,9 +930,9 @@ func TestCancelRequestedEmitsCancelActions(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "d", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("work")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("work")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -969,7 +971,7 @@ func TestCancelRequestedEmitsCancelActions(t *testing.T) {
 func TestCancelRequestedNoCancelActionsUnchanged(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "d", Version: 1,
-		Nodes: []definition.Node{definition.NewStartEvent("start"), definition.NewEndEvent("end")},
+		Nodes: []definition.Node{event.NewStart("start"), event.NewEnd("end")},
 		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 	st := engine.InstanceState{

@@ -18,9 +18,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // findUpdateTasks returns all UpdateTask commands in cmds.
@@ -66,9 +69,9 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 				def := &definition.ProcessDefinition{
 					ID: "c-single", Version: 1,
 					Nodes: []definition.Node{
-						definition.NewStartEvent("start"),
-						definition.NewUserTask("user", []string{"r"}),
-						definition.NewEndEvent("end"),
+						event.NewStart("start"),
+						activity.NewUserTask("user", []string{"r"}),
+						event.NewEnd("end"),
 					},
 					Flows: []definition.SequenceFlow{
 						{ID: "f1", Source: "start", Target: "user"},
@@ -97,12 +100,12 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 				def := &definition.ProcessDefinition{
 					ID: "c-par", Version: 1,
 					Nodes: []definition.Node{
-						definition.NewStartEvent("start"),
-						definition.NewParallelGateway("fork"),
-						definition.NewUserTask("ua", []string{"r"}),
-						definition.NewUserTask("ub", []string{"r"}),
-						definition.NewParallelGateway("join"),
-						definition.NewEndEvent("end"),
+						event.NewStart("start"),
+						gateway.NewParallel("fork"),
+						activity.NewUserTask("ua", []string{"r"}),
+						activity.NewUserTask("ub", []string{"r"}),
+						gateway.NewParallel("join"),
+						event.NewEnd("end"),
 					},
 					Flows: []definition.SequenceFlow{
 						{ID: "f0", Source: "start", Target: "fork"},
@@ -132,9 +135,9 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 				def := &definition.ProcessDefinition{
 					ID: "c-svc", Version: 1,
 					Nodes: []definition.Node{
-						definition.NewStartEvent("start"),
-						definition.NewServiceTask("svc", definition.WithActionName("work")),
-						definition.NewEndEvent("end"),
+						event.NewStart("start"),
+						activity.NewServiceTask("svc", activity.WithActionName("work")),
+						event.NewEnd("end"),
 					},
 					Flows: []definition.SequenceFlow{
 						{ID: "f1", Source: "start", Target: "svc"},
@@ -180,10 +183,10 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "cc-comp", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
-			definition.NewUserTask("user", []string{"r"}),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewUserTask("user", []string{"r"}),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},

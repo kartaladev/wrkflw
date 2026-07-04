@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"

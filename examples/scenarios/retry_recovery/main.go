@@ -37,8 +37,10 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -56,17 +58,17 @@ func main() {
 	// The action is charged up to 5 times with exponential backoff. It recovers
 	// on attempt 3, so it never exhausts the budget.
 	def, err := definition.NewDefinition("payment", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("charge",
-			definition.WithActionName("charge-card"),
-			definition.WithRetryPolicy(&definition.RetryPolicy{
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("charge",
+			activity.WithActionName("charge-card"),
+			activity.WithRetryPolicy(&definition.RetryPolicy{
 				MaxAttempts:     5,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,
 				MaxInterval:     time.Minute,
 			}),
 		)).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewEnd("end")).
 		Connect("start", "charge").
 		Connect("charge", "end").
 		Build()

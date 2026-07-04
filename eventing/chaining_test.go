@@ -13,9 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -189,7 +190,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 
 	succ := &definition.ProcessDefinition{
 		ID: "fulfillment", Version: 1,
-		Nodes: []definition.Node{definition.NewStartEvent("s"), definition.NewEndEvent("e")},
+		Nodes: []definition.Node{event.NewStart("s"), event.NewEnd("e")},
 		Flows: []definition.SequenceFlow{{ID: "f", Source: "s", Target: "e"}},
 	}
 	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {

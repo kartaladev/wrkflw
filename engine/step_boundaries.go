@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // armBoundaries finds all KindBoundaryEvent nodes with AttachedTo == hostNode,
@@ -20,7 +21,7 @@ import (
 func armBoundaries(def *definition.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
-		n, ok := raw.(definition.BoundaryEvent)
+		n, ok := raw.(event.BoundaryEvent)
 		if !ok || n.AttachedTo != hostNode {
 			continue
 		}

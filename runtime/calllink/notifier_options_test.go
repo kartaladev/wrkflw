@@ -12,8 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -25,7 +26,7 @@ func minimalDef(id string) *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID:      id,
 		Version: 1,
-		Nodes:   []definition.Node{definition.NewStartEvent("start")},
+		Nodes:   []definition.Node{event.NewStart("start")},
 	}
 }
 

@@ -23,8 +23,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -75,9 +78,9 @@ func TestCancelHandler_SingleActiveNode(t *testing.T) {
 		ID: "ch-single", Version: 1,
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("user", nil, definition.WithCancelHandler("release-hold")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("user", nil, activity.WithCancelHandler("release-hold")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "user"},
@@ -120,12 +123,12 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "ch-parallel", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewServiceTask("svc-a", definition.WithActionName("do-a"), definition.WithCancelHandler("cleanup-a")),
-			definition.NewServiceTask("svc-b", definition.WithActionName("do-b")),
-			definition.NewParallelGateway("join"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewServiceTask("svc-a", activity.WithActionName("do-a"), activity.WithCancelHandler("cleanup-a")),
+			activity.NewServiceTask("svc-b", activity.WithActionName("do-b")),
+			gateway.NewParallel("join"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},
@@ -167,9 +170,9 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 	innerDef := &definition.ProcessDefinition{
 		ID: "inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-action"), definition.WithCancelHandler("inner-cleanup")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action"), activity.WithCancelHandler("inner-cleanup")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -181,9 +184,9 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "ch-sub", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", innerDef),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", innerDef),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -238,10 +241,10 @@ func TestCancelHandler_WithCompensation(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "ch-comp", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
-			definition.NewUserTask("user", nil, definition.WithCancelHandler("release-hold")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewUserTask("user", nil, activity.WithCancelHandler("release-hold")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -298,9 +301,9 @@ func TestCancelHandler_NoneSet(t *testing.T) {
 		ID: "ch-none", Version: 1,
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("user", nil), // no CancelHandler
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("user", nil), // no CancelHandler
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "user"},
@@ -334,9 +337,9 @@ func TestCancelHandler_Determinism(t *testing.T) {
 		ID: "ch-det", Version: 1,
 		CancelActions: []string{"def-action"},
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("work"), definition.WithCancelHandler("node-cleanup")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("work"), activity.WithCancelHandler("node-cleanup")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},

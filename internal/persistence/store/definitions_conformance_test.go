@@ -7,8 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -29,46 +32,46 @@ func richConformanceDefinition() *definition.ProcessDefinition {
 		ID:      "order-process",
 		Version: 2,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start",
-				definition.WithName("Order Received"),
-				definition.WithStartSignal("sig-order"),
-				definition.WithStartMessage("msg-order", "vars.orderID"),
+			event.NewStart("start",
+				event.WithName("Order Received"),
+				event.WithStartSignal("sig-order"),
+				event.WithStartMessage("msg-order", "vars.orderID"),
 			),
-			definition.NewUserTask("review", []string{"reviewer", "manager"},
-				definition.WithName("Review Order"),
-				definition.WithEligibilityExpr("vars.amount > 100"),
-				definition.WithDeadline("PT24H", "sla-breach", "notify-manager"),
-				definition.WithReminder("PT6H", "send-reminder"),
-				definition.WithCompensation("cancel-review"),
+			activity.NewUserTask("review", []string{"reviewer", "manager"},
+				activity.WithName("Review Order"),
+				activity.WithEligibilityExpr("vars.amount > 100"),
+				activity.WithDeadline("PT24H", "sla-breach", "notify-manager"),
+				activity.WithReminder("PT6H", "send-reminder"),
+				activity.WithCompensation("cancel-review"),
 			),
-			definition.NewExclusiveGateway("approve", "Approved?"),
-			definition.NewServiceTask("fulfill", definition.WithActionName("fulfillment-service"),
-				definition.WithName("Fulfill Order"),
-				definition.WithCompensation("rollback-fulfillment"),
+			gateway.NewExclusive("approve", "Approved?"),
+			activity.NewServiceTask("fulfill", activity.WithActionName("fulfillment-service"),
+				activity.WithName("Fulfill Order"),
+				activity.WithCompensation("rollback-fulfillment"),
 			),
-			definition.NewSubProcess("sub", &definition.ProcessDefinition{
+			activity.NewSubProcess("sub", &definition.ProcessDefinition{
 				ID:      "nested",
 				Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("n-start"),
-					definition.NewEndEvent("n-end"),
+					event.NewStart("n-start"),
+					event.NewEnd("n-end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "nf1", Source: "n-start", Target: "n-end"},
 				},
-			}, definition.WithName("Nested Sub")),
-			definition.NewBoundaryEvent("boundary-err", "fulfill",
-				definition.WithBoundaryErrorCode("FULFILLMENT_ERROR"),
+			}, activity.WithName("Nested Sub")),
+			event.NewBoundary("boundary-err", "fulfill",
+				event.WithBoundaryErrorCode("FULFILLMENT_ERROR"),
 			),
-			definition.NewBoundaryEvent("boundary-sig", "review",
-				definition.BoundaryNonInterrupting(),
-				definition.WithBoundarySignal("sig-cancel"),
+			event.NewBoundary("boundary-sig", "review",
+				event.WithBoundaryNonInterrupting(),
+				event.WithBoundarySignal("sig-cancel"),
 			),
-			definition.NewCallActivity("call", "sub-def:3",
-				definition.WithName("Call Sub-process"),
+			activity.NewCallActivity("call", "sub-def:3",
+				activity.WithName("Call Sub-process"),
 			),
-			definition.NewEndEvent("end", "Done"),
-			definition.NewErrorEndEvent("err-end", "ORDER_ERROR"),
+			event.NewEnd("end", "Done"),
+			event.NewErrorEnd("err-end", "ORDER_ERROR"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},

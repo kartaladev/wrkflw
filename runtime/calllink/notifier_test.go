@@ -11,9 +11,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -29,9 +31,9 @@ func notifierChildDef() *definition.ProcessDefinition {
 		ID:      "notifier-child",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("child-start"),
-			definition.NewUserTask("child-task", []string{"worker"}),
-			definition.NewEndEvent("child-end"),
+			event.NewStart("child-start"),
+			activity.NewUserTask("child-task", []string{"worker"}),
+			event.NewEnd("child-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "ncf1", Source: "child-start", Target: "child-task"},
@@ -48,9 +50,9 @@ func notifierParentDef() *definition.ProcessDefinition {
 		ID:      "notifier-parent",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "notifier-child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "notifier-child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "npf1", Source: "parent-start", Target: "call"},

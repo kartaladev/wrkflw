@@ -6,13 +6,16 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 )
 
 func TestDefinitionBuilderBuildsAndValidates(t *testing.T) {
 	def, err := definition.NewDefinition("p", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewServiceTask("t", definition.WithActionName("do"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(activity.NewServiceTask("t", activity.WithActionName("do"))).
+		Add(event.NewEnd("e")).
 		Connect("s", "t").
 		Connect("t", "e").
 		Build()
@@ -25,7 +28,7 @@ func TestDefinitionBuilderBuildsAndValidates(t *testing.T) {
 }
 
 func TestDefinitionBuilderRejectsInvalid(t *testing.T) {
-	_, err := definition.NewDefinition("p", 1).Add(definition.NewServiceTask("t", definition.WithActionName("do"))).Build()
+	_, err := definition.NewDefinition("p", 1).Add(activity.NewServiceTask("t", activity.WithActionName("do"))).Build()
 	if err == nil {
 		t.Fatal("expected validation error (no start event)")
 	}
@@ -33,11 +36,11 @@ func TestDefinitionBuilderRejectsInvalid(t *testing.T) {
 
 func TestDefinitionBuilderConnectOptions(t *testing.T) {
 	def, err := definition.NewDefinition("p", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewExclusiveGateway("gw")).
-		Add(definition.NewServiceTask("a", definition.WithActionName("act-a"))).
-		Add(definition.NewServiceTask("b", definition.WithActionName("act-b"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(gateway.NewExclusive("gw")).
+		Add(activity.NewServiceTask("a", activity.WithActionName("act-a"))).
+		Add(activity.NewServiceTask("b", activity.WithActionName("act-b"))).
+		Add(event.NewEnd("e")).
 		Connect("s", "gw").
 		Connect("gw", "a", definition.WithCondition("vars.x == 1")).
 		Connect("gw", "b", definition.AsDefault()).
@@ -83,8 +86,8 @@ func TestDefinitionBuilderConnectOptions(t *testing.T) {
 
 func TestDefinitionBuilderWithFlowID(t *testing.T) {
 	def, err := definition.NewDefinition("p", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(event.NewEnd("e")).
 		Connect("s", "e", definition.WithFlowID("myflow")).
 		Build()
 	if err != nil {
@@ -100,8 +103,8 @@ func TestDefinitionBuilderWithFlowID(t *testing.T) {
 
 func TestDefinitionBuilderAutoFlowID(t *testing.T) {
 	def, err := definition.NewDefinition("p", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(event.NewEnd("end")).
 		Connect("start", "end").
 		Build()
 	if err != nil {
@@ -132,8 +135,8 @@ func TestScopedActionNames(t *testing.T) {
 			name: "no scoped actions returns nil",
 			build: func() (*definition.ProcessDefinition, error) {
 				return definition.NewDefinition("p", 1).
-					Add(definition.NewStartEvent("s")).
-					Add(definition.NewEndEvent("e")).
+					Add(event.NewStart("s")).
+					Add(event.NewEnd("e")).
 					Connect("s", "e").
 					Build()
 			},
@@ -147,8 +150,8 @@ func TestScopedActionNames(t *testing.T) {
 			name: "single scoped action returns single-element slice",
 			build: func() (*definition.ProcessDefinition, error) {
 				return definition.NewDefinition("p", 1).
-					Add(definition.NewStartEvent("s")).
-					Add(definition.NewEndEvent("e")).
+					Add(event.NewStart("s")).
+					Add(event.NewEnd("e")).
 					Connect("s", "e").
 					RegisterAction("only", noop).
 					Build()
@@ -163,8 +166,8 @@ func TestScopedActionNames(t *testing.T) {
 			name: "multiple scoped actions returned sorted regardless of registration order",
 			build: func() (*definition.ProcessDefinition, error) {
 				return definition.NewDefinition("p", 1).
-					Add(definition.NewStartEvent("s")).
-					Add(definition.NewEndEvent("e")).
+					Add(event.NewStart("s")).
+					Add(event.NewEnd("e")).
 					Connect("s", "e").
 					RegisterAction("b", noop).
 					RegisterActionFunc("a", func(_ context.Context, _ map[string]any) (map[string]any, error) {
@@ -212,21 +215,21 @@ func TestDefinitionBuilderActionsFirstAndStructureFirstBothBuild(t *testing.T) {
 	// actions-first (the established idiom)
 	assert(t, definition.NewDefinition("d", 1).
 		RegisterActionFunc("a", func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(event.NewEnd("e")).
 		Connect("s", "e"))
 	// structure-first
 	assert(t, definition.NewDefinition("d", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(event.NewEnd("e")).
 		Connect("s", "e").
 		RegisterActionFunc("a", func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }))
 }
 
 func TestDefinitionLoaderFromBuilderCanRegisterThenBuild(t *testing.T) {
 	l := definition.NewDefinition("d", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(event.NewEnd("e")).
 		Connect("s", "e").
 		Loader()
 	def, err := l.RegisterActionFunc("a", func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }).Build()
@@ -240,8 +243,8 @@ func TestDefinitionLoaderFromBuilderCanRegisterThenBuild(t *testing.T) {
 
 func TestDefinitionBuilderCancelActions(t *testing.T) {
 	def, err := definition.NewDefinition("p", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(event.NewEnd("e")).
 		Connect("s", "e").
 		CancelActions("cleanup-a", "cleanup-b").
 		Build()

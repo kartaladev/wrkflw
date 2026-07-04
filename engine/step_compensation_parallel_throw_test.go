@@ -24,8 +24,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // parallelThrowDef returns a process definition with a parallel fork to N
@@ -42,10 +44,10 @@ import (
 // compensation-throw branch in the SAME drive pass after the fork.
 func parallelThrowDef(n int) *definition.ProcessDefinition {
 	nodes := []definition.Node{
-		definition.NewStartEvent("start"),
-		definition.NewParallelGateway("forkGW"),
-		definition.NewParallelGateway("joinGW"),
-		definition.NewEndEvent("end"),
+		event.NewStart("start"),
+		gateway.NewParallel("forkGW"),
+		gateway.NewParallel("joinGW"),
+		event.NewEnd("end"),
 	}
 	flows := []definition.SequenceFlow{
 		{ID: "f-start", Source: "start", Target: "forkGW"},
@@ -54,7 +56,7 @@ func parallelThrowDef(n int) *definition.ProcessDefinition {
 	for i := 1; i <= n; i++ {
 		throwID := throwName(i)
 		ref := refName(i)
-		nodes = append(nodes, definition.NewIntermediateThrowEvent(throwID, definition.WithCompensateRef(ref)))
+		nodes = append(nodes, event.NewThrow(throwID, event.WithCompensateRef(ref)))
 		flows = append(flows,
 			definition.SequenceFlow{ID: "f-fork-" + throwID, Source: "forkGW", Target: throwID},
 			definition.SequenceFlow{ID: "f-" + throwID + "-join", Source: throwID, Target: "joinGW"},

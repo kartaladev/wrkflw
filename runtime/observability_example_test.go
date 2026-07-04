@@ -9,6 +9,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -42,9 +44,9 @@ func ExampleProcessDriver_observability() {
 		ID:      "demo",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("greet", definition.WithActionName("greet")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},

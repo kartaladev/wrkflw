@@ -16,8 +16,11 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -27,13 +30,13 @@ func main() {
 
 	// Build the process definition.
 	def, err := definition.NewDefinition("order-fulfillment", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewParallelGateway("fork")).
-		Add(definition.NewServiceTask("pick-items", definition.WithActionName("pick-items"))).
-		Add(definition.NewServiceTask("charge-card", definition.WithActionName("charge-card"))).
-		Add(definition.NewParallelGateway("join")).
-		Add(definition.NewServiceTask("ship", definition.WithActionName("ship"))).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(gateway.NewParallel("fork")).
+		Add(activity.NewServiceTask("pick-items", activity.WithActionName("pick-items"))).
+		Add(activity.NewServiceTask("charge-card", activity.WithActionName("charge-card"))).
+		Add(gateway.NewParallel("join")).
+		Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "fork").
 		Connect("fork", "pick-items").
 		Connect("fork", "charge-card").

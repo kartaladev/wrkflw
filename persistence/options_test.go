@@ -8,9 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -22,8 +23,8 @@ func minimalDef() *definition.ProcessDefinition {
 		ID:      "opt-test",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}

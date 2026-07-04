@@ -7,8 +7,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // receiveTaskDef: start → recv(msg "m") → end.
@@ -16,9 +18,9 @@ func receiveTaskDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-recv", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewReceiveTask("recv", "m"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewReceiveTask("recv", "m"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv"},
@@ -32,12 +34,12 @@ func receiveTaskBoundaryDef(boundary definition.Node) *definition.ProcessDefinit
 	return &definition.ProcessDefinition{
 		ID: "p-recv-bnd", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewReceiveTask("recv", "m"),
+			event.NewStart("start"),
+			activity.NewReceiveTask("recv", "m"),
 			boundary,
-			definition.NewServiceTask("escalate", definition.WithActionName("esc")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			activity.NewServiceTask("escalate", activity.WithActionName("esc")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv"},
@@ -76,9 +78,9 @@ func TestReceiveTaskBadCorrelationKey(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "p-recv-bad", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewReceiveTask("recv", "m", definition.WithCorrelationKey("this is not valid expr ++")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewReceiveTask("recv", "m", activity.WithCorrelationKey("this is not valid expr ++")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv"},
@@ -106,7 +108,7 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 	cases := []testCase{
 		{
 			name:     "timer boundary",
-			boundary: definition.NewBoundaryEvent("bnd", "recv", definition.WithBoundaryTimer(`"60s"`)),
+			boundary: event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(`"60s"`)),
 			fire: func(r1 engine.StepResult) engine.Trigger {
 				for _, c := range r1.Commands {
 					if st, ok := c.(engine.ScheduleTimer); ok {
@@ -118,7 +120,7 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 		},
 		{
 			name:     "message boundary",
-			boundary: definition.NewBoundaryEvent("bnd", "recv", definition.WithBoundaryMessage("cancel", "")),
+			boundary: event.NewBoundary("bnd", "recv", event.WithBoundaryMessage("cancel", "")),
 			fire: func(engine.StepResult) engine.Trigger {
 				return engine.NewMessageReceived(t0, "cancel", "", nil)
 			},
@@ -150,7 +152,7 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 // boundary is disarmed (CancelTimer emitted, no leftover arm).
 func TestReceiveTaskMessageResumeDisarmsBoundary(t *testing.T) {
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
-	def := receiveTaskBoundaryDef(definition.NewBoundaryEvent("bnd", "recv", definition.WithBoundaryTimer(`"60s"`)))
+	def := receiveTaskBoundaryDef(event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(`"60s"`)))
 
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})

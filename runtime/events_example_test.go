@@ -10,8 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -24,9 +26,9 @@ func messageCatchDef(msgName string) *definition.ProcessDefinition {
 		ID:      "message-catch-" + msgName,
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait-msg", definition.WithMessageNameAndKey(msgName, "orderId")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-msg"},
@@ -45,12 +47,12 @@ func eventGatewayDef() *definition.ProcessDefinition {
 		ID:      "event-gateway-race",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewEventBasedGateway("gw"),
-			definition.NewIntermediateCatchEvent("timer-arm", definition.WithTimerDuration(`"1h"`)),
-			definition.NewIntermediateCatchEvent("signal-arm", definition.WithSignalName("approved")),
-			definition.NewEndEvent("timer-end"),
-			definition.NewEndEvent("signal-end"),
+			event.NewStart("start"),
+			gateway.NewEventBased("gw"),
+			event.NewCatch("timer-arm", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("signal-arm", event.WithCatchSignal("approved")),
+			event.NewEnd("timer-end"),
+			event.NewEnd("signal-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "gw"},
@@ -122,9 +124,9 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		ID:      "throw-only",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateThrowEvent("throw", definition.WithThrowSignal("approved")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewThrow("throw", event.WithThrowSignal("approved")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "throw"},

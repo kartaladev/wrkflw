@@ -29,35 +29,22 @@ type DefinitionLoader interface {
 }
 
 // DefinitionBuilder is a fluent builder for ProcessDefinition. Construct one
-// with NewDefinition, chain Add/AddX/Connect/RegisterAction/CancelActions calls,
-// then call Build to assemble and validate the definition. Loader returns a
+// with NewDefinition, chain Add/Connect/RegisterAction/CancelActions calls, then
+// call Build to assemble and validate the definition. Loader returns a
 // DefinitionLoader backed by the same core — useful when handing off to code
 // that only registers actions without knowing the full builder API.
+//
+// Nodes are added with Add(node), constructing the node from the family packages
+// (event.NewStart, gateway.NewExclusive, activity.NewServiceTask, …). The terse
+// per-kind fluent adders (AddStart, AddServiceTask, …) live in the
+// definition/build package, which can import the leaf packages without creating a
+// cycle.
 //
 // All mutating methods return DefinitionBuilder so that both the
 // actions-first idiom (RegisterAction before Add) and the structure-first
 // idiom (Add/Connect then RegisterAction) compile identically.
 type DefinitionBuilder interface {
 	Add(n Node) DefinitionBuilder
-	AddStartEvent(id string, opts ...startEventOption) DefinitionBuilder
-	AddEndEvent(id string, name ...string) DefinitionBuilder
-	AddTerminateEndEvent(id string, name ...string) DefinitionBuilder
-	AddErrorEndEvent(id, errorCode string, name ...string) DefinitionBuilder
-	AddExclusiveGateway(id string, name ...string) DefinitionBuilder
-	AddParallelGateway(id string, name ...string) DefinitionBuilder
-	AddInclusiveGateway(id string, name ...string) DefinitionBuilder
-	AddEventBasedGateway(id string, name ...string) DefinitionBuilder
-	AddServiceTask(id string, opts ...serviceTaskOption) DefinitionBuilder
-	AddUserTask(id string, roles []string, opts ...userTaskOption) DefinitionBuilder
-	AddReceiveTask(id, messageName string, opts ...receiveTaskOption) DefinitionBuilder
-	AddSendTask(id, messageName string, opts ...sendTaskOption) DefinitionBuilder
-	AddBusinessRuleTask(id string, opts ...businessRuleOption) DefinitionBuilder
-	AddSubProcess(id string, sub *ProcessDefinition, opts ...activityOption) DefinitionBuilder
-	AddCallActivity(id, defRef string, opts ...activityOption) DefinitionBuilder
-	AddEventSubProcess(id string, sub *ProcessDefinition, opts ...eventSubProcessOption) DefinitionBuilder
-	AddIntermediateCatchEvent(id string, opts ...catchOption) DefinitionBuilder
-	AddIntermediateThrowEvent(id string, opts ...throwOption) DefinitionBuilder
-	AddBoundaryEvent(id, attachedTo string, opts ...boundaryOption) DefinitionBuilder
 	Connect(fromID, toID string, opts ...FlowOption) DefinitionBuilder
 	RegisterAction(name string, a action.ServiceAction) DefinitionBuilder
 	RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionBuilder

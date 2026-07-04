@@ -18,8 +18,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -38,9 +40,9 @@ func throwDefWithCompensableSubProcess() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "throw-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book-inner"), definition.WithCompensation("cancel-inner")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -50,14 +52,14 @@ func throwDefWithCompensableSubProcess() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "throw-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
 			// Compensation throw: when reached, runs ArchivedCompensations["sub"].
-			definition.NewIntermediateThrowEvent("compThrow", definition.WithCompensateRef("sub")),
+			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
 			// After the throw resumes, we park here (UserTask) so the test can observe
 			// that the token arrived at afterThrow and then drove to end.
-			definition.NewUserTask("afterThrow", nil),
-			definition.NewEndEvent("end"),
+			activity.NewUserTask("afterThrow", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -197,9 +199,9 @@ func secondThrowDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "second-throw-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book-2"), definition.WithCompensation("cancel-2")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-2"), activity.WithCompensation("cancel-2")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -209,11 +211,11 @@ func secondThrowDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "second-throw-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
-			definition.NewIntermediateThrowEvent("compThrow1", definition.WithCompensateRef("sub")),
-			definition.NewIntermediateThrowEvent("compThrow2", definition.WithCompensateRef("sub")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
+			event.NewThrow("compThrow1", event.WithCompensateRef("sub")),
+			event.NewThrow("compThrow2", event.WithCompensateRef("sub")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -295,9 +297,9 @@ func throwThenCancelDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "ttc-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book-ttc"), definition.WithCompensation("cancel-ttc")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-ttc"), activity.WithCompensation("cancel-ttc")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -307,11 +309,11 @@ func throwThenCancelDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "ttc-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
-			definition.NewIntermediateThrowEvent("compThrow", definition.WithCompensateRef("sub")),
-			definition.NewUserTask("userTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
+			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -491,9 +493,9 @@ func cancelMidThrowDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "cmtw-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book-inner"), definition.WithCompensation("cancel-inner")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -503,12 +505,12 @@ func cancelMidThrowDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "cmtw-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("rootSvc", definition.WithActionName("book-root"), definition.WithCompensation("cancel-root")),
-			definition.NewSubProcess("sub", nested),
-			definition.NewIntermediateThrowEvent("compThrow", definition.WithCompensateRef("sub")),
-			definition.NewUserTask("afterThrow", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("rootSvc", activity.WithActionName("book-root"), activity.WithCompensation("cancel-root")),
+			activity.NewSubProcess("sub", nested),
+			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			activity.NewUserTask("afterThrow", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "rootSvc"},
@@ -679,9 +681,9 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 	nested := &definition.ProcessDefinition{
 		ID: "throw-nested-noout", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book-inner"), definition.WithCompensation("cancel-inner")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -691,9 +693,9 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "throw-proc-noout", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
-			definition.NewIntermediateThrowEvent("compThrow", definition.WithCompensateRef("sub")),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
+			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},

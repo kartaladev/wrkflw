@@ -10,9 +10,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -27,9 +29,9 @@ func childDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "child", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("child-start"),
-			definition.NewServiceTask("child-svc", definition.WithActionName("set-output")),
-			definition.NewEndEvent("child-end"),
+			event.NewStart("child-start"),
+			activity.NewServiceTask("child-svc", activity.WithActionName("set-output")),
+			event.NewEnd("child-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-svc"},
@@ -45,9 +47,9 @@ func parentCallDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "parent", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -149,9 +151,9 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	failingChild := &definition.ProcessDefinition{
 		ID: "failing-child", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("child-start"),
-			definition.NewServiceTask("child-svc", definition.WithActionName("failing-action")),
-			definition.NewEndEvent("child-end"),
+			event.NewStart("child-start"),
+			activity.NewServiceTask("child-svc", activity.WithActionName("failing-action")),
+			event.NewEnd("child-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-svc"},
@@ -163,9 +165,9 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	failingParent := &definition.ProcessDefinition{
 		ID: "parent-fail", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "failing-child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "failing-child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -197,9 +199,9 @@ func parkingChildDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "parking-child", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("child-start"),
-			definition.NewUserTask("child-user", nil),
-			definition.NewEndEvent("child-end"),
+			event.NewStart("child-start"),
+			activity.NewUserTask("child-user", nil),
+			event.NewEnd("child-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "child-start", Target: "child-user"},
@@ -213,9 +215,9 @@ func parkingParentDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "parking-parent", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "parking-child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "parking-child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -309,9 +311,9 @@ func selfRefDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "self-ref", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("sr-start"),
-			definition.NewCallActivity("sr-call", "self-ref"),
-			definition.NewEndEvent("sr-end"),
+			event.NewStart("sr-start"),
+			activity.NewCallActivity("sr-call", "self-ref"),
+			event.NewEnd("sr-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "sf1", Source: "sr-start", Target: "sr-call"},

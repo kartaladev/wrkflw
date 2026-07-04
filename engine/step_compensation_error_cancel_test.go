@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -27,10 +29,10 @@ func cancelWithCompDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "cancel-comp-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
-			definition.NewUserTask("user", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewUserTask("user", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -47,10 +49,10 @@ func errorWithCompDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "error-comp-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc1", definition.WithActionName("charge"), definition.WithCompensation("refund")),
-			definition.NewServiceTask("svc2", definition.WithActionName("notify")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc1", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("svc2", activity.WithActionName("notify")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc1"},
@@ -67,11 +69,11 @@ func twoCompNodesDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "two-comp-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc1", definition.WithActionName("step1"), definition.WithCompensation("undo1")),
-			definition.NewServiceTask("svc2", definition.WithActionName("step2"), definition.WithCompensation("undo2")),
-			definition.NewUserTask("user", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc1", activity.WithActionName("step1"), activity.WithCompensation("undo1")),
+			activity.NewServiceTask("svc2", activity.WithActionName("step2"), activity.WithCompensation("undo2")),
+			activity.NewUserTask("user", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc1"},
@@ -231,10 +233,10 @@ func TestEmptyRecordsCancelImmediate(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "no-comp-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge")),
-			definition.NewUserTask("user", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge")),
+			activity.NewUserTask("user", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -271,9 +273,9 @@ func TestEmptyRecordsErrorImmediate(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "no-comp-err-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -459,9 +461,9 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 		inner := &definition.ProcessDefinition{
 			ID: "no-double-nested", Version: 1,
 			Nodes: []definition.Node{
-				definition.NewStartEvent("inner-start"),
-				definition.NewServiceTask("inner-svc", definition.WithActionName("book-inner"), definition.WithCompensation("cancel-inner")),
-				definition.NewEndEvent("inner-end"),
+				event.NewStart("inner-start"),
+				activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+				event.NewEnd("inner-end"),
 			},
 			Flows: []definition.SequenceFlow{
 				{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -471,10 +473,10 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 		return &definition.ProcessDefinition{
 			ID: "no-double-outer", Version: 1,
 			Nodes: []definition.Node{
-				definition.NewStartEvent("start"),
-				definition.NewSubProcess("sub", inner),
-				definition.NewUserTask("rootUserTask", nil),
-				definition.NewEndEvent("end"),
+				event.NewStart("start"),
+				activity.NewSubProcess("sub", inner),
+				activity.NewUserTask("rootUserTask", nil),
+				event.NewEnd("end"),
 			},
 			Flows: []definition.SequenceFlow{
 				{ID: "f1", Source: "start", Target: "sub"},

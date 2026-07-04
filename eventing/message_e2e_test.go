@@ -9,10 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
@@ -25,9 +27,9 @@ func receiverDef() *definition.ProcessDefinition {
 		ID:      "receiver",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewReceiveTask("recv-order", "OrderPlaced"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewReceiveTask("recv-order", "OrderPlaced"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv-order"},
@@ -44,9 +46,9 @@ func senderDef() *definition.ProcessDefinition {
 		ID:      "sender",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSendTask("send-order", "OrderPlaced"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSendTask("send-order", "OrderPlaced"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "send-order"},

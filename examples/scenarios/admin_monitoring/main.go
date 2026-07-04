@@ -37,8 +37,10 @@ import (
 	"database/sql"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -135,9 +137,9 @@ func run() error {
 func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// Simple linear definition: start → greet → end.
 	def, err := definition.NewDefinition("greet", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("greet", definition.WithActionName("say-hello"))).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("greet", activity.WithActionName("say-hello"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "greet").
 		Connect("greet", "end").
 		Build()
@@ -211,9 +213,9 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 // ResolveIncident to resume the instance to completion.
 func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) error {
 	def, err := definition.NewDefinition("incident-demo", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("risky-op", definition.WithActionName("risky"))).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("risky-op", activity.WithActionName("risky"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "risky-op").
 		Connect("risky-op", "end").
 		Build()
@@ -305,9 +307,9 @@ func (failPublisher) Publish(_ context.Context, _ kernel.OutboxEvent) error {
 func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// A simple definition that completes immediately → emits a terminal outbox event.
 	def, err := definition.NewDefinition("dl-demo", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("work", definition.WithActionName("work"))).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("work", activity.WithActionName("work"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "work").
 		Connect("work", "end").
 		Build()

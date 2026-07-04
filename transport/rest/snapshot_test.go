@@ -9,6 +9,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
 )
@@ -81,10 +83,10 @@ func actionMetadataProcess(t *testing.T) *definition.ProcessDefinition {
 		return map[string]any{"done": true}, nil
 	})
 	def, err := definition.NewDefinition("action-meta", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("svc-named", definition.WithActionName("scoped-action"))).
-		Add(definition.NewServiceTask("svc-inline", definition.WithAction(inlineAction))).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("svc-named", activity.WithActionName("scoped-action"))).
+		Add(activity.NewServiceTask("svc-inline", activity.WithAction(inlineAction))).
+		Add(event.NewEnd("end")).
 		Connect("start", "svc-named").
 		Connect("svc-named", "svc-inline").
 		Connect("svc-inline", "end").

@@ -39,9 +39,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -137,9 +139,9 @@ func run(logger *slog.Logger) error {
 
 	// --- A demo definition + catalog so the engine can actually run instances ---
 	def, err := definition.NewDefinition("order", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewServiceTask("charge", definition.WithActionName("charge-card"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
 		Build()

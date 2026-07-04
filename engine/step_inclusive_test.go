@@ -7,8 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // inclusiveForkDef: start -> or -{a>0}-> ta ; -{b>0}-> tb ; -default-> tc ; each -> its end
@@ -16,14 +19,14 @@ func inclusiveForkDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "or", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewInclusiveGateway("or"),
-			definition.NewServiceTask("ta", definition.WithActionName("a")),
-			definition.NewServiceTask("tb", definition.WithActionName("b")),
-			definition.NewServiceTask("tc", definition.WithActionName("c")),
-			definition.NewEndEvent("ea"),
-			definition.NewEndEvent("eb"),
-			definition.NewEndEvent("ec"),
+			event.NewStart("start"),
+			gateway.NewInclusive("or"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			activity.NewServiceTask("tb", activity.WithActionName("b")),
+			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			event.NewEnd("ea"),
+			event.NewEnd("eb"),
+			event.NewEnd("ec"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},
@@ -82,12 +85,12 @@ func TestInclusiveForkUnconditionalFlowSuppressesDefault(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "or2", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewInclusiveGateway("or"),
-			definition.NewServiceTask("ta", definition.WithActionName("a")), // unconditional (empty condition)
-			definition.NewServiceTask("tb", definition.WithActionName("b")), // default
-			definition.NewEndEvent("ea"),
-			definition.NewEndEvent("eb"),
+			event.NewStart("start"),
+			gateway.NewInclusive("or"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")), // unconditional (empty condition)
+			activity.NewServiceTask("tb", activity.WithActionName("b")), // default
+			event.NewEnd("ea"),
+			event.NewEnd("eb"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},
@@ -114,14 +117,14 @@ func orDiamondDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "ord", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewInclusiveGateway("orsplit"),
-			definition.NewServiceTask("ta", definition.WithActionName("a")),
-			definition.NewServiceTask("tb", definition.WithActionName("b")),
-			definition.NewServiceTask("tc", definition.WithActionName("c")),
-			definition.NewInclusiveGateway("orjoin"),
-			definition.NewServiceTask("post", definition.WithActionName("post")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewInclusive("orsplit"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			activity.NewServiceTask("tb", activity.WithActionName("b")),
+			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			gateway.NewInclusive("orjoin"),
+			activity.NewServiceTask("post", activity.WithActionName("post")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},
@@ -207,10 +210,10 @@ func TestInclusiveForkNoMatchNoDefaultErrors(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "or", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewInclusiveGateway("or"),
-			definition.NewServiceTask("ta", definition.WithActionName("a")),
-			definition.NewEndEvent("ea"),
+			event.NewStart("start"),
+			gateway.NewInclusive("or"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			event.NewEnd("ea"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "or"},

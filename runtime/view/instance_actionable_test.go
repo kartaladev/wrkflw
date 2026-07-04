@@ -3,9 +3,12 @@ package view_test
 import (
 	"testing"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
@@ -21,10 +24,10 @@ func TestNewActionableView(t *testing.T) {
 	// approve → gw (unconditional); gw → e (conditional with FlowID "go-e").
 	// The task's AllowedActions come from def.Outgoing("approve") = [{approve->gw}].
 	def, err := definition.NewDefinition("d1", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewUserTask("approve", []string{"manager"})).
-		Add(definition.NewExclusiveGateway("gw")).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(activity.NewUserTask("approve", []string{"manager"})).
+		Add(gateway.NewExclusive("gw")).
+		Add(event.NewEnd("e")).
 		Connect("s", "approve").
 		Connect("approve", "gw", definition.WithFlowID("approve-gw")).
 		Connect("gw", "e", definition.WithFlowID("go-e"), definition.WithCondition("vars.ok")).

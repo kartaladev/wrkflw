@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // armEventSubprocesses scans the given definition for KindEventSubProcess nodes
@@ -25,7 +26,7 @@ import (
 func armEventSubprocesses(def *definition.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
-		n, ok := raw.(definition.EventSubProcess)
+		n, ok := raw.(event.EventSubProcess)
 		if !ok {
 			continue
 		}
@@ -45,7 +46,7 @@ func armEventSubprocesses(def *definition.ProcessDefinition, s *InstanceState, e
 		}
 
 		// startNode is a definition.Node; assert to StartEvent to read trigger fields.
-		if se, isSE := startNode.(definition.StartEvent); isSE {
+		if se, isSE := startNode.(event.StartEvent); isSE {
 			if se.SignalName != "" {
 				arm.Signal = se.SignalName
 			} else if se.TimerDuration != "" {
@@ -132,7 +133,7 @@ func fireEventSubprocessArm(def *definition.ProcessDefinition, s *InstanceState,
 		// Node missing: defensive no-op.
 		return nil, nil
 	}
-	espNode, isESP := espRaw.(definition.EventSubProcess)
+	espNode, isESP := espRaw.(event.EventSubProcess)
 	if !isESP || espNode.Subprocess == nil {
 		// Not an EventSubProcess or has no nested def: defensive no-op.
 		return nil, nil

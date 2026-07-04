@@ -10,8 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // retryDef builds a one-service-task definition with an optional node-level
@@ -20,9 +22,9 @@ func retryDef(p *definition.RetryPolicy) *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRetryPolicy(p)),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(p)),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -199,10 +201,10 @@ func recoveryFlowDef(p *definition.RetryPolicy) *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRecoveryFlow("rf"), definition.WithRetryPolicy(p)),
-			definition.NewServiceTask("recover", definition.WithActionName("compensate")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRecoveryFlow("rf"), activity.WithRetryPolicy(p)),
+			activity.NewServiceTask("recover", activity.WithActionName("compensate")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -220,12 +222,12 @@ func boundaryWithPolicyDef(p *definition.RetryPolicy) *definition.ProcessDefinit
 	return &definition.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRetryPolicy(p)),
-			definition.NewBoundaryEvent("bnd", "task"),
-			definition.NewServiceTask("recover", definition.WithActionName("compensate")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end-recover"),
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(p)),
+			event.NewBoundary("bnd", "task"),
+			activity.NewServiceTask("recover", activity.WithActionName("compensate")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recover"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},

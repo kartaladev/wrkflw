@@ -8,8 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
@@ -17,9 +20,9 @@ func linearDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "greeting", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("greet", definition.WithActionName("greet")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
@@ -32,12 +35,12 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "diamond", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewServiceTask("a", definition.WithActionName("a")),
-			definition.NewServiceTask("b", definition.WithActionName("b")),
-			definition.NewParallelGateway("join"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewServiceTask("a", activity.WithActionName("a")),
+			activity.NewServiceTask("b", activity.WithActionName("b")),
+			gateway.NewParallel("join"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -76,13 +79,13 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "ord", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewInclusiveGateway("orsplit"),
-			definition.NewServiceTask("ta", definition.WithActionName("a")),
-			definition.NewServiceTask("tb", definition.WithActionName("b")),
-			definition.NewServiceTask("tc", definition.WithActionName("c")),
-			definition.NewInclusiveGateway("orjoin"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewInclusive("orsplit"),
+			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			activity.NewServiceTask("tb", activity.WithActionName("b")),
+			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			gateway.NewInclusive("orjoin"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},

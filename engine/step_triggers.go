@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
 // handleStartInstance processes a StartInstance trigger: initialises instance

@@ -7,6 +7,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 func noopFn(_ context.Context, in map[string]any) (map[string]any, error) { return in, nil }
@@ -17,7 +19,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 		assert func(t *testing.T, node definition.Node)
 	}{
 		"named action": {
-			definition.NewServiceTask("st", definition.WithActionName("pay")),
+			activity.NewServiceTask("st", activity.WithActionName("pay")),
 			func(t *testing.T, node definition.Node) {
 				if got := definition.ActionOf(node); got != "pay" {
 					t.Fatalf("ActionOf = %q, want %q", got, "pay")
@@ -28,7 +30,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"empty default": {
-			definition.NewServiceTask("st"),
+			activity.NewServiceTask("st"),
 			func(t *testing.T, node definition.Node) {
 				if got := definition.ActionOf(node); got != "" {
 					t.Fatalf("ActionOf = %q, want %q", got, "")
@@ -39,7 +41,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"inline action": {
-			definition.NewServiceTask("st", definition.WithAction(action.Func(noopFn))),
+			activity.NewServiceTask("st", activity.WithAction(action.Func(noopFn))),
 			func(t *testing.T, node definition.Node) {
 				if got := definition.ActionOf(node); got != "" {
 					t.Fatalf("ActionOf = %q, want %q", got, "")
@@ -50,7 +52,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"inline func": {
-			definition.NewServiceTask("st", definition.WithActionFunc(noopFn)),
+			activity.NewServiceTask("st", activity.WithActionFunc(noopFn)),
 			func(t *testing.T, node definition.Node) {
 				if got := definition.ActionOf(node); got != "" {
 					t.Fatalf("ActionOf = %q, want %q", got, "")
@@ -61,7 +63,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"businessrule name": {
-			definition.NewBusinessRuleTask("br", definition.WithActionName("rule")),
+			activity.NewBusinessRuleTask("br", activity.WithActionName("rule")),
 			func(t *testing.T, node definition.Node) {
 				if got := definition.ActionOf(node); got != "rule" {
 					t.Fatalf("ActionOf = %q, want %q", got, "rule")
@@ -72,7 +74,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"businessrule inline": {
-			definition.NewBusinessRuleTask("br", definition.WithAction(action.Func(noopFn))),
+			activity.NewBusinessRuleTask("br", activity.WithAction(action.Func(noopFn))),
 			func(t *testing.T, node definition.Node) {
 				if got := definition.ActionOf(node); got != "" {
 					t.Fatalf("ActionOf = %q, want %q", got, "")
@@ -83,7 +85,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"with name + retry": {
-			definition.NewServiceTask("st", definition.WithActionName("pay"), definition.WithName("Pay")),
+			activity.NewServiceTask("st", activity.WithActionName("pay"), activity.WithName("Pay")),
 			func(t *testing.T, node definition.Node) {
 				if got := definition.ActionOf(node); got != "pay" {
 					t.Fatalf("ActionOf = %q, want %q", got, "pay")
@@ -105,9 +107,9 @@ func TestRegisterActionScopedCatalog(t *testing.T) {
 	def, err := definition.NewDefinition("d", 1).
 		RegisterAction("score", action.Func(noopFn)).
 		RegisterActionFunc("notify", noopFn).
-		Add(definition.NewStartEvent("st")).
-		Add(definition.NewServiceTask("s", definition.WithActionName("score"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("st")).
+		Add(activity.NewServiceTask("s", activity.WithActionName("score"))).
+		Add(event.NewEnd("e")).
 		Connect("st", "s").
 		Connect("s", "e").
 		Build()
@@ -128,9 +130,9 @@ func TestRegisterActionScopedCatalog(t *testing.T) {
 
 func TestBuildRejectsInlineAndNameConflict(t *testing.T) {
 	_, err := definition.NewDefinition("d", 1).
-		Add(definition.NewStartEvent("st")).
-		Add(definition.NewServiceTask("s", definition.WithActionName("x"), definition.WithAction(action.Func(noopFn)))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("st")).
+		Add(activity.NewServiceTask("s", activity.WithActionName("x"), activity.WithAction(action.Func(noopFn)))).
+		Add(event.NewEnd("e")).
 		Connect("st", "s").
 		Connect("s", "e").
 		Build()
@@ -143,9 +145,9 @@ func TestBuildRejectsDuplicateScopedAction(t *testing.T) {
 	_, err := definition.NewDefinition("d", 1).
 		RegisterAction("x", action.Func(noopFn)).
 		RegisterAction("x", action.Func(noopFn)).
-		Add(definition.NewStartEvent("st")).
-		Add(definition.NewServiceTask("s", definition.WithActionName("x"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("st")).
+		Add(activity.NewServiceTask("s", activity.WithActionName("x"))).
+		Add(event.NewEnd("e")).
 		Connect("st", "s").
 		Connect("s", "e").
 		Build()
@@ -156,9 +158,9 @@ func TestBuildRejectsDuplicateScopedAction(t *testing.T) {
 
 func TestNoScopedActionsLeavesCatalogNil(t *testing.T) {
 	def, err := definition.NewDefinition("d", 1).
-		Add(definition.NewStartEvent("st")).
-		Add(definition.NewServiceTask("s", definition.WithActionName("x"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("st")).
+		Add(activity.NewServiceTask("s", activity.WithActionName("x"))).
+		Add(event.NewEnd("e")).
 		Connect("st", "s").
 		Connect("s", "e").
 		Build()

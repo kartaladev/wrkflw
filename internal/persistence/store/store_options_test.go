@@ -18,10 +18,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 

@@ -11,8 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -78,16 +80,16 @@ func sagaDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "saga", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("book", definition.WithActionName("book"), definition.WithCompensation("cancel-booking")),
-			definition.NewServiceTask("pay", definition.WithActionName("pay"), definition.WithCompensation("refund")),
-			definition.NewServiceTask("ship", definition.WithActionName("ship")),
+			event.NewStart("start"),
+			activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensation("cancel-booking")),
+			activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("ship", activity.WithActionName("ship")),
 			// Boundary catches ship failure so the unhandled-error auto-compensation
 			// path (ADR-0034) is not triggered; RootCompensations stays intact for
 			// the admin-triggered CompensateRequested below.
-			definition.NewBoundaryEvent("ship-err", "ship", definition.WithBoundaryErrorCode("")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end-fail"),
+			event.NewBoundary("ship-err", "ship", event.WithBoundaryErrorCode("")),
+			event.NewEnd("end"),
+			event.NewEnd("end-fail"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "book"},
@@ -187,13 +189,13 @@ func boundaryErrorDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "boundary-error-recovery", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("risky", definition.WithActionName("risky-action")),
+			event.NewStart("start"),
+			activity.NewServiceTask("risky", activity.WithActionName("risky-action")),
 			// KindBoundaryEvent: error boundary attached to "risky", catch-all (ErrorCode=="").
-			definition.NewBoundaryEvent("err-boundary", "risky", definition.WithBoundaryErrorCode("")),
-			definition.NewServiceTask("recover", definition.WithActionName("recover-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end-recovery"),
+			event.NewBoundary("err-boundary", "risky", event.WithBoundaryErrorCode("")),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recovery"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "risky"},

@@ -14,8 +14,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -66,9 +68,9 @@ func failingActionDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "failing-action-metrics", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("fail")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("fail")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -82,9 +84,9 @@ func timerMetricsDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "timer-metrics", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait1h", definition.WithTimerDuration(`"1h"`)),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},

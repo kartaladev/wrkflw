@@ -10,9 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -25,11 +28,11 @@ func gatewayBlockDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "gw-block", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewExclusiveGateway("xor"),
-			definition.NewServiceTask("big", definition.WithActionName("noop")),
-			definition.NewServiceTask("small", definition.WithActionName("noop")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("big", activity.WithActionName("noop")),
+			activity.NewServiceTask("small", activity.WithActionName("noop")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
@@ -100,11 +103,11 @@ func exclusiveRuntimeDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "xor-rt", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewExclusiveGateway("xor"),
-			definition.NewServiceTask("big", definition.WithActionName("noop")),
-			definition.NewServiceTask("small", definition.WithActionName("noop")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("big", activity.WithActionName("noop")),
+			activity.NewServiceTask("small", activity.WithActionName("noop")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},

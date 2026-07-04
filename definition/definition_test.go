@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 func linearDef() *definition.ProcessDefinition {
@@ -14,9 +16,9 @@ func linearDef() *definition.ProcessDefinition {
 		ID:      "p1",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("greet", definition.WithActionName("greet")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
@@ -53,9 +55,9 @@ func TestNodeUserTaskFields(t *testing.T) {
 		ID:      "p2",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewUserTask("approve", []string{"manager", "admin"},
-				definition.WithName("Approve Request"),
-				definition.WithEligibilityExpr("amount > 1000"),
+			activity.NewUserTask("approve", []string{"manager", "admin"},
+				activity.WithName("Approve Request"),
+				activity.WithEligibilityExpr("amount > 1000"),
 			),
 		},
 		Flows: []definition.SequenceFlow{},
@@ -65,7 +67,7 @@ func TestNodeUserTaskFields(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, definition.KindUserTask, n.Kind())
 	assert.Equal(t, "Approve Request", n.Name())
-	ut, ok := n.(definition.UserTask)
+	ut, ok := n.(activity.UserTask)
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, ut.CandidateRoles)
 	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
@@ -80,27 +82,27 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 	}{
 		{
 			name: "signal-catch",
-			node: definition.NewIntermediateCatchEvent("sig-catch", definition.WithSignalName("order.placed")),
+			node: event.NewCatch("sig-catch", event.WithCatchSignal("order.placed")),
 		},
 		{
 			name: "message-catch",
-			node: definition.NewIntermediateCatchEvent("msg-catch", definition.WithMessageNameAndKey("payment.received", "order.id")),
+			node: event.NewCatch("msg-catch", event.WithCatchMessage("payment.received", "order.id")),
 		},
 		{
 			name: "signal-throw",
-			node: definition.NewIntermediateThrowEvent("sig-throw", definition.WithThrowSignal("order.shipped")),
+			node: event.NewThrow("sig-throw", event.WithThrowSignal("order.shipped")),
 		},
 		{
 			// Zero-value NonInterrupting (false) = interrupting — the default.
 			name: "boundary-interrupting-default",
-			node: definition.NewBoundaryEvent("boundary-1", "task-1", definition.WithBoundarySignal("cancel.signal")),
+			node: event.NewBoundary("boundary-1", "task-1", event.WithBoundarySignal("cancel.signal")),
 		},
 		{
 			// NonInterrupting: true = non-interrupting boundary event.
 			name: "boundary-non-interrupting",
-			node: definition.NewBoundaryEvent("boundary-2", "task-2",
-				definition.WithBoundaryMessage("reminder.msg", ""),
-				definition.BoundaryNonInterrupting(),
+			node: event.NewBoundary("boundary-2", "task-2",
+				event.WithBoundaryMessage("reminder.msg", ""),
+				event.WithBoundaryNonInterrupting(),
 			),
 		},
 	}
@@ -117,18 +119,18 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 			n, ok := d.Node(tc.node.ID())
 			require.True(t, ok)
 			switch expected := tc.node.(type) {
-			case definition.IntermediateCatchEvent:
-				got, ok := n.(definition.IntermediateCatchEvent)
+			case event.IntermediateCatchEvent:
+				got, ok := n.(event.IntermediateCatchEvent)
 				require.True(t, ok)
 				assert.Equal(t, expected.SignalName, got.SignalName)
 				assert.Equal(t, expected.MessageName, got.MessageName)
 				assert.Equal(t, expected.CorrelationKey, got.CorrelationKey)
-			case definition.IntermediateThrowEvent:
-				got, ok := n.(definition.IntermediateThrowEvent)
+			case event.IntermediateThrowEvent:
+				got, ok := n.(event.IntermediateThrowEvent)
 				require.True(t, ok)
 				assert.Equal(t, expected.SignalName, got.SignalName)
-			case definition.BoundaryEvent:
-				got, ok := n.(definition.BoundaryEvent)
+			case event.BoundaryEvent:
+				got, ok := n.(event.BoundaryEvent)
 				require.True(t, ok)
 				assert.Equal(t, expected.SignalName, got.SignalName)
 				assert.Equal(t, expected.MessageName, got.MessageName)
@@ -147,9 +149,9 @@ func TestNodeSubProcessField(t *testing.T) {
 		ID:      "nested-proc",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("ns-start"),
-			definition.NewServiceTask("ns-task", definition.WithActionName("inner-action")),
-			definition.NewEndEvent("ns-end"),
+			event.NewStart("ns-start"),
+			activity.NewServiceTask("ns-task", activity.WithActionName("inner-action")),
+			event.NewEnd("ns-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "nf1", Source: "ns-start", Target: "ns-task"},
@@ -160,7 +162,7 @@ func TestNodeSubProcessField(t *testing.T) {
 	d := &definition.ProcessDefinition{
 		ID:      "outer",
 		Version: 1,
-		Nodes:   []definition.Node{definition.NewSubProcess("subprocess-1", nested, definition.WithName("Inner Subprocess"))},
+		Nodes:   []definition.Node{activity.NewSubProcess("subprocess-1", nested, activity.WithName("Inner Subprocess"))},
 		Flows:   []definition.SequenceFlow{},
 	}
 
@@ -168,7 +170,7 @@ func TestNodeSubProcessField(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, definition.KindSubProcess, n.Kind())
 	assert.Equal(t, "Inner Subprocess", n.Name())
-	sp, ok := n.(definition.SubProcess)
+	sp, ok := n.(activity.SubProcess)
 	require.True(t, ok)
 	require.NotNil(t, sp.Subprocess)
 	assert.Equal(t, "nested-proc", sp.Subprocess.ID)
@@ -184,8 +186,8 @@ func TestNodeEventSubProcessField(t *testing.T) {
 		Version: 1,
 		Nodes: []definition.Node{
 			// The trigger is encoded on the nested StartEvent's SignalName field.
-			definition.NewStartEvent("es-start", definition.WithStartSignal("cancel.signal")),
-			definition.NewEndEvent("es-end"),
+			event.NewStart("es-start", event.WithStartSignal("cancel.signal")),
+			event.NewEnd("es-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "ef1", Source: "es-start", Target: "es-end"},
@@ -195,21 +197,21 @@ func TestNodeEventSubProcessField(t *testing.T) {
 	d := &definition.ProcessDefinition{
 		ID:      "outer2",
 		Version: 1,
-		Nodes:   []definition.Node{definition.NewEventSubProcess("event-sub-1", nested, definition.WithName("Cancel Handler"))},
+		Nodes:   []definition.Node{event.NewEventSubProcess("event-sub-1", nested, event.WithName("Cancel Handler"))},
 		Flows:   []definition.SequenceFlow{},
 	}
 
 	n, ok := d.Node("event-sub-1")
 	require.True(t, ok)
 	assert.Equal(t, definition.KindEventSubProcess, n.Kind())
-	esp, ok := n.(definition.EventSubProcess)
+	esp, ok := n.(event.EventSubProcess)
 	require.True(t, ok)
 	require.NotNil(t, esp.Subprocess)
 	assert.Equal(t, "event-nested-proc", esp.Subprocess.ID)
 	// The trigger is encoded on the nested start event's SignalName field.
 	starts := esp.Subprocess.StartNodes()
 	require.Len(t, starts, 1)
-	se, ok := starts[0].(definition.StartEvent)
+	se, ok := starts[0].(event.StartEvent)
 	require.True(t, ok)
 	assert.Equal(t, "cancel.signal", se.SignalName)
 }
@@ -220,14 +222,14 @@ func TestNodeCallActivityDefRef(t *testing.T) {
 	d := &definition.ProcessDefinition{
 		ID:      "outer3",
 		Version: 1,
-		Nodes:   []definition.Node{definition.NewCallActivity("call-1", "external-process-v2", definition.WithName("Call External Process"))},
+		Nodes:   []definition.Node{activity.NewCallActivity("call-1", "external-process-v2", activity.WithName("Call External Process"))},
 		Flows:   []definition.SequenceFlow{},
 	}
 
 	n, ok := d.Node("call-1")
 	require.True(t, ok)
 	assert.Equal(t, definition.KindCallActivity, n.Kind())
-	ca, ok := n.(definition.CallActivity)
+	ca, ok := n.(activity.CallActivity)
 	require.True(t, ok)
 	assert.Equal(t, "external-process-v2", ca.DefRef)
 }
@@ -242,12 +244,12 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 	}{
 		{
 			name: "timer-intermediate",
-			node: definition.NewIntermediateCatchEvent("wait-1h",
-				definition.WithTimerDuration("PT1H"),
-				definition.WithName("Wait 1 hour"),
+			node: event.NewCatch("wait-1h",
+				event.WithCatchTimer("PT1H"),
+				event.WithName("Wait 1 hour"),
 			),
 			check: func(t *testing.T, n definition.Node) {
-				ice, ok := n.(definition.IntermediateCatchEvent)
+				ice, ok := n.(event.IntermediateCatchEvent)
 				require.True(t, ok)
 				assert.Equal(t, "PT1H", ice.TimerDuration)
 				assert.Equal(t, "Wait 1 hour", n.Name())
@@ -255,12 +257,12 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		},
 		{
 			name: "deadline-with-flow-and-action",
-			node: definition.NewUserTask("review", nil,
-				definition.WithName("Review"),
-				definition.WithDeadline("P1D", "sla-breach-flow", "notify-manager"),
+			node: activity.NewUserTask("review", nil,
+				activity.WithName("Review"),
+				activity.WithDeadline("P1D", "sla-breach-flow", "notify-manager"),
 			),
 			check: func(t *testing.T, n definition.Node) {
-				ut, ok := n.(definition.UserTask)
+				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
 				assert.Equal(t, "P1D", ut.DeadlineDuration)
 				assert.Equal(t, "sla-breach-flow", ut.DeadlineFlow)
@@ -269,12 +271,12 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		},
 		{
 			name: "reminder-every-with-action",
-			node: definition.NewUserTask("approve", nil,
-				definition.WithName("Approve"),
-				definition.WithReminder("PT4H", "send-reminder"),
+			node: activity.NewUserTask("approve", nil,
+				activity.WithName("Approve"),
+				activity.WithReminder("PT4H", "send-reminder"),
 			),
 			check: func(t *testing.T, n definition.Node) {
-				ut, ok := n.(definition.UserTask)
+				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
 				assert.Equal(t, "PT4H", ut.ReminderEvery)
 				assert.Equal(t, "send-reminder", ut.ReminderAction)
@@ -282,13 +284,13 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		},
 		{
 			name: "all-six-fields",
-			node: definition.NewUserTask("task-full", nil,
-				definition.WithName("Full Task"),
-				definition.WithDeadline("P2D", "escalate", "escalate-action"),
-				definition.WithReminder("PT6H", "remind-action"),
+			node: activity.NewUserTask("task-full", nil,
+				activity.WithName("Full Task"),
+				activity.WithDeadline("P2D", "escalate", "escalate-action"),
+				activity.WithReminder("PT6H", "remind-action"),
 			),
 			check: func(t *testing.T, n definition.Node) {
-				ut, ok := n.(definition.UserTask)
+				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
 				assert.Equal(t, "P2D", ut.DeadlineDuration)
 				assert.Equal(t, "escalate", ut.DeadlineFlow)

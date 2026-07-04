@@ -31,8 +31,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -48,18 +50,18 @@ func main() {
 
 	// book and pay each carry a compensation action; ship has none and fails.
 	def, err := definition.NewDefinition("booking-saga", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("book", definition.WithActionName("book"),
-			definition.WithCompensation("cancel-booking"))).
-		Add(definition.NewServiceTask("pay", definition.WithActionName("pay"),
-			definition.WithCompensation("refund"))).
-		Add(definition.NewServiceTask("ship", definition.WithActionName("ship"))).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("book", activity.WithActionName("book"),
+			activity.WithCompensation("cancel-booking"))).
+		Add(activity.NewServiceTask("pay", activity.WithActionName("pay"),
+			activity.WithCompensation("refund"))).
+		Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
 		// Catch-all boundary error keeps recorded compensations intact for the
 		// explicit rollback below.
-		Add(definition.NewBoundaryEvent("ship-err", "ship",
-			definition.WithBoundaryErrorCode(""))).
-		Add(definition.NewEndEvent("end")).
-		Add(definition.NewEndEvent("end-fail")).
+		Add(event.NewBoundary("ship-err", "ship",
+			event.WithBoundaryErrorCode(""))).
+		Add(event.NewEnd("end")).
+		Add(event.NewEnd("end-fail")).
 		Connect("start", "book").
 		Connect("book", "pay").
 		Connect("pay", "ship").

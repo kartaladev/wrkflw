@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // compensableDef returns a minimal process:
@@ -28,9 +30,9 @@ func compensableDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "comp-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge"), definition.WithCompensation("refund")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -44,9 +46,9 @@ func nonCompensableDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "plain-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("charge")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("charge")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -62,9 +64,9 @@ func compensableSubProcessDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book"), definition.WithCompensation("cancel-booking")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensation("cancel-booking")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -74,9 +76,9 @@ func compensableSubProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -255,9 +257,9 @@ func compensableSubThenRootDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "nested-hoist", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book-inner"), definition.WithCompensation("cancel-inner")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -267,10 +269,10 @@ func compensableSubThenRootDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-hoist", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
-			definition.NewUserTask("rootUserTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
+			activity.NewUserTask("rootUserTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -351,10 +353,10 @@ func openSubProcessWithParkDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "nested-park", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("svc", definition.WithActionName("book"), definition.WithCompensation("x")),
-			definition.NewUserTask("userTask", nil),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensation("x")),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "svc"},
@@ -365,9 +367,9 @@ func openSubProcessWithParkDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-park", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
@@ -440,12 +442,12 @@ func threeCompensableDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "three-comp", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("step1", definition.WithActionName("a1"), definition.WithCompensation("c1")),
-			definition.NewServiceTask("step2", definition.WithActionName("a2"), definition.WithCompensation("c2")),
-			definition.NewServiceTask("step3", definition.WithActionName("a3"), definition.WithCompensation("c3")),
-			definition.NewUserTask("userTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("step1", activity.WithActionName("a1"), activity.WithCompensation("c1")),
+			activity.NewServiceTask("step2", activity.WithActionName("a2"), activity.WithCompensation("c2")),
+			activity.NewServiceTask("step3", activity.WithActionName("a3"), activity.WithCompensation("c3")),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "step1"},
@@ -631,9 +633,9 @@ func rootThenSubProcessCompensableDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "nested-order", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-book"), definition.WithCompensation("inner-comp")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-book"), activity.WithCompensation("inner-comp")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -643,11 +645,11 @@ func rootThenSubProcessCompensableDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "order-proc", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("rootSvc", definition.WithActionName("root-book"), definition.WithCompensation("root-comp")),
-			definition.NewSubProcess("sub", nested),
-			definition.NewUserTask("rootUserTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("rootSvc", activity.WithActionName("root-book"), activity.WithCompensation("root-comp")),
+			activity.NewSubProcess("sub", nested),
+			activity.NewUserTask("rootUserTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "rootSvc"},
@@ -757,9 +759,9 @@ func twoLevelNestedCompensableDef() *definition.ProcessDefinition {
 	grandchild := &definition.ProcessDefinition{
 		ID: "grandchild", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("g-start"),
-			definition.NewServiceTask("grandchildSvc", definition.WithActionName("gc-book"), definition.WithCompensation("gc-comp")),
-			definition.NewEndEvent("g-end"),
+			event.NewStart("g-start"),
+			activity.NewServiceTask("grandchildSvc", activity.WithActionName("gc-book"), activity.WithCompensation("gc-comp")),
+			event.NewEnd("g-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "gf1", Source: "g-start", Target: "grandchildSvc"},
@@ -769,9 +771,9 @@ func twoLevelNestedCompensableDef() *definition.ProcessDefinition {
 	outerNested := &definition.ProcessDefinition{
 		ID: "outer-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewSubProcess("innerSub", grandchild),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("inner-start"),
+			activity.NewSubProcess("innerSub", grandchild),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "inner-start", Target: "innerSub"},
@@ -781,10 +783,10 @@ func twoLevelNestedCompensableDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "two-level", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("outerSub", outerNested),
-			definition.NewUserTask("rootUserTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("outerSub", outerNested),
+			activity.NewUserTask("rootUserTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "outerSub"},

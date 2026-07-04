@@ -55,8 +55,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
@@ -291,8 +292,8 @@ func run(logger *slog.Logger) error {
 
 	// ── Define predecessor (proc-a) and successor (proc-a-succ) processes ─────
 	defPA, err := definition.NewDefinition("proc-a", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(event.NewEnd("end")).
 		Connect("start", "end").
 		Build()
 	if err != nil {
@@ -300,8 +301,8 @@ func run(logger *slog.Logger) error {
 	}
 
 	defSA, err := definition.NewDefinition("proc-a-succ", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(event.NewEnd("end")).
 		Connect("start", "end").
 		Build()
 	if err != nil {

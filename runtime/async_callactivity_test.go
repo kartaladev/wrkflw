@@ -10,9 +10,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -27,9 +29,9 @@ func asyncChildDef() *definition.ProcessDefinition {
 		ID:      "async-child",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("child-start"),
-			definition.NewUserTask("child-human", nil),
-			definition.NewEndEvent("child-end"),
+			event.NewStart("child-start"),
+			activity.NewUserTask("child-human", nil),
+			event.NewEnd("child-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "acf1", Source: "child-start", Target: "child-human"},
@@ -46,9 +48,9 @@ func asyncParentDef() *definition.ProcessDefinition {
 		ID:      "async-parent",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "async-child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "async-child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "apf1", Source: "parent-start", Target: "call"},
@@ -134,9 +136,9 @@ func asyncImmediateChildDef() *definition.ProcessDefinition {
 		ID:      "async-imm-child",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("child-start"),
-			definition.NewServiceTask("child-work", definition.WithActionName("complete-action")),
-			definition.NewEndEvent("child-end"),
+			event.NewStart("child-start"),
+			activity.NewServiceTask("child-work", activity.WithActionName("complete-action")),
+			event.NewEnd("child-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "icf1", Source: "child-start", Target: "child-work"},
@@ -151,9 +153,9 @@ func asyncImmediateParentDef() *definition.ProcessDefinition {
 		ID:      "async-imm-parent",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "async-imm-child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "async-imm-child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "ipf1", Source: "parent-start", Target: "call"},
@@ -171,9 +173,9 @@ func asyncFailingChildDef() *definition.ProcessDefinition {
 		ID:      "async-fail-child",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("child-start"),
-			definition.NewServiceTask("child-work", definition.WithActionName("fail-action")),
-			definition.NewEndEvent("child-end"),
+			event.NewStart("child-start"),
+			activity.NewServiceTask("child-work", activity.WithActionName("fail-action")),
+			event.NewEnd("child-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "fcf1", Source: "child-start", Target: "child-work"},
@@ -188,9 +190,9 @@ func asyncFailingParentDef() *definition.ProcessDefinition {
 		ID:      "async-fail-parent",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "async-fail-child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "async-fail-child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "fpf1", Source: "parent-start", Target: "call"},

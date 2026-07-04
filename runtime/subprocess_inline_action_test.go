@@ -23,8 +23,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -40,13 +42,13 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 	nested := &definition.ProcessDefinition{
 		ID: "inline-sub-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionFunc(
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionFunc(
 				func(_ context.Context, in map[string]any) (map[string]any, error) {
 					ran.Store(true)
 					return map[string]any{"done": true}, nil
 				})),
-			definition.NewEndEvent("inner-end"),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -56,9 +58,9 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "inline-sub-def", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},

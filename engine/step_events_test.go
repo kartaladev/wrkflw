@@ -8,8 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // signalCatchDef returns a linear definition:
@@ -19,10 +22,10 @@ func signalCatchDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-signal", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("catch-approved", definition.WithSignalName("approved")),
-			definition.NewServiceTask("complete", definition.WithActionName("complete-action")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("catch-approved", event.WithCatchSignal("approved")),
+			activity.NewServiceTask("complete", activity.WithActionName("complete-action")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-approved"},
@@ -39,10 +42,10 @@ func messageCatchDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-message", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("catch-order", definition.WithMessageNameAndKey("order", `orderId`)),
-			definition.NewServiceTask("process", definition.WithActionName("process-order")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("catch-order", event.WithCatchMessage("order", `orderId`)),
+			activity.NewServiceTask("process", activity.WithActionName("process-order")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-order"},
@@ -59,11 +62,11 @@ func signalThrowDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-throw", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("setup", definition.WithActionName("setup-action")),
-			definition.NewIntermediateThrowEvent("throw-done", definition.WithThrowSignal("done")),
-			definition.NewServiceTask("after", definition.WithActionName("after-action")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("setup", activity.WithActionName("setup-action")),
+			event.NewThrow("throw-done", event.WithThrowSignal("done")),
+			activity.NewServiceTask("after", activity.WithActionName("after-action")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "setup"},
@@ -82,12 +85,12 @@ func twoSignalTokensDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-2-signal", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewIntermediateCatchEvent("catch1", definition.WithSignalName("wake")),
-			definition.NewIntermediateCatchEvent("catch2", definition.WithSignalName("wake")),
-			definition.NewEndEvent("end1"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			event.NewCatch("catch1", event.WithCatchSignal("wake")),
+			event.NewCatch("catch2", event.WithCatchSignal("wake")),
+			event.NewEnd("end1"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -192,11 +195,11 @@ func TestMessageCatchNoCorrelationKeyMatchesOnNameOnly(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "p-msg-nokey", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
+			event.NewStart("start"),
 			// No CorrelationKey: match on name only
-			definition.NewIntermediateCatchEvent("catch-msg", definition.WithMessageNameAndKey("ping", "")),
-			definition.NewServiceTask("svc", definition.WithActionName("pong")),
-			definition.NewEndEvent("end"),
+			event.NewCatch("catch-msg", event.WithCatchMessage("ping", "")),
+			activity.NewServiceTask("svc", activity.WithActionName("pong")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-msg"},
@@ -341,14 +344,14 @@ func eventGatewayDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-evtgw", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewEventBasedGateway("evtgw"),
-			definition.NewIntermediateCatchEvent("timer-catch", definition.WithTimerDuration(`"1h"`)),
-			definition.NewIntermediateCatchEvent("signal-catch", definition.WithSignalName("approved")),
-			definition.NewServiceTask("timer-branch", definition.WithActionName("timer-action")),
-			definition.NewServiceTask("signal-branch", definition.WithActionName("signal-action")),
-			definition.NewEndEvent("end1"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			gateway.NewEventBased("evtgw"),
+			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("signal-catch", event.WithCatchSignal("approved")),
+			activity.NewServiceTask("timer-branch", activity.WithActionName("timer-action")),
+			activity.NewServiceTask("signal-branch", activity.WithActionName("signal-action")),
+			event.NewEnd("end1"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "evtgw"},
@@ -510,14 +513,14 @@ func eventGatewayMessageDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-evtgw-msg", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewEventBasedGateway("evtgw"),
-			definition.NewIntermediateCatchEvent("timer-catch", definition.WithTimerDuration(`"1h"`)),
-			definition.NewIntermediateCatchEvent("msg-catch", definition.WithMessageNameAndKey("order", "")),
-			definition.NewServiceTask("timer-branch", definition.WithActionName("timer-action")),
-			definition.NewServiceTask("msg-branch", definition.WithActionName("msg-action")),
-			definition.NewEndEvent("end1"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			gateway.NewEventBased("evtgw"),
+			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("msg-catch", event.WithCatchMessage("order", "")),
+			activity.NewServiceTask("timer-branch", activity.WithActionName("timer-action")),
+			activity.NewServiceTask("msg-branch", activity.WithActionName("msg-action")),
+			event.NewEnd("end1"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "evtgw"},
@@ -602,12 +605,12 @@ func interruptingBoundaryTimerDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-bnd-timer", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("approve", nil),
-			definition.NewBoundaryEvent("bnd-timer", "approve", definition.WithBoundaryTimer(`"3h"`)),
-			definition.NewServiceTask("escalate", definition.WithActionName("escalate-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			activity.NewUserTask("approve", nil),
+			event.NewBoundary("bnd-timer", "approve", event.WithBoundaryTimer(`"3h"`)),
+			activity.NewServiceTask("escalate", activity.WithActionName("escalate-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "approve"},
@@ -696,12 +699,12 @@ func nonInterruptingBoundaryDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-bnd-nonint", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("work", nil),
-			definition.NewBoundaryEvent("bnd-signal", "work", definition.WithBoundarySignal("notify"), definition.BoundaryNonInterrupting()),
-			definition.NewServiceTask("notify-svc", definition.WithActionName("notify-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			activity.NewUserTask("work", nil),
+			event.NewBoundary("bnd-signal", "work", event.WithBoundarySignal("notify"), event.WithBoundaryNonInterrupting()),
+			activity.NewServiceTask("notify-svc", activity.WithActionName("notify-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -796,12 +799,12 @@ func hostCompletionCancelsBoundaryDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-bnd-hostfirst", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("work", definition.WithActionName("work-action")),
-			definition.NewBoundaryEvent("bnd-timer", "work", definition.WithBoundaryTimer(`"1h"`)),
-			definition.NewServiceTask("alert", definition.WithActionName("alert-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			activity.NewServiceTask("work", activity.WithActionName("work-action")),
+			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(`"1h"`)),
+			activity.NewServiceTask("alert", activity.WithActionName("alert-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -877,12 +880,12 @@ func badBoundaryDurationDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-bad-bnd-dur", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("work", definition.WithActionName("work-action")),
-			definition.NewBoundaryEvent("bnd-bad", "work", definition.WithBoundaryTimer(`"not a duration"`)),
-			definition.NewServiceTask("alert", definition.WithActionName("alert-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			activity.NewServiceTask("work", activity.WithActionName("work-action")),
+			event.NewBoundary("bnd-bad", "work", event.WithBoundaryTimer(`"not a duration"`)),
+			activity.NewServiceTask("alert", activity.WithActionName("alert-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -920,12 +923,12 @@ func actionFailedCancelsArmsAndBoundariesDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-af-cancel", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("work", definition.WithActionName("work-action")),
-			definition.NewBoundaryEvent("bnd-timer", "work", definition.WithBoundaryTimer(`"2h"`)),
-			definition.NewServiceTask("alert", definition.WithActionName("alert-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			activity.NewServiceTask("work", activity.WithActionName("work-action")),
+			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(`"2h"`)),
+			activity.NewServiceTask("alert", activity.WithActionName("alert-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -1014,13 +1017,13 @@ func nonInterruptingBoundarySignalSelfCascadeDef() *definition.ProcessDefinition
 	return &definition.ProcessDefinition{
 		ID: "p-nonint-selfcascade", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("work", nil),
-			definition.NewBoundaryEvent("bnd-pulse", "work", definition.WithBoundarySignal("pulse"), definition.BoundaryNonInterrupting()),
+			event.NewStart("start"),
+			activity.NewUserTask("work", nil),
+			event.NewBoundary("bnd-pulse", "work", event.WithBoundarySignal("pulse"), event.WithBoundaryNonInterrupting()),
 			// The boundary's outgoing path leads to a signal catch for the same signal.
-			definition.NewIntermediateCatchEvent("inner-catch", definition.WithSignalName("pulse")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewCatch("inner-catch", event.WithCatchSignal("pulse")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},

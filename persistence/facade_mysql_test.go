@@ -19,10 +19,11 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
@@ -54,8 +55,8 @@ func mysqlMinimalDef() *definition.ProcessDefinition {
 		ID:      "mysql-minimal",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
@@ -164,7 +165,7 @@ func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	st, err := r.Run(t.Context(), &definition.ProcessDefinition{
 		ID:      "hist-mysql-1",
 		Version: 1,
-		Nodes:   []definition.Node{definition.NewStartEvent("start"), definition.NewEndEvent("end")},
+		Nodes:   []definition.Node{event.NewStart("start"), event.NewEnd("end")},
 		Flows:   []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}, "hist-mysql-inst-1", nil)
 	require.NoError(t, err)

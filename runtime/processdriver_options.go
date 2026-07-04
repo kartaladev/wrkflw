@@ -6,11 +6,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"go.opentelemetry.io/otel/metric"

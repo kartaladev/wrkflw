@@ -7,8 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // exclusiveDef: start -> xor -{amount > 100}-> big ; -default-> small ; both -> end
@@ -16,11 +19,11 @@ func exclusiveDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "xor", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewExclusiveGateway("xor"),
-			definition.NewServiceTask("big", definition.WithActionName("big")),
-			definition.NewServiceTask("small", definition.WithActionName("small")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("big", activity.WithActionName("big")),
+			activity.NewServiceTask("small", activity.WithActionName("small")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
@@ -62,12 +65,12 @@ func parallelForkDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "par", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewServiceTask("a", definition.WithActionName("a")),
-			definition.NewServiceTask("b", definition.WithActionName("b")),
-			definition.NewEndEvent("enda"),
-			definition.NewEndEvent("endb"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewServiceTask("a", activity.WithActionName("a")),
+			activity.NewServiceTask("b", activity.WithActionName("b")),
+			event.NewEnd("enda"),
+			event.NewEnd("endb"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -107,12 +110,12 @@ func diamondDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "diamond", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewServiceTask("a", definition.WithActionName("a")),
-			definition.NewServiceTask("b", definition.WithActionName("b")),
-			definition.NewParallelGateway("join"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewServiceTask("a", activity.WithActionName("a")),
+			activity.NewServiceTask("b", activity.WithActionName("b")),
+			gateway.NewParallel("join"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -170,12 +173,12 @@ func dualSubProcessParallelDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "dual-inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewParallelGateway("ifork"),
-			definition.NewServiceTask("inner-a", definition.WithActionName("action-a")),
-			definition.NewServiceTask("inner-b", definition.WithActionName("action-b")),
-			definition.NewParallelGateway("ijoin"),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			gateway.NewParallel("ifork"),
+			activity.NewServiceTask("inner-a", activity.WithActionName("action-a")),
+			activity.NewServiceTask("inner-b", activity.WithActionName("action-b")),
+			gateway.NewParallel("ijoin"),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "di1", Source: "inner-start", Target: "ifork"},
@@ -190,12 +193,12 @@ func dualSubProcessParallelDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "dual-sub-par", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewParallelGateway("pfork"),
-			definition.NewSubProcess("subA", inner),
-			definition.NewSubProcess("subB", inner),
-			definition.NewParallelGateway("pouter-join"),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			gateway.NewParallel("pfork"),
+			activity.NewSubProcess("subA", inner),
+			activity.NewSubProcess("subB", inner),
+			gateway.NewParallel("pouter-join"),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "pfork"},
@@ -337,10 +340,10 @@ func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "xor", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewExclusiveGateway("xor"),
-			definition.NewServiceTask("big", definition.WithActionName("big")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("big", activity.WithActionName("big")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},

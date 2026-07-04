@@ -2,8 +2,8 @@ package runtime
 
 import (
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // resolveInvokeAction resolves the action for a main-action InvokeAction:

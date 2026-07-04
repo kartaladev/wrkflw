@@ -8,9 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // timerDef returns a linear definition:
@@ -20,10 +23,10 @@ func timerDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-timer", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait1h", definition.WithTimerDuration(`"1h"`)),
-			definition.NewServiceTask("notify", definition.WithActionName("send-notification")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
+			activity.NewServiceTask("notify", activity.WithActionName("send-notification")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
@@ -157,10 +160,10 @@ func deadlineDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-deadline", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify")),
-			definition.NewEndEvent("normalEnd"),
-			definition.NewEndEvent("escalateNode"),
+			event.NewStart("start"),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify")),
+			event.NewEnd("normalEnd"),
+			event.NewEnd("escalateNode"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -345,10 +348,10 @@ func reminderDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-reminder", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify"), definition.WithReminder(`"1h"`, "remind")),
-			definition.NewEndEvent("normalEnd"),
-			definition.NewEndEvent("escalateNode"),
+			event.NewStart("start"),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify"), activity.WithReminder(`"1h"`, "remind")),
+			event.NewEnd("normalEnd"),
+			event.NewEnd("escalateNode"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -556,9 +559,9 @@ func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
 		ID:      "p-reminder-noaction",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("userTask", []string{"manager"}, definition.WithReminder(`"1h"`, "")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithReminder(`"1h"`, "")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -693,12 +696,12 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 		ID:      "p-parallel-deadline",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "esc", "notify")),
-			definition.NewServiceTask("svcTask", definition.WithActionName("work")),
-			definition.NewEndEvent("endA"),
-			definition.NewEndEvent("endB"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "esc", "notify")),
+			activity.NewServiceTask("svcTask", activity.WithActionName("work")),
+			event.NewEnd("endA"),
+			event.NewEnd("endB"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},

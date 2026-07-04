@@ -11,9 +11,12 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -43,12 +46,12 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "fail-e2e", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewUserTask("user", []string{"r"}),
-			definition.NewServiceTask("svc", definition.WithActionName("boom")),
-			definition.NewParallelGateway("join"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewUserTask("user", []string{"r"}),
+			activity.NewServiceTask("svc", activity.WithActionName("boom")),
+			gateway.NewParallel("join"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f0", Source: "start", Target: "fork"},

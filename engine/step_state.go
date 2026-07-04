@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
 // defForScope returns the ProcessDefinition that a token in the given scope
@@ -32,12 +34,12 @@ func defForScope(top *definition.ProcessDefinition, s *InstanceState, scopeID st
 		return nil, fmt.Errorf("workflow-engine: defForScope: sub-process node %q not found in parent definition", scope.NodeID)
 	}
 	switch n := node.(type) {
-	case definition.SubProcess:
+	case activity.SubProcess:
 		if n.Subprocess == nil {
 			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
 		}
 		return n.Subprocess, nil
-	case definition.EventSubProcess:
+	case event.EventSubProcess:
 		if n.Subprocess == nil {
 			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
 		}

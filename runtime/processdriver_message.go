@@ -3,8 +3,8 @@ package runtime
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // DeliverMessage finds the single process instance that is currently waiting for

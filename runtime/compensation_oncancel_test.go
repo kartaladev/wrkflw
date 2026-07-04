@@ -20,9 +20,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -37,10 +39,10 @@ func compensationOnCancelDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "comp-cancel-def", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("charge", definition.WithActionName("charge"), definition.WithCompensation("refund")),
-			definition.NewUserTask("approve", []string{"reviewer"}),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("charge", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewUserTask("approve", []string{"reviewer"}),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},

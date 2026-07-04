@@ -27,8 +27,11 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -38,14 +41,14 @@ func main() {
 	ctx := context.Background()
 
 	def, err := definition.NewDefinition("application-screening", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("assess", definition.WithActionName("assess"))).
-		Add(definition.NewInclusiveGateway("split")).
-		Add(definition.NewServiceTask("notify-risk", definition.WithActionName("notify-risk"))).
-		Add(definition.NewServiceTask("senior-review", definition.WithActionName("senior-review"))).
-		Add(definition.NewServiceTask("fraud-check", definition.WithActionName("fraud-check"))).
-		Add(definition.NewInclusiveGateway("join")).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("assess", activity.WithActionName("assess"))).
+		Add(gateway.NewInclusive("split")).
+		Add(activity.NewServiceTask("notify-risk", activity.WithActionName("notify-risk"))).
+		Add(activity.NewServiceTask("senior-review", activity.WithActionName("senior-review"))).
+		Add(activity.NewServiceTask("fraud-check", activity.WithActionName("fraud-check"))).
+		Add(gateway.NewInclusive("join")).
+		Add(event.NewEnd("end")).
 		Connect("start", "assess").
 		Connect("assess", "split").
 		Connect("split", "notify-risk", definition.WithCondition("score < 600")).

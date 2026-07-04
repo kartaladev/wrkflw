@@ -226,11 +226,14 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 		for {
 			grew := false
 			for _, n := range d.Nodes {
-				be, ok := n.(BoundaryEvent)
-				if !ok || reached[be.ID()] || !reached[be.AttachedTo] {
+				if n.Kind() != KindBoundaryEvent {
 					continue
 				}
-				for id := range forwardReachable(d, be.ID()) {
+				attachedTo := toWire(n).AttachedTo
+				if reached[n.ID()] || !reached[attachedTo] {
+					continue
+				}
+				for id := range forwardReachable(d, n.ID()) {
 					if !reached[id] {
 						reached[id] = true
 						grew = true
@@ -286,20 +289,20 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// may only attach to activities that can throw a BPMN error: ServiceTask,
 	// SubProcess, or CallActivity.
 	for _, n := range d.Nodes {
-		be, ok := n.(BoundaryEvent)
-		if !ok {
+		if n.Kind() != KindBoundaryEvent {
 			continue
 		}
-		host, hok := d.Node(be.AttachedTo)
+		w := toWire(n)
+		host, hok := d.Node(w.AttachedTo)
 		if !hok || !activityKinds[host.Kind()] {
-			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q", ErrBoundaryAttachment, be.ID(), be.AttachedTo))
+			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q", ErrBoundaryAttachment, n.ID(), w.AttachedTo))
 			continue // skip further checks — attachment itself is invalid
 		}
 		// If this is a boundary error event (no timer/signal/message trigger),
 		// the host must be an error-throwing activity.
-		isErrorBoundary := be.TimerDuration == "" && be.SignalName == "" && be.MessageName == ""
+		isErrorBoundary := w.TimerDuration == "" && w.SignalName == "" && w.MessageName == ""
 		if isErrorBoundary && !errorBoundaryHostKinds[host.Kind()] {
-			errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, be.ID(), be.AttachedTo, host.Kind()))
+			errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, n.ID(), w.AttachedTo, host.Kind()))
 		}
 	}
 
@@ -308,32 +311,23 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// definition are wrapped with the host node id so callers can trace which
 	// sub-process contains the violation.
 	for _, n := range d.Nodes {
-		switch v := n.(type) {
-		case SubProcess:
-			if v.Subprocess == nil {
-				errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, v.ID()))
-				continue
-			}
-			if nestedErr := validate(v.Subprocess, seen); nestedErr != nil {
-				errs = append(errs, fmt.Errorf("subprocess %q: %w", v.ID(), nestedErr))
-			}
-		case EventSubProcess:
-			if v.Subprocess == nil {
-				errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, v.ID()))
-				continue
-			}
-			if nestedErr := validate(v.Subprocess, seen); nestedErr != nil {
-				errs = append(errs, fmt.Errorf("subprocess %q: %w", v.ID(), nestedErr))
-			}
+		if n.Kind() != KindSubProcess && n.Kind() != KindEventSubProcess {
+			continue
+		}
+		sub := toWire(n).Subprocess
+		if sub == nil {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, n.ID()))
+			continue
+		}
+		if nestedErr := validate(sub, seen); nestedErr != nil {
+			errs = append(errs, fmt.Errorf("subprocess %q: %w", n.ID(), nestedErr))
 		}
 	}
 
 	// Call-activity: DefRef must be non-empty.
 	for _, n := range d.Nodes {
-		if ca, ok := n.(CallActivity); ok {
-			if ca.DefRef == "" {
-				errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingDefRef, ca.ID()))
-			}
+		if n.Kind() == KindCallActivity && toWire(n).DefRef == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingDefRef, n.ID()))
 		}
 	}
 
@@ -374,12 +368,15 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// means "scope-wide compensation" and is always valid. This rule recurses into
 	// sub-processes automatically (it lives inside validate).
 	for _, n := range d.Nodes {
-		ite, ok := n.(IntermediateThrowEvent)
-		if !ok || ite.CompensateRef == "" {
+		if n.Kind() != KindIntermediateThrowEvent {
 			continue
 		}
-		if _, ok := d.Node(ite.CompensateRef); !ok {
-			errs = append(errs, fmt.Errorf("%w: throw %q -> %q", ErrCompensateRefNotFound, ite.ID(), ite.CompensateRef))
+		compensateRef := toWire(n).CompensateRef
+		if compensateRef == "" {
+			continue
+		}
+		if _, ok := d.Node(compensateRef); !ok {
+			errs = append(errs, fmt.Errorf("%w: throw %q -> %q", ErrCompensateRefNotFound, n.ID(), compensateRef))
 		}
 	}
 

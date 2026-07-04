@@ -11,9 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -27,9 +29,9 @@ func cancelPropParentDef(id, childDefRef string) *definition.ProcessDefinition {
 		ID:      id,
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("p-start"),
-			definition.NewCallActivity("call", childDefRef),
-			definition.NewEndEvent("p-end"),
+			event.NewStart("p-start"),
+			activity.NewCallActivity("call", childDefRef),
+			event.NewEnd("p-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "p-start", Target: "call"},
@@ -46,9 +48,9 @@ func cancelPropChildDef(id string) *definition.ProcessDefinition {
 		ID:      id,
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("c-start"),
-			definition.NewUserTask("c-human", nil),
-			definition.NewEndEvent("c-end"),
+			event.NewStart("c-start"),
+			activity.NewUserTask("c-human", nil),
+			event.NewEnd("c-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "c-start", Target: "c-human"},
@@ -370,9 +372,9 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 		ID:      "no-cl-parent",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("human", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("human", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "human"},

@@ -8,8 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // subProcessDef builds an outer definition:
@@ -23,9 +26,9 @@ func subProcessDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-action")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -35,9 +38,9 @@ func subProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -158,12 +161,12 @@ func parallelSubProcessDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner-parallel", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewParallelGateway("pfork"),
-			definition.NewServiceTask("inner-a", definition.WithActionName("action-a")),
-			definition.NewServiceTask("inner-b", definition.WithActionName("action-b")),
-			definition.NewParallelGateway("pjoin"),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			gateway.NewParallel("pfork"),
+			activity.NewServiceTask("inner-a", activity.WithActionName("action-a")),
+			activity.NewServiceTask("inner-b", activity.WithActionName("action-b")),
+			gateway.NewParallel("pjoin"),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "pfork"},
@@ -177,9 +180,9 @@ func parallelSubProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-parallel", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -204,9 +207,9 @@ func eventSubProcessDef(nonInterrupting bool) *definition.ProcessDefinition {
 	evtsubInner := &definition.ProcessDefinition{
 		ID: "evtsub-inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("evtsub-start", definition.WithStartSignal("cancel")),
-			definition.NewServiceTask("evtsub-svc", definition.WithActionName("cancel-action")),
-			definition.NewEndEvent("evtsub-end"),
+			event.NewStart("evtsub-start", event.WithStartSignal("cancel")),
+			activity.NewServiceTask("evtsub-svc", activity.WithActionName("cancel-action")),
+			event.NewEnd("evtsub-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
@@ -214,17 +217,17 @@ func eventSubProcessDef(nonInterrupting bool) *definition.ProcessDefinition {
 		},
 	}
 
-	evtsubNode := definition.NewEventSubProcess("evtsub", evtsubInner)
+	evtsubNode := event.NewEventSubProcess("evtsub", evtsubInner)
 	if nonInterrupting {
-		evtsubNode = definition.NewEventSubProcess("evtsub", evtsubInner, definition.WithESPNonInterrupting())
+		evtsubNode = event.NewEventSubProcess("evtsub", evtsubInner, event.WithEventSubProcessNonInterrupting())
 	}
 
 	inner := &definition.ProcessDefinition{
 		ID: "inner-evtsub", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewUserTask("inner-user", nil),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewUserTask("inner-user", nil),
+			event.NewEnd("inner-end"),
 			evtsubNode,
 		},
 		Flows: []definition.SequenceFlow{
@@ -236,9 +239,9 @@ func eventSubProcessDef(nonInterrupting bool) *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-evtsub", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -504,9 +507,9 @@ func timerEventSubProcessDef() *definition.ProcessDefinition {
 	evtsubInner := &definition.ProcessDefinition{
 		ID: "evtsub-timer-inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("evtsub-start", definition.WithStartTimer(`"1h"`)),
-			definition.NewServiceTask("evtsub-svc", definition.WithActionName("timeout-action")),
-			definition.NewEndEvent("evtsub-end"),
+			event.NewStart("evtsub-start", event.WithStartTimer(`"1h"`)),
+			activity.NewServiceTask("evtsub-svc", activity.WithActionName("timeout-action")),
+			event.NewEnd("evtsub-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
@@ -516,10 +519,10 @@ func timerEventSubProcessDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner-timer-evtsub", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-action")),
-			definition.NewEndEvent("inner-end"),
-			definition.NewEventSubProcess("evtsub", evtsubInner),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+			event.NewEnd("inner-end"),
+			event.NewEventSubProcess("evtsub", evtsubInner),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -529,9 +532,9 @@ func timerEventSubProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-timer-evtsub", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -634,9 +637,9 @@ func espWithEventGatewayDef() *definition.ProcessDefinition {
 	evtsubInner := &definition.ProcessDefinition{
 		ID: "esp-gw-evtsub-inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("evtsub-start", definition.WithStartSignal("cancel")),
-			definition.NewServiceTask("evtsub-svc", definition.WithActionName("cancel-action")),
-			definition.NewEndEvent("evtsub-end"),
+			event.NewStart("evtsub-start", event.WithStartSignal("cancel")),
+			activity.NewServiceTask("evtsub-svc", activity.WithActionName("cancel-action")),
+			event.NewEnd("evtsub-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "ef1", Source: "evtsub-start", Target: "evtsub-svc"},
@@ -647,12 +650,12 @@ func espWithEventGatewayDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner-esp-gw", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewEventBasedGateway("evtgw"),
-			definition.NewIntermediateCatchEvent("timer-catch", definition.WithTimerDuration(`"2h"`)),
-			definition.NewIntermediateCatchEvent("signal-catch", definition.WithSignalName("done")),
-			definition.NewEndEvent("normal-end"),
-			definition.NewEventSubProcess("evtsub", evtsubInner),
+			event.NewStart("inner-start"),
+			gateway.NewEventBased("evtgw"),
+			event.NewCatch("timer-catch", event.WithCatchTimer(`"2h"`)),
+			event.NewCatch("signal-catch", event.WithCatchSignal("done")),
+			event.NewEnd("normal-end"),
+			event.NewEventSubProcess("evtsub", evtsubInner),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "evtgw"},
@@ -666,9 +669,9 @@ func espWithEventGatewayDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-esp-gw", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -771,9 +774,9 @@ func rootLevelESPDef() *definition.ProcessDefinition {
 	espInner := &definition.ProcessDefinition{
 		ID: "root-esp-inner", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("esp-start", definition.WithStartSignal("cancel")),
-			definition.NewServiceTask("esp-svc", definition.WithActionName("esp-action")),
-			definition.NewEndEvent("esp-end"),
+			event.NewStart("esp-start", event.WithStartSignal("cancel")),
+			activity.NewServiceTask("esp-svc", activity.WithActionName("esp-action")),
+			event.NewEnd("esp-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "re1", Source: "esp-start", Target: "esp-svc"},
@@ -784,10 +787,10 @@ func rootLevelESPDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "root-esp-def", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("root-start"),
-			definition.NewServiceTask("root-svc", definition.WithActionName("normal-action")),
-			definition.NewEndEvent("root-end"),
-			definition.NewEventSubProcess("root-esp", espInner),
+			event.NewStart("root-start"),
+			activity.NewServiceTask("root-svc", activity.WithActionName("normal-action")),
+			event.NewEnd("root-end"),
+			event.NewEventSubProcess("root-esp", espInner),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "rf1", Source: "root-start", Target: "root-svc"},
@@ -892,9 +895,9 @@ func callActivityDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "parent", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("parent-start"),
-			definition.NewCallActivity("call", "child"),
-			definition.NewEndEvent("parent-end"),
+			event.NewStart("parent-start"),
+			activity.NewCallActivity("call", "child"),
+			event.NewEnd("parent-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "parent-start", Target: "call"},
@@ -1022,12 +1025,12 @@ func callActivityWithParallelUserTaskDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "ca-sla-parent", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("p-start"),
-			definition.NewParallelGateway("p-fork"),
-			definition.NewUserTask("p-user", nil, definition.WithDeadline(`"1h"`, "", "")),
-			definition.NewCallActivity("p-call", "child"),
-			definition.NewParallelGateway("p-join"),
-			definition.NewEndEvent("p-end"),
+			event.NewStart("p-start"),
+			gateway.NewParallel("p-fork"),
+			activity.NewUserTask("p-user", nil, activity.WithDeadline(`"1h"`, "", "")),
+			activity.NewCallActivity("p-call", "child"),
+			gateway.NewParallel("p-join"),
+			event.NewEnd("p-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "p-start", Target: "p-fork"},
@@ -1198,12 +1201,12 @@ func boundaryTimerInsideSubProcessDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner-bnd-timer", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("inner-action")),
-			definition.NewBoundaryEvent("bnd-timer", "inner-svc", definition.WithBoundaryTimer(`"2h"`)),
-			definition.NewServiceTask("bnd-target", definition.WithActionName("escalate-action")),
-			definition.NewEndEvent("inner-end"),
-			definition.NewEndEvent("bnd-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+			event.NewBoundary("bnd-timer", "inner-svc", event.WithBoundaryTimer(`"2h"`)),
+			activity.NewServiceTask("bnd-target", activity.WithActionName("escalate-action")),
+			event.NewEnd("inner-end"),
+			event.NewEnd("bnd-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -1215,9 +1218,9 @@ func boundaryTimerInsideSubProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-bnd-timer", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -1338,14 +1341,14 @@ func eventBasedGatewayInsideSubProcessDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner-evtgw", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewEventBasedGateway("evtgw"),
-			definition.NewIntermediateCatchEvent("timer-catch", definition.WithTimerDuration(`"1h"`)),
-			definition.NewIntermediateCatchEvent("signal-catch", definition.WithSignalName("approved")),
-			definition.NewServiceTask("svc-timer", definition.WithActionName("timer-action")),
-			definition.NewServiceTask("svc-signal", definition.WithActionName("signal-action")),
-			definition.NewEndEvent("inner-end"),
-			definition.NewEndEvent("inner-end2"),
+			event.NewStart("inner-start"),
+			gateway.NewEventBased("evtgw"),
+			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("signal-catch", event.WithCatchSignal("approved")),
+			activity.NewServiceTask("svc-timer", activity.WithActionName("timer-action")),
+			activity.NewServiceTask("svc-signal", activity.WithActionName("signal-action")),
+			event.NewEnd("inner-end"),
+			event.NewEnd("inner-end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "evtgw"},
@@ -1360,9 +1363,9 @@ func eventBasedGatewayInsideSubProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-evtgw", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -1477,13 +1480,13 @@ func inclusiveGatewayInsideSubProcessDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner-or", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewInclusiveGateway("orsplit"),
-			definition.NewServiceTask("ta", definition.WithActionName("action-a")),
-			definition.NewServiceTask("tb", definition.WithActionName("action-b")),
-			definition.NewInclusiveGateway("orjoin"),
-			definition.NewServiceTask("post", definition.WithActionName("post-action")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			gateway.NewInclusive("orsplit"),
+			activity.NewServiceTask("ta", activity.WithActionName("action-a")),
+			activity.NewServiceTask("tb", activity.WithActionName("action-b")),
+			gateway.NewInclusive("orjoin"),
+			activity.NewServiceTask("post", activity.WithActionName("post-action")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "orsplit"},
@@ -1498,9 +1501,9 @@ func inclusiveGatewayInsideSubProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-or", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},
@@ -1610,11 +1613,11 @@ func deadlineUserTaskInsideSubProcessDef() *definition.ProcessDefinition {
 	inner := &definition.ProcessDefinition{
 		ID: "inner-sla", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewUserTask("inner-user", []string{"reviewer"},
-				definition.WithDeadline(`"30m"`, "inner-escalate", "notify-action")),
-			definition.NewEndEvent("inner-end"),
-			definition.NewEndEvent("escalate-node"),
+			event.NewStart("inner-start"),
+			activity.NewUserTask("inner-user", []string{"reviewer"},
+				activity.WithDeadline(`"30m"`, "inner-escalate", "notify-action")),
+			event.NewEnd("inner-end"),
+			event.NewEnd("escalate-node"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-user"},
@@ -1625,9 +1628,9 @@ func deadlineUserTaskInsideSubProcessDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "outer-sla", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("outer-start"),
-			definition.NewSubProcess("sub", inner),
-			definition.NewEndEvent("outer-end"),
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewEnd("outer-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "sub"},

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // TestNodeKindJSONMarshal verifies that every NodeKind constant serialises to
@@ -75,7 +76,7 @@ func TestNodeKindJSONInNode(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID:      "p",
 		Version: 1,
-		Nodes:   []definition.Node{definition.NewStartEvent("start", definition.WithName("Order Received"))},
+		Nodes:   []definition.Node{event.NewStart("start", event.WithName("Order Received"))},
 		Flows:   []definition.SequenceFlow{},
 	}
 

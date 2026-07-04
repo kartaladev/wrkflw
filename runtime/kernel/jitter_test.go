@@ -12,6 +12,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -37,14 +39,14 @@ func retryOnceTaskDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "retry-test", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRetryPolicy(&definition.RetryPolicy{
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(&definition.RetryPolicy{
 				MaxAttempts:     3,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,
 				MaxInterval:     time.Minute,
 			})),
-			definition.NewEndEvent("end"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},

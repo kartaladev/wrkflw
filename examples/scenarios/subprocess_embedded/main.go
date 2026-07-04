@@ -25,8 +25,10 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -37,9 +39,9 @@ func main() {
 
 	// The nested definition embedded inside the sub-process node.
 	hotel, err := definition.NewDefinition("hotel-reservation", 1).
-		Add(definition.NewStartEvent("hotel-start")).
-		Add(definition.NewServiceTask("book-room", definition.WithActionName("book-room"))).
-		Add(definition.NewEndEvent("hotel-end")).
+		Add(event.NewStart("hotel-start")).
+		Add(activity.NewServiceTask("book-room", activity.WithActionName("book-room"))).
+		Add(event.NewEnd("hotel-end")).
 		Connect("hotel-start", "book-room").
 		Connect("book-room", "hotel-end").
 		Build()
@@ -49,10 +51,10 @@ func main() {
 
 	// The parent definition embeds the nested definition as a SubProcess.
 	def, err := definition.NewDefinition("travel-booking", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewSubProcess("reserve-hotel", hotel)).
-		Add(definition.NewServiceTask("send-confirmation", definition.WithActionName("send-confirmation"))).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewSubProcess("reserve-hotel", hotel)).
+		Add(activity.NewServiceTask("send-confirmation", activity.WithActionName("send-confirmation"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "reserve-hotel").
 		Connect("reserve-hotel", "send-confirmation").
 		Connect("send-confirmation", "end").

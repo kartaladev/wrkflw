@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 )
 
 func TestParseYAML(t *testing.T) {
@@ -24,7 +25,7 @@ func TestParseYAML(t *testing.T) {
 	if def.ID != "order" || len(def.Nodes) != 3 {
 		t.Fatalf("def = %+v", def)
 	}
-	st, ok := def.Nodes[1].(definition.ServiceTask)
+	st, ok := def.Nodes[1].(activity.ServiceTask)
 	if !ok || st.Action != "charge-card" || st.CompensationAction != "refund-card" {
 		t.Fatalf("node[1] = %#v", def.Nodes[1])
 	}
@@ -201,9 +202,9 @@ flows:
 
 	// Verify the parsed UserTask has the correct eligibilityPrivileges.
 	approveNode := parsed.Nodes[1]
-	ut, ok := approveNode.(definition.UserTask)
+	ut, ok := approveNode.(activity.UserTask)
 	if !ok {
-		t.Fatalf("node[1] is %T, want definition.UserTask", approveNode)
+		t.Fatalf("node[1] is %T, want activity.UserTask", approveNode)
 	}
 	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "finance-task claim" {
 		t.Fatalf("EligibilityPrivileges = %v, want [finance-task claim]", ut.EligibilityPrivileges)

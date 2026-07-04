@@ -40,9 +40,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -60,13 +62,13 @@ func main() {
 	// keep the inner quotes literal. The third argument is the fire-once breach
 	// action; the escalation work proper is the service task on the deadline path.
 	def, err := definition.NewDefinition("review-escalation", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewUserTask("review", []string{"reviewer"},
-			definition.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"),
+		Add(event.NewStart("start")).
+		Add(activity.NewUserTask("review", []string{"reviewer"},
+			activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"),
 		)).
-		Add(definition.NewServiceTask("escalate", definition.WithActionName("reassign"))).
-		Add(definition.NewEndEvent("approved-end")).
-		Add(definition.NewEndEvent("escalated-end")).
+		Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
+		Add(event.NewEnd("approved-end")).
+		Add(event.NewEnd("escalated-end")).
 		Connect("start", "review").
 		Connect("review", "approved-end"). // normal completion path
 		// The deadline flow: its ID must match the WithDeadline flowID above.

@@ -3,10 +3,11 @@ package runtime
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // ResolveIncident clears the named incident on an instance, grants addAttempts

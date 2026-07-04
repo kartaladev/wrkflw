@@ -13,8 +13,10 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -115,9 +117,9 @@ func userTaskOnlyDef() *definition.ProcessDefinition {
 		ID:      "user-task-only",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("task1", []string{"manager"}),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("task1", []string{"manager"}),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task1"},
@@ -146,9 +148,9 @@ func timerOnlyDef() *definition.ProcessDefinition {
 		ID:      "timer-only",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait", definition.WithTimerDuration(`"1h"`)),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait", event.WithCatchTimer(`"1h"`)),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},
@@ -252,9 +254,9 @@ func conflictTimerDef() *definition.ProcessDefinition {
 		ID:      "conflict-timer",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait10s", definition.WithTimerDuration(`"10s"`)),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait10s", event.WithCatchTimer(`"10s"`)),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait10s"},

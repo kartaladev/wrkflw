@@ -10,9 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	// kinds registers every node kind so definitions read back from the store
+	// deserialize into their concrete types (see definition/kinds).
+	_ "github.com/zakyalvan/krtlwrkflw/definition/kinds"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 

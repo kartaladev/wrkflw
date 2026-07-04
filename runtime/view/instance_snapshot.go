@@ -4,9 +4,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // StatusString converts an engine.Status to its canonical string representation.

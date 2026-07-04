@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // fireForgetDeadlineDef returns a user task with a 3h deadline whose breach runs
@@ -16,10 +18,10 @@ func fireForgetDeadlineDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-ff-deadline", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify")),
-			definition.NewEndEvent("normalEnd"),
-			definition.NewEndEvent("escalateNode"),
+			event.NewStart("start"),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify")),
+			event.NewEnd("normalEnd"),
+			event.NewEnd("escalateNode"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},
@@ -35,10 +37,10 @@ func fireForgetReminderDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-ff-reminder", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("userTask", []string{"manager"}, definition.WithDeadline(`"3h"`, "escalate", "notify"), definition.WithReminder(`"1h"`, "remind")),
-			definition.NewEndEvent("normalEnd"),
-			definition.NewEndEvent("escalateNode"),
+			event.NewStart("start"),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify"), activity.WithReminder(`"1h"`, "remind")),
+			event.NewEnd("normalEnd"),
+			event.NewEnd("escalateNode"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "userTask"},

@@ -30,8 +30,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
 	"github.com/zakyalvan/krtlwrkflw/action/logaction"
 	"github.com/zakyalvan/krtlwrkflw/action/transform"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -141,12 +143,12 @@ func main() {
 
 	// --- 3. Process definition ——————————————————————————————————————————————
 	def, err := definition.NewDefinition("builtin-actions-demo", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("enrich", definition.WithActionName("enrich"))).
-		Add(definition.NewServiceTask("call-api", definition.WithActionName("call-api"))).
-		Add(definition.NewServiceTask("notify", definition.WithActionName("notify"))).
-		Add(definition.NewServiceTask("audit", definition.WithActionName("audit"))).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("enrich", activity.WithActionName("enrich"))).
+		Add(activity.NewServiceTask("call-api", activity.WithActionName("call-api"))).
+		Add(activity.NewServiceTask("notify", activity.WithActionName("notify"))).
+		Add(activity.NewServiceTask("audit", activity.WithActionName("audit"))).
+		Add(event.NewEnd("end")).
 		Connect("start", "enrich").
 		Connect("enrich", "call-api").
 		Connect("call-api", "notify").

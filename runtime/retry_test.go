@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -29,10 +31,10 @@ func noRetryServiceTaskDef() *definition.ProcessDefinition {
 		ID:      "no-node-retry",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
+			event.NewStart("start"),
 			// RetryPolicy intentionally omitted — no node-level policy.
-			definition.NewServiceTask("task", definition.WithActionName("a")),
-			definition.NewEndEvent("end"),
+			activity.NewServiceTask("task", activity.WithActionName("a")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -127,12 +129,12 @@ func incidentTaskDef() *definition.ProcessDefinition {
 		ID:      "incident-test",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
+			event.NewStart("start"),
 			// RetryPolicy intentionally omitted — default policy of MaxAttempts=1
 			// causes the first failure to exhaust the budget immediately, parking
 			// the instance as an incident rather than scheduling a retry.
-			definition.NewServiceTask("task", definition.WithActionName("a")),
-			definition.NewEndEvent("end"),
+			activity.NewServiceTask("task", activity.WithActionName("a")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},

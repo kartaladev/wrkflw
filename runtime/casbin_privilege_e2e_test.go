@@ -18,8 +18,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -35,11 +37,11 @@ func financePrivilegeDef() *definition.ProcessDefinition {
 		ID:      "finance-approval",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("review", nil,
-				definition.WithEligibilityPrivileges("finance-task claim"),
+			event.NewStart("start"),
+			activity.NewUserTask("review", nil,
+				activity.WithEligibilityPrivileges("finance-task claim"),
 			),
-			definition.NewEndEvent("end"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},

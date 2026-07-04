@@ -24,8 +24,10 @@ import (
 	"log"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -36,9 +38,9 @@ func main() {
 
 	// Child definition — a reusable credit-check process.
 	child, err := definition.NewDefinition("credit-check", 1).
-		Add(definition.NewStartEvent("child-start")).
-		Add(definition.NewServiceTask("score", definition.WithActionName("score"))).
-		Add(definition.NewEndEvent("child-end")).
+		Add(event.NewStart("child-start")).
+		Add(activity.NewServiceTask("score", activity.WithActionName("score"))).
+		Add(event.NewEnd("child-end")).
 		Connect("child-start", "score").
 		Connect("score", "child-end").
 		Build()
@@ -48,9 +50,9 @@ func main() {
 
 	// Parent definition — calls the child by its registered name.
 	parent, err := definition.NewDefinition("loan-origination", 1).
-		Add(definition.NewStartEvent("parent-start")).
-		Add(definition.NewCallActivity("call", "credit-check")).
-		Add(definition.NewEndEvent("parent-end")).
+		Add(event.NewStart("parent-start")).
+		Add(activity.NewCallActivity("call", "credit-check")).
+		Add(event.NewEnd("parent-end")).
 		Connect("parent-start", "call").
 		Connect("call", "parent-end").
 		Build()

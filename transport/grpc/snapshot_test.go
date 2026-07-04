@@ -11,6 +11,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
 )
 
@@ -31,11 +33,11 @@ func snapNoopFn(_ context.Context, in map[string]any) (map[string]any, error) {
 func snapshotDef() *definition.ProcessDefinition {
 	def, err := definition.NewDefinition("snap-def", 1).
 		RegisterAction("scoped-svc", action.Func(snapNoopFn)).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("named-svc", definition.WithActionName("scoped-svc"))).
-		Add(definition.NewServiceTask("inline-svc", definition.WithActionFunc(snapNoopFn))).
-		Add(definition.NewServiceTask("default-svc")).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("named-svc", activity.WithActionName("scoped-svc"))).
+		Add(activity.NewServiceTask("inline-svc", activity.WithActionFunc(snapNoopFn))).
+		Add(activity.NewServiceTask("default-svc")).
+		Add(event.NewEnd("end")).
 		Connect("start", "named-svc").
 		Connect("named-svc", "inline-svc").
 		Connect("inline-svc", "default-svc").

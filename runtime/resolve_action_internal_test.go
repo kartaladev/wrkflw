@@ -8,8 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -38,9 +40,9 @@ func resolveActionScopedDef(t *testing.T) *definition.ProcessDefinition {
 	def, err := definition.NewDefinition("d", 1).
 		RegisterAction("x", tag("scoped")).
 		RegisterAction("scoped-only", tag("scoped-only")).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("idNode", definition.WithActionName("idNode"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("idNode", activity.WithActionName("idNode"))).
+		Add(event.NewEnd("e")).
 		Connect("start", "idNode").
 		Connect("idNode", "e").
 		Build()

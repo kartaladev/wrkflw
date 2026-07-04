@@ -22,10 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
@@ -38,8 +39,8 @@ import (
 func buildDef(t *testing.T, id string, version int) *definition.ProcessDefinition {
 	t.Helper()
 	def, err := definition.NewDefinition(id, version).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewEndEvent("end")).
+		Add(event.NewStart("start")).
+		Add(event.NewEnd("end")).
 		Connect("start", "end").
 		Build()
 	require.NoError(t, err)

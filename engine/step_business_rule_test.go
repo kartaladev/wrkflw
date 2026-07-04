@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
@@ -32,9 +34,9 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p-svc-default", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("work"), // no WithActionName → default-by-id
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("work"), // no WithActionName → default-by-id
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "work"},
@@ -51,9 +53,9 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p-svc-explicit", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("work", definition.WithActionName("pay")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("work", activity.WithActionName("pay")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "work"},
@@ -70,9 +72,9 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p-svc-inline", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("work", definition.WithAction(inlineAction)),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("work", activity.WithAction(inlineAction)),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "work"},
@@ -89,9 +91,9 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p-br-explicit", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewBusinessRuleTask("rule", definition.WithActionName("decide")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewBusinessRuleTask("rule", activity.WithActionName("decide")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "rule"},
@@ -108,9 +110,9 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p-br-default", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewBusinessRuleTask("brule"), // no WithActionName → default-by-id
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewBusinessRuleTask("brule"), // no WithActionName → default-by-id
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "brule"},
@@ -127,9 +129,9 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p-br-inline", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewBusinessRuleTask("brule", definition.WithAction(inlineAction)),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewBusinessRuleTask("brule", activity.WithAction(inlineAction)),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "brule"},

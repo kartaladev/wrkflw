@@ -8,8 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // interruptingMessageBoundaryDef returns a definition:
@@ -20,12 +22,12 @@ func interruptingMessageBoundaryDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-bnd-msg-int", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("work", nil),
-			definition.NewBoundaryEvent("bnd-msg", "work", definition.WithBoundaryMessage("cancel", "")),
-			definition.NewServiceTask("escalate", definition.WithActionName("escalate-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			activity.NewUserTask("work", nil),
+			event.NewBoundary("bnd-msg", "work", event.WithBoundaryMessage("cancel", "")),
+			activity.NewServiceTask("escalate", activity.WithActionName("escalate-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
@@ -129,13 +131,13 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 		return &definition.ProcessDefinition{
 			ID: "p-bnd-msg-corr", Version: 1,
 			Nodes: []definition.Node{
-				definition.NewStartEvent("start"),
-				definition.NewUserTask("work", nil),
-				definition.NewBoundaryEvent("bnd-msg", "work",
-					definition.WithBoundaryMessage("cancel", "string(orderId)")),
-				definition.NewServiceTask("escalate", definition.WithActionName("escalate-action")),
-				definition.NewEndEvent("end"),
-				definition.NewEndEvent("end2"),
+				event.NewStart("start"),
+				activity.NewUserTask("work", nil),
+				event.NewBoundary("bnd-msg", "work",
+					event.WithBoundaryMessage("cancel", "string(orderId)")),
+				activity.NewServiceTask("escalate", activity.WithActionName("escalate-action")),
+				event.NewEnd("end"),
+				event.NewEnd("end2"),
 			},
 			Flows: []definition.SequenceFlow{
 				{ID: "f-start", Source: "start", Target: "work"},
@@ -206,13 +208,13 @@ func nonInterruptingMessageBoundaryDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-bnd-msg-nonint", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("work", nil),
-			definition.NewBoundaryEvent("bnd-msg", "work",
-				definition.WithBoundaryMessage("notify", ""), definition.BoundaryNonInterrupting()),
-			definition.NewServiceTask("notify-svc", definition.WithActionName("notify-action")),
-			definition.NewEndEvent("end"),
-			definition.NewEndEvent("end2"),
+			event.NewStart("start"),
+			activity.NewUserTask("work", nil),
+			event.NewBoundary("bnd-msg", "work",
+				event.WithBoundaryMessage("notify", ""), event.WithBoundaryNonInterrupting()),
+			activity.NewServiceTask("notify-svc", activity.WithActionName("notify-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},

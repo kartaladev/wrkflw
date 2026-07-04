@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // ExampleDefinitionBuilder demonstrates how a consumer builds a small process
@@ -11,13 +13,13 @@ import (
 // constructors. This example is also executed by "go test" to verify the output.
 func ExampleDefinitionBuilder() {
 	def, err := definition.NewDefinition("order-fulfillment", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("charge",
-			definition.WithActionName("charge-card"),
-			definition.WithCompensation("refund-card"),
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("charge",
+			activity.WithActionName("charge-card"),
+			activity.WithCompensation("refund-card"),
 		)).
-		Add(definition.NewUserTask("approve", []string{"manager"})).
-		Add(definition.NewEndEvent("end")).
+		Add(activity.NewUserTask("approve", []string{"manager"})).
+		Add(event.NewEnd("end")).
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").

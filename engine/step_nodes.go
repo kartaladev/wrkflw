@@ -5,8 +5,10 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
 // stepCtx carries the repeated inputs to the node-kind dispatch layer.
@@ -79,7 +81,7 @@ var nodeStrategies = map[definition.NodeKind]nodeStrategy{
 type serviceTaskStrategy struct{}
 
 func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	if _, ok := node.(definition.ServiceTask); !ok {
+	if _, ok := node.(activity.ServiceTask); !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
 	}
@@ -110,7 +112,7 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) (
 type businessRuleTaskStrategy struct{}
 
 func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	if _, ok := node.(definition.BusinessRuleTask); !ok {
+	if _, ok := node.(activity.BusinessRuleTask); !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
 	}
@@ -140,7 +142,7 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node definition.No
 type receiveTaskStrategy struct{}
 
 func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	rt, ok := node.(definition.ReceiveTask)
+	rt, ok := node.(activity.ReceiveTask)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -167,7 +169,7 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) (
 type sendTaskStrategy struct{}
 
 func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	st, ok := node.(definition.SendTask)
+	st, ok := node.(activity.SendTask)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -255,7 +257,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]C
 			parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
 			if pErr == nil {
 				if espNode, ok2 := parentDef.Node(subNodeID); ok2 {
-					_, isEventSubProcess = espNode.(definition.EventSubProcess)
+					_, isEventSubProcess = espNode.(event.EventSubProcess)
 				}
 			}
 
@@ -417,7 +419,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]C
 				// it in the parent scope. The snapshot is taken after the scope is
 				// closed (consistent: the sub-process completed at this point).
 				if spNode, spOK := parentDef.Node(subNodeID); spOK {
-					if sp, spIsSubProc := spNode.(definition.SubProcess); spIsSubProc && sp.CompensationAction != "" {
+					if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensationAction != "" {
 						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensationAction, c.at, copyVars(c.s.Variables))
 					}
 				}
@@ -444,7 +446,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]C
 type subProcessStrategy struct{}
 
 func (subProcessStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	sp, ok := node.(definition.SubProcess)
+	sp, ok := node.(activity.SubProcess)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -484,7 +486,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([
 type userTaskStrategy struct{}
 
 func (userTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	ut, ok := node.(definition.UserTask)
+	ut, ok := node.(activity.UserTask)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -571,7 +573,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]C
 type intermediateCatchEventStrategy struct{}
 
 func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	ice, ok := node.(definition.IntermediateCatchEvent)
+	ice, ok := node.(event.IntermediateCatchEvent)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -620,7 +622,7 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node definit
 type errorEndEventStrategy struct{}
 
 func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	eee, ok := node.(definition.ErrorEndEvent)
+	eee, ok := node.(event.ErrorEndEvent)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -750,7 +752,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node definition.N
 		if !ok {
 			continue
 		}
-		ce, ok := catchNodeRaw.(definition.IntermediateCatchEvent)
+		ce, ok := catchNodeRaw.(event.IntermediateCatchEvent)
 		if !ok {
 			continue
 		}
@@ -792,7 +794,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node definition.N
 type callActivityStrategy struct{}
 
 func (callActivityStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	ca, ok := node.(definition.CallActivity)
+	ca, ok := node.(activity.CallActivity)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil
@@ -823,7 +825,7 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node definition.Node) 
 type intermediateThrowEventStrategy struct{}
 
 func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node definition.Node) ([]Command, bool, error) {
-	ite, ok := node.(definition.IntermediateThrowEvent)
+	ite, ok := node.(event.IntermediateThrowEvent)
 	if !ok {
 		tok.State = TokenWaitingCommand
 		return nil, false, nil

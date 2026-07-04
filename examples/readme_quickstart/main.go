@@ -9,8 +9,10 @@ import (
 	"os"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -20,12 +22,12 @@ func main() {
 
 	// --- Define a process (Go builder) ---
 	def, err := definition.NewDefinition("order-fulfillment", 1).
-		Add(definition.NewStartEvent("start")).
-		Add(definition.NewServiceTask("charge", definition.WithActionName("charge-card"),
-			definition.WithCompensation("refund-card"),
+		Add(event.NewStart("start")).
+		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
+			activity.WithCompensation("refund-card"),
 		)).
-		Add(definition.NewUserTask("approve", []string{"manager"})).
-		Add(definition.NewEndEvent("end")).
+		Add(activity.NewUserTask("approve", []string{"manager"})).
+		Add(event.NewEnd("end")).
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").
@@ -66,9 +68,9 @@ flows:
 
 	// --- Run it ---
 	simpleDef, _ := definition.NewDefinition("order", 1).
-		Add(definition.NewStartEvent("s")).
-		Add(definition.NewServiceTask("charge", definition.WithActionName("charge-card"))).
-		Add(definition.NewEndEvent("e")).
+		Add(event.NewStart("s")).
+		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
 		Build()

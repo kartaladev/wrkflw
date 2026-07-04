@@ -27,8 +27,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // parallelErrorEndFirstNoHandlerDef builds a process where the ErrorEndEvent
@@ -55,11 +58,11 @@ func parallelErrorEndFirstNoHandlerDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-par-errend-first", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
 			// err-end FIRST so forkParallel places its token before svc-a.
-			definition.NewErrorEndEvent("err-end", "FATAL"),
-			definition.NewServiceTask("svc-a", definition.WithActionName("svc-a")),
+			event.NewErrorEnd("err-end", "FATAL"),
+			activity.NewServiceTask("svc-a", activity.WithActionName("svc-a")),
 			// NO boundary error handler anywhere.
 		},
 		Flows: []definition.SequenceFlow{

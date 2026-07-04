@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 )
 
 // propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).
@@ -68,9 +69,9 @@ func propagateError(top *definition.ProcessDefinition, s *InstanceState, scopeID
 			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
 		}
 
-		var directHandler *definition.BoundaryEvent
+		var directHandler *event.BoundaryEvent
 		for _, raw := range ownDef.Nodes {
-			n, isBnd := raw.(definition.BoundaryEvent)
+			n, isBnd := raw.(event.BoundaryEvent)
 			if !isBnd {
 				continue
 			}
@@ -163,9 +164,9 @@ func propagateError(top *definition.ProcessDefinition, s *InstanceState, scopeID
 
 		// Scan the parent def for a boundary error event attached to activityNodeID
 		// that matches errorCode (specific or catch-all).
-		var handler *definition.BoundaryEvent
+		var handler *event.BoundaryEvent
 		for _, raw := range parentDef.Nodes {
-			n, isBnd := raw.(definition.BoundaryEvent)
+			n, isBnd := raw.(event.BoundaryEvent)
 			if !isBnd {
 				continue
 			}

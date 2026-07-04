@@ -9,43 +9,46 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 )
 
 func TestRetryPolicyOf(t *testing.T) {
 	p := &definition.RetryPolicy{MaxAttempts: 5}
-	n := definition.NewServiceTask("a", definition.WithActionName("act"), definition.WithRetryPolicy(p))
+	n := activity.NewServiceTask("a", activity.WithActionName("act"), activity.WithRetryPolicy(p))
 	if definition.RetryPolicyOf(n) != p {
 		t.Fatal("RetryPolicyOf did not return the activity's policy")
 	}
-	if definition.RetryPolicyOf(definition.NewStartEvent("s")) != nil {
+	if definition.RetryPolicyOf(event.NewStart("s")) != nil {
 		t.Fatal("non-activity must return nil")
 	}
 	// Test all activity kinds
 	cases := []definition.Node{
-		definition.NewUserTask("ut", nil, definition.WithRetryPolicy(p)),
-		definition.NewReceiveTask("rt", "msg", definition.WithRetryPolicy(p)),
-		definition.NewSendTask("st", "msg", definition.WithRetryPolicy(p)),
-		definition.NewBusinessRuleTask("brt", definition.WithActionName("act"), definition.WithRetryPolicy(p)),
-		definition.NewSubProcess("sp", nil, definition.WithRetryPolicy(p)),
-		definition.NewCallActivity("ca", "ref", definition.WithRetryPolicy(p)),
+		activity.NewUserTask("ut", nil, activity.WithRetryPolicy(p)),
+		activity.NewReceiveTask("rt", "msg", activity.WithRetryPolicy(p)),
+		activity.NewSendTask("st", "msg", activity.WithRetryPolicy(p)),
+		activity.NewBusinessRuleTask("brt", activity.WithActionName("act"), activity.WithRetryPolicy(p)),
+		activity.NewSubProcess("sp", nil, activity.WithRetryPolicy(p)),
+		activity.NewCallActivity("ca", "ref", activity.WithRetryPolicy(p)),
 	}
 	for _, c := range cases {
 		require.Equal(t, p, definition.RetryPolicyOf(c), "kind %v should return policy", c.Kind())
 	}
 	// Non-activity kinds should return nil
 	nonActivities := []definition.Node{
-		definition.NewStartEvent("s"),
-		definition.NewEndEvent("e"),
-		definition.NewTerminateEndEvent("te"),
-		definition.NewErrorEndEvent("ee", "ERR"),
-		definition.NewExclusiveGateway("xor"),
-		definition.NewParallelGateway("par"),
-		definition.NewInclusiveGateway("inc"),
-		definition.NewEventBasedGateway("ebg"),
-		definition.NewBoundaryEvent("be", "host"),
-		definition.NewIntermediateCatchEvent("ice"),
-		definition.NewIntermediateThrowEvent("ite"),
-		definition.NewEventSubProcess("esp", nil),
+		event.NewStart("s"),
+		event.NewEnd("e"),
+		event.NewTerminateEnd("te"),
+		event.NewErrorEnd("ee", "ERR"),
+		gateway.NewExclusive("xor"),
+		gateway.NewParallel("par"),
+		gateway.NewInclusive("inc"),
+		gateway.NewEventBased("ebg"),
+		event.NewBoundary("be", "host"),
+		event.NewCatch("ice"),
+		event.NewThrow("ite"),
+		event.NewEventSubProcess("esp", nil),
 	}
 	for _, c := range nonActivities {
 		require.Nil(t, definition.RetryPolicyOf(c), "kind %v should return nil", c.Kind())
@@ -60,28 +63,28 @@ func TestDeadlineOf(t *testing.T) {
 	}{
 		{
 			name:     "service task with deadline",
-			node:     definition.NewServiceTask("st", definition.WithActionName("act"), definition.WithDeadline("P1D", "sla-flow", "sla-act")),
+			node:     activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithDeadline("P1D", "sla-flow", "sla-act")),
 			wantDur:  "P1D",
 			wantFlow: "sla-flow",
 			wantAct:  "sla-act",
 		},
 		{
 			name:     "user task with deadline",
-			node:     definition.NewUserTask("ut", nil, definition.WithDeadline("PT2H", "ut-flow", "ut-act")),
+			node:     activity.NewUserTask("ut", nil, activity.WithDeadline("PT2H", "ut-flow", "ut-act")),
 			wantDur:  "PT2H",
 			wantFlow: "ut-flow",
 			wantAct:  "ut-act",
 		},
 		{
 			name:     "intermediate catch event with deadline",
-			node:     definition.NewIntermediateCatchEvent("ice", definition.WithICEDeadline("P2D", "ice-flow", "ice-act")),
+			node:     event.NewCatch("ice", event.WithCatchDeadline("P2D", "ice-flow", "ice-act")),
 			wantDur:  "P2D",
 			wantFlow: "ice-flow",
 			wantAct:  "ice-act",
 		},
 		{
 			name:     "start event returns empty",
-			node:     definition.NewStartEvent("s"),
+			node:     event.NewStart("s"),
 			wantDur:  "",
 			wantFlow: "",
 			wantAct:  "",
@@ -99,31 +102,31 @@ func TestDeadlineOf(t *testing.T) {
 
 func TestReminderOf(t *testing.T) {
 	p := &definition.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
-	n := definition.NewUserTask("ut", nil,
-		definition.WithRetryPolicy(p),
-		definition.WithReminder("PT4H", "send-reminder"),
+	n := activity.NewUserTask("ut", nil,
+		activity.WithRetryPolicy(p),
+		activity.WithReminder("PT4H", "send-reminder"),
 	)
 	every, act := definition.ReminderOf(n)
 	assert.Equal(t, "PT4H", every)
 	assert.Equal(t, "send-reminder", act)
 
 	// Non-activity returns empty
-	every, act = definition.ReminderOf(definition.NewStartEvent("s"))
+	every, act = definition.ReminderOf(event.NewStart("s"))
 	assert.Equal(t, "", every)
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
-	ice := definition.NewIntermediateCatchEvent("ice", definition.WithICEReminder("PT2H", "ice-remind"))
+	ice := event.NewCatch("ice", event.WithCatchReminder("PT2H", "ice-remind"))
 	every, act = definition.ReminderOf(ice)
 	assert.Equal(t, "PT2H", every)
 	assert.Equal(t, "ice-remind", act)
 }
 
 func TestActionOf(t *testing.T) {
-	assert.Equal(t, "charge-card", definition.ActionOf(definition.NewServiceTask("st", definition.WithActionName("charge-card"))))
-	assert.Equal(t, "apply-discount", definition.ActionOf(definition.NewBusinessRuleTask("brt", definition.WithActionName("apply-discount"))))
-	assert.Equal(t, "", definition.ActionOf(definition.NewUserTask("ut", nil)))
-	assert.Equal(t, "", definition.ActionOf(definition.NewStartEvent("s")))
+	assert.Equal(t, "charge-card", definition.ActionOf(activity.NewServiceTask("st", activity.WithActionName("charge-card"))))
+	assert.Equal(t, "apply-discount", definition.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithActionName("apply-discount"))))
+	assert.Equal(t, "", definition.ActionOf(activity.NewUserTask("ut", nil)))
+	assert.Equal(t, "", definition.ActionOf(event.NewStart("s")))
 }
 
 // TestProcessDefinitionJSONRoundTrip verifies that Marshal(def) then Unmarshal
@@ -134,32 +137,32 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 		ID:      "order",
 		Version: 2,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start", definition.WithName("Start")),
-			definition.NewServiceTask("charge",
-				definition.WithActionName("charge-card"),
-				definition.WithCompensation("refund-card"),
-				definition.WithRecoveryFlow("f-error"),
-				definition.WithRetryPolicy(p),
-				definition.WithDeadline("P1D", "sla-flow", "sla-act"),
-				definition.WithReminder("PT4H", "remind-act"),
-				definition.WithCancelHandler("cancel-charge"),
+			event.NewStart("start", event.WithName("Start")),
+			activity.NewServiceTask("charge",
+				activity.WithActionName("charge-card"),
+				activity.WithCompensation("refund-card"),
+				activity.WithRecoveryFlow("f-error"),
+				activity.WithRetryPolicy(p),
+				activity.WithDeadline("P1D", "sla-flow", "sla-act"),
+				activity.WithReminder("PT4H", "remind-act"),
+				activity.WithCancelHandler("cancel-charge"),
 			),
-			definition.NewUserTask("approve", []string{"manager", "admin"},
-				definition.WithEligibilityExpr("amount > 1000"),
-				definition.WithName("Approve"),
+			activity.NewUserTask("approve", []string{"manager", "admin"},
+				activity.WithEligibilityExpr("amount > 1000"),
+				activity.WithName("Approve"),
 			),
-			definition.NewIntermediateCatchEvent("wait",
-				definition.WithTimerDuration("PT30M"),
-				definition.WithName("Wait"),
+			event.NewCatch("wait",
+				event.WithCatchTimer("PT30M"),
+				event.WithName("Wait"),
 			),
-			definition.NewIntermediateThrowEvent("signal-done", definition.WithThrowSignal("order.done")),
-			definition.NewBoundaryEvent("error-bnd", "charge",
-				definition.WithBoundaryErrorCode("ERR_PAYMENT"),
+			event.NewThrow("signal-done", event.WithThrowSignal("order.done")),
+			event.NewBoundary("error-bnd", "charge",
+				event.WithBoundaryErrorCode("ERR_PAYMENT"),
 			),
-			definition.NewExclusiveGateway("xor", "Decision"),
-			definition.NewEndEvent("end", "End"),
-			definition.NewErrorEndEvent("err-end", "ERR_FATAL"),
-			definition.NewTerminateEndEvent("term-end"),
+			gateway.NewExclusive("xor", "Decision"),
+			event.NewEnd("end", "End"),
+			event.NewErrorEnd("err-end", "ERR_FATAL"),
+			event.NewTerminateEnd("term-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
@@ -197,7 +200,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	}
 
 	// Verify ServiceTask fields survived round-trip
-	charge, ok := restored.Nodes[1].(definition.ServiceTask)
+	charge, ok := restored.Nodes[1].(activity.ServiceTask)
 	require.True(t, ok)
 	assert.Equal(t, "charge-card", charge.Action)
 	assert.Equal(t, "refund-card", charge.CompensationAction)
@@ -209,7 +212,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, 3, charge.RetryPolicy.MaxAttempts)
 
 	// Verify UserTask fields
-	approve, ok := restored.Nodes[2].(definition.UserTask)
+	approve, ok := restored.Nodes[2].(activity.UserTask)
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, approve.CandidateRoles)
 	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
@@ -254,82 +257,82 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	require.Len(t, def.Nodes, 20)
 
 	// Spot-check types
-	_, ok := def.Nodes[0].(definition.StartEvent)
+	_, ok := def.Nodes[0].(event.StartEvent)
 	require.True(t, ok, "nodes[0] should be StartEvent")
 
-	st, ok := def.Nodes[1].(definition.ServiceTask)
+	st, ok := def.Nodes[1].(activity.ServiceTask)
 	require.True(t, ok, "nodes[1] should be ServiceTask")
 	assert.Equal(t, "charge-card", st.Action)
 	assert.Equal(t, "refund-card", st.CompensationAction)
 	assert.Equal(t, "cancel-charge", st.CancelHandler)
 
-	ut, ok := def.Nodes[2].(definition.UserTask)
+	ut, ok := def.Nodes[2].(activity.UserTask)
 	require.True(t, ok, "nodes[2] should be UserTask")
 	assert.Equal(t, []string{"manager"}, ut.CandidateRoles)
 	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
 
-	ice, ok := def.Nodes[3].(definition.IntermediateCatchEvent)
+	ice, ok := def.Nodes[3].(event.IntermediateCatchEvent)
 	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")
 	assert.Equal(t, "PT1H", ice.TimerDuration)
 
-	ite, ok := def.Nodes[4].(definition.IntermediateThrowEvent)
+	ite, ok := def.Nodes[4].(event.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[4] should be IntermediateThrowEvent")
 	assert.Equal(t, "done", ite.SignalName)
 
-	be, ok := def.Nodes[5].(definition.BoundaryEvent)
+	be, ok := def.Nodes[5].(event.BoundaryEvent)
 	require.True(t, ok, "nodes[5] should be BoundaryEvent")
 	assert.Equal(t, "charge", be.AttachedTo)
 	assert.Equal(t, "ERR", be.ErrorCode)
 
-	sp, ok := def.Nodes[6].(definition.SubProcess)
+	sp, ok := def.Nodes[6].(activity.SubProcess)
 	require.True(t, ok, "nodes[6] should be SubProcess")
 	require.NotNil(t, sp.Subprocess)
 	assert.Equal(t, "inner", sp.Subprocess.ID)
 
-	ca, ok := def.Nodes[7].(definition.CallActivity)
+	ca, ok := def.Nodes[7].(activity.CallActivity)
 	require.True(t, ok, "nodes[7] should be CallActivity")
 	assert.Equal(t, "ext-process", ca.DefRef)
 
-	_, ok = def.Nodes[8].(definition.ExclusiveGateway)
+	_, ok = def.Nodes[8].(gateway.ExclusiveGateway)
 	require.True(t, ok, "nodes[8] should be ExclusiveGateway")
 
-	_, ok = def.Nodes[9].(definition.ParallelGateway)
+	_, ok = def.Nodes[9].(gateway.ParallelGateway)
 	require.True(t, ok, "nodes[9] should be ParallelGateway")
 
-	_, ok = def.Nodes[10].(definition.InclusiveGateway)
+	_, ok = def.Nodes[10].(gateway.InclusiveGateway)
 	require.True(t, ok, "nodes[10] should be InclusiveGateway")
 
-	_, ok = def.Nodes[11].(definition.EventBasedGateway)
+	_, ok = def.Nodes[11].(gateway.EventBasedGateway)
 	require.True(t, ok, "nodes[11] should be EventBasedGateway")
 
-	_, ok = def.Nodes[12].(definition.EndEvent)
+	_, ok = def.Nodes[12].(event.EndEvent)
 	require.True(t, ok, "nodes[12] should be EndEvent")
 
-	_, ok = def.Nodes[13].(definition.TerminateEndEvent)
+	_, ok = def.Nodes[13].(event.TerminateEndEvent)
 	require.True(t, ok, "nodes[13] should be TerminateEndEvent")
 
-	ee, ok := def.Nodes[14].(definition.ErrorEndEvent)
+	ee, ok := def.Nodes[14].(event.ErrorEndEvent)
 	require.True(t, ok, "nodes[14] should be ErrorEndEvent")
 	assert.Equal(t, "FATAL", ee.ErrorCode)
 
-	send, ok := def.Nodes[15].(definition.SendTask)
+	send, ok := def.Nodes[15].(activity.SendTask)
 	require.True(t, ok, "nodes[15] should be SendTask")
 	assert.Equal(t, "msg.send", send.MessageName)
 
-	recv, ok := def.Nodes[16].(definition.ReceiveTask)
+	recv, ok := def.Nodes[16].(activity.ReceiveTask)
 	require.True(t, ok, "nodes[16] should be ReceiveTask")
 	assert.Equal(t, "msg.recv", recv.MessageName)
 	assert.Equal(t, "order.id", recv.CorrelationKey)
 
-	brt, ok := def.Nodes[17].(definition.BusinessRuleTask)
+	brt, ok := def.Nodes[17].(activity.BusinessRuleTask)
 	require.True(t, ok, "nodes[17] should be BusinessRuleTask")
 	assert.Equal(t, "apply-discount", brt.Action)
 
-	esp, ok := def.Nodes[18].(definition.EventSubProcess)
+	esp, ok := def.Nodes[18].(event.EventSubProcess)
 	require.True(t, ok, "nodes[18] should be EventSubProcess")
 	require.NotNil(t, esp.Subprocess)
 
-	compThrow, ok := def.Nodes[19].(definition.IntermediateThrowEvent)
+	compThrow, ok := def.Nodes[19].(event.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[19] should be IntermediateThrowEvent")
 	assert.Equal(t, "charge", compThrow.CompensateRef)
 }

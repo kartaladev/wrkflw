@@ -17,9 +17,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -33,8 +34,8 @@ func minimalStartEndDefinition() *definition.ProcessDefinition {
 		ID:      "minimal",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "end"},
@@ -139,7 +140,7 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 
 	// Round-trip a definition through the store.
 	def := &definition.ProcessDefinition{ID: "d1", Version: 1,
-		Nodes: []definition.Node{definition.NewStartEvent("start")},
+		Nodes: []definition.Node{event.NewStart("start")},
 	}
 	require.NoError(t, ds.PutDefinition(t.Context(), def))
 

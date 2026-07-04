@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
 // handleDeadlineFired processes a TimerFired event for a deadline timer. It is called

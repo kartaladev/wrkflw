@@ -8,9 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 )
 
 // userTaskDef returns a linear definition with a single user-task node between
@@ -21,9 +23,9 @@ func userTaskDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-ht", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("approve", []string{"manager"}, definition.WithEligibilityExpr(`actor.ID != ""`)),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"manager"}, activity.WithEligibilityExpr(`actor.ID != ""`)),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
@@ -87,7 +89,7 @@ func TestUserTaskEmitsAwaitHumanAndParks(t *testing.T) {
 }
 
 // TestUserTaskPrivilegesFlowToAwaitHuman verifies that EligibilityPrivileges set
-// via definition.WithEligibilityPrivileges flow through to the AwaitHuman command's
+// via activity.WithEligibilityPrivileges flow through to the AwaitHuman command's
 // Eligibility.Privileges field and the HumanTask stored in engine state.
 func TestUserTaskPrivilegesFlowToAwaitHuman(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
@@ -95,11 +97,11 @@ func TestUserTaskPrivilegesFlowToAwaitHuman(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "p-priv", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("approve", nil,
-				definition.WithEligibilityPrivileges(privs...),
+			event.NewStart("start"),
+			activity.NewUserTask("approve", nil,
+				activity.WithEligibilityPrivileges(privs...),
 			),
-			definition.NewEndEvent("end"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
@@ -133,10 +135,10 @@ func TestUserTaskTaskSeqIncrements(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "p-ht2", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("task1", []string{"a"}),
-			definition.NewUserTask("task2", []string{"b"}),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("task1", []string{"a"}),
+			activity.NewUserTask("task2", []string{"b"}),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task1"},

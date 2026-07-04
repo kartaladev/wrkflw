@@ -20,8 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
@@ -40,9 +42,9 @@ func scopeCompensationDef() *definition.ProcessDefinition {
 	nested := &definition.ProcessDefinition{
 		ID: "scope-comp-nested", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("inner-start"),
-			definition.NewServiceTask("inner-svc", definition.WithActionName("book"), definition.WithCompensation("cancel-book")),
-			definition.NewEndEvent("inner-end"),
+			event.NewStart("inner-start"),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensation("cancel-book")),
+			event.NewEnd("inner-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
@@ -52,11 +54,11 @@ func scopeCompensationDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "scope-comp-def", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSubProcess("sub", nested),
+			event.NewStart("start"),
+			activity.NewSubProcess("sub", nested),
 			// Compensation throw: runs ArchivedCompensations["sub"] then resumes.
-			definition.NewIntermediateThrowEvent("compThrow", definition.WithCompensateRef("sub")),
-			definition.NewEndEvent("end"),
+			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},

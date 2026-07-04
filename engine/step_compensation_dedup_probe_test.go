@@ -22,8 +22,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // dedupProbeDef: start → svc(CompensationAction "cancel-svc") → userTask → end.
@@ -33,10 +35,10 @@ func dedupProbeDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "dedup-probe", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("book"), definition.WithCompensation("cancel-svc")),
-			definition.NewUserTask("userTask", nil),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensation("cancel-svc")),
+			activity.NewUserTask("userTask", nil),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},

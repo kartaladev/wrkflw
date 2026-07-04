@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // FuzzStep feeds varied, fuzzer-generated process definitions and trigger
@@ -94,7 +96,7 @@ func isEngineSentinel(err error) bool {
 // event so the chain has valid endpoints; the interior nodes' kinds are chosen
 // byte-by-byte. Sequence flows wire each node to its successor in order.
 func buildDef(data []byte) *definition.ProcessDefinition {
-	nodes := []definition.Node{definition.NewStartEvent("n0")}
+	nodes := []definition.Node{event.NewStart("n0")}
 
 	// Interior nodes: at most 6, chosen from the fuzz bytes.
 	maxInterior := min(len(data), 6)
@@ -102,18 +104,18 @@ func buildDef(data []byte) *definition.ProcessDefinition {
 		id := nodeID(i + 1)
 		switch data[i] % 4 {
 		case 0:
-			nodes = append(nodes, definition.NewServiceTask(id, definition.WithActionName("act")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act")))
 		case 1:
-			nodes = append(nodes, definition.NewUserTask(id, []string{"role"}))
+			nodes = append(nodes, activity.NewUserTask(id, []string{"role"}))
 		case 2:
-			nodes = append(nodes, definition.NewServiceTask(id, definition.WithActionName("act2")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act2")))
 		default:
-			nodes = append(nodes, definition.NewServiceTask(id, definition.WithActionName("act3")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act3")))
 		}
 	}
 
 	endID := nodeID(len(nodes))
-	nodes = append(nodes, definition.NewEndEvent(endID))
+	nodes = append(nodes, event.NewEnd(endID))
 
 	flows := make([]definition.SequenceFlow, 0, len(nodes)-1)
 	for i := 0; i < len(nodes)-1; i++ {

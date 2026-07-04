@@ -7,8 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // microForkDef returns a process definition without end events:
@@ -24,10 +27,10 @@ func microForkDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "mfork", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewParallelGateway("fork"),
-			definition.NewServiceTask("svc-a", definition.WithActionName("do-a")),
-			definition.NewServiceTask("svc-b", definition.WithActionName("do-b")),
+			event.NewStart("start"),
+			gateway.NewParallel("fork"),
+			activity.NewServiceTask("svc-a", activity.WithActionName("do-a")),
+			activity.NewServiceTask("svc-b", activity.WithActionName("do-b")),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
@@ -43,9 +46,9 @@ func linearEndDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "lend", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("svc", definition.WithActionName("work")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("work")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},

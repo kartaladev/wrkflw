@@ -19,9 +19,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -54,9 +56,9 @@ func serverLinearDef() *definition.ProcessDefinition {
 		ID:      "greeting",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("greet", definition.WithActionName("greet")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
@@ -71,9 +73,9 @@ func serverApprovalDef() *definition.ProcessDefinition {
 		ID:      "approval",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("approve", []string{"manager"}),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"manager"}),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
@@ -88,9 +90,9 @@ func serverSignalDef(signalName string) *definition.ProcessDefinition {
 		ID:      "signal-catch-" + signalName,
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait-signal", definition.WithSignalName(signalName)),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait-signal", event.WithCatchSignal(signalName)),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-signal"},
@@ -109,9 +111,9 @@ func serverMessageDef(msgName string) *definition.ProcessDefinition {
 		ID:      "message-catch-" + msgName,
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("wait-msg", definition.WithMessageNameAndKey(msgName, "orderId")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-msg"},

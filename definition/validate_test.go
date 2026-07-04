@@ -7,6 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 )
 
 func TestValidate(t *testing.T) {
@@ -23,7 +26,7 @@ func TestValidate(t *testing.T) {
 		"no start event": {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{definition.NewEndEvent("end")},
+				Nodes: []definition.Node{event.NewEnd("end")},
 			},
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, definition.ErrNoStartEvent)
@@ -33,9 +36,9 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("s1"),
-					definition.NewStartEvent("s2"),
-					definition.NewEndEvent("end"),
+					event.NewStart("s1"),
+					event.NewStart("s2"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "s1", Target: "end"},
@@ -50,8 +53,8 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ghost"},
@@ -65,9 +68,9 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("x")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("x")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -82,9 +85,9 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("x")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("x")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -100,9 +103,9 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewEndEvent("end"),
-					definition.NewServiceTask("task", definition.WithActionName("x")),
+					event.NewStart("start"),
+					event.NewEnd("end"),
+					activity.NewServiceTask("task", activity.WithActionName("x")),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -118,8 +121,8 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "ghost", Target: "end"}, // source node missing
@@ -134,11 +137,11 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewParallelGateway("fork"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewParallel("fork"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "fork"},
@@ -156,11 +159,11 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewParallelGateway("fork"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewParallel("fork"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "fork"},
@@ -178,11 +181,11 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewExclusiveGateway("xor"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewExclusive("xor"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -201,11 +204,11 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewEventBasedGateway("ebg"),
-					definition.NewIntermediateCatchEvent("sig-catch", definition.WithSignalName("sig.a")),
-					definition.NewIntermediateCatchEvent("msg-catch", definition.WithMessageNameAndKey("msg.b", "")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewEventBased("ebg"),
+					event.NewCatch("sig-catch", event.WithCatchSignal("sig.a")),
+					event.NewCatch("msg-catch", event.WithCatchMessage("msg.b", "")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ebg"},
@@ -223,11 +226,11 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewEventBasedGateway("ebg"),
-					definition.NewIntermediateCatchEvent("sig-catch", definition.WithSignalName("sig.a")),
-					definition.NewServiceTask("task", definition.WithActionName("do-work")), // non-catch
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewEventBased("ebg"),
+					event.NewCatch("sig-catch", event.WithCatchSignal("sig.a")),
+					activity.NewServiceTask("task", activity.WithActionName("do-work")), // non-catch
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ebg"},
@@ -246,12 +249,12 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("do-work")),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("do-work")),
 					// NonInterrupting omitted (false) = interrupting, the default.
-					definition.NewBoundaryEvent("boundary", "task", definition.WithBoundarySignal("cancel")),
-					definition.NewEndEvent("end"),
-					definition.NewEndEvent("cancel-end"),
+					event.NewBoundary("boundary", "task", event.WithBoundarySignal("cancel")),
+					event.NewEnd("end"),
+					event.NewEnd("cancel-end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -267,9 +270,9 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewEndEvent("end"),
-					definition.NewBoundaryEvent("boundary", "ghost", definition.WithBoundarySignal("cancel")),
+					event.NewStart("start"),
+					event.NewEnd("end"),
+					event.NewBoundary("boundary", "ghost", event.WithBoundarySignal("cancel")),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -284,13 +287,13 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewExclusiveGateway("xor"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewExclusive("xor"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					event.NewEnd("end"),
 					// boundary attached to a gateway — not an activity
-					definition.NewBoundaryEvent("boundary", "xor", definition.WithBoundarySignal("cancel")),
+					event.NewBoundary("boundary", "xor", event.WithBoundarySignal("cancel")),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -309,11 +312,11 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewExclusiveGateway("xor"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewExclusive("xor"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -332,13 +335,13 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewExclusiveGateway("gw"),
-					definition.NewServiceTask("c", definition.WithActionName("c")),
-					definition.NewServiceTask("d", definition.WithActionName("d")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					gateway.NewExclusive("gw"),
+					activity.NewServiceTask("c", activity.WithActionName("c")),
+					activity.NewServiceTask("d", activity.WithActionName("d")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "a"},
@@ -359,12 +362,12 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewParallelGateway("gw"),
-					definition.NewServiceTask("c", definition.WithActionName("c")),
-					definition.NewServiceTask("d", definition.WithActionName("d")),
-					definition.NewParallelGateway("j"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewParallel("gw"),
+					activity.NewServiceTask("c", activity.WithActionName("c")),
+					activity.NewServiceTask("d", activity.WithActionName("d")),
+					gateway.NewParallel("j"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "gw"},
@@ -383,11 +386,11 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("t")),
-					definition.NewServiceTask("orphan", definition.WithActionName("o")),
-					definition.NewEndEvent("orphan-end"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("t")),
+					activity.NewServiceTask("orphan", activity.WithActionName("o")),
+					event.NewEnd("orphan-end"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -403,12 +406,12 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("t")),
-					definition.NewBoundaryEvent("bnd", "task", definition.WithBoundaryTimer("PT1M")),
-					definition.NewServiceTask("handler", definition.WithActionName("h")),
-					definition.NewEndEvent("hend"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("t")),
+					event.NewBoundary("bnd", "task", event.WithBoundaryTimer("PT1M")),
+					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					event.NewEnd("hend"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -425,13 +428,13 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("t")),
-					definition.NewEndEvent("end"),
-					definition.NewServiceTask("ghost", definition.WithActionName("g")), // unreachable host
-					definition.NewBoundaryEvent("bnd", "ghost", definition.WithBoundaryTimer("PT1M")),
-					definition.NewServiceTask("handler", definition.WithActionName("h")),
-					definition.NewEndEvent("hend"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("t")),
+					event.NewEnd("end"),
+					activity.NewServiceTask("ghost", activity.WithActionName("g")), // unreachable host
+					event.NewBoundary("bnd", "ghost", event.WithBoundaryTimer("PT1M")),
+					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					event.NewEnd("hend"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -448,7 +451,7 @@ func TestValidate(t *testing.T) {
 		"zero start events does not run reachability": {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{definition.NewEndEvent("end")},
+				Nodes: []definition.Node{event.NewEnd("end")},
 			},
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, definition.ErrNoStartEvent)
@@ -462,12 +465,12 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewParallelGateway("fork"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewParallelGateway("j"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewParallel("fork"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					gateway.NewParallel("j"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "fork"},
@@ -486,12 +489,12 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewExclusiveGateway("split"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewParallelGateway("j"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewExclusive("split"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					gateway.NewParallel("j"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
@@ -510,12 +513,12 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewInclusiveGateway("split"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewParallelGateway("j"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewInclusive("split"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					gateway.NewParallel("j"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
@@ -534,14 +537,14 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("s1"),
-					definition.NewStartEvent("s2"),
-					definition.NewExclusiveGateway("split"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewParallelGateway("j"),
-					definition.NewEndEvent("end"),
-					definition.NewEndEvent("end2"),
+					event.NewStart("s1"),
+					event.NewStart("s2"),
+					gateway.NewExclusive("split"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					gateway.NewParallel("j"),
+					event.NewEnd("end"),
+					event.NewEnd("end2"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f0", Source: "s1", Target: "split"},
@@ -564,14 +567,14 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewExclusiveGateway("merge"), // loop-back merge (pure join)
-					definition.NewParallelGateway("fork"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewParallelGateway("j"),
-					definition.NewExclusiveGateway("loop"), // loop-back decision (pure split)
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewExclusive("merge"), // loop-back merge (pure join)
+					gateway.NewParallel("fork"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					gateway.NewParallel("j"),
+					gateway.NewExclusive("loop"), // loop-back decision (pure split)
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "merge"},
@@ -593,16 +596,16 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("t")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("t")),
+					event.NewEnd("end"),
 					// Disconnected component: an exclusive split feeding a parallel join
 					// (would be ErrUnpairedJoin if reachable) — but it is unreachable.
-					definition.NewExclusiveGateway("osplit"),
-					definition.NewServiceTask("ox", definition.WithActionName("x")),
-					definition.NewServiceTask("oy", definition.WithActionName("y")),
-					definition.NewParallelGateway("oj"),
-					definition.NewEndEvent("oend"),
+					gateway.NewExclusive("osplit"),
+					activity.NewServiceTask("ox", activity.WithActionName("x")),
+					activity.NewServiceTask("oy", activity.WithActionName("y")),
+					gateway.NewParallel("oj"),
+					event.NewEnd("oend"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -623,12 +626,12 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewExclusiveGateway("split"),
-					definition.NewServiceTask("a", definition.WithActionName("a")),
-					definition.NewServiceTask("b", definition.WithActionName("b")),
-					definition.NewInclusiveGateway("j"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					gateway.NewExclusive("split"),
+					activity.NewServiceTask("a", activity.WithActionName("a")),
+					activity.NewServiceTask("b", activity.WithActionName("b")),
+					gateway.NewInclusive("j"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
@@ -649,10 +652,10 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("do-work")),
-					definition.NewIntermediateThrowEvent("comp-throw", definition.WithCompensateRef("missing-node")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("do-work")),
+					event.NewThrow("comp-throw", event.WithCompensateRef("missing-node")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -669,10 +672,10 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewServiceTask("task", definition.WithActionName("do-work"), definition.WithCompensation("undo-work")),
-					definition.NewIntermediateThrowEvent("comp-throw", definition.WithCompensateRef("task")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithActionName("do-work"), activity.WithCompensation("undo-work")),
+					event.NewThrow("comp-throw", event.WithCompensateRef("task")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
@@ -690,9 +693,9 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewIntermediateThrowEvent("throw", definition.WithThrowSignal("sig.done")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					event.NewThrow("throw", event.WithThrowSignal("sig.done")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "throw"},
@@ -709,20 +712,20 @@ func TestValidate(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewSubProcess("sp", &definition.ProcessDefinition{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &definition.ProcessDefinition{
 						ID: "inner", Version: 1,
 						Nodes: []definition.Node{
-							definition.NewStartEvent("ns"),
-							definition.NewIntermediateThrowEvent("nthrow", definition.WithCompensateRef("no-such")),
-							definition.NewEndEvent("ne"),
+							event.NewStart("ns"),
+							event.NewThrow("nthrow", event.WithCompensateRef("no-such")),
+							event.NewEnd("ne"),
 						},
 						Flows: []definition.SequenceFlow{
 							{ID: "nf1", Source: "ns", Target: "nthrow"},
 							{ID: "nf2", Source: "nthrow", Target: "ne"},
 						},
 					}),
-					definition.NewEndEvent("end"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -749,9 +752,9 @@ func validSubprocessDef(id string) *definition.ProcessDefinition {
 		ID:      id,
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("ns-start"),
-			definition.NewServiceTask("ns-task", definition.WithActionName("inner")),
-			definition.NewEndEvent("ns-end"),
+			event.NewStart("ns-start"),
+			activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
+			event.NewEnd("ns-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "nf1", Source: "ns-start", Target: "ns-task"},
@@ -769,9 +772,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewSubProcess("sp", validSubprocessDef("inner")),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", validSubprocessDef("inner")),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -786,9 +789,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewSubProcess("sp", nil),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", nil),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -803,9 +806,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewEventSubProcess("esp", nil),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					event.NewEventSubProcess("esp", nil),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "esp"},
@@ -820,14 +823,14 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewSubProcess("sp", &definition.ProcessDefinition{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &definition.ProcessDefinition{
 						ID:      "bad-inner",
 						Version: 1,
 						Nodes: []definition.Node{
-							definition.NewStartEvent("ns-start"),
-							definition.NewServiceTask("ns-task", definition.WithActionName("inner")),
-							definition.NewEndEvent("ns-end"),
+							event.NewStart("ns-start"),
+							activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
+							event.NewEnd("ns-end"),
 						},
 						Flows: []definition.SequenceFlow{
 							{ID: "nf1", Source: "ns-start", Target: "ns-task"},
@@ -836,7 +839,7 @@ func TestValidateSubProcess(t *testing.T) {
 							{ID: "nf3", Source: "ns-task", Target: "ns-start"},
 						},
 					}),
-					definition.NewEndEvent("end"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -852,19 +855,19 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewSubProcess("sp", &definition.ProcessDefinition{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &definition.ProcessDefinition{
 						ID:      "bad-inner-2",
 						Version: 1,
 						Nodes: []definition.Node{
-							definition.NewStartEvent("ns-start"),
-							definition.NewEndEvent("ns-end"),
+							event.NewStart("ns-start"),
+							event.NewEnd("ns-end"),
 						},
 						Flows: []definition.SequenceFlow{
 							{ID: "nf1", Source: "ns-start", Target: "ghost-node"}, // dangling
 						},
 					}),
-					definition.NewEndEvent("end"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -879,9 +882,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewCallActivity("ca", "some-external-process"),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewCallActivity("ca", "some-external-process"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ca"},
@@ -896,9 +899,9 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewCallActivity("ca", ""),
-					definition.NewEndEvent("end"),
+					event.NewStart("start"),
+					activity.NewCallActivity("ca", ""),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ca"},
@@ -913,18 +916,18 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewSubProcess("sp", &definition.ProcessDefinition{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &definition.ProcessDefinition{
 						ID:      "inner-mixed",
 						Version: 1,
 						Nodes: []definition.Node{
-							definition.NewStartEvent("ns-start"),
-							definition.NewServiceTask("na", definition.WithActionName("na")),
-							definition.NewServiceTask("nb", definition.WithActionName("nb")),
-							definition.NewParallelGateway("ngw"),
-							definition.NewServiceTask("nc", definition.WithActionName("nc")),
-							definition.NewServiceTask("nd", definition.WithActionName("nd")),
-							definition.NewEndEvent("ns-end"),
+							event.NewStart("ns-start"),
+							activity.NewServiceTask("na", activity.WithActionName("na")),
+							activity.NewServiceTask("nb", activity.WithActionName("nb")),
+							gateway.NewParallel("ngw"),
+							activity.NewServiceTask("nc", activity.WithActionName("nc")),
+							activity.NewServiceTask("nd", activity.WithActionName("nd")),
+							event.NewEnd("ns-end"),
 						},
 						Flows: []definition.SequenceFlow{
 							{ID: "nf0", Source: "ns-start", Target: "na"},
@@ -937,7 +940,7 @@ func TestValidateSubProcess(t *testing.T) {
 							{ID: "nf6", Source: "nd", Target: "ns-end"},
 						},
 					}),
-					definition.NewEndEvent("end"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -952,17 +955,17 @@ func TestValidateSubProcess(t *testing.T) {
 			def: &definition.ProcessDefinition{
 				ID: "outer", Version: 1,
 				Nodes: []definition.Node{
-					definition.NewStartEvent("start"),
-					definition.NewSubProcess("sp", &definition.ProcessDefinition{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &definition.ProcessDefinition{
 						ID:      "inner-unpaired",
 						Version: 1,
 						Nodes: []definition.Node{
-							definition.NewStartEvent("ns-start"),
-							definition.NewExclusiveGateway("nsplit"),
-							definition.NewServiceTask("na", definition.WithActionName("na")),
-							definition.NewServiceTask("nb", definition.WithActionName("nb")),
-							definition.NewParallelGateway("nj"), // parallel join fed by exclusive split
-							definition.NewEndEvent("ns-end"),
+							event.NewStart("ns-start"),
+							gateway.NewExclusive("nsplit"),
+							activity.NewServiceTask("na", activity.WithActionName("na")),
+							activity.NewServiceTask("nb", activity.WithActionName("nb")),
+							gateway.NewParallel("nj"), // parallel join fed by exclusive split
+							event.NewEnd("ns-end"),
 						},
 						Flows: []definition.SequenceFlow{
 							{ID: "nf0", Source: "ns-start", Target: "nsplit"},
@@ -973,7 +976,7 @@ func TestValidateSubProcess(t *testing.T) {
 							{ID: "nf5", Source: "nj", Target: "ns-end"},
 						},
 					}),
-					definition.NewEndEvent("end"),
+					event.NewEnd("end"),
 				},
 				Flows: []definition.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
@@ -1002,11 +1005,11 @@ func TestValidateRejectsBadRetryPolicy(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("a"),
-				definition.WithRetryPolicy(&definition.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}),
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a"),
+				activity.WithRetryPolicy(&definition.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}),
 			),
-			definition.NewEndEvent("end"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -1024,9 +1027,9 @@ func TestValidateRejectsRecoveryFlowNotFromNode(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("a"), definition.WithRecoveryFlow("nope")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRecoveryFlow("nope")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -1043,9 +1046,9 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 	defA := &definition.ProcessDefinition{
 		ID: "cyclic-a", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("a-start"),
-			definition.NewSubProcess("a-sub", nil), // nil will be replaced below
-			definition.NewEndEvent("a-end"),
+			event.NewStart("a-start"),
+			activity.NewSubProcess("a-sub", nil), // nil will be replaced below
+			event.NewEnd("a-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "af1", Source: "a-start", Target: "a-sub"},
@@ -1055,9 +1058,9 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 	defB := &definition.ProcessDefinition{
 		ID: "cyclic-b", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("b-start"),
-			definition.NewSubProcess("b-sub", nil), // nil will be replaced below
-			definition.NewEndEvent("b-end"),
+			event.NewStart("b-start"),
+			activity.NewSubProcess("b-sub", nil), // nil will be replaced below
+			event.NewEnd("b-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "bf1", Source: "b-start", Target: "b-sub"},
@@ -1066,8 +1069,8 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 	}
 	// Wire the cycle: A's sub-process points to B, B's sub-process points back to A.
 	// We must replace the nodes since they are value types.
-	defA.Nodes[1] = definition.NewSubProcess("a-sub", defB)
-	defB.Nodes[1] = definition.NewSubProcess("b-sub", defA)
+	defA.Nodes[1] = activity.NewSubProcess("a-sub", defB)
+	defB.Nodes[1] = activity.NewSubProcess("b-sub", defA)
 
 	// Must not panic or stack-overflow.
 	require.NotPanics(t, func() {
@@ -1080,8 +1083,8 @@ func TestValidateCancelActions(t *testing.T) {
 		return &definition.ProcessDefinition{
 			ID: "d", Version: 1,
 			Nodes: []definition.Node{
-				definition.NewStartEvent("start"),
-				definition.NewEndEvent("end"),
+				event.NewStart("start"),
+				event.NewEnd("end"),
 			},
 			Flows:         []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 			CancelActions: cancel,

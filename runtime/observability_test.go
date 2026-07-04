@@ -22,9 +22,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
@@ -210,9 +212,9 @@ func paymentDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "payment", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("charge", definition.WithActionName("charge")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("charge", activity.WithActionName("charge")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
@@ -332,9 +334,9 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID: "incident-obs", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewServiceTask("task", definition.WithActionName("a")),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewServiceTask("task", activity.WithActionName("a")),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
@@ -513,9 +515,9 @@ func TestDeliverSpan(t *testing.T) {
 	msgDef := &definition.ProcessDefinition{
 		ID: "msg-deliver-obs", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewIntermediateCatchEvent("catch", definition.WithMessageNameAndKey("pay.confirmed", `"ord-42"`)),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			event.NewCatch("catch", event.WithCatchMessage("pay.confirmed", `"ord-42"`)),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch"},

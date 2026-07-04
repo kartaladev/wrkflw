@@ -14,9 +14,11 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -79,10 +81,10 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 		ID:      "deadline-fireforget",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewUserTask("review", []string{"reviewer"}, definition.WithDeadline(`"30m"`, "escalate", "notify")),
-			definition.NewEndEvent("end-normal"),
-			definition.NewEndEvent("end-escalated"),
+			event.NewStart("start"),
+			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(`"30m"`, "escalate", "notify")),
+			event.NewEnd("end-normal"),
+			event.NewEnd("end-escalated"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},

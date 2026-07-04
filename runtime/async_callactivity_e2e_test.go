@@ -24,9 +24,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -43,9 +45,9 @@ func e2eGrandchildDef() *definition.ProcessDefinition {
 		ID:      "e2e-grandchild",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("gc-start"),
-			definition.NewUserTask("gc-task", []string{"worker"}),
-			definition.NewEndEvent("gc-end"),
+			event.NewStart("gc-start"),
+			activity.NewUserTask("gc-task", []string{"worker"}),
+			event.NewEnd("gc-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "gcf1", Source: "gc-start", Target: "gc-task"},
@@ -62,9 +64,9 @@ func e2eChildDef() *definition.ProcessDefinition {
 		ID:      "e2e-child",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("c-start"),
-			definition.NewCallActivity("c-call", "e2e-grandchild"),
-			definition.NewEndEvent("c-end"),
+			event.NewStart("c-start"),
+			activity.NewCallActivity("c-call", "e2e-grandchild"),
+			event.NewEnd("c-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "cf1", Source: "c-start", Target: "c-call"},
@@ -81,9 +83,9 @@ func e2eParentDef() *definition.ProcessDefinition {
 		ID:      "e2e-parent",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("p-start"),
-			definition.NewCallActivity("p-call", "e2e-child"),
-			definition.NewEndEvent("p-end"),
+			event.NewStart("p-start"),
+			activity.NewCallActivity("p-call", "e2e-child"),
+			event.NewEnd("p-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "pf1", Source: "p-start", Target: "p-call"},
@@ -301,9 +303,9 @@ func selfCallDef() *definition.ProcessDefinition {
 		ID:      "self-call",
 		Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("self-start"),
-			definition.NewCallActivity("self-call", "self-call"),
-			definition.NewEndEvent("self-end"),
+			event.NewStart("self-start"),
+			activity.NewCallActivity("self-call", "self-call"),
+			event.NewEnd("self-end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "sf1", Source: "self-start", Target: "self-call"},

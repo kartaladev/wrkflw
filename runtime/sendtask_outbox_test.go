@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -33,9 +35,9 @@ func buildOrderPlacedSendTaskDef() *definition.ProcessDefinition {
 	return &definition.ProcessDefinition{
 		ID: "p-send-outbox", Version: 1,
 		Nodes: []definition.Node{
-			definition.NewStartEvent("start"),
-			definition.NewSendTask("send", "OrderPlaced"),
-			definition.NewEndEvent("end"),
+			event.NewStart("start"),
+			activity.NewSendTask("send", "OrderPlaced"),
+			event.NewEnd("end"),
 		},
 		Flows: []definition.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "send"},
