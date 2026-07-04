@@ -23,12 +23,12 @@ func (a sqlDBPinger) Ping(ctx context.Context) error { return a.db.PingContext(c
 
 // PingCheck is a readiness probe that reports the database reachable by issuing
 // a Ping with the request context (ADR-0054). It structurally satisfies the
-// rest.HealthCheck contract (Name + Check), so a consumer registers it with
-// rest.NewHealthHandler to wire /readyz to a database:
+// httpcore.HealthCheck contract (Name + Check), so a consumer registers it with
+// stdlib.MountHealth to wire /readyz to a database:
 //
-//	handler := rest.NewHealthHandler(persistence.NewPingCheck(pool))
+//	stdlib.MountHealth(mux, persistence.NewPingCheck(pool))
 //
-// It is defined here (not in transport/rest) so the database driver dependency
+// It is defined here (not in the transport layer) so the database driver dependency
 // stays out of the transport package and persistence keeps no import on a transport.
 type PingCheck struct {
 	ping pinger

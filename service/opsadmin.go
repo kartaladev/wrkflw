@@ -1,5 +1,7 @@
 package service
 
+//go:generate mockgen -source=opsadmin.go -package=service -destination=opsadmin_mock.go -typed
+
 import (
 	"context"
 

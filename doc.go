@@ -57,10 +57,14 @@
 //
 // # Expose it (mount in your server)
 //
-//   - transport    REST http.Handler factories and gRPC service registrations
-//     a consumer mounts in their own server (transport/rest,
-//     transport/grpc). Transport adapters are thin translators over service.Service;
-//     the engine core never imports them.
+//   - transport    HTTP transport adapters — pick the subpackage for your framework:
+//     transport/http/stdlib (net/http *ServeMux), transport/http/gin (gin.IRouter),
+//     transport/http/fiber (fiber.Router). Shared logic lives in transport/http/httpcore:
+//     pure-endpoint funcs, DTOs (validated via go-playground/validator/v10),
+//     ClassifyError (5xx redaction), Instrumentation.Observe (static route template),
+//     and the RouteCustomizer[R] / CustomizeOption[R] generic seam.
+//     Admin routes are default-absent: mount AdminRoutes on a consumer-secured group.
+//     The engine core never imports transport packages.
 //   - service      The application-layer Service façade consumed by transports:
 //     StartInstance, GetInstance, ClaimTask, CompleteTask, ResolveIncident, etc.
 //     Also defines optional admin ports (DeadLetterAdmin, TimerAdmin, LineageAdmin).

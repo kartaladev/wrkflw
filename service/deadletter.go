@@ -1,5 +1,7 @@
 package service
 
+//go:generate mockgen -source=deadletter.go -package=service -destination=deadletter_mock.go -typed
+
 import (
 	"context"
 

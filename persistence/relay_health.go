@@ -34,14 +34,14 @@ func WithMaxPending(n int64) RelayBacklogOption {
 
 // RelayBacklogCheck is a readiness probe that queries the outbox table statistics
 // and reports unhealthy when the dead or pending row counts exceed configured
-// thresholds (ADR-0054). It structurally satisfies the rest.HealthCheck contract
-// (Name + Check), so a consumer registers it with rest.NewHealthHandler:
+// thresholds (ADR-0054). It structurally satisfies the httpcore.HealthCheck contract
+// (Name + Check), so a consumer registers it with stdlib.MountHealth:
 //
-//	handler := rest.NewHealthHandler(persistence.NewRelayBacklogCheck(relay))
+//	stdlib.MountHealth(mux, persistence.NewRelayBacklogCheck(relay))
 //
-// It is defined here (not in transport/rest) so the transport package has no
+// It is defined here (not in the transport layer) so the transport package has no
 // import dependency on the persistence layer. Only the test asserts the
-// interface satisfaction via var _ rest.HealthCheck = check.
+// interface satisfaction via var _ httpcore.HealthCheck = check.
 type RelayBacklogCheck struct {
 	reader kernel.OutboxStatsReader
 	cfg    relayBacklogConfig

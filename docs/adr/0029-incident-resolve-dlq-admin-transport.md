@@ -3,6 +3,10 @@
 - Status: Accepted
 - Date: 2026-06-22
 
+> **The gRPC ResolveIncident RPC is superseded by ADR-0094 (HTTP-only); the
+> DeadLetterAdmin/incident admin seam it introduced survives in the REST/HTTP
+> surface.**
+
 ## Context
 
 The Resilience sub-project (ADRs 0015–0018) shipped the load-bearing runtime and persistence

@@ -51,7 +51,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
-	rest "github.com/zakyalvan/krtlwrkflw/transport/rest"
+	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
 )
 
 func main() {
@@ -101,7 +102,7 @@ func run(logger *slog.Logger) error {
 	var (
 		store       kernel.Store = memStore
 		lister                   = memStore
-		readyChecks []rest.HealthCheck
+		readyChecks []httpcore.HealthCheck
 	)
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		pool, perr := pgxpool.New(workerCtx, dsn)
@@ -177,9 +178,8 @@ func run(logger *slog.Logger) error {
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---
 	mux := http.NewServeMux()
-	mux.Handle("/", rest.NewHandler(svc))
-	mux.Handle("/healthz", rest.NewHealthHandler(readyChecks...))
-	mux.Handle("/readyz", rest.NewHealthHandler(readyChecks...))
+	stdlib.Mount(mux, svc)
+	stdlib.MountHealth(mux, readyChecks...)
 
 	srv := &http.Server{
 		Addr:              ":8080",

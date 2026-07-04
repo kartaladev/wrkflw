@@ -3,6 +3,11 @@
 - Status: Accepted
 - Date: 2026-06-25
 
+> **Superseded by ADR-0094.** The gRPC transport and `NewSecureServer` are
+> removed. The admin-by-composition design in ADR-0095 replaces the fail-closed
+> default with the safer default-absent approach (admin endpoints do not exist
+> unless mounted on a consumer-secured router group).
+
 ## Context
 
 `RegisterWorkflowServiceServer` registers the WorkflowService onto a

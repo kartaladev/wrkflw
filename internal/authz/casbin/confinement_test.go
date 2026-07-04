@@ -26,8 +26,7 @@ func TestCasbinConfinement(t *testing.T) {
 		"./runtime/...",
 		"./internal/persistence/...",
 		"./service/...",
-		"./transport/rest/...",
-		"./transport/grpc/...",
+		"./transport/http/...",
 	}
 
 	var deps []string
