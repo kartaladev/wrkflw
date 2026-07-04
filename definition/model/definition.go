@@ -1,8 +1,8 @@
 // Package model holds the in-memory process-definition types: the Node interface,
 // gateways/events/activities' shared embeds, the ProcessDefinition template, the
 // kind registry, validation, and serialization. The root definition package
-// re-exports its public surface. The concepts are inspired by BPMN, but this is
-// NOT a BPMN-compatible implementation. It is pure data plus validation.
+// re-exports its public surface. It models a workflow as tasks, gateways, events,
+// and sequence flows; it is pure data plus validation.
 package model
 
 import (

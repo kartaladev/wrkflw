@@ -1,4 +1,4 @@
-// Package gateway holds the BPMN gateway node kinds — exclusive, parallel,
+// Package gateway holds the workflow gateway node kinds — exclusive, parallel,
 // inclusive, and event-based — for the definition authoring layer. Import it to
 // construct gateways (gateway.NewExclusive, …) and, via its init, to register
 // their (de)serialization with the definition package.

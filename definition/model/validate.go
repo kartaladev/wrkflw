@@ -19,7 +19,7 @@ var activityKinds = map[NodeKind]bool{
 
 // gatewayKinds is the set of gateway NodeKinds (used by the mixed split+join
 // check). errorBoundaryHostKinds is the subset of activityKinds that can throw a
-// BPMN error and therefore may host a boundary error event.
+// workflow error and therefore may host a boundary error event.
 var (
 	gatewayKinds = map[NodeKind]bool{
 		KindExclusiveGateway:  true,
@@ -71,7 +71,7 @@ var (
 	ErrMixedGateway = errors.New("workflow-definition: gateway both splits and joins")
 	// ErrBoundaryErrorHost is returned when a boundary error event
 	// (KindBoundaryEvent with no TimerDuration/SignalName/MessageName) is
-	// attached to an activity that cannot throw a BPMN error. Only
+	// attached to an activity that cannot throw a workflow error. Only
 	// KindServiceTask, KindSubProcess, and KindCallActivity may host a
 	// boundary error event; user tasks and task variants are not valid hosts.
 	ErrBoundaryErrorHost = errors.New("workflow-definition: boundary error event attached to non-error-throwing activity")
@@ -286,7 +286,7 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	// SubProcess, CallActivity. Gateways and events are not valid hosts.
 	//
 	// Additionally, a boundary ERROR event (no TimerDuration/SignalName/MessageName)
-	// may only attach to activities that can throw a BPMN error: ServiceTask,
+	// may only attach to activities that can throw a workflow error: ServiceTask,
 	// SubProcess, or CallActivity.
 	for _, n := range d.Nodes {
 		if n.Kind() != KindBoundaryEvent {

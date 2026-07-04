@@ -1,4 +1,4 @@
-// Package event holds the BPMN event node kinds — start, end, terminate-end,
+// Package event holds the workflow event node kinds — start, end, terminate-end,
 // error-end, intermediate catch/throw, boundary, and event sub-process — for the
 // definition authoring layer. Import it to construct events (event.NewStart, …)
 // and, via its init, to register their (de)serialization with the definition
@@ -9,7 +9,7 @@ import "github.com/zakyalvan/krtlwrkflw/definition/model"
 
 // --- concrete node types ---
 
-// StartEvent is the BPMN start event: the entry point of a process. As the
+// StartEvent is the workflow start event: the entry point of a process. As the
 // trigger start of an EventSubProcess it may carry correlation fields.
 type StartEvent struct {
 	model.Base
@@ -22,7 +22,7 @@ type StartEvent struct {
 // Kind returns model.KindStartEvent.
 func (StartEvent) Kind() model.NodeKind { return model.KindStartEvent }
 
-// EndEvent is the BPMN end event: a normal process completion point.
+// EndEvent is the workflow end event: a normal process completion point.
 type EndEvent struct{ model.Base }
 
 // Kind returns model.KindEndEvent.
@@ -34,10 +34,10 @@ type TerminateEndEvent struct{ model.Base }
 // Kind returns model.KindTerminateEndEvent.
 func (TerminateEndEvent) Kind() model.NodeKind { return model.KindTerminateEndEvent }
 
-// ErrorEndEvent throws a BPMN error when reached, caught by a boundary error event.
+// ErrorEndEvent throws a workflow error when reached, caught by a boundary error event.
 type ErrorEndEvent struct {
 	model.Base
-	// ErrorCode is the BPMN error code thrown (empty = anonymous catch-all).
+	// ErrorCode is the workflow error code thrown (empty = anonymous catch-all).
 	ErrorCode string
 }
 

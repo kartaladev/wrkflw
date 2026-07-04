@@ -1,4 +1,4 @@
-// Package activity holds the BPMN activity node kinds — service, user, receive,
+// Package activity holds the workflow activity node kinds — service, user, receive,
 // send, and business-rule tasks, plus sub-process and call-activity — for the
 // definition authoring layer. Import it to construct activities
 // (activity.NewServiceTask, …) and, via its init, to register their

@@ -6,7 +6,7 @@ import (
 )
 
 // nodeKindNames maps each NodeKind constant to its stable JSON name, and
-// nodeKindByName is its reverse. The names follow BPMN2 lowerCamelCase convention
+// nodeKindByName is its reverse. The names follow a lowerCamelCase convention
 // so stored JSONB is human-readable and independent of iota ordering — reordering
 // or inserting a constant in the iota block never corrupts previously persisted
 // process definitions.
