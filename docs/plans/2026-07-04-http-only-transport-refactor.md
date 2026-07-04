@@ -6,7 +6,7 @@
 
 **Architecture:** `transport/http/httpcore` holds all transport-neutral logic — pure per-endpoint functions (extracted from today's `transport/rest` handlers), DTOs, error classification, the instance view mapper, health-probe evaluation, observability recording, and the generic seam (`RouteCustomizer[R]`, `CustomizeConfig[R]`, `CustomizeOption[R]`, `MountGroups[R]`). Each framework subpackage (`stdlib`, `gin`, `fiber`) declares exported group structs (`InstanceRoutes`, `TaskRoutes`, `MessageRoutes`, `AdminRoutes`, `HealthRoutes`) that carry dependencies only and implement `Customize(r R, opts ...httpcore.CustomizeOption[R])` by natively binding the request, calling the shared `httpcore` function, and natively writing the response. `transport/grpc` and `transport/rest` are deleted.
 
-**Tech Stack:** Go 1.25, `net/http`, `github.com/gin-gonic/gin` (v1.x), `github.com/gofiber/fiber/v3` (v3.x) + `github.com/gofiber/fiber/v3/middleware/adaptor`, `expr-lang/expr` (unchanged), OpenTelemetry (`go.opentelemetry.io/otel`), `log/slog`.
+**Tech Stack:** Go 1.25, `net/http`, `github.com/gin-gonic/gin` (v1.x), `github.com/gofiber/fiber/v3` (v3.x) + `github.com/gofiber/fiber/v3/middleware/adaptor`, `github.com/go-playground/validator/v10` (request validation), `expr-lang/expr` (unchanged), OpenTelemetry (`go.opentelemetry.io/otel`), `log/slog`.
 
 ## Global Constraints
 
@@ -502,31 +502,42 @@ git commit -m "feat(transport): httpcore ClassifyError with 5xx message redactio
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
-### Task 4: Request DTOs
+### Task 4: Request DTOs + validation helper
 
 **Files:**
-- Create: `transport/http/httpcore/dto.go`, `transport/http/httpcore/dto_test.go`
+- Create: `transport/http/httpcore/dto.go`, `transport/http/httpcore/dto_test.go`, `transport/http/httpcore/validate.go`, `transport/http/httpcore/validate_test.go`
+- Modify: `go.mod`, `go.sum` (add `github.com/go-playground/validator/v10`)
+
+**Dependency:** `go get github.com/go-playground/validator/v10@latest` (the standard Go validation library; the same engine gin embeds). Used ONLY inside `httpcore` — adapters never import it directly.
 
 **Interfaces:**
-- Produces (JSON tags must match today's `transport/rest` bodies exactly — see `handler.go` reqBody structs):
+- Produces DTOs. JSON tags must match today's `transport/rest` bodies exactly (see `handler.go` reqBody structs). Add `validate:"..."` tags encoding the required-field rules currently hand-checked in the rest handlers (e.g. StartInstance needs def_ref + instance_id; DeliverSignal needs signal; DeliverMessage needs def_ref + name):
   ```go
   type Actor struct { ID string `json:"id"`; Roles []string `json:"roles"` }
-  type StartInput struct { DefRef string `json:"def_ref"`; InstanceID string `json:"instance_id"`; Vars map[string]any `json:"vars"` }
-  type SignalInput struct { Signal string `json:"signal"`; Payload map[string]any `json:"payload"` }
-  type MessageInput struct { DefRef string `json:"def_ref"`; Name string `json:"name"`; CorrelationKey string `json:"correlation_key"`; Payload map[string]any `json:"payload"` }
+  type StartInput struct { DefRef string `json:"def_ref" validate:"required"`; InstanceID string `json:"instance_id" validate:"required"`; Vars map[string]any `json:"vars"` }
+  type SignalInput struct { Signal string `json:"signal" validate:"required"`; Payload map[string]any `json:"payload"` }
+  type MessageInput struct { DefRef string `json:"def_ref" validate:"required"`; Name string `json:"name" validate:"required"`; CorrelationKey string `json:"correlation_key"`; Payload map[string]any `json:"payload"` }
   type ClaimInput struct { Actor Actor `json:"actor"` }
   type CompleteInput struct { Actor Actor `json:"actor"`; Output map[string]any `json:"output"` }
   type ReassignInput struct { From string `json:"from"`; To string `json:"to"`; By Actor `json:"by"` }
-  // Admin DTOs (mirror transport/rest/admin.go bodies): PolicyRuleInput, RoleBindingInput, RedriveInput, ListInstancesQuery (cursor/limit/status filters), etc.
+  // Admin DTOs (mirror transport/rest/admin.go bodies): PolicyRuleInput, RoleBindingInput, RedriveInput, ListInstancesQuery (cursor/limit/status filters), etc. — add validate: tags matching today's required-field checks.
+  ```
+- Produces a shared validator (single package-level `*validator.Validate` instance, safe for concurrent use):
+  ```go
+  // Validate runs the struct's validate: tags. On failure it returns an error
+  // wrapping ErrBadInput (so ClassifyError → 400) with a human-readable message.
+  // Returns nil when valid or when v has no validate tags.
+  func Validate(v any) error
   ```
 
-- [ ] **Step 1: Write the failing test** — round-trip JSON for one representative DTO to lock the wire tags.
+- [ ] **Step 1: Write the failing tests** — (a) JSON round-trip locking wire tags; (b) `Validate` returns an `ErrBadInput`-wrapping error for a missing required field and nil for a valid struct.
 
 ```go
 package httpcore_test
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -542,23 +553,55 @@ func TestStartInputJSONTags(t *testing.T) {
 		t.Fatalf("wire tags mismatch: %+v", got)
 	}
 }
+
+func TestValidate(t *testing.T) {
+	if err := httpcore.Validate(httpcore.StartInput{DefRef: "o", InstanceID: "o-1"}); err != nil {
+		t.Fatalf("valid struct should pass: %v", err)
+	}
+	err := httpcore.Validate(httpcore.StartInput{DefRef: ""}) // missing required fields
+	if err == nil || !errors.Is(err, httpcore.ErrBadInput) {
+		t.Fatalf("missing required must wrap ErrBadInput, got %v", err)
+	}
+}
 ```
 
 - [ ] **Step 2: Run — expect FAIL.**
 
 ```bash
-go test ./transport/http/httpcore/... -run TestStartInputJSONTags 2>&1 | head -10
+go test ./transport/http/httpcore/... -run 'TestStartInputJSONTags|TestValidate' 2>&1 | head -12
 ```
 
-- [ ] **Step 3: Implement `dto.go`** with the structs above (copy the exact reqBody shapes + admin body shapes from `transport/rest/handler.go` and `transport/rest/admin.go`).
+- [ ] **Step 3: Implement `dto.go`** (structs above; copy exact reqBody + admin body shapes from `transport/rest/handler.go` and `transport/rest/admin.go`, adding `validate:` tags) and **`validate.go`**:
 
-- [ ] **Step 4: Run — expect PASS.** `go test ./transport/http/httpcore/... -run TestStartInputJSONTags -v`
+```go
+package httpcore
+
+import (
+	"fmt"
+
+	"github.com/go-playground/validator/v10"
+)
+
+// validate is a shared, concurrency-safe validator instance.
+var validate = validator.New(validator.WithRequiredStructEnabled())
+
+// Validate runs v's `validate:` struct tags. On failure it returns an error
+// wrapping ErrBadInput so ClassifyError maps it to 400.
+func Validate(v any) error {
+	if err := validate.Struct(v); err != nil {
+		return fmt.Errorf("%w: %v", ErrBadInput, err)
+	}
+	return nil
+}
+```
+
+- [ ] **Step 4: Run — expect PASS.** `go test ./transport/http/httpcore/... -run 'TestStartInputJSONTags|TestValidate' -v`
 
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add transport/http/httpcore/dto.go transport/http/httpcore/dto_test.go
-git commit -m "feat(transport): httpcore request DTOs (wire-compatible)
+git add transport/http/httpcore/dto.go transport/http/httpcore/dto_test.go transport/http/httpcore/validate.go transport/http/httpcore/validate_test.go go.mod go.sum
+git commit -m "feat(transport): httpcore request DTOs + go-playground validation helper
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -583,7 +626,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   func ReassignTask(ctx context.Context, svc service.Service, token string, in ReassignInput, mapper func(engine.InstanceState) any) (int, any, error)
   ```
 
-**Source of truth:** the bodies of `transport/rest/handler.go` `handle*` methods. Extract the service-call + mapping (drop the decode/write, which move to adapters). Validation that today returns `ErrBadInput` (e.g. "def_ref and instance_id are required") moves INTO these funcs so every framework enforces it identically.
+**Source of truth:** the bodies of `transport/rest/handler.go` `handle*` methods. Extract the service-call + mapping (drop the decode/write, which move to adapters). Validation moves INTO these funcs via `Validate(&in)` (Task 4) — call it at the top of each func that takes a request DTO, replacing the hand-rolled `if field == ""` checks, so every framework enforces identical rules and 400 bodies.
 
 - [ ] **Step 1: Write the failing test** — table-driven against a mock `service.Service` (generate via `use-mockgen` if not present: `mockgen` the `service.Service` interface into `service/mock_service_test.go`... place per `use-mockgen`). Assert-closure form.
 
@@ -651,8 +694,8 @@ go test ./transport/http/httpcore/... -run TestStartInstance 2>&1 | head -20
 
 ```go
 func StartInstance(ctx context.Context, svc service.Service, in StartInput, mapper func(engine.InstanceState) any) (int, any, error) {
-	if in.DefRef == "" || in.InstanceID == "" {
-		return 0, nil, fmt.Errorf("%w: def_ref and instance_id are required", ErrBadInput)
+	if err := Validate(&in); err != nil { // go-playground validator on validate: tags; wraps ErrBadInput
+		return 0, nil, err
 	}
 	st, err := svc.StartInstance(ctx, service.StartInstanceRequest{DefRef: in.DefRef, InstanceID: in.InstanceID, Vars: in.Vars})
 	if err != nil {
@@ -734,7 +777,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test** — table-driven against mocks for `service.Service` + one admin sub-interface (e.g. `PolicyAdmin`). Cover: AddPolicy success (200/201), ResolveIncident success, CancelInstance success. Assert-closure form, `t.Context()`.
 - [ ] **Step 2: Run — expect FAIL.** `go test ./transport/http/httpcore/... -run TestAdmin 2>&1 | head -20`
-- [ ] **Step 3: Implement** by relocating `transport/rest/admin.go` handler bodies (drop decode/write). Keyset pagination cursor parsing that today lives in the handler moves into `ListInstancesQuery` construction at the adapter (adapter parses query params → `ListInstancesQuery`; func consumes it).
+- [ ] **Step 3: Implement** by relocating `transport/rest/admin.go` handler bodies (drop decode/write). For funcs taking a body DTO (AddPolicy/RemovePolicy/AddRoleBinding/RemoveRoleBinding/RedriveDeadLetters), call `Validate(&in)` at the top (admin DTOs carry `validate:` tags per Task 4), replacing any hand-rolled required-field checks. Keyset pagination cursor parsing that today lives in the handler moves into `ListInstancesQuery` construction at the adapter (adapter parses query params → `ListInstancesQuery`; func consumes it).
 - [ ] **Step 4: Run — expect PASS** (extend table to all funcs; ≥85%).
 - [ ] **Step 5: Commit.**
 
@@ -1130,7 +1173,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Create: `docs/adr/0094-http-only-remove-grpc.md`, `docs/adr/0095-multiframework-mount-adapters.md`
 - Modify: `docs/adr/0011-*.md`, `0051-*.md`, `0058-*.md`, `0062-*.md`, `0029-*.md` (add `> **Superseded by ADR-0094**` note to Status; for 0029 scope the note to the gRPC ResolveIncident RPC only).
 
-- [ ] **Step 1:** Write both ADRs in the Nygard template (Status/Date, Context, Decision, Consequences). 0094 = HTTP-only + gRPC removal; 0095 = generic `RouteCustomizer[R]` + `CustomizeOption[R]` + three native adapters + admin-by-composition + observability/500-leak changes. Reference the spec.
+- [ ] **Step 1:** Write both ADRs in the Nygard template (Status/Date, Context, Decision, Consequences). 0094 = HTTP-only + gRPC removal; 0095 = generic `RouteCustomizer[R]` + `CustomizeOption[R]` + three native adapters + admin-by-composition + observability/500-leak changes + adoption of `go-playground/validator/v10` for request validation (shared `validate:` tags in httpcore). Reference the spec.
 - [ ] **Step 2:** Add supersede notes to the five prior ADRs.
 - [ ] **Step 3: Commit.**
 

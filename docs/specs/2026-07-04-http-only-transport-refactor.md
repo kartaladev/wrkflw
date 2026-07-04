@@ -284,6 +284,25 @@ value only the stdlib `ServeMux` populates. Replaced by:
   on any router-populated request field. Trace-context extraction reads `r.Header`
   (every framework populates it).
 
+## Request validation
+
+Validation uses **`github.com/go-playground/validator/v10`** (the standard Go
+validation library; the same engine gin embeds). Rules live as `validate:"..."`
+struct tags on the shared `httpcore` DTOs, evaluated by a shared helper:
+
+```go
+// httpcore
+func Validate(v any) error // wraps validator errors as %w of ErrBadInput; nil when valid
+```
+
+`Validate(&in)` is called **inside the pure endpoint functions**, replacing the
+former hand-rolled `if field == ""` checks. This guarantees every adapter
+(stdlib, gin, fiber) enforces identical rules and returns byte-identical 400
+bodies — a parity requirement. stdlib and fiber v3 have no built-in validation, so
+this *is* their validator; gin's native binding validator is the same library, and
+using one shared rule source (no duplicated `binding:` tags) keeps the frameworks
+in lockstep. The dependency is recorded in ADR-0095.
+
 ## Error-body 500 leak fixed
 
 Today `WriteHTTPError` writes `err.Error()` into every response body, including the
