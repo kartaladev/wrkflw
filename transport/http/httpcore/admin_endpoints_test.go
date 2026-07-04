@@ -1,11 +1,12 @@
 package httpcore_test
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
 	"time"
+
+	"go.uber.org/mock/gomock"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -13,81 +14,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
 )
-
-// --- in-mem fakes for admin sub-interfaces ---
-
-// fakePolicyAdmin is a hand-written test double for service.PolicyAdmin.
-type fakePolicyAdmin struct {
-	addPolicyFn    func(ctx context.Context, r service.PolicyRule) (bool, error)
-	removePolicyFn func(ctx context.Context, r service.PolicyRule) (bool, error)
-	listPoliciesFn func(ctx context.Context) ([]service.PolicyRule, error)
-	addRoleFn      func(ctx context.Context, b service.RoleBinding) (bool, error)
-	removeRoleFn   func(ctx context.Context, b service.RoleBinding) (bool, error)
-	listRolesFn    func(ctx context.Context) ([]service.RoleBinding, error)
-}
-
-func (f *fakePolicyAdmin) AddPolicy(ctx context.Context, r service.PolicyRule) (bool, error) {
-	return f.addPolicyFn(ctx, r)
-}
-func (f *fakePolicyAdmin) RemovePolicy(ctx context.Context, r service.PolicyRule) (bool, error) {
-	return f.removePolicyFn(ctx, r)
-}
-func (f *fakePolicyAdmin) ListPolicies(ctx context.Context) ([]service.PolicyRule, error) {
-	return f.listPoliciesFn(ctx)
-}
-func (f *fakePolicyAdmin) AddRole(ctx context.Context, b service.RoleBinding) (bool, error) {
-	return f.addRoleFn(ctx, b)
-}
-func (f *fakePolicyAdmin) RemoveRole(ctx context.Context, b service.RoleBinding) (bool, error) {
-	return f.removeRoleFn(ctx, b)
-}
-func (f *fakePolicyAdmin) ListRoles(ctx context.Context) ([]service.RoleBinding, error) {
-	return f.listRolesFn(ctx)
-}
-
-// fakeDLQAdmin is a hand-written test double for service.DeadLetterAdmin.
-type fakeDLQAdmin struct {
-	listFn    func(ctx context.Context, limit int) ([]monitor.DeadLetter, error)
-	redriveFn func(ctx context.Context, ids ...int64) (int, error)
-}
-
-func (f *fakeDLQAdmin) ListDeadLettered(ctx context.Context, limit int) ([]monitor.DeadLetter, error) {
-	return f.listFn(ctx, limit)
-}
-func (f *fakeDLQAdmin) Redrive(ctx context.Context, ids ...int64) (int, error) {
-	return f.redriveFn(ctx, ids...)
-}
-
-// fakeRelayStatsAdmin is a hand-written test double for service.RelayStatsAdmin.
-type fakeRelayStatsAdmin struct {
-	statsFn func(ctx context.Context) (kernel.OutboxStats, error)
-}
-
-func (f *fakeRelayStatsAdmin) OutboxStats(ctx context.Context) (kernel.OutboxStats, error) {
-	return f.statsFn(ctx)
-}
-
-// fakeTimerAdmin is a hand-written test double for service.TimerAdmin.
-type fakeTimerAdmin struct {
-	statsFn     func(ctx context.Context) (kernel.TimerStats, error)
-	listArmedFn func(ctx context.Context) ([]kernel.ArmedTimer, error)
-}
-
-func (f *fakeTimerAdmin) Stats(ctx context.Context) (kernel.TimerStats, error) {
-	return f.statsFn(ctx)
-}
-func (f *fakeTimerAdmin) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error) {
-	return f.listArmedFn(ctx)
-}
-
-// fakeLineageAdmin is a hand-written test double for service.LineageAdmin.
-type fakeLineageAdmin struct {
-	lineageFn func(ctx context.Context, instanceID string) (kernel.InstanceLineage, error)
-}
-
-func (f *fakeLineageAdmin) Lineage(ctx context.Context, instanceID string) (kernel.InstanceLineage, error) {
-	return f.lineageFn(ctx, instanceID)
-}
 
 // --- Tests ---
 
@@ -333,15 +259,16 @@ func TestListDeadLetters(t *testing.T) {
 	now := time.Now()
 
 	tests := map[string]struct {
-		dla    service.DeadLetterAdmin
-		q      httpcore.DeadLetterQuery
-		assert func(t *testing.T, status int, body any, err error)
+		buildDLA func(t *testing.T) service.DeadLetterAdmin
+		q        httpcore.DeadLetterQuery
+		assert   func(t *testing.T, status int, body any, err error)
 	}{
 		"empty list → 200 empty items": {
-			dla: &fakeDLQAdmin{
-				listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-					return nil, nil
-				},
+			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
+				t.Helper()
+				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, nil)
+				return m
 			},
 			q: httpcore.DeadLetterQuery{},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -357,12 +284,14 @@ func TestListDeadLetters(t *testing.T) {
 			},
 		},
 		"one dead letter → 200 with item": {
-			dla: &fakeDLQAdmin{
-				listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-					return []monitor.DeadLetter{
+			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
+				t.Helper()
+				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(
+					[]monitor.DeadLetter{
 						{ID: 1, InstanceID: "inst-1", Topic: "instance.failed", RetryCount: 3, LastError: "timeout", CreatedAt: now},
-					}, nil
-				},
+					}, nil)
+				return m
 			},
 			q: httpcore.DeadLetterQuery{Limit: 10},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -378,10 +307,11 @@ func TestListDeadLetters(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			dla: &fakeDLQAdmin{
-				listFn: func(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
-					return nil, errors.New("db error")
-				},
+			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
+				t.Helper()
+				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, errors.New("db error"))
+				return m
 			},
 			q: httpcore.DeadLetterQuery{},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -398,7 +328,7 @@ func TestListDeadLetters(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.ListDeadLetters(t.Context(), tc.dla, tc.q)
+			status, body, err := httpcore.ListDeadLetters(t.Context(), tc.buildDLA(t), tc.q)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -409,15 +339,16 @@ func TestRedriveDeadLetters(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		dla    service.DeadLetterAdmin
-		in     httpcore.RedriveInput
-		assert func(t *testing.T, status int, body any, err error)
+		buildDLA func(t *testing.T) service.DeadLetterAdmin
+		in       httpcore.RedriveInput
+		assert   func(t *testing.T, status int, body any, err error)
 	}{
 		"redrive two → 200 redriven:2": {
-			dla: &fakeDLQAdmin{
-				redriveFn: func(_ context.Context, ids ...int64) (int, error) {
-					return len(ids), nil
-				},
+			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
+				t.Helper()
+				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m.EXPECT().Redrive(gomock.Any(), int64(1), int64(2)).Return(2, nil)
+				return m
 			},
 			in: httpcore.RedriveInput{IDs: []int64{1, 2}},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -433,10 +364,11 @@ func TestRedriveDeadLetters(t *testing.T) {
 			},
 		},
 		"empty ids → 200 redriven:0": {
-			dla: &fakeDLQAdmin{
-				redriveFn: func(_ context.Context, ids ...int64) (int, error) {
-					return 0, nil
-				},
+			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
+				t.Helper()
+				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m.EXPECT().Redrive(gomock.Any()).Return(0, nil)
+				return m
 			},
 			in: httpcore.RedriveInput{IDs: nil},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -449,10 +381,11 @@ func TestRedriveDeadLetters(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			dla: &fakeDLQAdmin{
-				redriveFn: func(_ context.Context, ids ...int64) (int, error) {
-					return 0, errors.New("db error")
-				},
+			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
+				t.Helper()
+				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m.EXPECT().Redrive(gomock.Any(), int64(99)).Return(0, errors.New("db error"))
+				return m
 			},
 			in: httpcore.RedriveInput{IDs: []int64{99}},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -469,7 +402,7 @@ func TestRedriveDeadLetters(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.RedriveDeadLetters(t.Context(), tc.dla, tc.in)
+			status, body, err := httpcore.RedriveDeadLetters(t.Context(), tc.buildDLA(t), tc.in)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -480,14 +413,16 @@ func TestListPolicies(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		pa     service.PolicyAdmin
-		assert func(t *testing.T, status int, body any, err error)
+		buildPA func(t *testing.T) service.PolicyAdmin
+		assert  func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 with policies": {
-			pa: &fakePolicyAdmin{
-				listPoliciesFn: func(_ context.Context) ([]service.PolicyRule, error) {
-					return []service.PolicyRule{{Subject: "alice", Object: "/orders", Action: "read"}}, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().ListPolicies(gomock.Any()).Return(
+					[]service.PolicyRule{{Subject: "alice", Object: "/orders", Action: "read"}}, nil)
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -502,10 +437,11 @@ func TestListPolicies(t *testing.T) {
 			},
 		},
 		"empty → 200 with empty policies": {
-			pa: &fakePolicyAdmin{
-				listPoliciesFn: func(_ context.Context) ([]service.PolicyRule, error) {
-					return nil, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().ListPolicies(gomock.Any()).Return(nil, nil)
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -517,10 +453,11 @@ func TestListPolicies(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			pa: &fakePolicyAdmin{
-				listPoliciesFn: func(_ context.Context) ([]service.PolicyRule, error) {
-					return nil, errors.New("casbin error")
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().ListPolicies(gomock.Any()).Return(nil, errors.New("casbin error"))
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
@@ -536,7 +473,7 @@ func TestListPolicies(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.ListPolicies(t.Context(), tc.pa)
+			status, body, err := httpcore.ListPolicies(t.Context(), tc.buildPA(t))
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -547,15 +484,16 @@ func TestAddPolicy(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		pa     service.PolicyAdmin
-		in     httpcore.PolicyRuleInput
-		assert func(t *testing.T, status int, body any, err error)
+		buildPA func(t *testing.T) service.PolicyAdmin
+		in      httpcore.PolicyRuleInput
+		assert  func(t *testing.T, status int, body any, err error)
 	}{
 		"new policy → 200 added:true": {
-			pa: &fakePolicyAdmin{
-				addPolicyFn: func(_ context.Context, r service.PolicyRule) (bool, error) {
-					return true, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil)
+				return m
 			},
 			in: httpcore.PolicyRuleInput{Subject: "alice", Object: "/orders", Action: "read"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -571,10 +509,11 @@ func TestAddPolicy(t *testing.T) {
 			},
 		},
 		"already exists → 200 added:false": {
-			pa: &fakePolicyAdmin{
-				addPolicyFn: func(_ context.Context, r service.PolicyRule) (bool, error) {
-					return false, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, nil)
+				return m
 			},
 			in: httpcore.PolicyRuleInput{Subject: "alice", Object: "/orders", Action: "read"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -587,10 +526,11 @@ func TestAddPolicy(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			pa: &fakePolicyAdmin{
-				addPolicyFn: func(_ context.Context, r service.PolicyRule) (bool, error) {
-					return false, errors.New("casbin error")
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
+				return m
 			},
 			in: httpcore.PolicyRuleInput{Subject: "alice", Object: "/orders", Action: "read"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -607,7 +547,7 @@ func TestAddPolicy(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.AddPolicy(t.Context(), tc.pa, tc.in)
+			status, body, err := httpcore.AddPolicy(t.Context(), tc.buildPA(t), tc.in)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -618,15 +558,16 @@ func TestRemovePolicy(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		pa     service.PolicyAdmin
-		in     httpcore.PolicyRuleInput
-		assert func(t *testing.T, status int, body any, err error)
+		buildPA func(t *testing.T) service.PolicyAdmin
+		in      httpcore.PolicyRuleInput
+		assert  func(t *testing.T, status int, body any, err error)
 	}{
 		"exists → 200 removed:true": {
-			pa: &fakePolicyAdmin{
-				removePolicyFn: func(_ context.Context, r service.PolicyRule) (bool, error) {
-					return true, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil)
+				return m
 			},
 			in: httpcore.PolicyRuleInput{Subject: "alice", Object: "/orders", Action: "read"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -642,10 +583,11 @@ func TestRemovePolicy(t *testing.T) {
 			},
 		},
 		"not found → 200 removed:false": {
-			pa: &fakePolicyAdmin{
-				removePolicyFn: func(_ context.Context, r service.PolicyRule) (bool, error) {
-					return false, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, nil)
+				return m
 			},
 			in: httpcore.PolicyRuleInput{Subject: "alice", Object: "/orders", Action: "read"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -658,10 +600,11 @@ func TestRemovePolicy(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			pa: &fakePolicyAdmin{
-				removePolicyFn: func(_ context.Context, r service.PolicyRule) (bool, error) {
-					return false, errors.New("casbin error")
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
+				return m
 			},
 			in: httpcore.PolicyRuleInput{Subject: "alice", Object: "/orders", Action: "read"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -678,7 +621,7 @@ func TestRemovePolicy(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.RemovePolicy(t.Context(), tc.pa, tc.in)
+			status, body, err := httpcore.RemovePolicy(t.Context(), tc.buildPA(t), tc.in)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -689,14 +632,16 @@ func TestListRoleBindings(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		pa     service.PolicyAdmin
-		assert func(t *testing.T, status int, body any, err error)
+		buildPA func(t *testing.T) service.PolicyAdmin
+		assert  func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 with bindings": {
-			pa: &fakePolicyAdmin{
-				listRolesFn: func(_ context.Context) ([]service.RoleBinding, error) {
-					return []service.RoleBinding{{User: "alice", Role: "admin"}}, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().ListRoles(gomock.Any()).Return(
+					[]service.RoleBinding{{User: "alice", Role: "admin"}}, nil)
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -711,10 +656,11 @@ func TestListRoleBindings(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			pa: &fakePolicyAdmin{
-				listRolesFn: func(_ context.Context) ([]service.RoleBinding, error) {
-					return nil, errors.New("casbin error")
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().ListRoles(gomock.Any()).Return(nil, errors.New("casbin error"))
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
@@ -730,7 +676,7 @@ func TestListRoleBindings(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.ListRoleBindings(t.Context(), tc.pa)
+			status, body, err := httpcore.ListRoleBindings(t.Context(), tc.buildPA(t))
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -741,15 +687,16 @@ func TestAddRoleBinding(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		pa     service.PolicyAdmin
-		in     httpcore.RoleBindingInput
-		assert func(t *testing.T, status int, body any, err error)
+		buildPA func(t *testing.T) service.PolicyAdmin
+		in      httpcore.RoleBindingInput
+		assert  func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 added:true": {
-			pa: &fakePolicyAdmin{
-				addRoleFn: func(_ context.Context, b service.RoleBinding) (bool, error) {
-					return true, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(true, nil)
+				return m
 			},
 			in: httpcore.RoleBindingInput{User: "alice", Role: "admin"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -765,10 +712,11 @@ func TestAddRoleBinding(t *testing.T) {
 			},
 		},
 		"already exists → 200 added:false": {
-			pa: &fakePolicyAdmin{
-				addRoleFn: func(_ context.Context, b service.RoleBinding) (bool, error) {
-					return false, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(false, nil)
+				return m
 			},
 			in: httpcore.RoleBindingInput{User: "alice", Role: "admin"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -781,10 +729,11 @@ func TestAddRoleBinding(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			pa: &fakePolicyAdmin{
-				addRoleFn: func(_ context.Context, b service.RoleBinding) (bool, error) {
-					return false, errors.New("casbin error")
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
+				return m
 			},
 			in: httpcore.RoleBindingInput{User: "alice", Role: "admin"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -801,7 +750,7 @@ func TestAddRoleBinding(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.AddRoleBinding(t.Context(), tc.pa, tc.in)
+			status, body, err := httpcore.AddRoleBinding(t.Context(), tc.buildPA(t), tc.in)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -812,15 +761,16 @@ func TestRemoveRoleBinding(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		pa     service.PolicyAdmin
-		in     httpcore.RoleBindingInput
-		assert func(t *testing.T, status int, body any, err error)
+		buildPA func(t *testing.T) service.PolicyAdmin
+		in      httpcore.RoleBindingInput
+		assert  func(t *testing.T, status int, body any, err error)
 	}{
 		"exists → 200 removed:true": {
-			pa: &fakePolicyAdmin{
-				removeRoleFn: func(_ context.Context, b service.RoleBinding) (bool, error) {
-					return true, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(true, nil)
+				return m
 			},
 			in: httpcore.RoleBindingInput{User: "alice", Role: "admin"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -836,10 +786,11 @@ func TestRemoveRoleBinding(t *testing.T) {
 			},
 		},
 		"not found → 200 removed:false": {
-			pa: &fakePolicyAdmin{
-				removeRoleFn: func(_ context.Context, b service.RoleBinding) (bool, error) {
-					return false, nil
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(false, nil)
+				return m
 			},
 			in: httpcore.RoleBindingInput{User: "alice", Role: "admin"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -852,10 +803,11 @@ func TestRemoveRoleBinding(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			pa: &fakePolicyAdmin{
-				removeRoleFn: func(_ context.Context, b service.RoleBinding) (bool, error) {
-					return false, errors.New("casbin error")
-				},
+			buildPA: func(t *testing.T) service.PolicyAdmin {
+				t.Helper()
+				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
+				return m
 			},
 			in: httpcore.RoleBindingInput{User: "alice", Role: "admin"},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -872,7 +824,7 @@ func TestRemoveRoleBinding(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.RemoveRoleBinding(t.Context(), tc.pa, tc.in)
+			status, body, err := httpcore.RemoveRoleBinding(t.Context(), tc.buildPA(t), tc.in)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -883,14 +835,16 @@ func TestAdminRelayStats(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		rsa    service.RelayStatsAdmin
-		assert func(t *testing.T, status int, body any, err error)
+		buildRSA func(t *testing.T) service.RelayStatsAdmin
+		assert   func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 with stats": {
-			rsa: &fakeRelayStatsAdmin{
-				statsFn: func(_ context.Context) (kernel.OutboxStats, error) {
-					return kernel.OutboxStats{Pending: 5, Dead: 1, OldestPendingAge: 10 * time.Second}, nil
-				},
+			buildRSA: func(t *testing.T) service.RelayStatsAdmin {
+				t.Helper()
+				m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+				m.EXPECT().OutboxStats(gomock.Any()).Return(
+					kernel.OutboxStats{Pending: 5, Dead: 1, OldestPendingAge: 10 * time.Second}, nil)
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -905,10 +859,11 @@ func TestAdminRelayStats(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			rsa: &fakeRelayStatsAdmin{
-				statsFn: func(_ context.Context) (kernel.OutboxStats, error) {
-					return kernel.OutboxStats{}, errors.New("db error")
-				},
+			buildRSA: func(t *testing.T) service.RelayStatsAdmin {
+				t.Helper()
+				m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+				m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, errors.New("db error"))
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
@@ -924,7 +879,7 @@ func TestAdminRelayStats(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.AdminRelayStats(t.Context(), tc.rsa)
+			status, body, err := httpcore.AdminRelayStats(t.Context(), tc.buildRSA(t))
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -937,19 +892,19 @@ func TestAdminTimers(t *testing.T) {
 	fireAt := time.Now().Add(5 * time.Minute)
 
 	tests := map[string]struct {
-		ta     service.TimerAdmin
-		assert func(t *testing.T, status int, body any, err error)
+		buildTA func(t *testing.T) service.TimerAdmin
+		assert  func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 with timer list": {
-			ta: &fakeTimerAdmin{
-				statsFn: func(_ context.Context) (kernel.TimerStats, error) {
-					return kernel.TimerStats{Armed: 1, NextFireAt: &fireAt}, nil
-				},
-				listArmedFn: func(_ context.Context) ([]kernel.ArmedTimer, error) {
-					return []kernel.ArmedTimer{
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 1, NextFireAt: &fireAt}, nil)
+				m.EXPECT().ListArmed(gomock.Any()).Return(
+					[]kernel.ArmedTimer{
 						{InstanceID: "inst-1", DefID: "d", DefVersion: 1, TimerID: "t1", FireAt: fireAt},
-					}, nil
-				},
+					}, nil)
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -964,13 +919,13 @@ func TestAdminTimers(t *testing.T) {
 			},
 		},
 		"stats error → propagated": {
-			ta: &fakeTimerAdmin{
-				statsFn: func(_ context.Context) (kernel.TimerStats, error) {
-					return kernel.TimerStats{}, errors.New("db error")
-				},
-				listArmedFn: func(_ context.Context) ([]kernel.ArmedTimer, error) {
-					return nil, nil
-				},
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, errors.New("db error"))
+				// ListArmed may or may not be called depending on short-circuit behavior.
+				m.EXPECT().ListArmed(gomock.Any()).Return(nil, nil).AnyTimes()
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
@@ -982,13 +937,12 @@ func TestAdminTimers(t *testing.T) {
 			},
 		},
 		"listArmed error → propagated": {
-			ta: &fakeTimerAdmin{
-				statsFn: func(_ context.Context) (kernel.TimerStats, error) {
-					return kernel.TimerStats{Armed: 0}, nil
-				},
-				listArmedFn: func(_ context.Context) ([]kernel.ArmedTimer, error) {
-					return nil, errors.New("list error")
-				},
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 0}, nil)
+				m.EXPECT().ListArmed(gomock.Any()).Return(nil, errors.New("list error"))
+				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
@@ -1004,7 +958,7 @@ func TestAdminTimers(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.AdminTimers(t.Context(), tc.ta)
+			status, body, err := httpcore.AdminTimers(t.Context(), tc.buildTA(t))
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -1015,19 +969,21 @@ func TestAdminInstanceLineage(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		la         service.LineageAdmin
+		buildLA    func(t *testing.T) service.LineageAdmin
 		instanceID string
 		assert     func(t *testing.T, status int, body any, err error)
 	}{
 		"root instance → 200 with lineage": {
-			la: &fakeLineageAdmin{
-				lineageFn: func(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
-					return kernel.InstanceLineage{
-						InstanceID:      instanceID,
+			buildLA: func(t *testing.T) service.LineageAdmin {
+				t.Helper()
+				m := service.NewMockLineageAdmin(gomock.NewController(t))
+				m.EXPECT().Lineage(gomock.Any(), "inst-root").Return(
+					kernel.InstanceLineage{
+						InstanceID:      "inst-root",
 						CallChildren:    []kernel.CallLinkRef{},
 						ChainSuccessors: []kernel.ChainLinkRef{},
-					}, nil
-				},
+					}, nil)
+				return m
 			},
 			instanceID: "inst-root",
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -1043,18 +999,20 @@ func TestAdminInstanceLineage(t *testing.T) {
 			},
 		},
 		"instance with call parent → 200 parent populated": {
-			la: &fakeLineageAdmin{
-				lineageFn: func(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
-					return kernel.InstanceLineage{
-						InstanceID: instanceID,
+			buildLA: func(t *testing.T) service.LineageAdmin {
+				t.Helper()
+				m := service.NewMockLineageAdmin(gomock.NewController(t))
+				m.EXPECT().Lineage(gomock.Any(), "inst-with-parent").Return(
+					kernel.InstanceLineage{
+						InstanceID: "inst-with-parent",
 						CallParent: &kernel.CallLinkRef{
 							InstanceID: "parent-inst", DefID: "parent-def", DefVersion: 1, Depth: 0,
 						},
 						CallChildren:     []kernel.CallLinkRef{{InstanceID: "child-inst", DefID: "", DefVersion: 0, Depth: 1}},
 						ChainPredecessor: &kernel.ChainLinkRef{InstanceID: "pred-inst", DefinitionRef: "pred-def:1", Outcome: "approved"},
 						ChainSuccessors:  []kernel.ChainLinkRef{{InstanceID: "succ-inst", DefinitionRef: "succ-def:1", Outcome: "done"}},
-					}, nil
-				},
+					}, nil)
+				return m
 			},
 			instanceID: "inst-with-parent",
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -1070,10 +1028,11 @@ func TestAdminInstanceLineage(t *testing.T) {
 			},
 		},
 		"service error → propagated": {
-			la: &fakeLineageAdmin{
-				lineageFn: func(_ context.Context, _ string) (kernel.InstanceLineage, error) {
-					return kernel.InstanceLineage{}, errors.New("not found")
-				},
+			buildLA: func(t *testing.T) service.LineageAdmin {
+				t.Helper()
+				m := service.NewMockLineageAdmin(gomock.NewController(t))
+				m.EXPECT().Lineage(gomock.Any(), "no-such-inst").Return(kernel.InstanceLineage{}, errors.New("not found"))
+				return m
 			},
 			instanceID: "no-such-inst",
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -1090,7 +1049,7 @@ func TestAdminInstanceLineage(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.AdminInstanceLineage(t.Context(), tc.la, tc.instanceID)
+			status, body, err := httpcore.AdminInstanceLineage(t.Context(), tc.buildLA(t), tc.instanceID)
 			tc.assert(t, status, body, err)
 		})
 	}
