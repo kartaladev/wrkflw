@@ -55,8 +55,8 @@ func ExampleProcessDriver_observability() {
 		},
 	}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return map[string]any{"greeting": "hello"}, nil
 		}),
 	})

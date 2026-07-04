@@ -53,20 +53,20 @@ func main() {
 		log.Fatal("build def:", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"check-credit": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"check-credit": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Printf("  [check-credit] amount=%.0f\n", vars["amount"])
 			return map[string]any{"credit_ok": true}, nil
 		}),
-		"manual-review": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"manual-review": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [manual-review] escalated to underwriter")
 			return map[string]any{"outcome": "manual-review"}, nil
 		}),
-		"auto-approve": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"auto-approve": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [auto-approve] loan auto-approved")
 			return map[string]any{"outcome": "approved"}, nil
 		}),
-		"reject": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"reject": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [reject] loan rejected (default path)")
 			return map[string]any{"outcome": "rejected"}, nil
 		}),

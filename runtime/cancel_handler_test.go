@@ -63,8 +63,8 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
 	var cleanupRan atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"cleanup": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"cleanup": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			cleanupRan.Add(1)
 			return nil, nil
 		}),
@@ -97,8 +97,8 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"cleanup": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"cleanup": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, assert.AnError // always fails
 		}),
 	})

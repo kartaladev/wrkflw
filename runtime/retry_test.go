@@ -89,8 +89,8 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 			T := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 			clk := clockwork.NewFakeClockAt(T)
 
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					return nil, errors.New("boom")
 				}),
 			})
@@ -157,8 +157,8 @@ func TestRunnerResolveIncident(t *testing.T) {
 
 	// Counter: action fails on first call (attempt 0), succeeds on second (after resolve).
 	var calls atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			if calls.Add(1) == 1 {
 				return nil, errors.New("first call fails")
 			}

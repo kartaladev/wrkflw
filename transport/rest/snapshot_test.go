@@ -80,7 +80,7 @@ func TestHandlerGetInstanceSnapshotNotFound(t *testing.T) {
 // ("svc-inline"). Used to assert that snapshot responses surface action metadata.
 func actionMetadataProcess(t *testing.T) *model.ProcessDefinition {
 	t.Helper()
-	inlineAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	inlineAction := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return map[string]any{"done": true}, nil
 	})
 	def, err := definition.NewBuilder("action-meta", 1).
@@ -91,7 +91,7 @@ func actionMetadataProcess(t *testing.T) *model.ProcessDefinition {
 		Connect("start", "svc-named").
 		Connect("svc-named", "svc-inline").
 		Connect("svc-inline", "end").
-		RegisterAction("scoped-action", action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+		RegisterAction("scoped-action", action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return nil, nil
 		})).
 		Build()

@@ -65,7 +65,7 @@ func (r *ProcessDriver) actionContext(parent context.Context) (context.Context, 
 	return context.WithTimeout(parent, r.actionTimeout)
 }
 
-func safeActionDo(ctx context.Context, a action.ServiceAction, in map[string]any) (out map[string]any, err error) {
+func safeActionDo(ctx context.Context, a action.Action, in map[string]any) (out map[string]any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			out = nil

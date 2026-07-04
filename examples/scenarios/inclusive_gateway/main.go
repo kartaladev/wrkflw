@@ -64,13 +64,13 @@ func main() {
 		log.Fatal("build def:", err)
 	}
 
-	mk := func(name, key string) action.ServiceAction {
-		return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	mk := func(name, key string) action.Action {
+		return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Printf("  [%s] ran\n", name)
 			return map[string]any{key: true}, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"assess":        mk("assess", "assessed"),
 		"notify-risk":   mk("notify-risk", "risk_notified"),
 		"senior-review": mk("senior-review", "senior_reviewed"),

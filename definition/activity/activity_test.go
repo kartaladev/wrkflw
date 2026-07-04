@@ -44,7 +44,7 @@ func TestInlineActionOptions(t *testing.T) {
 	if model.InlineActionOf(n) == nil {
 		t.Fatal("WithActionFunc: expected inline action")
 	}
-	n2 := activity.NewBusinessRuleTask("y", activity.WithAction(action.Func(fn)))
+	n2 := activity.NewBusinessRuleTask("y", activity.WithAction(action.ActionFunc(fn)))
 	if model.InlineActionOf(n2) == nil {
 		t.Fatal("WithAction: expected inline action")
 	}

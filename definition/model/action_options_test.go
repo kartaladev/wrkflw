@@ -41,7 +41,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"inline action": {
-			activity.NewServiceTask("st", activity.WithAction(action.Func(noopFn))),
+			activity.NewServiceTask("st", activity.WithAction(action.ActionFunc(noopFn))),
 			func(t *testing.T, node model.Node) {
 				if got := model.ActionOf(node); got != "" {
 					t.Fatalf("ActionOf = %q, want %q", got, "")
@@ -74,7 +74,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			},
 		},
 		"businessrule inline": {
-			activity.NewBusinessRuleTask("br", activity.WithAction(action.Func(noopFn))),
+			activity.NewBusinessRuleTask("br", activity.WithAction(action.ActionFunc(noopFn))),
 			func(t *testing.T, node model.Node) {
 				if got := model.ActionOf(node); got != "" {
 					t.Fatalf("ActionOf = %q, want %q", got, "")
@@ -105,7 +105,7 @@ func TestServiceTaskActionOptions(t *testing.T) {
 
 func TestRegisterActionScopedCatalog(t *testing.T) {
 	def, err := model.NewBuilder("d", 1).
-		RegisterAction("score", action.Func(noopFn)).
+		RegisterAction("score", action.ActionFunc(noopFn)).
 		RegisterActionFunc("notify", noopFn).
 		Add(event.NewStart("st")).
 		Add(activity.NewServiceTask("s", activity.WithActionName("score"))).
@@ -131,7 +131,7 @@ func TestRegisterActionScopedCatalog(t *testing.T) {
 func TestBuildRejectsInlineAndNameConflict(t *testing.T) {
 	_, err := model.NewBuilder("d", 1).
 		Add(event.NewStart("st")).
-		Add(activity.NewServiceTask("s", activity.WithActionName("x"), activity.WithAction(action.Func(noopFn)))).
+		Add(activity.NewServiceTask("s", activity.WithActionName("x"), activity.WithAction(action.ActionFunc(noopFn)))).
 		Add(event.NewEnd("e")).
 		Connect("st", "s").
 		Connect("s", "e").
@@ -143,8 +143,8 @@ func TestBuildRejectsInlineAndNameConflict(t *testing.T) {
 
 func TestBuildRejectsDuplicateScopedAction(t *testing.T) {
 	_, err := model.NewBuilder("d", 1).
-		RegisterAction("x", action.Func(noopFn)).
-		RegisterAction("x", action.Func(noopFn)).
+		RegisterAction("x", action.ActionFunc(noopFn)).
+		RegisterAction("x", action.ActionFunc(noopFn)).
 		Add(event.NewStart("st")).
 		Add(activity.NewServiceTask("s", activity.WithActionName("x"))).
 		Add(event.NewEnd("e")).

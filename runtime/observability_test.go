@@ -167,8 +167,8 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
@@ -296,8 +296,8 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			reader := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"charge": action.Func(tc.actionFunc),
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"charge": action.ActionFunc(tc.actionFunc),
 			})
 			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
@@ -323,8 +323,8 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	clk := clockwork.NewFakeClockAt(T)
 
 	var calls atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			if calls.Add(1) == 1 {
 				return nil, errors.New("first call fails")
 			}

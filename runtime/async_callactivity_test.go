@@ -202,14 +202,14 @@ func asyncFailingParentDef() *model.ProcessDefinition {
 	}
 }
 
-// successAction is a ServiceAction that returns a fixed output map.
+// successAction is a action.Action that returns a fixed output map.
 type successAction struct{ out map[string]any }
 
 func (a *successAction) Do(_ context.Context, _ map[string]any) (map[string]any, error) {
 	return a.out, nil
 }
 
-// failAction is a ServiceAction that always returns an error.
+// failAction is a action.Action that always returns an error.
 type failAction struct{ msg string }
 
 func (a *failAction) Do(_ context.Context, _ map[string]any) (map[string]any, error) {
@@ -236,7 +236,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 		childOutput := map[string]any{"result": "ok", "score": 42}
-		cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		cat := action.NewMapCatalog(map[string]action.Action{
 			"complete-action": &successAction{out: childOutput},
 		})
 
@@ -277,7 +277,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		cl := kernel.NewMemCallLinkStore()
 		store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
-		cat := action.NewMapCatalog(map[string]action.ServiceAction{
+		cat := action.NewMapCatalog(map[string]action.Action{
 			"fail-action": &failAction{msg: "child service error"},
 		})
 

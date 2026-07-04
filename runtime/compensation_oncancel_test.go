@@ -66,12 +66,12 @@ func TestRunnerCompensationOnCancel(t *testing.T) {
 	var chargeRan atomic.Int32
 	var refundRan atomic.Int32
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			chargeRan.Add(1)
 			return nil, nil
 		}),
-		"refund": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"refund": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			refundRan.Add(1)
 			return nil, nil
 		}),

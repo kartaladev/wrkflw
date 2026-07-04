@@ -47,7 +47,7 @@ func newTestHarness(t *testing.T, defs ...*model.ProcessDefinition) (*testHarnes
 	az := authz.RoleAuthorizer{}
 	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"greet": greetServiceAction{},
 	})
 	r, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))

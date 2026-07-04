@@ -50,16 +50,16 @@ func main() {
 	}
 
 	// Wire up service actions.
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"pick-items": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"pick-items": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Println("  [pick-items] picking items from warehouse")
 			return map[string]any{"items_picked": true}, nil
 		}),
-		"charge-card": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+		"charge-card": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Printf("  [charge-card] charging card for order %v\n", vars["order_id"])
 			return map[string]any{"payment_ref": "PAY-001"}, nil
 		}),
-		"ship": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+		"ship": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Println("  [ship] shipping order")
 			return map[string]any{"tracking": "TRACK-42"}, nil
 		}),

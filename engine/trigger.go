@@ -27,14 +27,14 @@ type StartInstance struct {
 	Vars map[string]any
 }
 
-// ActionCompleted reports that a ServiceAction finished successfully.
+// ActionCompleted reports that a action.Action finished successfully.
 type ActionCompleted struct {
 	baseTrigger
 	CommandID string
 	Output    map[string]any
 }
 
-// ActionFailed reports that a ServiceAction failed.
+// ActionFailed reports that a action.Action failed.
 type ActionFailed struct {
 	baseTrigger
 	CommandID string

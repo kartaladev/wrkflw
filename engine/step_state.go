@@ -250,7 +250,7 @@ func copyVars(in map[string]any) map[string]any {
 	return out
 }
 
-// serviceActionInput builds the Input map for a node's primary ServiceAction
+// serviceActionInput builds the Input map for a node's primary action.Action
 // invocation. It copies the instance variables and stamps a stable,
 // attempt-independent idempotency key ("<instanceID>:<nodeID>") so action
 // authors can dedup external side effects across retries.

@@ -76,8 +76,8 @@ flows:
 		Connect("charge", "e").
 		Build()
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge-card": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			return map[string]any{"charged": true}, nil
 		}),
 	})

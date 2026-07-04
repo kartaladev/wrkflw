@@ -44,7 +44,7 @@ func newObsGRPCHarness(t *testing.T, opts []grpctransport.Option, defs ...*model
 	az := authz.RoleAuthorizer{}
 	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"greet": serverTestGreetAction{},
 	})
 	runner, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, taskStore, az))

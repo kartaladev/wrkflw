@@ -54,12 +54,12 @@ func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime
 func TestRunnerCancelInstanceRunsCancelActions(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	var ran []string
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"notify": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"notify": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "notify")
 			return nil, nil
 		}),
-		"boom": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"boom": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "boom")
 			return nil, errors.New("cancel action failed on purpose")
 		}),

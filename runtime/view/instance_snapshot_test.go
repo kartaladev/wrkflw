@@ -114,9 +114,9 @@ func TestNewInstanceSnapshot(t *testing.T) {
 	}
 }
 
-// noop returns a trivial inline ServiceAction for use in test definitions.
-func noop() action.ServiceAction {
-	return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+// noop returns a trivial inline action.Action for use in test definitions.
+func noop() action.Action {
+	return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return nil, nil
 	})
 }

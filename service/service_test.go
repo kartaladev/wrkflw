@@ -125,7 +125,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	require.NoError(t, err)
 
 	// Build the action catalog with a simple "greet" action.
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"greet": greetAction{},
 	})
 

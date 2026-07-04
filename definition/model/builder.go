@@ -23,7 +23,7 @@ var ErrDuplicateScopedAction = errors.New("workflow-definition: duplicate scoped
 // definition-scoped actions and call Build to validate and obtain the
 // *ProcessDefinition. All methods return DefinitionLoader for chaining.
 type DefinitionLoader interface {
-	RegisterAction(name string, a action.ServiceAction) DefinitionLoader
+	RegisterAction(name string, a action.Action) DefinitionLoader
 	RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionLoader
 	CancelActions(names ...string) DefinitionLoader
 	Build() (*ProcessDefinition, error)
@@ -47,7 +47,7 @@ type DefinitionLoader interface {
 type DefinitionBuilder interface {
 	Add(n Node) DefinitionBuilder
 	Connect(fromID, toID string, opts ...flow.Option) DefinitionBuilder
-	RegisterAction(name string, a action.ServiceAction) DefinitionBuilder
+	RegisterAction(name string, a action.Action) DefinitionBuilder
 	RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionBuilder
 	CancelActions(names ...string) DefinitionBuilder
 	Build() (*ProcessDefinition, error)
@@ -69,13 +69,13 @@ type definitionCore struct {
 	nodes         []Node
 	flows         []flow.SequenceFlow
 	cancelActions []string
-	actions       map[string]action.ServiceAction // scoped catalog accumulator; nil until first register
-	dupAction     string                          // first duplicate-registered name, "" if none
+	actions       map[string]action.Action // scoped catalog accumulator; nil until first register
+	dupAction     string                   // first duplicate-registered name, "" if none
 }
 
-func (c *definitionCore) register(name string, a action.ServiceAction) {
+func (c *definitionCore) register(name string, a action.Action) {
 	if c.actions == nil {
-		c.actions = make(map[string]action.ServiceAction)
+		c.actions = make(map[string]action.Action)
 	}
 	if _, exists := c.actions[name]; exists && c.dupAction == "" {
 		c.dupAction = name
@@ -164,14 +164,14 @@ func (b *definitionBuilder) CancelActions(names ...string) DefinitionBuilder {
 
 // RegisterAction adds a definition-scoped action under name, visible only to
 // this definition (global catalog is the fallback). Returns the builder.
-func (b *definitionBuilder) RegisterAction(name string, a action.ServiceAction) DefinitionBuilder {
+func (b *definitionBuilder) RegisterAction(name string, a action.Action) DefinitionBuilder {
 	b.register(name, a)
 	return b
 }
 
 // RegisterActionFunc is RegisterAction sugar wrapping a plain function.
 func (b *definitionBuilder) RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionBuilder {
-	b.register(name, action.Func(fn))
+	b.register(name, action.ActionFunc(fn))
 	return b
 }
 
@@ -193,14 +193,14 @@ func (l *definitionLoader) CancelActions(names ...string) DefinitionLoader {
 }
 
 // RegisterAction adds a definition-scoped action under name. Returns the loader for chaining.
-func (l *definitionLoader) RegisterAction(name string, a action.ServiceAction) DefinitionLoader {
+func (l *definitionLoader) RegisterAction(name string, a action.Action) DefinitionLoader {
 	l.register(name, a)
 	return l
 }
 
 // RegisterActionFunc is RegisterAction sugar wrapping a plain function.
 func (l *definitionLoader) RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionLoader {
-	l.register(name, action.Func(fn))
+	l.register(name, action.ActionFunc(fn))
 	return l
 }
 

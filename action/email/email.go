@@ -328,7 +328,7 @@ func WithSender(s sender) Option {
 //  4. Default — smtpSender (smtp.SendMail, plaintext).
 //
 // When both [WithTLS] and [WithStartTLS] appear, last-wins determines the mode.
-func NewEmail(opts ...Option) action.ServiceAction {
+func NewEmail(opts ...Option) action.Action {
 	a := &emailAction{}
 	for _, o := range opts {
 		o(a)

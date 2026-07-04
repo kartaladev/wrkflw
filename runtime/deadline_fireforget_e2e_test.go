@@ -71,8 +71,8 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	escalationRan := false
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"notify": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"notify": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			escalationRan = true
 			return map[string]any{"escalated": true}, nil
 		}),

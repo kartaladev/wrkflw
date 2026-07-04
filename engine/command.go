@@ -62,7 +62,7 @@ type CancelTimer struct {
 	TimerID string
 }
 
-// InvokeAction asks the runtime to run a ServiceAction. Its result returns as
+// InvokeAction asks the runtime to run a action.Action. Its result returns as
 // ActionCompleted/ActionFailed with the same CommandID.
 //
 // Name is the lookup key: the explicit action name, or the node id when the node
@@ -88,7 +88,7 @@ type CancelTimer struct {
 type InvokeAction struct {
 	CommandID string
 	Name      string
-	Inline    action.ServiceAction
+	Inline    action.Action
 	Scoped    action.Catalog
 	Input     map[string]any
 	// FireAndForget marks an action the engine runs for its side effect only
@@ -176,7 +176,7 @@ type SendMessage struct {
 	Payload map[string]any
 }
 
-// InvokeCancelAction asks the runtime to run a named ServiceAction as a
+// InvokeCancelAction asks the runtime to run a named action.Action as a
 // best-effort side effect during cancellation. Unlike InvokeAction it carries no
 // CommandID and its result is never fed back into the engine (the instance is
 // already terminal). The runtime logs a failure; it never fails the cancel.

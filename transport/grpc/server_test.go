@@ -145,7 +145,7 @@ func newGRPCHarness(t *testing.T, defs ...*model.ProcessDefinition) *grpcHarness
 	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"greet": serverTestGreetAction{},
 	})
 

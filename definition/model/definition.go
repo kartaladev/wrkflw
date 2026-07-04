@@ -44,7 +44,7 @@ type ProcessDefinition struct {
 	// Node interface; use type assertions to access kind-specific fields.
 	Nodes []Node
 	Flows []flow.SequenceFlow
-	// CancelActions are optional, ordered ServiceAction names invoked best-effort
+	// CancelActions are optional, ordered action.Action names invoked best-effort
 	// by the engine when the instance is cancelled (see ADR-0028). Empty means no
 	// cancel actions. Action-name existence is not validated here (the catalog is
 	// not available at validate time); an unresolved name is logged at runtime.

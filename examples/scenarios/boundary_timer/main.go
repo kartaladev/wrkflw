@@ -5,7 +5,7 @@
 // flowID, action). When a token sits in the activity past the duration, the
 // engine arms a TimerDeadline that, on breach, does two things:
 //
-//  1. runs the breach action (a fire-once ServiceAction — the third argument —
+//  1. runs the breach action (a fire-once action.Action — the third argument —
 //     run for its side effect; its result is not fed back), and
 //  2. routes the token down the named deadline flow to an alternative path,
 //     cancelling the in-progress human task.
@@ -81,15 +81,15 @@ func main() {
 	}
 
 	escalated := false
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		// Fire-once breach action: run by the engine the moment the deadline
 		// elapses, for its side effect only (its result is not fed back).
-		"notify-overdue": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"notify-overdue": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [notify-overdue] review deadline breached — notifying the manager")
 			return nil, nil
 		}),
 		// Service action on the escalation path the token is routed to on breach.
-		"reassign": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"reassign": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			escalated = true
 			fmt.Println("  [reassign] reassigning the review to a senior reviewer")
 			return map[string]any{"escalated": true}, nil

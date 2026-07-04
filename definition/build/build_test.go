@@ -55,7 +55,7 @@ func TestFluentAllAdders(t *testing.T) {
 		AddBoundaryEvent("bnd", "recv").
 		AddTerminateEndEvent("term").
 		AddErrorEndEvent("err", "E").
-		RegisterAction("a", action.Func(noop)).
+		RegisterAction("a", action.ActionFunc(noop)).
 		RegisterActionFunc("b", noop).
 		CancelActions("cleanup")
 	if _, err := b.Loader().Build(); err == nil {

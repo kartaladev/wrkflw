@@ -50,7 +50,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	clk := clockwork.NewFakeClockAt(T)
 
 	var calls atomic.Int32
-	failingAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	failingAction := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		if calls.Add(1) == 1 {
 			return nil, errors.New("first call fails")
 		}
@@ -62,7 +62,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"failing": failingAction,
 	})
 
@@ -115,7 +115,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	clk := clockwork.NewFakeClockAt(T)
 
 	var calls atomic.Int32
-	failingAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	failingAction := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		if calls.Add(1) == 1 {
 			return nil, errors.New("first call fails")
 		}
@@ -127,7 +127,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 	store, err := kernel.NewMemStore()
 	require.NoError(t, err)
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"failing": failingAction,
 	})
 

@@ -70,22 +70,22 @@ func WithActionName(name string) interface {
 	return actionNameOpt{name}
 }
 
-type inlineActionOpt struct{ a action.ServiceAction }
+type inlineActionOpt struct{ a action.Action }
 
 func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.Inline = o.a }
 func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.Inline = o.a }
 
-// WithAction attaches a node-local inline ServiceAction available to this node
+// WithAction attaches a node-local inline action.Action available to this node
 // only. Mutually exclusive with WithActionName (Build reports a conflict). Inline
 // actions are never serialized; a persisted definition must re-attach them in code.
-func WithAction(a action.ServiceAction) interface {
+func WithAction(a action.Action) interface {
 	ServiceTaskOption
 	BusinessRuleOption
 } {
 	return inlineActionOpt{a}
 }
 
-// WithActionFunc is WithAction sugar wrapping a plain function as action.Func.
+// WithActionFunc is WithAction sugar wrapping a plain function as action.ActionFunc.
 func WithActionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) interface {
 	ServiceTaskOption
 	BusinessRuleOption
@@ -123,12 +123,12 @@ func WithRecoveryFlow(flowID string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.RecoveryFlow = flowID })
 }
 
-// WithCompensation sets the ServiceAction name invoked during rollback.
+// WithCompensation sets the action.Action name invoked during rollback.
 func WithCompensation(action string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.CompensationAction = action })
 }
 
-// WithCancelHandler sets the ServiceAction run when the node is interrupted.
+// WithCancelHandler sets the action.Action run when the node is interrupted.
 func WithCancelHandler(action string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.CancelHandler = action })
 }

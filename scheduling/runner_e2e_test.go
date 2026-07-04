@@ -61,8 +61,8 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt) // ONE shared instance — drives both runner and gocron
 
 	serviceRan := make(chan struct{})
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			close(serviceRan)
 			return map[string]any{"greeted": true}, nil
 		}),

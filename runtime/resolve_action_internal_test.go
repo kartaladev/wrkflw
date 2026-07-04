@@ -16,16 +16,16 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// tag returns a ServiceAction whose Do returns {"tag": name}, used to identify
+// tag returns a action.Action whose Do returns {"tag": name}, used to identify
 // which action (inline / scoped / global) was resolved in assertion closures.
-func tag(name string) action.ServiceAction {
-	return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+func tag(name string) action.Action {
+	return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return map[string]any{"tag": name}, nil
 	})
 }
 
 // tagOf calls a.Do and extracts the "tag" key, failing the test on any error.
-func tagOf(t *testing.T, a action.ServiceAction) string {
+func tagOf(t *testing.T, a action.Action) string {
 	t.Helper()
 	out, err := a.Do(t.Context(), nil)
 	require.NoError(t, err, "action.Do must not fail")
@@ -58,7 +58,7 @@ func resolveActionScopedDef(t *testing.T) *model.ProcessDefinition {
 func TestResolveInvokeAction(t *testing.T) {
 	t.Parallel()
 
-	global := action.NewMapCatalog(map[string]action.ServiceAction{
+	global := action.NewMapCatalog(map[string]action.Action{
 		"x":     tag("global"),
 		"gonly": tag("global-only"),
 	})
@@ -70,7 +70,7 @@ func TestResolveInvokeAction(t *testing.T) {
 
 	// cmdScoped is the scope-effective scoped catalog carried by the engine; it
 	// registers "x" so we can prove the carried catalog (not the def's) is used.
-	cmdScoped := action.NewMapCatalog(map[string]action.ServiceAction{
+	cmdScoped := action.NewMapCatalog(map[string]action.Action{
 		"x": tag("cmd-scoped"),
 	})
 
@@ -78,7 +78,7 @@ func TestResolveInvokeAction(t *testing.T) {
 		name   string
 		def    *model.ProcessDefinition
 		cmd    engine.InvokeAction
-		assert func(t *testing.T, got action.ServiceAction, ok bool)
+		assert func(t *testing.T, got action.Action, ok bool)
 	}
 
 	cases := []testCase{
@@ -86,7 +86,7 @@ func TestResolveInvokeAction(t *testing.T) {
 			name: "inline carried wins over scoped and global",
 			def:  def,
 			cmd:  engine.InvokeAction{Name: "x", Inline: tag("inline"), Scoped: cmdScoped},
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "inline", tagOf(t, got))
 			},
@@ -95,7 +95,7 @@ func TestResolveInvokeAction(t *testing.T) {
 			name: "carried scoped catalog is used (over global, ignoring def)",
 			def:  def,
 			cmd:  engine.InvokeAction{Name: "x", Scoped: cmdScoped},
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "cmd-scoped", tagOf(t, got))
 			},
@@ -104,7 +104,7 @@ func TestResolveInvokeAction(t *testing.T) {
 			name: "scoped nil falls back to def.ScopedCatalog()",
 			def:  def,
 			cmd:  engine.InvokeAction{Name: "x"},
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "scoped", tagOf(t, got))
 			},
@@ -113,7 +113,7 @@ func TestResolveInvokeAction(t *testing.T) {
 			name: "global fallback when not in scoped",
 			def:  def,
 			cmd:  engine.InvokeAction{Name: "gonly"},
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "global-only", tagOf(t, got))
 			},
@@ -122,7 +122,7 @@ func TestResolveInvokeAction(t *testing.T) {
 			name: "total miss returns false",
 			def:  def,
 			cmd:  engine.InvokeAction{Name: "no-such-action"},
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				assert.False(t, ok, "must not resolve unknown name")
 				assert.Nil(t, got)
 			},
@@ -143,7 +143,7 @@ func TestResolveInvokeAction(t *testing.T) {
 func TestResolveActionName(t *testing.T) {
 	t.Parallel()
 
-	global := action.NewMapCatalog(map[string]action.ServiceAction{
+	global := action.NewMapCatalog(map[string]action.Action{
 		"x":     tag("global-x"),
 		"gonly": tag("global-only"),
 	})
@@ -156,14 +156,14 @@ func TestResolveActionName(t *testing.T) {
 	type testCase struct {
 		name       string
 		actionName string
-		assert     func(t *testing.T, got action.ServiceAction, ok bool)
+		assert     func(t *testing.T, got action.Action, ok bool)
 	}
 
 	cases := []testCase{
 		{
 			name:       "scoped action takes precedence over global",
 			actionName: "x",
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "scoped", tagOf(t, got))
 			},
@@ -171,7 +171,7 @@ func TestResolveActionName(t *testing.T) {
 		{
 			name:       "global action found when not in scoped catalog",
 			actionName: "gonly",
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				require.True(t, ok, "must resolve")
 				assert.Equal(t, "global-only", tagOf(t, got))
 			},
@@ -179,7 +179,7 @@ func TestResolveActionName(t *testing.T) {
 		{
 			name:       "miss when name absent from both catalogs",
 			actionName: "absent",
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				assert.False(t, ok)
 				assert.Nil(t, got)
 			},
@@ -187,7 +187,7 @@ func TestResolveActionName(t *testing.T) {
 		{
 			name:       "nil def does not consult scoped catalog",
 			actionName: "scoped-only",
-			assert: func(t *testing.T, got action.ServiceAction, ok bool) {
+			assert: func(t *testing.T, got action.Action, ok bool) {
 				assert.False(t, ok, "scoped-only must not resolve with nil def (not in global)")
 				assert.Nil(t, got)
 			},

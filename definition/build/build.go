@@ -111,7 +111,7 @@ func (b *Builder) Connect(fromID, toID string, opts ...flow.Option) *Builder {
 }
 
 // RegisterAction registers a definition-scoped action.
-func (b *Builder) RegisterAction(name string, a action.ServiceAction) *Builder {
+func (b *Builder) RegisterAction(name string, a action.Action) *Builder {
 	b.inner.RegisterAction(name, a)
 	return b
 }

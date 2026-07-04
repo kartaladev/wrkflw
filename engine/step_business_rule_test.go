@@ -19,7 +19,7 @@ import (
 func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 	t.Parallel()
 
-	inlineAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	inlineAction := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return nil, nil
 	})
 

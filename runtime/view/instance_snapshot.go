@@ -144,7 +144,7 @@ type ActionBindingView struct {
 	// Action is the explicit catalog-action name set on the node. Empty means
 	// the node uses the default-by-id resolution (action name == node ID).
 	Action string `json:"action,omitempty"`
-	// Inline is true when the node carries a node-local inline ServiceAction
+	// Inline is true when the node carries a node-local inline action.Action
 	// (attached via WithAction/WithActionFunc). Inline actions are never serialized.
 	Inline bool `json:"inline"`
 }

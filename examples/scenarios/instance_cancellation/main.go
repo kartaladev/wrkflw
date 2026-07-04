@@ -73,13 +73,13 @@ func main() {
 	// (or unresolved) CancelAction is logged and skipped — it never fails the
 	// cancel. Order is preserved: release-inventory runs before notify-customer.
 	var ran []string
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"release-inventory": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"release-inventory": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "release-inventory")
 			fmt.Println("  [release-inventory] returning the reserved stock to the pool")
 			return nil, nil
 		}),
-		"notify-customer": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"notify-customer": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "notify-customer")
 			fmt.Println("  [notify-customer] send failed — logged and skipped, cancel still succeeds")
 			return nil, errors.New("mail gateway unavailable")

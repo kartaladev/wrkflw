@@ -15,8 +15,8 @@ import (
 // ── MapCatalog (moved from action_test.go) ─────────────────────────────────
 
 func TestMapCatalogResolveAndRun(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
 		}),
 	})
@@ -36,7 +36,7 @@ func TestMapCatalogResolveAndRun(t *testing.T) {
 
 func TestRegistry_RegisterThenResolve(t *testing.T) {
 	r := action.NewRegistry()
-	a := action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	a := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 		return map[string]any{"ok": true}, nil
 	})
 	require.NoError(t, r.Register("my-action", a))
@@ -58,10 +58,10 @@ func TestRegistry_ResolveUnknown(t *testing.T) {
 
 func TestRegistry_DuplicateRegister(t *testing.T) {
 	r := action.NewRegistry()
-	a1 := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	a1 := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return map[string]any{"who": "first"}, nil
 	})
-	a2 := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	a2 := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return map[string]any{"who": "second"}, nil
 	})
 
@@ -80,10 +80,10 @@ func TestRegistry_DuplicateRegister(t *testing.T) {
 func TestRegistry_RegisterValidation(t *testing.T) {
 	tests := map[string]struct {
 		name    string
-		a       action.ServiceAction
+		a       action.Action
 		wantErr error
 	}{
-		"empty name": {"", action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) { return nil, nil }), action.ErrEmptyActionName},
+		"empty name": {"", action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) { return nil, nil }), action.ErrEmptyActionName},
 		"nil action": {"ok", nil, action.ErrNilAction},
 	}
 
@@ -121,7 +121,7 @@ func TestRegistry_RegisterFuncNilFn(t *testing.T) {
 
 func TestRegistry_MustRegister(t *testing.T) {
 	r := action.NewRegistry()
-	a := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) { return nil, nil })
+	a := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) { return nil, nil })
 
 	// Must not panic for a fresh name.
 	require.NotPanics(t, func() { r.MustRegister("new-action", a) })
@@ -147,7 +147,7 @@ func TestRegistry_PostConstruction(t *testing.T) {
 	names := []string{"alpha", "beta", "gamma", "delta"}
 	for _, n := range names {
 		n := n
-		require.NoError(t, r.Register(n, action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		require.NoError(t, r.Register(n, action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"name": n}, nil
 		})))
 	}
@@ -170,7 +170,7 @@ func TestRegistry_Concurrency(t *testing.T) {
 	wg.Add(writers + readers)
 
 	// Seed one action so readers have something to find immediately.
-	require.NoError(t, r.Register("seed", action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	require.NoError(t, r.Register("seed", action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return nil, nil
 	})))
 
@@ -180,7 +180,7 @@ func TestRegistry_Concurrency(t *testing.T) {
 			name := "action-" + string(rune('A'+i%26)) + "-" + string(rune('0'+i%10))
 			// Each goroutine index produces a unique name, so no duplicate errors are
 			// expected; errors are discarded only to keep the goroutine concise.
-			_ = r.Register(name, action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			_ = r.Register(name, action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 				return nil, nil
 			}))
 		}(i)
@@ -209,7 +209,7 @@ func TestRegistry_ImplementsCatalog(t *testing.T) {
 
 func ExampleRegistry() {
 	r := action.NewRegistry()
-	r.MustRegister("greet", action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	r.MustRegister("greet", action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 		return map[string]any{"msg": "hello " + in["name"].(string)}, nil
 	}))
 

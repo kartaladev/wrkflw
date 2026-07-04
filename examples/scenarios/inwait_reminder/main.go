@@ -63,8 +63,8 @@ func main() {
 	}
 
 	nudges := 0
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"nudge-reviewer": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"nudge-reviewer": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			nudges++
 			fmt.Printf("  [nudge-reviewer] reminder #%d — please review the pending item\n", nudges)
 			return nil, nil

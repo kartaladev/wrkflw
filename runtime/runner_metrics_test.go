@@ -136,8 +136,8 @@ func TestActionFailuresCounter(t *testing.T) {
 			reader := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"fail": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"fail": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					return nil, tc.actionErr
 				}),
 			})

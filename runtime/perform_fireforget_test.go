@@ -57,8 +57,8 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 			t.Parallel()
 
 			var ran atomic.Bool
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"x": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"x": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					ran.Store(true)
 					return map[string]any{"ok": true}, nil
 				}),

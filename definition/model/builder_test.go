@@ -121,7 +121,7 @@ func TestDefinitionBuilderAutoFlowID(t *testing.T) {
 func TestScopedActionNames(t *testing.T) {
 	t.Parallel()
 
-	noop := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	noop := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return nil, nil
 	})
 

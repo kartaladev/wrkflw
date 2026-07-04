@@ -5,7 +5,7 @@ package action
 // false when neither resolves the name. This is the scoped→global tier shared
 // by every action reference at execution time; node-local inline actions take
 // precedence over both and are handled by the caller.
-func Resolve(scoped, global Catalog, name string) (ServiceAction, bool) {
+func Resolve(scoped, global Catalog, name string) (Action, bool) {
 	if scoped != nil {
 		if a, ok := scoped.Resolve(name); ok {
 			return a, true

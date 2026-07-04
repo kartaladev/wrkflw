@@ -52,11 +52,11 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			{ID: "f6", Source: "join", Target: "end"},
 		},
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"a": true}, nil
 		}),
-		"b": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"b": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"b": true}, nil
 		}),
 	})
@@ -99,12 +99,12 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 			{ID: "f8", Source: "orjoin", Target: "end"},
 		},
 	}
-	mk := func(key string) action.ServiceAction {
-		return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	mk := func(key string) action.Action {
+		return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{key: true}, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
+	cat := action.NewMapCatalog(map[string]action.Action{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
 
 	final, err := r.Run(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
@@ -124,8 +124,8 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 }
 
 func TestRunnerExecutesLinearProcess(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
 		}),
 	})

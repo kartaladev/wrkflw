@@ -79,8 +79,8 @@ func main() {
 
 	// Flaky action: fails the first two attempts, succeeds on the third.
 	attempts := 0
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge-card": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			attempts++
 			if attempts < 3 {
 				fmt.Printf("  [charge-card] attempt %d — transient gateway error\n", attempts)

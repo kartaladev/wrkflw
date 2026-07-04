@@ -161,7 +161,7 @@ func main() {
 	fmt.Printf("defined %q v%d with %d nodes\n", def.ID, def.Version, len(def.Nodes))
 
 	// --- 4. Catalog + runner ————————————————————————————————————————————————
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"enrich":   enrichAction,
 		"call-api": callAction,
 		"notify":   notifyAction,

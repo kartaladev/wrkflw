@@ -14,7 +14,7 @@ import (
 // to a task: a definition-scoped catalog entry referenced by name, a node-local
 // inline function, and default-by-id (no name → the node id is the lookup key).
 func ExampleDefinitionBuilder_RegisterAction() {
-	score := action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	score := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 		return map[string]any{"score": 42}, nil
 	})
 	def, err := definition.NewBuilder("loan", 1).

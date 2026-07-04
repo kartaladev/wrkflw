@@ -163,11 +163,11 @@ func NewCallActivity(id, defRef string, opts ...ActivityOption) model.Node {
 	return n
 }
 
-// --- action.Func adapter re-export convenience ---
+// --- action.ActionFunc adapter re-export convenience ---
 
-// actionFunc adapts a plain function to action.ServiceAction for WithActionFunc.
-func actionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) action.ServiceAction {
-	return action.Func(fn)
+// actionFunc adapts a plain function to action.Action for WithActionFunc.
+func actionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) action.Action {
+	return action.ActionFunc(fn)
 }
 
 // --- serialization registration ---

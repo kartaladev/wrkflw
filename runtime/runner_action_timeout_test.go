@@ -50,7 +50,7 @@ func TestRunner_ActionTimeout(t *testing.T) {
 	type testCase struct {
 		name      string
 		opts      []runtime.Option
-		newAction func(o *obs) action.ServiceAction
+		newAction func(o *obs) action.Action
 		assert    func(t *testing.T, st engine.InstanceState, o *obs)
 	}
 
@@ -58,8 +58,8 @@ func TestRunner_ActionTimeout(t *testing.T) {
 		{
 			name: "active timeout cancels a blocking action",
 			opts: []runtime.Option{runtime.WithActionTimeout(20 * time.Millisecond)},
-			newAction: func(o *obs) action.ServiceAction {
-				return action.Func(func(ctx context.Context, _ map[string]any) (map[string]any, error) {
+			newAction: func(o *obs) action.Action {
+				return action.ActionFunc(func(ctx context.Context, _ map[string]any) (map[string]any, error) {
 					select {
 					case <-ctx.Done():
 						o.canceled = true
@@ -78,8 +78,8 @@ func TestRunner_ActionTimeout(t *testing.T) {
 		{
 			name: "explicit zero disables the deadline",
 			opts: []runtime.Option{runtime.WithActionTimeout(0)},
-			newAction: func(o *obs) action.ServiceAction {
-				return action.Func(func(ctx context.Context, _ map[string]any) (map[string]any, error) {
+			newAction: func(o *obs) action.Action {
+				return action.ActionFunc(func(ctx context.Context, _ map[string]any) (map[string]any, error) {
 					_, o.hadDeadline = ctx.Deadline()
 					return nil, nil
 				})
@@ -92,8 +92,8 @@ func TestRunner_ActionTimeout(t *testing.T) {
 		{
 			name: "default applies a deadline",
 			opts: nil,
-			newAction: func(o *obs) action.ServiceAction {
-				return action.Func(func(ctx context.Context, _ map[string]any) (map[string]any, error) {
+			newAction: func(o *obs) action.Action {
+				return action.ActionFunc(func(ctx context.Context, _ map[string]any) (map[string]any, error) {
 					_, o.hadDeadline = ctx.Deadline()
 					return nil, nil
 				})
@@ -110,7 +110,7 @@ func TestRunner_ActionTimeout(t *testing.T) {
 			t.Parallel()
 
 			o := &obs{}
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{"t": tc.newAction(o)})
+			cat := action.NewMapCatalog(map[string]action.Action{"t": tc.newAction(o)})
 			opts := append([]runtime.Option{runtime.WithClock(clockwork.NewFakeClock())}, tc.opts...)
 			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), opts...)
 

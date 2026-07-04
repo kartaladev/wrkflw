@@ -35,14 +35,14 @@ func panicTaskDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerRecoversActionPanic asserts that a ServiceAction that panics does NOT
+// TestRunnerRecoversActionPanic asserts that a action.Action that panics does NOT
 // crash the runner; the panic is recovered and converted to an action failure, so
 // the instance reaches a normal terminal state (StatusFailed) instead of taking
 // down the whole replica with every in-flight instance.
 func TestRunnerRecoversActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"p": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"p": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			panic("action blew up")
 		}),
 	})
@@ -60,8 +60,8 @@ func TestRunnerRecoversActionPanic(t *testing.T) {
 // StatusTerminated (ADR-0028: cancellation reports success regardless).
 func TestRunnerRecoversCancelActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"boom": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"boom": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			panic("cancel action blew up")
 		}),
 	})

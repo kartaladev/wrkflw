@@ -74,17 +74,17 @@ func main() {
 
 	// Record invocation order so the reverse-order rollback is observable.
 	var invoked []string
-	record := func(name string) action.ServiceAction {
-		return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	record := func(name string) action.Action {
+		return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			invoked = append(invoked, name)
 			fmt.Printf("  [%s]\n", name)
 			return nil, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"book": record("book"),
 		"pay":  record("pay"),
-		"ship": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"ship": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			invoked = append(invoked, "ship")
 			fmt.Println("  [ship] FAILED — no carrier capacity")
 			return nil, &failError{msg: "ship-failed"}

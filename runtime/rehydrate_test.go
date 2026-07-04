@@ -27,8 +27,8 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 		def.ID + ":1": def, // key format "DefID:DefVersion" — match def.ID/def.Version
 	})
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})

@@ -57,12 +57,12 @@ func TestActionFailedHonoursRetryContract(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			act := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			act := action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 				return nil, tc.actErr
 			})
 
 			store := runtimetest.MustMemStore(t)
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": act})
+			cat := action.NewMapCatalog(map[string]action.Action{"a": act})
 			// No retry policy: ActionFailed is terminal → instance reaches StatusFailed.
 			runner := runtimetest.MustRunner(t, cat, store)
 

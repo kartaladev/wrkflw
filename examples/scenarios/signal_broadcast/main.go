@@ -55,8 +55,8 @@ func main() {
 	}
 
 	traded := 0
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"place-trade": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"place-trade": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			traded++
 			fmt.Printf("  [place-trade] desk %v trading now that the market is open\n", in["desk"])
 			return nil, nil
