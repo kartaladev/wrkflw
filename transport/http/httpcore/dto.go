@@ -97,3 +97,10 @@ type ListInstancesQuery struct {
 	Cursor       string `json:"cursor"`
 	IncludeTotal bool   `json:"total"`
 }
+
+// DeadLetterQuery carries the decoded query parameters for
+// GET /admin/dead-letters. Limit is optional and clamped by
+// kernel.NormalizeLimit (default 50, max 200).
+type DeadLetterQuery struct {
+	Limit int `json:"limit"`
+}
