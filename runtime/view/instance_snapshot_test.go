@@ -152,7 +152,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		{
 			name: "service_task_with_action_name",
 			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("svc-named", activity.WithActionName("my-action"))).
 					Add(event.NewEnd("end")).
@@ -193,7 +193,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		{
 			name: "service_task_inline_action",
 			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("svc-inline", activity.WithAction(noop()))).
 					Add(event.NewEnd("end")).
@@ -231,7 +231,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		{
 			name: "service_task_default_by_id",
 			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("svc-default")).
 					Add(event.NewEnd("end")).
@@ -267,7 +267,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		{
 			name: "business_rule_task",
 			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewBusinessRuleTask("brt-node", activity.WithActionName("rule-action"))).
 					Add(event.NewEnd("end")).
@@ -302,7 +302,7 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		{
 			name: "mixed_nodes_sorted_by_node_id",
 			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("z-svc", activity.WithActionName("svc-x"))).
 					Add(activity.NewBusinessRuleTask("a-brt")).

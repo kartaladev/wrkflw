@@ -40,7 +40,7 @@ func main() {
 	// The correlation key is an expr expression over the instance variables here
 	// `orderID` resolves to each instance's own order id, so each parked
 	// ReceiveTask is addressable by that value.
-	def, err := definition.NewDefinition("order-shipping", 1).
+	def, err := definition.NewBuilder("order-shipping", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
 			activity.WithCorrelationKey("orderID"))).

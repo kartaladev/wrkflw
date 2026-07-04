@@ -96,7 +96,7 @@ func Resolve(scoped, global Catalog, name string) (ServiceAction, bool)
 The runtime resolves actions in three tiers, outermost first:
 
 1. **Inline action** — a `ServiceAction` embedded directly in the node via
-   `model.WithInlineAction` or `model.WithInlineActionFunc`. The engine sets
+   `definition.WithInlineAction` or `definition.WithInlineActionFunc`. The engine sets
    `InvokeAction.Inline` when present; the runner calls it directly, bypassing both
    catalogs. No `name` is involved.
 2. **Scoped (definition-local) catalog** — a `Catalog` registered on the

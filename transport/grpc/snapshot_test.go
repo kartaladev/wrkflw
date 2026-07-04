@@ -31,7 +31,7 @@ func snapNoopFn(_ context.Context, in map[string]any) (map[string]any, error) {
 // named-svc and inline-svc resolve successfully; default-svc will fail with
 // an incident (no "default-svc" in any catalog) but the instance is stored.
 func snapshotDef() *definition.ProcessDefinition {
-	def, err := definition.NewDefinition("snap-def", 1).
+	def, err := definition.NewBuilder("snap-def", 1).
 		RegisterAction("scoped-svc", action.Func(snapNoopFn)).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("named-svc", activity.WithActionName("scoped-svc"))).

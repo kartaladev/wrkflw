@@ -41,7 +41,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, err := definition.NewDefinition("trading-desk", 1).
+	def, err := definition.NewBuilder("trading-desk", 1).
 		Add(event.NewStart("start")).
 		Add(event.NewCatch("await", event.WithCatchSignal("market-open"))).
 		Add(activity.NewServiceTask("trade", activity.WithActionName("place-trade"))).

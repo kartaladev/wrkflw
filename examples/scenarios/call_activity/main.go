@@ -37,7 +37,7 @@ func main() {
 	ctx := context.Background()
 
 	// Child definition — a reusable credit-check process.
-	child, err := definition.NewDefinition("credit-check", 1).
+	child, err := definition.NewBuilder("credit-check", 1).
 		Add(event.NewStart("child-start")).
 		Add(activity.NewServiceTask("score", activity.WithActionName("score"))).
 		Add(event.NewEnd("child-end")).
@@ -49,7 +49,7 @@ func main() {
 	}
 
 	// Parent definition — calls the child by its registered name.
-	parent, err := definition.NewDefinition("loan-origination", 1).
+	parent, err := definition.NewBuilder("loan-origination", 1).
 		Add(event.NewStart("parent-start")).
 		Add(activity.NewCallActivity("call", "credit-check")).
 		Add(event.NewEnd("parent-end")).

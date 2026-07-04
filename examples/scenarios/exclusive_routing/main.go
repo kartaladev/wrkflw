@@ -21,6 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -31,7 +32,7 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process definition once; run it multiple times with different vars.
-	def, err := definition.NewDefinition("loan-approval", 1).
+	def, err := definition.NewBuilder("loan-approval", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("check-credit", activity.WithActionName("check-credit"))).
 		Add(gateway.NewExclusive("route")).
@@ -41,9 +42,9 @@ func main() {
 		Add(event.NewEnd("end")).
 		Connect("start", "check-credit").
 		Connect("check-credit", "route").
-		Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
-		Connect("route", "auto-approve", definition.WithCondition("amount <= 50000")).
-		Connect("route", "reject", definition.AsDefault()).
+		Connect("route", "manual-review", flow.WithCondition("amount > 50000")).
+		Connect("route", "auto-approve", flow.WithCondition("amount <= 50000")).
+		Connect("route", "reject", flow.AsDefault()).
 		Connect("manual-review", "end").
 		Connect("auto-approve", "end").
 		Connect("reject", "end").

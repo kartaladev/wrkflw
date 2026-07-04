@@ -38,7 +38,7 @@ import (
 // buildDef is a helper to build a trivial start→end process definition.
 func buildDef(t *testing.T, id string, version int) *definition.ProcessDefinition {
 	t.Helper()
-	def, err := definition.NewDefinition(id, version).
+	def, err := definition.NewBuilder(id, version).
 		Add(event.NewStart("start")).
 		Add(event.NewEnd("end")).
 		Connect("start", "end").

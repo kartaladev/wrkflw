@@ -9,25 +9,25 @@ import (
 	"context"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // --- concrete node types ---
 
 // ServiceTask executes a named service action.
 type ServiceTask struct {
-	definition.Base
-	definition.ActivityFields
-	definition.TaskAction
+	model.Base
+	model.ActivityFields
+	model.TaskAction
 }
 
-// Kind returns definition.KindServiceTask.
-func (ServiceTask) Kind() definition.NodeKind { return definition.KindServiceTask }
+// Kind returns model.KindServiceTask.
+func (ServiceTask) Kind() model.NodeKind { return model.KindServiceTask }
 
 // UserTask waits for a human to complete a work item.
 type UserTask struct {
-	definition.Base
-	definition.ActivityFields
+	model.Base
+	model.ActivityFields
 	// CandidateRoles are the roles eligible to claim and complete this task.
 	CandidateRoles []string
 	// EligibilityPrivileges is a list of resource-privilege tokens (e.g. "finance-task claim")
@@ -37,26 +37,26 @@ type UserTask struct {
 	EligibilityExpr string
 }
 
-// Kind returns definition.KindUserTask.
-func (UserTask) Kind() definition.NodeKind { return definition.KindUserTask }
+// Kind returns model.KindUserTask.
+func (UserTask) Kind() model.NodeKind { return model.KindUserTask }
 
 // ReceiveTask waits for an inbound message (signal or message correlation).
 type ReceiveTask struct {
-	definition.Base
-	definition.ActivityFields
+	model.Base
+	model.ActivityFields
 	// MessageName is the message reference for correlation.
 	MessageName string
 	// CorrelationKey is an expr expression evaluated at runtime to derive the correlation key.
 	CorrelationKey string
 }
 
-// Kind returns definition.KindReceiveTask.
-func (ReceiveTask) Kind() definition.NodeKind { return definition.KindReceiveTask }
+// Kind returns model.KindReceiveTask.
+func (ReceiveTask) Kind() model.NodeKind { return model.KindReceiveTask }
 
 // SendTask sends an outbound message.
 type SendTask struct {
-	definition.Base
-	definition.ActivityFields
+	model.Base
+	model.ActivityFields
 	// MessageName is the message reference to send.
 	MessageName string
 	// CorrelationKey is an optional expr expression evaluated at runtime to derive
@@ -64,48 +64,48 @@ type SendTask struct {
 	CorrelationKey string
 }
 
-// Kind returns definition.KindSendTask.
-func (SendTask) Kind() definition.NodeKind { return definition.KindSendTask }
+// Kind returns model.KindSendTask.
+func (SendTask) Kind() model.NodeKind { return model.KindSendTask }
 
 // BusinessRuleTask executes a business rule action (by name or inline).
 type BusinessRuleTask struct {
-	definition.Base
-	definition.ActivityFields
-	definition.TaskAction
+	model.Base
+	model.ActivityFields
+	model.TaskAction
 }
 
-// Kind returns definition.KindBusinessRuleTask.
-func (BusinessRuleTask) Kind() definition.NodeKind { return definition.KindBusinessRuleTask }
+// Kind returns model.KindBusinessRuleTask.
+func (BusinessRuleTask) Kind() model.NodeKind { return model.KindBusinessRuleTask }
 
 // SubProcess embeds a nested process definition executed as a scope.
 type SubProcess struct {
-	definition.Base
-	definition.ActivityFields
+	model.Base
+	model.ActivityFields
 	// Subprocess is the nested process definition (must be non-nil).
-	Subprocess *definition.ProcessDefinition
+	Subprocess *model.ProcessDefinition
 }
 
-// Kind returns definition.KindSubProcess.
-func (SubProcess) Kind() definition.NodeKind { return definition.KindSubProcess }
+// Kind returns model.KindSubProcess.
+func (SubProcess) Kind() model.NodeKind { return model.KindSubProcess }
 
 // CallActivity delegates to a top-level process definition resolved by name.
 type CallActivity struct {
-	definition.Base
-	definition.ActivityFields
+	model.Base
+	model.ActivityFields
 	// DefRef is the name of the top-level process definition to call.
 	DefRef string
 }
 
-// Kind returns definition.KindCallActivity.
-func (CallActivity) Kind() definition.NodeKind { return definition.KindCallActivity }
+// Kind returns model.KindCallActivity.
+func (CallActivity) Kind() model.NodeKind { return model.KindCallActivity }
 
 // --- constructors ---
 
 // NewServiceTask constructs a ServiceTask. Set the action with WithActionName
 // (catalog reference) or WithAction/WithActionFunc (node-local inline); with
 // neither, the action name defaults to the node id at execution time.
-func NewServiceTask(id string, opts ...ServiceTaskOption) definition.Node {
-	s := ServiceTask{Base: definition.NewBase(id, "")}
+func NewServiceTask(id string, opts ...ServiceTaskOption) model.Node {
+	s := ServiceTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {
 		o.applyServiceTask(&s)
 	}
@@ -113,8 +113,8 @@ func NewServiceTask(id string, opts ...ServiceTaskOption) definition.Node {
 }
 
 // NewUserTask constructs a UserTask with the given id and candidate roles.
-func NewUserTask(id string, roles []string, opts ...UserTaskOption) definition.Node {
-	u := UserTask{Base: definition.NewBase(id, ""), CandidateRoles: roles}
+func NewUserTask(id string, roles []string, opts ...UserTaskOption) model.Node {
+	u := UserTask{Base: model.NewBase(id, ""), CandidateRoles: roles}
 	for _, o := range opts {
 		o.applyUserTask(&u)
 	}
@@ -122,8 +122,8 @@ func NewUserTask(id string, roles []string, opts ...UserTaskOption) definition.N
 }
 
 // NewReceiveTask constructs a ReceiveTask with the given id and message name.
-func NewReceiveTask(id, messageName string, opts ...ReceiveTaskOption) definition.Node {
-	r := ReceiveTask{Base: definition.NewBase(id, ""), MessageName: messageName}
+func NewReceiveTask(id, messageName string, opts ...ReceiveTaskOption) model.Node {
+	r := ReceiveTask{Base: model.NewBase(id, ""), MessageName: messageName}
 	for _, o := range opts {
 		o.applyReceiveTask(&r)
 	}
@@ -131,8 +131,8 @@ func NewReceiveTask(id, messageName string, opts ...ReceiveTaskOption) definitio
 }
 
 // NewSendTask constructs a SendTask with the given id and message name.
-func NewSendTask(id, messageName string, opts ...SendTaskOption) definition.Node {
-	s := SendTask{Base: definition.NewBase(id, ""), MessageName: messageName}
+func NewSendTask(id, messageName string, opts ...SendTaskOption) model.Node {
+	s := SendTask{Base: model.NewBase(id, ""), MessageName: messageName}
 	for _, o := range opts {
 		o.applySendTask(&s)
 	}
@@ -141,24 +141,24 @@ func NewSendTask(id, messageName string, opts ...SendTaskOption) definition.Node
 
 // NewBusinessRuleTask constructs a BusinessRuleTask. Action configuration mirrors
 // NewServiceTask (WithActionName / WithAction / WithActionFunc / default-by-id).
-func NewBusinessRuleTask(id string, opts ...BusinessRuleOption) definition.Node {
-	b := BusinessRuleTask{Base: definition.NewBase(id, "")}
+func NewBusinessRuleTask(id string, opts ...BusinessRuleOption) model.Node {
+	b := BusinessRuleTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {
 		o.applyBusinessRule(&b)
 	}
 	return b
 }
 
-// NewSubProcess constructs a SubProcess with the given id and nested definition.
-func NewSubProcess(id string, sub *definition.ProcessDefinition, opts ...ActivityOption) definition.Node {
-	n := SubProcess{Base: definition.NewBase(id, ""), Subprocess: sub}
+// NewSubProcess constructs a SubProcess with the given id and nested model.
+func NewSubProcess(id string, sub *model.ProcessDefinition, opts ...ActivityOption) model.Node {
+	n := SubProcess{Base: model.NewBase(id, ""), Subprocess: sub}
 	applyActivityOpts(&n.Base, &n.ActivityFields, opts)
 	return n
 }
 
 // NewCallActivity constructs a CallActivity with the given id and definition reference.
-func NewCallActivity(id, defRef string, opts ...ActivityOption) definition.Node {
-	n := CallActivity{Base: definition.NewBase(id, ""), DefRef: defRef}
+func NewCallActivity(id, defRef string, opts ...ActivityOption) model.Node {
+	n := CallActivity{Base: model.NewBase(id, ""), DefRef: defRef}
 	applyActivityOpts(&n.Base, &n.ActivityFields, opts)
 	return n
 }
@@ -173,78 +173,78 @@ func actionFunc(fn func(context.Context, map[string]any) (map[string]any, error)
 // --- serialization registration ---
 
 func init() {
-	definition.RegisterKind(definition.KindServiceTask, definition.NodeSpec{
+	model.RegisterKind(model.KindServiceTask, model.NodeSpec{
 		Name: "serviceTask",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
-			return ServiceTask{Base: b, ActivityFields: w.Activity(), TaskAction: definition.TaskAction{Action: w.Action}}
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
+			return ServiceTask{Base: b, ActivityFields: w.Activity(), TaskAction: model.TaskAction{Action: w.Action}}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(ServiceTask)
 			w.Action = v.Action
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	definition.RegisterKind(definition.KindUserTask, definition.NodeSpec{
+	model.RegisterKind(model.KindUserTask, model.NodeSpec{
 		Name: "userTask",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return UserTask{Base: b, ActivityFields: w.Activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(UserTask)
 			w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	definition.RegisterKind(definition.KindReceiveTask, definition.NodeSpec{
+	model.RegisterKind(model.KindReceiveTask, model.NodeSpec{
 		Name: "receiveTask",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return ReceiveTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(ReceiveTask)
 			w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	definition.RegisterKind(definition.KindSendTask, definition.NodeSpec{
+	model.RegisterKind(model.KindSendTask, model.NodeSpec{
 		Name: "sendTask",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return SendTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(SendTask)
 			w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	definition.RegisterKind(definition.KindBusinessRuleTask, definition.NodeSpec{
+	model.RegisterKind(model.KindBusinessRuleTask, model.NodeSpec{
 		Name: "businessRuleTask",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
-			return BusinessRuleTask{Base: b, ActivityFields: w.Activity(), TaskAction: definition.TaskAction{Action: w.Action}}
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
+			return BusinessRuleTask{Base: b, ActivityFields: w.Activity(), TaskAction: model.TaskAction{Action: w.Action}}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(BusinessRuleTask)
 			w.Action = v.Action
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	definition.RegisterKind(definition.KindSubProcess, definition.NodeSpec{
+	model.RegisterKind(model.KindSubProcess, model.NodeSpec{
 		Name: "subProcess",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return SubProcess{Base: b, ActivityFields: w.Activity(), Subprocess: w.Subprocess}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(SubProcess)
 			w.Subprocess = v.Subprocess
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	definition.RegisterKind(definition.KindCallActivity, definition.NodeSpec{
+	model.RegisterKind(model.KindCallActivity, model.NodeSpec{
 		Name: "callActivity",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return CallActivity{Base: b, ActivityFields: w.Activity(), DefRef: w.DefRef}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(CallActivity)
 			w.DefRef = v.DefRef
 			w.PutActivity(v.ActivityFields)

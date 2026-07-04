@@ -11,11 +11,11 @@ import (
 
 func TestFluentChain(t *testing.T) {
 	def, err := build.New("order", 1).
-		AddStart("s").
-		AddExclusive("gw", "Approved?").
+		AddStartEvent("s").
+		AddExclusiveGateway("gw", "Approved?").
 		AddServiceTask("charge", activity.WithActionName("charge-card")).
 		AddUserTask("approve", []string{"manager"}).
-		AddEnd("e").
+		AddEndEvent("e").
 		Connect("s", "gw").
 		Connect("gw", "charge").
 		Connect("charge", "approve").
@@ -33,28 +33,28 @@ func TestFluentChain(t *testing.T) {
 
 func TestFluentAllAdders(t *testing.T) {
 	sub := build.New("sub", 1)
-	sub.AddStart("ss").AddEnd("se").Connect("ss", "se")
+	sub.AddStartEvent("ss").AddEndEvent("se").Connect("ss", "se")
 	subDef, err := sub.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
 	noop := func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }
 	b := build.New("full", 1).
-		AddStart("start").
-		AddParallel("par").
-		AddInclusive("inc").
-		AddEventBased("evt").
+		AddStartEvent("start").
+		AddParallelGateway("par").
+		AddInclusiveGateway("inc").
+		AddEventBasedGateway("evt").
 		AddReceiveTask("recv", "msg").
 		AddSendTask("send", "msg").
 		AddBusinessRuleTask("rule", activity.WithActionName("r")).
 		AddSubProcess("sp", subDef).
 		AddCallActivity("call", "sub:1").
 		AddEventSubProcess("esp", subDef).
-		AddCatch("catch").
-		AddThrow("throw").
-		AddBoundary("bnd", "recv").
-		AddTerminateEnd("term").
-		AddErrorEnd("err", "E").
+		AddIntermediateCatchEvent("catch").
+		AddIntermediateThrowEvent("throw").
+		AddBoundaryEvent("bnd", "recv").
+		AddTerminateEndEvent("term").
+		AddErrorEndEvent("err", "E").
 		RegisterAction("a", action.Func(noop)).
 		RegisterActionFunc("b", noop).
 		CancelActions("cleanup")

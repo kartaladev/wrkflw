@@ -5,78 +5,78 @@
 // package.
 package event
 
-import "github.com/zakyalvan/krtlwrkflw/definition"
+import "github.com/zakyalvan/krtlwrkflw/definition/model"
 
 // --- concrete node types ---
 
 // StartEvent is the BPMN start event: the entry point of a process. As the
 // trigger start of an EventSubProcess it may carry correlation fields.
 type StartEvent struct {
-	definition.Base
+	model.Base
 	SignalName     string
 	MessageName    string
 	CorrelationKey string
 	TimerDuration  string
 }
 
-// Kind returns definition.KindStartEvent.
-func (StartEvent) Kind() definition.NodeKind { return definition.KindStartEvent }
+// Kind returns model.KindStartEvent.
+func (StartEvent) Kind() model.NodeKind { return model.KindStartEvent }
 
 // EndEvent is the BPMN end event: a normal process completion point.
-type EndEvent struct{ definition.Base }
+type EndEvent struct{ model.Base }
 
-// Kind returns definition.KindEndEvent.
-func (EndEvent) Kind() definition.NodeKind { return definition.KindEndEvent }
+// Kind returns model.KindEndEvent.
+func (EndEvent) Kind() model.NodeKind { return model.KindEndEvent }
 
 // TerminateEndEvent terminates the entire process (including parallel branches).
-type TerminateEndEvent struct{ definition.Base }
+type TerminateEndEvent struct{ model.Base }
 
-// Kind returns definition.KindTerminateEndEvent.
-func (TerminateEndEvent) Kind() definition.NodeKind { return definition.KindTerminateEndEvent }
+// Kind returns model.KindTerminateEndEvent.
+func (TerminateEndEvent) Kind() model.NodeKind { return model.KindTerminateEndEvent }
 
 // ErrorEndEvent throws a BPMN error when reached, caught by a boundary error event.
 type ErrorEndEvent struct {
-	definition.Base
+	model.Base
 	// ErrorCode is the BPMN error code thrown (empty = anonymous catch-all).
 	ErrorCode string
 }
 
-// Kind returns definition.KindErrorEndEvent.
-func (ErrorEndEvent) Kind() definition.NodeKind { return definition.KindErrorEndEvent }
+// Kind returns model.KindErrorEndEvent.
+func (ErrorEndEvent) Kind() model.NodeKind { return model.KindErrorEndEvent }
 
 // IntermediateCatchEvent waits for a timer, signal, or message. It can wait, so
-// it embeds definition.WaitFields (deadline escalation + reminders).
+// it embeds model.WaitFields (deadline escalation + reminders).
 type IntermediateCatchEvent struct {
-	definition.Base
-	definition.WaitFields
+	model.Base
+	model.WaitFields
 	TimerDuration  string
 	SignalName     string
 	MessageName    string
 	CorrelationKey string
 }
 
-// Kind returns definition.KindIntermediateCatchEvent.
-func (IntermediateCatchEvent) Kind() definition.NodeKind {
-	return definition.KindIntermediateCatchEvent
+// Kind returns model.KindIntermediateCatchEvent.
+func (IntermediateCatchEvent) Kind() model.NodeKind {
+	return model.KindIntermediateCatchEvent
 }
 
 // IntermediateThrowEvent throws a signal or triggers a compensation.
 type IntermediateThrowEvent struct {
-	definition.Base
+	model.Base
 	SignalName string
 	// CompensateRef names the node whose compensation to run (empty = scope-wide).
 	CompensateRef string
 }
 
-// Kind returns definition.KindIntermediateThrowEvent.
-func (IntermediateThrowEvent) Kind() definition.NodeKind {
-	return definition.KindIntermediateThrowEvent
+// Kind returns model.KindIntermediateThrowEvent.
+func (IntermediateThrowEvent) Kind() model.NodeKind {
+	return model.KindIntermediateThrowEvent
 }
 
 // BoundaryEvent is attached to an activity and fires on timer, signal, message,
 // or error.
 type BoundaryEvent struct {
-	definition.Base
+	model.Base
 	// AttachedTo is the ID of the host activity node.
 	AttachedTo string
 	// NonInterrupting controls interrupting behavior: false = interrupting (default).
@@ -88,21 +88,21 @@ type BoundaryEvent struct {
 	TimerDuration   string
 }
 
-// Kind returns definition.KindBoundaryEvent.
-func (BoundaryEvent) Kind() definition.NodeKind { return definition.KindBoundaryEvent }
+// Kind returns model.KindBoundaryEvent.
+func (BoundaryEvent) Kind() model.NodeKind { return model.KindBoundaryEvent }
 
 // EventSubProcess is an event-triggered subprocess rooted at an event start.
 type EventSubProcess struct {
-	definition.Base
+	model.Base
 	// Subprocess is the nested process definition (must be non-nil).
-	Subprocess *definition.ProcessDefinition
+	Subprocess *model.ProcessDefinition
 	// NonInterrupting, when true, runs the event sub-process alongside the
 	// enclosing scope without cancelling it (default false = interrupting).
 	NonInterrupting bool
 }
 
-// Kind returns definition.KindEventSubProcess.
-func (EventSubProcess) Kind() definition.NodeKind { return definition.KindEventSubProcess }
+// Kind returns model.KindEventSubProcess.
+func (EventSubProcess) Kind() model.NodeKind { return model.KindEventSubProcess }
 
 // --- constructors ---
 
@@ -115,8 +115,8 @@ func optName(name []string) string {
 
 // NewStart constructs a StartEvent. Use WithName plus WithStartSignal/
 // WithStartMessage/WithStartTimer to configure EventSubProcess triggers.
-func NewStart(id string, opts ...StartOption) definition.Node {
-	n := StartEvent{Base: definition.NewBase(id, "")}
+func NewStart(id string, opts ...StartOption) model.Node {
+	n := StartEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
 		o.applyStart(&n)
 	}
@@ -124,24 +124,24 @@ func NewStart(id string, opts ...StartOption) definition.Node {
 }
 
 // NewEnd constructs an EndEvent. An optional name may be provided.
-func NewEnd(id string, name ...string) definition.Node {
-	return EndEvent{definition.NewBase(id, optName(name))}
+func NewEnd(id string, name ...string) model.Node {
+	return EndEvent{model.NewBase(id, optName(name))}
 }
 
 // NewTerminateEnd constructs a TerminateEndEvent. An optional name may be provided.
-func NewTerminateEnd(id string, name ...string) definition.Node {
-	return TerminateEndEvent{definition.NewBase(id, optName(name))}
+func NewTerminateEnd(id string, name ...string) model.Node {
+	return TerminateEndEvent{model.NewBase(id, optName(name))}
 }
 
 // NewErrorEnd constructs an ErrorEndEvent. An optional name may be provided.
-func NewErrorEnd(id, errorCode string, name ...string) definition.Node {
-	return ErrorEndEvent{definition.NewBase(id, optName(name)), errorCode}
+func NewErrorEnd(id, errorCode string, name ...string) model.Node {
+	return ErrorEndEvent{model.NewBase(id, optName(name)), errorCode}
 }
 
 // NewCatch constructs an IntermediateCatchEvent. Options can be WithCatchTimer,
 // WithCatchSignal, WithCatchMessage, WithCatchDeadline, WithCatchReminder, or WithName.
-func NewCatch(id string, opts ...CatchOption) definition.Node {
-	n := IntermediateCatchEvent{Base: definition.NewBase(id, "")}
+func NewCatch(id string, opts ...CatchOption) model.Node {
+	n := IntermediateCatchEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
 		o.applyCatch(&n)
 	}
@@ -150,8 +150,8 @@ func NewCatch(id string, opts ...CatchOption) definition.Node {
 
 // NewThrow constructs an IntermediateThrowEvent. Use WithThrowSignal,
 // WithCompensateRef, or WithThrowName.
-func NewThrow(id string, opts ...ThrowOption) definition.Node {
-	n := IntermediateThrowEvent{Base: definition.NewBase(id, "")}
+func NewThrow(id string, opts ...ThrowOption) model.Node {
+	n := IntermediateThrowEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
 		o(&n)
 	}
@@ -160,8 +160,8 @@ func NewThrow(id string, opts ...ThrowOption) definition.Node {
 
 // NewBoundary constructs a BoundaryEvent attached to the given host activity.
 // Use WithBoundarySignal/Message/Timer/ErrorCode, WithBoundaryNonInterrupting, WithName.
-func NewBoundary(id, attachedTo string, opts ...BoundaryOption) definition.Node {
-	n := BoundaryEvent{Base: definition.NewBase(id, ""), AttachedTo: attachedTo}
+func NewBoundary(id, attachedTo string, opts ...BoundaryOption) model.Node {
+	n := BoundaryEvent{Base: model.NewBase(id, ""), AttachedTo: attachedTo}
 	for _, o := range opts {
 		o.applyBoundary(&n)
 	}
@@ -169,9 +169,9 @@ func NewBoundary(id, attachedTo string, opts ...BoundaryOption) definition.Node 
 }
 
 // NewEventSubProcess constructs an EventSubProcess with the given id and nested
-// definition. Use WithEventSubProcessNonInterrupting and WithName.
-func NewEventSubProcess(id string, sub *definition.ProcessDefinition, opts ...EventSubProcessOption) definition.Node {
-	n := EventSubProcess{Base: definition.NewBase(id, ""), Subprocess: sub}
+// model. Use WithEventSubProcessNonInterrupting and WithName.
+func NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...EventSubProcessOption) model.Node {
+	n := EventSubProcess{Base: model.NewBase(id, ""), Subprocess: sub}
 	for _, o := range opts {
 		o.applyEventSubProcess(&n)
 	}
@@ -181,69 +181,69 @@ func NewEventSubProcess(id string, sub *definition.ProcessDefinition, opts ...Ev
 // --- serialization registration ---
 
 func init() {
-	definition.RegisterKind(definition.KindStartEvent, definition.NodeSpec{
+	model.RegisterKind(model.KindStartEvent, model.NodeSpec{
 		Name: "startEvent",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey, TimerDuration: w.TimerDuration}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(StartEvent)
 			w.SignalName, w.MessageName, w.CorrelationKey, w.TimerDuration = v.SignalName, v.MessageName, v.CorrelationKey, v.TimerDuration
 		},
 	})
-	definition.RegisterKind(definition.KindEndEvent, definition.NodeSpec{
+	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
 		Name:     "endEvent",
-		FromWire: func(b definition.Base, _ definition.NodeWire) definition.Node { return EndEvent{b} },
-		ToWire:   func(definition.Node, *definition.NodeWire) {},
+		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return EndEvent{b} },
+		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	definition.RegisterKind(definition.KindTerminateEndEvent, definition.NodeSpec{
+	model.RegisterKind(model.KindTerminateEndEvent, model.NodeSpec{
 		Name:     "terminateEndEvent",
-		FromWire: func(b definition.Base, _ definition.NodeWire) definition.Node { return TerminateEndEvent{b} },
-		ToWire:   func(definition.Node, *definition.NodeWire) {},
+		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return TerminateEndEvent{b} },
+		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	definition.RegisterKind(definition.KindErrorEndEvent, definition.NodeSpec{
+	model.RegisterKind(model.KindErrorEndEvent, model.NodeSpec{
 		Name:     "errorEndEvent",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node { return ErrorEndEvent{b, w.ErrorCode} },
-		ToWire:   func(n definition.Node, w *definition.NodeWire) { w.ErrorCode = n.(ErrorEndEvent).ErrorCode },
+		FromWire: func(b model.Base, w model.NodeWire) model.Node { return ErrorEndEvent{b, w.ErrorCode} },
+		ToWire:   func(n model.Node, w *model.NodeWire) { w.ErrorCode = n.(ErrorEndEvent).ErrorCode },
 	})
-	definition.RegisterKind(definition.KindIntermediateCatchEvent, definition.NodeSpec{
+	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return IntermediateCatchEvent{Base: b, WaitFields: w.Wait(), TimerDuration: w.TimerDuration, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(IntermediateCatchEvent)
 			w.TimerDuration, w.SignalName, w.MessageName, w.CorrelationKey = v.TimerDuration, v.SignalName, v.MessageName, v.CorrelationKey
 			w.PutWait(v.WaitFields)
 		},
 	})
-	definition.RegisterKind(definition.KindIntermediateThrowEvent, definition.NodeSpec{
+	model.RegisterKind(model.KindIntermediateThrowEvent, model.NodeSpec{
 		Name: "intermediateThrowEvent",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return IntermediateThrowEvent{Base: b, SignalName: w.SignalName, CompensateRef: w.CompensateRef}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(IntermediateThrowEvent)
 			w.SignalName, w.CompensateRef = v.SignalName, v.CompensateRef
 		},
 	})
-	definition.RegisterKind(definition.KindBoundaryEvent, definition.NodeSpec{
+	model.RegisterKind(model.KindBoundaryEvent, model.NodeSpec{
 		Name: "boundaryEvent",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return BoundaryEvent{Base: b, AttachedTo: w.AttachedTo, NonInterrupting: w.NonInterrupting, ErrorCode: w.ErrorCode, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey, TimerDuration: w.TimerDuration}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(BoundaryEvent)
 			w.AttachedTo, w.NonInterrupting, w.ErrorCode = v.AttachedTo, v.NonInterrupting, v.ErrorCode
 			w.SignalName, w.MessageName, w.CorrelationKey, w.TimerDuration = v.SignalName, v.MessageName, v.CorrelationKey, v.TimerDuration
 		},
 	})
-	definition.RegisterKind(definition.KindEventSubProcess, definition.NodeSpec{
+	model.RegisterKind(model.KindEventSubProcess, model.NodeSpec{
 		Name: "eventSubProcess",
-		FromWire: func(b definition.Base, w definition.NodeWire) definition.Node {
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return EventSubProcess{Base: b, Subprocess: w.Subprocess, NonInterrupting: w.NonInterrupting}
 		},
-		ToWire: func(n definition.Node, w *definition.NodeWire) {
+		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(EventSubProcess)
 			w.Subprocess, w.NonInterrupting = v.Subprocess, v.NonInterrupting
 		},

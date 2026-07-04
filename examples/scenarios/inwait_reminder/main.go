@@ -49,7 +49,7 @@ func main() {
 	// The reminder interval is an expr-lang duration string (parsed by
 	// time.ParseDuration), so it is a quoted Go-duration literal. The reminder
 	// action "nudge-reviewer" runs fire-and-forget once per interval.
-	def, err := definition.NewDefinition("periodic-review", 1).
+	def, err := definition.NewBuilder("periodic-review", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("review", []string{"reviewer"},
 			activity.WithReminder(`"30m"`, "nudge-reviewer"),

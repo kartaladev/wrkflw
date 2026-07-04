@@ -82,7 +82,7 @@ func actionMetadataProcess(t *testing.T) *definition.ProcessDefinition {
 	inlineAction := action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return map[string]any{"done": true}, nil
 	})
-	def, err := definition.NewDefinition("action-meta", 1).
+	def, err := definition.NewBuilder("action-meta", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("svc-named", activity.WithActionName("scoped-action"))).
 		Add(activity.NewServiceTask("svc-inline", activity.WithAction(inlineAction))).

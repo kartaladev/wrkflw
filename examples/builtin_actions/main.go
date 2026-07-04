@@ -142,7 +142,7 @@ func main() {
 	)
 
 	// --- 3. Process definition ——————————————————————————————————————————————
-	def, err := definition.NewDefinition("builtin-actions-demo", 1).
+	def, err := definition.NewBuilder("builtin-actions-demo", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("enrich", activity.WithActionName("enrich"))).
 		Add(activity.NewServiceTask("call-api", activity.WithActionName("call-api"))).

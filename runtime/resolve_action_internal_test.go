@@ -37,7 +37,7 @@ func tagOf(t *testing.T, a action.ServiceAction) string {
 // and the scoped tier of resolveActionName.
 func resolveActionScopedDef(t *testing.T) *definition.ProcessDefinition {
 	t.Helper()
-	def, err := definition.NewDefinition("d", 1).
+	def, err := definition.NewBuilder("d", 1).
 		RegisterAction("x", tag("scoped")).
 		RegisterAction("scoped-only", tag("scoped-only")).
 		Add(event.NewStart("start")).

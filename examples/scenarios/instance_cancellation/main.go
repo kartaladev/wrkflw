@@ -57,7 +57,7 @@ func main() {
 
 	// Build the process. CancelActions lists cleanup ServiceActions the engine
 	// invokes best-effort, in order, when the instance is cancelled.
-	def, err := definition.NewDefinition("order-fulfilment", 1).
+	def, err := definition.NewBuilder("order-fulfilment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("fulfil", []string{"fulfiller"})).
 		Add(event.NewEnd("end")).

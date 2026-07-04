@@ -1,120 +1,121 @@
-// Package model defines the in-memory process-definition types: nodes,
-// gateways, sequence flows, and the ProcessDefinition template. The concepts
-// are inspired by BPMN, but this is NOT a BPMN-compatible implementation and
-// does not aim to load or round-trip arbitrary BPMN2 documents. It is pure data
-// plus validation; it imports only the standard library and the in-repo
-// [action] package (a pure leaf).
+// Package definition is the root of the process-definition authoring layer. It
+// is a thin aggregator: the core types and logic live in definition/model, the
+// node kinds in definition/{event,gateway,activity}, sequence flows in
+// definition/flow, and the fluent builder in definition/build. This package
+// re-exports the core public surface and provides NewBuilder — the fluent entry
+// point — so consumers can start from a single, well-named package:
+//
+//	def, err := definition.NewBuilder("order", 1).
+//		AddStartEvent("start").
+//		AddServiceTask("charge", activity.WithActionName("charge-card")).
+//		AddEndEvent("end").
+//		Connect("start", "charge").Connect("charge", "end").
+//		Build()
+//
+// Because this package imports definition/build (which imports every node-family
+// leaf), importing definition also registers every node kind for
+// (de)serialization; deserialization paths that import only definition/model
+// should blank-import definition/kinds.
 package definition
 
-import "github.com/zakyalvan/krtlwrkflw/action"
-
-// NodeKind discriminates the kind of a Node.
-type NodeKind int
-
-const (
-	KindUnspecified NodeKind = iota
-	KindStartEvent
-	KindEndEvent
-	KindTerminateEndEvent
-	KindErrorEndEvent
-	KindServiceTask
-	KindUserTask
-	KindReceiveTask
-	KindSendTask
-	KindBusinessRuleTask
-	KindSubProcess
-	KindCallActivity
-	KindEventSubProcess
-	KindIntermediateCatchEvent
-	KindIntermediateThrowEvent
-	KindBoundaryEvent
-	KindExclusiveGateway
-	KindParallelGateway
-	KindInclusiveGateway
-	KindEventBasedGateway
+import (
+	"github.com/zakyalvan/krtlwrkflw/definition/build"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
-// SequenceFlow is a directed edge between two nodes.
-type SequenceFlow struct {
-	ID        string
-	Source    string
-	Target    string
-	Condition string // expr; empty means unconditional
-	IsDefault bool
-}
+// NewBuilder starts the fluent builder for a definition with the given id and
+// version. It is the root-package entry point for Go authoring; each AddX method
+// mirrors a node-family constructor, and Build returns a *ProcessDefinition.
+func NewBuilder(id string, version int) *build.Builder { return build.New(id, version) }
 
-// ProcessDefinition is the reusable template a process instance executes.
-type ProcessDefinition struct {
-	ID      string
-	Version int
-	// Nodes is the ordered list of process nodes. Each element satisfies the
-	// Node interface; use type assertions to access kind-specific fields.
-	Nodes []Node
-	Flows []SequenceFlow
-	// CancelActions are optional, ordered ServiceAction names invoked best-effort
-	// by the engine when the instance is cancelled (see ADR-0028). Empty means no
-	// cancel actions. Action-name existence is not validated here (the catalog is
-	// not available at validate time); an unresolved name is logged at runtime.
-	CancelActions []string
-	// scoped is the optional definition-scoped action catalog. nil means none.
-	// It is never serialized; resolution falls back to the global catalog on a
-	// miss (see action.Resolve).
-	scoped action.Catalog
-	// scopedNames is the sorted slice of names registered in the scoped catalog.
-	// nil when no scoped actions were registered. Set by Build().
-	scopedNames []string
-}
+// --- re-exported core types (definition/model) ---
 
-// ScopedCatalog returns the definition-scoped action catalog, or nil when the
-// definition registered no scoped actions.
-func (d *ProcessDefinition) ScopedCatalog() action.Catalog { return d.scoped }
+type (
+	Node              = model.Node
+	NodeKind          = model.NodeKind
+	ProcessDefinition = model.ProcessDefinition
+	RetryPolicy       = model.RetryPolicy
+	Base              = model.Base
+	ActivityFields    = model.ActivityFields
+	WaitFields        = model.WaitFields
+	TaskAction        = model.TaskAction
+	NodeWire          = model.NodeWire
+	NodeSpec          = model.NodeSpec
+	DefinitionBuilder = model.DefinitionBuilder
+	DefinitionLoader  = model.DefinitionLoader
+)
 
-// ScopedActionNames returns the sorted names registered in the definition-scoped
-// action catalog, or nil when none were registered. The returned slice is a
-// defensive copy; callers may mutate it without affecting the definition.
-func (d *ProcessDefinition) ScopedActionNames() []string {
-	return append([]string(nil), d.scopedNames...)
-}
+// SequenceFlow is a directed edge between two nodes; it lives in definition/flow
+// and is re-exported here for convenience.
+type SequenceFlow = flow.SequenceFlow
 
-// Node returns the node with the given id.
-func (d *ProcessDefinition) Node(id string) (Node, bool) {
-	for _, n := range d.Nodes {
-		if n.ID() == id {
-			return n, true
-		}
-	}
-	return nil, false
-}
+// --- re-exported functions and accessors (definition/model) ---
 
-// Outgoing returns the sequence flows leaving nodeID.
-func (d *ProcessDefinition) Outgoing(nodeID string) []SequenceFlow {
-	var out []SequenceFlow
-	for _, f := range d.Flows {
-		if f.Source == nodeID {
-			out = append(out, f)
-		}
-	}
-	return out
-}
+var (
+	Validate           = model.Validate
+	NewBase            = model.NewBase
+	DefaultRetryPolicy = model.DefaultRetryPolicy
+	ParseYAML          = model.ParseYAML
+	LoadYAML           = model.LoadYAML
+	RegisterKind       = model.RegisterKind
+	RetryPolicyOf      = model.RetryPolicyOf
+	DeadlineOf         = model.DeadlineOf
+	ReminderOf         = model.ReminderOf
+	ActionOf           = model.ActionOf
+	InlineActionOf     = model.InlineActionOf
+)
 
-// Incoming returns the sequence flows entering nodeID.
-func (d *ProcessDefinition) Incoming(nodeID string) []SequenceFlow {
-	var in []SequenceFlow
-	for _, f := range d.Flows {
-		if f.Target == nodeID {
-			in = append(in, f)
-		}
-	}
-	return in
-}
+// --- re-exported NodeKind constants (definition/model) ---
 
-// StartNodes returns all start-event nodes.
-func (d *ProcessDefinition) StartNodes() []Node {
-	var starts []Node
-	for _, n := range d.Nodes {
-		if n.Kind() == KindStartEvent {
-			starts = append(starts, n)
-		}
-	}
-	return starts
-}
+const (
+	KindUnspecified            = model.KindUnspecified
+	KindStartEvent             = model.KindStartEvent
+	KindEndEvent               = model.KindEndEvent
+	KindTerminateEndEvent      = model.KindTerminateEndEvent
+	KindErrorEndEvent          = model.KindErrorEndEvent
+	KindServiceTask            = model.KindServiceTask
+	KindUserTask               = model.KindUserTask
+	KindReceiveTask            = model.KindReceiveTask
+	KindSendTask               = model.KindSendTask
+	KindBusinessRuleTask       = model.KindBusinessRuleTask
+	KindSubProcess             = model.KindSubProcess
+	KindCallActivity           = model.KindCallActivity
+	KindEventSubProcess        = model.KindEventSubProcess
+	KindIntermediateCatchEvent = model.KindIntermediateCatchEvent
+	KindIntermediateThrowEvent = model.KindIntermediateThrowEvent
+	KindBoundaryEvent          = model.KindBoundaryEvent
+	KindExclusiveGateway       = model.KindExclusiveGateway
+	KindParallelGateway        = model.KindParallelGateway
+	KindInclusiveGateway       = model.KindInclusiveGateway
+	KindEventBasedGateway      = model.KindEventBasedGateway
+)
+
+// --- re-exported sentinel errors (definition/model) ---
+
+var (
+	ErrActionInlineAndNameConflict = model.ErrActionInlineAndNameConflict
+	ErrDuplicateScopedAction       = model.ErrDuplicateScopedAction
+	ErrKindNotRegistered           = model.ErrKindNotRegistered
+	ErrNoStartEvent                = model.ErrNoStartEvent
+	ErrMultipleStartEvents         = model.ErrMultipleStartEvents
+	ErrDanglingFlow                = model.ErrDanglingFlow
+	ErrDeadEnd                     = model.ErrDeadEnd
+	ErrStartHasIncoming            = model.ErrStartHasIncoming
+	ErrEndHasOutgoing              = model.ErrEndHasOutgoing
+	ErrConditionNotAllowed         = model.ErrConditionNotAllowed
+	ErrDefaultNotAllowed           = model.ErrDefaultNotAllowed
+	ErrMultipleDefaults            = model.ErrMultipleDefaults
+	ErrEventGatewayTarget          = model.ErrEventGatewayTarget
+	ErrMixedGateway                = model.ErrMixedGateway
+	ErrUnreachableNode             = model.ErrUnreachableNode
+	ErrUnpairedJoin                = model.ErrUnpairedJoin
+	ErrBoundaryAttachment          = model.ErrBoundaryAttachment
+	ErrBoundaryErrorHost           = model.ErrBoundaryErrorHost
+	ErrMissingSubprocess           = model.ErrMissingSubprocess
+	ErrMissingDefRef               = model.ErrMissingDefRef
+	ErrInvalidRetryPolicy          = model.ErrInvalidRetryPolicy
+	ErrInvalidRecoveryFlow         = model.ErrInvalidRecoveryFlow
+	ErrEmptyCancelAction           = model.ErrEmptyCancelAction
+	ErrCompensateRefNotFound       = model.ErrCompensateRefNotFound
+)

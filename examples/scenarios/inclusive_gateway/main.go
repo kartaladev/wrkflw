@@ -30,6 +30,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -40,7 +41,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, err := definition.NewDefinition("application-screening", 1).
+	def, err := definition.NewBuilder("application-screening", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("assess", activity.WithActionName("assess"))).
 		Add(gateway.NewInclusive("split")).
@@ -51,9 +52,9 @@ func main() {
 		Add(event.NewEnd("end")).
 		Connect("start", "assess").
 		Connect("assess", "split").
-		Connect("split", "notify-risk", definition.WithCondition("score < 600")).
-		Connect("split", "senior-review", definition.WithCondition("amount > 10000")).
-		Connect("split", "fraud-check", definition.WithCondition("flagged == true")).
+		Connect("split", "notify-risk", flow.WithCondition("score < 600")).
+		Connect("split", "senior-review", flow.WithCondition("amount > 10000")).
+		Connect("split", "fraud-check", flow.WithCondition("flagged == true")).
 		Connect("notify-risk", "join").
 		Connect("senior-review", "join").
 		Connect("fraud-check", "join").

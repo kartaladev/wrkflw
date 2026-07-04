@@ -57,7 +57,7 @@ func main() {
 
 	// The action is charged up to 5 times with exponential backoff. It recovers
 	// on attempt 3, so it never exhausts the budget.
-	def, err := definition.NewDefinition("payment", 1).
+	def, err := definition.NewBuilder("payment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge",
 			activity.WithActionName("charge-card"),

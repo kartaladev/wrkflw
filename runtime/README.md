@@ -49,7 +49,7 @@ one-directional import graph (ADR-0087). Import direction:
 | `chain` | `.../runtime/chain` | `Chainer` — starts successor instances on terminal events. |
 | `task` | `.../runtime/task` | `TaskService` — human-task authorization and trigger production. |
 | `monitor` | `.../runtime/monitor` | `LineageReader`, outbox/timer stats collectors, dead-letter classification (admin/monitoring). |
-| `view` | `.../runtime/view` | `InstanceSnapshot` / `ActionableView` read-model DTOs and `StatusString`. Independent leaf (imports only `engine`/`model`/`humantask`). |
+| `view` | `.../runtime/view` | `InstanceSnapshot` / `ActionableView` read-model DTOs and `StatusString`. Independent leaf (imports only `engine`/`definition`/`humantask`). |
 
 The reference driver type is `ProcessDriver` (constructed with
 `runtime.NewProcessDriver`); it was named `Runner` before ADR-0087.
@@ -64,7 +64,7 @@ import (
 
     "github.com/zakyalvan/krtlwrkflw/action"
     "github.com/zakyalvan/krtlwrkflw/engine"
-    "github.com/zakyalvan/krtlwrkflw/model"
+    "github.com/zakyalvan/krtlwrkflw/definition"
     "github.com/zakyalvan/krtlwrkflw/runtime"
     "github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -79,14 +79,14 @@ if err != nil { log.Fatal(err) }
 r, err := runtime.NewProcessDriver(cat, store) // clock defaults to clock.System()
 if err != nil { log.Fatal(err) }
 
-def := &model.ProcessDefinition{
+def := &definition.ProcessDefinition{
     ID: "greeting", Version: 1,
-    Nodes: []model.Node{
-        model.NewStartEvent("start"),
-        model.NewServiceTask("greet", model.WithActionName("greet")),
-        model.NewEndEvent("end"),
+    Nodes: []definition.Node{
+        event.NewStart("start"),
+        activity.NewServiceTask("greet", activity.WithActionName("greet")),
+        event.NewEnd("end"),
     },
-    Flows: []model.SequenceFlow{
+    Flows: []definition.SequenceFlow{
         {ID: "f1", Source: "start", Target: "greet"},
         {ID: "f2", Source: "greet", Target: "end"},
     },
@@ -133,7 +133,7 @@ functions accepted by `NewProcessDriver`:
 | `WithDefinitions(reg)` | Definition registry for resolving call-activity `DefRef` strings. Required when any `CallActivity` node is present. |
 | `WithCallLinkStore(store)` | Enables the async (non-blocking) call-activity path. Without this, call activities run the child synchronously to completion in-process. |
 | `WithTimerStore(store)` | Persists armed timers so `RehydrateTimers` can re-arm them after a restart. Without this, timers are in-memory only. |
-| `WithDefaultRetryPolicy(p)` | Fallback `model.RetryPolicy` for action-bearing nodes that declare none. Without this, a failed action goes straight to incident or error-boundary. |
+| `WithDefaultRetryPolicy(p)` | Fallback `definition.RetryPolicy` for action-bearing nodes that declare none. Without this, a failed action goes straight to incident or error-boundary. |
 | `WithActionTimeout(d)` | Per-invocation timeout applied to every service action (default **30s**; `0` disables). A hung action that honours ctx is cancelled and surfaces as a retryable failure. |
 | `WithExpressionTimeout(d)` | Wraps the engine's expression evaluator with a per-eval timeout (guards against expression-DoS from untrusted definitions). |
 | `WithConditionEvaluator(eval)` | Replaces the engine's expression evaluator entirely (advanced; supersedes `WithExpressionTimeout`). |
@@ -225,7 +225,7 @@ st, err := r.CancelInstance(ctx, def, instanceID)
 ```
 
 Delivers a `CancelRequested` trigger. Any definition-level cancel actions (see
-`model.CancelActions`) run best-effort inside the same loop. When `WithCallLinkStore`
+`definition.CancelActions`) run best-effort inside the same loop. When `WithCallLinkStore`
 and `WithDefinitions` are both configured, running async child instances are
 cancelled recursively (best-effort; errors are logged, never returned). Returns
 the terminated `InstanceState`.
@@ -264,14 +264,14 @@ r, _ := runtime.NewProcessDriver(
     runtime.WithHumanTasks(resolver, taskStore, az),
 )
 
-def := &model.ProcessDefinition{
+def := &definition.ProcessDefinition{
     ID: "approval", Version: 1,
-    Nodes: []model.Node{
-        model.NewStartEvent("start"),
-        model.NewUserTask("approve", []string{"manager"}),
-        model.NewEndEvent("end"),
+    Nodes: []definition.Node{
+        event.NewStart("start"),
+        activity.NewUserTask("approve", []string{"manager"}),
+        event.NewEnd("end"),
     },
-    Flows: []model.SequenceFlow{
+    Flows: []definition.SequenceFlow{
         {ID: "f1", Source: "start", Target: "approve"},
         {ID: "f2", Source: "approve", Target: "end"},
     },
@@ -301,7 +301,7 @@ final, err := r.Deliver(ctx, def, "inst-1", completeTrg)
 Authorization happens in `TaskService` so the engine core remains pure. The
 runner snapshots process variables into `HumanTask.Vars` at task-creation time
 so attribute-based eligibility predicates (e.g. `vars["region"] == "EU"` via
-`model.WithEligibilityExpr`) are evaluated against the correct state at claim
+`activity.WithEligibilityExpr`) are evaluated against the correct state at claim
 time.
 
 ## Signals, messages, and timers
@@ -332,7 +332,7 @@ constructing the runner.
 ### Timers and deadlines
 
 Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
-`WithTimerDuration`), deadlines (`WithDeadline` on any activity), and reminders
+`WithCatchTimer`), deadlines (`WithDeadline` on any activity), and reminders
 (`WithReminder`). Use `NewMemScheduler` for tests:
 
 ```go
@@ -358,11 +358,11 @@ To survive process restarts, also wire `WithTimerStore` and call
 
 ## Retries and incidents
 
-Retry policy can be set per node with `model.WithRetryPolicy` or globally as a
+Retry policy can be set per node with `activity.WithRetryPolicy` or globally as a
 runner-level fallback with `WithDefaultRetryPolicy`:
 
 ```go
-p := model.RetryPolicy{
+p := definition.RetryPolicy{
     MaxAttempts:     5,
     InitialInterval: 2 * time.Second,
     BackoffCoef:     2.0,
@@ -565,7 +565,7 @@ and returns a `SuccessorDecision`:
 
 | Field | Type | Description |
 |---|---|---|
-| `Def` | `*model.ProcessDefinition` | The successor definition to start. A `nil` `Def` (or returning `ok=false`) ends the chain. |
+| `Def` | `*definition.ProcessDefinition` | The successor definition to start. A `nil` `Def` (or returning `ok=false`) ends the chain. |
 | `Vars` | `map[string]any` | Seed variables for the successor instance. |
 
 Three pieces:

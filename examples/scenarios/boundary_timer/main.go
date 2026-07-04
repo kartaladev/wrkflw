@@ -43,6 +43,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -61,7 +62,7 @@ func main() {
 	// are quoted Go-duration strings ("1h", "30m", "45s"). The outer backticks
 	// keep the inner quotes literal. The third argument is the fire-once breach
 	// action; the escalation work proper is the service task on the deadline path.
-	def, err := definition.NewDefinition("review-escalation", 1).
+	def, err := definition.NewBuilder("review-escalation", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("review", []string{"reviewer"},
 			activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"),
@@ -72,7 +73,7 @@ func main() {
 		Connect("start", "review").
 		Connect("review", "approved-end"). // normal completion path
 		// The deadline flow: its ID must match the WithDeadline flowID above.
-		Connect("review", "escalate", definition.WithFlowID("review-overdue")).
+		Connect("review", "escalate", flow.WithFlowID("review-overdue")).
 		Connect("escalate", "escalated-end").
 		Build()
 	if err != nil {

@@ -1,10 +1,12 @@
-package definition
+package model
 
 import (
 	"fmt"
 	"io"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 )
 
 // nodeYAML is the flat YAML representation of any node. It mirrors NodeWire
@@ -39,7 +41,7 @@ type nodeYAML struct {
 	DefRef                string          `yaml:"defRef,omitempty"`
 }
 
-// sequenceFlowYAML decodes a SequenceFlow from YAML. Field names match the
+// sequenceFlowYAML decodes a flow.SequenceFlow from YAML. Field names match the
 // JSON tags so the same YAML keys work for both representations.
 type sequenceFlowYAML struct {
 	ID        string `yaml:"id"`
@@ -126,9 +128,9 @@ func coreFromYAML(dy *definitionYAML) (*definitionCore, error) {
 		}
 		c.nodes[i] = n
 	}
-	c.flows = make([]SequenceFlow, len(dy.Flows))
+	c.flows = make([]flow.SequenceFlow, len(dy.Flows))
 	for i, fy := range dy.Flows {
-		c.flows[i] = SequenceFlow(fy)
+		c.flows[i] = flow.SequenceFlow(fy)
 	}
 	return c, nil
 }

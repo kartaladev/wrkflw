@@ -136,7 +136,7 @@ func run() error {
 // incident so it stays running) and pages through them via the SQLite lister.
 func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// Simple linear definition: start → greet → end.
-	def, err := definition.NewDefinition("greet", 1).
+	def, err := definition.NewBuilder("greet", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("greet", activity.WithActionName("say-hello"))).
 		Add(event.NewEnd("end")).
@@ -212,7 +212,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 // (MaxAttempts=1 so no retry, incident raised immediately) then calls
 // ResolveIncident to resume the instance to completion.
 func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) error {
-	def, err := definition.NewDefinition("incident-demo", 1).
+	def, err := definition.NewBuilder("incident-demo", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("risky-op", activity.WithActionName("risky"))).
 		Add(event.NewEnd("end")).
@@ -306,7 +306,7 @@ func (failPublisher) Publish(_ context.Context, _ kernel.OutboxEvent) error {
 //   - confirms OutboxStats.Dead == 0 after redrive (row is pending again).
 func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// A simple definition that completes immediately → emits a terminal outbox event.
-	def, err := definition.NewDefinition("dl-demo", 1).
+	def, err := definition.NewBuilder("dl-demo", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("work", activity.WithActionName("work"))).
 		Add(event.NewEnd("end")).

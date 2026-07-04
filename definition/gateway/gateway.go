@@ -5,34 +5,34 @@
 //
 // Gateways carry no options beyond an optional name; their routing behaviour
 // emerges entirely from the number and conditions of their incoming/outgoing
-// flows (see definition.Validate and the runtime).
+// flows (see model.Validate and the runtime).
 package gateway
 
-import "github.com/zakyalvan/krtlwrkflw/definition"
+import "github.com/zakyalvan/krtlwrkflw/definition/model"
 
 // ExclusiveGateway routes to exactly one outgoing flow (XOR split / merge).
-type ExclusiveGateway struct{ definition.Base }
+type ExclusiveGateway struct{ model.Base }
 
-// Kind returns definition.KindExclusiveGateway.
-func (ExclusiveGateway) Kind() definition.NodeKind { return definition.KindExclusiveGateway }
+// Kind returns model.KindExclusiveGateway.
+func (ExclusiveGateway) Kind() model.NodeKind { return model.KindExclusiveGateway }
 
 // ParallelGateway splits into all outgoing flows (AND split) or waits for all (AND join).
-type ParallelGateway struct{ definition.Base }
+type ParallelGateway struct{ model.Base }
 
-// Kind returns definition.KindParallelGateway.
-func (ParallelGateway) Kind() definition.NodeKind { return definition.KindParallelGateway }
+// Kind returns model.KindParallelGateway.
+func (ParallelGateway) Kind() model.NodeKind { return model.KindParallelGateway }
 
 // InclusiveGateway routes to one or more outgoing flows (OR split / join).
-type InclusiveGateway struct{ definition.Base }
+type InclusiveGateway struct{ model.Base }
 
-// Kind returns definition.KindInclusiveGateway.
-func (InclusiveGateway) Kind() definition.NodeKind { return definition.KindInclusiveGateway }
+// Kind returns model.KindInclusiveGateway.
+func (InclusiveGateway) Kind() model.NodeKind { return model.KindInclusiveGateway }
 
 // EventBasedGateway routes based on which event arrives first (race).
-type EventBasedGateway struct{ definition.Base }
+type EventBasedGateway struct{ model.Base }
 
-// Kind returns definition.KindEventBasedGateway.
-func (EventBasedGateway) Kind() definition.NodeKind { return definition.KindEventBasedGateway }
+// Kind returns model.KindEventBasedGateway.
+func (EventBasedGateway) Kind() model.NodeKind { return model.KindEventBasedGateway }
 
 // optName returns the first name from a variadic or "".
 func optName(name []string) string {
@@ -44,47 +44,47 @@ func optName(name []string) string {
 
 // NewExclusive constructs an ExclusiveGateway. An optional name may be provided
 // as a trailing variadic argument.
-func NewExclusive(id string, name ...string) definition.Node {
-	return ExclusiveGateway{definition.NewBase(id, optName(name))}
+func NewExclusive(id string, name ...string) model.Node {
+	return ExclusiveGateway{model.NewBase(id, optName(name))}
 }
 
 // NewParallel constructs a ParallelGateway. An optional name may be provided as a
 // trailing variadic argument.
-func NewParallel(id string, name ...string) definition.Node {
-	return ParallelGateway{definition.NewBase(id, optName(name))}
+func NewParallel(id string, name ...string) model.Node {
+	return ParallelGateway{model.NewBase(id, optName(name))}
 }
 
 // NewInclusive constructs an InclusiveGateway. An optional name may be provided
 // as a trailing variadic argument.
-func NewInclusive(id string, name ...string) definition.Node {
-	return InclusiveGateway{definition.NewBase(id, optName(name))}
+func NewInclusive(id string, name ...string) model.Node {
+	return InclusiveGateway{model.NewBase(id, optName(name))}
 }
 
 // NewEventBased constructs an EventBasedGateway. An optional name may be provided
 // as a trailing variadic argument.
-func NewEventBased(id string, name ...string) definition.Node {
-	return EventBasedGateway{definition.NewBase(id, optName(name))}
+func NewEventBased(id string, name ...string) model.Node {
+	return EventBasedGateway{model.NewBase(id, optName(name))}
 }
 
 func init() {
-	definition.RegisterKind(definition.KindExclusiveGateway, definition.NodeSpec{
+	model.RegisterKind(model.KindExclusiveGateway, model.NodeSpec{
 		Name:     "exclusiveGateway",
-		FromWire: func(b definition.Base, _ definition.NodeWire) definition.Node { return ExclusiveGateway{b} },
-		ToWire:   func(definition.Node, *definition.NodeWire) {},
+		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return ExclusiveGateway{b} },
+		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	definition.RegisterKind(definition.KindParallelGateway, definition.NodeSpec{
+	model.RegisterKind(model.KindParallelGateway, model.NodeSpec{
 		Name:     "parallelGateway",
-		FromWire: func(b definition.Base, _ definition.NodeWire) definition.Node { return ParallelGateway{b} },
-		ToWire:   func(definition.Node, *definition.NodeWire) {},
+		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return ParallelGateway{b} },
+		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	definition.RegisterKind(definition.KindInclusiveGateway, definition.NodeSpec{
+	model.RegisterKind(model.KindInclusiveGateway, model.NodeSpec{
 		Name:     "inclusiveGateway",
-		FromWire: func(b definition.Base, _ definition.NodeWire) definition.Node { return InclusiveGateway{b} },
-		ToWire:   func(definition.Node, *definition.NodeWire) {},
+		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return InclusiveGateway{b} },
+		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	definition.RegisterKind(definition.KindEventBasedGateway, definition.NodeSpec{
+	model.RegisterKind(model.KindEventBasedGateway, model.NodeSpec{
 		Name:     "eventBasedGateway",
-		FromWire: func(b definition.Base, _ definition.NodeWire) definition.Node { return EventBasedGateway{b} },
-		ToWire:   func(definition.Node, *definition.NodeWire) {},
+		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return EventBasedGateway{b} },
+		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
 }

@@ -29,7 +29,7 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process definition.
-	def, err := definition.NewDefinition("order-fulfillment", 1).
+	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(gateway.NewParallel("fork")).
 		Add(activity.NewServiceTask("pick-items", activity.WithActionName("pick-items"))).

@@ -21,7 +21,7 @@ func main() {
 	ctx := context.Background()
 
 	// --- Define a process (Go builder) ---
-	def, err := definition.NewDefinition("order-fulfillment", 1).
+	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
 			activity.WithCompensation("refund-card"),
@@ -67,7 +67,7 @@ flows:
 	fmt.Printf("yaml def %q v%d with %d nodes\n", yamlDef.ID, yamlDef.Version, len(yamlDef.Nodes))
 
 	// --- Run it ---
-	simpleDef, _ := definition.NewDefinition("order", 1).
+	simpleDef, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
 		Add(event.NewEnd("e")).

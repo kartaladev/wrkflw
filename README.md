@@ -559,8 +559,8 @@ Two options are **compile-enforced** to a single constructor:
 
 > **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
 > them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
-> not ISO-8601. This applies to `WithBoundaryTimer`, `WithTimerDuration`, `WithDeadline`,
-> `WithReminder`, `WithStartTimer`, and `WithICEDeadline`/`WithICEReminder`.
+> not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithDeadline`,
+> `WithReminder`, `WithStartTimer`, and `WithCatchDeadline`/`WithCatchReminder`.
 
 `RetryPolicy` fields:
 
@@ -611,7 +611,7 @@ event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 
 All activity constructors take the shared activity options above. `NewUserTask` also
 takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
-`NewEventSubProcess` takes `WithName(string)` and `WithESPNonInterrupting()` (default
+`NewEventSubProcess` takes `WithName(string)` and `WithEventSubProcessNonInterrupting()` (default
 is interrupting) — its nested start event carries the trigger.
 
 ```go
@@ -660,14 +660,14 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 | **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `event.NewThrow(id string, opts ...) Node` |
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
-`NewIntermediateCatchEvent` options: `WithTimerDuration(dur)`, `WithSignalName(name)`,
-`WithMessageNameAndKey(msg, key)`, `WithICEDeadline(dur, flow, action)`,
-`WithICEReminder(every, action)`, `WithName(string)`.
+`NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
+`WithCatchMessage(msg, key)`, `WithCatchDeadline(dur, flow, action)`,
+`WithCatchReminder(every, action)`, `WithName(string)`.
 `NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
 `NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithBoundarySignal(name)`,
 `WithBoundaryMessage(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
-`BoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
+`WithBoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
 
 > **Boundary events:** timer, signal, error, and message boundaries are all armed and
 > fired by the engine (message boundaries since ADR-0053).

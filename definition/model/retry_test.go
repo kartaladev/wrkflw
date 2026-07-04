@@ -1,14 +1,14 @@
-package definition_test
+package model_test
 
 import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 func TestDefaultRetryPolicy(t *testing.T) {
-	p := definition.DefaultRetryPolicy()
+	p := model.DefaultRetryPolicy()
 	if p.MaxAttempts != 3 {
 		t.Fatalf("MaxAttempts = %d, want 3", p.MaxAttempts)
 	}
@@ -24,7 +24,7 @@ func TestDefaultRetryPolicy(t *testing.T) {
 }
 
 func TestRetryPolicyBackoff(t *testing.T) {
-	p := definition.RetryPolicy{InitialInterval: time.Second, BackoffCoef: 2.0, MaxInterval: 10 * time.Second}
+	p := model.RetryPolicy{InitialInterval: time.Second, BackoffCoef: 2.0, MaxInterval: 10 * time.Second}
 	cases := []struct {
 		name    string
 		attempt int
@@ -59,14 +59,14 @@ func TestRetryPolicyBackoff(t *testing.T) {
 }
 
 func TestRetryPolicyBackoffZeroInitial(t *testing.T) {
-	p := definition.RetryPolicy{InitialInterval: 0, BackoffCoef: 2.0, MaxInterval: 10 * time.Second}
+	p := model.RetryPolicy{InitialInterval: 0, BackoffCoef: 2.0, MaxInterval: 10 * time.Second}
 	if d := p.Backoff(0); d != 0 {
 		t.Fatalf("expected 0 for zero InitialInterval, got %v", d)
 	}
 }
 
 func TestRetryPolicyIsNonRetryable(t *testing.T) {
-	p := definition.RetryPolicy{NonRetryableErrors: []string{"validation", "not found"}}
+	p := model.RetryPolicy{NonRetryableErrors: []string{"validation", "not found"}}
 	if !p.IsNonRetryable("input validation failed") {
 		t.Fatal("expected substring match to be non-retryable")
 	}
@@ -76,7 +76,7 @@ func TestRetryPolicyIsNonRetryable(t *testing.T) {
 }
 
 func TestRetryPolicyNormalizeFillsZeros(t *testing.T) {
-	got := definition.RetryPolicy{MaxAttempts: 5}.Normalize()
+	got := model.RetryPolicy{MaxAttempts: 5}.Normalize()
 	if got.MaxAttempts != 5 {
 		t.Fatalf("MaxAttempts overwritten: %d", got.MaxAttempts)
 	}
@@ -87,7 +87,7 @@ func TestRetryPolicyNormalizeFillsZeros(t *testing.T) {
 
 func TestRetryPolicyNormalizePreservesUnlimited(t *testing.T) {
 	// MaxAttempts==0 means unlimited and must be preserved by Normalize.
-	got := definition.RetryPolicy{MaxAttempts: 0}.Normalize()
+	got := model.RetryPolicy{MaxAttempts: 0}.Normalize()
 	if got.MaxAttempts != 0 {
 		t.Fatalf("MaxAttempts==0 (unlimited) was overwritten to %d", got.MaxAttempts)
 	}
@@ -95,7 +95,7 @@ func TestRetryPolicyNormalizePreservesUnlimited(t *testing.T) {
 
 func TestRetryPolicyNormalizeNegativeMaxAttempts(t *testing.T) {
 	// MaxAttempts<0 is treated as unset and replaced with the default (3).
-	got := definition.RetryPolicy{MaxAttempts: -1}.Normalize()
+	got := model.RetryPolicy{MaxAttempts: -1}.Normalize()
 	if got.MaxAttempts != 3 {
 		t.Fatalf("negative MaxAttempts not replaced with default 3: %d", got.MaxAttempts)
 	}

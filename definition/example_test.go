@@ -12,7 +12,7 @@ import (
 // definition using the fluent DefinitionBuilder together with the node
 // constructors. This example is also executed by "go test" to verify the output.
 func ExampleDefinitionBuilder() {
-	def, err := definition.NewDefinition("order-fulfillment", 1).
+	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge",
 			activity.WithActionName("charge-card"),

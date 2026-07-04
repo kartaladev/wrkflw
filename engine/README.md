@@ -10,12 +10,12 @@ Package `engine` is the **pure token state machine** that drives process
 instances. Its single exported entry point is:
 
 ```go
-func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error)
+func Step(def *definition.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error)
 ```
 
 `Step` maps `(definition, current state, trigger) → (commands + next state)`.
 It does no I/O, reads no wall clock (time arrives inside the trigger), spawns no
-goroutines, and imports nothing beyond `model` and the internal expression
+goroutines, and imports nothing beyond `definition` and the internal expression
 evaluator. The runtime executes the returned commands and persists the new state.
 
 ---
@@ -118,7 +118,7 @@ sequence flow to the next node.
 
 ```go
 func Step(
-    def *model.ProcessDefinition, // 1. the process definition (template)
+    def *definition.ProcessDefinition, // 1. the process definition (template)
     st  InstanceState,            // 2. the current instance state
     trg Trigger,                  // 3. the external event to apply
     opt StepOptions,              // 4. optional behaviour
@@ -130,10 +130,10 @@ always produce the same outputs, and the input `st` is never mutated. The
 subsections below follow the signature left-to-right — the four inputs in
 positional order, then the output.
 
-### Input 1 — `def *model.ProcessDefinition`
+### Input 1 — `def *definition.ProcessDefinition`
 
 The process definition the instance executes against (the immutable template).
-`Step` assumes it has already passed `model.Validate`; in particular, an
+`Step` assumes it has already passed `definition.Validate`; in particular, an
 exclusive gateway is assumed to have at most one unconditional non-default
 outgoing flow — the engine takes the first matching flow in definition order and
 does not detect ambiguous multi-unconditional configurations. For a token inside
@@ -179,7 +179,7 @@ never build the struct literals directly.
 | Field | Type | Description |
 |---|---|---|
 | `Mode` | `StepMode` | Step granularity: `Macro` (default) or `Micro` — see the table below. |
-| `DefaultRetryPolicy` | `*model.RetryPolicy` | Fallback retry policy applied when a node carries no `RetryPolicy` of its own. `nil` = retry disabled by default. |
+| `DefaultRetryPolicy` | `*definition.RetryPolicy` | Fallback retry policy applied when a node carries no `RetryPolicy` of its own. `nil` = retry disabled by default. |
 | `Evaluator` | `ConditionEvaluator` | Overrides the expression evaluator used for gateway conditions, timer/deadline durations, and correlation keys. `nil` (default) uses the pure, wall-clock-free package-global evaluator, keeping `Step` deterministic for replay. A consumer evaluating **untrusted** definitions can supply a timeout-capable evaluator (e.g. `expreval.New(expreval.WithTimeout(d))`) to bound evaluation latency and guard against expression-DoS — trading the replay-determinism guarantee for that protection (ADR-0049, ADR-0056). |
 
 | `StepMode` | Behaviour |
@@ -221,10 +221,10 @@ runtime executes them all before persisting the new state.
 ### Minimal usage example
 
 ```go
-def, _ := model.NewDefinition("order", 1).
-    Add(model.NewStartEvent("start")).
-    Add(model.NewServiceTask("charge", "billing.charge")).
-    Add(model.NewEndEvent("end")).
+def, _ := definition.NewDefinition("order", 1).
+    Add(event.NewStart("start")).
+    Add(activity.NewServiceTask("charge", "billing.charge")).
+    Add(event.NewEnd("end")).
     Connect("start", "charge").
     Connect("charge", "end").
     Build()
@@ -250,7 +250,7 @@ with **bare key names**.
 
 | Gateway | BPMN type | Split behaviour | Join behaviour |
 |---|---|---|---|
-| `ExclusiveGateway` | XOR | Takes the **first** outgoing flow whose `Condition` is true (definition order); or the flow marked `AsDefault()` if none match. Multiple unconditional flows are undefined — use `model.Validate` to catch this. | Pass-through (single incoming). |
+| `ExclusiveGateway` | XOR | Takes the **first** outgoing flow whose `Condition` is true (definition order); or the flow marked `AsDefault()` if none match. Multiple unconditional flows are undefined — use `definition.Validate` to catch this. | Pass-through (single incoming). |
 | `ParallelGateway` | AND | Activates **all** outgoing flows simultaneously, one token per branch. | Waits until **all** incoming flows carry a token (`TokenAtJoin`), then fires. |
 | `InclusiveGateway` | OR | Activates all outgoing flows whose `Condition` is true (or the default). | Waits for all **active** matching branches (branches that were not taken are not waited for). |
 | `EventBasedGateway` | Event-based | Arms all following `IntermediateCatchEvent` branches simultaneously. The gateway token is parked until the **first** armed event fires; sibling arms are cancelled. | Not applicable (single path). |
@@ -282,7 +282,7 @@ The engine's file layout after the ADR-0044 decomposition:
 `drive` dispatches each token's current node through:
 
 ```go
-var nodeStrategies = map[model.NodeKind]nodeStrategy{ ... }
+var nodeStrategies = map[definition.NodeKind]nodeStrategy{ ... }
 ```
 
 Sixteen kinds are registered: `KindServiceTask`, `KindStartEvent`,
@@ -413,7 +413,7 @@ is appended to `InstanceState.Incidents`. Operators clear incidents with
 
 ### Compensation
 
-Attach `model.WithCompensation("undo-action")` to any activity. When the
+Attach `activity.WithCompensation("undo-action")` to any activity. When the
 activity completes, a `CompensationRecord` is appended (in completion order) to
 the relevant scope's record list.
 
@@ -423,7 +423,7 @@ to least-recent (down to `toNode`, exclusive). When the walk finishes (all
 records processed, or `toNode` reached), the instance enters `StatusTerminated`
 (full rollback) or resumes at `toNode` (partial rollback).
 
-An `IntermediateThrowEvent` with `model.WithCompensateRef("nodeID")` triggers a
+An `IntermediateThrowEvent` with `event.WithCompensateRef("nodeID")` triggers a
 localized compensation walk over the archived records of the named sub-process
 scope, then resumes execution past the throw event.
 

@@ -1,17 +1,13 @@
-// Package build provides a terse fluent surface for authoring a
-// ProcessDefinition — one AddX method per node kind — layered over
-// definition.DefinitionBuilder. It lives in its own package because it imports
-// the node-family leaf packages (event, gateway, activity), which the definition
-// package itself must not import (that would create a cycle).
+// Package build provides the fluent definition builder — one AddX method per
+// node kind — layered over the core model builder. It imports the node-family
+// leaf packages (event, gateway, activity), which the model package must not
+// import (that would create a cycle). The root definition package re-exports its
+// entry point as definition.NewBuilder.
 //
-// The AddX methods mirror the leaf constructors; node-specific options are the
-// leaf option types, so a chain typically imports the relevant leaf for its
-// options:
-//
-//	def, err := build.New("order", 1).
-//		AddStart("s").
+//	def, err := definition.NewBuilder("order", 1).
+//		AddStartEvent("s").
 //		AddServiceTask("charge", activity.WithActionName("charge-card")).
-//		AddEnd("e").
+//		AddEndEvent("e").
 //		Connect("s", "charge").Connect("charge", "e").
 //		Build()
 package build
@@ -20,63 +16,65 @@ import (
 	"context"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
-// Builder is a fluent wrapper around definition.DefinitionBuilder exposing a
-// per-kind AddX method for each node family. Construct one with New.
-type Builder struct{ inner definition.DefinitionBuilder }
+// Builder is a fluent wrapper around the core model builder exposing a per-kind
+// AddX method for each node family. Construct one with New (or, from the root
+// package, definition.NewBuilder).
+type Builder struct{ inner model.DefinitionBuilder }
 
 // New starts a fluent builder for a definition with the given id and version.
 func New(id string, version int) *Builder {
-	return &Builder{inner: definition.NewDefinition(id, version)}
+	return &Builder{inner: model.NewBuilder(id, version)}
 }
 
 // Add appends a pre-built node (programmatic / dynamic construction).
-func (b *Builder) Add(n definition.Node) *Builder { b.inner.Add(n); return b }
+func (b *Builder) Add(n model.Node) *Builder { b.inner.Add(n); return b }
 
 // --- events ---
 
-func (b *Builder) AddStart(id string, opts ...event.StartOption) *Builder {
+func (b *Builder) AddStartEvent(id string, opts ...event.StartOption) *Builder {
 	return b.Add(event.NewStart(id, opts...))
 }
-func (b *Builder) AddEnd(id string, name ...string) *Builder {
+func (b *Builder) AddEndEvent(id string, name ...string) *Builder {
 	return b.Add(event.NewEnd(id, name...))
 }
-func (b *Builder) AddTerminateEnd(id string, name ...string) *Builder {
+func (b *Builder) AddTerminateEndEvent(id string, name ...string) *Builder {
 	return b.Add(event.NewTerminateEnd(id, name...))
 }
-func (b *Builder) AddErrorEnd(id, errorCode string, name ...string) *Builder {
+func (b *Builder) AddErrorEndEvent(id, errorCode string, name ...string) *Builder {
 	return b.Add(event.NewErrorEnd(id, errorCode, name...))
 }
-func (b *Builder) AddCatch(id string, opts ...event.CatchOption) *Builder {
+func (b *Builder) AddIntermediateCatchEvent(id string, opts ...event.CatchOption) *Builder {
 	return b.Add(event.NewCatch(id, opts...))
 }
-func (b *Builder) AddThrow(id string, opts ...event.ThrowOption) *Builder {
+func (b *Builder) AddIntermediateThrowEvent(id string, opts ...event.ThrowOption) *Builder {
 	return b.Add(event.NewThrow(id, opts...))
 }
-func (b *Builder) AddBoundary(id, attachedTo string, opts ...event.BoundaryOption) *Builder {
+func (b *Builder) AddBoundaryEvent(id, attachedTo string, opts ...event.BoundaryOption) *Builder {
 	return b.Add(event.NewBoundary(id, attachedTo, opts...))
 }
-func (b *Builder) AddEventSubProcess(id string, sub *definition.ProcessDefinition, opts ...event.EventSubProcessOption) *Builder {
+func (b *Builder) AddEventSubProcess(id string, sub *model.ProcessDefinition, opts ...event.EventSubProcessOption) *Builder {
 	return b.Add(event.NewEventSubProcess(id, sub, opts...))
 }
 
 // --- gateways ---
 
-func (b *Builder) AddExclusive(id string, name ...string) *Builder {
+func (b *Builder) AddExclusiveGateway(id string, name ...string) *Builder {
 	return b.Add(gateway.NewExclusive(id, name...))
 }
-func (b *Builder) AddParallel(id string, name ...string) *Builder {
+func (b *Builder) AddParallelGateway(id string, name ...string) *Builder {
 	return b.Add(gateway.NewParallel(id, name...))
 }
-func (b *Builder) AddInclusive(id string, name ...string) *Builder {
+func (b *Builder) AddInclusiveGateway(id string, name ...string) *Builder {
 	return b.Add(gateway.NewInclusive(id, name...))
 }
-func (b *Builder) AddEventBased(id string, name ...string) *Builder {
+func (b *Builder) AddEventBasedGateway(id string, name ...string) *Builder {
 	return b.Add(gateway.NewEventBased(id, name...))
 }
 
@@ -97,7 +95,7 @@ func (b *Builder) AddSendTask(id, messageName string, opts ...activity.SendTaskO
 func (b *Builder) AddBusinessRuleTask(id string, opts ...activity.BusinessRuleOption) *Builder {
 	return b.Add(activity.NewBusinessRuleTask(id, opts...))
 }
-func (b *Builder) AddSubProcess(id string, sub *definition.ProcessDefinition, opts ...activity.ActivityOption) *Builder {
+func (b *Builder) AddSubProcess(id string, sub *model.ProcessDefinition, opts ...activity.ActivityOption) *Builder {
 	return b.Add(activity.NewSubProcess(id, sub, opts...))
 }
 func (b *Builder) AddCallActivity(id, defRef string, opts ...activity.ActivityOption) *Builder {
@@ -107,7 +105,7 @@ func (b *Builder) AddCallActivity(id, defRef string, opts ...activity.ActivityOp
 // --- passthroughs to the underlying builder ---
 
 // Connect adds a directed sequence flow.
-func (b *Builder) Connect(fromID, toID string, opts ...definition.FlowOption) *Builder {
+func (b *Builder) Connect(fromID, toID string, opts ...flow.Option) *Builder {
 	b.inner.Connect(fromID, toID, opts...)
 	return b
 }
@@ -131,7 +129,7 @@ func (b *Builder) CancelActions(names ...string) *Builder {
 }
 
 // Build assembles and validates the definition.
-func (b *Builder) Build() (*definition.ProcessDefinition, error) { return b.inner.Build() }
+func (b *Builder) Build() (*model.ProcessDefinition, error) { return b.inner.Build() }
 
 // Loader returns a DefinitionLoader backed by the same core.
-func (b *Builder) Loader() definition.DefinitionLoader { return b.inner.Loader() }
+func (b *Builder) Loader() model.DefinitionLoader { return b.inner.Loader() }

@@ -49,7 +49,7 @@ func main() {
 	ctx := context.Background()
 
 	// book and pay each carry a compensation action; ship has none and fails.
-	def, err := definition.NewDefinition("booking-saga", 1).
+	def, err := definition.NewBuilder("booking-saga", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("book", activity.WithActionName("book"),
 			activity.WithCompensation("cancel-booking"))).
