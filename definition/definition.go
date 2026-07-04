@@ -91,31 +91,7 @@ const (
 	KindEventBasedGateway      = model.KindEventBasedGateway
 )
 
-// --- re-exported sentinel errors (definition/model) ---
-
-var (
-	ErrActionInlineAndNameConflict = model.ErrActionInlineAndNameConflict
-	ErrDuplicateScopedAction       = model.ErrDuplicateScopedAction
-	ErrKindNotRegistered           = model.ErrKindNotRegistered
-	ErrNoStartEvent                = model.ErrNoStartEvent
-	ErrMultipleStartEvents         = model.ErrMultipleStartEvents
-	ErrDanglingFlow                = model.ErrDanglingFlow
-	ErrDeadEnd                     = model.ErrDeadEnd
-	ErrStartHasIncoming            = model.ErrStartHasIncoming
-	ErrEndHasOutgoing              = model.ErrEndHasOutgoing
-	ErrConditionNotAllowed         = model.ErrConditionNotAllowed
-	ErrDefaultNotAllowed           = model.ErrDefaultNotAllowed
-	ErrMultipleDefaults            = model.ErrMultipleDefaults
-	ErrEventGatewayTarget          = model.ErrEventGatewayTarget
-	ErrMixedGateway                = model.ErrMixedGateway
-	ErrUnreachableNode             = model.ErrUnreachableNode
-	ErrUnpairedJoin                = model.ErrUnpairedJoin
-	ErrBoundaryAttachment          = model.ErrBoundaryAttachment
-	ErrBoundaryErrorHost           = model.ErrBoundaryErrorHost
-	ErrMissingSubprocess           = model.ErrMissingSubprocess
-	ErrMissingDefRef               = model.ErrMissingDefRef
-	ErrInvalidRetryPolicy          = model.ErrInvalidRetryPolicy
-	ErrInvalidRecoveryFlow         = model.ErrInvalidRecoveryFlow
-	ErrEmptyCancelAction           = model.ErrEmptyCancelAction
-	ErrCompensateRefNotFound       = model.ErrCompensateRefNotFound
-)
+// Validation sentinel errors (ErrNoStartEvent, ErrMixedGateway, …) and the
+// builder/registry sentinels (ErrActionInlineAndNameConflict,
+// ErrDuplicateScopedAction, ErrKindNotRegistered) are NOT re-exported here.
+// Check them from definition/model, e.g. errors.Is(err, model.ErrNoStartEvent).

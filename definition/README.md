@@ -261,7 +261,8 @@ fills zero fields (preserving `MaxAttempts == 0`). Attach with
 
 `definition.Validate(*ProcessDefinition)` is called automatically by `Build` and
 the YAML/JSON loaders. It runs a comprehensive structural check and returns a
-joined error. Sentinel errors include: `ErrNoStartEvent`,
+joined error. The sentinel errors live in `definition/model` — check them with
+`errors.Is(err, model.ErrNoStartEvent)`. They include: `ErrNoStartEvent`,
 `ErrMultipleStartEvents`, `ErrDanglingFlow`, `ErrDeadEnd`, `ErrStartHasIncoming`,
 `ErrEndHasOutgoing`, `ErrConditionNotAllowed`, `ErrDefaultNotAllowed`,
 `ErrMultipleDefaults`, `ErrEventGatewayTarget`, `ErrMixedGateway`,
