@@ -13,9 +13,10 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -60,8 +61,8 @@ func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 }
 
 func TestRunnerActionErrorFailsInstance(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, errors.New("greet exploded")
 		}),
 	})
@@ -80,8 +81,8 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 // TestRunnerStoreCreateErrorPropagates verifies that a Create failure from the
 // store is surfaced as a hard error from Run (wrapping ErrConcurrentUpdate).
 func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
 		}),
 	})
@@ -95,8 +96,8 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 // TestRunnerStoreCommitErrorPropagates verifies that a Commit failure is surfaced
 // as a hard error from Run for subsequent steps (after Create succeeds).
 func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
 		}),
 	})
@@ -112,16 +113,16 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 }
 
 // userTaskOnlyDef returns a process with a single user-task node: start → userTask → end.
-func userTaskOnlyDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func userTaskOnlyDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "user-task-only",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("task1", []string{"manager"}),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task1"},
 			{ID: "f2", Source: "task1", Target: "end"},
 		},
@@ -143,16 +144,16 @@ func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 
 // timerDef returns: start → timer-catch("1h") → end, used to exercise
 // ScheduleTimer / CancelTimer perform paths in the runner.
-func timerOnlyDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func timerOnlyDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "timer-only",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait", event.WithCatchTimer(`"1h"`)),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},
 			{ID: "f2", Source: "wait", Target: "end"},
 		},
@@ -249,16 +250,16 @@ func (s *onceConflictStore) Commit(ctx context.Context, expected kernel.Token, s
 
 // conflictTimerDef returns: start → timer-catch("10s") → end.
 // No service tasks; the timer catch is the only external wait.
-func conflictTimerDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func conflictTimerDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "conflict-timer",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait10s", event.WithCatchTimer(`"10s"`)),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait10s"},
 			{ID: "f2", Source: "wait10s", Target: "end"},
 		},
@@ -314,8 +315,8 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 // returns ErrConcurrentUpdate, deliverLoop surfaces it wrapped so errors.Is matches.
 func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 	// Use a simple linear def (start → greet → end) with a succeeding action.
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
@@ -329,8 +330,8 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 // TestNewRunnerDefaultUsesSystemClock verifies that a Runner constructed without a
 // clock option stamps instance StartedAt from the system clock (within a real-time bracket).
 func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})
@@ -349,8 +350,8 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 // whose time flows into the engine's StartedAt stamp (behavioral assertion).
 func TestNewRunnerWithClockOption(t *testing.T) {
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})

@@ -8,26 +8,27 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // signalCatchDef returns a linear definition:
 //
 //	Start → SignalCatch("approved") → ServiceTask(complete) → End
-func signalCatchDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func signalCatchDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-signal", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("catch-approved", event.WithCatchSignal("approved")),
 			activity.NewServiceTask("complete", activity.WithActionName("complete-action")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-approved"},
 			{ID: "f2", Source: "catch-approved", Target: "complete"},
 			{ID: "f3", Source: "complete", Target: "end"},
@@ -38,16 +39,16 @@ func signalCatchDef() *definition.ProcessDefinition {
 // messageCatchDef returns a linear definition:
 //
 //	Start → MessageCatch("order", correlationKey="orderId") → ServiceTask(process) → End
-func messageCatchDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func messageCatchDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-message", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("catch-order", event.WithCatchMessage("order", `orderId`)),
 			activity.NewServiceTask("process", activity.WithActionName("process-order")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-order"},
 			{ID: "f2", Source: "catch-order", Target: "process"},
 			{ID: "f3", Source: "process", Target: "end"},
@@ -58,17 +59,17 @@ func messageCatchDef() *definition.ProcessDefinition {
 // signalThrowDef returns a definition:
 //
 //	Start → ServiceTask(setup) → SignalThrow("done") → ServiceTask(after) → End
-func signalThrowDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func signalThrowDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-throw", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("setup", activity.WithActionName("setup-action")),
 			event.NewThrow("throw-done", event.WithThrowSignal("done")),
 			activity.NewServiceTask("after", activity.WithActionName("after-action")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "setup"},
 			{ID: "f2", Source: "setup", Target: "throw-done"},
 			{ID: "f3", Source: "throw-done", Target: "after"},
@@ -81,10 +82,10 @@ func signalThrowDef() *definition.ProcessDefinition {
 //
 //	Start → ParallelFork → SignalCatch("wake") → End1
 //	                     → SignalCatch("wake") → End2
-func twoSignalTokensDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func twoSignalTokensDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-2-signal", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			event.NewCatch("catch1", event.WithCatchSignal("wake")),
@@ -92,7 +93,7 @@ func twoSignalTokensDef() *definition.ProcessDefinition {
 			event.NewEnd("end1"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "catch1"},
 			{ID: "f3", Source: "fork", Target: "catch2"},
@@ -192,16 +193,16 @@ func TestMessageCatchCorrelates(t *testing.T) {
 // CorrelationKey is empty on the node, MessageReceived matches on name alone
 // (the empty string "" matches any MessageReceived whose CorrelationKey is also "").
 func TestMessageCatchNoCorrelationKeyMatchesOnNameOnly(t *testing.T) {
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "p-msg-nokey", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			// No CorrelationKey: match on name only
 			event.NewCatch("catch-msg", event.WithCatchMessage("ping", "")),
 			activity.NewServiceTask("svc", activity.WithActionName("pong")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch-msg"},
 			{ID: "f2", Source: "catch-msg", Target: "svc"},
 			{ID: "f3", Source: "svc", Target: "end"},
@@ -340,10 +341,10 @@ func TestThrowSignalFields(t *testing.T) {
 //	                     → SignalCatch("approved") → ServiceTask(signal-branch) → End2
 //
 // TimerDuration uses the expr-evaluable format `"1h"` (quoted Go duration string).
-func eventGatewayDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func eventGatewayDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-evtgw", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
@@ -353,7 +354,7 @@ func eventGatewayDef() *definition.ProcessDefinition {
 			event.NewEnd("end1"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "evtgw"},
 			{ID: "f-gw-timer", Source: "evtgw", Target: "timer-catch"},
 			{ID: "f-gw-signal", Source: "evtgw", Target: "signal-catch"},
@@ -509,10 +510,10 @@ func TestEventGatewayFirstSignalWins(t *testing.T) {
 //
 //	Start → EventGateway → TimerCatch("1h") → ServiceTask(timer-branch) → End1
 //	                     → MessageCatch("order") → ServiceTask(msg-branch) → End2
-func eventGatewayMessageDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func eventGatewayMessageDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-evtgw-msg", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
@@ -522,7 +523,7 @@ func eventGatewayMessageDef() *definition.ProcessDefinition {
 			event.NewEnd("end1"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "evtgw"},
 			{ID: "f-gw-timer", Source: "evtgw", Target: "timer-catch"},
 			{ID: "f-gw-msg", Source: "evtgw", Target: "msg-catch"},
@@ -601,10 +602,10 @@ func TestEventGatewayFirstMessageWins(t *testing.T) {
 //
 //	Start → UserTask("approve") → End
 //	                ↑ interrupting timer boundary "3h" → escalate → End2
-func interruptingBoundaryTimerDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func interruptingBoundaryTimerDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-bnd-timer", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", nil),
 			event.NewBoundary("bnd-timer", "approve", event.WithBoundaryTimer(`"3h"`)),
@@ -612,7 +613,7 @@ func interruptingBoundaryTimerDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "approve"},
 			{ID: "f-approve-end", Source: "approve", Target: "end"},
 			{ID: "f-bnd-escalate", Source: "bnd-timer", Target: "escalate"},
@@ -695,10 +696,10 @@ func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
 //
 //	Start → UserTask("work") → End
 //	               ↑ non-interrupting signal boundary "notify" → notify-svc → End2
-func nonInterruptingBoundaryDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func nonInterruptingBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-bnd-nonint", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("work", nil),
 			event.NewBoundary("bnd-signal", "work", event.WithBoundarySignal("notify"), event.WithBoundaryNonInterrupting()),
@@ -706,7 +707,7 @@ func nonInterruptingBoundaryDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-notify", Source: "bnd-signal", Target: "notify-svc"},
@@ -795,10 +796,10 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 //
 //	Start → ServiceTask("work") → End
 //	               ↑ interrupting timer boundary "1h" → alert → End2
-func hostCompletionCancelsBoundaryDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func hostCompletionCancelsBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-bnd-hostfirst", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("work", activity.WithActionName("work-action")),
 			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(`"1h"`)),
@@ -806,7 +807,7 @@ func hostCompletionCancelsBoundaryDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-alert", Source: "bnd-timer", Target: "alert"},
@@ -876,10 +877,10 @@ func TestHostCompletionCancelsArmedBoundary(t *testing.T) {
 //	               ↑ interrupting timer boundary with malformed TimerDuration → alert → End2
 //
 // The boundary TimerDuration is intentionally invalid so that EvalDuration fails.
-func badBoundaryDurationDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func badBoundaryDurationDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-bad-bnd-dur", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("work", activity.WithActionName("work-action")),
 			event.NewBoundary("bnd-bad", "work", event.WithBoundaryTimer(`"not a duration"`)),
@@ -887,7 +888,7 @@ func badBoundaryDurationDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-alert", Source: "bnd-bad", Target: "alert"},
@@ -919,10 +920,10 @@ func TestBoundaryBadDurationErrors(t *testing.T) {
 //	               ↑ interrupting timer boundary "2h" → alert → End2
 //
 // Used to verify that ActionFailed cancels armed boundary timer IDs (Fix 1).
-func actionFailedCancelsArmsAndBoundariesDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func actionFailedCancelsArmsAndBoundariesDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-af-cancel", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("work", activity.WithActionName("work-action")),
 			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(`"2h"`)),
@@ -930,7 +931,7 @@ func actionFailedCancelsArmsAndBoundariesDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-alert", Source: "bnd-timer", Target: "alert"},
@@ -1013,10 +1014,10 @@ func TestActionFailedCancelsArmsAndBoundaries(t *testing.T) {
 //
 // BPMN semantics: signal delivery is a point-in-time event; tokens spawned during
 // the same Step are not in scope for the current delivery.
-func nonInterruptingBoundarySignalSelfCascadeDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func nonInterruptingBoundarySignalSelfCascadeDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-nonint-selfcascade", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("work", nil),
 			event.NewBoundary("bnd-pulse", "work", event.WithBoundarySignal("pulse"), event.WithBoundaryNonInterrupting()),
@@ -1025,7 +1026,7 @@ func nonInterruptingBoundarySignalSelfCascadeDef() *definition.ProcessDefinition
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-catch", Source: "bnd-pulse", Target: "inner-catch"},

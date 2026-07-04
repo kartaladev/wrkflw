@@ -34,7 +34,7 @@ func WithKeys(keys ...string) Option { return func(a *logAction) { a.keys = keys
 
 // NewLog returns a pass-through service action that logs the (selected) input
 // variables as a single structured record.
-func NewLog(opts ...Option) action.ServiceAction {
+func NewLog(opts ...Option) action.Action {
 	a := &logAction{logger: slog.Default(), level: slog.LevelInfo, msg: "workflow action"}
 	for _, o := range opts {
 		o(a)

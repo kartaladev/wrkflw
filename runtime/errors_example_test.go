@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -42,7 +43,7 @@ func (r *orderRecorder) snapshot() []string {
 	return out
 }
 
-// recordingAction is a ServiceAction that records its name in rec and optionally
+// recordingAction is a action.Action that records its name in rec and optionally
 // fails with a given error string. If errMsg is empty the action succeeds.
 type recordingAction struct {
 	name   string
@@ -76,10 +77,10 @@ func (e *sagaActionError) Error() string { return e.msg }
 // trigger CompensateRequested to roll back book+pay in reverse order
 // (refund THEN cancel-booking). Without the boundary, ADR-0034 auto-runs
 // compensation on the unhandled-error terminal path before StatusFailed.
-func sagaDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func sagaDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "saga", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensation("cancel-booking")),
 			activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensation("refund")),
@@ -91,7 +92,7 @@ func sagaDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end-fail"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "book"},
 			{ID: "f2", Source: "book", Target: "pay"},
 			{ID: "f3", Source: "pay", Target: "ship"},
@@ -121,7 +122,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	rec := &orderRecorder{}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"book":           &recordingAction{name: "book", rec: rec},
 		"pay":            &recordingAction{name: "pay", rec: rec},
 		"ship":           &recordingAction{name: "ship", rec: rec, errMsg: "ship-failed"},
@@ -185,10 +186,10 @@ func TestSagaCompensationRollback(t *testing.T) {
 //	start → risky (ServiceTask "risky-action")
 //	             ↘ (boundary error, catch-all) → recover (ServiceTask "recover-action") → end
 //	       → end  (normal path, if risky succeeds)
-func boundaryErrorDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func boundaryErrorDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "boundary-error-recovery", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("risky", activity.WithActionName("risky-action")),
 			// KindBoundaryEvent: error boundary attached to "risky", catch-all (ErrorCode=="").
@@ -197,7 +198,7 @@ func boundaryErrorDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end-recovery"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "risky"},
 			{ID: "f2", Source: "risky", Target: "end"},            // normal path
 			{ID: "f3", Source: "err-boundary", Target: "recover"}, // recovery path
@@ -214,7 +215,7 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 
 	rec := &orderRecorder{}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"risky-action":   &recordingAction{name: "risky-action", rec: rec, errMsg: "risky-failed"},
 		"recover-action": &recordingAction{name: "recover-action", rec: rec},
 	})

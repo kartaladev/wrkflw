@@ -32,6 +32,25 @@ const (
 	Cancelled
 )
 
+// String returns the canonical lowercase name of the state ("unclaimed",
+// "claimed", "completed", "cancelled"); out-of-range values map to "unknown". It
+// implements [fmt.Stringer], so a TaskState formats correctly with %s/%v and is
+// the source of the string form used in the runtime view DTOs.
+func (s TaskState) String() string {
+	switch s {
+	case Unclaimed:
+		return "unclaimed"
+	case Claimed:
+		return "claimed"
+	case Completed:
+		return "completed"
+	case Cancelled:
+		return "cancelled"
+	default:
+		return "unknown"
+	}
+}
+
 // HumanTask is the in-flight record of a human-task node execution. It is stored
 // in a [TaskStore] and queried by the runtime and API layer.
 //

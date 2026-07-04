@@ -11,9 +11,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -22,15 +23,15 @@ import (
 
 // cancelDef parks at a human task so Run returns with the instance Running;
 // CancelActions lists the names of ServiceActions to run best-effort on cancel.
-func cancelDef(cancelActions []string) *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func cancelDef(cancelActions []string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "cancel-def", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("wait", []string{"r"}),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait"},
 			{ID: "f2", Source: "wait", Target: "end"},
 		},
@@ -53,12 +54,12 @@ func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime
 func TestRunnerCancelInstanceRunsCancelActions(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	var ran []string
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"notify": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"notify": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "notify")
 			return nil, nil
 		}),
-		"boom": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"boom": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "boom")
 			return nil, errors.New("cancel action failed on purpose")
 		}),

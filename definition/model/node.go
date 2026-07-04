@@ -1,4 +1,4 @@
-package definition
+package model
 
 import "github.com/zakyalvan/krtlwrkflw/action"
 
@@ -41,11 +41,11 @@ type WaitFields struct {
 	DeadlineDuration string
 	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
 	DeadlineFlow string
-	// DeadlineAction is the name of the ServiceAction to invoke on deadline breach.
+	// DeadlineAction is the name of the action.Action to invoke on deadline breach.
 	DeadlineAction string
 	// ReminderEvery is an expr-lang duration expression for the reminder interval (string → time.ParseDuration, e.g. "24h"; number → seconds; not ISO-8601).
 	ReminderEvery string
-	// ReminderAction is the name of the ServiceAction to invoke for each reminder.
+	// ReminderAction is the name of the action.Action to invoke for each reminder.
 	ReminderAction string
 }
 
@@ -66,9 +66,9 @@ type ActivityFields struct {
 	RetryPolicy *RetryPolicy
 	// RecoveryFlow is the ID of the sequence flow to take when retries are exhausted.
 	RecoveryFlow string
-	// CompensationAction is the name of the ServiceAction to invoke during rollback.
+	// CompensationAction is the name of the action.Action to invoke during rollback.
 	CompensationAction string
-	// CancelHandler is the optional ServiceAction to run when this node is interrupted.
+	// CancelHandler is the optional action.Action to run when this node is interrupted.
 	CancelHandler string
 }
 
@@ -81,9 +81,9 @@ func (a ActivityFields) recoveryFlow() string { return a.RecoveryFlow }
 type TaskAction struct {
 	// Action is the service-action name; empty means default to the node id.
 	Action string
-	// Inline is a node-local ServiceAction taking precedence over name lookup.
+	// Inline is a node-local action.Action taking precedence over name lookup.
 	// It is never serialized (re-attached in code on rehydration).
-	Inline action.ServiceAction
+	Inline action.Action
 }
 
-func (t TaskAction) taskAction() (string, action.ServiceAction) { return t.Action, t.Inline }
+func (t TaskAction) taskAction() (string, action.Action) { return t.Action, t.Inline }

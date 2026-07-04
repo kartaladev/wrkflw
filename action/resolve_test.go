@@ -7,22 +7,22 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 )
 
-func act(tag string) action.ServiceAction {
-	return action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+func act(tag string) action.Action {
+	return action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 		return map[string]any{"tag": tag}, nil
 	})
 }
 
 func TestResolve(t *testing.T) {
-	scoped := action.NewMapCatalog(map[string]action.ServiceAction{"a": act("scoped")})
-	global := action.NewMapCatalog(map[string]action.ServiceAction{"a": act("global"), "b": act("global-b")})
+	scoped := action.NewMapCatalog(map[string]action.Action{"a": act("scoped")})
+	global := action.NewMapCatalog(map[string]action.Action{"a": act("global"), "b": act("global-b")})
 
 	tests := map[string]struct {
 		scoped, global action.Catalog
 		name           string
-		assert         func(t *testing.T, got action.ServiceAction, ok bool)
+		assert         func(t *testing.T, got action.Action, ok bool)
 	}{
-		"scoped wins over global": {scoped, global, "a", func(t *testing.T, got action.ServiceAction, ok bool) {
+		"scoped wins over global": {scoped, global, "a", func(t *testing.T, got action.Action, ok bool) {
 			if !ok {
 				t.Fatal("want ok")
 			}
@@ -31,7 +31,7 @@ func TestResolve(t *testing.T) {
 				t.Fatalf("want scoped, got %v", out["tag"])
 			}
 		}},
-		"falls back to global": {scoped, global, "b", func(t *testing.T, got action.ServiceAction, ok bool) {
+		"falls back to global": {scoped, global, "b", func(t *testing.T, got action.Action, ok bool) {
 			if !ok {
 				t.Fatal("want ok")
 			}
@@ -40,22 +40,22 @@ func TestResolve(t *testing.T) {
 				t.Fatalf("want global-b, got %v", out["tag"])
 			}
 		}},
-		"nil scoped uses global": {nil, global, "a", func(t *testing.T, _ action.ServiceAction, ok bool) {
+		"nil scoped uses global": {nil, global, "a", func(t *testing.T, _ action.Action, ok bool) {
 			if !ok {
 				t.Fatal("want ok from global")
 			}
 		}},
-		"nil global, scoped only": {scoped, nil, "a", func(t *testing.T, _ action.ServiceAction, ok bool) {
+		"nil global, scoped only": {scoped, nil, "a", func(t *testing.T, _ action.Action, ok bool) {
 			if !ok {
 				t.Fatal("want ok from scoped")
 			}
 		}},
-		"both nil": {nil, nil, "a", func(t *testing.T, _ action.ServiceAction, ok bool) {
+		"both nil": {nil, nil, "a", func(t *testing.T, _ action.Action, ok bool) {
 			if ok {
 				t.Fatal("want miss")
 			}
 		}},
-		"miss everywhere": {scoped, global, "zzz", func(t *testing.T, _ action.ServiceAction, ok bool) {
+		"miss everywhere": {scoped, global, "zzz", func(t *testing.T, _ action.Action, ok bool) {
 			if ok {
 				t.Fatal("want miss")
 			}

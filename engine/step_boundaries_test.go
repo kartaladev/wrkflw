@@ -8,9 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -18,10 +19,10 @@ import (
 //
 //	Start → UserTask("work") → End
 //	               ↑ interrupting message boundary "cancel" → escalate → End2
-func interruptingMessageBoundaryDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func interruptingMessageBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-bnd-msg-int", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("work", nil),
 			event.NewBoundary("bnd-msg", "work", event.WithBoundaryMessage("cancel", "")),
@@ -29,7 +30,7 @@ func interruptingMessageBoundaryDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-escalate", Source: "bnd-msg", Target: "escalate"},
@@ -127,10 +128,10 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 	// Definition: UserTask("work") with a message boundary "cancel" correlated on
 	// the instance variable orderId (expr expression). Start vars set orderId=42,
 	// so the resolved correlation key is "42".
-	newDef := func() *definition.ProcessDefinition {
-		return &definition.ProcessDefinition{
+	newDef := func() *model.ProcessDefinition {
+		return &model.ProcessDefinition{
 			ID: "p-bnd-msg-corr", Version: 1,
-			Nodes: []definition.Node{
+			Nodes: []model.Node{
 				event.NewStart("start"),
 				activity.NewUserTask("work", nil),
 				event.NewBoundary("bnd-msg", "work",
@@ -139,7 +140,7 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 				event.NewEnd("end"),
 				event.NewEnd("end2"),
 			},
-			Flows: []definition.SequenceFlow{
+			Flows: []flow.SequenceFlow{
 				{ID: "f-start", Source: "start", Target: "work"},
 				{ID: "f-work-end", Source: "work", Target: "end"},
 				{ID: "f-bnd-escalate", Source: "bnd-msg", Target: "escalate"},
@@ -204,10 +205,10 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 //
 //	Start → UserTask("work") → End
 //	               ↑ non-interrupting message boundary "notify" → notify-svc → End2
-func nonInterruptingMessageBoundaryDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func nonInterruptingMessageBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-bnd-msg-nonint", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("work", nil),
 			event.NewBoundary("bnd-msg", "work",
@@ -216,7 +217,7 @@ func nonInterruptingMessageBoundaryDef() *definition.ProcessDefinition {
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f-start", Source: "start", Target: "work"},
 			{ID: "f-work-end", Source: "work", Target: "end"},
 			{ID: "f-bnd-notify", Source: "bnd-msg", Target: "notify-svc"},

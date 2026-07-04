@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -19,29 +20,29 @@ import (
 
 // panicTaskDef builds start → task("p") → end with no retry policy, so a single
 // action failure drives the instance terminal (StatusFailed).
-func panicTaskDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func panicTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "panic-test", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("task", activity.WithActionName("p")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
 	}
 }
 
-// TestRunnerRecoversActionPanic asserts that a ServiceAction that panics does NOT
+// TestRunnerRecoversActionPanic asserts that a action.Action that panics does NOT
 // crash the runner; the panic is recovered and converted to an action failure, so
 // the instance reaches a normal terminal state (StatusFailed) instead of taking
 // down the whole replica with every in-flight instance.
 func TestRunnerRecoversActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"p": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"p": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			panic("action blew up")
 		}),
 	})
@@ -59,8 +60,8 @@ func TestRunnerRecoversActionPanic(t *testing.T) {
 // StatusTerminated (ADR-0028: cancellation reports success regardless).
 func TestRunnerRecoversCancelActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"boom": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"boom": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			panic("cancel action blew up")
 		}),
 	})

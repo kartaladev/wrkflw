@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
@@ -22,16 +23,16 @@ import (
 // receiverDef returns a minimal process that parks on a ReceiveTask awaiting "OrderPlaced":
 //
 //	start → receive("OrderPlaced") → end
-func receiverDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func receiverDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "receiver",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewReceiveTask("recv-order", "OrderPlaced"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv-order"},
 			{ID: "f2", Source: "recv-order", Target: "end"},
 		},
@@ -41,16 +42,16 @@ func receiverDef() *definition.ProcessDefinition {
 // senderDef returns a minimal process that sends "OrderPlaced" via a SendTask:
 //
 //	start → send("OrderPlaced") → end
-func senderDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func senderDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "sender",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSendTask("send-order", "OrderPlaced"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "send-order"},
 			{ID: "f2", Source: "send-order", Target: "end"},
 		},

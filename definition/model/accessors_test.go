@@ -1,4 +1,4 @@
-package definition_test
+package model_test
 
 import (
 	"encoding/json"
@@ -8,23 +8,24 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 func TestRetryPolicyOf(t *testing.T) {
-	p := &definition.RetryPolicy{MaxAttempts: 5}
+	p := &model.RetryPolicy{MaxAttempts: 5}
 	n := activity.NewServiceTask("a", activity.WithActionName("act"), activity.WithRetryPolicy(p))
-	if definition.RetryPolicyOf(n) != p {
+	if model.RetryPolicyOf(n) != p {
 		t.Fatal("RetryPolicyOf did not return the activity's policy")
 	}
-	if definition.RetryPolicyOf(event.NewStart("s")) != nil {
+	if model.RetryPolicyOf(event.NewStart("s")) != nil {
 		t.Fatal("non-activity must return nil")
 	}
 	// Test all activity kinds
-	cases := []definition.Node{
+	cases := []model.Node{
 		activity.NewUserTask("ut", nil, activity.WithRetryPolicy(p)),
 		activity.NewReceiveTask("rt", "msg", activity.WithRetryPolicy(p)),
 		activity.NewSendTask("st", "msg", activity.WithRetryPolicy(p)),
@@ -33,10 +34,10 @@ func TestRetryPolicyOf(t *testing.T) {
 		activity.NewCallActivity("ca", "ref", activity.WithRetryPolicy(p)),
 	}
 	for _, c := range cases {
-		require.Equal(t, p, definition.RetryPolicyOf(c), "kind %v should return policy", c.Kind())
+		require.Equal(t, p, model.RetryPolicyOf(c), "kind %v should return policy", c.Kind())
 	}
 	// Non-activity kinds should return nil
-	nonActivities := []definition.Node{
+	nonActivities := []model.Node{
 		event.NewStart("s"),
 		event.NewEnd("e"),
 		event.NewTerminateEnd("te"),
@@ -51,14 +52,14 @@ func TestRetryPolicyOf(t *testing.T) {
 		event.NewEventSubProcess("esp", nil),
 	}
 	for _, c := range nonActivities {
-		require.Nil(t, definition.RetryPolicyOf(c), "kind %v should return nil", c.Kind())
+		require.Nil(t, model.RetryPolicyOf(c), "kind %v should return nil", c.Kind())
 	}
 }
 
 func TestDeadlineOf(t *testing.T) {
 	cases := []struct {
 		name                       string
-		node                       definition.Node
+		node                       model.Node
 		wantDur, wantFlow, wantAct string
 	}{
 		{
@@ -92,7 +93,7 @@ func TestDeadlineOf(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dur, flow, act := definition.DeadlineOf(tc.node)
+			dur, flow, act := model.DeadlineOf(tc.node)
 			assert.Equal(t, tc.wantDur, dur)
 			assert.Equal(t, tc.wantFlow, flow)
 			assert.Equal(t, tc.wantAct, act)
@@ -101,42 +102,42 @@ func TestDeadlineOf(t *testing.T) {
 }
 
 func TestReminderOf(t *testing.T) {
-	p := &definition.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
+	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
 	n := activity.NewUserTask("ut", nil,
 		activity.WithRetryPolicy(p),
 		activity.WithReminder("PT4H", "send-reminder"),
 	)
-	every, act := definition.ReminderOf(n)
+	every, act := model.ReminderOf(n)
 	assert.Equal(t, "PT4H", every)
 	assert.Equal(t, "send-reminder", act)
 
 	// Non-activity returns empty
-	every, act = definition.ReminderOf(event.NewStart("s"))
+	every, act = model.ReminderOf(event.NewStart("s"))
 	assert.Equal(t, "", every)
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
 	ice := event.NewCatch("ice", event.WithCatchReminder("PT2H", "ice-remind"))
-	every, act = definition.ReminderOf(ice)
+	every, act = model.ReminderOf(ice)
 	assert.Equal(t, "PT2H", every)
 	assert.Equal(t, "ice-remind", act)
 }
 
 func TestActionOf(t *testing.T) {
-	assert.Equal(t, "charge-card", definition.ActionOf(activity.NewServiceTask("st", activity.WithActionName("charge-card"))))
-	assert.Equal(t, "apply-discount", definition.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithActionName("apply-discount"))))
-	assert.Equal(t, "", definition.ActionOf(activity.NewUserTask("ut", nil)))
-	assert.Equal(t, "", definition.ActionOf(event.NewStart("s")))
+	assert.Equal(t, "charge-card", model.ActionOf(activity.NewServiceTask("st", activity.WithActionName("charge-card"))))
+	assert.Equal(t, "apply-discount", model.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithActionName("apply-discount"))))
+	assert.Equal(t, "", model.ActionOf(activity.NewUserTask("ut", nil)))
+	assert.Equal(t, "", model.ActionOf(event.NewStart("s")))
 }
 
 // TestProcessDefinitionJSONRoundTrip verifies that Marshal(def) then Unmarshal
 // produces a definition equal to the original.
 func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
-	p := &definition.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
-	original := &definition.ProcessDefinition{
+	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
+	original := &model.ProcessDefinition{
 		ID:      "order",
 		Version: 2,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start", event.WithName("Start")),
 			activity.NewServiceTask("charge",
 				activity.WithActionName("charge-card"),
@@ -164,7 +165,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 			event.NewErrorEnd("err-end", "ERR_FATAL"),
 			event.NewTerminateEnd("term-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
 			{ID: "f2", Source: "charge", Target: "approve"},
 			{ID: "f3", Source: "approve", Target: "xor"},
@@ -181,7 +182,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	data, err := json.Marshal(original)
 	require.NoError(t, err, "marshal should not fail")
 
-	var restored definition.ProcessDefinition
+	var restored model.ProcessDefinition
 	require.NoError(t, json.Unmarshal(data, &restored), "unmarshal should not fail")
 
 	// Verify key structural properties
@@ -250,7 +251,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 		"flows": []
 	}`
 
-	var def definition.ProcessDefinition
+	var def model.ProcessDefinition
 	require.NoError(t, json.Unmarshal([]byte(legacyJSON), &def))
 
 	assert.Equal(t, "legacy", def.ID)

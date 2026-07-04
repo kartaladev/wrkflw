@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // Compile-time assertion: CachingDefinitionRegistry satisfies DefinitionRegistry.
@@ -17,7 +17,7 @@ var _ DefinitionRegistry = (*CachingDefinitionRegistry)(nil)
 
 // cacheEntry holds a cached definition and the wall-clock time at which it expires.
 type cacheEntry struct {
-	def       *definition.ProcessDefinition
+	def       *model.ProcessDefinition
 	expiresAt time.Time
 }
 
@@ -82,7 +82,7 @@ func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration,
 // TTL expiry) the backing registry is consulted exactly once per key (concurrent
 // callers share the same in-flight request via singleflight). Errors from the
 // backing registry are returned as-is and never cached.
-func (c *CachingDefinitionRegistry) Lookup(ctx context.Context, defRef string) (*definition.ProcessDefinition, error) {
+func (c *CachingDefinitionRegistry) Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error) {
 	now := c.clk.Now()
 
 	// Fast path: cache hit within TTL — no lock contention on the singleflight group.
@@ -123,5 +123,5 @@ func (c *CachingDefinitionRegistry) Lookup(ctx context.Context, defRef string) (
 	if err != nil {
 		return nil, err
 	}
-	return v.(*definition.ProcessDefinition), nil
+	return v.(*model.ProcessDefinition), nil
 }

@@ -40,7 +40,7 @@ are propagated **as-is** so the transport layer can classify them.
 |---|---|---|---|
 | `StartInstance` | `StartInstanceRequest` | `(engine.InstanceState, error)` | Resolve the definition by `DefRef`, start a new instance, return the resulting state. |
 | `GetInstance` | `instanceID string` | `(engine.InstanceState, error)` | Load the current state of an existing instance. |
-| `GetInstanceWithDefinition` | `instanceID string` | `(engine.InstanceState, *model.ProcessDefinition, error)` | Load state **and** resolve its definition (for building a snapshot / actionable view). |
+| `GetInstanceWithDefinition` | `instanceID string` | `(engine.InstanceState, *definition.ProcessDefinition, error)` | Load state **and** resolve its definition (for building a snapshot / actionable view). |
 | `DeliverSignal` | `DeliverSignalRequest` | `(engine.InstanceState, error)` | Deliver a `SignalReceived` trigger to a parked instance. `ErrConflict` if terminal. |
 | `DeliverMessage` | `DeliverMessageRequest` | `error` | Route a message to the waiting instance via the runner's waiter table. |
 | `ClaimTask` | `ClaimTaskRequest` | `(engine.InstanceState, error)` | Authorize + claim a human task, deliver the trigger, return state. |
@@ -72,7 +72,7 @@ The six required collaborators must be wired by hand (no DI container is imposed
 |---|---|---|---|
 | 1 | `runner` | `*runtime.Runner` | Drives execution — `Run` / `Deliver` / `DeliverMessage` / `ResolveIncident` / `CancelInstance`. |
 | 2 | `tasks` | `*runtime.TaskService` | Authorizes human-task ops and returns the resulting engine trigger (`Claim`/`Complete`/`Reassign`). |
-| 3 | `reg` | `runtime.DefinitionRegistry` | Resolves `DefRef` strings to `*model.ProcessDefinition`. |
+| 3 | `reg` | `runtime.DefinitionRegistry` | Resolves `DefRef` strings to `*definition.ProcessDefinition`. |
 | 4 | `store` | `runtime.Store` | Loads instance state for `GetInstance` and definition resolution. |
 | 5 | `lister` | `runtime.InstanceLister` | Enumerates instance summaries for `ListInstances`. |
 | 6 | `taskStore` | `humantask.TaskStore` | Resolves the owning instance ID from a task token in task-lifecycle ops. |
@@ -94,7 +94,7 @@ az, _, _ := casbinauthz.NewCasbinAuthorizer(
     casbinauthz.FromStrings(modelText, policyText))
 
 // 3. Build the runner:
-reg := runtime.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{...})
+reg := runtime.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{...})
 cat := action.NewMapCatalog(map[string]action.ServiceAction{...})
 runner, _ := runtime.NewRunner(cat, pgStore, runtime.WithDefinitions(reg))
 

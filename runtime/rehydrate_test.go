@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -23,12 +23,12 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	mts := kernel.NewMemTimerStore()
 	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
 	def := runtimetest.TimerIntermediateDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		def.ID + ":1": def, // key format "DefID:DefVersion" — match def.ID/def.Version
 	})
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})

@@ -1,4 +1,4 @@
-package definition_test
+package model_test
 
 import (
 	"testing"
@@ -6,15 +6,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 func TestValidate(t *testing.T) {
 	tests := map[string]struct {
-		def    *definition.ProcessDefinition
+		def    *model.ProcessDefinition
 		assert func(t *testing.T, err error)
 	}{
 		"valid linear": {
@@ -24,126 +25,126 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"no start event": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{event.NewEnd("end")},
+				Nodes: []model.Node{event.NewEnd("end")},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrNoStartEvent)
+				require.ErrorIs(t, err, model.ErrNoStartEvent)
 			},
 		},
 		"multiple start events": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("s1"),
 					event.NewStart("s2"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "s1", Target: "end"},
 					{ID: "f2", Source: "s2", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMultipleStartEvents)
+				require.ErrorIs(t, err, model.ErrMultipleStartEvents)
 			},
 		},
 		"dangling flow target": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ghost"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrDanglingFlow)
+				require.ErrorIs(t, err, model.ErrDanglingFlow)
 			},
 		},
 		"dead end non-end node": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("x")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					// task has no outgoing → dead end
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrDeadEnd)
+				require.ErrorIs(t, err, model.ErrDeadEnd)
 			},
 		},
 		"start has incoming": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("x")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "start"}, // illegal: loops back to start
 					{ID: "f3", Source: "task", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrStartHasIncoming)
+				require.ErrorIs(t, err, model.ErrStartHasIncoming)
 			},
 		},
 		"end has outgoing": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
 					activity.NewServiceTask("task", activity.WithActionName("x")),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
 					{ID: "f2", Source: "end", Target: "task"}, // illegal: end has outgoing
 					{ID: "f3", Source: "task", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrEndHasOutgoing)
+				require.ErrorIs(t, err, model.ErrEndHasOutgoing)
 			},
 		},
 		"dangling flow source": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "ghost", Target: "end"}, // source node missing
 					{ID: "f2", Source: "start", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrDanglingFlow)
+				require.ErrorIs(t, err, model.ErrDanglingFlow)
 			},
 		},
 		"condition on parallel gateway outgoing": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
 					activity.NewServiceTask("b", activity.WithActionName("b")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "fork"},
 					{ID: "f2", Source: "fork", Target: "a", Condition: "x > 1"}, // illegal
 					{ID: "f3", Source: "fork", Target: "b"},
@@ -152,20 +153,20 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrConditionNotAllowed)
+				require.ErrorIs(t, err, model.ErrConditionNotAllowed)
 			},
 		},
 		"default on parallel gateway outgoing": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
 					activity.NewServiceTask("b", activity.WithActionName("b")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "fork"},
 					{ID: "f2", Source: "fork", Target: "a", IsDefault: true}, // illegal
 					{ID: "f3", Source: "fork", Target: "b"},
@@ -174,20 +175,20 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrDefaultNotAllowed)
+				require.ErrorIs(t, err, model.ErrDefaultNotAllowed)
 			},
 		},
 		"multiple defaults on exclusive gateway": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
 					activity.NewServiceTask("b", activity.WithActionName("b")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
 					{ID: "f2", Source: "xor", Target: "a", IsDefault: true},
 					{ID: "f3", Source: "xor", Target: "b", IsDefault: true}, // illegal: two defaults
@@ -196,21 +197,21 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMultipleDefaults)
+				require.ErrorIs(t, err, model.ErrMultipleDefaults)
 			},
 		},
 		// Event-based gateway rules
 		"valid event-based gateway targeting catch events": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
 					event.NewCatch("sig-catch", event.WithCatchSignal("sig.a")),
 					event.NewCatch("msg-catch", event.WithCatchMessage("msg.b", "")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ebg"},
 					{ID: "f2", Source: "ebg", Target: "sig-catch"},
 					{ID: "f3", Source: "ebg", Target: "msg-catch"},
@@ -223,16 +224,16 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"event-based gateway flow targets non-catch node": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
 					event.NewCatch("sig-catch", event.WithCatchSignal("sig.a")),
 					activity.NewServiceTask("task", activity.WithActionName("do-work")), // non-catch
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ebg"},
 					{ID: "f2", Source: "ebg", Target: "sig-catch"},
 					{ID: "f3", Source: "ebg", Target: "task"}, // illegal: non-catch target
@@ -241,14 +242,14 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrEventGatewayTarget)
+				require.ErrorIs(t, err, model.ErrEventGatewayTarget)
 			},
 		},
 		// Boundary event attachment rules
 		"valid boundary attached to service task": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("do-work")),
 					// NonInterrupting omitted (false) = interrupting, the default.
@@ -256,7 +257,7 @@ func TestValidate(t *testing.T) {
 					event.NewEnd("end"),
 					event.NewEnd("cancel-end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "end"},
 					{ID: "f3", Source: "boundary", Target: "cancel-end"},
@@ -267,26 +268,26 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"boundary attached to missing node": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
 					event.NewBoundary("boundary", "ghost", event.WithBoundarySignal("cancel")),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
 					{ID: "f2", Source: "boundary", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrBoundaryAttachment)
+				require.ErrorIs(t, err, model.ErrBoundaryAttachment)
 			},
 		},
 		"boundary attached to non-activity node": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -295,7 +296,7 @@ func TestValidate(t *testing.T) {
 					// boundary attached to a gateway — not an activity
 					event.NewBoundary("boundary", "xor", event.WithBoundarySignal("cancel")),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
 					{ID: "f2", Source: "xor", Target: "a", Condition: "x > 0"},
 					{ID: "f3", Source: "xor", Target: "b", IsDefault: true},
@@ -305,20 +306,20 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrBoundaryAttachment)
+				require.ErrorIs(t, err, model.ErrBoundaryAttachment)
 			},
 		},
 		"valid exclusive gateway with condition and default": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
 					activity.NewServiceTask("b", activity.WithActionName("b")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
 					{ID: "f2", Source: "xor", Target: "a", Condition: "x > 1"},
 					{ID: "f3", Source: "xor", Target: "b", IsDefault: true},
@@ -332,9 +333,9 @@ func TestValidate(t *testing.T) {
 		},
 		// Mixed split+join gateway rules (ADR-0014)
 		"mixed gateway both splits and joins": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
 					activity.NewServiceTask("b", activity.WithActionName("b")),
@@ -343,7 +344,7 @@ func TestValidate(t *testing.T) {
 					activity.NewServiceTask("d", activity.WithActionName("d")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "a"},
 					{ID: "f0b", Source: "start", Target: "b"}, // start splits to a and b
 					{ID: "f1", Source: "a", Target: "gw"},
@@ -355,13 +356,13 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMixedGateway)
+				require.ErrorIs(t, err, model.ErrMixedGateway)
 			},
 		},
 		"pure split gateway is valid": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("gw"),
 					activity.NewServiceTask("c", activity.WithActionName("c")),
@@ -369,7 +370,7 @@ func TestValidate(t *testing.T) {
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "gw"},
 					{ID: "f2", Source: "gw", Target: "c"},
 					{ID: "f3", Source: "gw", Target: "d"},
@@ -383,29 +384,29 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"unreachable orphan node": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("t")),
 					activity.NewServiceTask("orphan", activity.WithActionName("o")),
 					event.NewEnd("orphan-end"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "end"},
 					{ID: "f3", Source: "orphan", Target: "orphan-end"}, // orphan unreachable from start
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrUnreachableNode)
+				require.ErrorIs(t, err, model.ErrUnreachableNode)
 			},
 		},
 		"node reachable via boundary on reachable host is valid": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("t")),
 					event.NewBoundary("bnd", "task", event.WithBoundaryTimer("PT1M")),
@@ -413,7 +414,7 @@ func TestValidate(t *testing.T) {
 					event.NewEnd("hend"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "end"},
 					{ID: "f3", Source: "bnd", Target: "handler"}, // reachable only via boundary
@@ -425,9 +426,9 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"node reachable only via boundary on unreachable host is unreachable": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("t")),
 					event.NewEnd("end"),
@@ -436,7 +437,7 @@ func TestValidate(t *testing.T) {
 					activity.NewServiceTask("handler", activity.WithActionName("h")),
 					event.NewEnd("hend"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "end"},
 					{ID: "f3", Source: "ghost", Target: "end"},
@@ -445,26 +446,26 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrUnreachableNode)
+				require.ErrorIs(t, err, model.ErrUnreachableNode)
 			},
 		},
 		"zero start events does not run reachability": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{event.NewEnd("end")},
+				Nodes: []model.Node{event.NewEnd("end")},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrNoStartEvent)
-				require.NotErrorIs(t, err, definition.ErrUnreachableNode)
+				require.ErrorIs(t, err, model.ErrNoStartEvent)
+				require.NotErrorIs(t, err, model.ErrUnreachableNode)
 			},
 		},
 		"pure join gateway is valid": {
 			// A parallel join needs a real parallel fork upstream: a start event
 			// follows only its first outgoing flow (moveAlongSingleFlow), so
 			// "start -> a, b" would never activate b and the join would deadlock.
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -472,7 +473,7 @@ func TestValidate(t *testing.T) {
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "fork"},
 					{ID: "f1", Source: "fork", Target: "a"},
 					{ID: "f2", Source: "fork", Target: "b"},
@@ -486,9 +487,9 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"parallel join fed by exclusive split is unpaired": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("split"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -496,7 +497,7 @@ func TestValidate(t *testing.T) {
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
 					{ID: "f1", Source: "split", Target: "a"},
 					{ID: "f2", Source: "split", Target: "b"},
@@ -506,13 +507,13 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrUnpairedJoin)
+				require.ErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
 		"parallel join fed by inclusive split is paired": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewInclusive("split"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -520,7 +521,7 @@ func TestValidate(t *testing.T) {
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
 					{ID: "f1", Source: "split", Target: "a"},
 					{ID: "f2", Source: "split", Target: "b"},
@@ -534,9 +535,9 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"multiple starts skips pairing (reachability ill-defined)": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("s1"),
 					event.NewStart("s2"),
 					gateway.NewExclusive("split"),
@@ -546,7 +547,7 @@ func TestValidate(t *testing.T) {
 					event.NewEnd("end"),
 					event.NewEnd("end2"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f0", Source: "s1", Target: "split"},
 					{ID: "f0b", Source: "s2", Target: "end2"},
 					{ID: "f1", Source: "split", Target: "a"},
@@ -557,16 +558,16 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMultipleStartEvents)
+				require.ErrorIs(t, err, model.ErrMultipleStartEvents)
 				// Pairing is skipped when the start count is ill-defined, so the
 				// otherwise-unpaired join is not reported on an already-invalid def.
-				require.NotErrorIs(t, err, definition.ErrUnpairedJoin)
+				require.NotErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
 		"loop containing a properly forked parallel join is valid": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("merge"), // loop-back merge (pure join)
 					gateway.NewParallel("fork"),
@@ -576,7 +577,7 @@ func TestValidate(t *testing.T) {
 					gateway.NewExclusive("loop"), // loop-back decision (pure split)
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "merge"},
 					{ID: "f0b", Source: "merge", Target: "fork"},
 					{ID: "f1", Source: "fork", Target: "a"},
@@ -593,9 +594,9 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"unreachable parallel join reports only unreachable, not unpaired": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("t")),
 					event.NewEnd("end"),
@@ -607,7 +608,7 @@ func TestValidate(t *testing.T) {
 					gateway.NewParallel("oj"),
 					event.NewEnd("oend"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "end"},
 					{ID: "f3", Source: "osplit", Target: "ox"},
@@ -618,14 +619,14 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrUnreachableNode)
-				require.NotErrorIs(t, err, definition.ErrUnpairedJoin) // unreachable join is skipped
+				require.ErrorIs(t, err, model.ErrUnreachableNode)
+				require.NotErrorIs(t, err, model.ErrUnpairedJoin) // unreachable join is skipped
 			},
 		},
 		"inclusive join fed by exclusive split is not flagged (rule is parallel-only)": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("split"),
 					activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -633,7 +634,7 @@ func TestValidate(t *testing.T) {
 					gateway.NewInclusive("j"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f0", Source: "start", Target: "split"},
 					{ID: "f1", Source: "split", Target: "a"},
 					{ID: "f2", Source: "split", Target: "b"},
@@ -643,41 +644,41 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.NotErrorIs(t, err, definition.ErrUnpairedJoin)
+				require.NotErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
 		// CompensateRef validation rules
 		"compensation throw with dangling CompensateRef is rejected": {
 			// KindIntermediateThrowEvent with CompensateRef pointing to a non-existent node.
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("do-work")),
 					event.NewThrow("comp-throw", event.WithCompensateRef("missing-node")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "comp-throw"},
 					{ID: "f3", Source: "comp-throw", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrCompensateRefNotFound)
+				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
 			},
 		},
 		"compensation throw with valid CompensateRef is accepted": {
 			// KindIntermediateThrowEvent with CompensateRef pointing to a real node.
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("do-work"), activity.WithCompensation("undo-work")),
 					event.NewThrow("comp-throw", event.WithCompensateRef("task")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "task"},
 					{ID: "f2", Source: "task", Target: "comp-throw"},
 					{ID: "f3", Source: "comp-throw", Target: "end"},
@@ -690,14 +691,14 @@ func TestValidate(t *testing.T) {
 		"normal intermediate throw event with no CompensateRef is unaffected": {
 			// KindIntermediateThrowEvent with empty CompensateRef (a normal signal throw)
 			// must not trigger ErrCompensateRefNotFound.
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewThrow("throw", event.WithThrowSignal("sig.done")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "throw"},
 					{ID: "f2", Source: "throw", Target: "end"},
 				},
@@ -709,54 +710,54 @@ func TestValidate(t *testing.T) {
 		"dangling CompensateRef inside a sub-process is rejected (recursion)": {
 			// The CompensateRef rule lives in the recursive validate(), so a dangling
 			// ref inside a nested sub-process definition must also be caught.
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewSubProcess("sp", &definition.ProcessDefinition{
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
 						ID: "inner", Version: 1,
-						Nodes: []definition.Node{
+						Nodes: []model.Node{
 							event.NewStart("ns"),
 							event.NewThrow("nthrow", event.WithCompensateRef("no-such")),
 							event.NewEnd("ne"),
 						},
-						Flows: []definition.SequenceFlow{
+						Flows: []flow.SequenceFlow{
 							{ID: "nf1", Source: "ns", Target: "nthrow"},
 							{ID: "nf2", Source: "nthrow", Target: "ne"},
 						},
 					}),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrCompensateRefNotFound)
+				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
 			},
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			tc.assert(t, definition.Validate(tc.def))
+			tc.assert(t, model.Validate(tc.def))
 		})
 	}
 }
 
 // validSubprocessDef returns a well-formed embedded subprocess definition
 // (start → service task → end) for use in outer process tests.
-func validSubprocessDef(id string) *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func validSubprocessDef(id string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      id,
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("ns-start"),
 			activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
 			event.NewEnd("ns-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "nf1", Source: "ns-start", Target: "ns-task"},
 			{ID: "nf2", Source: "ns-task", Target: "ns-end"},
 		},
@@ -765,18 +766,18 @@ func validSubprocessDef(id string) *definition.ProcessDefinition {
 
 func TestValidateSubProcess(t *testing.T) {
 	tests := map[string]struct {
-		def    *definition.ProcessDefinition
+		def    *model.ProcessDefinition
 		assert func(t *testing.T, err error)
 	}{
 		"valid subprocess with valid nested definition": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewSubProcess("sp", validSubprocessDef("inner")),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
 				},
@@ -786,53 +787,53 @@ func TestValidateSubProcess(t *testing.T) {
 			},
 		},
 		"subprocess with nil Subprocess pointer is invalid": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewSubProcess("sp", nil),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMissingSubprocess)
+				require.ErrorIs(t, err, model.ErrMissingSubprocess)
 			},
 		},
 		"event-subprocess with nil Subprocess pointer is invalid": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEventSubProcess("esp", nil),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "esp"},
 					{ID: "f2", Source: "esp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMissingSubprocess)
+				require.ErrorIs(t, err, model.ErrMissingSubprocess)
 			},
 		},
 		"subprocess whose nested definition is malformed (start-has-incoming) propagates error": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewSubProcess("sp", &definition.ProcessDefinition{
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "bad-inner",
 						Version: 1,
-						Nodes: []definition.Node{
+						Nodes: []model.Node{
 							event.NewStart("ns-start"),
 							activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
 							event.NewEnd("ns-end"),
 						},
-						Flows: []definition.SequenceFlow{
+						Flows: []flow.SequenceFlow{
 							{ID: "nf1", Source: "ns-start", Target: "ns-task"},
 							{ID: "nf2", Source: "ns-task", Target: "ns-end"},
 							// illegal: flow into the start event
@@ -841,52 +842,52 @@ func TestValidateSubProcess(t *testing.T) {
 					}),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
 				// The nested error is propagated and is unwrappable.
-				require.ErrorIs(t, err, definition.ErrStartHasIncoming)
+				require.ErrorIs(t, err, model.ErrStartHasIncoming)
 			},
 		},
 		"subprocess whose nested definition is malformed (dangling flow) propagates error": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewSubProcess("sp", &definition.ProcessDefinition{
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "bad-inner-2",
 						Version: 1,
-						Nodes: []definition.Node{
+						Nodes: []model.Node{
 							event.NewStart("ns-start"),
 							event.NewEnd("ns-end"),
 						},
-						Flows: []definition.SequenceFlow{
+						Flows: []flow.SequenceFlow{
 							{ID: "nf1", Source: "ns-start", Target: "ghost-node"}, // dangling
 						},
 					}),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrDanglingFlow)
+				require.ErrorIs(t, err, model.ErrDanglingFlow)
 			},
 		},
 		"call-activity with non-empty DefRef is valid": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewCallActivity("ca", "some-external-process"),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ca"},
 					{ID: "f2", Source: "ca", Target: "end"},
 				},
@@ -896,31 +897,31 @@ func TestValidateSubProcess(t *testing.T) {
 			},
 		},
 		"call-activity with empty DefRef is invalid": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewCallActivity("ca", ""),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "ca"},
 					{ID: "f2", Source: "ca", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMissingDefRef)
+				require.ErrorIs(t, err, model.ErrMissingDefRef)
 			},
 		},
 		"mixed gateway nested inside subprocess propagates ErrMixedGateway": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewSubProcess("sp", &definition.ProcessDefinition{
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "inner-mixed",
 						Version: 1,
-						Nodes: []definition.Node{
+						Nodes: []model.Node{
 							event.NewStart("ns-start"),
 							activity.NewServiceTask("na", activity.WithActionName("na")),
 							activity.NewServiceTask("nb", activity.WithActionName("nb")),
@@ -929,7 +930,7 @@ func TestValidateSubProcess(t *testing.T) {
 							activity.NewServiceTask("nd", activity.WithActionName("nd")),
 							event.NewEnd("ns-end"),
 						},
-						Flows: []definition.SequenceFlow{
+						Flows: []flow.SequenceFlow{
 							{ID: "nf0", Source: "ns-start", Target: "na"},
 							{ID: "nf0b", Source: "ns-start", Target: "nb"},
 							{ID: "nf1", Source: "na", Target: "ngw"},
@@ -942,24 +943,24 @@ func TestValidateSubProcess(t *testing.T) {
 					}),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrMixedGateway)
+				require.ErrorIs(t, err, model.ErrMixedGateway)
 			},
 		},
 		"unpaired parallel join nested inside subprocess propagates ErrUnpairedJoin": {
-			def: &definition.ProcessDefinition{
+			def: &model.ProcessDefinition{
 				ID: "outer", Version: 1,
-				Nodes: []definition.Node{
+				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewSubProcess("sp", &definition.ProcessDefinition{
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
 						ID:      "inner-unpaired",
 						Version: 1,
-						Nodes: []definition.Node{
+						Nodes: []model.Node{
 							event.NewStart("ns-start"),
 							gateway.NewExclusive("nsplit"),
 							activity.NewServiceTask("na", activity.WithActionName("na")),
@@ -967,7 +968,7 @@ func TestValidateSubProcess(t *testing.T) {
 							gateway.NewParallel("nj"), // parallel join fed by exclusive split
 							event.NewEnd("ns-end"),
 						},
-						Flows: []definition.SequenceFlow{
+						Flows: []flow.SequenceFlow{
 							{ID: "nf0", Source: "ns-start", Target: "nsplit"},
 							{ID: "nf1", Source: "nsplit", Target: "na"},
 							{ID: "nf2", Source: "nsplit", Target: "nb"},
@@ -978,20 +979,20 @@ func TestValidateSubProcess(t *testing.T) {
 					}),
 					event.NewEnd("end"),
 				},
-				Flows: []definition.SequenceFlow{
+				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrUnpairedJoin)
+				require.ErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			tc.assert(t, definition.Validate(tc.def))
+			tc.assert(t, model.Validate(tc.def))
 		})
 	}
 }
@@ -1002,67 +1003,67 @@ func TestValidateSubProcess(t *testing.T) {
 // InitialInterval).
 func TestValidateRejectsBadRetryPolicy(t *testing.T) {
 	bad := -1.0 // BackoffCoef below 1.0 with a positive interval is invalid
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "p", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("task", activity.WithActionName("a"),
-				activity.WithRetryPolicy(&definition.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}),
+				activity.WithRetryPolicy(&model.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}),
 			),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
 	}
-	err := definition.Validate(def)
-	require.ErrorIs(t, err, definition.ErrInvalidRetryPolicy)
+	err := model.Validate(def)
+	require.ErrorIs(t, err, model.ErrInvalidRetryPolicy)
 }
 
 // TestValidateRejectsRecoveryFlowNotFromNode checks that Validate returns
 // ErrInvalidRecoveryFlow when a node's RecoveryFlow names a flow ID that does
 // not exist or whose Source is not the node itself.
 func TestValidateRejectsRecoveryFlowNotFromNode(t *testing.T) {
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "p", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRecoveryFlow("nope")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
 	}
-	err := definition.Validate(def)
-	require.ErrorIs(t, err, definition.ErrInvalidRecoveryFlow)
+	err := model.Validate(def)
+	require.ErrorIs(t, err, model.ErrInvalidRecoveryFlow)
 }
 
 // TestValidateCyclicSubprocessDoesNotPanic verifies that Validate does not
 // stack-overflow on a hand-constructed cyclic subprocess pointer graph (A→B→A).
 func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
-	defA := &definition.ProcessDefinition{
+	defA := &model.ProcessDefinition{
 		ID: "cyclic-a", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("a-start"),
 			activity.NewSubProcess("a-sub", nil), // nil will be replaced below
 			event.NewEnd("a-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "af1", Source: "a-start", Target: "a-sub"},
 			{ID: "af2", Source: "a-sub", Target: "a-end"},
 		},
 	}
-	defB := &definition.ProcessDefinition{
+	defB := &model.ProcessDefinition{
 		ID: "cyclic-b", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("b-start"),
 			activity.NewSubProcess("b-sub", nil), // nil will be replaced below
 			event.NewEnd("b-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "bf1", Source: "b-start", Target: "b-sub"},
 			{ID: "bf2", Source: "b-sub", Target: "b-end"},
 		},
@@ -1074,25 +1075,25 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 
 	// Must not panic or stack-overflow.
 	require.NotPanics(t, func() {
-		_ = definition.Validate(defA)
+		_ = model.Validate(defA)
 	}, "Validate must not panic on cyclic subprocess graph")
 }
 
 func TestValidateCancelActions(t *testing.T) {
-	base := func(cancel []string) *definition.ProcessDefinition {
-		return &definition.ProcessDefinition{
+	base := func(cancel []string) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
 			ID: "d", Version: 1,
-			Nodes: []definition.Node{
+			Nodes: []model.Node{
 				event.NewStart("start"),
 				event.NewEnd("end"),
 			},
-			Flows:         []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+			Flows:         []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 			CancelActions: cancel,
 		}
 	}
 	cases := []struct {
 		name   string
-		def    *definition.ProcessDefinition
+		def    *model.ProcessDefinition
 		assert func(t *testing.T, err error)
 	}{
 		{
@@ -1109,11 +1110,11 @@ func TestValidateCancelActions(t *testing.T) {
 			name: "empty cancel action name is rejected",
 			def:  base([]string{"notify", ""}),
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, definition.ErrEmptyCancelAction)
+				require.ErrorIs(t, err, model.ErrEmptyCancelAction)
 			},
 		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) { tc.assert(t, definition.Validate(tc.def)) })
+		t.Run(tc.name, func(t *testing.T) { tc.assert(t, model.Validate(tc.def)) })
 	}
 }

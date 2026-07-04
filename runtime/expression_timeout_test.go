@@ -10,10 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -24,17 +25,17 @@ import (
 // The conditional flow's expression calls a process-variable function block(),
 // so a test can drive the gateway evaluation into a runaway by supplying a
 // block() that never returns.
-func gatewayBlockDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func gatewayBlockDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "gw-block", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
 			activity.NewServiceTask("big", activity.WithActionName("noop")),
 			activity.NewServiceTask("small", activity.WithActionName("noop")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
 			{ID: "f2", Source: "xor", Target: "big", Condition: "block()"},
 			{ID: "f3", Source: "xor", Target: "small", IsDefault: true},
@@ -45,8 +46,8 @@ func gatewayBlockDef() *definition.ProcessDefinition {
 }
 
 func noopCatalog() action.Catalog {
-	return action.NewMapCatalog(map[string]action.ServiceAction{
-		"noop": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	return action.NewMapCatalog(map[string]action.Action{
+		"noop": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return in, nil
 		}),
 	})
@@ -99,17 +100,17 @@ func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 
 // exclusiveRuntimeDef mirrors the engine exclusiveDef but with noop actions so a
 // runtime Runner can execute it end-to-end.
-func exclusiveRuntimeDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func exclusiveRuntimeDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "xor-rt", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
 			activity.NewServiceTask("big", activity.WithActionName("noop")),
 			activity.NewServiceTask("small", activity.WithActionName("noop")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
 			{ID: "f2", Source: "xor", Target: "big", Condition: "amount > 100"},
 			{ID: "f3", Source: "xor", Target: "small", IsDefault: true},

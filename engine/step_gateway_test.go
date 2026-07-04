@@ -7,25 +7,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // exclusiveDef: start -> xor -{amount > 100}-> big ; -default-> small ; both -> end
-func exclusiveDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func exclusiveDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "xor", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
 			activity.NewServiceTask("big", activity.WithActionName("big")),
 			activity.NewServiceTask("small", activity.WithActionName("small")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
 			{ID: "f2", Source: "xor", Target: "big", Condition: "amount > 100"},
 			{ID: "f3", Source: "xor", Target: "small", IsDefault: true},
@@ -61,10 +62,10 @@ func TestExclusiveGatewayTakesDefaultBranch(t *testing.T) {
 }
 
 // parallelForkDef: start -> fork => a, b (service tasks) -> end (each)
-func parallelForkDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func parallelForkDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "par", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -72,7 +73,7 @@ func parallelForkDef() *definition.ProcessDefinition {
 			event.NewEnd("enda"),
 			event.NewEnd("endb"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "a"},
 			{ID: "f3", Source: "fork", Target: "b"},
@@ -106,10 +107,10 @@ func TestParallelGatewayForksAllBranches(t *testing.T) {
 }
 
 // diamondDef: start -> fork => a,b -> join -> end. Join waits for both a and b.
-func diamondDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func diamondDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "diamond", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -117,7 +118,7 @@ func diamondDef() *definition.ProcessDefinition {
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "a"},
 			{ID: "f3", Source: "fork", Target: "b"},
@@ -169,10 +170,10 @@ func TestParallelJoinWaitsForAllBranches(t *testing.T) {
 // Since both subprocesses share the same inner definition, the inner join node ID
 // "ijoin" is identical across both scopes. The scope-local join test verifies that
 // tokens from different scopes are NOT counted together.
-func dualSubProcessParallelDef() *definition.ProcessDefinition {
-	inner := &definition.ProcessDefinition{
+func dualSubProcessParallelDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
 		ID: "dual-inner", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			gateway.NewParallel("ifork"),
 			activity.NewServiceTask("inner-a", activity.WithActionName("action-a")),
@@ -180,7 +181,7 @@ func dualSubProcessParallelDef() *definition.ProcessDefinition {
 			gateway.NewParallel("ijoin"),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "di1", Source: "inner-start", Target: "ifork"},
 			{ID: "di2", Source: "ifork", Target: "inner-a"},
 			{ID: "di3", Source: "ifork", Target: "inner-b"},
@@ -190,9 +191,9 @@ func dualSubProcessParallelDef() *definition.ProcessDefinition {
 		},
 	}
 
-	return &definition.ProcessDefinition{
+	return &model.ProcessDefinition{
 		ID: "dual-sub-par", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("outer-start"),
 			gateway.NewParallel("pfork"),
 			activity.NewSubProcess("subA", inner),
@@ -200,7 +201,7 @@ func dualSubProcessParallelDef() *definition.ProcessDefinition {
 			gateway.NewParallel("pouter-join"),
 			event.NewEnd("outer-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "of1", Source: "outer-start", Target: "pfork"},
 			{ID: "of2", Source: "pfork", Target: "subA"},
 			{ID: "of3", Source: "pfork", Target: "subB"},
@@ -337,15 +338,15 @@ func TestParallelJoinIsScopeLocal(t *testing.T) {
 
 func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "xor", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
 			activity.NewServiceTask("big", activity.WithActionName("big")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "xor"},
 			{ID: "f2", Source: "xor", Target: "big", Condition: "amount > 100"},
 			{ID: "f3", Source: "big", Target: "end"},

@@ -74,7 +74,7 @@ type BodyFunc func(ctx context.Context, vars map[string]any) (io.Reader, error)
 // (non-retryable) error — the library wraps the returned error with
 // [action.NonRetryable] automatically. Dependency-free: consumers plug in
 // JSON-schema validation with their own library. The vars parameter is the
-// same input variable map passed to [action.ServiceAction.Do], enabling
+// same input variable map passed to [action.Action.Do], enabling
 // schema selection by variable value or cross-validation of the body against
 // process state — consistent with [WithHeaderFunc] and [WithBodyFunc] which
 // also receive vars.
@@ -204,7 +204,7 @@ func readAllCapped(r io.Reader, max int64) ([]byte, error) {
 // NewHTTPCall returns a service action that performs one HTTP request per Do,
 // mapping the response status, body, and headers into output variables. See the
 // package doc for the retry classification and response size limit.
-func NewHTTPCall(opts ...Option) action.ServiceAction {
+func NewHTTPCall(opts ...Option) action.Action {
 	h := &httpCall{
 		client:          &http.Client{Timeout: 30 * time.Second},
 		headers:         http.Header{},

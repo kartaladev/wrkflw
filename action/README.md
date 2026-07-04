@@ -9,7 +9,7 @@ Import path: `github.com/zakyalvan/krtlwrkflw/action`
 
 ## Contents
 
-1. [The `ServiceAction` interface](#the-serviceaction-interface)
+1. [The `Action` interface](#the-action-interface)
 2. [Catalogs and registration](#catalogs-and-registration)
 3. [Retry contract](#retry-contract)
 4. [Built-in actions](#built-in-actions)
@@ -20,25 +20,25 @@ Import path: `github.com/zakyalvan/krtlwrkflw/action`
 
 ---
 
-## The `ServiceAction` interface
+## The `Action` interface
 
 A service task references an action **by name**; the runtime resolves that name to
-a `ServiceAction` and calls `Do`:
+a `Action` and calls `Do`:
 
 ```go
-type ServiceAction interface {
+type Action interface {
     Do(ctx context.Context, in map[string]any) (out map[string]any, err error)
 }
 ```
 
 `in` is the current process variables; the returned `out` map is merged back into
-the process variables. Use the `Func` adapter to make a plain function an action:
+the process variables. Use the `ActionFunc` adapter to make a plain function an action:
 
 ```go
 type Func func(ctx context.Context, in map[string]any) (map[string]any, error)
 ```
 
-`action.Func(fn)` satisfies `ServiceAction` (its `Do` calls `fn`).
+`action.ActionFunc(fn)` satisfies `Action` (its `Do` calls `fn`).
 
 ---
 
@@ -48,7 +48,7 @@ The catalog is split into a read side and a write side:
 
 | Type | Method(s) | Purpose |
 |---|---|---|
-| `Catalog` | `Resolve(name string) (ServiceAction, bool)` | Read side: resolve a name to an action. |
+| `Catalog` | `Resolve(name string) (Action, bool)` | Read side: resolve a name to an action. |
 | `Registrar` | `Register(name, a) error`, `RegisterFunc(name, fn) error` | Write side: register actions by name after construction. |
 
 Two implementations ship:
@@ -57,8 +57,8 @@ Two implementations ship:
 
 | Function / method | Signature | Notes |
 |---|---|---|
-| `NewMapCatalog` | `NewMapCatalog(m map[string]ServiceAction) MapCatalog` | Wraps `m`; the caller must not mutate `m` afterward. `nil` map is allowed (empty catalog). |
-| `MapCatalog.Resolve` | `Resolve(name) (ServiceAction, bool)` | Map lookup. Safe for concurrent reads. |
+| `NewMapCatalog` | `NewMapCatalog(m map[string]Action) MapCatalog` | Wraps `m`; the caller must not mutate `m` afterward. `nil` map is allowed (empty catalog). |
+| `MapCatalog.Resolve` | `Resolve(name) (Action, bool)` | Map lookup. Safe for concurrent reads. |
 
 Use `action.NewMapCatalog(nil)` (not Go `nil`) when constructing a runner for
 processes with no service tasks — `runtime.NewRunner` requires a non-nil catalog.
@@ -72,17 +72,17 @@ actions are registered incrementally after startup.
 | Method | Signature | Notes |
 |---|---|---|
 | `NewRegistry` | `NewRegistry() *Registry` | Empty, ready-to-use registry. |
-| `Register` | `Register(name string, a ServiceAction) error` | Adds `a` under `name`. **First registration wins** — a duplicate returns `ErrActionExists` and does not overwrite. |
-| `RegisterFunc` | `RegisterFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) error` | Wraps `fn` as a `Func` and delegates to `Register`; nil `fn` → `ErrNilAction`. |
+| `Register` | `Register(name string, a Action) error` | Adds `a` under `name`. **First registration wins** — a duplicate returns `ErrActionExists` and does not overwrite. |
+| `RegisterFunc` | `RegisterFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) error` | Wraps `fn` as a `ActionFunc` and delegates to `Register`; nil `fn` → `ErrNilAction`. |
 | `MustRegister` / `MustRegisterFunc` | `MustRegister(name, a)` / `MustRegisterFunc(name, fn)` | Panic-on-error variants for init-time wiring. |
-| `Resolve` | `Resolve(name) (ServiceAction, bool)` | RLock-guarded lookup. |
+| `Resolve` | `Resolve(name) (Action, bool)` | RLock-guarded lookup. |
 
 **Sentinel errors** (compare with `errors.Is`):
 
 | Sentinel | Meaning |
 |---|---|
 | `ErrEmptyActionName` | The `name` argument was empty. |
-| `ErrNilAction` | A nil `ServiceAction` (or nil func) was registered. |
+| `ErrNilAction` | A nil `Action` (or nil func) was registered. |
 | `ErrActionExists` | A different action is already registered under that name (wrapped with the name). |
 
 (A resolution *miss* is reported by the `bool` return, not an error — there is no `ErrActionNotFound`.)
@@ -90,13 +90,13 @@ actions are registered incrementally after startup.
 ### `Resolve` — three-tier precedence
 
 ```go
-func Resolve(scoped, global Catalog, name string) (ServiceAction, bool)
+func Resolve(scoped, global Catalog, name string) (Action, bool)
 ```
 
 The runtime resolves actions in three tiers, outermost first:
 
-1. **Inline action** — a `ServiceAction` embedded directly in the node via
-   `model.WithInlineAction` or `model.WithInlineActionFunc`. The engine sets
+1. **Inline action** — a `Action` embedded directly in the node via
+   `definition.WithInlineAction` or `definition.WithInlineActionFunc`. The engine sets
    `InvokeAction.Inline` when present; the runner calls it directly, bypassing both
    catalogs. No `name` is involved.
 2. **Scoped (definition-local) catalog** — a `Catalog` registered on the
@@ -126,13 +126,13 @@ wrapping it.
 
 ## Built-in actions
 
-Each subpackage exposes a `New*` constructor returning an `action.ServiceAction`,
+Each subpackage exposes a `New*` constructor returning an `action.Action`,
 configured with functional options. All are dependency-free (standard library +
 the in-repo `expr-lang`).
 
 ### `action/httpcall`
 
-`NewHTTPCall(opts ...Option) action.ServiceAction` — performs one HTTP request per `Do`.
+`NewHTTPCall(opts ...Option) action.Action` — performs one HTTP request per `Do`.
 
 | Option | Effect |
 |---|---|
@@ -177,7 +177,7 @@ the in-repo `expr-lang`).
 
 ### `action/email`
 
-`NewEmail(opts ...Option) action.ServiceAction` — sends one **individual** email per recipient per `Do`.
+`NewEmail(opts ...Option) action.Action` — sends one **individual** email per recipient per `Do`.
 
 | Option | Effect |
 |---|---|
@@ -211,7 +211,7 @@ recipients); zero recipients is a `NonRetryable` error.
 
 ### `action/transform`
 
-`NewTransform(opts ...Option) (action.ServiceAction, error)` — projects/enriches
+`NewTransform(opts ...Option) (action.Action, error)` — projects/enriches
 variables. **Returns an error** (unlike the others).
 
 | Option | Effect |
@@ -228,7 +228,7 @@ it. Expressions are compiled **eagerly**: a malformed expression (or a nil mappe
 
 ### `action/logaction`
 
-`NewLog(opts ...Option) action.ServiceAction` — logs selected variables as one
+`NewLog(opts ...Option) action.Action` — logs selected variables as one
 structured `slog` record and passes the variables through unchanged. **Never errors**
 (fire-and-forget safe).
 

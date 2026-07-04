@@ -10,9 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -21,16 +22,16 @@ import (
 )
 
 // messageCatchDef returns: start → message-catch(name, correlationKey="orderId") → end.
-func messageCatchDef(msgName string) *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func messageCatchDef(msgName string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "message-catch-" + msgName,
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-msg"},
 			{ID: "f2", Source: "wait-msg", Target: "end"},
 		},
@@ -42,11 +43,11 @@ func messageCatchDef(msgName string) *definition.ProcessDefinition {
 //
 //	start → event-gateway → timer-catch(1h) → timer-end
 //	                      → signal-catch("approved") → signal-end
-func eventGatewayDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func eventGatewayDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "event-gateway-race",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("gw"),
 			event.NewCatch("timer-arm", event.WithCatchTimer(`"1h"`)),
@@ -54,7 +55,7 @@ func eventGatewayDef() *definition.ProcessDefinition {
 			event.NewEnd("timer-end"),
 			event.NewEnd("signal-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "gw"},
 			{ID: "f2", Source: "gw", Target: "timer-arm"},
 			{ID: "f3", Source: "gw", Target: "signal-arm"},
@@ -120,15 +121,15 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 	// Process: start → throw("approved") → end.
 	// A throw event emits ThrowSignal; without a bus the runner must fail.
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID:      "throw-only",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewThrow("throw", event.WithThrowSignal("approved")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "throw"},
 			{ID: "f2", Source: "throw", Target: "end"},
 		},

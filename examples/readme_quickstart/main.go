@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
@@ -21,7 +22,7 @@ func main() {
 	ctx := context.Background()
 
 	// --- Define a process (Go builder) ---
-	def, err := definition.NewDefinition("order-fulfillment", 1).
+	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
 			activity.WithCompensation("refund-card"),
@@ -54,7 +55,7 @@ flows:
   - { id: f1, source: s, target: charge }
   - { id: f2, source: charge, target: e }
 `
-	yamlLd, err := definition.ParseYAML([]byte(yamlSrc))
+	yamlLd, err := definition.NewLoader(strings.NewReader(yamlSrc))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "yaml parse:", err)
 		os.Exit(1)
@@ -67,7 +68,7 @@ flows:
 	fmt.Printf("yaml def %q v%d with %d nodes\n", yamlDef.ID, yamlDef.Version, len(yamlDef.Nodes))
 
 	// --- Run it ---
-	simpleDef, _ := definition.NewDefinition("order", 1).
+	simpleDef, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
 		Add(event.NewEnd("e")).
@@ -75,8 +76,8 @@ flows:
 		Connect("charge", "e").
 		Build()
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge-card": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			return map[string]any{"charged": true}, nil
 		}),
 	})

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
@@ -17,7 +17,7 @@ import (
 //
 // Returns an error if the scope or its subprocess definition cannot be resolved
 // (defensive; unreachable for a well-formed state that was built by Step).
-func defForScope(top *definition.ProcessDefinition, s *InstanceState, scopeID string) (*definition.ProcessDefinition, error) {
+func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string) (*model.ProcessDefinition, error) {
 	if scopeID == "" {
 		return top, nil
 	}
@@ -162,7 +162,7 @@ func (s *InstanceState) setVisitActor(tokenID, nodeID, actorID string) {
 	}
 }
 
-func (s *InstanceState) moveAlongSingleFlow(def *definition.ProcessDefinition, tok *Token, at time.Time) {
+func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *Token, at time.Time) {
 	out := def.Outgoing(tok.NodeID)
 	s.closeVisit(tok.ID, tok.NodeID, at)
 	if len(out) == 0 {
@@ -214,16 +214,16 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 // effectiveRetryPolicy returns the retry policy to apply for the given node and
 // step options, plus a boolean indicating whether a policy is in effect.
 // Precedence: node-level policy > StepOptions.DefaultRetryPolicy > none.
-// The returned policy has been normalized via [definition.RetryPolicy.Normalize].
-func effectiveRetryPolicy(node definition.Node, opt StepOptions) (definition.RetryPolicy, bool) {
-	rp := definition.RetryPolicyOf(node)
+// The returned policy has been normalized via [model.RetryPolicy.Normalize].
+func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, bool) {
+	rp := model.RetryPolicyOf(node)
 	switch {
 	case rp != nil:
 		return rp.Normalize(), true
 	case opt.DefaultRetryPolicy != nil:
 		return opt.DefaultRetryPolicy.Normalize(), true
 	default:
-		return definition.RetryPolicy{}, false
+		return model.RetryPolicy{}, false
 	}
 }
 
@@ -250,7 +250,7 @@ func copyVars(in map[string]any) map[string]any {
 	return out
 }
 
-// serviceActionInput builds the Input map for a node's primary ServiceAction
+// serviceActionInput builds the Input map for a node's primary action.Action
 // invocation. It copies the instance variables and stamps a stable,
 // attempt-independent idempotency key ("<instanceID>:<nodeID>") so action
 // authors can dedup external side effects across retries.
@@ -260,7 +260,7 @@ func copyVars(in map[string]any) map[string]any {
 // operations on the same node; stamping instanceID:nodeID on them would
 // collide with the primary action's key and could cause an external system to
 // wrongly dedup distinct operations.
-func serviceActionInput(s *InstanceState, node definition.Node) map[string]any {
+func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
 	in := copyVars(s.Variables)
 	if in == nil {
 		in = map[string]any{}

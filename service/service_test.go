@@ -13,9 +13,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -37,15 +38,15 @@ type harness struct {
 }
 
 // linearDef returns start → serviceTask("greet") → end.
-func linearDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func linearDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "greeting", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},
@@ -53,16 +54,16 @@ func linearDef() *definition.ProcessDefinition {
 }
 
 // approvalDef returns start → userTask("approve", role "manager") → end.
-func approvalDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func approvalDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "approval",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", []string{"manager"}),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "approve"},
 			{ID: "f2", Source: "approve", Target: "end"},
 		},
@@ -70,16 +71,16 @@ func approvalDef() *definition.ProcessDefinition {
 }
 
 // signalCatchDef returns start → signal-catch(name) → end.
-func signalCatchDef(signalName string) *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func signalCatchDef(signalName string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "signal-catch-" + signalName,
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait-signal", event.WithCatchSignal(signalName)),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-signal"},
 			{ID: "f2", Source: "wait-signal", Target: "end"},
 		},
@@ -87,16 +88,16 @@ func signalCatchDef(signalName string) *definition.ProcessDefinition {
 }
 
 // messageCatchDef returns start → message-catch(msgName, orderId) → end.
-func messageCatchDef(msgName string) *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func messageCatchDef(msgName string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "message-catch-" + msgName,
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait-msg"},
 			{ID: "f2", Source: "wait-msg", Target: "end"},
 		},
@@ -104,12 +105,12 @@ func messageCatchDef(msgName string) *definition.ProcessDefinition {
 }
 
 // defRefFor returns the "DefID:DefVersion" key used by MapDefinitionRegistry.
-func defRefFor(def *definition.ProcessDefinition) string {
+func defRefFor(def *model.ProcessDefinition) string {
 	return fmt.Sprintf("%s:%d", def.ID, def.Version)
 }
 
 // newHarness builds a harness wired with the given process definitions.
-func newHarness(t *testing.T, defs ...*definition.ProcessDefinition) *harness {
+func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	t.Helper()
 
 	fc := clockwork.NewFakeClock()
@@ -124,7 +125,7 @@ func newHarness(t *testing.T, defs ...*definition.ProcessDefinition) *harness {
 	require.NoError(t, err)
 
 	// Build the action catalog with a simple "greet" action.
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"greet": greetAction{},
 	})
 
@@ -137,7 +138,7 @@ func newHarness(t *testing.T, defs ...*definition.ProcessDefinition) *harness {
 	require.NoError(t, err)
 
 	// Build the definition registry with all provided definitions.
-	defsMap := make(map[string]*definition.ProcessDefinition, len(defs))
+	defsMap := make(map[string]*model.ProcessDefinition, len(defs))
 	for _, d := range defs {
 		defsMap[defRefFor(d)] = d
 		// Also register by ID alone for convenience.

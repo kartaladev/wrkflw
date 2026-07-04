@@ -23,15 +23,15 @@ describe the shape of a workflow; the `runtime` and `engine` packages execute it
 ## Overview
 
 `definition` holds the in-memory representation of a **process definition** — the
-reusable template from which process instances are created. Concepts mirror BPMN
-(tasks, gateways, events, sequence flows) but this package is **not
-BPMN-compatible** and makes no attempt to round-trip arbitrary BPMN2 XML.
+reusable template from which process instances are created. It models a workflow
+as tasks, gateways, events, and sequence flows; it is a self-contained model, not
+tied to any external workflow standard or XML interchange format.
 
 Key design properties:
 
 - **Pure data + validation.** `ProcessDefinition` and every `Node` type are plain
   Go values. No I/O, no goroutines, no heavy dependencies.
-- **One concrete type per node kind, grouped by BPMN family.** `Node` is an
+- **One concrete type per node kind, grouped by node family.** `Node` is an
   interface; each kind is a struct that lives in one of three leaf packages —
   `definition/event`, `definition/gateway`, `definition/activity`. Construct nodes
   with the family `New*` constructors — never construct the structs directly.
@@ -39,10 +39,10 @@ Key design properties:
   `definition` at import time (the `image/png`/`database/sql` driver idiom), so
   `definition` serializes and validates without importing the leaves. This is why
   deserialization callers must import [`definition/kinds`](#the-kinds-bundle-deserialization).
-- **Three authoring forms.** Go constructors (`definition/build` fluent chain or
-  `definition.NewDefinition(...).Add(...)`), YAML, or JSON. The builder and YAML
-  paths call `Validate` automatically; the JSON path (`json.Unmarshal`) does
-  **not** — call `definition.Validate` yourself after decoding.
+- **Three authoring forms.** Go (`definition.NewBuilder(...)` fluent chain), YAML,
+  or JSON. The builder and YAML paths call `Validate` automatically; the JSON path
+  (`json.Unmarshal`) does **not** — call `model.Validate` yourself after
+  decoding.
 
 ### Container types
 
@@ -61,14 +61,18 @@ flows), `IsDefault`.
 
 | Package | Import path | Holds |
 |---|---|---|
-| core | `.../definition` | `Node`, `NodeKind`, `ProcessDefinition`, `SequenceFlow`, `RetryPolicy`, `Validate`, `NewDefinition`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), sentinel errors. Imports no leaf. |
+| root (entry) | `.../definition` | **Only** `NewBuilder` (fluent Go entry) and `NewLoader` (YAML entry) — the one place that can import `build` without a cycle. No re-exports; every other symbol is used from its source package below. |
+| model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), the `ErrX` sentinels. The de-facto types package. Imports only `flow`. |
+| flow | `.../definition/flow` | `SequenceFlow`, `Option`, `WithFlowID`, `WithCondition`, `AsDefault`. |
 | events | `.../definition/event` | `NewStart`, `NewEnd`, `NewTerminateEnd`, `NewErrorEnd`, `NewCatch`, `NewThrow`, `NewBoundary`, `NewEventSubProcess` + their options |
 | gateways | `.../definition/gateway` | `NewExclusive`, `NewParallel`, `NewInclusive`, `NewEventBased` |
 | activities | `.../definition/activity` | `NewServiceTask`, `NewUserTask`, `NewReceiveTask`, `NewSendTask`, `NewBusinessRuleTask`, `NewSubProcess`, `NewCallActivity` + their options |
-| fluent builder | `.../definition/build` | `build.New(...)` with terse `AddX` methods (imports the leaves) |
+| fluent builder | `.../definition/build` | `Builder` with per-kind `AddX` methods (`AddStartEvent`, …); entered via `definition.NewBuilder`. |
 | kinds bundle | `.../definition/kinds` | blank-imports all leaves so deserialization has every kind registered |
 
-The leaves import `definition`; `definition` imports none of them (no cycle).
+Dependency graph (acyclic; nothing imports the root aggregator): `definition →
+build, model, flow`; `build → model, event, gateway, activity, flow`;
+`event/gateway/activity → model, flow`; `model → flow`.
 
 ---
 
@@ -83,7 +87,7 @@ type Node interface {
 ```
 
 The 19 concrete kinds live in the leaf packages. Constructors return
-`definition.Node`; you rarely name the concrete type (accessors below read
+`model.Node`; you rarely name the concrete type (accessors below read
 kind-specific data generically).
 
 ### Events — `definition/event`
@@ -141,7 +145,7 @@ task := activity.NewServiceTask("charge",
     activity.WithName("Charge Card"),
     activity.WithCompensation("refund-card"),
     activity.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
-    activity.WithRetryPolicy(&definition.RetryPolicy{
+    activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: 2 * time.Second, BackoffCoef: 2.0,
     }),
 )
@@ -166,48 +170,52 @@ Gateways take only an optional name (trailing variadic); they have no options.
 
 ## Building a definition
 
-Two Go paths. The fluent `definition/build` package is the terse one:
+Start from `definition.NewBuilder`, which returns the fluent builder. Each `AddX`
+mirrors a node-family constructor; node options come from the leaf packages:
 
 ```go
 import (
+    "github.com/zakyalvan/krtlwrkflw/definition"
     "github.com/zakyalvan/krtlwrkflw/definition/activity"
-    "github.com/zakyalvan/krtlwrkflw/definition/build"
 )
 
-def, err := build.New("order-fulfillment", 1).
-    AddStart("start").
+def, err := definition.NewBuilder("order-fulfillment", 1).
+    AddStartEvent("start").
     AddServiceTask("charge",
         activity.WithActionName("charge-card"),
         activity.WithCompensation("refund-card")).
     AddUserTask("approve", []string{"manager"}).
-    AddEnd("end").
+    AddEndEvent("end").
     Connect("start", "charge").
     Connect("charge", "approve").
     Connect("approve", "end").
     Build()
 ```
 
-The core `definition.NewDefinition(...)` builder takes pre-built nodes via the
-generic `.Add(node)` — useful for programmatic/dynamic construction:
+The builder also accepts pre-built nodes via the generic `.Add(node)` — useful
+for programmatic/dynamic construction — and routing conditions come from the
+`flow` package:
 
 ```go
-def, err := definition.NewDefinition("loan", 1).
+import "github.com/zakyalvan/krtlwrkflw/definition/flow"
+
+def, err := definition.NewBuilder("loan", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewExclusive("gw")).
     Add(activity.NewServiceTask("approve", activity.WithActionName("approve-loan"))).
     Add(event.NewEnd("end-ok")).
     Connect("start", "gw").
-    Connect("gw", "approve", definition.WithCondition("score >= 700")).
-    Connect("gw", "end-ok", definition.AsDefault()).
+    Connect("gw", "approve", flow.WithCondition("score >= 700")).
+    Connect("gw", "end-ok", flow.AsDefault()).
     Connect("approve", "end-ok").
     Build()
 ```
 
-Both `Build()` calls run `Validate` and compile the definition-scoped action
-catalog. `FlowOption` values: `definition.WithFlowID(id)`,
-`definition.WithCondition(expr)`, `definition.AsDefault()`.
+`Build()` runs `Validate`, compiles the definition-scoped action catalog, and
+returns a `*model.ProcessDefinition`. Flow options live in `flow`:
+`flow.WithFlowID(id)`, `flow.WithCondition(expr)`, `flow.AsDefault()`.
 
-**`DefinitionLoader`** (returned by `ParseYAML`/`LoadYAML`) exposes only
+**`DefinitionLoader`** (returned by `definition.NewLoader`) exposes only
 `RegisterAction`/`RegisterActionFunc`/`CancelActions`/`Build` — the structure is
 already declared by the parsed YAML.
 
@@ -226,7 +234,7 @@ import _ "github.com/zakyalvan/krtlwrkflw/definition/kinds"
 Code that **constructs** definitions in Go already imports the specific leaf
 packages it uses and needs no extra import. If a kind is not registered,
 `ProcessDefinition.UnmarshalJSON` (and the YAML loader) fail with a loud
-`definition.ErrKindNotRegistered` naming the missing kind — never a silent zero
+`model.ErrKindNotRegistered` naming the missing kind — never a silent zero
 value. The persistence store already imports the bundle.
 
 ---
@@ -242,7 +250,7 @@ value. The persistence store already imports the bundle.
 | `MaxElapsed` | `time.Duration` | `0` | Total time budget; `0` = no cap. |
 | `NonRetryableErrors` | `[]string` | `nil` | Error-message substrings that abort retrying. |
 
-`definition.DefaultRetryPolicy()` returns the defaults; `RetryPolicy.Normalize()`
+`model.DefaultRetryPolicy()` returns the defaults; `RetryPolicy.Normalize()`
 fills zero fields (preserving `MaxAttempts == 0`). Attach with
 `activity.WithRetryPolicy(&p)`; set a runtime-wide fallback with
 `runtime.WithDefaultRetryPolicy(p)`.
@@ -251,9 +259,10 @@ fills zero fields (preserving `MaxAttempts == 0`). Attach with
 
 ## Validation
 
-`definition.Validate(*ProcessDefinition)` is called automatically by `Build` and
+`model.Validate(*ProcessDefinition)` is called automatically by `Build` and
 the YAML/JSON loaders. It runs a comprehensive structural check and returns a
-joined error. Sentinel errors include: `ErrNoStartEvent`,
+joined error. The sentinel errors live in `definition/model` — check them with
+`errors.Is(err, model.ErrNoStartEvent)`. They include: `ErrNoStartEvent`,
 `ErrMultipleStartEvents`, `ErrDanglingFlow`, `ErrDeadEnd`, `ErrStartHasIncoming`,
 `ErrEndHasOutgoing`, `ErrConditionNotAllowed`, `ErrDefaultNotAllowed`,
 `ErrMultipleDefaults`, `ErrEventGatewayTarget`, `ErrMixedGateway`,
@@ -265,7 +274,7 @@ joined error. Sentinel errors include: `ErrNoStartEvent`,
 
 ### Kind-agnostic accessors
 
-`definition.RetryPolicyOf(n)`, `DeadlineOf(n)`, `ReminderOf(n)`, `ActionOf(n)`,
+`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `ReminderOf(n)`, `ActionOf(n)`,
 `InlineActionOf(n)` read kind-specific fields off any `Node` (returning zero
 values for kinds that don't carry them), so callers never type-switch on concrete
 leaf types.
@@ -278,7 +287,7 @@ leaf types.
 standard `encoding/json`. YAML entry points return a `DefinitionLoader`:
 
 ```go
-ld, err := definition.ParseYAML(data)   // or definition.LoadYAML(r)
+ld, err := definition.NewLoader(r)   // r is any io.Reader
 ld.RegisterAction("my-action", myAction) // YAML can't carry Go funcs
 def, err := ld.Build()
 ```
@@ -294,7 +303,7 @@ deserializing, import `definition/kinds` — see above.)
 
 | Form | Entry point | When to use |
 |---|---|---|
-| **Fluent Go** | `build.New(...).AddX(...).Connect(...).Build()` | Preferred; terse, IDE-navigable. |
-| **Core builder** | `definition.NewDefinition(...).Add(node).Connect(...).Build()` | Programmatic / dynamic node lists. |
-| **YAML** | `definition.ParseYAML` / `LoadYAML` → `DefinitionLoader` | Config-driven pipelines; import `definition/kinds`. |
-| **JSON** | `json.Unmarshal` into `ProcessDefinition` then `definition.Validate` | Interchange / persistence; import `definition/kinds`. |
+| **Fluent Go** | `definition.NewBuilder(...).AddX(...).Connect(...).Build()` | Preferred; terse, IDE-navigable. |
+| **Core builder** | `definition.NewBuilder(...).Add(node).Connect(...).Build()` | Programmatic / dynamic node lists. |
+| **YAML** | `definition.NewLoader(r)` → `DefinitionLoader` | Config-driven pipelines; import `definition/kinds`. |
+| **JSON** | `json.Unmarshal` into `ProcessDefinition` then `model.Validate` | Interchange / persistence; import `definition/kinds`. |

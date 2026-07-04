@@ -8,23 +8,24 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
-func linearDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func linearDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "greeting", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "greet"},
 			{ID: "f2", Source: "greet", Target: "end"},
 		},
@@ -32,9 +33,9 @@ func linearDef() *definition.ProcessDefinition {
 }
 
 func TestRunnerExecutesParallelDiamond(t *testing.T) {
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "diamond", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			activity.NewServiceTask("a", activity.WithActionName("a")),
@@ -42,7 +43,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "fork"},
 			{ID: "f2", Source: "fork", Target: "a"},
 			{ID: "f3", Source: "fork", Target: "b"},
@@ -51,11 +52,11 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			{ID: "f6", Source: "join", Target: "end"},
 		},
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"a": true}, nil
 		}),
-		"b": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"b": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"b": true}, nil
 		}),
 	})
@@ -76,9 +77,9 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 }
 
 func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "ord", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewInclusive("orsplit"),
 			activity.NewServiceTask("ta", activity.WithActionName("a")),
@@ -87,7 +88,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 			gateway.NewInclusive("orjoin"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "orsplit"},
 			{ID: "f2", Source: "orsplit", Target: "ta", Condition: "a > 0"},
 			{ID: "f3", Source: "orsplit", Target: "tb", Condition: "b > 0"},
@@ -98,12 +99,12 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 			{ID: "f8", Source: "orjoin", Target: "end"},
 		},
 	}
-	mk := func(key string) action.ServiceAction {
-		return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	mk := func(key string) action.Action {
+		return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{key: true}, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
+	cat := action.NewMapCatalog(map[string]action.Action{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
 
 	final, err := r.Run(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
@@ -123,8 +124,8 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 }
 
 func TestRunnerExecutesLinearProcess(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
 		}),
 	})

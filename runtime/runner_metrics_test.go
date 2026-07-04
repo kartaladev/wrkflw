@@ -14,9 +14,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -64,15 +65,15 @@ func dpEmitMatch(attrs attribute.Set, filter map[string]string) bool {
 
 // failingActionDef builds start → task("fail") → end with no retry policy,
 // so the first (and only) action failure drives the instance to StatusFailed.
-func failingActionDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func failingActionDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "failing-action-metrics", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("task", activity.WithActionName("fail")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -80,15 +81,15 @@ func failingActionDef() *definition.ProcessDefinition {
 }
 
 // timerMetricsDef builds start → timer-catch("1h") → end.
-func timerMetricsDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func timerMetricsDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "timer-metrics", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "wait1h"},
 			{ID: "f2", Source: "wait1h", Target: "end"},
 		},
@@ -135,8 +136,8 @@ func TestActionFailuresCounter(t *testing.T) {
 			reader := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"fail": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"fail": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					return nil, tc.actionErr
 				}),
 			})

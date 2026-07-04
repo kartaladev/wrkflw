@@ -30,17 +30,17 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
 	ctx := context.Background()
 
-	def, err := definition.NewDefinition("application-screening", 1).
+	def, err := definition.NewBuilder("application-screening", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("assess", activity.WithActionName("assess"))).
 		Add(gateway.NewInclusive("split")).
@@ -51,9 +51,9 @@ func main() {
 		Add(event.NewEnd("end")).
 		Connect("start", "assess").
 		Connect("assess", "split").
-		Connect("split", "notify-risk", definition.WithCondition("score < 600")).
-		Connect("split", "senior-review", definition.WithCondition("amount > 10000")).
-		Connect("split", "fraud-check", definition.WithCondition("flagged == true")).
+		Connect("split", "notify-risk", flow.WithCondition("score < 600")).
+		Connect("split", "senior-review", flow.WithCondition("amount > 10000")).
+		Connect("split", "fraud-check", flow.WithCondition("flagged == true")).
 		Connect("notify-risk", "join").
 		Connect("senior-review", "join").
 		Connect("fraud-check", "join").
@@ -63,13 +63,13 @@ func main() {
 		log.Fatal("build def:", err)
 	}
 
-	mk := func(name, key string) action.ServiceAction {
-		return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	mk := func(name, key string) action.Action {
+		return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Printf("  [%s] ran\n", name)
 			return map[string]any{key: true}, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		"assess":        mk("assess", "assessed"),
 		"notify-risk":   mk("notify-risk", "risk_notified"),
 		"senior-review": mk("senior-review", "senior_reviewed"),
@@ -102,6 +102,6 @@ func main() {
 		_, ranFraud := state.Variables["fraud_checked"]
 		fmt.Println("  fraud_checked:  ", ranFraud, "(skipped — flagged was false)")
 	} else {
-		fmt.Printf("unexpected status: %s\n", view.StatusString(state.Status))
+		fmt.Printf("unexpected status: %s\n", state.Status.String())
 	}
 }

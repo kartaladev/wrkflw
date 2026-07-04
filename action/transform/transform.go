@@ -84,7 +84,7 @@ type transform struct {
 // service action. A malformed expression causes NewTransform to return an error
 // immediately (wiring time), not mid-process. WithMapper stages are recorded
 // as-is and invoked at Do time.
-func NewTransform(opts ...Option) (action.ServiceAction, error) {
+func NewTransform(opts ...Option) (action.Action, error) {
 	var c config
 	for _, o := range opts {
 		o(&c)

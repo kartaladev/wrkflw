@@ -1,12 +1,12 @@
 package engine
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // compensationActionOf returns the CompensationAction of an activity node, or "".
-func compensationActionOf(n definition.Node) string {
+func compensationActionOf(n model.Node) string {
 	switch v := n.(type) {
 	case activity.ServiceTask:
 		return v.CompensationAction
@@ -28,7 +28,7 @@ func compensationActionOf(n definition.Node) string {
 }
 
 // cancelHandlerOf returns the CancelHandler of an activity node, or "".
-func cancelHandlerOf(n definition.Node) string {
+func cancelHandlerOf(n model.Node) string {
 	switch v := n.(type) {
 	case activity.ServiceTask:
 		return v.CancelHandler
@@ -50,7 +50,7 @@ func cancelHandlerOf(n definition.Node) string {
 }
 
 // recoveryFlowOf returns the RecoveryFlow of an activity node, or "".
-func recoveryFlowOf(n definition.Node) string {
+func recoveryFlowOf(n model.Node) string {
 	switch v := n.(type) {
 	case activity.ServiceTask:
 		return v.RecoveryFlow

@@ -7,22 +7,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // receiveTaskDef: start → recv(msg "m") → end.
-func receiveTaskDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func receiveTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-recv", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewReceiveTask("recv", "m"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv"},
 			{ID: "f2", Source: "recv", Target: "end"},
 		},
@@ -30,10 +31,10 @@ func receiveTaskDef() *definition.ProcessDefinition {
 }
 
 // receiveTaskBoundaryDef: start → recv(msg "m") → end ; boundary on recv → escalate → end2.
-func receiveTaskBoundaryDef(boundary definition.Node) *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func receiveTaskBoundaryDef(boundary model.Node) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "p-recv-bnd", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewReceiveTask("recv", "m"),
 			boundary,
@@ -41,7 +42,7 @@ func receiveTaskBoundaryDef(boundary definition.Node) *definition.ProcessDefinit
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv"},
 			{ID: "f2", Source: "recv", Target: "end"},
 			{ID: "f3", Source: "bnd", Target: "escalate"},
@@ -75,14 +76,14 @@ func TestReceiveTaskResumesOnMessage(t *testing.T) {
 // than parking silently.
 func TestReceiveTaskBadCorrelationKey(t *testing.T) {
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "p-recv-bad", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewReceiveTask("recv", "m", activity.WithCorrelationKey("this is not valid expr ++")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "recv"},
 			{ID: "f2", Source: "recv", Target: "end"},
 		},
@@ -102,7 +103,7 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 
 	type testCase struct {
 		name     string
-		boundary definition.Node
+		boundary model.Node
 		fire     func(r1 engine.StepResult) engine.Trigger
 	}
 	cases := []testCase{

@@ -11,9 +11,10 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -26,16 +27,16 @@ import (
 // candidate role "worker" so a known actor can claim/complete it in the test.
 //
 //	child-start → child-task (KindUserTask, role "worker") → child-end
-func notifierChildDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func notifierChildDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "notifier-child",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("child-start"),
 			activity.NewUserTask("child-task", []string{"worker"}),
 			event.NewEnd("child-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "ncf1", Source: "child-start", Target: "child-task"},
 			{ID: "ncf2", Source: "child-task", Target: "child-end"},
 		},
@@ -45,16 +46,16 @@ func notifierChildDef() *definition.ProcessDefinition {
 // notifierParentDef returns a parent def calling notifierChildDef.
 //
 //	parent-start → call (KindCallActivity, DefRef:"notifier-child") → parent-end
-func notifierParentDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func notifierParentDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "notifier-parent",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("parent-start"),
 			activity.NewCallActivity("call", "notifier-child"),
 			event.NewEnd("parent-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "npf1", Source: "parent-start", Target: "call"},
 			{ID: "npf2", Source: "call", Target: "parent-end"},
 		},
@@ -82,7 +83,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	parent := notifierParentDef()
 
 	// Parent definition must be resolvable under the "id:version" ref format.
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"notifier-child":    child,
 		"notifier-parent:1": parent,
 	})
@@ -137,7 +138,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	assert.True(t, pending[0].Outcome.Completed, "link outcome must be Completed")
 
 	// ── Step 3: build CallNotifier and DrainOnce → parent resumes ─────────
-	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *definition.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		_, err2 := runner.Deliver(ctx2, def, instanceID, trg)
 		return err2
 	})
@@ -164,10 +165,10 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 // without a positional clock argument (ADR-0003: clock defaults to clock.System()).
 func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *definition.ProcessDefinition, _ string, _ engine.Trigger) error {
+	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{})
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
 
 	n := runtimetest.MustCallNotifier(t, cl, deliver, reg)
 	assert.NotNil(t, n)
@@ -183,14 +184,14 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 
 	cl := kernel.NewMemCallLinkStore()
 	var capturedTrigger engine.Trigger
-	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *definition.ProcessDefinition, _ string, trg engine.Trigger) error {
+	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, trg engine.Trigger) error {
 		capturedTrigger = trg
 		return nil
 	})
 
 	// Wire minimal parent def so the registry resolves the parent ref.
-	parentDef := &definition.ProcessDefinition{ID: "opt-parent", Version: 1}
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	parentDef := &model.ProcessDefinition{ID: "opt-parent", Version: 1}
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"opt-parent:1": parentDef,
 	})
 
@@ -224,7 +225,7 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 	t.Parallel()
 
 	cl := kernel.NewMemCallLinkStore()
-	var deliver calllink.CallDeliverFunc = func(_ context.Context, _ *definition.ProcessDefinition, _ string, _ engine.Trigger) error {
+	var deliver calllink.CallDeliverFunc = func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	}
 	reg := kernel.NewMapDefinitionRegistry(nil)

@@ -6,14 +6,14 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	_ "github.com/zakyalvan/krtlwrkflw/definition/kinds"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // TestAllKindsRegistered asserts every node kind resolves once the kinds bundle
 // is imported — guarding against a leaf package forgetting to register a kind.
 func TestAllKindsRegistered(t *testing.T) {
-	for k := definition.KindStartEvent; k <= definition.KindEventBasedGateway; k++ {
+	for k := model.KindStartEvent; k <= model.KindEventBasedGateway; k++ {
 		var buf bytes.Buffer
 		if err := json.NewEncoder(&buf).Encode(k); err != nil {
 			t.Fatalf("kind %d not encodable (unregistered name?): %v", int(k), err)
@@ -32,7 +32,7 @@ func TestGoldenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
 	}
-	var def definition.ProcessDefinition
+	var def model.ProcessDefinition
 	if err := json.Unmarshal(orig, &def); err != nil {
 		t.Fatalf("unmarshal golden: %v", err)
 	}

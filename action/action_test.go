@@ -11,7 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 )
 
-// TestFunc_Do verifies that the Func adapter satisfies ServiceAction correctly.
+// TestFunc_Do verifies that the ActionFunc adapter satisfies Action correctly.
 func TestFunc_Do(t *testing.T) {
 	sentinel := errors.New("boom")
 
@@ -36,7 +36,7 @@ func TestFunc_Do(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			var a action.ServiceAction = action.Func(tc.fn)
+			var a action.Action = action.ActionFunc(tc.fn)
 			out, err := a.Do(t.Context(), tc.in)
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)

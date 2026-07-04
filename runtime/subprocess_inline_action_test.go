@@ -23,9 +23,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -39,9 +40,9 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 
 	var ran atomic.Bool
 
-	nested := &definition.ProcessDefinition{
+	nested := &model.ProcessDefinition{
 		ID: "inline-sub-nested", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionFunc(
 				func(_ context.Context, in map[string]any) (map[string]any, error) {
@@ -50,26 +51,26 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 				})),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "inline-sub-def", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "end"},
 		},
 	}
 
 	// Empty global catalog: the inline action is the ONLY way "inner-svc" resolves.
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{})
+	cat := action.NewMapCatalog(map[string]action.Action{})
 	store := runtimetest.MustMemStore(t)
 	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc))
 

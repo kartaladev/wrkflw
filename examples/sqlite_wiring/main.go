@@ -47,6 +47,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -148,7 +149,7 @@ func run(logger *slog.Logger) error {
 	// runner is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
 	var runner *runtime.ProcessDriver
-	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *definition.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
 		if runner == nil {
 			return nil // not yet wired; should not occur in practice
 		}
@@ -211,7 +212,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(scheduler)
 
 	// --- A demo definition + catalog so the engine can actually run instances ---
-	def, derr := definition.NewDefinition("order", 1).
+	def, derr := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
 		Add(event.NewEnd("e")).
@@ -221,8 +222,8 @@ func run(logger *slog.Logger) error {
 	if derr != nil {
 		return derr
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge-card": action.Func(func(context.Context, map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) {
 			return map[string]any{"charged": true}, nil
 		}),
 	})
@@ -230,7 +231,7 @@ func run(logger *slog.Logger) error {
 	// definitions survive restarts. For illustrative purposes we also seed a
 	// well-known definition via the map registry; in production you would use
 	// persistence.NewSQLiteDefinitionStore exclusively.
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})

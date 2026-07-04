@@ -1,4 +1,4 @@
-package definition
+package model
 
 import (
 	"math"
@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// RetryPolicy describes how a failed action.ServiceAction is retried when its
+// RetryPolicy describes how a failed action.Action is retried when its
 // execution returns an error. The zero value is not directly usable; call
 // [DefaultRetryPolicy] to get safe defaults or call [RetryPolicy.Normalize]
 // on a partially-populated value to fill any zero fields from those defaults.

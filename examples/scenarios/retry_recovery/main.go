@@ -40,6 +40,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -57,11 +58,11 @@ func main() {
 
 	// The action is charged up to 5 times with exponential backoff. It recovers
 	// on attempt 3, so it never exhausts the budget.
-	def, err := definition.NewDefinition("payment", 1).
+	def, err := definition.NewBuilder("payment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge",
 			activity.WithActionName("charge-card"),
-			activity.WithRetryPolicy(&definition.RetryPolicy{
+			activity.WithRetryPolicy(&model.RetryPolicy{
 				MaxAttempts:     5,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,
@@ -78,8 +79,8 @@ func main() {
 
 	// Flaky action: fails the first two attempts, succeeds on the third.
 	attempts := 0
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge-card": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			attempts++
 			if attempts < 3 {
 				fmt.Printf("  [charge-card] attempt %d — transient gateway error\n", attempts)

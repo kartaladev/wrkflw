@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -24,13 +25,13 @@ import (
 // configured with a RetryPolicy that allows 5 attempts with exponential backoff.
 //
 //	start → task → end
-func retryE2EDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func retryE2EDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "retry-e2e",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(&definition.RetryPolicy{
+			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(&model.RetryPolicy{
 				MaxAttempts:     5,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,
@@ -38,7 +39,7 @@ func retryE2EDef() *definition.ProcessDefinition {
 			})),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -68,8 +69,8 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	// attempts counts how many times action "a" has been invoked.
 	// We use a plain int because the closure is captured by reference (pointer via &attempts).
 	attempts := 0
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			attempts++
 			if attempts < 3 {
 				return nil, errors.New("boom")

@@ -339,7 +339,7 @@ message ActionBindingView {
   string node_kind = 2;
   // action is the explicit catalog-action name; empty means default-by-id.
   string action = 3;
-  // inline is true when the node carries a node-local inline ServiceAction.
+  // inline is true when the node carries a node-local inline action.Action.
   bool inline = 4;
 }
 

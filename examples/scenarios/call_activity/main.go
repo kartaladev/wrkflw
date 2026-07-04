@@ -27,6 +27,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -37,7 +38,7 @@ func main() {
 	ctx := context.Background()
 
 	// Child definition — a reusable credit-check process.
-	child, err := definition.NewDefinition("credit-check", 1).
+	child, err := definition.NewBuilder("credit-check", 1).
 		Add(event.NewStart("child-start")).
 		Add(activity.NewServiceTask("score", activity.WithActionName("score"))).
 		Add(event.NewEnd("child-end")).
@@ -49,7 +50,7 @@ func main() {
 	}
 
 	// Parent definition — calls the child by its registered name.
-	parent, err := definition.NewDefinition("loan-origination", 1).
+	parent, err := definition.NewBuilder("loan-origination", 1).
 		Add(event.NewStart("parent-start")).
 		Add(activity.NewCallActivity("call", "credit-check")).
 		Add(event.NewEnd("parent-end")).
@@ -60,15 +61,15 @@ func main() {
 		log.Fatal("build parent def:", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"score": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"score": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Printf("  [score] scoring applicant %v\n", vars["applicant"])
 			return map[string]any{"credit_score": 742}, nil
 		}),
 	})
 
 	// Register the child so the CallActivity can resolve "credit-check".
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"credit-check": child,
 	})
 

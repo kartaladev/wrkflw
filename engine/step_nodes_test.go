@@ -3,37 +3,37 @@ package engine
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // armBearingKinds is the complete set of node kinds that have a drive() strategy.
 // Keep in sync with nodeStrategies in step_nodes.go.
-var armBearingKinds = []definition.NodeKind{
-	definition.KindStartEvent,
-	definition.KindEndEvent,
-	definition.KindUserTask,
-	definition.KindIntermediateCatchEvent,
-	definition.KindErrorEndEvent,
-	definition.KindSubProcess,
-	definition.KindExclusiveGateway,
-	definition.KindParallelGateway,
-	definition.KindInclusiveGateway,
-	definition.KindEventBasedGateway,
-	definition.KindCallActivity,
-	definition.KindIntermediateThrowEvent,
-	definition.KindServiceTask,
-	definition.KindBusinessRuleTask,
-	definition.KindReceiveTask,
-	definition.KindSendTask,
+var armBearingKinds = []model.NodeKind{
+	model.KindStartEvent,
+	model.KindEndEvent,
+	model.KindUserTask,
+	model.KindIntermediateCatchEvent,
+	model.KindErrorEndEvent,
+	model.KindSubProcess,
+	model.KindExclusiveGateway,
+	model.KindParallelGateway,
+	model.KindInclusiveGateway,
+	model.KindEventBasedGateway,
+	model.KindCallActivity,
+	model.KindIntermediateThrowEvent,
+	model.KindServiceTask,
+	model.KindBusinessRuleTask,
+	model.KindReceiveTask,
+	model.KindSendTask,
 }
 
 // intentionallyUnhandledKinds is the set of node kinds that must NOT have a
 // drive() strategy — they fall through to the default park logic in drive().
-var intentionallyUnhandledKinds = []definition.NodeKind{
-	definition.KindTerminateEndEvent,
-	definition.KindBoundaryEvent,
-	definition.KindEventSubProcess,
-	definition.KindUnspecified,
+var intentionallyUnhandledKinds = []model.NodeKind{
+	model.KindTerminateEndEvent,
+	model.KindBoundaryEvent,
+	model.KindEventSubProcess,
+	model.KindUnspecified,
 }
 
 // TestNodeStrategyRegistry asserts that nodeStrategies covers exactly the

@@ -7,8 +7,9 @@ import (
 	clockwork "github.com/jonboulle/clockwork"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -35,10 +36,10 @@ func ExampleChainer() {
 		panic(err)
 	}
 
-	fulfillment := &definition.ProcessDefinition{
+	fulfillment := &model.ProcessDefinition{
 		ID: "fulfillment", Version: 1,
-		Nodes: []definition.Node{event.NewStart("s"), event.NewEnd("e")},
-		Flows: []definition.SequenceFlow{{ID: "f", Source: "s", Target: "e"}},
+		Nodes: []model.Node{event.NewStart("s"), event.NewEnd("e")},
+		Flows: []flow.SequenceFlow{{ID: "f", Source: "s", Target: "e"}},
 	}
 
 	// The policy decides the successor for each terminal outcome. A completed

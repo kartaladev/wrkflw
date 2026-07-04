@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -57,8 +57,8 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 			t.Parallel()
 
 			var ran atomic.Bool
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"x": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"x": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					ran.Store(true)
 					return map[string]any{"ok": true}, nil
 				}),
@@ -74,7 +74,7 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 				Name:          "x",
 				FireAndForget: tc.fnf,
 			}
-			trg, err := r.perform(t.Context(), &definition.ProcessDefinition{}, engine.InstanceState{}, cmd)
+			trg, err := r.perform(t.Context(), &model.ProcessDefinition{}, engine.InstanceState{}, cmd)
 			tc.assert(t, trg, err, &ran)
 		})
 	}

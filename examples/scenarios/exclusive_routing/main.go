@@ -21,6 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -31,7 +32,7 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process definition once; run it multiple times with different vars.
-	def, err := definition.NewDefinition("loan-approval", 1).
+	def, err := definition.NewBuilder("loan-approval", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("check-credit", activity.WithActionName("check-credit"))).
 		Add(gateway.NewExclusive("route")).
@@ -41,9 +42,9 @@ func main() {
 		Add(event.NewEnd("end")).
 		Connect("start", "check-credit").
 		Connect("check-credit", "route").
-		Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
-		Connect("route", "auto-approve", definition.WithCondition("amount <= 50000")).
-		Connect("route", "reject", definition.AsDefault()).
+		Connect("route", "manual-review", flow.WithCondition("amount > 50000")).
+		Connect("route", "auto-approve", flow.WithCondition("amount <= 50000")).
+		Connect("route", "reject", flow.AsDefault()).
 		Connect("manual-review", "end").
 		Connect("auto-approve", "end").
 		Connect("reject", "end").
@@ -52,20 +53,20 @@ func main() {
 		log.Fatal("build def:", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"check-credit": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"check-credit": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Printf("  [check-credit] amount=%.0f\n", vars["amount"])
 			return map[string]any{"credit_ok": true}, nil
 		}),
-		"manual-review": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"manual-review": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [manual-review] escalated to underwriter")
 			return map[string]any{"outcome": "manual-review"}, nil
 		}),
-		"auto-approve": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"auto-approve": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [auto-approve] loan auto-approved")
 			return map[string]any{"outcome": "approved"}, nil
 		}),
-		"reject": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"reject": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [reject] loan rejected (default path)")
 			return map[string]any{"outcome": "rejected"}, nil
 		}),

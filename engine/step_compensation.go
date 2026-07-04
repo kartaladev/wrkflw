@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // compensationRecordsForScope returns a read-only slice of CompensationRecords for
@@ -41,7 +41,7 @@ func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecor
 // The admin path always calls beginCompensation with zero finalStatus and empty
 // finalErr, producing StatusTerminated with no FailInstance on a full rollback —
 // identical to the prior behaviour.
-func stepCompensateRequested(def *definition.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// If a compensation walk is already in flight, ignore the redundant request:
 	// restarting beginCompensation would re-walk records that are still
 	// mid-consumption and re-emit the in-flight compensation (double-compensation).
@@ -74,7 +74,7 @@ func stepCompensateRequested(def *definition.ProcessDefinition, s *InstanceState
 //
 // The FinalStatus/FinalErr values are carried on the cursor across all advance steps
 // so that stepCompensationFinish applies them when the walk completes.
-func beginCompensation(def *definition.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -198,7 +198,7 @@ func beginCompensation(def *definition.ProcessDefinition, s *InstanceState, toNo
 // stepCompensationAdvance advances the compensation cursor after a compensation
 // InvokeAction completes (ActionCompleted with cursor.ActiveCmdID). It emits the
 // next InvokeAction in reverse order, or finalises compensation if the walk is done.
-func stepCompensationAdvance(def *definition.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	cur := s.Compensating
 	// Use cursorRecords so that throw walks (ArchiveKey != "") read from the
 	// archive and admin/cancel/error walks read from the live scope.
@@ -258,7 +258,7 @@ func stepCompensationAdvance(def *definition.ProcessDefinition, s *InstanceState
 //     at toNode, set Status = StatusRunning, and drive forward.
 //   - If toNode == "" and ResumeNode == "": full rollback — apply the cursor's
 //     terminal FinalStatus (StatusTerminated / StatusFailed).
-func stepCompensationFinish(def *definition.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Save outcome fields AND cursor metadata BEFORE clearing the cursor.
 	finalStatus := s.Compensating.FinalStatus
 	finalErr := s.Compensating.FinalErr

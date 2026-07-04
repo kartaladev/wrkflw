@@ -42,6 +42,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -138,7 +139,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// --- A demo definition + catalog so the engine can actually run instances ---
-	def, err := definition.NewDefinition("order", 1).
+	def, err := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
 		Add(event.NewEnd("e")).
@@ -148,12 +149,12 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge-card": action.Func(func(context.Context, map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) {
 			return map[string]any{"charged": true}, nil
 		}),
 	})
-	reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{
+	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
 		"order":   def,
 		"order:1": def,
 	})

@@ -40,28 +40,12 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
-
-// statusName returns a human-readable label for engine.Status values.
-// engine.Status is a plain int (no String() method), so we map explicitly.
-func statusName(s engine.Status) string {
-	switch s {
-	case engine.StatusRunning:
-		return "running"
-	case engine.StatusCompleted:
-		return "completed"
-	case engine.StatusFailed:
-		return "failed"
-	case engine.StatusTerminated:
-		return "terminated"
-	default:
-		return fmt.Sprintf("status(%d)", int(s))
-	}
-}
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -136,7 +120,7 @@ func run() error {
 // incident so it stays running) and pages through them via the SQLite lister.
 func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// Simple linear definition: start → greet → end.
-	def, err := definition.NewDefinition("greet", 1).
+	def, err := definition.NewBuilder("greet", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("greet", activity.WithActionName("say-hello"))).
 		Add(event.NewEnd("end")).
@@ -147,8 +131,8 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 		return fmt.Errorf("build def: %w", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"say-hello": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"say-hello": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
@@ -164,7 +148,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 		if err != nil {
 			return fmt.Errorf("run %s: %w", id, err)
 		}
-		fmt.Printf("  started %s → %s\n", id, statusName(st.Status))
+		fmt.Printf("  started %s → %s\n", id, st.Status.String())
 	}
 
 	lister, err := persistence.NewSQLiteLister(db)
@@ -179,7 +163,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 	}
 	fmt.Printf("\n  Page 1 (limit 2), total=%d, hasMore=%v:\n", page1.TotalCount, page1.HasMore)
 	for _, s := range page1.Items {
-		fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, statusName(s.Status))
+		fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, s.Status.String())
 	}
 
 	if page1.HasMore {
@@ -189,7 +173,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 		}
 		fmt.Printf("  Page 2 (cursor), hasMore=%v:\n", page2.HasMore)
 		for _, s := range page2.Items {
-			fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, statusName(s.Status))
+			fmt.Printf("    id=%-14s  status=%s\n", s.InstanceID, s.Status.String())
 		}
 	}
 
@@ -212,7 +196,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 // (MaxAttempts=1 so no retry, incident raised immediately) then calls
 // ResolveIncident to resume the instance to completion.
 func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) error {
-	def, err := definition.NewDefinition("incident-demo", 1).
+	def, err := definition.NewBuilder("incident-demo", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("risky-op", activity.WithActionName("risky"))).
 		Add(event.NewEnd("end")).
@@ -226,8 +210,8 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	// attempts counts how many times the action is called.
 	// Call 1 → fails (raises incident); call 2+ → succeeds.
 	var attempts atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"risky": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"risky": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			n := attempts.Add(1)
 			if n == 1 {
 				return nil, errors.New("transient failure on first attempt")
@@ -239,7 +223,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
 	runner, err := runtime.NewProcessDriver(cat, store,
-		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: 0,
 			BackoffCoef:     1,
@@ -262,7 +246,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	incidentID := parked.Incidents[0].ID
 	fmt.Printf("  INCIDENT RAISED on %s  id=%s  error=%q\n",
 		instanceID, incidentID, parked.Incidents[0].Error)
-	fmt.Printf("  instance status=%s  incident_count=%d\n", statusName(parked.Status), len(parked.Incidents))
+	fmt.Printf("  instance status=%s  incident_count=%d\n", parked.Status.String(), len(parked.Incidents))
 
 	// Operator resolves the incident and grants 1 additional attempt.
 	// ResolveIncident delivers a ResolveIncident trigger → the engine clears the
@@ -274,10 +258,10 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 	}
 
 	fmt.Printf("  INCIDENT RESOLVED → status=%s  incidents_remaining=%d\n",
-		statusName(resolved.Status), len(resolved.Incidents))
+		resolved.Status.String(), len(resolved.Incidents))
 
 	if resolved.Status != engine.StatusCompleted {
-		return fmt.Errorf("expected StatusCompleted after resolve; got %s", statusName(resolved.Status))
+		return fmt.Errorf("expected StatusCompleted after resolve; got %s", resolved.Status.String())
 	}
 
 	return nil
@@ -306,7 +290,7 @@ func (failPublisher) Publish(_ context.Context, _ kernel.OutboxEvent) error {
 //   - confirms OutboxStats.Dead == 0 after redrive (row is pending again).
 func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) error {
 	// A simple definition that completes immediately → emits a terminal outbox event.
-	def, err := definition.NewDefinition("dl-demo", 1).
+	def, err := definition.NewBuilder("dl-demo", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("work", activity.WithActionName("work"))).
 		Add(event.NewEnd("end")).
@@ -317,8 +301,8 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) 
 		return fmt.Errorf("build def: %w", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"work": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"work": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"done": true}, nil
 		}),
 	})
@@ -332,7 +316,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) 
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
-	fmt.Printf("  instance %s → %s (outbox row inserted)\n", st.InstanceID, statusName(st.Status))
+	fmt.Printf("  instance %s → %s (outbox row inserted)\n", st.InstanceID, st.Status.String())
 
 	// Build a relay with the failing publisher and MaxDeliveryAttempts=1 so a
 	// single DrainOnce call quarantines every row it touches.

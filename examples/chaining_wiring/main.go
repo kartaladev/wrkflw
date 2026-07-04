@@ -291,7 +291,7 @@ func run(logger *slog.Logger) error {
 	defer be.cleanup()
 
 	// ── Define predecessor (proc-a) and successor (proc-a-succ) processes ─────
-	defPA, err := definition.NewDefinition("proc-a", 1).
+	defPA, err := definition.NewBuilder("proc-a", 1).
 		Add(event.NewStart("start")).
 		Add(event.NewEnd("end")).
 		Connect("start", "end").
@@ -300,7 +300,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("build proc-a: %w", err)
 	}
 
-	defSA, err := definition.NewDefinition("proc-a-succ", 1).
+	defSA, err := definition.NewBuilder("proc-a-succ", 1).
 		Add(event.NewStart("start")).
 		Add(event.NewEnd("end")).
 		Connect("start", "end").

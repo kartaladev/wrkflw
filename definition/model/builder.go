@@ -1,4 +1,4 @@
-package definition
+package model
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 )
 
 // ErrActionInlineAndNameConflict is returned by Build when a node carries both
@@ -17,19 +18,19 @@ var ErrActionInlineAndNameConflict = errors.New("workflow-definition: node has b
 // the same name twice.
 var ErrDuplicateScopedAction = errors.New("workflow-definition: duplicate scoped action name")
 
-// DefinitionLoader is a post-parse handle returned by ParseYAML and LoadYAML.
+// DefinitionLoader is a post-parse handle returned by ParseYAML (definition.NewLoader).
 // The structural declaration (nodes, flows) is already loaded; callers register
 // definition-scoped actions and call Build to validate and obtain the
 // *ProcessDefinition. All methods return DefinitionLoader for chaining.
 type DefinitionLoader interface {
-	RegisterAction(name string, a action.ServiceAction) DefinitionLoader
+	RegisterAction(name string, a action.Action) DefinitionLoader
 	RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionLoader
 	CancelActions(names ...string) DefinitionLoader
 	Build() (*ProcessDefinition, error)
 }
 
 // DefinitionBuilder is a fluent builder for ProcessDefinition. Construct one
-// with NewDefinition, chain Add/Connect/RegisterAction/CancelActions calls, then
+// with NewBuilder, chain Add/Connect/RegisterAction/CancelActions calls, then
 // call Build to assemble and validate the definition. Loader returns a
 // DefinitionLoader backed by the same core — useful when handing off to code
 // that only registers actions without knowing the full builder API.
@@ -45,8 +46,8 @@ type DefinitionLoader interface {
 // idiom (Add/Connect then RegisterAction) compile identically.
 type DefinitionBuilder interface {
 	Add(n Node) DefinitionBuilder
-	Connect(fromID, toID string, opts ...FlowOption) DefinitionBuilder
-	RegisterAction(name string, a action.ServiceAction) DefinitionBuilder
+	Connect(fromID, toID string, opts ...flow.Option) DefinitionBuilder
+	RegisterAction(name string, a action.Action) DefinitionBuilder
 	RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionBuilder
 	CancelActions(names ...string) DefinitionBuilder
 	Build() (*ProcessDefinition, error)
@@ -66,15 +67,15 @@ type definitionCore struct {
 	id            string
 	version       int
 	nodes         []Node
-	flows         []SequenceFlow
+	flows         []flow.SequenceFlow
 	cancelActions []string
-	actions       map[string]action.ServiceAction // scoped catalog accumulator; nil until first register
-	dupAction     string                          // first duplicate-registered name, "" if none
+	actions       map[string]action.Action // scoped catalog accumulator; nil until first register
+	dupAction     string                   // first duplicate-registered name, "" if none
 }
 
-func (c *definitionCore) register(name string, a action.ServiceAction) {
+func (c *definitionCore) register(name string, a action.Action) {
 	if c.actions == nil {
-		c.actions = make(map[string]action.ServiceAction)
+		c.actions = make(map[string]action.Action)
 	}
 	if _, exists := c.actions[name]; exists && c.dupAction == "" {
 		c.dupAction = name
@@ -82,12 +83,8 @@ func (c *definitionCore) register(name string, a action.ServiceAction) {
 	c.actions[name] = a
 }
 
-func (c *definitionCore) connect(fromID, toID string, opts ...FlowOption) {
-	f := SequenceFlow{ID: fromID + "->" + toID, Source: fromID, Target: toID}
-	for _, o := range opts {
-		o.applyFlow(&f)
-	}
-	c.flows = append(c.flows, f)
+func (c *definitionCore) connect(fromID, toID string, opts ...flow.Option) {
+	c.flows = append(c.flows, flow.New(fromID, toID, opts...))
 }
 
 func (c *definitionCore) build() (*ProcessDefinition, error) {
@@ -127,10 +124,19 @@ type definitionBuilder struct{ *definitionCore }
 // definitionLoader implements DefinitionLoader over a shared *definitionCore.
 type definitionLoader struct{ *definitionCore }
 
-// NewDefinition returns a new DefinitionBuilder for a process with the given
-// id and version. Use Add, Connect, and CancelActions to populate it, then
-// call Build to obtain a validated *ProcessDefinition.
-func NewDefinition(id string, version int) DefinitionBuilder {
+// NewBuilder returns a new DefinitionBuilder for a process with the given id and
+// version. It is the root-package entry point for authoring a definition in Go.
+// Add nodes constructed from the family packages (event.NewStart,
+// gateway.NewExclusive, activity.NewServiceTask, …) via Add, wire them with
+// Connect, then call Build to obtain a validated *ProcessDefinition:
+//
+//	def, err := definition.NewBuilder("order", 1).
+//		Add(event.NewStart("s")).
+//		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+//		Add(event.NewEnd("e")).
+//		Connect("s", "charge").Connect("charge", "e").
+//		Build()
+func NewBuilder(id string, version int) DefinitionBuilder {
 	return &definitionBuilder{&definitionCore{id: id, version: version}}
 }
 
@@ -141,10 +147,10 @@ func (b *definitionBuilder) Add(n Node) DefinitionBuilder {
 }
 
 // Connect adds a directed sequence flow from fromID to toID. The flow ID is
-// auto-generated as "fromID->toID" unless WithFlowID is supplied; use
-// WithCondition to set a routing expression, and AsDefault to mark the flow
-// as the exclusive-gateway default. Returns the builder for chaining.
-func (b *definitionBuilder) Connect(fromID, toID string, opts ...FlowOption) DefinitionBuilder {
+// auto-generated as "fromID->toID" unless flow.WithFlowID is supplied; use
+// flow.WithCondition to set a routing expression, and flow.AsDefault to mark the
+// flow as the exclusive-gateway default. Returns the builder for chaining.
+func (b *definitionBuilder) Connect(fromID, toID string, opts ...flow.Option) DefinitionBuilder {
 	b.connect(fromID, toID, opts...)
 	return b
 }
@@ -158,14 +164,14 @@ func (b *definitionBuilder) CancelActions(names ...string) DefinitionBuilder {
 
 // RegisterAction adds a definition-scoped action under name, visible only to
 // this definition (global catalog is the fallback). Returns the builder.
-func (b *definitionBuilder) RegisterAction(name string, a action.ServiceAction) DefinitionBuilder {
+func (b *definitionBuilder) RegisterAction(name string, a action.Action) DefinitionBuilder {
 	b.register(name, a)
 	return b
 }
 
 // RegisterActionFunc is RegisterAction sugar wrapping a plain function.
 func (b *definitionBuilder) RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionBuilder {
-	b.register(name, action.Func(fn))
+	b.register(name, action.ActionFunc(fn))
 	return b
 }
 
@@ -187,43 +193,17 @@ func (l *definitionLoader) CancelActions(names ...string) DefinitionLoader {
 }
 
 // RegisterAction adds a definition-scoped action under name. Returns the loader for chaining.
-func (l *definitionLoader) RegisterAction(name string, a action.ServiceAction) DefinitionLoader {
+func (l *definitionLoader) RegisterAction(name string, a action.Action) DefinitionLoader {
 	l.register(name, a)
 	return l
 }
 
 // RegisterActionFunc is RegisterAction sugar wrapping a plain function.
 func (l *definitionLoader) RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionLoader {
-	l.register(name, action.Func(fn))
+	l.register(name, action.ActionFunc(fn))
 	return l
 }
 
 // Build assembles the ProcessDefinition and runs Validate. Validation errors
 // that were deferred from parse time (e.g. structural issues) surface here.
 func (l *definitionLoader) Build() (*ProcessDefinition, error) { return l.build() }
-
-// FlowOption is a functional option for Connect, configuring a SequenceFlow.
-type FlowOption interface {
-	applyFlow(f *SequenceFlow)
-}
-
-// flowFuncOpt is a FlowOption backed by a plain function.
-type flowFuncOpt struct{ fn func(*SequenceFlow) }
-
-func (o flowFuncOpt) applyFlow(f *SequenceFlow) { o.fn(f) }
-
-// WithFlowID overrides the auto-generated flow ID.
-func WithFlowID(id string) FlowOption {
-	return flowFuncOpt{func(f *SequenceFlow) { f.ID = id }}
-}
-
-// WithCondition sets the routing expression on the flow. The expression is
-// evaluated by expr-lang/expr against the token's variable map.
-func WithCondition(expr string) FlowOption {
-	return flowFuncOpt{func(f *SequenceFlow) { f.Condition = expr }}
-}
-
-// AsDefault marks the flow as the exclusive-gateway default (IsDefault = true).
-func AsDefault() FlowOption {
-	return flowFuncOpt{func(f *SequenceFlow) { f.IsDefault = true }}
-}

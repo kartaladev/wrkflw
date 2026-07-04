@@ -18,9 +18,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -36,22 +37,22 @@ import (
 // The compensation throw event refers to sub-process "sub". After the sub-process
 // completes normally, its inner-svc record is archived under "sub". When the
 // throw fires, it runs cancel-inner then resumes at afterThrow.
-func throwDefWithCompensableSubProcess() *definition.ProcessDefinition {
-	nested := &definition.ProcessDefinition{
+func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
 		ID: "throw-nested", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &definition.ProcessDefinition{
+	return &model.ProcessDefinition{
 		ID: "throw-proc", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			// Compensation throw: when reached, runs ArchivedCompensations["sub"].
@@ -61,7 +62,7 @@ func throwDefWithCompensableSubProcess() *definition.ProcessDefinition {
 			activity.NewUserTask("afterThrow", nil),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "compThrow"},
 			{ID: "f3", Source: "compThrow", Target: "afterThrow"},
@@ -80,7 +81,7 @@ func throwDefWithCompensableSubProcess() *definition.ProcessDefinition {
 // At this point ArchivedCompensations["sub"] must have one entry and the instance
 // must be StatusCompensating (compensation throw walk started), emitting InvokeAction
 // for cancel-inner. The test body delivers ActionCompleted to finish the walk.
-func driveToThrowEmitStep(t *testing.T) (def *definition.ProcessDefinition, throwResult engine.StepResult) {
+func driveToThrowEmitStep(t *testing.T) (def *model.ProcessDefinition, throwResult engine.StepResult) {
 	t.Helper()
 	at := time.Date(2026, 6, 23, 9, 0, 0, 0, time.UTC)
 	def = throwDefWithCompensableSubProcess()
@@ -195,29 +196,29 @@ func TestCompensationThrowRunsCompensationAndResumes(t *testing.T) {
 //
 // After the first throw compensates "sub" and deletes its archive entry,
 // the second throw should find no records and be a no-op (auto-advance).
-func secondThrowDef() *definition.ProcessDefinition {
-	nested := &definition.ProcessDefinition{
+func secondThrowDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
 		ID: "second-throw-nested", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionName("book-2"), activity.WithCompensation("cancel-2")),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &definition.ProcessDefinition{
+	return &model.ProcessDefinition{
 		ID: "second-throw-proc", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			event.NewThrow("compThrow1", event.WithCompensateRef("sub")),
 			event.NewThrow("compThrow2", event.WithCompensateRef("sub")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "compThrow1"},
 			{ID: "f3", Source: "compThrow1", Target: "compThrow2"},
@@ -293,29 +294,29 @@ func TestSecondCompensationThrowToSameRefIsNoOp(t *testing.T) {
 //
 // After the compensation throw compensates "sub" and resumes at userTask, a
 // CancelRequested is issued. The cancel walk must NOT re-compensate "sub" (already gone).
-func throwThenCancelDef() *definition.ProcessDefinition {
-	nested := &definition.ProcessDefinition{
+func throwThenCancelDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
 		ID: "ttc-nested", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionName("book-ttc"), activity.WithCompensation("cancel-ttc")),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &definition.ProcessDefinition{
+	return &model.ProcessDefinition{
 		ID: "ttc-proc", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "compThrow"},
 			{ID: "f3", Source: "compThrow", Target: "userTask"},
@@ -489,22 +490,22 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 //   - cancel-inner invoked exactly once (from the throw walk)
 //   - cancel-root invoked exactly once (from the deferred cancel over remaining records)
 //   - instance terminates (StatusTerminated, FailInstance{"cancelled"})
-func cancelMidThrowDef() *definition.ProcessDefinition {
-	nested := &definition.ProcessDefinition{
+func cancelMidThrowDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
 		ID: "cmtw-nested", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	return &definition.ProcessDefinition{
+	return &model.ProcessDefinition{
 		ID: "cmtw-proc", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("rootSvc", activity.WithActionName("book-root"), activity.WithCompensation("cancel-root")),
 			activity.NewSubProcess("sub", nested),
@@ -512,7 +513,7 @@ func cancelMidThrowDef() *definition.ProcessDefinition {
 			activity.NewUserTask("afterThrow", nil),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "rootSvc"},
 			{ID: "f2", Source: "rootSvc", Target: "sub"},
 			{ID: "f3", Source: "sub", Target: "compThrow"},
@@ -669,7 +670,7 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 
 // TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate verifies the producer's
 // defensive guard: a compensation throw whose resume node cannot be resolved
-// (no outgoing flow — which definition.Validate forbids via ErrDeadEnd, but Step does
+// (no outgoing flow — which model.Validate forbids via ErrDeadEnd, but Step does
 // not call Validate) must NOT start the walk. Otherwise stepCompensationFinish
 // would see ResumeNode=="" and wrongly TERMINATE the instance. Instead the token
 // auto-advances (moveAlongSingleFlow), which parks defensively, leaving the
@@ -678,26 +679,26 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 	at := time.Date(2026, 6, 23, 13, 0, 0, 0, time.UTC)
 	// Same shape as throwDefWithCompensableSubProcess but the compThrow node has
 	// NO outgoing flow (f3/f4 dropped).
-	nested := &definition.ProcessDefinition{
+	nested := &model.ProcessDefinition{
 		ID: "throw-nested-noout", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "if1", Source: "inner-start", Target: "inner-svc"},
 			{ID: "if2", Source: "inner-svc", Target: "inner-end"},
 		},
 	}
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "throw-proc-noout", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
 			{ID: "f2", Source: "sub", Target: "compThrow"},
 			// compThrow has NO outgoing flow (deliberately malformed for this guard test).

@@ -152,19 +152,9 @@ func newLineageView(l kernel.InstanceLineage) lineageView {
 	return v
 }
 
+// statusString renders an engine.Status for the REST response body. It delegates
+// to engine.Status.String (the canonical source); retained as a named helper for
+// the view mappers and to keep the REST string contract explicit at the call site.
 func statusString(s engine.Status) string {
-	switch s {
-	case engine.StatusRunning:
-		return "running"
-	case engine.StatusCompleted:
-		return "completed"
-	case engine.StatusFailed:
-		return "failed"
-	case engine.StatusCompensating:
-		return "compensating"
-	case engine.StatusTerminated:
-		return "terminated"
-	default:
-		return "unknown"
-	}
+	return s.String()
 }

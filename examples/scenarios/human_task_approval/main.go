@@ -42,7 +42,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, err := definition.NewDefinition("expense-approval", 1).
+	def, err := definition.NewBuilder("expense-approval", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("approve", []string{"manager"})).
 		Add(event.NewEnd("end")).

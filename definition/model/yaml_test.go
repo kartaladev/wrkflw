@@ -1,12 +1,13 @@
-package definition_test
+package model_test
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 func TestParseYAML(t *testing.T) {
@@ -14,7 +15,7 @@ func TestParseYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	ld, err := definition.ParseYAML(data)
+	ld, err := model.ParseYAML(bytes.NewReader(data))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestParseYAMLFlows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	ld, err := definition.ParseYAML(data)
+	ld, err := model.ParseYAML(bytes.NewReader(data))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestLoadYAML(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = f.Close() })
 
-	ld, err := definition.LoadYAML(f)
+	ld, err := model.ParseYAML(f)
 	if err != nil {
 		t.Fatalf("LoadYAML: %v", err)
 	}
@@ -83,7 +84,7 @@ nodes:
     action: do-something
 flows: []
 `
-	ld, err := definition.ParseYAML([]byte(yamlInput))
+	ld, err := model.ParseYAML(strings.NewReader(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: unexpected parse error: %v", err)
 	}
@@ -108,7 +109,7 @@ cancelActions:
   - cleanup-a
   - cleanup-b
 `
-	ld, err := definition.ParseYAML([]byte(yamlInput))
+	ld, err := model.ParseYAML(strings.NewReader(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -145,7 +146,7 @@ flows:
   - { id: f4, source: a, target: e }
   - { id: f5, source: b, target: e }
 `
-	ld, err := definition.ParseYAML([]byte(yamlInput))
+	ld, err := model.ParseYAML(strings.NewReader(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}
@@ -164,7 +165,7 @@ flows:
 }
 
 func TestParseYAMLBadYAML(t *testing.T) {
-	_, err := definition.ParseYAML([]byte("not: valid: yaml: ["))
+	_, err := model.ParseYAML(strings.NewReader("not: valid: yaml: ["))
 	if err == nil {
 		t.Fatal("expected parse error for invalid YAML")
 	}
@@ -191,7 +192,7 @@ flows:
 `
 
 	// Parse the YAML and build.
-	ld, err := definition.ParseYAML([]byte(yamlInput))
+	ld, err := model.ParseYAML(strings.NewReader(yamlInput))
 	if err != nil {
 		t.Fatalf("ParseYAML: %v", err)
 	}

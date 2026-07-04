@@ -6,19 +6,20 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // ProcessDriver is the reference single-process driver loop.
@@ -48,7 +49,7 @@ type ProcessDriver struct {
 	// node that declares no RetryPolicy of its own. When nil, retry is disabled by
 	// default and a failed action behaves as before (error boundary or instance failure).
 	// Set via [WithDefaultRetryPolicy].
-	defaultRetryPolicy *definition.RetryPolicy
+	defaultRetryPolicy *model.RetryPolicy
 
 	// conditionEval, when non-nil, is the expression evaluator the runner passes
 	// into engine.Step via StepOptions.Evaluator for every step. When nil (the
@@ -128,7 +129,7 @@ func NewProcessDriver(
 
 // Run starts an instance and drives it to a terminal state or until the engine
 // parks (e.g. awaiting a human task). It returns the state at the point it stopped.
-func (r *ProcessDriver) Run(ctx context.Context, def *definition.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
 	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.def_id", def.ID),
@@ -160,7 +161,7 @@ func (r *ProcessDriver) Run(ctx context.Context, def *definition.ProcessDefiniti
 // bypasses authorization entirely — the engine core is authorization-unaware by
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
-func (r *ProcessDriver) Deliver(ctx context.Context, def *definition.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+func (r *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
 	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Deliver", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.trigger", triggerName(trg)),
@@ -198,7 +199,7 @@ func (r *ProcessDriver) Deliver(ctx context.Context, def *definition.ProcessDefi
 // instance.
 func (r *ProcessDriver) deliverLoop(
 	ctx context.Context,
-	def *definition.ProcessDefinition,
+	def *model.ProcessDefinition,
 	st engine.InstanceState,
 	token kernel.Token,
 	create bool,

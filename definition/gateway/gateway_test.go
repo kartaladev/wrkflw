@@ -4,19 +4,19 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 func TestGatewayConstructors(t *testing.T) {
 	cases := []struct {
-		node definition.Node
-		kind definition.NodeKind
+		node model.Node
+		kind model.NodeKind
 	}{
-		{gateway.NewExclusive("x", "XOR"), definition.KindExclusiveGateway},
-		{gateway.NewParallel("p"), definition.KindParallelGateway},
-		{gateway.NewInclusive("i"), definition.KindInclusiveGateway},
-		{gateway.NewEventBased("e"), definition.KindEventBasedGateway},
+		{gateway.NewExclusive("x", "XOR"), model.KindExclusiveGateway},
+		{gateway.NewParallel("p"), model.KindParallelGateway},
+		{gateway.NewInclusive("i"), model.KindInclusiveGateway},
+		{gateway.NewEventBased("e"), model.KindEventBasedGateway},
 	}
 	for _, c := range cases {
 		if c.node.Kind() != c.kind {
@@ -32,9 +32,9 @@ func TestGatewayConstructors(t *testing.T) {
 }
 
 func TestGatewayRoundTrip(t *testing.T) {
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "g", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			gateway.NewExclusive("x"), gateway.NewParallel("p"),
 			gateway.NewInclusive("i"), gateway.NewEventBased("e"),
 		},
@@ -43,7 +43,7 @@ func TestGatewayRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got definition.ProcessDefinition
+	var got model.ProcessDefinition
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}

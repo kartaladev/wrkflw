@@ -57,7 +57,7 @@ func main() {
 
 	// Build the process. CancelActions lists cleanup ServiceActions the engine
 	// invokes best-effort, in order, when the instance is cancelled.
-	def, err := definition.NewDefinition("order-fulfilment", 1).
+	def, err := definition.NewBuilder("order-fulfilment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("fulfil", []string{"fulfiller"})).
 		Add(event.NewEnd("end")).
@@ -73,13 +73,13 @@ func main() {
 	// (or unresolved) CancelAction is logged and skipped — it never fails the
 	// cancel. Order is preserved: release-inventory runs before notify-customer.
 	var ran []string
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"release-inventory": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"release-inventory": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "release-inventory")
 			fmt.Println("  [release-inventory] returning the reserved stock to the pool")
 			return nil, nil
 		}),
-		"notify-customer": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"notify-customer": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "notify-customer")
 			fmt.Println("  [notify-customer] send failed — logged and skipped, cancel still succeeds")
 			return nil, errors.New("mail gateway unavailable")
@@ -149,7 +149,7 @@ func main() {
 	if err != nil {
 		log.Fatal("get task:", err)
 	}
-	fmt.Printf("human task %q state: %s\n", task.TaskToken, taskStateString(task.State))
+	fmt.Printf("human task %q state: %s\n", task.TaskToken, task.State.String())
 
 	if final.Status == engine.StatusTerminated &&
 		len(final.Tokens) == 0 &&
@@ -157,21 +157,5 @@ func main() {
 		fmt.Println("OK: instance terminated, tokens cleared, cleanup attempted, task cancelled")
 	} else {
 		fmt.Println("unexpected outcome")
-	}
-}
-
-// taskStateString renders a humantask.TaskState for display.
-func taskStateString(s humantask.TaskState) string {
-	switch s {
-	case humantask.Unclaimed:
-		return "unclaimed"
-	case humantask.Claimed:
-		return "claimed"
-	case humantask.Completed:
-		return "completed"
-	case humantask.Cancelled:
-		return "cancelled"
-	default:
-		return "unknown"
 	}
 }

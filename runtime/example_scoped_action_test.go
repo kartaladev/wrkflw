@@ -14,10 +14,10 @@ import (
 // to a task: a definition-scoped catalog entry referenced by name, a node-local
 // inline function, and default-by-id (no name → the node id is the lookup key).
 func ExampleDefinitionBuilder_RegisterAction() {
-	score := action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	score := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 		return map[string]any{"score": 42}, nil
 	})
-	def, err := definition.NewDefinition("loan", 1).
+	def, err := definition.NewBuilder("loan", 1).
 		RegisterAction("score", score). // def-scoped, by name
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("risk", activity.WithActionName("score"))). // scoped→global

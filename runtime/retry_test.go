@@ -12,9 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -26,17 +27,17 @@ import (
 // supplied via WithDefaultRetryPolicy enables retry on this task.
 //
 //	start → task → end
-func noRetryServiceTaskDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func noRetryServiceTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "no-node-retry",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			// RetryPolicy intentionally omitted — no node-level policy.
 			activity.NewServiceTask("task", activity.WithActionName("a")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -88,8 +89,8 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 			T := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 			clk := clockwork.NewFakeClockAt(T)
 
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					return nil, errors.New("boom")
 				}),
 			})
@@ -100,7 +101,7 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 			opts = append(opts, runtime.WithScheduler(sched))
 			opts = append(opts, runtime.WithJitterSource(runtimetest.FixedJitter{F: 1.0}))
 			if tc.withDefaultRetry {
-				opts = append(opts, runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
+				opts = append(opts, runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 					MaxAttempts:     3,
 					InitialInterval: time.Second,
 					BackoffCoef:     2,
@@ -124,11 +125,11 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 // without scheduling a retry timer.
 //
 //	start → task → end
-func incidentTaskDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func incidentTaskDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "incident-test",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			// RetryPolicy intentionally omitted — default policy of MaxAttempts=1
 			// causes the first failure to exhaust the budget immediately, parking
@@ -136,7 +137,7 @@ func incidentTaskDef() *definition.ProcessDefinition {
 			activity.NewServiceTask("task", activity.WithActionName("a")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -156,8 +157,8 @@ func TestRunnerResolveIncident(t *testing.T) {
 
 	// Counter: action fails on first call (attempt 0), succeeds on second (after resolve).
 	var calls atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			if calls.Add(1) == 1 {
 				return nil, errors.New("first call fails")
 			}
@@ -169,7 +170,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	runner := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(clk),
 		// MaxAttempts=1: first failure parks as incident, no retry timer scheduled.
-		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: time.Second,
 			BackoffCoef:     1,

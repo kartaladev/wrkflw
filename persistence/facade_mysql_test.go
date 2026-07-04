@@ -19,8 +19,9 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
@@ -50,15 +51,15 @@ func (p *facadePub) count() int {
 }
 
 // mysqlMinimalDef returns the simplest process definition for MySQL tests.
-func mysqlMinimalDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func mysqlMinimalDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "mysql-minimal",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+		Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 }
 
@@ -162,11 +163,11 @@ func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	// Drive a minimal process to confirm the option is wired through.
 	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)
-	st, err := r.Run(t.Context(), &definition.ProcessDefinition{
+	st, err := r.Run(t.Context(), &model.ProcessDefinition{
 		ID:      "hist-mysql-1",
 		Version: 1,
-		Nodes:   []definition.Node{event.NewStart("start"), event.NewEnd("end")},
-		Flows:   []definition.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+		Nodes:   []model.Node{event.NewStart("start"), event.NewEnd("end")},
+		Flows:   []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}, "hist-mysql-inst-1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
@@ -268,10 +269,10 @@ func TestNewMySQLDeduper_FirstThenDup(t *testing.T) {
 
 // staticReg is a simple in-memory DefinitionRegistry for tests.
 type staticReg struct {
-	defs map[string]*definition.ProcessDefinition
+	defs map[string]*model.ProcessDefinition
 }
 
-func (r *staticReg) Lookup(_ context.Context, defRef string) (*definition.ProcessDefinition, error) {
+func (r *staticReg) Lookup(_ context.Context, defRef string) (*model.ProcessDefinition, error) {
 	d, ok := r.defs[defRef]
 	if !ok {
 		return nil, fmt.Errorf("def not found: %s", defRef)
@@ -444,7 +445,7 @@ func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID:            "facade-def-1",
 		Version:       1,
 		CancelActions: []string{"rollback"},
@@ -588,12 +589,12 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Build a simple in-memory registry wrapping the definition.
-	reg := &staticReg{defs: map[string]*definition.ProcessDefinition{
+	reg := &staticReg{defs: map[string]*model.ProcessDefinition{
 		"mysql-minimal:1": def,
 	}}
 
 	var deliverCalled int
-	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *definition.ProcessDefinition, _ string, _ engine.Trigger) error {
+	deliverFn := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		deliverCalled++
 		return nil
 	})

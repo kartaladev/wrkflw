@@ -2142,7 +2142,7 @@ type ActionBindingView struct {
 	NodeKind string `protobuf:"bytes,2,opt,name=node_kind,json=nodeKind,proto3" json:"node_kind,omitempty"`
 	// action is the explicit catalog-action name; empty means default-by-id.
 	Action string `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
-	// inline is true when the node carries a node-local inline ServiceAction.
+	// inline is true when the node carries a node-local inline action.Action.
 	Inline        bool `protobuf:"varint,4,opt,name=inline,proto3" json:"inline,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
@@ -113,9 +114,9 @@ func TestNewInstanceSnapshot(t *testing.T) {
 	}
 }
 
-// noop returns a trivial inline ServiceAction for use in test definitions.
-func noop() action.ServiceAction {
-	return action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+// noop returns a trivial inline action.Action for use in test definitions.
+func noop() action.Action {
+	return action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 		return nil, nil
 	})
 }
@@ -133,12 +134,12 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 
 	cases := []struct {
 		name   string
-		def    func() *definition.ProcessDefinition
+		def    func() *model.ProcessDefinition
 		assert func(t *testing.T, snap view.InstanceSnapshot)
 	}{
 		{
 			name: "nil_def_leaves_fields_empty",
-			def:  func() *definition.ProcessDefinition { return nil },
+			def:  func() *model.ProcessDefinition { return nil },
 			assert: func(t *testing.T, snap view.InstanceSnapshot) {
 				t.Helper()
 				if snap.ScopedActions != nil {
@@ -151,8 +152,8 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "service_task_with_action_name",
-			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+			def: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("svc-named", activity.WithActionName("my-action"))).
 					Add(event.NewEnd("end")).
@@ -192,8 +193,8 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "service_task_inline_action",
-			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+			def: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("svc-inline", activity.WithAction(noop()))).
 					Add(event.NewEnd("end")).
@@ -230,8 +231,8 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "service_task_default_by_id",
-			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+			def: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("svc-default")).
 					Add(event.NewEnd("end")).
@@ -266,8 +267,8 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "business_rule_task",
-			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+			def: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewBusinessRuleTask("brt-node", activity.WithActionName("rule-action"))).
 					Add(event.NewEnd("end")).
@@ -301,8 +302,8 @@ func TestNewInstanceSnapshotActionMetadata(t *testing.T) {
 		},
 		{
 			name: "mixed_nodes_sorted_by_node_id",
-			def: func() *definition.ProcessDefinition {
-				def, err := definition.NewDefinition("meta-proc", 1).
+			def: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("meta-proc", 1).
 					Add(event.NewStart("start")).
 					Add(activity.NewServiceTask("z-svc", activity.WithActionName("svc-x"))).
 					Add(activity.NewBusinessRuleTask("a-brt")).

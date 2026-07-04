@@ -3,6 +3,16 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
+## ⏩⏩ ACTIVE BRANCH (read FIRST — 2026-07-04): `definition` aggregator + `action` rename
+
+> **⏸ UNMERGED branch `refactor/definition-core-aggregator`** (off `main` @ `6d67925` = ADR-0090 merge), 12 commits, working tree clean, **all gates green**, **awaiting maintainer review then `--no-ff` merge to `main`.**
+>
+> **Full handover:** [`docs/plans/2026-07-04-definition-aggregator-branch-handover.md`](2026-07-04-definition-aggregator-branch-handover.md) — read it before touching the `definition` or `action` packages.
+>
+> **TL;DR (ADR-0091 + follow-ons):** root `definition` is now a **two-function aggregator** (`NewBuilder` → `build.NewBuilder`, `NewLoader` → `build.NewLoader`); core types moved to **`definition/model`**, sequence flows to **`definition/flow`** (`flow.SequenceFlow`/`flow.Option`); the fluent builder + YAML loader both live in **`definition/build`**; **no re-export aliases** (types used from `model`/`flow` directly). `action.ServiceAction`→`action.Action`, `action.Func`→`action.ActionFunc` (kept top-level). `action/email` TLS senders split into `tls.go`/`starttls.go`. All BPMN mentions in `definition` replaced with "workflow". **Next free ADR 0092.**
+>
+> **Resume:** `git checkout refactor/definition-core-aggregator && go build ./... && go test ./definition/... ./action/...` (green). One pre-existing flake noted in the handover (`TestRelayRun_ExitsOnCtxCancel/sqlite` goleak — not from this branch).
+
 ## ⏩ CURRENT RESUME POINT (read this FIRST — supersedes the dated blocks below) — updated 2026-07-03 (runtime package decomposition, ADR-0087)
 
 > **State:** ✅ **MERGED to `main` + PUSHED to `origin/main`** (tip `4d77f88`, 2026-07-03; working tree clean, everything published). The flat 32-file `runtime` package is decomposed into **8 concept-oriented sub-packages** with a strictly one-directional import graph. `go build ./...` clean; `go test ./...` 0 failures; `go test -race ./...` 0 races; `golangci-lint run ./...` **0 issues**; **no import cycles** (`go list ./runtime/...`); per-package coverage all ≥85% (runtime 91.4, kernel 86.3, signal 98.1, calllink 87.0, chain 93.5, task 85.4, monitor 92.0, view 87.7); `engine/`+`model/` **zero-diff**. **Next free ADR: 0088** (0087 consumed). Spec: `docs/specs/runtime-package-decomposition.md`. Plan: `docs/plans/2026-07-03-runtime-package-decomposition.md`. ADR: `docs/adr/0087-runtime-package-decomposition.md`.

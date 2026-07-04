@@ -40,7 +40,7 @@ func main() {
 	// The correlation key is an expr expression over the instance variables here
 	// `orderID` resolves to each instance's own order id, so each parked
 	// ReceiveTask is addressable by that value.
-	def, err := definition.NewDefinition("order-shipping", 1).
+	def, err := definition.NewBuilder("order-shipping", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
 			activity.WithCorrelationKey("orderID"))).
@@ -55,8 +55,8 @@ func main() {
 	}
 
 	shipped := map[string]bool{}
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"ship-order": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"ship-order": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			id, _ := in["orderID"].(string)
 			shipped[id] = true
 			fmt.Printf("  [ship-order] shipping %s\n", id)

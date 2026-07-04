@@ -5,7 +5,7 @@
 // flowID, action). When a token sits in the activity past the duration, the
 // engine arms a TimerDeadline that, on breach, does two things:
 //
-//  1. runs the breach action (a fire-once ServiceAction — the third argument —
+//  1. runs the breach action (a fire-once action.Action — the third argument —
 //     run for its side effect; its result is not fed back), and
 //  2. routes the token down the named deadline flow to an alternative path,
 //     cancelling the in-progress human task.
@@ -43,11 +43,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/view"
 )
 
 func main() {
@@ -61,7 +61,7 @@ func main() {
 	// are quoted Go-duration strings ("1h", "30m", "45s"). The outer backticks
 	// keep the inner quotes literal. The third argument is the fire-once breach
 	// action; the escalation work proper is the service task on the deadline path.
-	def, err := definition.NewDefinition("review-escalation", 1).
+	def, err := definition.NewBuilder("review-escalation", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("review", []string{"reviewer"},
 			activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"),
@@ -72,7 +72,7 @@ func main() {
 		Connect("start", "review").
 		Connect("review", "approved-end"). // normal completion path
 		// The deadline flow: its ID must match the WithDeadline flowID above.
-		Connect("review", "escalate", definition.WithFlowID("review-overdue")).
+		Connect("review", "escalate", flow.WithFlowID("review-overdue")).
 		Connect("escalate", "escalated-end").
 		Build()
 	if err != nil {
@@ -80,15 +80,15 @@ func main() {
 	}
 
 	escalated := false
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
+	cat := action.NewMapCatalog(map[string]action.Action{
 		// Fire-once breach action: run by the engine the moment the deadline
 		// elapses, for its side effect only (its result is not fed back).
-		"notify-overdue": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"notify-overdue": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			fmt.Println("  [notify-overdue] review deadline breached — notifying the manager")
 			return nil, nil
 		}),
 		// Service action on the escalation path the token is routed to on breach.
-		"reassign": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+		"reassign": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			escalated = true
 			fmt.Println("  [reassign] reassigning the review to a senior reviewer")
 			return map[string]any{"escalated": true}, nil
@@ -130,7 +130,7 @@ func main() {
 		log.Fatal("run:", err)
 	}
 	fmt.Printf("instance parked at %q (status=%s)\n",
-		parked.Tokens[0].NodeID, view.StatusString(parked.Status))
+		parked.Tokens[0].NodeID, parked.Status.String())
 
 	// The reviewer never claims the task. Advance the clock past the 1h deadline
 	// and tick the scheduler — this fires the deadline timer.
@@ -148,6 +148,6 @@ func main() {
 			final.Variables["escalated"])
 	} else {
 		fmt.Printf("unexpected outcome: status=%s escalated=%v\n",
-			view.StatusString(final.Status), escalated)
+			final.Status.String(), escalated)
 	}
 }

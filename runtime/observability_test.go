@@ -22,9 +22,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -166,8 +167,8 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"greet": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
@@ -208,15 +209,15 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 }
 
 // paymentDef returns a minimal start→charge(service)→end process definition.
-func paymentDef() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func paymentDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID: "payment", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("charge", activity.WithActionName("charge")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
 			{ID: "f2", Source: "charge", Target: "end"},
 		},
@@ -295,8 +296,8 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			reader := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-			cat := action.NewMapCatalog(map[string]action.ServiceAction{
-				"charge": action.Func(tc.actionFunc),
+			cat := action.NewMapCatalog(map[string]action.Action{
+				"charge": action.ActionFunc(tc.actionFunc),
 			})
 			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
@@ -322,8 +323,8 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	clk := clockwork.NewFakeClockAt(T)
 
 	var calls atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"a": action.Func(func(_ context.Context, _ map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			if calls.Add(1) == 1 {
 				return nil, errors.New("first call fails")
 			}
@@ -331,14 +332,14 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		}),
 	})
 
-	def := &definition.ProcessDefinition{
+	def := &model.ProcessDefinition{
 		ID: "incident-obs", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("task", activity.WithActionName("a")),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "task"},
 			{ID: "f2", Source: "task", Target: "end"},
 		},
@@ -348,7 +349,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		runtime.WithClock(clk),
 		runtime.WithMeterProvider(mp),
 		// MaxAttempts=1: first failure parks immediately as an incident.
-		runtime.WithDefaultRetryPolicy(definition.RetryPolicy{
+		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: time.Second,
 			BackoffCoef:     1,
@@ -512,14 +513,14 @@ func TestDeliverSpan(t *testing.T) {
 	// evaluates it to the string "ord-42" without referencing a process variable).
 	// After Run parks at the catch-message node, we Deliver a MessageReceived
 	// trigger — that single Deliver call must produce a "wrkflw.runner.Deliver" span.
-	msgDef := &definition.ProcessDefinition{
+	msgDef := &model.ProcessDefinition{
 		ID: "msg-deliver-obs", Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewCatch("catch", event.WithCatchMessage("pay.confirmed", `"ord-42"`)),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "catch"},
 			{ID: "f2", Source: "catch", Target: "end"},
 		},

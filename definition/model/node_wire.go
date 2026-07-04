@@ -1,8 +1,10 @@
-package definition
+package model
 
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 )
 
 // NodeWire is the flat JSON/JSONB representation of any node. It is the single
@@ -103,11 +105,11 @@ func fromWire(w NodeWire) (Node, error) {
 
 // definitionWire mirrors ProcessDefinition with Nodes as wire forms.
 type definitionWire struct {
-	ID            string         `json:"id"`
-	Version       int            `json:"version"`
-	Nodes         []NodeWire     `json:"nodes"`
-	Flows         []SequenceFlow `json:"flows"`
-	CancelActions []string       `json:"cancelActions,omitempty"`
+	ID            string              `json:"id"`
+	Version       int                 `json:"version"`
+	Nodes         []NodeWire          `json:"nodes"`
+	Flows         []flow.SequenceFlow `json:"flows"`
+	CancelActions []string            `json:"cancelActions,omitempty"`
 }
 
 // MarshalJSON serializes a ProcessDefinition to JSON using the flat NodeWire

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // --- option interfaces ---
@@ -12,8 +12,8 @@ import (
 // ActivityOption is the functional-options type accepted by NewSubProcess and
 // NewCallActivity (and satisfied by every shared activity option).
 type ActivityOption interface {
-	applyActivity(a *definition.ActivityFields)
-	applyName(b *definition.Base)
+	applyActivity(a *model.ActivityFields)
+	applyName(b *model.Base)
 }
 
 // ServiceTaskOption configures a ServiceTask.
@@ -32,7 +32,7 @@ type SendTaskOption interface{ applySendTask(s *SendTask) }
 type BusinessRuleOption interface{ applyBusinessRule(b *BusinessRuleTask) }
 
 // applyActivityOpts applies ActivityOption values to a base + activity fields.
-func applyActivityOpts(b *definition.Base, a *definition.ActivityFields, opts []ActivityOption) {
+func applyActivityOpts(b *model.Base, a *model.ActivityFields, opts []ActivityOption) {
 	for _, o := range opts {
 		o.applyActivity(a)
 		o.applyName(b)
@@ -43,13 +43,13 @@ func applyActivityOpts(b *definition.Base, a *definition.ActivityFields, opts []
 
 type nameOpt struct{ name string }
 
-func (o nameOpt) applyActivity(_ *definition.ActivityFields) {}
-func (o nameOpt) applyName(b *definition.Base)               { b.SetName(o.name) }
-func (o nameOpt) applyServiceTask(s *ServiceTask)            { s.SetName(o.name) }
-func (o nameOpt) applyUserTask(u *UserTask)                  { u.SetName(o.name) }
-func (o nameOpt) applyReceiveTask(r *ReceiveTask)            { r.SetName(o.name) }
-func (o nameOpt) applySendTask(s *SendTask)                  { s.SetName(o.name) }
-func (o nameOpt) applyBusinessRule(b *BusinessRuleTask)      { b.SetName(o.name) }
+func (o nameOpt) applyActivity(_ *model.ActivityFields) {}
+func (o nameOpt) applyName(b *model.Base)               { b.SetName(o.name) }
+func (o nameOpt) applyServiceTask(s *ServiceTask)       { s.SetName(o.name) }
+func (o nameOpt) applyUserTask(u *UserTask)             { u.SetName(o.name) }
+func (o nameOpt) applyReceiveTask(r *ReceiveTask)       { r.SetName(o.name) }
+func (o nameOpt) applySendTask(s *SendTask)             { s.SetName(o.name) }
+func (o nameOpt) applyBusinessRule(b *BusinessRuleTask) { b.SetName(o.name) }
 
 // WithName sets the display name on any activity node.
 func WithName(name string) nameOpt { return nameOpt{name} }
@@ -70,22 +70,22 @@ func WithActionName(name string) interface {
 	return actionNameOpt{name}
 }
 
-type inlineActionOpt struct{ a action.ServiceAction }
+type inlineActionOpt struct{ a action.Action }
 
 func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.Inline = o.a }
 func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.Inline = o.a }
 
-// WithAction attaches a node-local inline ServiceAction available to this node
+// WithAction attaches a node-local inline action.Action available to this node
 // only. Mutually exclusive with WithActionName (Build reports a conflict). Inline
 // actions are never serialized; a persisted definition must re-attach them in code.
-func WithAction(a action.ServiceAction) interface {
+func WithAction(a action.Action) interface {
 	ServiceTaskOption
 	BusinessRuleOption
 } {
 	return inlineActionOpt{a}
 }
 
-// WithActionFunc is WithAction sugar wrapping a plain function as action.Func.
+// WithActionFunc is WithAction sugar wrapping a plain function as action.ActionFunc.
 func WithActionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) interface {
 	ServiceTaskOption
 	BusinessRuleOption
@@ -98,51 +98,51 @@ func WithActionFunc(fn func(context.Context, map[string]any) (map[string]any, er
 // activityOnlyOption wraps a function that mutates ActivityFields only. Its
 // concrete type satisfies every activity option interface at once.
 type activityOnlyOption struct {
-	fn func(*definition.ActivityFields)
+	fn func(*model.ActivityFields)
 }
 
-func (o activityOnlyOption) applyActivity(a *definition.ActivityFields) { o.fn(a) }
-func (activityOnlyOption) applyName(_ *definition.Base)                 {}
-func (o activityOnlyOption) applyServiceTask(s *ServiceTask)            { o.fn(&s.ActivityFields) }
-func (o activityOnlyOption) applyUserTask(u *UserTask)                  { o.fn(&u.ActivityFields) }
-func (o activityOnlyOption) applyReceiveTask(r *ReceiveTask)            { o.fn(&r.ActivityFields) }
-func (o activityOnlyOption) applySendTask(s *SendTask)                  { o.fn(&s.ActivityFields) }
-func (o activityOnlyOption) applyBusinessRule(b *BusinessRuleTask)      { o.fn(&b.ActivityFields) }
+func (o activityOnlyOption) applyActivity(a *model.ActivityFields) { o.fn(a) }
+func (activityOnlyOption) applyName(_ *model.Base)                 {}
+func (o activityOnlyOption) applyServiceTask(s *ServiceTask)       { o.fn(&s.ActivityFields) }
+func (o activityOnlyOption) applyUserTask(u *UserTask)             { o.fn(&u.ActivityFields) }
+func (o activityOnlyOption) applyReceiveTask(r *ReceiveTask)       { o.fn(&r.ActivityFields) }
+func (o activityOnlyOption) applySendTask(s *SendTask)             { o.fn(&s.ActivityFields) }
+func (o activityOnlyOption) applyBusinessRule(b *BusinessRuleTask) { o.fn(&b.ActivityFields) }
 
-func withActivity(fn func(*definition.ActivityFields)) activityOnlyOption {
+func withActivity(fn func(*model.ActivityFields)) activityOnlyOption {
 	return activityOnlyOption{fn}
 }
 
 // WithRetryPolicy sets the per-node RetryPolicy (nil = use runtime default).
-func WithRetryPolicy(p *definition.RetryPolicy) activityOnlyOption {
-	return withActivity(func(a *definition.ActivityFields) { a.RetryPolicy = p })
+func WithRetryPolicy(p *model.RetryPolicy) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.RetryPolicy = p })
 }
 
 // WithRecoveryFlow sets the flow taken when retries are exhausted.
 func WithRecoveryFlow(flowID string) activityOnlyOption {
-	return withActivity(func(a *definition.ActivityFields) { a.RecoveryFlow = flowID })
+	return withActivity(func(a *model.ActivityFields) { a.RecoveryFlow = flowID })
 }
 
-// WithCompensation sets the ServiceAction name invoked during rollback.
+// WithCompensation sets the action.Action name invoked during rollback.
 func WithCompensation(action string) activityOnlyOption {
-	return withActivity(func(a *definition.ActivityFields) { a.CompensationAction = action })
+	return withActivity(func(a *model.ActivityFields) { a.CompensationAction = action })
 }
 
-// WithCancelHandler sets the ServiceAction run when the node is interrupted.
+// WithCancelHandler sets the action.Action run when the node is interrupted.
 func WithCancelHandler(action string) activityOnlyOption {
-	return withActivity(func(a *definition.ActivityFields) { a.CancelHandler = action })
+	return withActivity(func(a *model.ActivityFields) { a.CancelHandler = action })
 }
 
 // WithDeadline sets DeadlineDuration, DeadlineFlow, and DeadlineAction.
 func WithDeadline(duration, flowID, action string) activityOnlyOption {
-	return withActivity(func(a *definition.ActivityFields) {
+	return withActivity(func(a *model.ActivityFields) {
 		a.DeadlineDuration, a.DeadlineFlow, a.DeadlineAction = duration, flowID, action
 	})
 }
 
 // WithReminder sets ReminderEvery and ReminderAction.
 func WithReminder(every, action string) activityOnlyOption {
-	return withActivity(func(a *definition.ActivityFields) {
+	return withActivity(func(a *model.ActivityFields) {
 		a.ReminderEvery, a.ReminderAction = every, action
 	})
 }

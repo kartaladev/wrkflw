@@ -17,8 +17,9 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -29,15 +30,15 @@ import (
 // minimalStartEndDefinition returns the simplest possible process: start → end.
 // It completes synchronously in a single Run call with no service tasks, so no
 // action catalog is required.
-func minimalStartEndDefinition() *definition.ProcessDefinition {
-	return &definition.ProcessDefinition{
+func minimalStartEndDefinition() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
 		ID:      "minimal",
 		Version: 1,
-		Nodes: []definition.Node{
+		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewEnd("end"),
 		},
-		Flows: []definition.SequenceFlow{
+		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "end"},
 		},
 	}
@@ -139,8 +140,8 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	require.NotNil(t, ds)
 
 	// Round-trip a definition through the store.
-	def := &definition.ProcessDefinition{ID: "d1", Version: 1,
-		Nodes: []definition.Node{event.NewStart("start")},
+	def := &model.ProcessDefinition{ID: "d1", Version: 1,
+		Nodes: []model.Node{event.NewStart("start")},
 	}
 	require.NoError(t, ds.PutDefinition(t.Context(), def))
 

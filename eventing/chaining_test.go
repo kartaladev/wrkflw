@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -31,7 +32,7 @@ type capturingStarter struct {
 	state engine.InstanceState
 }
 
-func (s *capturingStarter) Run(_ context.Context, _ *definition.ProcessDefinition, id string, _ map[string]any) (engine.InstanceState, error) {
+func (s *capturingStarter) Run(_ context.Context, _ *model.ProcessDefinition, id string, _ map[string]any) (engine.InstanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ids = append(s.ids, id)
@@ -50,7 +51,7 @@ func chainCore(t *testing.T, starter chain.InstanceStarter, capture *[]chain.Cha
 		mu.Lock()
 		*capture = append(*capture, ev)
 		mu.Unlock()
-		return chain.SuccessorDecision{Def: &definition.ProcessDefinition{ID: "succ", Version: 1}, Vars: ev.Result}, true
+		return chain.SuccessorDecision{Def: &model.ProcessDefinition{ID: "succ", Version: 1}, Vars: ev.Result}, true
 	}
 	c, err := chain.NewChainer(starter, policy)
 	require.NoError(t, err)
@@ -188,10 +189,10 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clk))
 	require.NoError(t, err)
 
-	succ := &definition.ProcessDefinition{
+	succ := &model.ProcessDefinition{
 		ID: "fulfillment", Version: 1,
-		Nodes: []definition.Node{event.NewStart("s"), event.NewEnd("e")},
-		Flows: []definition.SequenceFlow{{ID: "f", Source: "s", Target: "e"}},
+		Nodes: []model.Node{event.NewStart("s"), event.NewEnd("e")},
+		Flows: []flow.SequenceFlow{{ID: "f", Source: "s", Target: "e"}},
 	}
 	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		return chain.SuccessorDecision{Def: succ, Vars: ev.Result}, true
