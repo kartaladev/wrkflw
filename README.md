@@ -62,22 +62,22 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/build"
 )
 
 func main() {
 	// Node kinds live in BPMN-family packages (event, gateway, activity). The
-	// fluent build.New(...) chain offers one terse AddX per kind; the generic
-	// definition.NewDefinition(...).Add(node) form also works for dynamic nodes.
-	def, err := build.New("order-fulfillment", 1).
-		AddStart("start").
+	// fluent definition.NewBuilder(...) chain offers one terse AddX per kind; the generic
+	// definition.NewBuilder(...).Add(node) form also works for dynamic nodes.
+	def, err := definition.NewBuilder("order-fulfillment", 1).
+		AddStartEvent("start").
 		AddServiceTask("charge",
 			activity.WithActionName("charge-card"),
 			activity.WithCompensation("refund-card"),
 		).
 		AddUserTask("approve", []string{"manager"}).
-		AddEnd("end").
+		AddEndEvent("end").
 		Connect("start", "charge").
 		Connect("charge", "approve").
 		Connect("approve", "end").
@@ -104,7 +104,7 @@ score := action.Func(func(_ context.Context, in map[string]any) (map[string]any,
     return map[string]any{"score": 42}, nil
 })
 
-def, _ := definition.NewDefinition("loan", 1).
+def, _ := definition.NewBuilder("loan", 1).
     RegisterAction("score", score).                   // def-scoped, by name
     Add(event.NewStart("start")).
     Add(activity.NewServiceTask("risk",
@@ -175,7 +175,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	def, _ := definition.NewDefinition("order", 1).
+	def, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
 		Add(event.NewEnd("e")).
@@ -213,7 +213,7 @@ For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
 
 | Form | Function | Notes |
 |---|---|---|
-| Go builder | `build.New(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Node kinds live in `definition/{event,gateway,activity}`; the fluent `build` package has one `Add<Kind>` per kind, or use `definition.NewDefinition(...).Add(node)` for dynamic nodes. |
+| Go builder | `definition.NewBuilder(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Node kinds live in `definition/{event,gateway,activity}`; the fluent `build` package has one `Add<Kind>` per kind, or use `definition.NewBuilder(...).Add(node)` for dynamic nodes. |
 | YAML | `definition.ParseYAML(data)` / `definition.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator; returns `DefinitionLoader` — call `.Build()` (optionally after `.RegisterAction(...)`) to obtain `*ProcessDefinition` |
 
 ---
@@ -381,7 +381,7 @@ Cancellation actions (run best-effort when the whole instance is cancelled) are 
 the definition:
 
 ```go
-definition.NewDefinition("order", 1).CancelActions("send-cancellation-email")
+definition.NewBuilder("order", 1).CancelActions("send-cancellation-email")
 ```
 
 ### Resilience
@@ -703,7 +703,7 @@ gateway.NewEventBased("await")
 Assemble nodes and flows with the fluent builder, then `Build()` (which validates):
 
 ```go
-def, err := definition.NewDefinition("order-fulfillment", 1).
+def, err := definition.NewBuilder("order-fulfillment", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewExclusive("route")).
     Add(activity.NewServiceTask("manual-review", activity.WithActionName("manual-review"))).
@@ -711,9 +711,9 @@ def, err := definition.NewDefinition("order-fulfillment", 1).
     Add(activity.NewServiceTask("reject", activity.WithActionName("reject"))).
     Add(event.NewEnd("end")).
     Connect("start", "route").
-    Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
-    Connect("route", "auto-approve", definition.WithCondition("amount <= 50000")).
-    Connect("route", "reject", definition.AsDefault()).
+    Connect("route", "manual-review", flow.WithCondition("amount > 50000")).
+    Connect("route", "auto-approve", flow.WithCondition("amount <= 50000")).
+    Connect("route", "reject", flow.AsDefault()).
     Connect("manual-review", "end").
     Connect("auto-approve", "end").
     Connect("reject", "end").
@@ -723,17 +723,17 @@ def, err := definition.NewDefinition("order-fulfillment", 1).
 
 | Builder method | Purpose |
 |---|---|
-| `definition.NewDefinition(id, version)` | Start a builder. |
+| `definition.NewBuilder(id, version)` | Start a builder. |
 | `.Add(node)` | Append a node. |
 | `.Connect(fromID, toID, opts...)` | Add a sequence flow (ID auto = `"from->to"`). |
 | `.CancelActions(names...)` | Best-effort actions run when the instance is cancelled. |
 | `.Build()` | Assemble + validate; returns `(*definition.ProcessDefinition, error)`. |
 
-Flow options for `.Connect`: `definition.WithFlowID(id)`, `definition.WithCondition(expr)`,
-`definition.AsDefault()`.
+Flow options for `.Connect`: `flow.WithFlowID(id)`, `flow.WithCondition(expr)`,
+`flow.AsDefault()`.
 
 > **Flow conditions use bare variable keys.** A condition is evaluated by expr-lang
-> directly against the process-variable map, so write `definition.WithCondition("amount > 100")`
+> directly against the process-variable map, so write `flow.WithCondition("amount > 100")`
 > — **not** `vars.amount`. (Only `WithEligibilityExpr` on a UserTask uses the
 > `vars[...]` form, because it is evaluated by authz.)
 
@@ -794,7 +794,7 @@ start → fork[Parallel] → pick-items[Service]  ┐
 ```
 
 ```go
-def, _ := definition.NewDefinition("order-fulfillment", 1).
+def, _ := definition.NewBuilder("order-fulfillment", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewParallel("fork")).
     Add(activity.NewServiceTask("pick-items", activity.WithActionName("pick-items"))).
@@ -830,9 +830,9 @@ start → check-credit[Service] → route[Exclusive]
 ```
 
 ```go
-Connect("route", "manual-review", definition.WithCondition("amount > 50000")).
-Connect("route", "auto-approve",  definition.WithCondition("amount <= 50000")).
-Connect("route", "reject",        definition.AsDefault()).
+Connect("route", "manual-review", flow.WithCondition("amount > 50000")).
+Connect("route", "auto-approve",  flow.WithCondition("amount <= 50000")).
+Connect("route", "reject",        flow.AsDefault()).
 ```
 
 **At runtime:** the example runs the same definition twice — `amount=75000` routes to
@@ -860,7 +860,7 @@ Add(activity.NewUserTask("review", []string{"reviewer"},
 Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
 // ...
 Connect("review", "approved-end").                                  // normal path
-Connect("review", "escalate", definition.WithFlowID("review-overdue")).  // deadline flow
+Connect("review", "escalate", flow.WithFlowID("review-overdue")).  // deadline flow
 Connect("escalate", "escalated-end").
 ```
 
@@ -964,8 +964,8 @@ CallActivity: parent-start → call[CallActivity → "credit-check"] → parent-
 
 ```go
 // Embedded sub-process:
-hotel, _ := definition.NewDefinition("hotel-reservation", 1). /* ... */ .Build()
-def, _  := definition.NewDefinition("travel-booking", 1).
+hotel, _ := definition.NewBuilder("hotel-reservation", 1). /* ... */ .Build()
+def, _  := definition.NewBuilder("travel-booking", 1).
     Add(activity.NewSubProcess("reserve-hotel", hotel)).
     /* ... */ .Build()
 
@@ -997,9 +997,9 @@ start → assess[Service] → split[Inclusive]
 ```
 
 ```go
-Connect("split", "notify-risk",   definition.WithCondition("score < 600")).
-Connect("split", "senior-review", definition.WithCondition("amount > 10000")).
-Connect("split", "fraud-check",   definition.WithCondition("flagged == true")).
+Connect("split", "notify-risk",   flow.WithCondition("score < 600")).
+Connect("split", "senior-review", flow.WithCondition("amount > 10000")).
+Connect("split", "fraud-check",   flow.WithCondition("flagged == true")).
 ```
 
 **At runtime:** with `score=580`, `amount=25000`, `flagged=false`, the split activates
@@ -1021,7 +1021,7 @@ start → fulfil[UserTask] → end   ── cancel ──▶ [release-inventory,
 ```
 
 ```go
-def, _ := definition.NewDefinition("order-fulfilment", 1).
+def, _ := definition.NewBuilder("order-fulfilment", 1).
     Add(event.NewStart("start")).
     Add(activity.NewUserTask("fulfil", []string{"fulfiller"})).
     Add(event.NewEnd("end")).
@@ -1049,7 +1049,7 @@ start → await-payment[ReceiveTask "PaymentReceived", key = orderID] → ship �
 ```
 
 ```go
-def, _ := definition.NewDefinition("order-shipping", 1).
+def, _ := definition.NewBuilder("order-shipping", 1).
     Add(event.NewStart("start")).
     Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
         activity.WithCorrelationKey("orderID"))).

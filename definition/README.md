@@ -39,10 +39,10 @@ Key design properties:
   `definition` at import time (the `image/png`/`database/sql` driver idiom), so
   `definition` serializes and validates without importing the leaves. This is why
   deserialization callers must import [`definition/kinds`](#the-kinds-bundle-deserialization).
-- **Three authoring forms.** Go constructors (`definition/build` fluent chain or
-  `definition.NewDefinition(...).Add(...)`), YAML, or JSON. The builder and YAML
-  paths call `Validate` automatically; the JSON path (`json.Unmarshal`) does
-  **not** — call `definition.Validate` yourself after decoding.
+- **Three authoring forms.** Go (`definition.NewBuilder(...)` fluent chain), YAML,
+  or JSON. The builder and YAML paths call `Validate` automatically; the JSON path
+  (`json.Unmarshal`) does **not** — call `definition.Validate` yourself after
+  decoding.
 
 ### Container types
 
@@ -61,14 +61,18 @@ flows), `IsDefault`.
 
 | Package | Import path | Holds |
 |---|---|---|
-| core | `.../definition` | `Node`, `NodeKind`, `ProcessDefinition`, `SequenceFlow`, `RetryPolicy`, `Validate`, `NewDefinition`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), sentinel errors. Imports no leaf. |
+| root (aggregator) | `.../definition` | `NewBuilder` (the fluent entry) + re-exports of `model`'s public surface (`Node`, `ProcessDefinition`, `Validate`, `KindX`, `ErrX`, accessors, embeds) and `flow.SequenceFlow`. |
+| model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), sentinel errors. Imports only `flow`. |
+| flow | `.../definition/flow` | `SequenceFlow`, `Option`, `WithFlowID`, `WithCondition`, `AsDefault`. |
 | events | `.../definition/event` | `NewStart`, `NewEnd`, `NewTerminateEnd`, `NewErrorEnd`, `NewCatch`, `NewThrow`, `NewBoundary`, `NewEventSubProcess` + their options |
 | gateways | `.../definition/gateway` | `NewExclusive`, `NewParallel`, `NewInclusive`, `NewEventBased` |
 | activities | `.../definition/activity` | `NewServiceTask`, `NewUserTask`, `NewReceiveTask`, `NewSendTask`, `NewBusinessRuleTask`, `NewSubProcess`, `NewCallActivity` + their options |
-| fluent builder | `.../definition/build` | `build.New(...)` with terse `AddX` methods (imports the leaves) |
+| fluent builder | `.../definition/build` | `Builder` with per-kind `AddX` methods (`AddStartEvent`, …); entered via `definition.NewBuilder`. |
 | kinds bundle | `.../definition/kinds` | blank-imports all leaves so deserialization has every kind registered |
 
-The leaves import `definition`; `definition` imports none of them (no cycle).
+Dependency graph (acyclic; nothing imports the root aggregator): `definition →
+build, model, flow`; `build → model, event, gateway, activity, flow`;
+`event/gateway/activity → model, flow`; `model → flow`.
 
 ---
 
@@ -166,46 +170,50 @@ Gateways take only an optional name (trailing variadic); they have no options.
 
 ## Building a definition
 
-Two Go paths. The fluent `definition/build` package is the terse one:
+Start from `definition.NewBuilder`, which returns the fluent builder. Each `AddX`
+mirrors a node-family constructor; node options come from the leaf packages:
 
 ```go
 import (
+    "github.com/zakyalvan/krtlwrkflw/definition"
     "github.com/zakyalvan/krtlwrkflw/definition/activity"
-    "github.com/zakyalvan/krtlwrkflw/definition/build"
 )
 
-def, err := build.New("order-fulfillment", 1).
-    AddStart("start").
+def, err := definition.NewBuilder("order-fulfillment", 1).
+    AddStartEvent("start").
     AddServiceTask("charge",
         activity.WithActionName("charge-card"),
         activity.WithCompensation("refund-card")).
     AddUserTask("approve", []string{"manager"}).
-    AddEnd("end").
+    AddEndEvent("end").
     Connect("start", "charge").
     Connect("charge", "approve").
     Connect("approve", "end").
     Build()
 ```
 
-The core `definition.NewDefinition(...)` builder takes pre-built nodes via the
-generic `.Add(node)` — useful for programmatic/dynamic construction:
+The builder also accepts pre-built nodes via the generic `.Add(node)` — useful
+for programmatic/dynamic construction — and routing conditions come from the
+`flow` package:
 
 ```go
-def, err := definition.NewDefinition("loan", 1).
+import "github.com/zakyalvan/krtlwrkflw/definition/flow"
+
+def, err := definition.NewBuilder("loan", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewExclusive("gw")).
     Add(activity.NewServiceTask("approve", activity.WithActionName("approve-loan"))).
     Add(event.NewEnd("end-ok")).
     Connect("start", "gw").
-    Connect("gw", "approve", definition.WithCondition("score >= 700")).
-    Connect("gw", "end-ok", definition.AsDefault()).
+    Connect("gw", "approve", flow.WithCondition("score >= 700")).
+    Connect("gw", "end-ok", flow.AsDefault()).
     Connect("approve", "end-ok").
     Build()
 ```
 
-Both `Build()` calls run `Validate` and compile the definition-scoped action
-catalog. `FlowOption` values: `definition.WithFlowID(id)`,
-`definition.WithCondition(expr)`, `definition.AsDefault()`.
+`Build()` runs `Validate`, compiles the definition-scoped action catalog, and
+returns a `*definition.ProcessDefinition`. Flow options live in `flow`:
+`flow.WithFlowID(id)`, `flow.WithCondition(expr)`, `flow.AsDefault()`.
 
 **`DefinitionLoader`** (returned by `ParseYAML`/`LoadYAML`) exposes only
 `RegisterAction`/`RegisterActionFunc`/`CancelActions`/`Build` — the structure is
@@ -294,7 +302,7 @@ deserializing, import `definition/kinds` — see above.)
 
 | Form | Entry point | When to use |
 |---|---|---|
-| **Fluent Go** | `build.New(...).AddX(...).Connect(...).Build()` | Preferred; terse, IDE-navigable. |
-| **Core builder** | `definition.NewDefinition(...).Add(node).Connect(...).Build()` | Programmatic / dynamic node lists. |
+| **Fluent Go** | `definition.NewBuilder(...).AddX(...).Connect(...).Build()` | Preferred; terse, IDE-navigable. |
+| **Core builder** | `definition.NewBuilder(...).Add(node).Connect(...).Build()` | Programmatic / dynamic node lists. |
 | **YAML** | `definition.ParseYAML` / `LoadYAML` → `DefinitionLoader` | Config-driven pipelines; import `definition/kinds`. |
 | **JSON** | `json.Unmarshal` into `ProcessDefinition` then `definition.Validate` | Interchange / persistence; import `definition/kinds`. |
