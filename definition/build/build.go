@@ -14,6 +14,7 @@ package build
 
 import (
 	"context"
+	"io"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
@@ -23,14 +24,28 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
+// This package is the single home for both authoring entry points, which the
+// root definition package re-exports symmetrically as definition.NewBuilder and
+// definition.NewLoader:
+//   - NewBuilder — Go authoring, the fluent per-kind builder.
+//   - NewLoader  — YAML authoring, a loader over the parsed definition.
+
 // Builder is a fluent wrapper around the core model builder exposing a per-kind
-// AddX method for each node family. Construct one with New (or, from the root
-// package, definition.NewBuilder).
+// AddX method for each node family. Construct one with NewBuilder (or, from the
+// root package, definition.NewBuilder).
 type Builder struct{ inner model.DefinitionBuilder }
 
-// New starts a fluent builder for a definition with the given id and version.
-func New(id string, version int) *Builder {
+// NewBuilder starts a fluent builder for a definition with the given id and version.
+func NewBuilder(id string, version int) *Builder {
 	return &Builder{inner: model.NewBuilder(id, version)}
+}
+
+// NewLoader reads a YAML process-definition from r and returns a
+// model.DefinitionLoader whose structure is already declared. It is the YAML
+// counterpart to NewBuilder; register definition-scoped actions via
+// RegisterAction/RegisterActionFunc, then call Build.
+func NewLoader(r io.Reader) (model.DefinitionLoader, error) {
+	return model.ParseYAML(r)
 }
 
 // Add appends a pre-built node (programmatic / dynamic construction).

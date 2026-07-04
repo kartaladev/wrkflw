@@ -2,6 +2,7 @@ package build_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
@@ -9,8 +10,36 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/build"
 )
 
+// TestNewLoader covers the YAML authoring entry — the symmetric counterpart to
+// NewBuilder. Importing build registers every node kind, so the loader can
+// reconstruct nodes from the wire form.
+func TestNewLoader(t *testing.T) {
+	const src = `
+id: y
+version: 1
+nodes:
+  - {id: s, kind: startEvent}
+  - {id: charge, kind: serviceTask, action: charge-card}
+  - {id: e, kind: endEvent}
+flows:
+  - {id: f1, source: s, target: charge}
+  - {id: f2, source: charge, target: e}
+`
+	ld, err := build.NewLoader(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("NewLoader: %v", err)
+	}
+	def, err := ld.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if def.ID != "y" || len(def.Nodes) != 3 || len(def.Flows) != 2 {
+		t.Fatalf("unexpected definition: %+v", def)
+	}
+}
+
 func TestFluentChain(t *testing.T) {
-	def, err := build.New("order", 1).
+	def, err := build.NewBuilder("order", 1).
 		AddStartEvent("s").
 		AddExclusiveGateway("gw", "Approved?").
 		AddServiceTask("charge", activity.WithActionName("charge-card")).
@@ -32,14 +61,14 @@ func TestFluentChain(t *testing.T) {
 }
 
 func TestFluentAllAdders(t *testing.T) {
-	sub := build.New("sub", 1)
+	sub := build.NewBuilder("sub", 1)
 	sub.AddStartEvent("ss").AddEndEvent("se").Connect("ss", "se")
 	subDef, err := sub.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
 	noop := func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }
-	b := build.New("full", 1).
+	b := build.NewBuilder("full", 1).
 		AddStartEvent("start").
 		AddParallelGateway("par").
 		AddInclusiveGateway("inc").

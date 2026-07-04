@@ -33,9 +33,9 @@ import (
 // NewBuilder starts the fluent builder for a definition with the given id and
 // version. Each AddX method mirrors a node-family constructor; Build returns a
 // *model.ProcessDefinition.
-func NewBuilder(id string, version int) *build.Builder { return build.New(id, version) }
+func NewBuilder(id string, version int) *build.Builder { return build.NewBuilder(id, version) }
 
 // NewLoader reads a YAML process-definition from r and returns a
 // model.DefinitionLoader whose structure is already declared. Register
 // definition-scoped actions via RegisterAction/RegisterActionFunc, then call Build.
-func NewLoader(r io.Reader) (model.DefinitionLoader, error) { return model.ParseYAML(r) }
+func NewLoader(r io.Reader) (model.DefinitionLoader, error) { return build.NewLoader(r) }

@@ -44,13 +44,16 @@ root package; the root package becomes a thin aggregator.
   `AsDefault`). A leaf; imports nothing internal.
 - **`definition/event` / `gateway` / `activity`** — unchanged in spirit; now import
   `model` (and `flow`) instead of the root package, and register with `model`.
-- **`definition/build`** — imports `model` + the leaves + `flow`. Defines
-  `Builder` with the full-name fluent methods (`AddStartEvent`, …); `New(...)` and
-  `Build()` return `*model.ProcessDefinition`.
+- **`definition/build`** — imports `model` + the leaves + `flow`. It is the single
+  home for **both** authoring entry points: `NewBuilder(id, version) *Builder` (the
+  fluent per-kind builder; `Build()` returns `*model.ProcessDefinition`) and
+  `NewLoader(r io.Reader) (model.DefinitionLoader, error)` (YAML — a thin wrapper
+  over `model.ParseYAML`, kept here so the two entries stay symmetric).
 - **`definition`** (root) — imports `model`, `build`, `flow`, and holds **only the
   two authoring constructors** (the one place that can import `build` without a
-  cycle): `func NewBuilder(id, version int) *build.Builder` (Go, fluent) and
-  `func NewLoader(r io.Reader) (model.DefinitionLoader, error)` (YAML). It does
+  cycle), both delegating to `build`: `func NewBuilder(id, version int) *build.Builder`
+  (Go, fluent) → `build.NewBuilder`, and `func NewLoader(r io.Reader)
+  (model.DefinitionLoader, error)` (YAML) → `build.NewLoader`. It does
   **not** re-export the rest of the surface — every other symbol is used directly
   from its source package (`model.Node`, `model.ProcessDefinition`,
   `model.Validate`, `model.KindX`, the accessors and `ErrX` sentinels;
