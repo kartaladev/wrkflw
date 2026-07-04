@@ -547,8 +547,10 @@ func TestAdminRoutes_Lineage_Absent(t *testing.T) {
 	mux := http.NewServeMux()
 	stdlib.AdminRoutes{Svc: svc, Lineage: nil}.Customize(mux)
 
-	// Without lineage route, /admin/instances/{id}/lineage won't match the lineage
-	// handler. The test just verifies no panic occurs.
+	// Without the lineage dep, GET /admin/instances/{id}/lineage is never registered,
+	// so the mux does not match it: 404.
 	rr := do(mux, newGetRequest(t, "/admin/instances/some-instance/lineage"))
-	_ = rr.Code
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("want 404 lineage absent, got %d", rr.Code)
+	}
 }
