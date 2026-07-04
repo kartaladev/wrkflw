@@ -47,15 +47,14 @@ root package; the root package becomes a thin aggregator.
 - **`definition/build`** — imports `model` + the leaves + `flow`. Defines
   `Builder` with the full-name fluent methods (`AddStartEvent`, …); `New(...)` and
   `Build()` return `*model.ProcessDefinition`.
-- **`definition`** (root) — the **aggregator**: imports `model`, `build`, `flow`.
-  Re-exports the public surface as aliases (`type Node = model.Node`,
-  `type ProcessDefinition = model.ProcessDefinition`, `type SequenceFlow =
-  flow.SequenceFlow`, `var Validate = model.Validate`, the `KindX` constants, the
-  accessors, …) and defines
-  `func NewBuilder(id, version int) *build.Builder { return build.New(id, version) }`.
-  The `ErrX` validation/builder sentinels are **not** re-exported — check them from
-  `definition/model` (e.g. `errors.Is(err, model.ErrNoStartEvent)`) to keep the
-  root surface minimal.
+- **`definition`** (root) — imports `model`, `build`, `flow`, and holds **only the
+  two authoring constructors** (the one place that can import `build` without a
+  cycle): `func NewBuilder(id, version int) *build.Builder` (Go, fluent) and
+  `func NewLoader(r io.Reader) (model.DefinitionLoader, error)` (YAML). It does
+  **not** re-export the rest of the surface — every other symbol is used directly
+  from its source package (`model.Node`, `model.ProcessDefinition`,
+  `model.Validate`, `model.KindX`, the accessors and `ErrX` sentinels;
+  `flow.SequenceFlow`). One canonical home per symbol, no duplicate names.
 
 Dependency graph (acyclic; nothing imports the root aggregator):
 
@@ -67,28 +66,32 @@ model             → flow
 flow              → (stdlib only)
 ```
 
-`definition.NewBuilder(...)` now returns the fluent `*build.Builder`; its
-`AddStartEvent(...)`/`AddServiceTask(...)`/… mirror the leaf constructors; and
-`Build()` yields `*definition.ProcessDefinition`. Because the root package
+`definition.NewBuilder(...)` returns the fluent `*build.Builder`; its
+`AddStartEvent(...)`/`AddServiceTask(...)`/… mirror the leaf constructors, and
+`Build()` yields `*model.ProcessDefinition`. Because the root package
 transitively imports the leaves (via `build`), importing `definition` also
 populates the kind registry — the `definition/kinds` bundle remains for
 deserialization paths that import only `model`.
 
 ## Consequences
 
-- **The maintainer's ergonomics are met**: authoring starts from
-  `definition.NewBuilder(...)` with a fully fluent, clearly-named chain, and
-  yields `*definition.ProcessDefinition`.
-- **Most call sites are unaffected** — `definition.Node`, `definition.Validate`,
-  `definition.ProcessDefinition`, `definition.KindX`, the accessors, etc. keep
-  working through the aggregator's re-exports. `definition.NewBuilder(...)` returns
-  a `*build.Builder`, which still offers `Add`/`Connect`/`Build`, so existing
-  `.Add(...)` chains compile unchanged.
-- **`SequenceFlow` is now `flow.SequenceFlow`** (aliased as `definition.SequenceFlow`).
-- **Cost**: re-restructures the core merged in ADR-0090; a sizeable but mechanical
-  aggregator shim; the core `.go` files move into `definition/model`; the leaves
-  and `build` re-point their imports.
-- **`model` is a public sub-package** but consumers rarely name it directly — they
-  use the root aliases. It is the one piece of new surface.
+- **The maintainer's ergonomics are met**: authoring starts from a single,
+  well-named root — `definition.NewBuilder(...)` (Go) or `definition.NewLoader(r)`
+  (YAML) — with a fully fluent, clearly-named chain.
+- **One canonical home per symbol.** The root package exposes *only* the two
+  constructors; the rest is used from its source package (`model.Node`,
+  `model.ProcessDefinition`, `model.Validate`, `model.KindX`, the accessors and
+  `ErrX` sentinels; `flow.SequenceFlow`). No duplicate names, no aliases.
+- **Call sites were rewritten** — this is the tradeoff. ~1,600 `definition.X`
+  references across ~134 files became `model.X` / `flow.SequenceFlow`. Consumers
+  now import `definition` for the entry, `model` for the types, `flow` for flows,
+  and the leaf packages for constructors. (An earlier iteration re-exported
+  everything from the root as aliases; that facade was dropped to keep a single,
+  unambiguous home per symbol.)
+- **Cost**: re-restructures the core merged in ADR-0090; the core `.go` files move
+  into `definition/model`; the leaves and `build` re-point their imports; the
+  repo-wide call-site rewrite above.
+- **`model` is the de-facto types package** consumers import most; `definition` is
+  a thin two-function entry. `model`/`flow` are new public sub-packages.
 - **Wire format and behaviour remain frozen** (unchanged from ADR-0090); the
   golden round-trip and all-kinds tests continue to guard it.

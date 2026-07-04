@@ -225,7 +225,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 
 | Package | Role |
 |---|---|
-| `definition` | Process-definition types: `Node`, `ProcessDefinition`, builder, validation, serialization. Node kinds live in family subpackages `definition/{event,gateway,activity}` (+ `definition/build` fluent, `definition/kinds` bundle). Pure data + validation; no I/O. |
+| `definition` | Authoring entry: `NewBuilder` (Go) and `NewLoader` (YAML) only. Types/validation/serialization live in `definition/model`; sequence flows in `definition/flow`; node constructors in `definition/{event,gateway,activity}`; fluent builder in `definition/build`; deserialization bundle `definition/kinds`. Pure data + validation; no I/O. |
 | `engine` | Core token state machine. Pure of transport, storage, and event-bus specifics — depends on interfaces only. |
 | `runtime` | Reference driver `ProcessDriver` that wires the engine to persistence, scheduling, and actions, plus lifecycle helpers (`ShutdownGroup`). Supporting pieces live in sub-packages: `runtime/kernel` (in-memory `MemStore`/`CachingStore`, schedulers, definition registry, ownership), `runtime/view` (snapshot DTOs), `runtime/chain` (instance chaining), `runtime/task` (human-task service), plus `runtime/signal`, `runtime/calllink`, `runtime/monitor`. |
 | `action` | Service-action catalog (`Catalog`, `ServiceAction`, `MapCatalog`, `Func` adapter). |
@@ -527,7 +527,7 @@ in `CLAUDE.md`.
 ## Node types
 
 A process definition is a graph of **nodes** connected by **sequence flows**. Every
-node is a value built with a `definition.New*` constructor and implements the `definition.Node`
+node is a value built with a `model.New*` constructor and implements the `model.Node`
 interface (`Kind() NodeKind`, `ID() string`, `Name() string`). Never construct the
 struct types directly — use the constructors. There are 19 node kinds, grouped below.
 
@@ -542,8 +542,8 @@ same set of functional options:
 
 | Option | Configures |
 |---|---|
-| `definition.WithName(string)` | Human-readable display name. |
-| `activity.WithRetryPolicy(*definition.RetryPolicy)` | Per-node retry policy (see below). |
+| `model.WithName(string)` | Human-readable display name. |
+| `activity.WithRetryPolicy(*model.RetryPolicy)` | Per-node retry policy (see below). |
 | `activity.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
 | `activity.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
 | `activity.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
@@ -566,7 +566,7 @@ Two options are **compile-enforced** to a single constructor:
 `RetryPolicy` fields:
 
 ```go
-definition.RetryPolicy{
+model.RetryPolicy{
     MaxAttempts:        5,                 // includes the first attempt; 0 = unlimited
     InitialInterval:    1 * time.Second,
     BackoffCoef:        2.0,               // exponential multiplier
@@ -606,9 +606,9 @@ event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 | **ReceiveTask** | Waits for an inbound correlated message. | `activity.NewReceiveTask(id, messageName string, opts ...) Node` |
 | **SendTask** | Sends an outbound message. | `activity.NewSendTask(id, messageName string, opts ...) Node` |
 | **BusinessRuleTask** | Runs a named business-rule action. | `activity.NewBusinessRuleTask(id string, opts ...) Node` |
-| **SubProcess** | Runs an *embedded* nested definition as a scope. | `activity.NewSubProcess(id string, sub *definition.ProcessDefinition, opts ...) Node` |
+| **SubProcess** | Runs an *embedded* nested definition as a scope. | `activity.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
 | **CallActivity** | Calls a *separate* top-level definition by name. | `activity.NewCallActivity(id, defRef string, opts ...) Node` |
-| **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `event.NewEventSubProcess(id string, sub *definition.ProcessDefinition, opts ...) Node` |
+| **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `event.NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
 
 All activity constructors take the shared activity options above. `NewUserTask` also
 takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
@@ -728,7 +728,7 @@ def, err := definition.NewBuilder("order-fulfillment", 1).
 | `.Add(node)` | Append a node. |
 | `.Connect(fromID, toID, opts...)` | Add a sequence flow (ID auto = `"from->to"`). |
 | `.CancelActions(names...)` | Best-effort actions run when the instance is cancelled. |
-| `.Build()` | Assemble + validate; returns `(*definition.ProcessDefinition, error)`. |
+| `.Build()` | Assemble + validate; returns `(*model.ProcessDefinition, error)`. |
 
 Flow options for `.Connect`: `flow.WithFlowID(id)`, `flow.WithCondition(expr)`,
 `flow.AsDefault()`.
@@ -971,7 +971,7 @@ def, _  := definition.NewBuilder("travel-booking", 1).
     /* ... */ .Build()
 
 // Call activity (separate definition resolved by name):
-reg := kernel.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{"credit-check": child})
+reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
 memSt, _ := kernel.NewMemStore()
 r, _   := runtime.NewProcessDriver(cat, memSt, runtime.WithDefinitions(reg))
 ```
@@ -1108,7 +1108,7 @@ start → charge[Service "charge-card", retry ≤5, backoff ×2] → end
 
 ```go
 Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
-    activity.WithRetryPolicy(&definition.RetryPolicy{
+    activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: time.Second, BackoffCoef: 2.0,
     })))
 // r wired with WithClock(fc), WithScheduler(sched), WithJitterSource(...)

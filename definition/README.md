@@ -41,7 +41,7 @@ Key design properties:
   deserialization callers must import [`definition/kinds`](#the-kinds-bundle-deserialization).
 - **Three authoring forms.** Go (`definition.NewBuilder(...)` fluent chain), YAML,
   or JSON. The builder and YAML paths call `Validate` automatically; the JSON path
-  (`json.Unmarshal`) does **not** — call `definition.Validate` yourself after
+  (`json.Unmarshal`) does **not** — call `model.Validate` yourself after
   decoding.
 
 ### Container types
@@ -61,8 +61,8 @@ flows), `IsDefault`.
 
 | Package | Import path | Holds |
 |---|---|---|
-| root (aggregator) | `.../definition` | `NewBuilder` (fluent Go entry), `NewLoader` (YAML entry) + re-exports of `model`'s public surface (`Node`, `ProcessDefinition`, `Validate`, `KindX`, accessors, embeds) and `flow.SequenceFlow`. The `ErrX` sentinels are **not** re-exported — check them via `model.ErrX`. |
-| model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), sentinel errors. Imports only `flow`. |
+| root (entry) | `.../definition` | **Only** `NewBuilder` (fluent Go entry) and `NewLoader` (YAML entry) — the one place that can import `build` without a cycle. No re-exports; every other symbol is used from its source package below. |
+| model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), the `ErrX` sentinels. The de-facto types package. Imports only `flow`. |
 | flow | `.../definition/flow` | `SequenceFlow`, `Option`, `WithFlowID`, `WithCondition`, `AsDefault`. |
 | events | `.../definition/event` | `NewStart`, `NewEnd`, `NewTerminateEnd`, `NewErrorEnd`, `NewCatch`, `NewThrow`, `NewBoundary`, `NewEventSubProcess` + their options |
 | gateways | `.../definition/gateway` | `NewExclusive`, `NewParallel`, `NewInclusive`, `NewEventBased` |
@@ -87,7 +87,7 @@ type Node interface {
 ```
 
 The 19 concrete kinds live in the leaf packages. Constructors return
-`definition.Node`; you rarely name the concrete type (accessors below read
+`model.Node`; you rarely name the concrete type (accessors below read
 kind-specific data generically).
 
 ### Events — `definition/event`
@@ -145,7 +145,7 @@ task := activity.NewServiceTask("charge",
     activity.WithName("Charge Card"),
     activity.WithCompensation("refund-card"),
     activity.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
-    activity.WithRetryPolicy(&definition.RetryPolicy{
+    activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: 2 * time.Second, BackoffCoef: 2.0,
     }),
 )
@@ -212,7 +212,7 @@ def, err := definition.NewBuilder("loan", 1).
 ```
 
 `Build()` runs `Validate`, compiles the definition-scoped action catalog, and
-returns a `*definition.ProcessDefinition`. Flow options live in `flow`:
+returns a `*model.ProcessDefinition`. Flow options live in `flow`:
 `flow.WithFlowID(id)`, `flow.WithCondition(expr)`, `flow.AsDefault()`.
 
 **`DefinitionLoader`** (returned by `definition.NewLoader`) exposes only
@@ -234,7 +234,7 @@ import _ "github.com/zakyalvan/krtlwrkflw/definition/kinds"
 Code that **constructs** definitions in Go already imports the specific leaf
 packages it uses and needs no extra import. If a kind is not registered,
 `ProcessDefinition.UnmarshalJSON` (and the YAML loader) fail with a loud
-`definition.ErrKindNotRegistered` naming the missing kind — never a silent zero
+`model.ErrKindNotRegistered` naming the missing kind — never a silent zero
 value. The persistence store already imports the bundle.
 
 ---
@@ -250,7 +250,7 @@ value. The persistence store already imports the bundle.
 | `MaxElapsed` | `time.Duration` | `0` | Total time budget; `0` = no cap. |
 | `NonRetryableErrors` | `[]string` | `nil` | Error-message substrings that abort retrying. |
 
-`definition.DefaultRetryPolicy()` returns the defaults; `RetryPolicy.Normalize()`
+`model.DefaultRetryPolicy()` returns the defaults; `RetryPolicy.Normalize()`
 fills zero fields (preserving `MaxAttempts == 0`). Attach with
 `activity.WithRetryPolicy(&p)`; set a runtime-wide fallback with
 `runtime.WithDefaultRetryPolicy(p)`.
@@ -259,7 +259,7 @@ fills zero fields (preserving `MaxAttempts == 0`). Attach with
 
 ## Validation
 
-`definition.Validate(*ProcessDefinition)` is called automatically by `Build` and
+`model.Validate(*ProcessDefinition)` is called automatically by `Build` and
 the YAML/JSON loaders. It runs a comprehensive structural check and returns a
 joined error. The sentinel errors live in `definition/model` — check them with
 `errors.Is(err, model.ErrNoStartEvent)`. They include: `ErrNoStartEvent`,
@@ -274,7 +274,7 @@ joined error. The sentinel errors live in `definition/model` — check them with
 
 ### Kind-agnostic accessors
 
-`definition.RetryPolicyOf(n)`, `DeadlineOf(n)`, `ReminderOf(n)`, `ActionOf(n)`,
+`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `ReminderOf(n)`, `ActionOf(n)`,
 `InlineActionOf(n)` read kind-specific fields off any `Node` (returning zero
 values for kinds that don't carry them), so callers never type-switch on concrete
 leaf types.
@@ -306,4 +306,4 @@ deserializing, import `definition/kinds` — see above.)
 | **Fluent Go** | `definition.NewBuilder(...).AddX(...).Connect(...).Build()` | Preferred; terse, IDE-navigable. |
 | **Core builder** | `definition.NewBuilder(...).Add(node).Connect(...).Build()` | Programmatic / dynamic node lists. |
 | **YAML** | `definition.NewLoader(r)` → `DefinitionLoader` | Config-driven pipelines; import `definition/kinds`. |
-| **JSON** | `json.Unmarshal` into `ProcessDefinition` then `definition.Validate` | Interchange / persistence; import `definition/kinds`. |
+| **JSON** | `json.Unmarshal` into `ProcessDefinition` then `model.Validate` | Interchange / persistence; import `definition/kinds`. |
