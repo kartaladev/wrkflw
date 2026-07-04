@@ -137,6 +137,97 @@ func TestNewMemSchedulerWithClockOption(t *testing.T) {
 	assert.True(t, fired, "timer due at the fake clock's now should fire")
 }
 
+// TestMemSchedulerNextFireAt verifies NextFireAt reports the earliest pending
+// timer's fire time (and false when there are none).
+func TestMemSchedulerNextFireAt(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		setup  func(s *kernel.MemScheduler)
+		assert func(t *testing.T, at time.Time, ok bool)
+	}
+
+	cases := []testCase{
+		{
+			name:  "empty scheduler reports no timer",
+			setup: func(*kernel.MemScheduler) {},
+			assert: func(t *testing.T, at time.Time, ok bool) {
+				assert.False(t, ok)
+				assert.True(t, at.IsZero())
+			},
+		},
+		{
+			name: "single timer reports its fire time",
+			setup: func(s *kernel.MemScheduler) {
+				s.Schedule("only", baseTime.Add(5*time.Second), func() {})
+			},
+			assert: func(t *testing.T, at time.Time, ok bool) {
+				require.True(t, ok)
+				assert.Equal(t, baseTime.Add(5*time.Second), at)
+			},
+		},
+		{
+			name: "multiple timers report the earliest fire time",
+			setup: func(s *kernel.MemScheduler) {
+				s.Schedule("late", baseTime.Add(9*time.Second), func() {})
+				s.Schedule("early", baseTime.Add(2*time.Second), func() {})
+				s.Schedule("mid", baseTime.Add(4*time.Second), func() {})
+			},
+			assert: func(t *testing.T, at time.Time, ok bool) {
+				require.True(t, ok)
+				assert.Equal(t, baseTime.Add(2*time.Second), at)
+			},
+		},
+		{
+			name: "cancel of the earliest promotes the next",
+			setup: func(s *kernel.MemScheduler) {
+				s.Schedule("early", baseTime.Add(2*time.Second), func() {})
+				s.Schedule("late", baseTime.Add(6*time.Second), func() {})
+				s.Cancel("early")
+			},
+			assert: func(t *testing.T, at time.Time, ok bool) {
+				require.True(t, ok)
+				assert.Equal(t, baseTime.Add(6*time.Second), at)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fc := clockwork.NewFakeClockAt(baseTime)
+			sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+			tc.setup(sched)
+
+			at, ok := sched.NextFireAt()
+			tc.assert(t, at, ok)
+		})
+	}
+}
+
+// TestMemSchedulerPending verifies Pending reports a specific timer's fire time
+// by id (and false for absent/cancelled ids).
+func TestMemSchedulerPending(t *testing.T) {
+	t.Parallel()
+
+	fc := clockwork.NewFakeClockAt(baseTime)
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched.Schedule("known", baseTime.Add(3*time.Second), func() {})
+
+	at, ok := sched.Pending("known")
+	require.True(t, ok)
+	assert.Equal(t, baseTime.Add(3*time.Second), at)
+
+	_, ok = sched.Pending("unknown")
+	assert.False(t, ok)
+
+	sched.Cancel("known")
+	_, ok = sched.Pending("known")
+	assert.False(t, ok, "cancelled timer is no longer pending")
+}
+
 // TestMemSchedulerConcurrentSafe verifies that concurrent Schedule/Cancel calls
 // and Tick do not race (exercise with -race).
 func TestMemSchedulerConcurrentSafe(t *testing.T) {
