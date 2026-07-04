@@ -201,6 +201,9 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 // have wired.
 //
 // It implements httpcore.RouteCustomizer[gin.IRouter].
+// SECURITY: these routes have NO built-in authentication. Mount AdminRoutes only
+// onto a router group already protected by your auth middleware (admin-by-
+// composition, ADR-0095); otherwise the admin endpoints are exposed unauthenticated.
 type AdminRoutes struct {
 	// Svc provides ListInstances, ResolveIncident, and CancelInstance.
 	// Must not be nil.

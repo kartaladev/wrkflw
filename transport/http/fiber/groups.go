@@ -205,6 +205,10 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 // Conditionally (when Lineage != nil):
 //
 //	GET    {basePath}/admin/instances/:id/lineage
+//
+// SECURITY: these routes have NO built-in authentication. Mount AdminRoutes only
+// onto a router group already protected by your auth middleware (admin-by-
+// composition, ADR-0095); otherwise the admin endpoints are exposed unauthenticated.
 type AdminRoutes struct {
 	Svc         service.Service
 	DeadLetters service.DeadLetterAdmin

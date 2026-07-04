@@ -186,6 +186,9 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 // Optional dep fields (DeadLetters, Policies, RelayStats, Timers, Lineage) are
 // guarded: if nil, their conditional routes are not registered.
 // It implements [httpcore.RouteCustomizer][*http.ServeMux].
+// SECURITY: these routes have NO built-in authentication. Mount AdminRoutes only
+// onto a router group already protected by your auth middleware (admin-by-
+// composition, ADR-0095); otherwise the admin endpoints are exposed unauthenticated.
 type AdminRoutes struct {
 	Svc         service.Service
 	DeadLetters service.DeadLetterAdmin
