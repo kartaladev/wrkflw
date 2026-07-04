@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// nodeYAML is the flat YAML representation of any node. It mirrors nodeWire
+// nodeYAML is the flat YAML representation of any node. It mirrors NodeWire
 // but uses a plain string for Kind so that yaml.v3 decodes the lowerCamelCase
 // discriminator without invoking NodeKind's JSON un/marshalers.
 type nodeYAML struct {
@@ -82,7 +82,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		subDef = built
 	}
 
-	w := nodeWire{
+	w := NodeWire{
 		ID:                    ny.ID,
 		Kind:                  kind,
 		Name:                  ny.Name,

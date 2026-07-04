@@ -439,7 +439,7 @@ func TestWithEligibilityPrivileges(t *testing.T) {
 }
 
 // TestWithEligibilityPrivilegesRoundTrip verifies that EligibilityPrivileges survives
-// a JSON marshal/unmarshal round-trip (via nodeWire).
+// a JSON marshal/unmarshal round-trip (via NodeWire).
 func TestWithEligibilityPrivilegesRoundTrip(t *testing.T) {
 	privs := []string{"doc read"}
 	n := definition.NewUserTask("u2", nil, definition.WithEligibilityPrivileges(privs...))

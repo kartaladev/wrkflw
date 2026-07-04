@@ -70,7 +70,7 @@ func TestNodeKindJSONUnmarshalUnknown(t *testing.T) {
 
 // TestNodeKindJSONInNode verifies that a Node containing a NodeKind field
 // round-trips through json.Marshal/Unmarshal with the name encoding.
-// Uses ProcessDefinition (Un)MarshalJSON which routes through nodeWire.
+// Uses ProcessDefinition (Un)MarshalJSON which routes through NodeWire.
 func TestNodeKindJSONInNode(t *testing.T) {
 	def := &definition.ProcessDefinition{
 		ID:      "p",

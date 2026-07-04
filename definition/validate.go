@@ -434,22 +434,8 @@ func hasConcurrencySource(d *ProcessDefinition, joinID string) bool {
 // recoveryFlowOf returns the RecoveryFlow field of an activity node, or "" if
 // the node does not carry one.
 func recoveryFlowOf(n Node) string {
-	switch v := n.(type) {
-	case ServiceTask:
-		return v.RecoveryFlow
-	case UserTask:
-		return v.RecoveryFlow
-	case ReceiveTask:
-		return v.RecoveryFlow
-	case SendTask:
-		return v.RecoveryFlow
-	case BusinessRuleTask:
-		return v.RecoveryFlow
-	case SubProcess:
-		return v.RecoveryFlow
-	case CallActivity:
-		return v.RecoveryFlow
-	default:
-		return ""
+	if a, ok := n.(interface{ recoveryFlow() string }); ok {
+		return a.recoveryFlow()
 	}
+	return ""
 }

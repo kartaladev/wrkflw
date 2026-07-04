@@ -5,10 +5,10 @@ import (
 	"fmt"
 )
 
-// nodeWire is the flat JSON/JSONB representation of any node. It is the single
+// NodeWire is the flat JSON/JSONB representation of any node. It is the single
 // serialization shape; previously stored definitions decode through it
 // unchanged. Field names/order mirror the pre-interface Node struct.
-type nodeWire struct {
+type NodeWire struct {
 	ID                    string             `json:"id"`
 	Kind                  NodeKind           `json:"kind"`
 	Name                  string             `json:"name,omitempty"`
@@ -38,8 +38,8 @@ type nodeWire struct {
 }
 
 // toWire flattens a Node into its wire form.
-func toWire(n Node) nodeWire {
-	w := nodeWire{ID: n.ID(), Kind: n.Kind(), Name: n.Name()}
+func toWire(n Node) NodeWire {
+	w := NodeWire{ID: n.ID(), Kind: n.Kind(), Name: n.Name()}
 	switch v := n.(type) {
 	case StartEvent:
 		w.SignalName, w.MessageName, w.CorrelationKey, w.TimerDuration = v.SignalName, v.MessageName, v.CorrelationKey, v.TimerDuration
@@ -47,25 +47,25 @@ func toWire(n Node) nodeWire {
 		w.ErrorCode = v.ErrorCode
 	case ServiceTask:
 		w.Action = v.Action
-		applyActivityWire(&w, v.activityFields)
+		w.PutActivity(v.ActivityFields)
 	case UserTask:
 		w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
-		applyActivityWire(&w, v.activityFields)
+		w.PutActivity(v.ActivityFields)
 	case ReceiveTask:
 		w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
-		applyActivityWire(&w, v.activityFields)
+		w.PutActivity(v.ActivityFields)
 	case SendTask:
 		w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
-		applyActivityWire(&w, v.activityFields)
+		w.PutActivity(v.ActivityFields)
 	case BusinessRuleTask:
 		w.Action = v.Action
-		applyActivityWire(&w, v.activityFields)
+		w.PutActivity(v.ActivityFields)
 	case SubProcess:
 		w.Subprocess = v.Subprocess
-		applyActivityWire(&w, v.activityFields)
+		w.PutActivity(v.ActivityFields)
 	case CallActivity:
 		w.DefRef = v.DefRef
-		applyActivityWire(&w, v.activityFields)
+		w.PutActivity(v.ActivityFields)
 	case EventSubProcess:
 		w.Subprocess = v.Subprocess
 		w.NonInterrupting = v.NonInterrupting
@@ -82,33 +82,58 @@ func toWire(n Node) nodeWire {
 	return w
 }
 
-func applyActivityWire(w *nodeWire, a activityFields) {
+// PutActivity projects the shared activity fields into the wire form. Leaf
+// packages call it from their ToWire specs.
+func (w *NodeWire) PutActivity(a ActivityFields) {
 	w.RetryPolicy, w.RecoveryFlow = a.RetryPolicy, a.RecoveryFlow
 	w.CompensationAction, w.CancelHandler = a.CompensationAction, a.CancelHandler
 	w.DeadlineDuration, w.DeadlineFlow, w.DeadlineAction = a.DeadlineDuration, a.DeadlineFlow, a.DeadlineAction
 	w.ReminderEvery, w.ReminderAction = a.ReminderEvery, a.ReminderAction
 }
 
-func (w nodeWire) activity() activityFields {
-	return activityFields{
+// Activity reconstructs the shared activity fields from the wire form. Leaf
+// packages call it from their FromWire specs.
+func (w NodeWire) Activity() ActivityFields {
+	return ActivityFields{
+		WaitFields: WaitFields{
+			DeadlineDuration: w.DeadlineDuration,
+			DeadlineFlow:     w.DeadlineFlow,
+			DeadlineAction:   w.DeadlineAction,
+			ReminderEvery:    w.ReminderEvery,
+			ReminderAction:   w.ReminderAction,
+		},
 		RetryPolicy:        w.RetryPolicy,
 		RecoveryFlow:       w.RecoveryFlow,
 		CompensationAction: w.CompensationAction,
 		CancelHandler:      w.CancelHandler,
-		DeadlineDuration:   w.DeadlineDuration,
-		DeadlineFlow:       w.DeadlineFlow,
-		DeadlineAction:     w.DeadlineAction,
-		ReminderEvery:      w.ReminderEvery,
-		ReminderAction:     w.ReminderAction,
 	}
 }
 
+// Wait reconstructs the shared deadline+reminder fields from the wire form,
+// for kinds (IntermediateCatchEvent) that carry WaitFields without the full
+// ActivityFields.
+func (w NodeWire) Wait() WaitFields {
+	return WaitFields{
+		DeadlineDuration: w.DeadlineDuration,
+		DeadlineFlow:     w.DeadlineFlow,
+		DeadlineAction:   w.DeadlineAction,
+		ReminderEvery:    w.ReminderEvery,
+		ReminderAction:   w.ReminderAction,
+	}
+}
+
+// PutWait projects the shared deadline+reminder fields into the wire form.
+func (w *NodeWire) PutWait(a WaitFields) {
+	w.DeadlineDuration, w.DeadlineFlow, w.DeadlineAction = a.DeadlineDuration, a.DeadlineFlow, a.DeadlineAction
+	w.ReminderEvery, w.ReminderAction = a.ReminderEvery, a.ReminderAction
+}
+
 // fromWire reconstructs the concrete Node for w.Kind.
-func fromWire(w nodeWire) (Node, error) {
-	b := baseNode{id: w.ID, name: w.Name}
+func fromWire(w NodeWire) (Node, error) {
+	b := Base{id: w.ID, name: w.Name}
 	switch w.Kind {
 	case KindStartEvent:
-		return StartEvent{baseNode: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey, TimerDuration: w.TimerDuration}, nil
+		return StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey, TimerDuration: w.TimerDuration}, nil
 	case KindEndEvent:
 		return EndEvent{b}, nil
 	case KindTerminateEndEvent:
@@ -116,39 +141,35 @@ func fromWire(w nodeWire) (Node, error) {
 	case KindErrorEndEvent:
 		return ErrorEndEvent{b, w.ErrorCode}, nil
 	case KindServiceTask:
-		return ServiceTask{baseNode: b, activityFields: w.activity(), Action: w.Action}, nil
+		return ServiceTask{Base: b, ActivityFields: w.Activity(), TaskAction: TaskAction{Action: w.Action}}, nil
 	case KindUserTask:
-		return UserTask{baseNode: b, activityFields: w.activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr}, nil
+		return UserTask{Base: b, ActivityFields: w.Activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr}, nil
 	case KindReceiveTask:
-		return ReceiveTask{baseNode: b, activityFields: w.activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}, nil
+		return ReceiveTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}, nil
 	case KindSendTask:
-		return SendTask{baseNode: b, activityFields: w.activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}, nil
+		return SendTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}, nil
 	case KindBusinessRuleTask:
-		return BusinessRuleTask{baseNode: b, activityFields: w.activity(), Action: w.Action}, nil
+		return BusinessRuleTask{Base: b, ActivityFields: w.Activity(), TaskAction: TaskAction{Action: w.Action}}, nil
 	case KindSubProcess:
-		return SubProcess{baseNode: b, activityFields: w.activity(), Subprocess: w.Subprocess}, nil
+		return SubProcess{Base: b, ActivityFields: w.Activity(), Subprocess: w.Subprocess}, nil
 	case KindCallActivity:
-		return CallActivity{baseNode: b, activityFields: w.activity(), DefRef: w.DefRef}, nil
+		return CallActivity{Base: b, ActivityFields: w.Activity(), DefRef: w.DefRef}, nil
 	case KindEventSubProcess:
-		return EventSubProcess{baseNode: b, Subprocess: w.Subprocess, NonInterrupting: w.NonInterrupting}, nil
+		return EventSubProcess{Base: b, Subprocess: w.Subprocess, NonInterrupting: w.NonInterrupting}, nil
 	case KindIntermediateCatchEvent:
 		return IntermediateCatchEvent{
-			baseNode:         b,
-			TimerDuration:    w.TimerDuration,
-			SignalName:       w.SignalName,
-			MessageName:      w.MessageName,
-			CorrelationKey:   w.CorrelationKey,
-			DeadlineDuration: w.DeadlineDuration,
-			DeadlineFlow:     w.DeadlineFlow,
-			DeadlineAction:   w.DeadlineAction,
-			ReminderEvery:    w.ReminderEvery,
-			ReminderAction:   w.ReminderAction,
+			Base:           b,
+			WaitFields:     w.Wait(),
+			TimerDuration:  w.TimerDuration,
+			SignalName:     w.SignalName,
+			MessageName:    w.MessageName,
+			CorrelationKey: w.CorrelationKey,
 		}, nil
 	case KindIntermediateThrowEvent:
-		return IntermediateThrowEvent{baseNode: b, SignalName: w.SignalName, CompensateRef: w.CompensateRef}, nil
+		return IntermediateThrowEvent{Base: b, SignalName: w.SignalName, CompensateRef: w.CompensateRef}, nil
 	case KindBoundaryEvent:
 		return BoundaryEvent{
-			baseNode:        b,
+			Base:            b,
 			AttachedTo:      w.AttachedTo,
 			NonInterrupting: w.NonInterrupting,
 			ErrorCode:       w.ErrorCode,
@@ -174,12 +195,12 @@ func fromWire(w nodeWire) (Node, error) {
 type definitionWire struct {
 	ID            string         `json:"id"`
 	Version       int            `json:"version"`
-	Nodes         []nodeWire     `json:"nodes"`
+	Nodes         []NodeWire     `json:"nodes"`
 	Flows         []SequenceFlow `json:"flows"`
 	CancelActions []string       `json:"cancelActions,omitempty"`
 }
 
-// MarshalJSON serializes a ProcessDefinition to JSON using the flat nodeWire
+// MarshalJSON serializes a ProcessDefinition to JSON using the flat NodeWire
 // form so stored JSONB definitions remain backward-compatible.
 func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 	dw := definitionWire{
@@ -188,7 +209,7 @@ func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 		Flows:         d.Flows,
 		CancelActions: d.CancelActions,
 	}
-	dw.Nodes = make([]nodeWire, len(d.Nodes))
+	dw.Nodes = make([]NodeWire, len(d.Nodes))
 	for i, n := range d.Nodes {
 		dw.Nodes[i] = toWire(n)
 	}

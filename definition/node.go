@@ -12,14 +12,23 @@ type Node interface {
 	Name() string
 }
 
-// baseNode supplies the identity common to every node kind.
-type baseNode struct {
+// Base supplies the identity common to every node kind. Every concrete node
+// type — in this package's leaf packages (event, gateway, activity) — embeds it.
+type Base struct {
 	id   string
 	name string
 }
 
-func (b baseNode) ID() string   { return b.id }
-func (b baseNode) Name() string { return b.name }
+// NewBase constructs the identity embed for a node. Leaf-package constructors
+// call it; consumers use the New* constructors instead.
+func NewBase(id, name string) Base { return Base{id: id, name: name} }
+
+func (b Base) ID() string   { return b.id }
+func (b Base) Name() string { return b.name }
+
+// SetName sets the display name. Used by the WithName options in the leaf
+// packages, which mutate the embedded Base.
+func (b *Base) SetName(name string) { b.name = name }
 
 // --- events ---
 
@@ -28,7 +37,7 @@ func (b baseNode) Name() string { return b.name }
 // correlation fields (SignalName, MessageName, CorrelationKey, TimerDuration)
 // to describe the event that activates the event sub-process.
 type StartEvent struct {
-	baseNode
+	Base
 	// SignalName is set when this start event is a signal trigger for an EventSubProcess.
 	SignalName string
 	// MessageName is set when this start event is a message trigger for an EventSubProcess.
@@ -44,20 +53,20 @@ type StartEvent struct {
 func (StartEvent) Kind() NodeKind { return KindStartEvent }
 
 // EndEvent is the BPMN end event node: a normal process completion point.
-type EndEvent struct{ baseNode }
+type EndEvent struct{ Base }
 
 // Kind returns KindEndEvent.
 func (EndEvent) Kind() NodeKind { return KindEndEvent }
 
 // TerminateEndEvent terminates the entire process (including all parallel branches).
-type TerminateEndEvent struct{ baseNode }
+type TerminateEndEvent struct{ Base }
 
 // Kind returns KindTerminateEndEvent.
 func (TerminateEndEvent) Kind() NodeKind { return KindTerminateEndEvent }
 
 // ErrorEndEvent throws a BPMN error when reached, caught by a boundary error event.
 type ErrorEndEvent struct {
-	baseNode
+	Base
 	// ErrorCode is the BPMN error code thrown when this node is reached.
 	// An empty value throws an anonymous error (catch-all).
 	ErrorCode string
@@ -68,18 +77,12 @@ func (ErrorEndEvent) Kind() NodeKind { return KindErrorEndEvent }
 
 // --- activities ---
 
-// activityFields holds the cross-cutting fields every activity kind shares
-// (retry, recovery, compensation, cancel, deadline, reminder). Embedded into each
-// activity type so the engine reads e.g. node.DeadlineDuration with no kind prefix.
-type activityFields struct {
-	// RetryPolicy is the optional per-node retry policy. Nil means use runtime default.
-	RetryPolicy *RetryPolicy
-	// RecoveryFlow is the ID of the sequence flow to take when retries are exhausted.
-	RecoveryFlow string
-	// CompensationAction is the name of the ServiceAction to invoke during rollback.
-	CompensationAction string
-	// CancelHandler is the optional ServiceAction to run when this node is interrupted.
-	CancelHandler string
+// WaitFields holds the deadline + reminder fields shared by activity kinds and
+// by IntermediateCatchEvent (all of which can wait and so can carry a deadline
+// escalation and periodic reminders). It is embedded by ActivityFields and by
+// IntermediateCatchEvent; the kind-agnostic accessors DeadlineOf/ReminderOf
+// dispatch on its (unexported) carrier methods.
+type WaitFields struct {
 	// DeadlineDuration is an expr-lang duration expression for the deadline (string → time.ParseDuration, e.g. "72h"; number → seconds; not ISO-8601).
 	DeadlineDuration string
 	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
@@ -92,15 +95,52 @@ type activityFields struct {
 	ReminderAction string
 }
 
-// ServiceTask executes a named service action.
-type ServiceTask struct {
-	baseNode
-	activityFields
+func (w WaitFields) deadline() (duration, flow, action string) {
+	return w.DeadlineDuration, w.DeadlineFlow, w.DeadlineAction
+}
+func (w WaitFields) reminder() (every, action string) {
+	return w.ReminderEvery, w.ReminderAction
+}
+
+// ActivityFields holds the cross-cutting fields every activity kind shares
+// (retry, recovery, compensation, cancel, plus the embedded WaitFields).
+// Embedded into each activity type so the engine reads e.g. node.DeadlineDuration
+// with no kind prefix. The RetryPolicyOf/recoveryFlowOf accessors dispatch on its
+// carrier methods.
+type ActivityFields struct {
+	WaitFields
+	// RetryPolicy is the optional per-node retry policy. Nil means use runtime default.
+	RetryPolicy *RetryPolicy
+	// RecoveryFlow is the ID of the sequence flow to take when retries are exhausted.
+	RecoveryFlow string
+	// CompensationAction is the name of the ServiceAction to invoke during rollback.
+	CompensationAction string
+	// CancelHandler is the optional ServiceAction to run when this node is interrupted.
+	CancelHandler string
+}
+
+func (a ActivityFields) retry() *RetryPolicy  { return a.RetryPolicy }
+func (a ActivityFields) recoveryFlow() string { return a.RecoveryFlow }
+
+// TaskAction holds the action reference shared by ServiceTask and
+// BusinessRuleTask: a catalog name and/or a node-local inline action. Embedded so
+// the ActionOf/InlineActionOf accessors dispatch on its carrier method across the
+// activity leaf package.
+type TaskAction struct {
 	// Action is the service-action name; empty means default to the node id.
 	Action string
-	// inline is a node-local ServiceAction taking precedence over name lookup.
+	// Inline is a node-local ServiceAction taking precedence over name lookup.
 	// It is never serialized (re-attached in code on rehydration).
-	inline action.ServiceAction
+	Inline action.ServiceAction
+}
+
+func (t TaskAction) taskAction() (string, action.ServiceAction) { return t.Action, t.Inline }
+
+// ServiceTask executes a named service action.
+type ServiceTask struct {
+	Base
+	ActivityFields
+	TaskAction
 }
 
 // Kind returns KindServiceTask.
@@ -108,8 +148,8 @@ func (ServiceTask) Kind() NodeKind { return KindServiceTask }
 
 // UserTask waits for a human to complete a work item.
 type UserTask struct {
-	baseNode
-	activityFields
+	Base
+	ActivityFields
 	// CandidateRoles are the roles eligible to claim and complete this task.
 	CandidateRoles []string
 	// EligibilityPrivileges is a list of resource-privilege tokens (e.g. "finance-task claim")
@@ -126,8 +166,8 @@ func (UserTask) Kind() NodeKind { return KindUserTask }
 
 // ReceiveTask waits for an inbound message (signal or message correlation).
 type ReceiveTask struct {
-	baseNode
-	activityFields
+	Base
+	ActivityFields
 	// MessageName is the message reference for correlation.
 	MessageName string
 	// CorrelationKey is an expr expression evaluated at runtime to derive the correlation key.
@@ -139,8 +179,8 @@ func (ReceiveTask) Kind() NodeKind { return KindReceiveTask }
 
 // SendTask sends an outbound message.
 type SendTask struct {
-	baseNode
-	activityFields
+	Base
+	ActivityFields
 	// MessageName is the message reference to send.
 	MessageName string
 	// CorrelationKey is an optional expr expression evaluated at runtime to derive
@@ -153,13 +193,9 @@ func (SendTask) Kind() NodeKind { return KindSendTask }
 
 // BusinessRuleTask executes a business rule action (by name or inline).
 type BusinessRuleTask struct {
-	baseNode
-	activityFields
-	// Action is the business-rule action name.
-	Action string
-	// inline is a node-local ServiceAction taking precedence over name lookup.
-	// It is never serialized (re-attached in code on rehydration).
-	inline action.ServiceAction
+	Base
+	ActivityFields
+	TaskAction
 }
 
 // Kind returns KindBusinessRuleTask.
@@ -167,8 +203,8 @@ func (BusinessRuleTask) Kind() NodeKind { return KindBusinessRuleTask }
 
 // SubProcess embeds a nested process definition executed as a scope.
 type SubProcess struct {
-	baseNode
-	activityFields
+	Base
+	ActivityFields
 	// Subprocess is the nested process definition (must be non-nil).
 	Subprocess *ProcessDefinition
 }
@@ -178,8 +214,8 @@ func (SubProcess) Kind() NodeKind { return KindSubProcess }
 
 // CallActivity delegates to a top-level process definition resolved by name.
 type CallActivity struct {
-	baseNode
-	activityFields
+	Base
+	ActivityFields
 	// DefRef is the name of the top-level process definition to call.
 	DefRef string
 }
@@ -189,7 +225,7 @@ func (CallActivity) Kind() NodeKind { return KindCallActivity }
 
 // EventSubProcess is an event-triggered subprocess rooted at an event start.
 type EventSubProcess struct {
-	baseNode
+	Base
 	// Subprocess is the nested process definition (must be non-nil).
 	Subprocess *ProcessDefinition
 	// NonInterrupting, when true, means the event sub-process does not cancel
@@ -203,9 +239,11 @@ func (EventSubProcess) Kind() NodeKind { return KindEventSubProcess }
 
 // --- intermediate / boundary events ---
 
-// IntermediateCatchEvent waits for a timer, signal, or message.
+// IntermediateCatchEvent waits for a timer, signal, or message. Like activities
+// it can wait, so it embeds WaitFields (deadline escalation + reminders).
 type IntermediateCatchEvent struct {
-	baseNode
+	Base
+	WaitFields
 	// TimerDuration is an expr-lang duration expression for a timer trigger (string → time.ParseDuration, e.g. "1h"; number → seconds; not ISO-8601).
 	TimerDuration string
 	// SignalName is the signal reference for a signal catch.
@@ -214,16 +252,6 @@ type IntermediateCatchEvent struct {
 	MessageName string
 	// CorrelationKey is an expr expression for message correlation.
 	CorrelationKey string
-	// DeadlineDuration is an expr-lang duration expression for the deadline (string → time.ParseDuration, e.g. "72h"; number → seconds; not ISO-8601).
-	DeadlineDuration string
-	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
-	DeadlineFlow string
-	// DeadlineAction is the name of the ServiceAction to invoke on deadline breach.
-	DeadlineAction string
-	// ReminderEvery is an expr-lang duration expression for the reminder interval (string → time.ParseDuration, e.g. "24h"; number → seconds; not ISO-8601).
-	ReminderEvery string
-	// ReminderAction is the name of the ServiceAction to invoke for each reminder.
-	ReminderAction string
 }
 
 // Kind returns KindIntermediateCatchEvent.
@@ -231,7 +259,7 @@ func (IntermediateCatchEvent) Kind() NodeKind { return KindIntermediateCatchEven
 
 // IntermediateThrowEvent throws a signal or triggers a compensation.
 type IntermediateThrowEvent struct {
-	baseNode
+	Base
 	// SignalName is the signal reference for a signal throw.
 	SignalName string
 	// CompensateRef names the node whose compensation to run (empty = scope-wide).
@@ -243,7 +271,7 @@ func (IntermediateThrowEvent) Kind() NodeKind { return KindIntermediateThrowEven
 
 // BoundaryEvent is an event attached to an activity that fires on timer, signal, message, or error.
 type BoundaryEvent struct {
-	baseNode
+	Base
 	// AttachedTo is the ID of the host activity node.
 	AttachedTo string
 	// NonInterrupting controls interrupting behavior: false = interrupting (the default).
@@ -266,25 +294,25 @@ func (BoundaryEvent) Kind() NodeKind { return KindBoundaryEvent }
 // --- gateways ---
 
 // ExclusiveGateway routes to exactly one outgoing flow (XOR split / merge).
-type ExclusiveGateway struct{ baseNode }
+type ExclusiveGateway struct{ Base }
 
 // Kind returns KindExclusiveGateway.
 func (ExclusiveGateway) Kind() NodeKind { return KindExclusiveGateway }
 
 // ParallelGateway splits into all outgoing flows (AND split) or waits for all (AND join).
-type ParallelGateway struct{ baseNode }
+type ParallelGateway struct{ Base }
 
 // Kind returns KindParallelGateway.
 func (ParallelGateway) Kind() NodeKind { return KindParallelGateway }
 
 // InclusiveGateway routes to one or more outgoing flows (OR split / join).
-type InclusiveGateway struct{ baseNode }
+type InclusiveGateway struct{ Base }
 
 // Kind returns KindInclusiveGateway.
 func (InclusiveGateway) Kind() NodeKind { return KindInclusiveGateway }
 
 // EventBasedGateway routes based on which event arrives first (race).
-type EventBasedGateway struct{ baseNode }
+type EventBasedGateway struct{ Base }
 
 // Kind returns KindEventBasedGateway.
 func (EventBasedGateway) Kind() NodeKind { return KindEventBasedGateway }

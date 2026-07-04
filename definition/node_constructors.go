@@ -19,11 +19,11 @@ func optNameArg(name []string) string {
 // --- activity options ---
 
 // activityOption is the functional-options type for activity kinds.
-// Options that only set activityFields are plain activityOption values.
+// Options that only set ActivityFields are plain activityOption values.
 // Options that also set name use the combined activityOrNameOption type.
 type activityOption interface {
-	applyActivity(a *activityFields)
-	applyName(b *baseNode)
+	applyActivity(a *ActivityFields)
+	applyName(b *Base)
 }
 
 // userTaskOption is the functional-options type for UserTask.
@@ -71,8 +71,8 @@ func WithActionName(name string) interface {
 // inlineActionOpt sets a node-local inline action.
 type inlineActionOpt struct{ a action.ServiceAction }
 
-func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.inline = o.a }
-func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.inline = o.a }
+func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.Inline = o.a }
+func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.Inline = o.a }
 
 // WithAction attaches a node-local inline ServiceAction available to this node
 // only. Mutually exclusive with WithActionName (Build reports a conflict).
@@ -96,35 +96,35 @@ func WithActionFunc(fn func(context.Context, map[string]any) (map[string]any, er
 	return inlineActionOpt{action.Func(fn)}
 }
 
-// activityOnlyOption wraps a function that mutates activityFields only.
-type activityOnlyOption struct{ fn func(*activityFields) }
+// activityOnlyOption wraps a function that mutates ActivityFields only.
+type activityOnlyOption struct{ fn func(*ActivityFields) }
 
-func (o activityOnlyOption) applyActivity(a *activityFields) { o.fn(a) }
-func (activityOnlyOption) applyName(_ *baseNode)             {}
-func (o activityOnlyOption) applyUserTask(u *UserTask)       { o.fn(&u.activityFields) }
-func (o activityOnlyOption) applyReceiveTask(r *ReceiveTask) { o.fn(&r.activityFields) }
-func (o activityOnlyOption) applySendTask(s *SendTask)       { o.fn(&s.activityFields) }
-func (o activityOnlyOption) applyServiceTask(s *ServiceTask) { o.fn(&s.activityFields) }
+func (o activityOnlyOption) applyActivity(a *ActivityFields) { o.fn(a) }
+func (activityOnlyOption) applyName(_ *Base)                 {}
+func (o activityOnlyOption) applyUserTask(u *UserTask)       { o.fn(&u.ActivityFields) }
+func (o activityOnlyOption) applyReceiveTask(r *ReceiveTask) { o.fn(&r.ActivityFields) }
+func (o activityOnlyOption) applySendTask(s *SendTask)       { o.fn(&s.ActivityFields) }
+func (o activityOnlyOption) applyServiceTask(s *ServiceTask) { o.fn(&s.ActivityFields) }
 func (o activityOnlyOption) applyBusinessRule(b *BusinessRuleTask) {
-	o.fn(&b.activityFields)
+	o.fn(&b.ActivityFields)
 }
 
 // withActivity constructs an activityOnlyOption. The concrete return type is
 // intentional: activityOnlyOption satisfies activityOption, userTaskOption,
 // receiveTaskOption, and sendTaskOption simultaneously, so callers can pass it to
 // any constructor.
-func withActivity(fn func(*activityFields)) activityOnlyOption {
+func withActivity(fn func(*ActivityFields)) activityOnlyOption {
 	return activityOnlyOption{fn}
 }
 
-// nameOpt sets the name on a baseNode; it implements every node option interface
+// nameOpt sets the name on a Base; it implements every node option interface
 // (activity, catch, boundary, startEvent, eventSubProcess, userTask, receiveTask,
 // sendTask, serviceTask, businessRule), so WithName is accepted by every
 // option-taking constructor.
 type nameOpt struct{ name string }
 
-func (o nameOpt) applyActivity(_ *activityFields)         {}
-func (o nameOpt) applyName(b *baseNode)                   { b.name = o.name }
+func (o nameOpt) applyActivity(_ *ActivityFields)         {}
+func (o nameOpt) applyName(b *Base)                       { b.name = o.name }
 func (o nameOpt) applyCatch(n *IntermediateCatchEvent)    { n.name = o.name }
 func (o nameOpt) applyBoundary(n *BoundaryEvent)          { n.name = o.name }
 func (o nameOpt) applyStart(n *StartEvent)                { n.name = o.name }
@@ -144,34 +144,34 @@ func WithName(name string) nameOpt { return nameOpt{name} }
 // The concrete return type (activityOnlyOption) satisfies activityOption,
 // userTaskOption, and receiveTaskOption so it works on all constructors.
 func WithRetryPolicy(p *RetryPolicy) activityOnlyOption {
-	return withActivity(func(a *activityFields) { a.RetryPolicy = p })
+	return withActivity(func(a *ActivityFields) { a.RetryPolicy = p })
 }
 
 // WithRecoveryFlow returns an activity option that sets RecoveryFlow.
 func WithRecoveryFlow(flowID string) activityOnlyOption {
-	return withActivity(func(a *activityFields) { a.RecoveryFlow = flowID })
+	return withActivity(func(a *ActivityFields) { a.RecoveryFlow = flowID })
 }
 
 // WithCompensation returns an activity option that sets CompensationAction.
 func WithCompensation(action string) activityOnlyOption {
-	return withActivity(func(a *activityFields) { a.CompensationAction = action })
+	return withActivity(func(a *ActivityFields) { a.CompensationAction = action })
 }
 
 // WithCancelHandler returns an activity option that sets CancelHandler.
 func WithCancelHandler(action string) activityOnlyOption {
-	return withActivity(func(a *activityFields) { a.CancelHandler = action })
+	return withActivity(func(a *ActivityFields) { a.CancelHandler = action })
 }
 
 // WithDeadline returns an activity option that sets DeadlineDuration, DeadlineFlow, and DeadlineAction.
 func WithDeadline(duration, flowID, action string) activityOnlyOption {
-	return withActivity(func(a *activityFields) {
+	return withActivity(func(a *ActivityFields) {
 		a.DeadlineDuration, a.DeadlineFlow, a.DeadlineAction = duration, flowID, action
 	})
 }
 
 // WithReminder returns an activity option that sets ReminderEvery and ReminderAction.
 func WithReminder(every, action string) activityOnlyOption {
-	return withActivity(func(a *activityFields) {
+	return withActivity(func(a *ActivityFields) {
 		a.ReminderEvery, a.ReminderAction = every, action
 	})
 }
@@ -227,7 +227,7 @@ func WithCorrelationKey(key string) interface {
 }
 
 // applyActivityOpts applies all options to the given base and activity fields.
-func applyActivityOpts(b *baseNode, a *activityFields, opts []activityOption) {
+func applyActivityOpts(b *Base, a *ActivityFields, opts []activityOption) {
 	for _, o := range opts {
 		o.applyActivity(a)
 		o.applyName(b)
@@ -265,7 +265,7 @@ func WithStartTimer(dur string) startEventOption {
 // NewStartEvent constructs a StartEvent. Use WithName to set the display name and
 // WithStartSignal, WithStartMessage, or WithStartTimer to configure EventSubProcess triggers.
 func NewStartEvent(id string, opts ...startEventOption) Node {
-	n := StartEvent{baseNode: baseNode{id: id}}
+	n := StartEvent{Base: Base{id: id}}
 	for _, o := range opts {
 		o.applyStart(&n)
 	}
@@ -275,19 +275,19 @@ func NewStartEvent(id string, opts ...startEventOption) Node {
 // NewEndEvent constructs an EndEvent. An optional name may be provided as a
 // trailing variadic argument.
 func NewEndEvent(id string, name ...string) Node {
-	return EndEvent{baseNode{id, optNameArg(name)}}
+	return EndEvent{Base{id, optNameArg(name)}}
 }
 
 // NewTerminateEndEvent constructs a TerminateEndEvent. An optional name may be
 // provided as a trailing variadic argument.
 func NewTerminateEndEvent(id string, name ...string) Node {
-	return TerminateEndEvent{baseNode{id, optNameArg(name)}}
+	return TerminateEndEvent{Base{id, optNameArg(name)}}
 }
 
 // NewErrorEndEvent constructs an ErrorEndEvent. An optional name may be
 // provided as a trailing variadic argument.
 func NewErrorEndEvent(id, errorCode string, name ...string) Node {
-	return ErrorEndEvent{baseNode{id, optNameArg(name)}, errorCode}
+	return ErrorEndEvent{Base{id, optNameArg(name)}, errorCode}
 }
 
 // --- gateway constructors ---
@@ -295,25 +295,25 @@ func NewErrorEndEvent(id, errorCode string, name ...string) Node {
 // NewExclusiveGateway constructs an ExclusiveGateway. An optional name may be
 // provided as a trailing variadic argument.
 func NewExclusiveGateway(id string, name ...string) Node {
-	return ExclusiveGateway{baseNode{id, optNameArg(name)}}
+	return ExclusiveGateway{Base{id, optNameArg(name)}}
 }
 
 // NewParallelGateway constructs a ParallelGateway. An optional name may be
 // provided as a trailing variadic argument.
 func NewParallelGateway(id string, name ...string) Node {
-	return ParallelGateway{baseNode{id, optNameArg(name)}}
+	return ParallelGateway{Base{id, optNameArg(name)}}
 }
 
 // NewInclusiveGateway constructs an InclusiveGateway. An optional name may be
 // provided as a trailing variadic argument.
 func NewInclusiveGateway(id string, name ...string) Node {
-	return InclusiveGateway{baseNode{id, optNameArg(name)}}
+	return InclusiveGateway{Base{id, optNameArg(name)}}
 }
 
 // NewEventBasedGateway constructs an EventBasedGateway. An optional name may be
 // provided as a trailing variadic argument.
 func NewEventBasedGateway(id string, name ...string) Node {
-	return EventBasedGateway{baseNode{id, optNameArg(name)}}
+	return EventBasedGateway{Base{id, optNameArg(name)}}
 }
 
 // --- activity constructors ---
@@ -323,7 +323,7 @@ func NewEventBasedGateway(id string, name ...string) Node {
 // neither, the action name defaults to the node id at execution time. Other
 // behaviour (retry, deadline, name, etc.) is configured via the shared activity options.
 func NewServiceTask(id string, opts ...serviceTaskOption) Node {
-	s := ServiceTask{baseNode: baseNode{id: id}}
+	s := ServiceTask{Base: Base{id: id}}
 	for _, o := range opts {
 		o.applyServiceTask(&s)
 	}
@@ -336,7 +336,7 @@ func NewServiceTask(id string, opts ...serviceTaskOption) Node {
 // WithCancelHandler) work here, as does the UserTask-specific WithEligibilityExpr.
 // Passing a non-userTaskOption (e.g. WithCorrelationKey) is a compile-time error.
 func NewUserTask(id string, roles []string, opts ...userTaskOption) Node {
-	u := UserTask{baseNode: baseNode{id: id}, CandidateRoles: roles}
+	u := UserTask{Base: Base{id: id}, CandidateRoles: roles}
 	for _, o := range opts {
 		o.applyUserTask(&u)
 	}
@@ -348,7 +348,7 @@ func NewUserTask(id string, roles []string, opts ...userTaskOption) Node {
 // as does the ReceiveTask-specific WithCorrelationKey.
 // Passing a non-receiveTaskOption (e.g. WithEligibilityExpr) is a compile-time error.
 func NewReceiveTask(id, messageName string, opts ...receiveTaskOption) Node {
-	r := ReceiveTask{baseNode: baseNode{id: id}, MessageName: messageName}
+	r := ReceiveTask{Base: Base{id: id}, MessageName: messageName}
 	for _, o := range opts {
 		o.applyReceiveTask(&r)
 	}
@@ -360,7 +360,7 @@ func NewReceiveTask(id, messageName string, opts ...receiveTaskOption) Node {
 // does the SendTask-specific WithCorrelationKey.
 // Passing a non-sendTaskOption (e.g. WithEligibilityExpr) is a compile-time error.
 func NewSendTask(id, messageName string, opts ...sendTaskOption) Node {
-	s := SendTask{baseNode: baseNode{id: id}, MessageName: messageName}
+	s := SendTask{Base: Base{id: id}, MessageName: messageName}
 	for _, o := range opts {
 		o.applySendTask(&s)
 	}
@@ -370,7 +370,7 @@ func NewSendTask(id, messageName string, opts ...sendTaskOption) Node {
 // NewBusinessRuleTask constructs a BusinessRuleTask. Action configuration mirrors
 // NewServiceTask (WithActionName / WithAction / WithActionFunc / default-by-id).
 func NewBusinessRuleTask(id string, opts ...businessRuleOption) Node {
-	b := BusinessRuleTask{baseNode: baseNode{id: id}}
+	b := BusinessRuleTask{Base: Base{id: id}}
 	for _, o := range opts {
 		o.applyBusinessRule(&b)
 	}
@@ -379,18 +379,18 @@ func NewBusinessRuleTask(id string, opts ...businessRuleOption) Node {
 
 // NewSubProcess constructs a SubProcess with the given id and nested definition.
 func NewSubProcess(id string, sub *ProcessDefinition, opts ...activityOption) Node {
-	b := baseNode{id: id}
-	var a activityFields
+	b := Base{id: id}
+	var a ActivityFields
 	applyActivityOpts(&b, &a, opts)
-	return SubProcess{baseNode: b, activityFields: a, Subprocess: sub}
+	return SubProcess{Base: b, ActivityFields: a, Subprocess: sub}
 }
 
 // NewCallActivity constructs a CallActivity with the given id and definition reference.
 func NewCallActivity(id, defRef string, opts ...activityOption) Node {
-	b := baseNode{id: id}
-	var a activityFields
+	b := Base{id: id}
+	var a ActivityFields
 	applyActivityOpts(&b, &a, opts)
-	return CallActivity{baseNode: b, activityFields: a, DefRef: defRef}
+	return CallActivity{Base: b, ActivityFields: a, DefRef: defRef}
 }
 
 // eventSubProcessOption is the functional-options interface for EventSubProcess,
@@ -412,7 +412,7 @@ func WithESPNonInterrupting() eventSubProcessOption { return espNonInterruptingO
 // Use WithESPNonInterrupting to mark the event sub-process as non-interrupting, and
 // WithName to set the display name.
 func NewEventSubProcess(id string, sub *ProcessDefinition, opts ...eventSubProcessOption) Node {
-	n := EventSubProcess{baseNode: baseNode{id: id}, Subprocess: sub}
+	n := EventSubProcess{Base: Base{id: id}, Subprocess: sub}
 	for _, o := range opts {
 		o.applyEventSubProcess(&n)
 	}
@@ -430,8 +430,8 @@ type catchOption interface {
 type timerDurationOpt struct{ dur string }
 
 func (o timerDurationOpt) applyCatch(n *IntermediateCatchEvent) { n.TimerDuration = o.dur }
-func (o timerDurationOpt) applyActivity(_ *activityFields)      {}
-func (o timerDurationOpt) applyName(_ *baseNode)                {}
+func (o timerDurationOpt) applyActivity(_ *ActivityFields)      {}
+func (o timerDurationOpt) applyName(_ *Base)                    {}
 
 // WithTimerDuration returns an IntermediateCatchEvent option that sets TimerDuration.
 func WithTimerDuration(dur string) interface {
@@ -445,8 +445,8 @@ func WithTimerDuration(dur string) interface {
 type signalNameOpt struct{ name string }
 
 func (o signalNameOpt) applyCatch(n *IntermediateCatchEvent) { n.SignalName = o.name }
-func (o signalNameOpt) applyActivity(_ *activityFields)      {}
-func (o signalNameOpt) applyName(_ *baseNode)                {}
+func (o signalNameOpt) applyActivity(_ *ActivityFields)      {}
+func (o signalNameOpt) applyName(_ *Base)                    {}
 
 // WithSignalName returns an IntermediateCatchEvent option that sets SignalName.
 func WithSignalName(name string) interface {
@@ -462,8 +462,8 @@ type messageNameKeyOpt struct{ msg, key string }
 func (o messageNameKeyOpt) applyCatch(n *IntermediateCatchEvent) {
 	n.MessageName, n.CorrelationKey = o.msg, o.key
 }
-func (o messageNameKeyOpt) applyActivity(_ *activityFields) {}
-func (o messageNameKeyOpt) applyName(_ *baseNode)           {}
+func (o messageNameKeyOpt) applyActivity(_ *ActivityFields) {}
+func (o messageNameKeyOpt) applyName(_ *Base)               {}
 
 // WithMessageNameAndKey returns an IntermediateCatchEvent option that sets
 // MessageName and CorrelationKey.
@@ -480,8 +480,8 @@ type iceDeadlineOpt struct{ dur, flow, act string }
 func (o iceDeadlineOpt) applyCatch(n *IntermediateCatchEvent) {
 	n.DeadlineDuration, n.DeadlineFlow, n.DeadlineAction = o.dur, o.flow, o.act
 }
-func (o iceDeadlineOpt) applyActivity(_ *activityFields) {}
-func (o iceDeadlineOpt) applyName(_ *baseNode)           {}
+func (o iceDeadlineOpt) applyActivity(_ *ActivityFields) {}
+func (o iceDeadlineOpt) applyName(_ *Base)               {}
 
 // WithICEDeadline returns an IntermediateCatchEvent option that sets DeadlineDuration, DeadlineFlow, DeadlineAction.
 func WithICEDeadline(duration, flowID, action string) interface {
@@ -497,8 +497,8 @@ type iceReminderOpt struct{ every, act string }
 func (o iceReminderOpt) applyCatch(n *IntermediateCatchEvent) {
 	n.ReminderEvery, n.ReminderAction = o.every, o.act
 }
-func (o iceReminderOpt) applyActivity(_ *activityFields) {}
-func (o iceReminderOpt) applyName(_ *baseNode)           {}
+func (o iceReminderOpt) applyActivity(_ *ActivityFields) {}
+func (o iceReminderOpt) applyName(_ *Base)               {}
 
 // WithICEReminder returns an IntermediateCatchEvent option that sets ReminderEvery and ReminderAction.
 func WithICEReminder(every, action string) interface {
@@ -512,7 +512,7 @@ func WithICEReminder(every, action string) interface {
 // Options can be WithTimerDuration, WithSignalName, WithMessageNameAndKey,
 // WithICEDeadline, WithICEReminder, or WithName (as a catchOption-compatible value).
 func NewIntermediateCatchEvent(id string, opts ...catchOption) Node {
-	n := IntermediateCatchEvent{baseNode: baseNode{id: id}}
+	n := IntermediateCatchEvent{Base: Base{id: id}}
 	for _, o := range opts {
 		o.applyCatch(&n)
 	}
@@ -540,7 +540,7 @@ func WithThrowName(name string) throwOption {
 // NewIntermediateThrowEvent constructs an IntermediateThrowEvent.
 // Use WithThrowSignal, WithCompensateRef, or WithThrowName to set fields.
 func NewIntermediateThrowEvent(id string, opts ...throwOption) Node {
-	n := IntermediateThrowEvent{baseNode: baseNode{id: id}}
+	n := IntermediateThrowEvent{Base: Base{id: id}}
 	for _, o := range opts {
 		o(&n)
 	}
@@ -587,7 +587,7 @@ func BoundaryNonInterrupting() boundaryOption {
 // Use WithBoundarySignal, WithBoundaryMessage, WithBoundaryTimer, WithBoundaryErrorCode,
 // BoundaryNonInterrupting, and WithName to set fields.
 func NewBoundaryEvent(id, attachedTo string, opts ...boundaryOption) Node {
-	n := BoundaryEvent{baseNode: baseNode{id: id}, AttachedTo: attachedTo}
+	n := BoundaryEvent{Base: Base{id: id}, AttachedTo: attachedTo}
 	for _, o := range opts {
 		o.applyBoundary(&n)
 	}
