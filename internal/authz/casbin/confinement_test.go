@@ -22,7 +22,7 @@ func TestCasbinConfinement(t *testing.T) {
 	// casbin remains confined to casbinauthz/ and internal/authz/casbin/ (ADR-0023/0036).
 	targets := []string{
 		"./engine/...",
-		"./model/...",
+		"./definition/...",
 		"./runtime/...",
 		"./internal/persistence/...",
 		"./service/...",
