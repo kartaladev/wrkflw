@@ -11,7 +11,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 The first tagged release (`v0.1.0`) will be cut from this section. It captures the engine as
-built across ADRs 0001–0082.
+built across ADRs 0001–0095.
+
+### Breaking
+
+- **BREAKING: gRPC transport removed (ADR-0094).** `transport/grpc/` and the generated
+  `transport/grpc/workflowpb/` stubs are deleted. `RegisterWorkflowServiceServer`,
+  `NewSecureServer`, `NewMethodAuthInterceptor`, and the full proto/buf toolchain are gone.
+  The `google.golang.org/grpc`, `google.golang.org/protobuf`, and
+  `google.golang.org/genproto/googleapis/rpc` dependencies are removed from `go.mod`.
+  Migrate to the HTTP surface (see below).
+
+- **BREAKING: `transport/rest` package removed (ADR-0095).** `rest.NewHandler`,
+  `rest.NewHealthHandler`, `rest.WithAdminMiddleware`, and all `rest.*` option/type names
+  are gone. Replace with the three new adapter subpackages (see Added section below).
+
+### Added
+
+- **`transport/http/{httpcore,stdlib,gin,fiber}` — composable multi-framework HTTP adapters
+  (ADR-0095, ADR-0094).** The transport layer is redesigned as three native adapter
+  subpackages over a shared pure root:
+  - `transport/http/httpcore` — shared pure-endpoint functions, DTOs (with
+    `go-playground/validator/v10` struct-tag validation), `ClassifyError`, `NewInstanceView`,
+    `EvaluateReady`/`EvaluateLive`, and `Instrumentation.Observe` (static route template, no
+    `r.Pattern` dependency). Exposes the generic `RouteCustomizer[R]` seam and
+    `CustomizeOption[R]` / `CustomizeConfig[R]`.
+  - `transport/http/stdlib` — native `net/http` adapter.
+    Groups: `InstanceRoutes`, `TaskRoutes`, `MessageRoutes`, `AdminRoutes`, `HealthRoutes`.
+    Convenience: `Mount(mux, svc)`, `MountHealth(mux, checks...)`.
+  - `transport/http/gin` — native gin adapter (same group set + `WithMiddleware`).
+  - `transport/http/fiber` — native fiber v3 adapter (same group set + `WithMiddleware`).
+
+  Key properties of the new design:
+  - Each group is an **exported struct** that carries only its dependencies; all
+    mount-time customisation flows through `Customize(router, opts...)`.
+  - **Admin-by-composition** — admin endpoints are **default-absent** (not default-deny).
+    They appear only if the consumer mounts `AdminRoutes` on a consumer-secured router
+    group. Safer than the old `WithAdminMiddleware` 403 gate and idiomatic per framework.
+  - **5xx error-body redaction** — `ClassifyError` returns only a sentinel code
+    (`{"error":"internal_error"}`) for 5xx responses; the raw error is logged, never
+    included in the body. 4xx responses retain their descriptive `message`.
+  - **Static route template observability** — span/metric labels use the template known
+    at registration time; no router-populated request field; identical labels across all
+    three frameworks.
+  - **Dependency isolation** — stdlib consumers pull no third-party transport dep.
+    gin consumers add only gin; fiber consumers add only fiber.
+
+  Migration:
+  ```go
+  // Before
+  mux.Handle("/workflow/", http.StripPrefix("/workflow", rest.NewHandler(svc)))
+
+  // After (stdlib)
+  stdlib.Mount(mux, svc)
+  stdlib.MountHealth(mux, dbCheck)
+  ```
+
+- **`github.com/gin-gonic/gin` v1.12.0** added as a dependency of `transport/http/gin`.
+- **`github.com/gofiber/fiber/v3` v3.4.0** added as a dependency of `transport/http/fiber`.
+- **`github.com/go-playground/validator/v10`** added as a direct dependency of
+  `transport/http/httpcore` (was already an indirect dep of gin).
 
 ### Changed
 - **BREAKING: stateful/service constructors now fail fast with `(T, error)` (ADR-0083).**
@@ -106,7 +165,7 @@ built across ADRs 0001–0082.
     `runtime.NewOutboxStatsCollector` / `NewTimerStatsCollector`); counters `wrkflw_timer_fired_total`
     and `wrkflw_action_failures_total{action,retryable}`.
   - `persistence.NewRelayBacklogCheck` readiness probe (DLQ/pending thresholds, default-disabled).
-  - Admin endpoints (REST + gRPC) behind the default-deny gate: relay stats, armed timers, instance
+  - Admin endpoints (REST, behind the default-deny gate): relay stats, armed timers, instance
     lineage, and a failure `category` on dead-letters (`runtime.ClassifyDeadLetter`).
   - `OutboxStats`/`TimerStats` reads and single-hop instance-lineage reads on both the Postgres and
     MySQL backends; `runtime.NewLineageReader` assembler.
@@ -131,9 +190,9 @@ built across ADRs 0001–0082.
   transactional `SendTask` messaging, and event-driven process-instance chaining.
 - **Service actions** — a name-resolved catalog plus built-in actions: `httpcall`, `email`,
   `transform`, and `logaction`; definition-scoped and inline action registration.
-- **Transports** — mountable REST (`http.Handler` factories) and gRPC (`ServiceRegistrar`) surfaces
+- **Transports** — mountable HTTP route groups (stdlib `*http.ServeMux`, gin, fiber v3)
   with request validation, structured error mapping, admin/DLQ/policy endpoints, keyset-paginated
-  listing, instance snapshot/actionable projections, and fail-closed auth helpers.
+  listing, and instance snapshot/actionable projections (see ADR-0094/0095 for the new shape).
 - **Observability** — OpenTelemetry metrics + traces and `slog` logging across runtime, transports,
   scheduling, eventing, and the persistence relay; `/healthz` + `/readyz` handlers.
 - **Operability** — graceful `ShutdownGroup`, example reference wiring under `examples/`, and a

@@ -5,8 +5,8 @@
 `wrkflw` is a single importable Go module (`github.com/zakyalvan/krtlwrkflw`) that a
 consumer embeds in their own application. There is no owned binary, no daemon, and no
 container you run. Process execution, human tasks, timers, compensation, and
-authorization all live in the library's root packages. The REST and gRPC transport
-adapters are mountable handlers a consumer registers in their own server.
+authorization all live in the library's root packages. The HTTP transport
+adapters are mountable route groups a consumer registers in their own server.
 
 ---
 
@@ -16,10 +16,10 @@ adapters are mountable handlers a consumer registers in their own server.
   `definition/`, `runtime/`, etc. A consumer imports them and embeds the engine in their app.
   Every feature must be reachable through the public API; no feature lives exclusively
   in a binary or example.
-- **Mountable transports, no owned main.** REST (`http.Handler`) and gRPC
-  (`grpc.ServiceRegistrar`) entry points are constructors the consumer calls and mounts
-  in their own server. The `examples/` directory shows reference wiring but is not a
-  shipped product.
+- **Mountable transports, no owned main.** HTTP entry points are constructors the consumer
+  calls and mounts in their own server — stdlib `*http.ServeMux`, gin, or fiber v3, each
+  with native group structs the consumer positions wherever they choose. The `examples/`
+  directory shows reference wiring but is not a shipped product.
 - **Token-based execution.** Transitions between nodes are modeled as tokens. Each
   token carries process-instance variables that downstream nodes (e.g. exclusive
   gateways) read to make routing decisions.
@@ -232,7 +232,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 | `humantask` | Human-task model and ports that drive human work (claim, complete, reassign). |
 | `authz` | Pluggable `Authorizer` abstraction: role, resource-privilege, and attribute-based rules. |
 | `casbinauthz` | Casbin-backed `Authorizer` (baseline implementation). Wraps `*casbin.SyncedEnforcer`. |
-| `transport` | REST `http.Handler` factory (`transport/rest.NewHandler`) and gRPC `ServiceRegistrar` registration (`transport/grpc.RegisterWorkflowServiceServer`). |
+| `transport` | HTTP transport adapters: `transport/http/httpcore` (shared pure-endpoint funcs, DTOs, validation, error classification, observability), `transport/http/stdlib` (net/http), `transport/http/gin`, `transport/http/fiber`. |
 | `persistence` | Persistence façade over the neutral SQL store: `OpenPostgres`, `OpenMySQL`, and `OpenSQLite`, plus migrations and relay/lister/store constructors (ADR-0081/0082). |
 | `eventing` | Eventing façade for publishing domain events via the transactional outbox. |
 | `scheduling` | Façade over the timer/deadline scheduler (gocron behind the abstraction). |
@@ -246,42 +246,123 @@ Implementation details a consumer must not import live under `internal/`.
 
 ## Mounting transports
 
-### REST
+The library provides three native HTTP adapter subpackages over a shared root:
+
+| Subpackage | Router type | Dep added |
+|---|---|---|
+| `transport/http/stdlib` | `*http.ServeMux` | none |
+| `transport/http/gin` | `gin.IRouter` | `github.com/gin-gonic/gin` |
+| `transport/http/fiber` | `fiber.Router` | `github.com/gofiber/fiber/v3` |
+
+Import only the subpackage you use — a stdlib consumer never pulls gin or fiber.
+
+### stdlib (net/http)
 
 ```go
 import (
-	"net/http"
+    "net/http"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/rest"
+    "github.com/zakyalvan/krtlwrkflw/service"
+    "github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
 )
 
 // svc is a service.Service (constructed via service.New or wired manually).
 var svc service.Service
 
 mux := http.NewServeMux()
-mux.Handle("/workflow/", http.StripPrefix("/workflow", rest.NewHandler(svc)))
+stdlib.Mount(mux, svc)           // instance + task + message routes
+stdlib.MountHealth(mux, dbCheck) // /healthz + /readyz
+http.ListenAndServe(":8080", mux)
 ```
 
-`rest.NewHandler` accepts functional options: `rest.WithAdminMiddleware(mw)` to protect
-admin routes, `rest.WithDeadLetterAdmin(dla)`, `rest.WithPolicyAdmin(pa)`.
-
-### gRPC
+### gin
 
 ```go
 import (
-	"google.golang.org/grpc"
+    "github.com/gin-gonic/gin"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
-	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
+    "github.com/zakyalvan/krtlwrkflw/transport/http/gin" // package alias: gintransport
+    "github.com/zakyalvan/krtlwrkflw/service"
 )
 
-// srv is a *grpc.Server; svc is a service.Service.
-var srv *grpc.Server
-var svc service.Service
-
-grpctransport.RegisterWorkflowServiceServer(srv, svc)
+g := gin.Default()
+gintransport.Mount(g, svc)
+gintransport.MountHealth(g, dbCheck)
+g.Run(":8080")
 ```
+
+### fiber
+
+```go
+import (
+    "github.com/gofiber/fiber/v3"
+
+    "github.com/zakyalvan/krtlwrkflw/transport/http/fiber" // package alias: fibertransport
+    "github.com/zakyalvan/krtlwrkflw/service"
+)
+
+app := fiber.New()
+fibertransport.Mount(app, svc)
+fibertransport.MountHealth(app, dbCheck)
+app.Listen(":8080")
+```
+
+### Flexible base-path and admin-by-composition
+
+All route groups are mounted at **relative** paths — no group hardcodes a
+prefix. Use `WithBasePath` (stdlib) or native sub-routers (gin/fiber) to place
+groups where you need them. Admin routes are **default-absent**: they do not
+exist unless you explicitly mount `AdminRoutes` on a consumer-secured router
+group — which is safer than a built-in default-deny gate.
+
+```go
+// stdlib — no sub-router; use WithBasePath
+import (
+    "github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+    "github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
+)
+
+mux := http.NewServeMux()
+stdlib.InstanceRoutes{Svc: svc}.Customize(mux, httpcore.WithBasePath[*http.ServeMux]("/api/v1/workflow"))
+stdlib.TaskRoutes{Svc: svc}.Customize(mux, httpcore.WithBasePath[*http.ServeMux]("/tasks"))
+// Admin mounted separately — no route is registered until this call:
+stdlib.AdminRoutes{Svc: svc, DeadLetters: dlq}.Customize(mux, httpcore.WithBasePath[*http.ServeMux]("/admin/workflow"))
+stdlib.MountHealth(mux)
+```
+
+```go
+// gin — native sub-router; WithBasePath still works but sub-routers are idiomatic
+import (
+    gintransport "github.com/zakyalvan/krtlwrkflw/transport/http/gin"
+)
+
+base  := g.Group("/api/v1/workflow")
+tasks := g.Group("/tasks")
+gintransport.InstanceRoutes{Svc: svc}.Customize(base)
+gintransport.TaskRoutes{Svc: svc}.Customize(tasks)
+
+// Admin secured by the consumer's native auth middleware:
+admin := g.Group("/api/v1/workflow", myAuthMiddleware)
+gintransport.AdminRoutes{Svc: svc, DeadLetters: dlq, Policies: pol}.Customize(admin)
+gintransport.HealthRoutes{Checks: checks}.Customize(base)
+```
+
+```go
+// fiber — same pattern as gin
+import (
+    fibertransport "github.com/zakyalvan/krtlwrkflw/transport/http/fiber"
+)
+
+base  := app.Group("/api/v1/workflow")
+admin := app.Group("/api/v1/workflow", myAuthHandler)
+fibertransport.InstanceRoutes{Svc: svc}.Customize(base)
+fibertransport.AdminRoutes{Svc: svc, DeadLetters: dlq}.Customize(admin)
+fibertransport.MountHealth(base)
+```
+
+For custom middleware on a single group use `WithMiddleware` (gin/fiber) or
+`WithRouterFunc` (any framework) — see `transport/http/httpcore` godoc for the
+full `CustomizeConfig[R]` and `CustomizeOption[R]` seam.
 
 ---
 
@@ -490,8 +571,11 @@ action/             # Service-action catalog (public)
 humantask/          # Human-task model (public)
 authz/              # Authorizer abstraction (public)
 casbinauthz/        # Casbin-backed authorizer (public)
-transport/rest/     # REST http.Handler factory (public)
-transport/grpc/     # gRPC ServiceRegistrar registration (public)
+transport/http/         # HTTP transport adapters (public)
+transport/http/httpcore/    # shared pure-endpoint funcs, DTOs, validation, observability
+transport/http/stdlib/      # net/http adapter
+transport/http/gin/         # gin adapter
+transport/http/fiber/       # fiber v3 adapter
 persistence/        # Persistence façade (public)
 eventing/           # Eventing façade (public)
 scheduling/         # Scheduling façade (public)
@@ -1192,13 +1276,12 @@ See [`examples/sqlite_wiring/`](examples/sqlite_wiring/) for the complete refere
 The library is lifecycle-neutral — the consumer owns the process. Three pieces make a
 clean production embedding ergonomic (ADR-0054):
 
-- **Health & readiness handlers.** `rest.NewHealthHandler(checks...)` returns an
-  `http.Handler` you mount alongside the workflow routes. It exposes `GET /healthz`
-  (liveness — always `200`, runs no checks) and `GET /readyz` (readiness — runs every
-  registered `rest.HealthCheck` and returns `200`, or `503` with a per-check JSON body
-  naming the failure). Wire readiness to Postgres with the ready-made
-  `persistence.NewPingCheck(pool)` (a `pool.Ping` probe), or register an inline check
-  with `rest.HealthCheckFunc(name, fn)`.
+- **Health & readiness handlers.** `stdlib.MountHealth(mux, checks...)` (or the gin/fiber
+  equivalent `MountHealth`) mounts `GET /healthz` (liveness — always `200`) and
+  `GET /readyz` (readiness — runs every registered `httpcore.HealthCheck` and returns
+  `200`, or `503` with a per-check JSON body naming the failure) alongside the workflow
+  routes. Wire readiness to Postgres with the ready-made `persistence.NewPingCheck(pool)`
+  (a `pool.Ping` probe), or register an inline check with `httpcore.HealthCheckFunc(name, fn)`.
 
 - **One-call graceful shutdown.** `runtime.ShutdownGroup` aggregates your resource
   holders — the `scheduling.Scheduler` (`io.Closer`), the advisory-lock ownership
@@ -1275,7 +1358,7 @@ carry sensitive data (PII, tokens, payment details). Treat them as secrets:
   a human-task resolver, or a `SuccessorPolicy`, do not `slog`/print the raw input/output
   maps. Log only the keys you need, or a redacted view — never the whole map. The same
   applies to error messages: don't interpolate a variable value into an error string that
-  flows back through the REST/gRPC transports.
+  flows back through the HTTP transport.
 - **Encrypt at rest if required.** Variables persist to Postgres as JSONB. If your
   compliance posture requires encryption-at-rest for these fields, encrypt the values in
   your action layer before they enter the engine (the engine treats them as opaque
