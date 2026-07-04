@@ -81,6 +81,42 @@ func (s *MemScheduler) Schedule(timerID string, fireAt time.Time, fire func()) {
 	s.pending[timerID] = pendingTimer{timerID: timerID, fireAt: fireAt, fire: fire}
 }
 
+// NextFireAt returns the fire time of the earliest pending timer and true, or
+// the zero time and false when no timers are pending. It lets a test harness
+// advance a fake clock to exactly the next due timer before calling Tick, without
+// needing visibility into the (unexported) per-instance timer bookkeeping. It is
+// concrete on MemScheduler and not part of the Scheduler interface.
+func (s *MemScheduler) NextFireAt() (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var (
+		earliest time.Time
+		found    bool
+	)
+	for _, pt := range s.pending {
+		if !found || pt.fireAt.Before(earliest) {
+			earliest = pt.fireAt
+			found = true
+		}
+	}
+	return earliest, found
+}
+
+// Pending returns the fire time of the pending timer with the given id and true,
+// or the zero time and false if no such timer is pending. It lets a test harness
+// tell whether a specific parked token's awaited timer is armed (matching the
+// token's command id against a scheduled timer id) without scanning all timers.
+func (s *MemScheduler) Pending(timerID string) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pt, ok := s.pending[timerID]
+	if !ok {
+		return time.Time{}, false
+	}
+	return pt.fireAt, true
+}
+
 // Cancel removes a pending timer. No-op if absent.
 func (s *MemScheduler) Cancel(timerID string) {
 	s.mu.Lock()
