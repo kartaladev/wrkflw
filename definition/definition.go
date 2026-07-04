@@ -19,6 +19,8 @@
 package definition
 
 import (
+	"io"
+
 	"github.com/zakyalvan/krtlwrkflw/definition/build"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -28,6 +30,12 @@ import (
 // version. It is the root-package entry point for Go authoring; each AddX method
 // mirrors a node-family constructor, and Build returns a *ProcessDefinition.
 func NewBuilder(id string, version int) *build.Builder { return build.New(id, version) }
+
+// NewLoader reads a YAML process-definition from r and returns a DefinitionLoader
+// whose structure is already declared. It is the root-package entry point for the
+// YAML authoring form, alongside NewBuilder: register definition-scoped actions
+// via RegisterAction/RegisterActionFunc, then call Build.
+func NewLoader(r io.Reader) (DefinitionLoader, error) { return model.ParseYAML(r) }
 
 // --- re-exported core types (definition/model) ---
 
@@ -56,8 +64,6 @@ var (
 	Validate           = model.Validate
 	NewBase            = model.NewBase
 	DefaultRetryPolicy = model.DefaultRetryPolicy
-	ParseYAML          = model.ParseYAML
-	LoadYAML           = model.LoadYAML
 	RegisterKind       = model.RegisterKind
 	RetryPolicyOf      = model.RetryPolicyOf
 	DeadlineOf         = model.DeadlineOf

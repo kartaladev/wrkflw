@@ -16,7 +16,7 @@
 // # Start here
 //
 // For most consumers the entry sequence is: (1) author a [definition.ProcessDefinition]
-// with [definition.NewBuilder] (Go) or [definition.ParseYAML]/[definition.LoadYAML] (YAML),
+// with [definition.NewBuilder] (Go) or [definition.NewLoader] (YAML),
 // calling [definition.DefinitionLoader.Build] in both cases; (2) construct a
 // [runtime.ProcessDriver] with [runtime.NewProcessDriver](catalog, store, opts) — all required
 // deps are non-nil interfaces; passing nil returns [kernel.ErrNilDependency];
@@ -26,7 +26,7 @@
 //   - definition   Define a process: nodes, gateways, sequence flows, the
 //     ProcessDefinition template. Pure data plus validation; imports only stdlib.
 //     Two builder surfaces: DefinitionBuilder (NewBuilder, Go-authored)
-//     and DefinitionLoader (ParseYAML/LoadYAML, post-parse action registration).
+//     and DefinitionLoader (NewLoader, post-parse action registration).
 //   - runtime      Run a process: the reference driver that performs engine
 //     commands, persists state, and feeds triggers back. Provides Runner,
 //     MemStore, CachingStore, TaskService, SignalBus, Chainer, CallNotifier.

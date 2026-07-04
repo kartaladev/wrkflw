@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
@@ -54,7 +55,7 @@ flows:
   - { id: f1, source: s, target: charge }
   - { id: f2, source: charge, target: e }
 `
-	yamlLd, err := definition.ParseYAML([]byte(yamlSrc))
+	yamlLd, err := definition.NewLoader(strings.NewReader(yamlSrc))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "yaml parse:", err)
 		os.Exit(1)

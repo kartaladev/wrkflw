@@ -34,33 +34,36 @@ import a leaf.
 Adopt the **aggregator + core-leaf** topology. The core types move out of the
 root package; the root package becomes a thin aggregator.
 
-- **`definition/core`** — holds what was in the root package: `Node`, `NodeKind`,
+- **`definition/model`** — holds what was in the root package: `Node`, `NodeKind`,
   `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the
   kind registry (`NodeSpec`/`RegisterKind`), the shared embeds (`Base`,
   `ActivityFields`, `WaitFields`, `TaskAction`, `NodeWire`), the core builder
   (`definitionBuilder`/`DefinitionBuilder`/`DefinitionLoader` with generic `Add`),
   and the sentinel errors. Imports `flow`; imports no leaf.
-- **`flow`** — `SequenceFlow` + `FlowOption` (`WithFlowID`, `WithCondition`,
+- **`flow`** — `SequenceFlow` + `Option` (`WithFlowID`, `WithCondition`,
   `AsDefault`). A leaf; imports nothing internal.
 - **`definition/event` / `gateway` / `activity`** — unchanged in spirit; now import
-  `core` (and `flow`) instead of the root package, and register with `core`.
-- **`definition/build`** — imports `core` + the leaves + `flow`. Defines
+  `model` (and `flow`) instead of the root package, and register with `model`.
+- **`definition/build`** — imports `model` + the leaves + `flow`. Defines
   `Builder` with the full-name fluent methods (`AddStartEvent`, …); `New(...)` and
-  `Build()` return `*core.ProcessDefinition`.
-- **`definition`** (root) — the **aggregator**: imports `core`, `build`, `flow`.
-  Re-exports the public surface as aliases (`type Node = core.Node`,
-  `type ProcessDefinition = core.ProcessDefinition`, `type SequenceFlow =
-  flow.SequenceFlow`, `var Validate = core.Validate`, the `KindX` constants, the
-  `ErrX` sentinels, the accessors, …) and defines
+  `Build()` return `*model.ProcessDefinition`.
+- **`definition`** (root) — the **aggregator**: imports `model`, `build`, `flow`.
+  Re-exports the public surface as aliases (`type Node = model.Node`,
+  `type ProcessDefinition = model.ProcessDefinition`, `type SequenceFlow =
+  flow.SequenceFlow`, `var Validate = model.Validate`, the `KindX` constants, the
+  accessors, …) and defines
   `func NewBuilder(id, version int) *build.Builder { return build.New(id, version) }`.
+  The `ErrX` validation/builder sentinels are **not** re-exported — check them from
+  `definition/model` (e.g. `errors.Is(err, model.ErrNoStartEvent)`) to keep the
+  root surface minimal.
 
 Dependency graph (acyclic; nothing imports the root aggregator):
 
 ```
-definition (root) → build, core, flow
-build             → core, event, gateway, activity, flow
-event/gateway/activity → core, flow
-core              → flow
+definition (root) → build, model, flow
+build             → model, event, gateway, activity, flow
+event/gateway/activity → model, flow
+model             → flow
 flow              → (stdlib only)
 ```
 
@@ -69,7 +72,7 @@ flow              → (stdlib only)
 `Build()` yields `*definition.ProcessDefinition`. Because the root package
 transitively imports the leaves (via `build`), importing `definition` also
 populates the kind registry — the `definition/kinds` bundle remains for
-deserialization paths that import only `core`.
+deserialization paths that import only `model`.
 
 ## Consequences
 
@@ -83,9 +86,9 @@ deserialization paths that import only `core`.
   `.Add(...)` chains compile unchanged.
 - **`SequenceFlow` is now `flow.SequenceFlow`** (aliased as `definition.SequenceFlow`).
 - **Cost**: re-restructures the core merged in ADR-0090; a sizeable but mechanical
-  aggregator shim; the core `.go` files move into `definition/core`; the leaves
+  aggregator shim; the core `.go` files move into `definition/model`; the leaves
   and `build` re-point their imports.
-- **`core` is a public sub-package** but consumers rarely name it directly — they
+- **`model` is a public sub-package** but consumers rarely name it directly — they
   use the root aliases. It is the one piece of new surface.
 - **Wire format and behaviour remain frozen** (unchanged from ADR-0090); the
   golden round-trip and all-kinds tests continue to guard it.

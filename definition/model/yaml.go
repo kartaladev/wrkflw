@@ -135,11 +135,16 @@ func coreFromYAML(dy *definitionYAML) (*definitionCore, error) {
 	return c, nil
 }
 
-// ParseYAML decodes a YAML process-definition and returns a DefinitionLoader
-// whose structure (nodes, flows) is already declared. Register any
-// definition-scoped actions via RegisterAction/RegisterActionFunc, then call
-// Build to validate and obtain the *ProcessDefinition.
-func ParseYAML(data []byte) (DefinitionLoader, error) {
+// ParseYAML reads a YAML process-definition from r and returns a
+// DefinitionLoader whose structure (nodes, flows) is already declared. Register
+// any definition-scoped actions via RegisterAction/RegisterActionFunc, then call
+// Build to validate and obtain the *ProcessDefinition. The root definition
+// package exposes this as definition.NewLoader.
+func ParseYAML(r io.Reader) (DefinitionLoader, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-definition: read YAML: %w", err)
+	}
 	var dy definitionYAML
 	if err := yaml.Unmarshal(data, &dy); err != nil {
 		return nil, fmt.Errorf("workflow-definition: parse YAML: %w", err)
@@ -149,13 +154,4 @@ func ParseYAML(data []byte) (DefinitionLoader, error) {
 		return nil, err
 	}
 	return &definitionLoader{core}, nil
-}
-
-// LoadYAML reads all bytes from r and calls ParseYAML.
-func LoadYAML(r io.Reader) (DefinitionLoader, error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("workflow-definition: read YAML: %w", err)
-	}
-	return ParseYAML(data)
 }

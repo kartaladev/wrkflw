@@ -123,7 +123,7 @@ def, _ := definition.NewBuilder("loan", 1).
 ```
 
 `WithActionName` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
-returns `definition.ErrActionInlineAndNameConflict` if both are set. See
+returns `model.ErrActionInlineAndNameConflict` if both are set. See
 `runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
 
 ### Author in YAML
@@ -147,8 +147,9 @@ flows:
 ```
 
 ```go
-data, _ := os.ReadFile("order.yaml")
-ld, err := definition.ParseYAML(data)
+f, _ := os.Open("order.yaml")
+defer f.Close()
+ld, err := definition.NewLoader(f) // NewLoader reads YAML from any io.Reader
 if err != nil { log.Fatal(err) }
 def, err := ld.Build()
 ```
@@ -214,7 +215,7 @@ For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
 | Form | Function | Notes |
 |---|---|---|
 | Go builder | `definition.NewBuilder(...).AddServiceTask(...).Connect(...).Build()` | Preferred; compile-time safe. Node kinds live in `definition/{event,gateway,activity}`; the fluent `build` package has one `Add<Kind>` per kind, or use `definition.NewBuilder(...).Add(node)` for dynamic nodes. |
-| YAML | `definition.ParseYAML(data)` / `definition.LoadYAML(r)` | Human-readable; lowerCamelCase kind discriminator; returns `DefinitionLoader` — call `.Build()` (optionally after `.RegisterAction(...)`) to obtain `*ProcessDefinition` |
+| YAML | `definition.NewLoader(r)` (any io.Reader) | Human-readable; lowerCamelCase kind discriminator; returns `DefinitionLoader` — call `.Build()` (optionally after `.RegisterAction(...)`) to obtain `*ProcessDefinition` |
 
 ---
 
@@ -739,8 +740,8 @@ Flow options for `.Connect`: `flow.WithFlowID(id)`, `flow.WithCondition(expr)`,
 
 ### YAML authoring
 
-Definitions can also be authored in YAML and loaded with `definition.ParseYAML(data)` or
-`definition.LoadYAML(r)`. Each node carries a `kind` discriminator (lowerCamelCase):
+Definitions can also be authored in YAML and loaded with `definition.NewLoader(r)` (any io.Reader);
+Each node carries a `kind` discriminator (lowerCamelCase):
 
 ```yaml
 id: order

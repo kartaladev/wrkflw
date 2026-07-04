@@ -61,7 +61,7 @@ flows), `IsDefault`.
 
 | Package | Import path | Holds |
 |---|---|---|
-| root (aggregator) | `.../definition` | `NewBuilder` (the fluent entry) + re-exports of `model`'s public surface (`Node`, `ProcessDefinition`, `Validate`, `KindX`, `ErrX`, accessors, embeds) and `flow.SequenceFlow`. |
+| root (aggregator) | `.../definition` | `NewBuilder` (fluent Go entry), `NewLoader` (YAML entry) + re-exports of `model`'s public surface (`Node`, `ProcessDefinition`, `Validate`, `KindX`, accessors, embeds) and `flow.SequenceFlow`. The `ErrX` sentinels are **not** re-exported — check them via `model.ErrX`. |
 | model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), sentinel errors. Imports only `flow`. |
 | flow | `.../definition/flow` | `SequenceFlow`, `Option`, `WithFlowID`, `WithCondition`, `AsDefault`. |
 | events | `.../definition/event` | `NewStart`, `NewEnd`, `NewTerminateEnd`, `NewErrorEnd`, `NewCatch`, `NewThrow`, `NewBoundary`, `NewEventSubProcess` + their options |
@@ -215,7 +215,7 @@ def, err := definition.NewBuilder("loan", 1).
 returns a `*definition.ProcessDefinition`. Flow options live in `flow`:
 `flow.WithFlowID(id)`, `flow.WithCondition(expr)`, `flow.AsDefault()`.
 
-**`DefinitionLoader`** (returned by `ParseYAML`/`LoadYAML`) exposes only
+**`DefinitionLoader`** (returned by `definition.NewLoader`) exposes only
 `RegisterAction`/`RegisterActionFunc`/`CancelActions`/`Build` — the structure is
 already declared by the parsed YAML.
 
@@ -287,7 +287,7 @@ leaf types.
 standard `encoding/json`. YAML entry points return a `DefinitionLoader`:
 
 ```go
-ld, err := definition.ParseYAML(data)   // or definition.LoadYAML(r)
+ld, err := definition.NewLoader(r)   // r is any io.Reader
 ld.RegisterAction("my-action", myAction) // YAML can't carry Go funcs
 def, err := ld.Build()
 ```
@@ -305,5 +305,5 @@ deserializing, import `definition/kinds` — see above.)
 |---|---|---|
 | **Fluent Go** | `definition.NewBuilder(...).AddX(...).Connect(...).Build()` | Preferred; terse, IDE-navigable. |
 | **Core builder** | `definition.NewBuilder(...).Add(node).Connect(...).Build()` | Programmatic / dynamic node lists. |
-| **YAML** | `definition.ParseYAML` / `LoadYAML` → `DefinitionLoader` | Config-driven pipelines; import `definition/kinds`. |
+| **YAML** | `definition.NewLoader(r)` → `DefinitionLoader` | Config-driven pipelines; import `definition/kinds`. |
 | **JSON** | `json.Unmarshal` into `ProcessDefinition` then `definition.Validate` | Interchange / persistence; import `definition/kinds`. |

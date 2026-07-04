@@ -18,7 +18,7 @@ var ErrActionInlineAndNameConflict = errors.New("workflow-definition: node has b
 // the same name twice.
 var ErrDuplicateScopedAction = errors.New("workflow-definition: duplicate scoped action name")
 
-// DefinitionLoader is a post-parse handle returned by ParseYAML and LoadYAML.
+// DefinitionLoader is a post-parse handle returned by ParseYAML (definition.NewLoader).
 // The structural declaration (nodes, flows) is already loaded; callers register
 // definition-scoped actions and call Build to validate and obtain the
 // *ProcessDefinition. All methods return DefinitionLoader for chaining.
