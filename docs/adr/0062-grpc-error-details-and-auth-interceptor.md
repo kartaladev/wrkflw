@@ -3,6 +3,12 @@
 - Status: Accepted
 - Date: 2026-06-25
 
+> **Superseded by ADR-0094.** The gRPC transport is removed;
+> `NewMethodAuthInterceptor` and the structured `InvalidArgument` details path
+> are gone with it. The HTTP equivalent is ADR-0095's `ClassifyError` +
+> `httpcore.Validate`, which attaches stable error codes for all three HTTP
+> adapters.
+
 ## Context
 
 [ADR-0058](0058-grpc-validation-and-per-method-auth.md) added a transport-boundary

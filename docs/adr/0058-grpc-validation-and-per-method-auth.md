@@ -3,6 +3,12 @@
 - Status: Accepted
 - Date: 2026-06-25
 
+> **Superseded by ADR-0094.** The gRPC transport is removed; the
+> per-RPC validation sweep and per-method auth example no longer apply.
+> Request validation is re-expressed in ADR-0095 via shared
+> `httpcore.Validate` (go-playground/validator/v10) applied inside pure
+> endpoint functions so all three HTTP frameworks enforce identical rules.
+
 ## Context
 
 [ADR-0051](0051-grpc-fail-closed-server.md) added transport-boundary request

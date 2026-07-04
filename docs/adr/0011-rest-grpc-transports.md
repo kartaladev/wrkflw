@@ -3,6 +3,11 @@
 - Status: Accepted
 - Date: 2026-06-21
 
+> **Superseded by ADR-0094** (gRPC removed; HTTP-only) and **ADR-0095**
+> (composable multi-framework `RouteCustomizer` adapters replace `NewHandler`).
+> The `service.Service` façade and the `DeadLetterAdmin`/admin seams it
+> introduced survive in the HTTP surface unchanged.
+
 ## Context
 
 The requirements ask for a "rest or grpc API", for the ability to "customize the
