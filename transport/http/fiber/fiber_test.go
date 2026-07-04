@@ -10,7 +10,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -18,6 +17,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/fiber"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -26,42 +27,38 @@ import (
 // ---------------------------------------------------------------------------
 // Helpers
 
-// newApp creates a fresh fiber app with disabled startup message and no delay
-// on test shutdown. It returns the app; callers call appTest(t, app, req).
+// newApp creates a fresh fiber app for testing. No special config needed —
+// app.Test() does not start the server so no startup banner is printed.
 func newApp() *fiberlib.App {
-	return fiberlib.New(fiberlib.Config{DisableStartupMessage: true})
+	return fiberlib.New()
 }
 
-// appTest drives req through app and returns the *http.Response.
-func appTest(t *testing.T, app *fiberlib.App, req *http.Request) *http.Response {
+// appDo drives req through app, reads and closes the response body, and returns
+// the status code and body string. The body is always closed before return,
+// satisfying the bodyclose linter.
+func appDo(t *testing.T, app *fiberlib.App, req *http.Request) (statusCode int, body string) {
 	t.Helper()
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
-	return resp
+	defer resp.Body.Close() //nolint:errcheck
+	b, err2 := io.ReadAll(resp.Body)
+	if err2 != nil {
+		t.Fatalf("ReadAll: %v", err2)
+	}
+	return resp.StatusCode, string(b)
 }
 
-// readBody reads the full response body as a string.
-func readBody(t *testing.T, r io.Reader) string {
+// appDoJSON drives req through app, reads and closes the body, and decodes the
+// JSON result into v. Returns the status code.
+func appDoJSON(t *testing.T, app *fiberlib.App, req *http.Request, v any) int {
 	t.Helper()
-	b, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
+	status, body := appDo(t, app, req)
+	if err := json.Unmarshal([]byte(body), v); err != nil {
+		t.Fatalf("decode JSON (status=%d body=%s): %v", status, body, err)
 	}
-	return string(b)
-}
-
-// decodeJSON decodes the response body into v.
-func decodeJSON(t *testing.T, r io.Reader, v any) {
-	t.Helper()
-	b, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if err := json.Unmarshal(b, v); err != nil {
-		t.Fatalf("decode JSON: %v (body=%s)", err, b)
-	}
+	return status
 }
 
 // jsonBody returns a *bytes.Reader containing the JSON encoding of v.
@@ -80,9 +77,9 @@ func newPostRequest(t *testing.T, path string, body any) *http.Request {
 	var r *http.Request
 	var err error
 	if body != nil {
-		r, err = httptest.NewRequest(http.MethodPost, path, jsonBody(t, body))
+		r, err = http.NewRequest(http.MethodPost, path, jsonBody(t, body))
 	} else {
-		r, err = httptest.NewRequest(http.MethodPost, path, http.NoBody)
+		r, err = http.NewRequest(http.MethodPost, path, http.NoBody)
 	}
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
@@ -94,7 +91,7 @@ func newPostRequest(t *testing.T, path string, body any) *http.Request {
 // newGetRequest creates a GET request.
 func newGetRequest(t *testing.T, path string) *http.Request {
 	t.Helper()
-	r, err := httptest.NewRequest(http.MethodGet, path, http.NoBody)
+	r, err := http.NewRequest(http.MethodGet, path, http.NoBody)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
@@ -107,9 +104,9 @@ func newDeleteRequest(t *testing.T, path string, body any) *http.Request {
 	var r *http.Request
 	var err error
 	if body != nil {
-		r, err = httptest.NewRequest(http.MethodDelete, path, jsonBody(t, body))
+		r, err = http.NewRequest(http.MethodDelete, path, jsonBody(t, body))
 	} else {
-		r, err = httptest.NewRequest(http.MethodDelete, path, http.NoBody)
+		r, err = http.NewRequest(http.MethodDelete, path, http.NoBody)
 	}
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
@@ -126,7 +123,7 @@ var errInternal = errors.New("db connection refused: internal secret dsn info")
 // alwaysErrorService is a minimal service.Service stub that returns err for
 // every operation. Used to verify 5xx responses do not leak raw messages.
 type alwaysErrorService struct {
-	err error
+	err             error
 	service.Service // embed to satisfy unused methods
 }
 
@@ -156,8 +153,46 @@ func (alwaysPoliciesAdmin) ListRoles(_ context.Context) ([]service.RoleBinding, 
 	return []service.RoleBinding{{User: "alice", Role: "manager"}}, nil
 }
 
+// alwaysDeadLetterAdmin always returns empty dead letters and zero redriven.
+type alwaysDeadLetterAdmin struct{}
+
+func (alwaysDeadLetterAdmin) ListDeadLettered(_ context.Context, _ int) ([]monitor.DeadLetter, error) {
+	return []monitor.DeadLetter{}, nil
+}
+func (alwaysDeadLetterAdmin) Redrive(_ context.Context, _ ...int64) (int, error) {
+	return 0, nil
+}
+
+// alwaysRelayStatsAdmin returns zero stats.
+type alwaysRelayStatsAdmin struct{}
+
+func (alwaysRelayStatsAdmin) OutboxStats(_ context.Context) (kernel.OutboxStats, error) {
+	return kernel.OutboxStats{}, nil
+}
+
+// alwaysTimerAdmin returns empty stats and nil arms.
+type alwaysTimerAdmin struct{}
+
+func (alwaysTimerAdmin) Stats(_ context.Context) (kernel.TimerStats, error) {
+	return kernel.TimerStats{}, nil
+}
+func (alwaysTimerAdmin) ListArmed(_ context.Context) ([]kernel.ArmedTimer, error) {
+	return []kernel.ArmedTimer{}, nil
+}
+
+// alwaysLineageAdmin returns a root lineage.
+type alwaysLineageAdmin struct{}
+
+func (alwaysLineageAdmin) Lineage(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
+	return kernel.InstanceLineage{
+		InstanceID:      instanceID,
+		CallChildren:    []kernel.CallLinkRef{},
+		ChainSuccessors: []kernel.ChainLinkRef{},
+	}, nil
+}
+
 // ---------------------------------------------------------------------------
-// Tests
+// Tests — instance routes
 
 // TestMount_StartInstance verifies that POST /instances creates an instance (201).
 func TestMount_StartInstance(t *testing.T) {
@@ -169,17 +204,16 @@ func TestMount_StartInstance(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newPostRequest(t, "/instances", map[string]any{
+	var result map[string]any
+	status := appDoJSON(t, app, newPostRequest(t, "/instances", map[string]any{
 		"def_ref":     "greeting",
 		"instance_id": "start-fiber-1",
 		"vars":        map[string]any{"name": "ada"},
-	}))
+	}), &result)
 
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("want 201, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	if status != http.StatusCreated {
+		t.Fatalf("want 201, got %d", status)
 	}
-	var result map[string]any
-	decodeJSON(t, resp.Body, &result)
 	if result["instance_id"] == nil {
 		t.Fatalf("want instance_id in response, got %v", result)
 	}
@@ -210,13 +244,12 @@ func TestMount_StartInstance_MissingFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			resp := appTest(t, app, newPostRequest(t, "/instances", body))
-
-			if resp.StatusCode != http.StatusBadRequest {
-				t.Fatalf("want 400, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
-			}
 			var errBody map[string]any
-			decodeJSON(t, resp.Body, &errBody)
+			status := appDoJSON(t, app, newPostRequest(t, "/instances", body), &errBody)
+
+			if status != http.StatusBadRequest {
+				t.Fatalf("want 400, got %d", status)
+			}
 			if errBody["message"] == nil || errBody["message"] == "" {
 				t.Fatalf("want error message in 400 response, got %v", errBody)
 			}
@@ -241,12 +274,11 @@ func TestMount_GetInstance(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newGetRequest(t, "/instances/get-fiber-1"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
-	}
 	var result map[string]any
-	decodeJSON(t, resp.Body, &result)
+	status := appDoJSON(t, app, newGetRequest(t, "/instances/get-fiber-1"), &result)
+	if status != http.StatusOK {
+		t.Fatalf("want 200, got %d", status)
+	}
 	if result["instance_id"] != "get-fiber-1" {
 		t.Fatalf("want instance_id=get-fiber-1, got %v", result)
 	}
@@ -261,9 +293,9 @@ func TestMount_GetInstance_NotFound(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newGetRequest(t, "/instances/no-such-id"))
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/instances/no-such-id"))
+	if status != http.StatusNotFound {
+		t.Fatalf("want 404, got %d (body=%s)", status, body)
 	}
 }
 
@@ -285,15 +317,15 @@ func TestMount_WithBasePath(t *testing.T) {
 	fiber.Mount(app, svc, fiber.WithBasePath("/api/v1/workflow"))
 
 	// Route under base path works.
-	resp := appTest(t, app, newGetRequest(t, "/api/v1/workflow/instances/base-path-fiber-1"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 under base path, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/api/v1/workflow/instances/base-path-fiber-1"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 under base path, got %d (body=%s)", status, body)
 	}
 
 	// The un-prefixed path is now 404 (no route registered there).
-	resp2 := appTest(t, app, newGetRequest(t, "/instances/base-path-fiber-1"))
-	if resp2.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404 (no route) for old path, got %d", resp2.StatusCode)
+	status2, _ := appDo(t, app, newGetRequest(t, "/instances/base-path-fiber-1"))
+	if status2 != http.StatusNotFound {
+		t.Fatalf("want 404 (no route) for old path, got %d", status2)
 	}
 }
 
@@ -315,9 +347,9 @@ func TestMount_NativeGroup(t *testing.T) {
 	grp := app.Group("/v2")
 	fiber.Mount(grp, svc)
 
-	resp := appTest(t, app, newGetRequest(t, "/v2/instances/native-group-fiber-1"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 via native group, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/v2/instances/native-group-fiber-1"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 via native group, got %d (body=%s)", status, body)
 	}
 }
 
@@ -337,7 +369,7 @@ func TestMount_WithMiddleware(t *testing.T) {
 	fiber.Mount(app, svc, fiber.WithMiddleware(mw))
 
 	// Hit any route — we just need the middleware to fire.
-	appTest(t, app, newGetRequest(t, "/instances/any-id"))
+	appDo(t, app, newGetRequest(t, "/instances/any-id"))
 
 	if !called {
 		t.Fatal("want middleware to have been called")
@@ -354,10 +386,10 @@ func TestMount_AdminAbsentByDefault(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc) // admin NOT mounted
 
-	resp := appTest(t, app, newGetRequest(t, "/admin/instances"))
+	status, _ := appDo(t, app, newGetRequest(t, "/admin/instances"))
 	// fiber returns 404 for unregistered routes.
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404 (no admin route), got %d", resp.StatusCode)
+	if status != http.StatusNotFound {
+		t.Fatalf("want 404 (no admin route), got %d", status)
 	}
 }
 
@@ -378,12 +410,11 @@ func TestAdminRoutes_Customize(t *testing.T) {
 	app := newApp()
 	fiber.AdminRoutes{Svc: svc}.Customize(app)
 
-	resp := appTest(t, app, newGetRequest(t, "/admin/instances"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
-	}
 	var result map[string]any
-	decodeJSON(t, resp.Body, &result)
+	status := appDoJSON(t, app, newGetRequest(t, "/admin/instances"), &result)
+	if status != http.StatusOK {
+		t.Fatalf("want 200, got %d", status)
+	}
 	if result["items"] == nil {
 		t.Fatalf("want items in response, got %v", result)
 	}
@@ -400,9 +431,9 @@ func TestAdminRoutes_ConditionalDep_NilDeadLetters(t *testing.T) {
 	// DeadLetters is nil — the routes should NOT be registered.
 	fiber.AdminRoutes{Svc: svc, DeadLetters: nil}.Customize(app)
 
-	resp := appTest(t, app, newGetRequest(t, "/admin/dead-letters"))
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404 (dead-letters dep nil), got %d", resp.StatusCode)
+	status, _ := appDo(t, app, newGetRequest(t, "/admin/dead-letters"))
+	if status != http.StatusNotFound {
+		t.Fatalf("want 404 (dead-letters dep nil), got %d", status)
 	}
 }
 
@@ -415,9 +446,9 @@ func TestAdminRoutes_ConditionalDep_NilPolicies(t *testing.T) {
 	app := newApp()
 	fiber.AdminRoutes{Svc: svc, Policies: nil}.Customize(app)
 
-	resp := appTest(t, app, newGetRequest(t, "/admin/policies"))
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404 (policies dep nil), got %d", resp.StatusCode)
+	status, _ := appDo(t, app, newGetRequest(t, "/admin/policies"))
+	if status != http.StatusNotFound {
+		t.Fatalf("want 404 (policies dep nil), got %d", status)
 	}
 }
 
@@ -428,9 +459,9 @@ func TestHealthRoutes_Live(t *testing.T) {
 	app := newApp()
 	fiber.MountHealth(app)
 
-	resp := appTest(t, app, newGetRequest(t, "/healthz"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 healthz, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/healthz"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 healthz, got %d (body=%s)", status, body)
 	}
 }
 
@@ -443,12 +474,11 @@ func TestHealthRoutes_Ready_OK(t *testing.T) {
 		return nil
 	}))
 
-	resp := appTest(t, app, newGetRequest(t, "/readyz"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 readyz, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
-	}
 	var result map[string]any
-	decodeJSON(t, resp.Body, &result)
+	status := appDoJSON(t, app, newGetRequest(t, "/readyz"), &result)
+	if status != http.StatusOK {
+		t.Fatalf("want 200 readyz, got %d", status)
+	}
 	if result["status"] != "ok" {
 		t.Fatalf("want status=ok, got %v", result)
 	}
@@ -463,9 +493,9 @@ func TestHealthRoutes_Ready_Fail(t *testing.T) {
 		return context.DeadlineExceeded
 	}))
 
-	resp := appTest(t, app, newGetRequest(t, "/readyz"))
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("want 503 readyz, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/readyz"))
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("want 503 readyz, got %d (body=%s)", status, body)
 	}
 }
 
@@ -478,15 +508,14 @@ func TestMount_5xx_NoRawError(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newPostRequest(t, "/instances", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/instances", map[string]any{
 		"def_ref":     "greeting",
 		"instance_id": "x",
 	}))
 
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("want 500, got %d", resp.StatusCode)
+	if status != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", status)
 	}
-	body := readBody(t, resp.Body)
 	if strings.Contains(body, errInternal.Error()) {
 		t.Fatalf("raw error message must not appear in 5xx response (body=%s)", body)
 	}
@@ -517,14 +546,14 @@ func TestMessageRoutes_Customize(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newPostRequest(t, "/messages", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/messages", map[string]any{
 		"def_ref":         "message-catch-order-shipped:1",
 		"name":            "order-shipped",
 		"correlation_key": "42",
 	}))
 
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("want 202, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	if status != http.StatusAccepted {
+		t.Fatalf("want 202, got %d (body=%s)", status, body)
 	}
 }
 
@@ -540,12 +569,72 @@ func TestTaskRoutes_Customize(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
 		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
 	}))
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 claim, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 claim, got %d (body=%s)", status, body)
+	}
+}
+
+// TestTaskRoutes_Complete verifies POST /tasks/:token/complete returns 200.
+func TestTaskRoutes_Complete(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	h, svc := transporttest.NewHarness(t, def)
+
+	taskToken := transporttest.StartedApprovalInstance(t, h, "task-complete-fiber-1")
+
+	app := newApp()
+	fiber.Mount(app, svc)
+
+	// Claim first, then complete.
+	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
+		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
+	}))
+	if statusClaim != http.StatusOK {
+		t.Fatalf("claim want 200, got %d (body=%s)", statusClaim, bodyClaim)
+	}
+
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/complete", map[string]any{
+		"actor":  map[string]any{"id": "alice", "roles": []string{"manager"}},
+		"output": map[string]any{"approved": true},
+	}))
+	if status != http.StatusOK {
+		t.Fatalf("complete want 200, got %d (body=%s)", status, body)
+	}
+}
+
+// TestTaskRoutes_Reassign verifies POST /tasks/:token/reassign returns 200.
+// The task must be claimed by alice first before it can be reassigned from alice.
+func TestTaskRoutes_Reassign(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	h, svc := transporttest.NewHarness(t, def)
+
+	taskToken := transporttest.StartedApprovalInstance(t, h, "task-reassign-fiber-1")
+
+	app := newApp()
+	fiber.Mount(app, svc)
+
+	// Claim first so alice is the claimant.
+	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
+		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
+	}))
+	if statusClaim != http.StatusOK {
+		t.Fatalf("claim want 200, got %d (body=%s)", statusClaim, bodyClaim)
+	}
+
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/reassign", map[string]any{
+		"from": "alice",
+		"to":   "bob",
+		"by":   map[string]any{"id": "alice", "roles": []string{"manager"}},
+	}))
+	if status != http.StatusOK {
+		t.Fatalf("reassign want 200, got %d (body=%s)", status, body)
 	}
 }
 
@@ -566,9 +655,9 @@ func TestInstanceRoutes_Snapshot(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newGetRequest(t, "/instances/snap-fiber-1/snapshot"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 snapshot, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/instances/snap-fiber-1/snapshot"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 snapshot, got %d (body=%s)", status, body)
 	}
 }
 
@@ -589,9 +678,9 @@ func TestInstanceRoutes_ActionableView(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newGetRequest(t, "/instances/actionable-fiber-1/actionable"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 actionable, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/instances/actionable-fiber-1/actionable"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 actionable, got %d (body=%s)", status, body)
 	}
 }
 
@@ -612,14 +701,17 @@ func TestDeliverSignal_Fiber(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	resp := appTest(t, app, newPostRequest(t, "/instances/signal-fiber-1/signals", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/instances/signal-fiber-1/signals", map[string]any{
 		"signal": "approved",
 	}))
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 signal, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 signal, got %d (body=%s)", status, body)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests — admin routes
 
 // TestPoliciesAdmin_WithPolicies verifies policy admin routes work when dep provided.
 func TestPoliciesAdmin_WithPolicies(t *testing.T) {
@@ -630,9 +722,9 @@ func TestPoliciesAdmin_WithPolicies(t *testing.T) {
 	app := newApp()
 	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
 
-	resp := appTest(t, app, newGetRequest(t, "/admin/policies"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 list policies, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/admin/policies"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 list policies, got %d (body=%s)", status, body)
 	}
 }
 
@@ -645,13 +737,13 @@ func TestDeleteAdminPolicy(t *testing.T) {
 	app := newApp()
 	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
 
-	resp := appTest(t, app, newDeleteRequest(t, "/admin/policies", map[string]any{
+	status, body := appDo(t, app, newDeleteRequest(t, "/admin/policies", map[string]any{
 		"subject": "alice",
 		"object":  "instances",
 		"action":  "read",
 	}))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 delete policy, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 delete policy, got %d (body=%s)", status, body)
 	}
 }
 
@@ -664,8 +756,215 @@ func TestListRoleBindings(t *testing.T) {
 	app := newApp()
 	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
 
-	resp := appTest(t, app, newGetRequest(t, "/admin/role-bindings"))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 list role bindings, got %d (body=%s)", resp.StatusCode, readBody(t, resp.Body))
+	status, body := appDo(t, app, newGetRequest(t, "/admin/role-bindings"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 list role bindings, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminDeadLetters_List verifies GET /admin/dead-letters returns 200 with dep.
+func TestAdminDeadLetters_List(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, DeadLetters: alwaysDeadLetterAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newGetRequest(t, "/admin/dead-letters"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 dead-letters, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminDeadLetters_Redrive verifies POST /admin/dead-letters/redrive returns 200.
+func TestAdminDeadLetters_Redrive(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, DeadLetters: alwaysDeadLetterAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newPostRequest(t, "/admin/dead-letters/redrive", map[string]any{
+		"ids": []int64{1, 2, 3},
+	}))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 redrive, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminRelayStats verifies GET /admin/relay-stats returns 200.
+func TestAdminRelayStats(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, RelayStats: alwaysRelayStatsAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newGetRequest(t, "/admin/relay-stats"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 relay-stats, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminTimers verifies GET /admin/timers returns 200.
+func TestAdminTimers(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, Timers: alwaysTimerAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newGetRequest(t, "/admin/timers"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 timers, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminLineage verifies GET /admin/instances/:id/lineage returns 200.
+func TestAdminLineage(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, Lineage: alwaysLineageAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newGetRequest(t, "/admin/instances/some-id/lineage"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 lineage, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAddRoleBinding verifies POST /admin/role-bindings returns 200.
+func TestAddRoleBinding(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newPostRequest(t, "/admin/role-bindings", map[string]any{
+		"user": "alice",
+		"role": "manager",
+	}))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 add role binding, got %d (body=%s)", status, body)
+	}
+}
+
+// TestDeleteRoleBinding verifies DELETE /admin/role-bindings returns 200.
+func TestDeleteRoleBinding(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newDeleteRequest(t, "/admin/role-bindings", map[string]any{
+		"user": "alice",
+		"role": "manager",
+	}))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 delete role binding, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAddPolicy verifies POST /admin/policies returns 200.
+func TestAddPolicy(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc, Policies: alwaysPoliciesAdmin{}}.Customize(app)
+
+	status, body := appDo(t, app, newPostRequest(t, "/admin/policies", map[string]any{
+		"subject": "alice",
+		"object":  "instances",
+		"action":  "write",
+	}))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 add policy, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminCancelInstance verifies POST /admin/instances/:id/cancel returns 200.
+// Uses an approval process so the instance parks at a user task (StatusRunning).
+func TestAdminCancelInstance(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	h, svc := transporttest.NewHarness(t, def)
+
+	// Start the approval instance — it parks at the user task.
+	_ = transporttest.StartedApprovalInstance(t, h, "cancel-fiber-1")
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc}.Customize(app)
+
+	status, body := appDo(t, app, newPostRequest(t, "/admin/instances/cancel-fiber-1/cancel", nil))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 cancel, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminResolveIncident_NotFound verifies POST resolve with optional body → 404.
+// We use a non-existent instance to get a 404 (still tests the body-bind path).
+func TestAdminResolveIncident_NotFound(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc}.Customize(app)
+
+	status, _ := appDo(t, app, newPostRequest(t, "/admin/instances/no-such-id/incidents/inc-1/resolve",
+		map[string]any{"add_attempts": 1}))
+	if status != http.StatusNotFound {
+		t.Fatalf("want 404 (not found), got %d", status)
+	}
+}
+
+// TestAdminListInstances_WithStatusFilter verifies GET /admin/instances with status+limit.
+func TestAdminListInstances_WithStatusFilter(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.LinearProcess()
+	_, svc := transporttest.NewHarness(t, def)
+
+	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", InstanceID: "admin-status-fiber-1", Vars: map[string]any{"name": "x"},
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc}.Customize(app)
+
+	status, body := appDo(t, app, newGetRequest(t, "/admin/instances?status=running&limit=10"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200 list, got %d (body=%s)", status, body)
+	}
+}
+
+// TestAdminListInstances_BadStatus verifies an unknown status query param returns 400.
+func TestAdminListInstances_BadStatus(t *testing.T) {
+	t.Parallel()
+
+	_, svc := transporttest.NewHarness(t)
+
+	app := newApp()
+	fiber.AdminRoutes{Svc: svc}.Customize(app)
+
+	status, body := appDo(t, app, newGetRequest(t, "/admin/instances?status=unknown-status"))
+	if status != http.StatusBadRequest {
+		t.Fatalf("want 400 bad status, got %d (body=%s)", status, body)
 	}
 }
