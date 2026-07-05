@@ -2,6 +2,7 @@ package httpcore_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -35,6 +36,23 @@ func TestValidateMessageInput(t *testing.T) {
 	}
 	if err := httpcore.Validate(httpcore.MessageInput{DefRef: "order"}); err == nil || !errors.Is(err, httpcore.ErrBadInput) {
 		t.Fatalf("missing name must wrap ErrBadInput, got %v", err)
+	}
+}
+
+// TestValidateUsesJSONFieldNames guards RegisterTagNameFunc: validation errors
+// must reference the JSON wire name (def_ref) the client sends, never the Go
+// struct field name (DefRef), which would leak internal identifiers and confuse
+// the caller.
+func TestValidateUsesJSONFieldNames(t *testing.T) {
+	err := httpcore.Validate(httpcore.StartInput{})
+	if err == nil {
+		t.Fatal("want validation error for empty StartInput")
+	}
+	if strings.Contains(err.Error(), "DefRef") {
+		t.Fatalf("400 message leaks Go field name DefRef: %v", err)
+	}
+	if !strings.Contains(err.Error(), "def_ref") {
+		t.Fatalf("400 message should reference json name def_ref: %v", err)
 	}
 }
 
