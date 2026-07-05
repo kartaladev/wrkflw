@@ -646,7 +646,7 @@ A constructor returns `T` (no error) when:
 
 | Constructor | Sentinel when nil dep |
 |---|---|
-| `runtime.NewProcessDriver(opts...)` | `kernel.ErrNilDependency` (when a non-nil option argument is nil) |
+| `runtime.NewProcessDriver(opts...)` | only a default `MemInstanceStore` construction failure (practically never); nil option args are silently ignored, so defaults stand |
 | `task.NewTaskService(store, az, opts...)` | `kernel.ErrNilDependency` |
 | `kernel.NewCachingInstanceStore(backing, owner, opts...)` | `kernel.ErrNilDependency` |
 | `kernel.NewCachingDefinitionRegistry(backing, ttl, opts...)` | `kernel.ErrNilDependency` |

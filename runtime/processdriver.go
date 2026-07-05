@@ -162,7 +162,7 @@ func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore
 		slog.String("timerStore", onOff(r.timerStore != nil)),
 		slog.String("actionTimeout", r.actionTimeout.String()),
 		slog.Bool("retryDefault", r.defaultRetryPolicy != nil),
-		slog.Bool("exprTimeout", r.conditionEval != nil),
+		slog.Bool("conditionEval", r.conditionEval != nil),
 		slog.String("hint", "in-memory store is not durable; for production wire persistence.OpenPostgres/OpenMySQL/OpenSQLite + runtime.WithInstanceStore, and enable WithScheduler/WithTimerStore/WithCallLinkStore as needed"),
 	)
 }
