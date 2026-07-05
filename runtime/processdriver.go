@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -103,6 +104,10 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("workflow-runtime: default instance store: %w", err)
 	}
+	// Capture the default sentinels before the option loop so we can detect
+	// whether the consumer replaced them with custom implementations.
+	defaultStore := memStore
+
 	r := &ProcessDriver{
 		cat:           action.DefaultCatalog(),
 		clk:           clock.System(),
@@ -115,7 +120,51 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		o(r)
 	}
 	r.obs = newDriverObs(r.logOpt, r.tpOpt, r.mpOpt)
+	r.logConstructionSummary(defaultStore)
 	return r, nil
+}
+
+// onOff returns "on" when v is true and "off" otherwise.
+func onOff(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
+}
+
+// logConstructionSummary emits a single DEBUG log record summarising the
+// ProcessDriver's wiring after construction. defaultStore is the MemInstanceStore
+// that was created inside NewProcessDriver as the pre-option default; when r.store
+// still points to that same value after the option loop, the store is in-memory
+// (non-durable); otherwise a custom implementation was supplied.
+func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore) {
+	storeLabel := "in-memory(non-durable)"
+	if r.store != defaultStore {
+		storeLabel = "custom"
+	}
+
+	catalogLabel := "custom"
+	if r.cat == action.DefaultCatalog() {
+		catalogLabel = "default-global"
+	}
+
+	r.obs.tel.Logger.LogAttrs(
+		context.Background(),
+		slog.LevelDebug,
+		"ProcessDriver constructed",
+		slog.String("store", storeLabel),
+		slog.String("catalog", catalogLabel),
+		slog.String("scheduler", onOff(r.sched != nil)),
+		slog.String("signalBus", onOff(r.sigbus != nil)),
+		slog.String("humanTasks", onOff(r.tasks != nil)),
+		slog.String("definitions", onOff(r.defsReg != nil)),
+		slog.String("callLinks", onOff(r.callLinks != nil)),
+		slog.String("timerStore", onOff(r.timerStore != nil)),
+		slog.String("actionTimeout", r.actionTimeout.String()),
+		slog.Bool("retryDefault", r.defaultRetryPolicy != nil),
+		slog.Bool("exprTimeout", r.conditionEval != nil),
+		slog.String("hint", "in-memory store is not durable; for production wire persistence.OpenPostgres/OpenMySQL/OpenSQLite + runtime.WithInstanceStore, and enable WithScheduler/WithTimerStore/WithCallLinkStore as needed"),
+	)
 }
 
 // Run starts an instance and drives it to a terminal state or until the engine
