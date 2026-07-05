@@ -36,13 +36,14 @@ func MustMemStore(t *testing.T, opts ...kernel.MemInstanceStoreOption) *kernel.M
 }
 
 // MustRunner builds a ProcessDriver with the given catalog and store, failing the
-// test on any error. A nil catalog defaults to an empty MapCatalog.
+// test on any error. A nil catalog defaults to action.DefaultCatalog() (via
+// WithActionCatalog nil-guard in the constructor).
 func MustRunner(t *testing.T, cat action.Catalog, store kernel.InstanceStore, opts ...runtime.Option) *runtime.ProcessDriver {
 	t.Helper()
-	if cat == nil {
-		cat = action.NewMapCatalog(nil)
-	}
-	r, err := runtime.NewProcessDriver(cat, store, opts...)
+	allOpts := make([]runtime.Option, 0, 2+len(opts))
+	allOpts = append(allOpts, runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+	allOpts = append(allOpts, opts...)
+	r, err := runtime.NewProcessDriver(allOpts...)
 	require.NoError(t, err)
 	return r
 }

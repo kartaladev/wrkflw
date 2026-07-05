@@ -75,7 +75,7 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
-//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 //	if err != nil { log.Fatal(err) }
 func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (InstanceStore, error) {
 	q, err := database.From(db)

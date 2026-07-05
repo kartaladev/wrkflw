@@ -66,7 +66,7 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 			fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC))
 			st, err := kernel.NewMemInstanceStore()
 			require.NoError(t, err)
-			r, err := NewProcessDriver(cat, st, WithClock(fc))
+			r, err := NewProcessDriver(WithActionCatalog(cat), WithInstanceStore(st), WithClock(fc))
 			require.NoError(t, err)
 
 			cmd := engine.InvokeAction{

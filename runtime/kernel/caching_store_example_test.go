@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -42,7 +41,7 @@ func ExampleNewCachingInstanceStore() {
 
 	def := runtimetest.SignalCatchDef("approved")
 
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	if err != nil {
 		panic(err)
 	}

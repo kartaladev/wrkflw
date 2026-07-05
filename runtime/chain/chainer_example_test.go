@@ -6,7 +6,6 @@ import (
 
 	clockwork "github.com/jonboulle/clockwork"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -31,7 +30,7 @@ func ExampleChainer() {
 		panic(err)
 	}
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
+	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clockwork.NewFakeClock()))
 	if err != nil {
 		panic(err)
 	}

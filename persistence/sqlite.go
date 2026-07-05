@@ -61,7 +61,7 @@ type SQLiteCallLinkOption = store.CallLinkOption
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	store, _ := persistence.OpenSQLite(ctx, db, persistence.WithHistoryCap(50))
-//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 //	if err != nil { log.Fatal(err) }
 func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (InstanceStore, error) {
 	q, err := database.From(db)

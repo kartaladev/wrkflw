@@ -66,8 +66,8 @@ func ExampleProcessDriver_observability() {
 		panic(err)
 	}
 	r, err := runtime.NewProcessDriver(
-		cat,
-		mem,
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(mem),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 		runtime.WithLogger(slog.Default()),

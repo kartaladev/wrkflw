@@ -201,7 +201,7 @@ func New(opts ...Option) (*Harness, error) {
 		driverOpts = append(driverOpts, runtime.WithSignalBus(bus))
 	}
 
-	driver, err := runtime.NewProcessDriver(catalog, store, driverOpts...)
+	driver, err := runtime.NewProcessDriver(append([]runtime.Option{runtime.WithActionCatalog(catalog), runtime.WithInstanceStore(store)}, driverOpts...)...)
 	if err != nil {
 		return nil, err
 	}

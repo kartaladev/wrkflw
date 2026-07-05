@@ -130,8 +130,8 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	})
 
 	r, err := runtime.NewProcessDriver(
-		cat,
-		store,
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)

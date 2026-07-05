@@ -137,7 +137,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.InstanceSto
 		}),
 	})
 
-	runner, err := runtime.NewProcessDriver(cat, store)
+	runner, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}
@@ -222,7 +222,9 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
-	runner, err := runtime.NewProcessDriver(cat, store,
+	runner, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: 0,
@@ -307,7 +309,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Instanc
 		}),
 	})
 
-	runner, err := runtime.NewProcessDriver(cat, store)
+	runner, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}

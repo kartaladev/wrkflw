@@ -363,38 +363,47 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 		"StartedAt must equal fake clock's epoch")
 }
 
-func TestNewRunnerFailsFast(t *testing.T) {
+// TestNewProcessDriverAlwaysSucceeds verifies that NewProcessDriver always
+// constructs a valid driver regardless of whether WithActionCatalog /
+// WithInstanceStore are supplied, because nil options are silently ignored
+// and sensible in-memory defaults apply.
+func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 	t.Parallel()
-	store := runtimetest.MustMemStore(t)
-	cat := action.NewMapCatalog(nil)
 	cases := []struct {
 		name   string
-		cat    action.Catalog
-		store  kernel.InstanceStore
+		opts   []runtime.Option
 		assert func(t *testing.T, r *runtime.ProcessDriver, err error)
 	}{
 		{
-			name:  "nil catalog",
-			cat:   nil,
-			store: store,
+			name: "zero args — defaults apply",
+			opts: nil,
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
-				require.ErrorIs(t, err, kernel.ErrNilDependency)
-				require.Nil(t, r)
+				require.NoError(t, err)
+				require.NotNil(t, r)
 			},
 		},
 		{
-			name:  "nil store",
-			cat:   cat,
-			store: nil,
+			name: "WithActionCatalog(nil) — ignored, defaults apply",
+			opts: []runtime.Option{runtime.WithActionCatalog(nil)},
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
-				require.ErrorIs(t, err, kernel.ErrNilDependency)
-				require.Nil(t, r)
+				require.NoError(t, err)
+				require.NotNil(t, r)
 			},
 		},
 		{
-			name:  "valid args",
-			cat:   cat,
-			store: store,
+			name: "WithInstanceStore(nil) — ignored, defaults apply",
+			opts: []runtime.Option{runtime.WithInstanceStore(nil)},
+			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, r)
+			},
+		},
+		{
+			name: "explicit catalog and store",
+			opts: []runtime.Option{
+				runtime.WithActionCatalog(action.NewMapCatalog(nil)),
+				runtime.WithInstanceStore(runtimetest.MustMemStore(t)),
+			},
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, r)
@@ -403,7 +412,8 @@ func TestNewRunnerFailsFast(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := runtime.NewProcessDriver(tc.cat, tc.store)
+			t.Parallel()
+			r, err := runtime.NewProcessDriver(tc.opts...)
 			tc.assert(t, r, err)
 		})
 	}

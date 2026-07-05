@@ -18,7 +18,6 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -75,7 +74,7 @@ func TestOpenMySQL_RoundTrip(t *testing.T) {
 	require.NotNil(t, store)
 
 	def := mysqlMinimalDef()
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "mysql-rt-1", map[string]any{"key": "val"})
 	require.NoError(t, err)
@@ -161,7 +160,7 @@ func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	require.NotNil(t, store)
 
 	// Drive a minimal process to confirm the option is wired through.
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), &model.ProcessDefinition{
 		ID:      "hist-mysql-1",
@@ -291,7 +290,7 @@ func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seed a parent instance.
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), mysqlMinimalDef(), "parent-cls-1", nil)
 	require.NoError(t, err)
@@ -372,7 +371,7 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 	store, err := persistence.OpenMySQL(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	for _, id := range []string{"lst-inst-a", "lst-inst-b"} {
 		_, err := r.Run(t.Context(), mysqlMinimalDef(), id, nil)
@@ -574,7 +573,7 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 
 	// Create a parent process instance (the definition "mysql-minimal" id:version 1).
 	def := mysqlMinimalDef()
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), def, "notifier-parent-1", nil)
 	require.NoError(t, err)

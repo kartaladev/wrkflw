@@ -15,7 +15,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
@@ -75,7 +74,7 @@ func TestOpenPostgresEndToEnd(t *testing.T) {
 
 	def := minimalStartEndDefinition()
 
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "i-e2e", map[string]any{"k": "v"})
 	require.NoError(t, err)
@@ -194,7 +193,7 @@ func TestNewRelayDrainsOutbox(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run a process to generate an outbox event.
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), minimalStartEndDefinition(), "i-relay", nil)
 	require.NoError(t, err)

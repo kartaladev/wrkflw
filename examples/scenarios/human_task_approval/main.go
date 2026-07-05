@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/definition"
@@ -66,8 +65,9 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	// No service-action catalog needed; pass an empty catalog.
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), memSt,
+	// No service-action catalog needed; the default catalog covers it.
+	r, err := runtime.NewProcessDriver(
+		runtime.WithInstanceStore(memSt),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	if err != nil {

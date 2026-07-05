@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -45,7 +44,7 @@ func TestOpenSQLite(t *testing.T) {
 		},
 	}
 
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), s)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(s))
 	require.NoError(t, err)
 	st, err := r.Run(t.Context(), def, "i-sqlite-e2e", map[string]any{"backend": "sqlite"})
 	require.NoError(t, err, "Runner.Run must succeed on SQLite store")

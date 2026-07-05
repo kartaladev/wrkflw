@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -186,7 +185,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clk))
+	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clk))
 	require.NoError(t, err)
 
 	succ := &model.ProcessDefinition{

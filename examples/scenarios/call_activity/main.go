@@ -77,7 +77,9 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(cat, memSt,
+	r, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(memSt),
 		runtime.WithDefinitions(reg),
 	)
 	if err != nil {

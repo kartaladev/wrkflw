@@ -72,7 +72,9 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 		"greet": greetAction{},
 	})
 
-	runner, err := runtime.NewProcessDriver(cat, store,
+	runner, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)

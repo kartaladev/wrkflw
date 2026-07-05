@@ -69,7 +69,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 	// No message-specific option is required — waiter tracking is built in.
-	r, err := runtime.NewProcessDriver(cat, store)
+	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}

@@ -54,7 +54,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
@@ -310,7 +309,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// ── Wire ProcessDriver, Chainer, and ChainerRunner ───────────────────────────────
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), be.store)
+	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(be.store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}
