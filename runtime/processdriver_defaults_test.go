@@ -44,10 +44,10 @@ var (
 	defaultCatalogOnce sync.Once
 
 	// Per-name call counters for the three subtests that exercise the default catalog.
-	zeroArgCalls   atomic.Int64
-	nilCatCalls    atomic.Int64
-	nilStoreCalls  atomic.Int64
-	instanceStoreC atomic.Int64
+	zeroArgCalls       atomic.Int64
+	nilCatCalls        atomic.Int64
+	nilStoreCalls      atomic.Int64
+	instanceStoreCalls atomic.Int64
 )
 
 // ensureDefaultCatalogActions registers the four default-catalog action names
@@ -62,7 +62,7 @@ func ensureDefaultCatalogActions(t *testing.T) {
 			{"test-defaults-zeroarg-v1", &zeroArgCalls},
 			{"test-defaults-nilcat-v1", &nilCatCalls},
 			{"test-defaults-nilstore-v1", &nilStoreCalls},
-			{"test-defaults-instancestore-v1", &instanceStoreC},
+			{"test-defaults-instancestore-v1", &instanceStoreCalls},
 		}
 		for _, n := range names {
 			counter := n.counter // capture
@@ -133,7 +133,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 	t.Run("WithInstanceStore overrides default store — instance retrievable via Load", func(t *testing.T) {
 		t.Parallel()
 
-		baseline := instanceStoreC.Load()
+		baseline := instanceStoreCalls.Load()
 
 		customStore, storeErr := kernel.NewMemInstanceStore()
 		require.NoError(t, storeErr)
@@ -146,7 +146,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-instancestore-v1"), "inst-custom-store", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
-		assert.Greater(t, instanceStoreC.Load(), baseline, "action must have been invoked")
+		assert.Greater(t, instanceStoreCalls.Load(), baseline, "action must have been invoked")
 
 		// The custom store must hold the completed instance.
 		loaded, _, loadErr := customStore.Load(t.Context(), "inst-custom-store")
