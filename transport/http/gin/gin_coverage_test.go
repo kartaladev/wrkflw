@@ -124,14 +124,9 @@ func TestInstanceRoutes_Signal_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	// Send invalid JSON body.
-	req, _ := newJSONRequest(t, http.MethodPost, srv.URL+"/instances/sig-badjson-1/signals", nil)
-	req.Body = badBody{}
-	resp, err2 := srv.Client().Do(req)
-	if err2 != nil {
-		t.Skipf("bad body test: %v", err2)
-	}
-	t.Cleanup(func() { drainClose(resp) })
+	// Malformed JSON body — a bare string where the handler expects an object —
+	// is transmitted intact and fails ShouldBindJSON server-side → 400.
+	resp := post(t, srv, "/instances/sig-badjson-1/signals", "not-json")
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400 for bad JSON, got %d", resp.StatusCode)
 	}
@@ -190,13 +185,7 @@ func TestTaskRoutes_Claim_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	req, _ := newJSONRequest(t, http.MethodPost, srv.URL+"/tasks/tok/claim", nil)
-	req.Body = badBody{}
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Skipf("bad body: %v", err)
-	}
-	t.Cleanup(func() { drainClose(resp) })
+	resp := post(t, srv, "/tasks/tok/claim", "not-json")
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
@@ -222,13 +211,7 @@ func TestTaskRoutes_Complete_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	req, _ := newJSONRequest(t, http.MethodPost, srv.URL+"/tasks/tok/complete", nil)
-	req.Body = badBody{}
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Skipf("bad body: %v", err)
-	}
-	t.Cleanup(func() { drainClose(resp) })
+	resp := post(t, srv, "/tasks/tok/complete", "not-json")
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
@@ -254,13 +237,7 @@ func TestTaskRoutes_Reassign_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	req, _ := newJSONRequest(t, http.MethodPost, srv.URL+"/tasks/tok/reassign", nil)
-	req.Body = badBody{}
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Skipf("bad body: %v", err)
-	}
-	t.Cleanup(func() { drainClose(resp) })
+	resp := post(t, srv, "/tasks/tok/reassign", "not-json")
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
@@ -348,14 +325,3 @@ func TestAdminRoutes_WithBasePath(t *testing.T) {
 		t.Fatalf("want 200 with prefix, got %d", withBase.StatusCode)
 	}
 }
-
-// ─── Helper: badBody implements io.ReadCloser that errors immediately ─────────
-
-type badBody struct{}
-
-func (badBody) Read(_ []byte) (int, error) { return 0, &badBodyErr{} }
-func (badBody) Close() error               { return nil }
-
-type badBodyErr struct{}
-
-func (b *badBodyErr) Error() string { return "bad body error" }
