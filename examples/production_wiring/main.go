@@ -5,7 +5,7 @@
 //
 // What it demonstrates end to end:
 //
-//   - construct the engine (Runner + Service), a gocron Scheduler, and the
+//   - construct the engine (ProcessDriver + Service), a gocron Scheduler, and the
 //     transactional-outbox Relay;
 //   - mount the REST handler AND a liveness/readiness health handler
 //     (/healthz, /readyz) on the consumer's own *http.Server;

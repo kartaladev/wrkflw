@@ -1,6 +1,6 @@
 // Package service provides a transport-agnostic Service facade that unifies
-// the workflow engine's core capabilities behind a single interface. REST and
-// gRPC transports depend exclusively on this package; they never import the
+// the workflow engine's core capabilities behind a single interface. The HTTP
+// transport adapters depend exclusively on this package; they never import the
 // engine core directly.
 package service
 
@@ -35,7 +35,7 @@ type DeliverSignalRequest struct {
 // to know which instance is waiting.
 type DeliverMessageRequest struct {
 	// DefRef is the process-definition reference; the definition is resolved
-	// via the registry before calling Runner.DeliverMessage.
+	// via the registry before calling ProcessDriver.DeliverMessage.
 	DefRef string
 	// Name is the message name.
 	Name string

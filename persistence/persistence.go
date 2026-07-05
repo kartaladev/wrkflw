@@ -410,7 +410,7 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (kernel.CallLi
 }
 
 // NewTimerStore returns a kernel.TimerStore backed by Postgres, for
-// Runner.RehydrateTimers. The pool must already have migrations applied.
+// ProcessDriver.RehydrateTimers. The pool must already have migrations applied.
 //
 // Example:
 //
@@ -428,12 +428,12 @@ func NewTimerStore(pool *pgxpool.Pool) (kernel.TimerStore, error) {
 // exactly-once backstop), LookupBySuccessor and ListByPredecessor serve
 // ancestry/audit queries. Migrate must have been applied before the first call.
 //
-// Wire it into a runtime.Chainer via runtime.WithChainLinks:
+// Wire it into a chain.Chainer via chain.WithChainLinks:
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
 //	links := persistence.NewChainLinkStore(pool)
-//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+//	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(pool, dialect.NewPostgres())
 }

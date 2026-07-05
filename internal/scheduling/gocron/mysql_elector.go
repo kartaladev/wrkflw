@@ -115,7 +115,7 @@ func WithMySQLHeartbeatInterval(d time.Duration) MySQLElectorOption {
 // It runs asynchronously — never blocking gocron's IsLeader hot path — on a
 // background context cancelled when Close is called; Close waits for it to
 // return. Overlapping invocations from rapid step-down/re-acquire cycles are
-// coalesced. Wire it to Runner.RehydrateTimers to re-arm persisted timers on a
+// coalesced. Wire it to ProcessDriver.RehydrateTimers to re-arm persisted timers on a
 // new leader after failover (Option A, ADR-0072). A nil value is ignored.
 func WithMySQLOnLeadershipAcquired(fn func(context.Context)) MySQLElectorOption {
 	return func(e *MySQLElector) {

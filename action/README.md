@@ -61,7 +61,7 @@ Two implementations ship:
 | `MapCatalog.Resolve` | `Resolve(name) (Action, bool)` | Map lookup. Safe for concurrent reads. |
 
 Use `action.NewMapCatalog(nil)` (not Go `nil`) when constructing a runner for
-processes with no service tasks — `runtime.NewRunner` requires a non-nil catalog.
+processes with no service tasks — `runtime.NewProcessDriver` requires a non-nil catalog.
 
 ### `Registry` — concurrency-safe, satisfies both `Catalog` and `Registrar`
 
@@ -95,14 +95,14 @@ func Resolve(scoped, global Catalog, name string) (Action, bool)
 
 The runtime resolves actions in three tiers, outermost first:
 
-1. **Inline action** — a `Action` embedded directly in the node via
-   `definition.WithInlineAction` or `definition.WithInlineActionFunc`. The engine sets
+1. **Inline action** — an `Action` embedded directly in the node via
+   `activity.WithAction` or `activity.WithActionFunc`. The engine sets
    `InvokeAction.Inline` when present; the runner calls it directly, bypassing both
    catalogs. No `name` is involved.
 2. **Scoped (definition-local) catalog** — a `Catalog` registered on the
    `ProcessDefinition` via `DefinitionBuilder.RegisterAction`. The engine sets
    `InvokeAction.Scoped` when available. Checked first in `action.Resolve`.
-3. **Global catalog** — the `action.Catalog` passed to `runtime.NewRunner`. The
+3. **Global catalog** — the `action.Catalog` passed to `runtime.NewProcessDriver`. The
    fallback when neither inline nor scoped resolves the name.
 
 `action.Resolve(scoped, global, name)` implements tiers 2 and 3. Either catalog

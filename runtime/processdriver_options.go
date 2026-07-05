@@ -20,7 +20,7 @@ import (
 
 // Option is a functional option for ProcessDriver. Optional capability bundles (human
 // tasks, scheduler) are configured via options; required core dependencies are
-// positional in NewRunner.
+// positional in NewProcessDriver.
 type Option func(*ProcessDriver)
 
 // defaultActionTimeout bounds each service-action invocation unless overridden

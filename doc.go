@@ -28,7 +28,7 @@
 //     Two builder surfaces: DefinitionBuilder (NewBuilder, Go-authored)
 //     and DefinitionLoader (NewLoader, post-parse action registration).
 //   - runtime      Run a process: the reference driver that performs engine
-//     commands, persists state, and feeds triggers back. Provides Runner,
+//     commands, persists state, and feeds triggers back. Provides ProcessDriver,
 //     MemStore, CachingStore, TaskService, SignalBus, Chainer, CallNotifier.
 //     All stateful constructors return (T, error) and reject nil required deps.
 //   - engine       The core token state machine. Pure of transport, storage

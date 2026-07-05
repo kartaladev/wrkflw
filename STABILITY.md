@@ -58,9 +58,9 @@ abruptly (subject to the pre-1.0 latitude above):
    `SA1019`, IDEs) surfaces these to consumers automatically:
 
    ```go
-   // Deprecated: use NewRunnerWithConfig instead; NewRunner cannot express the
-   // retry-policy option and will be removed in v2.
-   func NewRunner(...) *Runner { ... }
+   // Deprecated: use NewCacheWithConfig instead; NewCache cannot express the
+   // eviction-policy option and will be removed in v2.
+   func NewCache(...) *Cache { ... }
    ```
 
 2. **Keep working.** A deprecated symbol continues to function for at least one MINOR

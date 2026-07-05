@@ -13,9 +13,9 @@ import (
 )
 
 // DeliverFunc is the function the SignalBus uses to deliver a trigger to a
-// specific process instance. The caller wires this to Runner.Deliver (with the
+// specific process instance. The caller wires this to ProcessDriver.Deliver (with the
 // definition already captured in a closure). Message correlation is handled
-// separately by Runner.DeliverMessage and does not go through a DeliverFunc.
+// separately by ProcessDriver.DeliverMessage and does not go through a DeliverFunc.
 type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger) error
 
 // SignalBus fans out a named signal to every instance that is currently
@@ -41,7 +41,7 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).
 //
 // Timestamp: Publish stamps each SignalReceived with the time from the injected
-// [clock.Clock] (ADR-0003). Pass the same fake clock used by the Runner in tests
+// [clock.Clock] (ADR-0003). Pass the same fake clock used by the ProcessDriver in tests
 // so that downstream timers anchored to the signal timestamp are deterministic.
 type SignalBus struct {
 	clk     clock.Clock
@@ -54,7 +54,7 @@ type SignalBus struct {
 type SignalBusOption func(*SignalBus)
 
 // WithClock sets the time source used to stamp SignalReceived triggers.
-// Default: clock.System(). A nil clock is ignored. Pass the Runner's fake clock in
+// Default: clock.System(). A nil clock is ignored. Pass the ProcessDriver's fake clock in
 // tests so downstream timers anchored to the signal timestamp stay deterministic.
 func WithClock(clk clock.Clock) SignalBusOption {
 	return func(b *SignalBus) {

@@ -20,7 +20,7 @@ import (
 // CallDeliverFunc delivers a trigger to a parent process instance. The
 // definition is resolved by the CallNotifier via the DefinitionRegistry and
 // passed to the delivery function so the caller can route to the correct
-// Runner.Deliver call. The instanceID is the parent's instance ID.
+// ProcessDriver.Deliver call. The instanceID is the parent's instance ID.
 //
 // A typical wiring:
 //
@@ -108,7 +108,7 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 // SubInstanceCompleted / SubInstanceFailed trigger via deliver.
 //
 //   - cl: the CallLinkStore to claim pending notifications from.
-//   - deliver: wraps Runner.Deliver (the parent def is pre-resolved by DrainOnce via reg).
+//   - deliver: wraps ProcessDriver.Deliver (the parent def is pre-resolved by DrainOnce via reg).
 //   - reg: resolves parent definition references (format "defID:version").
 //   - opts: optional configuration overrides (use [WithClock] to set the
 //     time source; default is clock.System() per ADR-0003).

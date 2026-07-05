@@ -51,8 +51,8 @@ type SuccessorDecision struct {
 type SuccessorPolicy func(ctx context.Context, ev ChainEvent) (SuccessorDecision, bool)
 
 // InstanceStarter is the minimal seam the Chainer core needs to start a
-// successor. *Runner satisfies it (Run). Kept narrow so the core is
-// unit-testable without a full Runner.
+// successor. *ProcessDriver satisfies it (Run). Kept narrow so the core is
+// unit-testable without a full ProcessDriver.
 type InstanceStarter interface {
 	Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error)
 }

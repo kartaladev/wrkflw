@@ -148,14 +148,14 @@ configured for production**. `persistence.WarnUnsafeConfig` flags each one that 
 **What:** When you run more than one engine replica AND use call activities (child
 processes notifying a parent), you must wire
 `persistence.NewAdvisoryLockOwnership` and pass the resulting `Ownership` to
-`runtime.NewCachingStore` so that only one replica acts on each completed child.
+`kernel.NewCachingStore` so that only one replica acts on each completed child.
 Without it, every replica races to notify the parent.
 
 ```go
 ownership, closer, err := persistence.NewAdvisoryLockOwnership(ctx, pool)
 // ... handle err; defer closer.Close()
 store, _ := persistence.OpenPostgres(ctx, pool)
-cachingStore, _ := runtime.NewCachingStore(store, ownership)
+cachingStore, _ := kernel.NewCachingStore(store, ownership)
 // use cachingStore for multi-replica exclusivity
 ```
 

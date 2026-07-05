@@ -7,7 +7,7 @@
 // CancelInstance delivers a CancelRequested trigger that:
 //
 //  1. runs the definition-level CancelActions (in declared order) best-effort —
-//     these are compensating/cleanup ServiceActions (release a hold, notify a
+//     these are compensating/cleanup Actions (release a hold, notify a
 //     customer, roll back an external side effect). A CancelAction that fails or
 //     is unresolved is logged and skipped; it never fails the cancel (ADR-0028).
 //  2. clears all live tokens and marks the instance StatusTerminated, and
@@ -55,7 +55,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Build the process. CancelActions lists cleanup ServiceActions the engine
+	// Build the process. CancelActions lists cleanup Actions the engine
 	// invokes best-effort, in order, when the instance is cancelled.
 	def, err := definition.NewBuilder("order-fulfilment", 1).
 		Add(event.NewStart("start")).

@@ -1,7 +1,7 @@
 # engine — core token state machine
 
 > **Most consumers use [`runtime`](../runtime/) instead of this package directly.**
-> `runtime.Runner` wraps the engine, persists state, executes commands, drives
+> `runtime.ProcessDriver` wraps the engine, persists state, executes commands, drives
 > timers, and integrates human tasks. Reach for `engine` only when you need
 > deterministic unit tests of process logic, or when you are building your own
 > execution layer on top.
@@ -10,7 +10,7 @@ Package `engine` is the **pure token state machine** that drives process
 instances. Its single exported entry point is:
 
 ```go
-func Step(def *definition.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error)
+func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error)
 ```
 
 `Step` maps `(definition, current state, trigger) → (commands + next state)`.
@@ -27,7 +27,7 @@ outputs. This makes process logic deterministic and straightforwardly testable
 without mocking a database or scheduler.
 
 Import-purity guarantees (enforced by `purity_test.go`):
-- No transport packages (HTTP, gRPC, …).
+- No transport packages (the HTTP adapters, …).
 - No persistence packages (Postgres, Redis, …).
 - No event-bus packages (watermill, …).
 - No observability SDK (OpenTelemetry).
@@ -63,15 +63,15 @@ to construct them is through the provided constructors (never raw struct literal
 
 | Trigger | Produced by |
 |---|---|
-| `StartInstance` | Runner.Run (first step) |
+| `StartInstance` | ProcessDriver.Run (first step) |
 | `ActionCompleted` / `ActionFailed` | Runtime (after `InvokeAction`) |
 | `HumanClaimed` / `HumanCompleted` / `HumanReassigned` | TaskService |
 | `TimerFired` | Scheduler callback |
 | `SignalReceived` | SignalBus |
-| `MessageReceived` | Runner.DeliverMessage |
-| `SubInstanceCompleted` / `SubInstanceFailed` | Runner (sync) or CallNotifier (async) |
-| `CancelRequested` / `CompensateRequested` | Admin path (Runner.CancelInstance / service layer) |
-| `ResolveIncident` | Admin path (Runner.ResolveIncident) |
+| `MessageReceived` | ProcessDriver.DeliverMessage |
+| `SubInstanceCompleted` / `SubInstanceFailed` | ProcessDriver (sync) or CallNotifier (async) |
+| `CancelRequested` / `CompensateRequested` | Admin path (ProcessDriver.CancelInstance / service layer) |
+| `ResolveIncident` | Admin path (ProcessDriver.ResolveIncident) |
 
 **Commands** are promises the runtime must fulfil before persisting:
 
@@ -118,7 +118,7 @@ sequence flow to the next node.
 
 ```go
 func Step(
-    def *definition.ProcessDefinition, // 1. the process definition (template)
+    def *model.ProcessDefinition, // 1. the process definition (template)
     st  InstanceState,            // 2. the current instance state
     trg Trigger,                  // 3. the external event to apply
     opt StepOptions,              // 4. optional behaviour
@@ -130,7 +130,7 @@ always produce the same outputs, and the input `st` is never mutated. The
 subsections below follow the signature left-to-right — the four inputs in
 positional order, then the output.
 
-### Input 1 — `def *definition.ProcessDefinition`
+### Input 1 — `def *model.ProcessDefinition`
 
 The process definition the instance executes against (the immutable template).
 `Step` assumes it has already passed `definition.Validate`; in particular, an
@@ -205,7 +205,7 @@ runtime executes them all before persisting the new state.
 
 | Command | What the runtime must do |
 |---|---|
-| `InvokeAction{CommandID, Name, Inline, Scoped, Input, FireAndForget}` | Run a `ServiceAction`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. When `FireAndForget` is true (deadline-breach and reminder actions) the runtime runs the action for its side effect only and feeds **no** `ActionCompleted`/`ActionFailed` back. |
+| `InvokeAction{CommandID, Name, Inline, Scoped, Input, FireAndForget}` | Run an `action.Action`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. When `FireAndForget` is true (deadline-breach and reminder actions) the runtime runs the action for its side effect only and feeds **no** `ActionCompleted`/`ActionFailed` back. |
 | `ScheduleTimer{TimerID, Token, FireAt, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` at `FireAt`. `Kind` is `TimerIntermediate`, `TimerDeadline`, `TimerInWait`, or `TimerRetry`. |
 | `CancelTimer{TimerID}` | Cancel a previously scheduled timer. |
 | `AwaitHuman{TaskToken, Eligibility}` | Create a human-task record; park until `HumanCompleted`. |

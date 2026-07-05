@@ -69,8 +69,8 @@ import (
     "github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-cat := action.NewMapCatalog(map[string]action.ServiceAction{
-    "greet": action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+cat := action.NewMapCatalog(map[string]action.Action{
+    "greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
         return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
     }),
 })
@@ -79,7 +79,7 @@ if err != nil { log.Fatal(err) }
 r, err := runtime.NewProcessDriver(cat, store) // clock defaults to clock.System()
 if err != nil { log.Fatal(err) }
 
-def := &definition.ProcessDefinition{
+def := &model.ProcessDefinition{
     ID: "greeting", Version: 1,
     Nodes: []definition.Node{
         event.NewStart("start"),
@@ -110,7 +110,7 @@ func NewProcessDriver(
 ```
 
 **Positional argument 1 — `cat action.Catalog`.** The service-action catalog
-resolving action names to `ServiceAction` implementations. Required non-nil; pass
+resolving action names to `Action` implementations. Required non-nil; pass
 `action.NewMapCatalog(nil)` when the process has no service or business-rule tasks.
 
 **Positional argument 2 — `store Store`.** The transactional persistence port
@@ -264,7 +264,7 @@ r, _ := runtime.NewProcessDriver(
     runtime.WithHumanTasks(resolver, taskStore, az),
 )
 
-def := &definition.ProcessDefinition{
+def := &model.ProcessDefinition{
     ID: "approval", Version: 1,
     Nodes: []definition.Node{
         event.NewStart("start"),
@@ -439,7 +439,7 @@ Each `ActionableTask` (note: `AllowedActions` lives here, **per task**, not on t
 | `Candidates` | `candidates` | `[]string` | Resolved actor IDs eligible to act on the task. |
 | `AllowedActions` | `allowed_actions` | `[]NextAction` | Outgoing sequence flows from this task's node; `nil` when no definition is available. Each `NextAction` is `{FlowID, Target, Condition, IsDefault}`. |
 
-Both DTOs are also exposed over the REST transport (`transport/rest`) at
+Both DTOs are also exposed over the HTTP transport (`transport/http/{stdlib,gin,fiber}`) at
 `GET /instances/{id}/snapshot` and `GET /instances/{id}/actionable`.
 
 ## Stores and caching
@@ -565,7 +565,7 @@ and returns a `SuccessorDecision`:
 
 | Field | Type | Description |
 |---|---|---|
-| `Def` | `*definition.ProcessDefinition` | The successor definition to start. A `nil` `Def` (or returning `ok=false`) ends the chain. |
+| `Def` | `*model.ProcessDefinition` | The successor definition to start. A `nil` `Def` (or returning `ok=false`) ends the chain. |
 | `Vars` | `map[string]any` | Seed variables for the successor instance. |
 
 Three pieces:

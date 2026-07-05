@@ -62,7 +62,7 @@ type PostgresElector struct {
 	closed   bool
 
 	// onAcquire, if set, is invoked each time this elector transitions to leader
-	// (Option A, ADR-0072). Wiring it to Runner.RehydrateTimers re-arms persisted
+	// (Option A, ADR-0072). Wiring it to ProcessDriver.RehydrateTimers re-arms persisted
 	// timers on a new leader after failover. It runs in a wg-tracked goroutine on
 	// bgCtx so Close waits for it and cancellation propagates; acquiring coalesces
 	// overlapping invocations from rapid step-down/re-acquire cycles.
@@ -125,7 +125,7 @@ func WithHeartbeatInterval(d time.Duration) ElectorOption {
 // asynchronously — never blocking gocron's IsLeader hot path — on a background
 // context that is cancelled when Close is called; Close waits for it to return.
 // Overlapping invocations from rapid step-down/re-acquire cycles are coalesced.
-// Wire it to Runner.RehydrateTimers to re-arm persisted timers on a new leader
+// Wire it to ProcessDriver.RehydrateTimers to re-arm persisted timers on a new leader
 // after failover (Option A, ADR-0072). A nil value is ignored.
 func WithOnLeadershipAcquired(fn func(context.Context)) ElectorOption {
 	return func(e *PostgresElector) {

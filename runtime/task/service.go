@@ -52,7 +52,7 @@ type TaskServiceOption func(*taskServiceConfig)
 // (WithLogger/WithTracerProvider/WithMeterProvider) applies to components that
 // own spans or log output; TaskService is intentionally meter-only.
 //
-// Use the same provider as the Runner to aggregate all lifecycle events
+// Use the same provider as the ProcessDriver to aggregate all lifecycle events
 // (created, claimed, reassigned, completed) into one metric stream under the
 // shared instrumentation scope "github.com/zakyalvan/krtlwrkflw/runtime".
 func WithTaskServiceMeterProvider(mp metric.MeterProvider) TaskServiceOption {

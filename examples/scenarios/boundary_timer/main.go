@@ -1,5 +1,5 @@
-// Package main demonstrates an activity deadline (the WithDeadline option,
-// formerly WithSLA) that escalates a human task not completed in time.
+// Package main demonstrates an activity deadline via the WithDeadline option
+// that escalates a human task not completed in time.
 //
 // A deadline is attached directly to an activity via WithDeadline(duration,
 // flowID, action). When a token sits in the activity past the duration, the

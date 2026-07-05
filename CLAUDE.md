@@ -7,27 +7,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `wrkflw` is a **Go workflow engine, shipped as a library** — not an executable backend. The
 deliverable is an **importable Go module**; there is no daemon we own and run. It can be
 embedded directly in a consumer's Go application or assembled by the consumer into a
-standalone deployment (e.g. sidecar / container) reachable through the library's REST or gRPC
+standalone deployment (e.g. sidecar / container) reachable through the library's HTTP transport
 surfaces. Read the load-bearing properties below before any design work — they shape every
 decision, and the Architecture section expands the rest:
 
 - **Library-first, always**. The product is the **module-root public API** (the exported
-  packages at the repo root — e.g. `engine/`, `model/`, `runtime/`; **no `pkg/` prefix**, see
+  packages at the repo root — e.g. `engine/`, `definition/`, `runtime/`; **no `pkg/` prefix**, see
   ADR-0004) that a consumer imports and embeds in *their* application. Every feature must be
   reachable and ergonomic through that API. When a design choice trades library ergonomics for
   server convenience, library ergonomics win.
-- **Transports are library-provided, not shipped binaries**. The REST and gRPC surfaces
+- **Transports are library-provided, not shipped binaries**. The HTTP transport surfaces
   exist so a consumer can *mount* them in their own server — expose them as
-  constructors/handlers/`http.Handler` / gRPC `ServiceRegistrar` registrations from the public
+  constructors / `http.Handler` route groups (`transport/http/{httpcore,stdlib,gin,fiber}`,
+  ADR-0094/0095) from the public
   root packages, configured by the consumer's DI and lifecycle. "Standalone (sidecar / container)" is a
   deployment shape the **consumer** assembles from these pieces; we do not own a `main`.
   Any binaries in this repo are **example/reference wiring only**, never the product.
 - Server/transport concerns must **never leak into the engine core** — the core depends on
   interfaces only and is consumable with no transport imported at all.
 - **BPMN semantics**: model process definitions on BPMN2 concepts (tasks, gateways,
-  events, sequence flows). Definitions load from BPMN2 XML, but **YAML and direct Go code
-  are the preferred authoring forms**. A *process definition* is a template; a *process
-  instance* is a running execution of it.
+  events, sequence flows). The vocabulary is BPMN-inspired, **not** BPMN-compatible: there
+  is no BPMN2 XML loader — **YAML and direct Go code are the authoring forms**. A *process
+  definition* is a template; a *process instance* is a running execution of it.
 - **Token-based execution**: transitions between nodes are modeled by **tokens**. A token
   carries process-instance variables that downstream nodes read to make decisions (e.g. an
   exclusive gateway choosing a branch). Token movement is the engine's core state machine.
@@ -44,7 +45,7 @@ decision, and the Architecture section expands the rest:
 | SQLite | `modernc.org/sqlite` | hard pin (ADR-0082); pure-Go, WAL mode, single-writer; single-node/test/embedded use only |
 | Expressions | `github.com/expr-lang/expr` | all in-definition / in-execution expressions |
 | Eventing | [`watermill`](https://github.com/ThreeDotsLabs/watermill), **outbox publishing** | **never import watermill from workflow code** — go through the eventing abstraction (no vendor lock-in) |
-| Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.21.2** | hard pin; timers, SLA waiters, in-wait actions |
+| Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.21.2** | hard pin; timers, deadline waiters, in-wait actions |
 | Time source | [`jonboulle/clockwork`](https://github.com/jonboulle/clockwork) | implements the in-repo `clock.Clock` interface (ADR-0003) — **never import clockwork from engine/workflow code**, depend on `clock.Clock`; shared with gocron so a fake clock drives both engine + scheduler in tests; core never reads the wall clock |
 | Authorization | pluggable; **casbin** as the baseline | role, resource-privilege, **and attribute-based** (data/process-variable) evaluation |
 | DI container | [`samber/do` v2](https://github.com/samber/do) | application-layer wiring only — see Dependency Injection below |
@@ -56,12 +57,12 @@ One `go.mod` at the repo root. **Library consumers import this single module pat
 exported **module-root packages** *are* the product. There is **no `pkg/` prefix** (ADR-0004):
 public packages live directly at the repo root.
 
-- **Module-root packages** (e.g. `engine/`, `model/`, `action/`, `authz/`, `runtime/`) — the
+- **Module-root packages** (e.g. `engine/`, `definition/`, `action/`, `authz/`, `runtime/`) — the
   **public engine library** and its value/stateless helpers. This is the entire API surface for
   embedded consumers. Token execution, process-definition model, gateway logic, the
   service-action catalog interface, the eventing/authz/persistence *abstractions*, and the
-  **transport adapters consumers mount** (REST `http.Handler` factories, gRPC service
-  registrations) all live here. Consumers import them as `github.com/zakyalvan/krtlwrkflw/engine`,
+  **transport adapters consumers mount** (HTTP `http.Handler` route-group factories in
+  `transport/http/{stdlib,gin,fiber}`) all live here. Consumers import them as `github.com/zakyalvan/krtlwrkflw/engine`,
   etc.
 - `internal/` — non-exported implementation details (concrete persistence, outbox plumbing,
   casbin adapters, watermill wiring) that consumers must not import. (Concrete persistence
@@ -99,9 +100,9 @@ These are the seams to understand before touching code; they span multiple packa
   pattern (events written in the same tx as state changes, relayed afterward). Swapping
   watermill for another broker must touch only the adapter.
 - **Service-action catalog** — actions usable from definition nodes, referenced **by name**,
-  all implementing a single `ServiceAction` interface. The catalog resolves names →
+  all implementing a single `Action` interface. The catalog resolves names →
   implementations at execution time.
-- **Scheduling / waiters** — gocron drives timer tasks and SLA deadlines (e.g. a human task
+- **Scheduling / waiters** — gocron drives timer tasks and deadlines (e.g. a human task
   due in 3 working days → on breach, run alternative action(s) then take an alternative
   path). Support **in-wait actions** (e.g. reminder emails) executed *during* a wait period,
   not only on expiry.
@@ -193,7 +194,7 @@ preceded by a visible red state.
 ### The Mandatory Cycle
 
 For **every** new exported symbol (function, method, type with behaviour,
-constructor, HTTP/gRPC handler, DI provider, etc.) and for **every** behavioural
+constructor, HTTP handler, DI provider, etc.) and for **every** behavioural
 change to an existing symbol:
 
 1. **Red** — Write the test file (or extend the existing one) with the new

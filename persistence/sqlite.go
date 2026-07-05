@@ -126,7 +126,7 @@ func NewSQLiteAdvisoryLockOwnership() (kernel.Ownership, io.Closer, error) {
 }
 
 // NewSQLiteTimerStore returns a kernel.TimerStore backed by SQLite, for
-// Runner.RehydrateTimers. The db must already have migrations applied.
+// ProcessDriver.RehydrateTimers. The db must already have migrations applied.
 // Mirrors [NewMySQLTimerStore] for MySQL and [NewTimerStore] for Postgres.
 //
 // SQLite is single-node and in-process; this constructor is well-suited for
@@ -216,7 +216,7 @@ func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (kernel.Ca
 //	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
 //	persistence.MigrateSQLite(ctx, db)
 //	links := persistence.NewSQLiteChainLinkStore(db)
-//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+//	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 func NewSQLiteChainLinkStore(db *sql.DB) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewSQLite())
 }

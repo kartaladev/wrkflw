@@ -22,7 +22,7 @@
 //
 //  1. Opens a database and applies schema migrations idempotently.
 //  2. Defines a predecessor process (proc-a) and a successor (proc-a-succ).
-//  3. Wires: Runner + Chainer + ChainerRunner + GoChannel pub/sub + Relay.
+//  3. Wires: ProcessDriver + Chainer + ChainerRunner + GoChannel pub/sub + Relay.
 //  4. Starts the ChainerRunner goroutine (subscribing before any relay publish).
 //  5. Runs the predecessor instance "demo-pred" to completion.
 //  6. Drains the relay once to publish the terminal outbox event.
@@ -309,7 +309,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("build proc-a-succ: %w", err)
 	}
 
-	// ── Wire Runner, Chainer, and ChainerRunner ───────────────────────────────
+	// ── Wire ProcessDriver, Chainer, and ChainerRunner ───────────────────────────────
 	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), be.store)
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)

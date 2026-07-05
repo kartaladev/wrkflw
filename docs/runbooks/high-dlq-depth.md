@@ -90,8 +90,9 @@ relay picks up redriven rows on its next poll cycle and reattempts delivery.
 **Step 3 — Resolve affected incidents.**
 
 For any process instance that raised an incident due to the delivery failure, resolve it
-via the gRPC `ResolveIncident` RPC or its REST equivalent once the underlying issue is
-fixed and the event has been successfully delivered.
+via `POST /admin/instances/{id}/incidents/{incidentID}/resolve` (or
+`service.Service.ResolveIncident` directly) once the underlying issue is fixed and the
+event has been successfully delivered.
 
 **Step 4 — Check `wrkflw_outbox_dead` drops to zero.**
 

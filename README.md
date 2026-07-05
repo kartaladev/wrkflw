@@ -100,7 +100,7 @@ Actions can be bound to a definition or a node in three ways:
 | Default-by-id | omit name | Node id is the lookup key |
 
 ```go
-score := action.Func(func(_ context.Context, in map[string]any) (map[string]any, error) {
+score := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
     return map[string]any{"score": 42}, nil
 })
 
@@ -184,8 +184,8 @@ func main() {
 		Connect("charge", "e").
 		Build()
 
-	cat := action.NewMapCatalog(map[string]action.ServiceAction{
-		"charge-card": action.Func(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+	cat := action.NewMapCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			return map[string]any{"charged": true}, nil
 		}),
 	})
@@ -228,7 +228,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 | `definition` | Authoring entry: `NewBuilder` (Go) and `NewLoader` (YAML) only. Types/validation/serialization live in `definition/model`; sequence flows in `definition/flow`; node constructors in `definition/{event,gateway,activity}`; fluent builder in `definition/build`; deserialization bundle `definition/kinds`. Pure data + validation; no I/O. |
 | `engine` | Core token state machine. Pure of transport, storage, and event-bus specifics — depends on interfaces only. |
 | `runtime` | Reference driver `ProcessDriver` that wires the engine to persistence, scheduling, and actions, plus lifecycle helpers (`ShutdownGroup`). Supporting pieces live in sub-packages: `runtime/kernel` (in-memory `MemStore`/`CachingStore`, schedulers, definition registry, ownership), `runtime/view` (snapshot DTOs), `runtime/chain` (instance chaining), `runtime/task` (human-task service), plus `runtime/signal`, `runtime/calllink`, `runtime/monitor`. |
-| `action` | Service-action catalog (`Catalog`, `ServiceAction`, `MapCatalog`, `Func` adapter). |
+| `action` | Service-action catalog (`Catalog`, `Action`, `MapCatalog`, `ActionFunc` adapter). |
 | `humantask` | Human-task model and ports that drive human work (claim, complete, reassign). |
 | `authz` | Pluggable `Authorizer` abstraction: role, resource-privilege, and attribute-based rules. |
 | `casbinauthz` | Casbin-backed `Authorizer` (baseline implementation). Wraps `*casbin.SyncedEnforcer`. |
@@ -376,7 +376,7 @@ The `runtime/view` package provides two JSON-serializable projections built from
 | `view.InstanceSnapshot` | `view.NewInstanceSnapshot(state, def)` | Full snapshot: tokens, variables, history, tasks, incidents. Omits engine bookkeeping. |
 | `view.ActionableView` | `view.NewActionableView(state, def)` | Curated view: only open human tasks + allowed next actions (outgoing flows). |
 
-The REST handler exposes these via:
+The HTTP transport exposes these via:
 
 - `GET /instances/{id}/snapshot` — returns `InstanceSnapshot` JSON.
 - `GET /instances/{id}/actionable` — returns `ActionableView` JSON.
@@ -611,9 +611,10 @@ in `CLAUDE.md`.
 ## Node types
 
 A process definition is a graph of **nodes** connected by **sequence flows**. Every
-node is a value built with a `model.New*` constructor and implements the `model.Node`
-interface (`Kind() NodeKind`, `ID() string`, `Name() string`). Never construct the
-struct types directly — use the constructors. There are 19 node kinds, grouped below.
+node is a value built with a constructor from `definition/{event,gateway,activity}`
+and implements the `model.Node` interface (`Kind() NodeKind`, `ID() string`,
+`Name() string`). Never construct the struct types directly — use the constructors.
+There are 19 node kinds, grouped below.
 
 All examples in this section are excerpts; the full, compiling programs they are
 drawn from live under [`examples/scenarios/`](examples/scenarios).
@@ -721,7 +722,7 @@ event.NewEventSubProcess("on-cancel", cancelHandlerDef, event.WithEventSubProces
 
 A BPMN `SendTask` emits its outbound message as a `message.<MessageName>` event written
 into the same `wrkflw_outbox` (and the same transaction) as the state commit, then relayed
-at-least-once by the outbox relay — no `MessageSink` wiring, no stranding window (ADR-0067).
+at-least-once by the outbox relay — no separate message-sink wiring, no stranding window (ADR-0067).
 
 The event payload is `{"messageName", "correlationKey", "variables"}`, with `instance_id`
 and `definition_ref` as message metadata. Consume it like any other outbox topic. To deliver
@@ -1297,7 +1298,7 @@ clean production embedding ergonomic (ADR-0054):
   with `AlwaysOwn`; for multi-replica deployments use
   `persistence.NewAdvisoryLockOwnership` so only the owning replica caches an instance.
 
-The full assembly — engine + scheduler + relay + mounted REST and health routes +
+The full assembly — engine + scheduler + relay + mounted HTTP and health routes +
 `signal.NotifyContext` → cancel workers → `http.Server.Shutdown` → `ShutdownGroup.Shutdown`
 — is in [`examples/production_wiring`](examples/production_wiring).
 
@@ -1354,7 +1355,7 @@ carry sensitive data (PII, tokens, payment details). Treat them as secrets:
   wall clock and emits no logs; the `runtime.ProcessDriver`'s `slog` records identify instances,
   nodes, actions, and outcomes — they do **not** dump the variable map. This is a
   deliberate invariant; keep it that way if you extend the logging.
-- **Redact in your own resolvers and actions.** When you write a `service.ServiceAction`,
+- **Redact in your own resolvers and actions.** When you write an `action.Action`,
   a human-task resolver, or a `SuccessorPolicy`, do not `slog`/print the raw input/output
   maps. Log only the keys you need, or a redacted view — never the whole map. The same
   applies to error messages: don't interpolate a variable value into an error string that
