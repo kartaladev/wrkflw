@@ -90,16 +90,26 @@ func WithSignalBus(bus *signal.SignalBus) Option {
 	return func(r *ProcessDriver) { r.sigbus = bus }
 }
 
-// WithDefinitions wires a [DefinitionRegistry] into the ProcessDriver, enabling
-// [engine.StartSubInstance] commands (call activities). Without this option,
-// any process that reaches a KindCallActivity node will return a descriptive
-// error rather than panicking.
+// WithDefinitions overrides the DefinitionRegistry used by the ProcessDriver for
+// resolving [engine.StartSubInstance] commands (call activities). A nil reg is
+// ignored — the process-global [DefaultDefinitionRegistry] remains in effect,
+// matching the nil-ignored contract of [WithActionCatalog] and [WithInstanceStore].
 //
-// The registry resolves DefRef strings (as stored on KindCallActivity nodes)
-// to *model.ProcessDefinition values. Use [NewMapDefinitionRegistry] to build
-// an in-memory registry from a plain map.
+// The registry resolves DefRef strings (as stored on KindCallActivity nodes) to
+// *model.ProcessDefinition values. Use [kernel.NewMapDefinitionRegistry] to build
+// an immutable in-memory registry from a plain map, or
+// [kernel.NewMemDefinitionRegistry] for a mutable, incrementally-populated one.
+//
+// A zero-config [NewProcessDriver] already uses [DefaultDefinitionRegistry];
+// call activities only error when the requested DefRef is not found in that
+// registry. Use [RegisterDefinition] to populate the global default at init time,
+// or pass an isolated registry here for test isolation.
 func WithDefinitions(reg kernel.DefinitionRegistry) Option {
-	return func(r *ProcessDriver) { r.defsReg = reg }
+	return func(r *ProcessDriver) {
+		if reg != nil {
+			r.defsReg = reg
+		}
+	}
 }
 
 // WithCallLinkStore wires a [CallLinkStore] into the ProcessDriver, enabling the

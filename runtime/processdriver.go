@@ -112,6 +112,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		cat:           action.DefaultCatalog(),
 		clk:           clock.System(),
 		store:         memStore,
+		defsReg:       defaultDefinitionRegistry,
 		jitter:        kernel.NewJitterSource(),
 		actionTimeout: defaultActionTimeout,
 		msgWaiters:    make(map[msgKey]string),
@@ -137,6 +138,16 @@ func onOff(v bool) string {
 // that was created inside NewProcessDriver as the pre-option default; when r.store
 // still points to that same value after the option loop, the store is in-memory
 // (non-durable); otherwise a custom implementation was supplied.
+// defOrigin returns "default-global" when the driver is using the process-global
+// DefaultDefinitionRegistry and "custom" otherwise, mirroring the storeLabel /
+// catalogLabel helpers in logConstructionSummary.
+func defOrigin(defsReg kernel.DefinitionRegistry) string {
+	if defsReg == defaultDefinitionRegistry {
+		return "default-global"
+	}
+	return "custom"
+}
+
 func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore) {
 	storeLabel := "in-memory(non-durable)"
 	if r.store != defaultStore {
@@ -157,7 +168,7 @@ func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore
 		slog.String("scheduler", onOff(r.sched != nil)),
 		slog.String("signalBus", onOff(r.sigbus != nil)),
 		slog.String("humanTasks", onOff(r.tasks != nil)),
-		slog.String("definitions", onOff(r.defsReg != nil)),
+		slog.String("definitions", defOrigin(r.defsReg)),
 		slog.String("callLinks", onOff(r.callLinks != nil)),
 		slog.String("timerStore", onOff(r.timerStore != nil)),
 		slog.String("actionTimeout", r.actionTimeout.String()),

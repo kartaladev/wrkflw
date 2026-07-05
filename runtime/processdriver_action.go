@@ -263,14 +263,17 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		return nil, nil
 
 	case engine.StartSubInstance:
-		// Nil-registry guard: a missing registry is a configuration error, not a
-		// retryable runtime failure, so we fail fast with a descriptive message.
+		// Defensive nil-guard: defsReg is always non-nil after NewProcessDriver
+		// (defaultDefinitionRegistry is set before the option loop, and
+		// WithDefinitions ignores nil). This guard exists only as dead-safe code.
 		if r.defsReg == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured (use WithDefinitions)", cmd.DefRef)
+			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured"+
+				" (use runtime.RegisterDefinition to populate the default registry, or supply one via WithDefinitions)", cmd.DefRef)
 		}
 		childDef, err := r.defsReg.Lookup(ctx, cmd.DefRef)
 		if err != nil {
-			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: registry lookup: %w", cmd.DefRef, err)
+			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: definition not found"+
+				" (register it via runtime.RegisterDefinition or supply a registry via WithDefinitions): %w", cmd.DefRef, err)
 		}
 
 		// Derive a deterministic child instance ID from the parent and command ID.
