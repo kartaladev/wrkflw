@@ -219,7 +219,7 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 
 	link := kernel.ChainLink{
 		PredecessorID:            "sqlite-pred-1",
-		Outcome:                  kernel.Outcome("success"),
+		Outcome:                  kernel.ChainOutcome("success"),
 		SuccessorID:              "sqlite-succ-1",
 		PredecessorDefinitionRef: "def-a:1",
 		SuccessorDefinitionRef:   "def-b:2",
@@ -234,7 +234,7 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "sqlite-pred-1", got.PredecessorID)
-	assert.Equal(t, kernel.Outcome("success"), got.Outcome)
+	assert.Equal(t, kernel.ChainOutcome("success"), got.Outcome)
 	assert.Equal(t, "sqlite-succ-1", got.SuccessorID)
 
 	// ListByPredecessor.

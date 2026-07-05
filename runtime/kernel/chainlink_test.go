@@ -76,7 +76,7 @@ func TestMemChainLinkStoreListByPredecessor(t *testing.T) {
 }
 
 func TestOutcomeConstants(t *testing.T) {
-	assert.Equal(t, kernel.Outcome("completed"), kernel.OutcomeCompleted)
-	assert.Equal(t, kernel.Outcome("failed"), kernel.OutcomeFailed)
-	assert.Equal(t, kernel.Outcome("terminated"), kernel.OutcomeTerminated)
+	assert.Equal(t, kernel.ChainOutcome("completed"), kernel.OutcomeCompleted)
+	assert.Equal(t, kernel.ChainOutcome("failed"), kernel.OutcomeFailed)
+	assert.Equal(t, kernel.ChainOutcome("terminated"), kernel.OutcomeTerminated)
 }

@@ -9,20 +9,20 @@ import (
 	"time"
 )
 
-// Outcome is the terminal outcome that triggered a chaining decision (ADR-0045).
+// ChainOutcome is the terminal outcome that triggered a chaining decision (ADR-0045).
 // It mirrors the status-accurate terminal outbox topics (ADR-0046):
 // instance.completed -> OutcomeCompleted, instance.failed -> OutcomeFailed,
 // instance.terminated -> OutcomeTerminated.
-type Outcome string
+type ChainOutcome string
 
 const (
 	// OutcomeCompleted is the predecessor reaching StatusCompleted.
-	OutcomeCompleted Outcome = "completed"
+	OutcomeCompleted ChainOutcome = "completed"
 	// OutcomeFailed is the predecessor reaching StatusFailed (unhandled error).
-	OutcomeFailed Outcome = "failed"
+	OutcomeFailed ChainOutcome = "failed"
 	// OutcomeTerminated is the predecessor reaching StatusTerminated (cancel /
 	// full rollback).
-	OutcomeTerminated Outcome = "terminated"
+	OutcomeTerminated ChainOutcome = "terminated"
 )
 
 // ChainLink is the durable predecessor→successor correlation for one chaining
@@ -32,7 +32,7 @@ const (
 type ChainLink struct {
 	PredecessorID            string
 	PredecessorDefinitionRef string
-	Outcome                  Outcome
+	Outcome                  ChainOutcome
 	SuccessorID              string
 	SuccessorDefinitionRef   string
 	StartVars                map[string]any
@@ -63,7 +63,7 @@ type ChainLinkStore interface {
 // chainKey is the (PredecessorID, Outcome) uniqueness key.
 type chainKey struct {
 	pred    string
-	outcome Outcome
+	outcome ChainOutcome
 }
 
 // MemChainLinkStore is the in-memory reference ChainLinkStore for tests and

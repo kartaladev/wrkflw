@@ -15,7 +15,7 @@ import (
 
 // chainTopics are the three status-accurate terminal topics a chaining consumer
 // subscribes (ADR-0046). The map also drives topic→Outcome projection.
-var chainTopics = map[string]kernel.Outcome{
+var chainTopics = map[string]kernel.ChainOutcome{
 	"instance.completed":  kernel.OutcomeCompleted,
 	"instance.failed":     kernel.OutcomeFailed,
 	"instance.terminated": kernel.OutcomeTerminated,
