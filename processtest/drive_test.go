@@ -32,7 +32,7 @@ func buildSignalCase(t *testing.T) (*runtime.ProcessDriver, engine.InstanceState
 		Build()
 	require.NoError(t, err)
 
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	driver, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 	require.NoError(t, err)

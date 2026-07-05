@@ -62,7 +62,7 @@ func main() {
 	az := authz.RoleAuthorizer{}
 	clk := clock.System()
 
-	memSt, err := kernel.NewMemStore()
+	memSt, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}

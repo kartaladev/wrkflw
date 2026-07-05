@@ -26,7 +26,7 @@ import (
 // errStore is a Store whose Create and Commit always fail with a concurrency error.
 // It embeds *kernel.MemStore so that Load still works for Deliver-based tests
 // that need an initial state.
-type errStore struct{ *kernel.MemStore }
+type errStore struct{ *kernel.MemInstanceStore }
 
 func (errStore) Create(_ context.Context, _ kernel.AppliedStep) (kernel.Token, error) {
 	return 0, kernel.ErrConcurrentUpdate
@@ -38,7 +38,7 @@ func (errStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) 
 
 // commitErrStore is a Store whose Create succeeds but Commit always fails
 // with ErrConcurrentUpdate. Used to test the Commit failure path independently.
-type commitErrStore struct{ *kernel.MemStore }
+type commitErrStore struct{ *kernel.MemInstanceStore }
 
 func (s *commitErrStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) (kernel.Token, error) {
 	return 0, kernel.ErrConcurrentUpdate
@@ -228,7 +228,7 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 // This lets TestTimerFireRetriesOnCASConflict drive a deterministic CAS conflict on
 // the timer-fire path without any concurrency or timing gymnastics.
 type onceConflictStore struct {
-	inner     *kernel.MemStore
+	inner     *kernel.MemInstanceStore
 	triggered atomic.Bool
 }
 
@@ -370,7 +370,7 @@ func TestNewRunnerFailsFast(t *testing.T) {
 	cases := []struct {
 		name   string
 		cat    action.Catalog
-		store  kernel.Store
+		store  kernel.InstanceStore
 		assert func(t *testing.T, r *runtime.ProcessDriver, err error)
 	}{
 		{

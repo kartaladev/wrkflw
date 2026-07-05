@@ -62,7 +62,7 @@ func TestResolveInvokeAction(t *testing.T) {
 		"x":     tag("global"),
 		"gonly": tag("global-only"),
 	})
-	st, err := kernel.NewMemStore()
+	st, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	r, err := NewProcessDriver(global, st)
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestResolveActionName(t *testing.T) {
 		"x":     tag("global-x"),
 		"gonly": tag("global-only"),
 	})
-	st2, err := kernel.NewMemStore()
+	st2, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	r, err := NewProcessDriver(global, st2)
 	require.NoError(t, err)

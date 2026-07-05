@@ -18,7 +18,7 @@ import (
 // shipped API; ADR-0087 follow-up).
 func SeedCallLink(t *testing.T, cl *kernel.MemCallLinkStore, link kernel.CallLink) {
 	t.Helper()
-	s, err := kernel.NewMemStore(kernel.WithCallLinks(cl))
+	s, err := kernel.NewMemInstanceStore(kernel.WithCallLinks(cl))
 	require.NoError(t, err)
 	_, err = s.Create(context.Background(), kernel.AppliedStep{
 		State:       engine.InstanceState{InstanceID: link.ChildInstanceID},
@@ -34,7 +34,7 @@ func SeedCallLink(t *testing.T, cl *kernel.MemCallLinkStore, link kernel.CallLin
 // off the shipped production API.
 func SeedTerminalCallLink(t *testing.T, cl *kernel.MemCallLinkStore, link kernel.CallLink, out kernel.CallOutcome) {
 	t.Helper()
-	s, err := kernel.NewMemStore(kernel.WithCallLinks(cl))
+	s, err := kernel.NewMemInstanceStore(kernel.WithCallLinks(cl))
 	require.NoError(t, err)
 	tok, err := s.Create(context.Background(), kernel.AppliedStep{
 		State:       engine.InstanceState{InstanceID: link.ChildInstanceID},

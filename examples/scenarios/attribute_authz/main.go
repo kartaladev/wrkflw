@@ -46,15 +46,15 @@ const casbinPolicy = `
 p, approver, finance-task, claim
 `
 
-func mustMemStore() *kernel.MemStore {
-	m, err := kernel.NewMemStore()
+func mustMemStore() *kernel.MemInstanceStore {
+	m, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 	return m
 }
 
-func mustRunner(cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
+func mustRunner(cat action.Catalog, store kernel.InstanceStore, opts ...runtime.Option) *runtime.ProcessDriver {
 	r, err := runtime.NewProcessDriver(cat, store, opts...)
 	if err != nil {
 		log.Fatal("runner:", err)

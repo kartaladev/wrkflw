@@ -77,7 +77,7 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 //	store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
 //	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 //	if err != nil { log.Fatal(err) }
-func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, error) {
+func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (InstanceStore, error) {
 	q, err := database.From(db)
 	if err != nil {
 		return nil, err
@@ -244,7 +244,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 }
 
 // NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.Ownership]
-// backed by MySQL GET_LOCK advisory locks, for use with [kernel.NewCachingStore]
+// backed by MySQL GET_LOCK advisory locks, for use with [kernel.NewCachingInstanceStore]
 // across multiple replicas sharing one database.
 //
 // It holds a dedicated *sql.Conn for its lifetime; close the returned [io.Closer]
@@ -391,7 +391,7 @@ func MySQLDSN(base string) (string, error) {
 // Compile-time checks: the neutral store concrete types must satisfy the same
 // public interfaces as their Postgres analogs.
 var (
-	_ Store                     = (*store.Store)(nil)
+	_ InstanceStore             = (*store.Store)(nil)
 	_ kernel.TimerStore         = (*store.TimerStore)(nil)
 	_ Relay                     = (*store.Relay)(nil)
 	_ Deduper                   = (*store.Deduper)(nil)

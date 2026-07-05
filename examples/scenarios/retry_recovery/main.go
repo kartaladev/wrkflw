@@ -94,7 +94,7 @@ func main() {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}

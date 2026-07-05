@@ -183,7 +183,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	defer cancel()
 
 	clk := clockwork.NewFakeClock()
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	links := kernel.NewMemChainLinkStore()
 	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clk))

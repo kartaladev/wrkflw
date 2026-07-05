@@ -194,7 +194,7 @@ func run(logger *slog.Logger) error {
 
 	// Use AlwaysOwn for single-process caching — the fail-loud SQLite ownership
 	// value is not passed to NewCachingStore.
-	cachingStore, err := kernel.NewCachingStore(store, kernel.AlwaysOwn{})
+	cachingStore, err := kernel.NewCachingInstanceStore(store, kernel.AlwaysOwn{})
 	if err != nil {
 		return err
 	}

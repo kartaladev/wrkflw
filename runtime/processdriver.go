@@ -26,7 +26,7 @@ import (
 type ProcessDriver struct {
 	cat        action.Catalog
 	clk        clock.Clock
-	store      kernel.Store
+	store      kernel.InstanceStore
 	resolver   humantask.ActorResolver
 	tasks      humantask.TaskStore
 	authz      authz.Authorizer
@@ -103,7 +103,7 @@ type ProcessDriver struct {
 //   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
 func NewProcessDriver(
 	cat action.Catalog,
-	store kernel.Store,
+	store kernel.InstanceStore,
 	opts ...Option,
 ) (*ProcessDriver, error) {
 	if cat == nil {

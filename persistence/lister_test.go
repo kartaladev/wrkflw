@@ -32,7 +32,7 @@ func TestNewListerReturnsInterface(t *testing.T) {
 
 // seedInstances creates running instances directly via store.Create so we can
 // control status without driving a full process through the engine.
-func seedInstances(t *testing.T, store kernel.Store, ids []string, base time.Time) {
+func seedInstances(t *testing.T, store kernel.InstanceStore, ids []string, base time.Time) {
 	t.Helper()
 	for i, id := range ids {
 		_, err := store.Create(t.Context(), kernel.AppliedStep{

@@ -56,10 +56,10 @@ func TestMemStoreLoadMissing(t *testing.T) {
 
 func TestMemStoreCommit(t *testing.T) {
 	tests := map[string]struct {
-		assert func(t *testing.T, ms *kernel.MemStore)
+		assert func(t *testing.T, ms *kernel.MemInstanceStore)
 	}{
 		"advances token": {
-			assert: func(t *testing.T, ms *kernel.MemStore) {
+			assert: func(t *testing.T, ms *kernel.MemInstanceStore) {
 				tok, err := ms.Create(t.Context(), step("i1", "a"))
 				require.NoError(t, err)
 				next, err := ms.Commit(t.Context(), tok, step("i1", "b"))
@@ -68,7 +68,7 @@ func TestMemStoreCommit(t *testing.T) {
 			},
 		},
 		"stale token conflicts": {
-			assert: func(t *testing.T, ms *kernel.MemStore) {
+			assert: func(t *testing.T, ms *kernel.MemInstanceStore) {
 				tok, err := ms.Create(t.Context(), step("i1", "a"))
 				require.NoError(t, err)
 				_, err = ms.Commit(t.Context(), tok, step("i1", "b")) // advances past tok
@@ -78,7 +78,7 @@ func TestMemStoreCommit(t *testing.T) {
 			},
 		},
 		"captures outbox events": {
-			assert: func(t *testing.T, ms *kernel.MemStore) {
+			assert: func(t *testing.T, ms *kernel.MemInstanceStore) {
 				tok, err := ms.Create(t.Context(), step("i1", "instance.completed"))
 				require.NoError(t, err)
 				_, err = ms.Commit(t.Context(), tok, step("i1", "instance.failed"))
@@ -91,7 +91,7 @@ func TestMemStoreCommit(t *testing.T) {
 			},
 		},
 		"records journal entries": {
-			assert: func(t *testing.T, ms *kernel.MemStore) {
+			assert: func(t *testing.T, ms *kernel.MemInstanceStore) {
 				tok, err := ms.Create(t.Context(), step("i1", "a"))
 				require.NoError(t, err)
 				_, err = ms.Commit(t.Context(), tok, step("i1", "b"))
@@ -102,7 +102,7 @@ func TestMemStoreCommit(t *testing.T) {
 			},
 		},
 		"commit on missing instance": {
-			assert: func(t *testing.T, ms *kernel.MemStore) {
+			assert: func(t *testing.T, ms *kernel.MemInstanceStore) {
 				_, err := ms.Commit(t.Context(), 1, step("missing-id", "a"))
 				require.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 			},
@@ -119,27 +119,33 @@ func TestNewMemStoreOptions(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
 	mts := kernel.NewMemTimerStore()
 	tests := map[string]struct {
-		opts   []kernel.MemStoreOption
-		assert func(t *testing.T, m *kernel.MemStore, err error)
+		opts   []kernel.MemInstanceStoreOption
+		assert func(t *testing.T, m *kernel.MemInstanceStore, err error)
 	}{
 		"no options": {
-			opts:   nil,
-			assert: func(t *testing.T, m *kernel.MemStore, err error) { require.NoError(t, err); require.NotNil(t, m) },
+			opts: nil,
+			assert: func(t *testing.T, m *kernel.MemInstanceStore, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, m)
+			},
 		},
 		"both set": {
-			opts:   []kernel.MemStoreOption{kernel.WithCallLinks(cl), kernel.WithTimers(mts)},
-			assert: func(t *testing.T, m *kernel.MemStore, err error) { require.NoError(t, err); require.NotNil(t, m) },
+			opts: []kernel.MemInstanceStoreOption{kernel.WithCallLinks(cl), kernel.WithTimers(mts)},
+			assert: func(t *testing.T, m *kernel.MemInstanceStore, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, m)
+			},
 		},
 		"nil call-links": {
-			opts: []kernel.MemStoreOption{kernel.WithCallLinks(nil)},
-			assert: func(t *testing.T, m *kernel.MemStore, err error) {
+			opts: []kernel.MemInstanceStoreOption{kernel.WithCallLinks(nil)},
+			assert: func(t *testing.T, m *kernel.MemInstanceStore, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, m)
 			},
 		},
 		"nil timers": {
-			opts: []kernel.MemStoreOption{kernel.WithTimers(nil)},
-			assert: func(t *testing.T, m *kernel.MemStore, err error) {
+			opts: []kernel.MemInstanceStoreOption{kernel.WithTimers(nil)},
+			assert: func(t *testing.T, m *kernel.MemInstanceStore, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, m)
 			},
@@ -147,7 +153,7 @@ func TestNewMemStoreOptions(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			m, err := kernel.NewMemStore(tc.opts...)
+			m, err := kernel.NewMemInstanceStore(tc.opts...)
 			tc.assert(t, m, err)
 		})
 	}

@@ -82,7 +82,7 @@ flows:
 		}),
 	})
 
-	memSt, err := kernel.NewMemStore()
+	memSt, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}

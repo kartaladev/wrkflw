@@ -95,7 +95,7 @@ type Engine struct {
 	runner    *runtime.ProcessDriver
 	tasks     *task.TaskService
 	reg       kernel.DefinitionRegistry
-	store     kernel.Store
+	store     kernel.InstanceStore
 	lister    kernel.InstanceLister
 	taskStore humantask.TaskStore
 	clk       clock.Clock
@@ -131,7 +131,7 @@ func New(
 	runner *runtime.ProcessDriver,
 	tasks *task.TaskService,
 	reg kernel.DefinitionRegistry,
-	store kernel.Store,
+	store kernel.InstanceStore,
 	lister kernel.InstanceLister,
 	taskStore humantask.TaskStore,
 	opts ...EngineOption,

@@ -52,7 +52,7 @@ func buildDef(t *testing.T, id string, version int) *model.ProcessDefinition {
 
 // chainingDialect bundles the objects needed by each dialect sub-test.
 type chainingDialect struct {
-	store  persistence.Store
+	store  persistence.InstanceStore
 	links  kernel.ChainLinkStore
 	relay  persistence.Relay
 	pub    kernel.Publisher

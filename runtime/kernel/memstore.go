@@ -12,9 +12,9 @@ import (
 
 // Compile-time checks: MemStore satisfies both ports.
 var (
-	_ Store          = (*MemStore)(nil)
-	_ JournalReader  = (*MemStore)(nil)
-	_ InstanceLister = (*MemStore)(nil)
+	_ InstanceStore  = (*MemInstanceStore)(nil)
+	_ JournalReader  = (*MemInstanceStore)(nil)
+	_ InstanceLister = (*MemInstanceStore)(nil)
 )
 
 // memInstance is the in-memory record for one instance.
@@ -23,11 +23,11 @@ type memInstance struct {
 	version Token
 }
 
-// MemStore is an in-memory transactional Store + JournalReader for tests and
+// MemInstanceStore is an in-memory transactional Store + JournalReader for tests and
 // reference wiring. Its Commit performs an in-memory CAS on a per-instance
 // version and BUFFERS all writes so a failed step never half-applies.
-// MemStore is safe for concurrent use.
-type MemStore struct {
+// MemInstanceStore is safe for concurrent use.
+type MemInstanceStore struct {
 	mu        sync.RWMutex
 	instances map[string]*memInstance
 	journal   map[string][]engine.Trigger
@@ -42,13 +42,13 @@ type memStoreConfig struct {
 	timers    *MemTimerStore
 }
 
-// MemStoreOption configures a MemStore. Options validate eagerly and may return
+// MemInstanceStoreOption configures a MemStore. Options validate eagerly and may return
 // an error.
-type MemStoreOption func(*memStoreConfig) error
+type MemInstanceStoreOption func(*memStoreConfig) error
 
 // WithCallLinks records call-link correlation into cl atomically with
 // Create/Commit (ADR-0025).
-func WithCallLinks(cl *MemCallLinkStore) MemStoreOption {
+func WithCallLinks(cl *MemCallLinkStore) MemInstanceStoreOption {
 	return func(c *memStoreConfig) error {
 		if cl == nil {
 			return fmt.Errorf("%w: call-link store", ErrNilDependency)
@@ -60,7 +60,7 @@ func WithCallLinks(cl *MemCallLinkStore) MemStoreOption {
 
 // WithTimers records armed-timer side-effects into mts atomically with each
 // Create/Commit.
-func WithTimers(mts *MemTimerStore) MemStoreOption {
+func WithTimers(mts *MemTimerStore) MemInstanceStoreOption {
 	return func(c *memStoreConfig) error {
 		if mts == nil {
 			return fmt.Errorf("%w: timer store", ErrNilDependency)
@@ -70,17 +70,17 @@ func WithTimers(mts *MemTimerStore) MemStoreOption {
 	}
 }
 
-// NewMemStore constructs an in-memory Store + JournalReader. By default it
+// NewMemInstanceStore constructs an in-memory Store + JournalReader. By default it
 // tracks neither call-links nor timers; use [WithCallLinks] / [WithTimers] to
 // opt in.
-func NewMemStore(opts ...MemStoreOption) (*MemStore, error) {
+func NewMemInstanceStore(opts ...MemInstanceStoreOption) (*MemInstanceStore, error) {
 	var cfg memStoreConfig
 	for _, o := range opts {
 		if err := o(&cfg); err != nil {
 			return nil, err
 		}
 	}
-	return &MemStore{
+	return &MemInstanceStore{
 		instances: map[string]*memInstance{},
 		journal:   map[string][]engine.Trigger{},
 		callLinks: cfg.callLinks,
@@ -90,7 +90,7 @@ func NewMemStore(opts ...MemStoreOption) (*MemStore, error) {
 
 // Create inserts a brand-new instance from its first applied step and returns
 // its initial token.
-func (m *MemStore) Create(_ context.Context, step AppliedStep) (Token, error) {
+func (m *MemInstanceStore) Create(_ context.Context, step AppliedStep) (Token, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	const initial Token = 1
@@ -115,7 +115,7 @@ func (m *MemStore) Create(_ context.Context, step AppliedStep) (Token, error) {
 }
 
 // Load returns the current snapshot and its concurrency token.
-func (m *MemStore) Load(_ context.Context, id string) (engine.InstanceState, Token, error) {
+func (m *MemInstanceStore) Load(_ context.Context, id string) (engine.InstanceState, Token, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	inst, ok := m.instances[id]
@@ -128,7 +128,7 @@ func (m *MemStore) Load(_ context.Context, id string) (engine.InstanceState, Tok
 // Commit atomically applies one step under an optimistic CAS on expected.
 // It buffers the snapshot, journal append, and outbox events, applying them
 // only after the CAS succeeds, so a stale token leaves the store untouched.
-func (m *MemStore) Commit(_ context.Context, expected Token, step AppliedStep) (Token, error) {
+func (m *MemInstanceStore) Commit(_ context.Context, expected Token, step AppliedStep) (Token, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	inst, ok := m.instances[step.State.InstanceID]
@@ -158,14 +158,14 @@ func (m *MemStore) Commit(_ context.Context, expected Token, step AppliedStep) (
 }
 
 // Entries returns the recorded trigger history for id (JournalReader).
-func (m *MemStore) Entries(_ context.Context, id string) ([]engine.Trigger, error) {
+func (m *MemInstanceStore) Entries(_ context.Context, id string) ([]engine.Trigger, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return slices.Clone(m.journal[id]), nil
 }
 
 // Events returns all buffered outbox events, in append order (test accessor).
-func (m *MemStore) Events() []OutboxEvent {
+func (m *MemInstanceStore) Events() []OutboxEvent {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return slices.Clone(m.events)
@@ -177,7 +177,7 @@ func (m *MemStore) Events() []OutboxEvent {
 // When filter.Status is non-nil, only instances with that status are included.
 // Cursor encodes the last-seen (StartedAt, InstanceID); items at-or-after that
 // position (under DESC ordering) are skipped. Limit is clamped via normalizeLimit.
-func (m *MemStore) List(_ context.Context, filter InstanceFilter) (InstancePage, error) {
+func (m *MemInstanceStore) List(_ context.Context, filter InstanceFilter) (InstancePage, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

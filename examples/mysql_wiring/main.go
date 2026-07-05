@@ -161,7 +161,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(ownerCloser)
 
 	// Wrap the store in the caching store so hot instances are served from memory.
-	cachingStore, err := kernel.NewCachingStore(store, ownership)
+	cachingStore, err := kernel.NewCachingInstanceStore(store, ownership)
 	if err != nil {
 		return fmt.Errorf("caching store: %w", err)
 	}

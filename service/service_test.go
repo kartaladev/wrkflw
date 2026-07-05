@@ -30,7 +30,7 @@ type harness struct {
 	runner *runtime.ProcessDriver
 	tasks  *task.TaskService
 	reg    *kernel.MapDefinitionRegistry
-	store  *kernel.MemStore
+	store  *kernel.MemInstanceStore
 	lister kernel.InstanceLister
 	clk    *clockwork.FakeClock
 	// taskStore is directly accessible for verification.
@@ -121,7 +121,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	})
 	az := authz.RoleAuthorizer{}
 
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 
 	// Build the action catalog with a simple "greet" action.

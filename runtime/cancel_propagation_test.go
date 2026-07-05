@@ -89,7 +89,7 @@ func (c *countingCallLinkStore) listCount(parentID string) int {
 // cancelPropRunner builds a Runner with CallLinks + Definitions + HumanTasks wired.
 // The registry is populated with BOTH plain "defID" keys (for StartSubInstance
 // DefRef lookup) and "defID:version" keys (for propagateCancel's def resolution).
-func cancelPropRunner(t *testing.T, store *kernel.MemStore, cl *kernel.MemCallLinkStore, defs map[string]*model.ProcessDefinition) *runtime.ProcessDriver {
+func cancelPropRunner(t *testing.T, store *kernel.MemInstanceStore, cl *kernel.MemCallLinkStore, defs map[string]*model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 	reg := cancelPropRegistry(defs)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})

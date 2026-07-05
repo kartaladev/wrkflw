@@ -28,7 +28,7 @@ func TestOpenPostgresReturnsInterface(t *testing.T) {
 	// The returned value must satisfy persistence.Store (which embeds kernel.Store
 	// and kernel.JournalReader). Verify via type assertions — if the interface is
 	// not satisfied the assertions panic and the test fails.
-	_ = store.(kernel.Store)
+	_ = store.(kernel.InstanceStore)
 	_ = store.(kernel.JournalReader)
 
 	assert.NotNil(t, store)

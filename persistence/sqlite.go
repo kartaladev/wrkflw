@@ -63,7 +63,7 @@ type SQLiteCallLinkOption = store.CallLinkOption
 //	store, _ := persistence.OpenSQLite(ctx, db, persistence.WithHistoryCap(50))
 //	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
 //	if err != nil { log.Fatal(err) }
-func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (Store, error) {
+func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (InstanceStore, error) {
 	q, err := database.From(db)
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 // that was never held.
 //
 // This constructor exists so SQLite consumers can satisfy the ownership
-// parameter required by [kernel.NewCachingStore] while making the
+// parameter required by [kernel.NewCachingInstanceStore] while making the
 // unsupported-locking contract explicit. Ownership-dependent flows must guard
 // against [dialect.ErrUnsupported] and skip the exclusivity path when running
 // on SQLite.

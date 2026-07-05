@@ -74,7 +74,7 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		s, err := store.New(b.conn, b.dialect)
 		require.NoError(t, err)
-		var _ kernel.Store = s         // compile-time interface check
+		var _ kernel.InstanceStore = s // compile-time interface check
 		var _ kernel.JournalReader = s // compile-time JournalReader check
 
 		// --- Create → Load round-trip (with time round-trip) ---

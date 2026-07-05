@@ -94,7 +94,7 @@ func NewMySQLOwnership(ctx context.Context, db *sql.DB) (*AdvisoryLockOwnership,
 // is a no-op for an un-held lock.
 //
 // Use this constructor to satisfy the ownership parameter required by
-// [kernel.NewCachingStore] in single-node SQLite deployments. Ownership-dependent
+// [kernel.NewCachingInstanceStore] in single-node SQLite deployments. Ownership-dependent
 // flows must guard against [dialect.ErrUnsupported] and skip the ownership path
 // when running on SQLite.
 //

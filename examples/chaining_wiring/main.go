@@ -78,7 +78,7 @@ func main() {
 // store holds process-instance state; links persists chain lineage;
 // relay drains the transactional outbox; cleanup releases held resources.
 type backend struct {
-	store   persistence.Store
+	store   persistence.InstanceStore
 	links   kernel.ChainLinkStore
 	relay   persistence.Relay
 	cleanup func()

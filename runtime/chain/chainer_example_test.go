@@ -26,7 +26,7 @@ import (
 // this example drives Chainer.Handle directly so the output is deterministic.
 func ExampleChainer() {
 	ctx := context.Background()
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		panic(err)
 	}

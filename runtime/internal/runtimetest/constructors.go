@@ -28,16 +28,16 @@ import (
 )
 
 // MustMemStore builds a MemStore or fails the test. Keeps option-free call sites terse.
-func MustMemStore(t *testing.T, opts ...kernel.MemStoreOption) *kernel.MemStore {
+func MustMemStore(t *testing.T, opts ...kernel.MemInstanceStoreOption) *kernel.MemInstanceStore {
 	t.Helper()
-	m, err := kernel.NewMemStore(opts...)
+	m, err := kernel.NewMemInstanceStore(opts...)
 	require.NoError(t, err)
 	return m
 }
 
 // MustRunner builds a ProcessDriver with the given catalog and store, failing the
 // test on any error. A nil catalog defaults to an empty MapCatalog.
-func MustRunner(t *testing.T, cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
+func MustRunner(t *testing.T, cat action.Catalog, store kernel.InstanceStore, opts ...runtime.Option) *runtime.ProcessDriver {
 	t.Helper()
 	if cat == nil {
 		cat = action.NewMapCatalog(nil)
@@ -57,9 +57,9 @@ func MustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 }
 
 // MustCachingStore builds a CachingStore or fails the test.
-func MustCachingStore(t *testing.T, backing kernel.Store, owner kernel.Ownership, opts ...kernel.CachingStoreOption) *kernel.CachingStore {
+func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.Ownership, opts ...kernel.CachingInstanceStoreOption) *kernel.CachingInstanceStore {
 	t.Helper()
-	s, err := kernel.NewCachingStore(backing, owner, opts...)
+	s, err := kernel.NewCachingInstanceStore(backing, owner, opts...)
 	require.NoError(t, err)
 	return s
 }

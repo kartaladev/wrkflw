@@ -61,7 +61,7 @@ func ExampleProcessDriver_observability() {
 		}),
 	})
 
-	mem, err := kernel.NewMemStore()
+	mem, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		panic(err)
 	}

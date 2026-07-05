@@ -20,7 +20,7 @@ import (
 
 // Compile-time checks that *Store satisfies both persistence ports.
 var (
-	_ kernel.Store         = (*Store)(nil)
+	_ kernel.InstanceStore = (*Store)(nil)
 	_ kernel.JournalReader = (*Store)(nil)
 )
 

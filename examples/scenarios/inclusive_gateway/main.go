@@ -76,7 +76,7 @@ func main() {
 		"fraud-check":   mk("fraud-check", "fraud_checked"),
 	})
 
-	memSt, err := kernel.NewMemStore()
+	memSt, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
