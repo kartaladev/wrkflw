@@ -411,15 +411,17 @@ func TestRelayOutboxStats(t *testing.T) {
 // ── Run / ctx-cancel / goleak ─────────────────────────────────────────────────
 
 // TestRelayRun_ExitsOnCtxCancel verifies Run exits promptly on cancellation
-// with context.Canceled. Goleak is scoped to the Relay goroutine by capturing
-// the current goroutine snapshot before Run starts.
+// with context.Canceled on every dialect.
+//
+// The goroutine-leak assertion deliberately lives in TestRelayRun_NoGoroutineLeak
+// (a non-parallel, single-backend test) and NOT here: forEachDialect runs the
+// three backends as t.Parallel() subtests, so goleak.VerifyNone inside a subtest
+// cannot distinguish a real Relay leak from a sibling subtest's connection-pool
+// goroutines (database/sql connectionOpener, go-sql-driver/mysql startWatcher),
+// which are spawned after IgnoreCurrent()'s snapshot and torn down only at the
+// sibling's t.Cleanup.
 func TestRelayRun_ExitsOnCtxCancel(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		// Capture goroutines that exist before Run starts — pool background
-		// goroutines, sibling subtests, etc. — so goleak only checks Relay-owned
-		// goroutines.
-		opt := goleak.IgnoreCurrent()
-
 		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{},
 			store.WithRelayPollInterval(10*time.Millisecond),
 		)
@@ -438,10 +440,47 @@ func TestRelayRun_ExitsOnCtxCancel(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatalf("Run did not return within 2s after ctx cancel on %s", b.name)
 		}
-
-		// Verify the Relay goroutine exited cleanly (no leak).
-		goleak.VerifyNone(t, opt)
 	})
+}
+
+// TestRelayRun_NoGoroutineLeak verifies that Run's polling goroutine exits
+// cleanly on context cancellation, leaving no leaked goroutine.
+//
+// This assertion is dialect-independent — Run's shutdown path is identical on
+// every backend (SQLite has no Notifier, so the listenLoop goroutine is never
+// started; Run's only goroutine is the caller's, which returns on ctx.Done()).
+// It runs against the in-process SQLite backend and — crucially — is top-level
+// and NOT parallel: goleak.VerifyNone can only trust its snapshot when no
+// sibling test is concurrently spawning goroutines. The IgnoreCurrent snapshot
+// is taken AFTER the SQLite pool is opened so the pool's connectionOpener
+// goroutine is excluded; the only goroutine that must exit is Run's.
+func TestRelayRun_NoGoroutineLeak(t *testing.T) {
+	db := dbtest.RunTestSQLite(t)
+
+	// Snapshot after the pool is open (so its background goroutine is ignored)
+	// and before Run starts. Safe because this test does not run in parallel.
+	opt := goleak.IgnoreCurrent()
+
+	relay, err := store.NewRelay(db, dialect.NewSQLite(), &recordingRelayPub{},
+		store.WithRelayPollInterval(10*time.Millisecond),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- relay.Run(ctx) }()
+
+	time.Sleep(25 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled, "Run must return context.Canceled")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return within 2s after ctx cancel")
+	}
+
+	goleak.VerifyNone(t, opt)
 }
 
 // TestRelayRun_DeadlineExceeded verifies Run returns ctx.Err() on deadline expiry.
