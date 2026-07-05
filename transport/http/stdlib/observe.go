@@ -39,3 +39,10 @@ func (r *statusRecorder) WriteHeader(code int) {
 	}
 	r.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap exposes the wrapped ResponseWriter so http.NewResponseController (and
+// middleware that type-asserts for http.Flusher / http.Hijacker) can reach the
+// underlying writer's optional interfaces through the recorder.
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
