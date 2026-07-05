@@ -75,7 +75,7 @@ func TestMigrator_FacadeLifecycle_SQLite(t *testing.T) {
 	require.NoError(t, m.Up(ctx))
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), v)
+	assert.Equal(t, int64(2), v)
 
 	st, err := m.Status(ctx)
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestMigrator_Postgres_Introspection(t *testing.T) {
 	require.NoError(t, m.Up(ctx))
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(9), v, "Postgres migration head is 9")
+	assert.Equal(t, int64(10), v, "Postgres migration head is 10")
 
 	pending, err := m.HasPending(ctx)
 	require.NoError(t, err)
@@ -137,8 +137,8 @@ func TestMigrator_Postgres_Introspection(t *testing.T) {
 
 	st, err := m.Status(ctx)
 	require.NoError(t, err)
-	assert.Len(t, st, 9, "9 postgres migration sources")
-	assert.Equal(t, int64(9), st[len(st)-1].Version)
+	assert.Len(t, st, 10, "10 postgres migration sources")
+	assert.Equal(t, int64(10), st[len(st)-1].Version)
 }
 
 func TestMigrator_MySQL_Introspection(t *testing.T) {
@@ -150,7 +150,7 @@ func TestMigrator_MySQL_Introspection(t *testing.T) {
 
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), v, "MySQL migration head is 2")
+	assert.Equal(t, int64(3), v, "MySQL migration head is 3")
 
 	pending, err := m.HasPending(ctx)
 	require.NoError(t, err)
@@ -158,5 +158,5 @@ func TestMigrator_MySQL_Introspection(t *testing.T) {
 
 	st, err := m.Status(ctx)
 	require.NoError(t, err)
-	assert.Len(t, st, 2, "2 MySQL migration sources")
+	assert.Len(t, st, 3, "3 MySQL migration sources")
 }
