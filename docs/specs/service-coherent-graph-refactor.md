@@ -2,7 +2,9 @@
 
 - **Status:** Draft (design approved via brainstorming, 2026-07-06). Not yet implemented.
 - **Target ADR:** 0098 (next free).
-- **Scope:** the module-root `service` package public API. No engine/model changes expected.
+- **Scope:** the module-root `service` package public API, plus a new durable
+  `humantask.TaskStore` in `persistence` / `internal/persistence` (D6). No `engine`/`model`
+  changes expected.
 - **Breaking:** yes, throughout. Acceptable — pre-v0.1.0, clean break, no deprecated shims.
 
 ## Context
@@ -37,6 +39,8 @@
    `runtime.NewProcessDriver` — including a DEBUG construction summary.
 5. Introduce the previously-deferred **`WithDurableStore`** option, here in `service`, without
    leaking DB drivers into the `service` compile graph.
+6. Introduce a **durable SQL-backed `humantask.TaskStore`** so the durable graph has a persistent
+   task store (not just an in-memory one).
 
 ## Decisions
 
@@ -197,7 +201,7 @@ type DurableProvider interface {
     InstanceStore() kernel.InstanceStore
     Definitions()   kernel.DefinitionRegistry
     Lister()        kernel.InstanceLister
-    TaskStore()     humantask.TaskStore   // may return nil → in-mem fallback + WARN (D5)
+    TaskStore()     humantask.TaskStore   // durable SQL-backed store (D6)
     TimerStore()    kernel.TimerStore      // driver leaves; nil → in-mem
     CallLinkStore() kernel.CallLinkStore
 }
@@ -215,13 +219,57 @@ dialect-bound provider.
 **Precedence:** `WithDurableStore` applies first; finer overrides later in the option list may
 still replace an individual leaf (documented, last-writer-wins in option order).
 
-### D5 — Defaults for authorizer and durable task store
+### D5 — Default authorizer
 
 - **Default authorizer:** allow-all, flagged in the DEBUG construction summary as a non-durable
   dev default (consistent with the in-memory "just works, not for production" framing).
-- **Durable `humantask.TaskStore`:** none exists today. `DurableProvider.TaskStore()` may return
-  `nil`; `service` then keeps the in-memory task store and logs a WARN. A real durable task store
-  is a **separate follow-up**, out of scope here.
+
+### D6 — Durable `humantask.TaskStore` (in scope)
+
+A SQL-backed `humantask.TaskStore` is implemented as part of this refactor so
+`DurableProvider.TaskStore()` returns a **real durable store** (never nil in the durable path).
+It follows the neutral-store + dialect pattern (ADR-0081): one implementation over
+`database.Querier`, parametrized by `internal/persistence/dialect`, working on
+Postgres / MySQL / SQLite.
+
+**Interface to satisfy** (`humantask/humantask.go:111`):
+
+```go
+Upsert(ctx, t HumanTask) error
+Get(ctx, taskToken string) (HumanTask, error)          // miss → humantask.ErrTaskNotFound
+AssignedTo(ctx, actorID string) ([]HumanTask, error)   // sorted by TaskToken
+ClaimableBy(ctx, actor authz.Actor) ([]HumanTask, error)
+```
+
+**Table** `wrkflw_human_task` (added to the neutral schema + per-dialect DDL, covered by the
+existing cross-dialect schema-parity guardrail test):
+
+| column | type | notes |
+|---|---|---|
+| `task_token` | text PK | matches the engine token |
+| `instance_id` | text, indexed | parent process instance |
+| `node_id` | text | source BPMN node |
+| `state` | text, indexed | `TaskState.String()` — index supports the Unclaimed scan |
+| `claimed_by` | text | empty when unclaimed; index supports `AssignedTo` |
+| `eligibility` | json/jsonb/text | serialized `authz.AuthzSpec` |
+| `candidates` | json/jsonb/text | resolved actor IDs |
+| `vars` | json/jsonb/text | variable snapshot |
+| `created_at` | timestamptz | store as UTC (ADR-0080) |
+| `due_at` | timestamptz null | optional deadline |
+
+**Query strategy (portable):** `Upsert` is an idempotent insert-or-replace keyed on `task_token`
+(dialect `UpsertClause`). `Get` selects by PK. `AssignedTo` filters `claimed_by = ?` in SQL,
+ordered by `task_token`. `ClaimableBy` selects `state = 'unclaimed'` in SQL, then applies the
+same eligibility matching the `MemTaskStore` uses (actor ID ∈ candidates **OR** actor role ∩
+`Eligibility.Roles`) **in Go** — keeping the predicate dialect-agnostic; JSON columns are
+decoded per row. If `ClaimableBy` becomes a hot path, front it with a cache per the project's
+hot-path guidance (ADR-0073) — deferred until measured.
+
+**Placement:** implementation in `internal/persistence/store`; public constructors in
+`persistence`: `persistence.NewTaskStore(pool)` (Postgres) + MySQL / SQLite `*sql.DB` variants,
+each returning `humantask.TaskStore`. `persistence.NewDurableProvider` wires this into
+`TaskStore()`. A `use-mockgen` mock is unnecessary (the in-mem `MemTaskStore` and the SQL store
+both serve tests; conformance is exercised via `use-testcontainers` on all three dialects).
 
 ## Invariant — `service` stays DB-vendor-free (tested)
 
@@ -265,13 +313,18 @@ is in `persistence`, imported only by a consumer that *chooses* durability.
 - `WithDurableStore`: a fake `DurableProvider` wires all leaves; driver rebuilt from them;
   precedence with a later `WithInstanceStore` override.
 - Vendor-free invariant test (`go list -deps ./service`).
+- Durable `humantask.TaskStore` (D6): 3-dialect conformance via `use-testcontainers` —
+  Upsert/Get round-trip, `Get` miss → `ErrTaskNotFound`, `AssignedTo` filters by `claimed_by` and
+  sorts, `ClaimableBy` matches by candidate ID and by shared role and excludes claimed tasks;
+  JSON columns round-trip `Eligibility`/`Candidates`/`Vars`; behavioural parity with `MemTaskStore`.
 - Coverage ≥ 85% for `service`; `go test ./...` green; `golangci-lint` clean.
 
 ## Open items / follow-ups (out of scope)
 
-1. Durable `humantask.TaskStore` implementation (separate spec/ADR).
-2. Whether `ActionableView` should also become a `service`-owned self-serializing type.
-3. Whether `runtime/view` can be deleted after the full-snapshot path moves into `service`.
+1. Whether `ActionableView` should also become a `service`-owned self-serializing type.
+2. Whether `runtime/view` can be deleted after the full-snapshot path moves into `service`.
+3. Optional hot-path cache in front of the durable `TaskStore.ClaimableBy` (defer until measured,
+   ADR-0073).
 
 ## Verification checklist
 
@@ -282,7 +335,10 @@ is in `persistence`, imported only by a consumer that *chooses* durability.
 - [ ] `ProcessInstance` interface + `json.Marshaler` + unexported DTO + `NewProcessInstance`.
 - [ ] `GetInstanceWithDefinition` removed; single-instance methods return `ProcessInstance`.
 - [ ] `WithDurableStore(DurableProvider)` + graph-leaf override options.
-- [ ] `persistence.NewDurableProvider` (PG/MySQL/SQLite) implemented.
+- [ ] Durable `humantask.TaskStore` (D6): `wrkflw_human_task` table added to neutral schema +
+      per-dialect DDL; schema-parity guardrail test updated; `internal/persistence/store` impl;
+      `persistence.NewTaskStore` (PG/MySQL/SQLite); 3-dialect conformance via testcontainers.
+- [ ] `persistence.NewDurableProvider` (PG/MySQL/SQLite) implemented, wiring the durable TaskStore.
 - [ ] Vendor-free `go list -deps ./service` test passes.
 - [ ] All impacted call sites migrated (transports, examples, transporttest, tests).
 - [ ] ADR-0098 written (Nygard template).
