@@ -170,7 +170,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func main() {
@@ -185,7 +184,9 @@ func main() {
 		Build()
 
 	// Zero-argument: in-memory driver with action.DefaultCatalog() + kernel.NewMemInstanceStore().
-	// For a process with service tasks, supply a catalog via runtime.WithActionCatalog.
+	// For a process with service tasks, populate the default action catalog via action.Register /
+	// action.MustRegister. For a process with call activities, populate the default definition
+	// registry via runtime.RegisterDefinition / runtime.MustRegisterDefinition.
 	action.MustRegister("charge-card", action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 		return map[string]any{"charged": true}, nil
 	}))
@@ -491,6 +492,21 @@ if err != nil { log.Fatal(err) }
 
 When a `With*` option is omitted, the runner defaults to the OTel global provider
 (or noop) and `slog.Default()`.
+
+`NewProcessDriver` also emits exactly one `DEBUG`-level log record after the option loop
+completes, summarising which collaborators are wired:
+
+```
+DEBUG "ProcessDriver constructed"
+    store=in-memory(non-durable)|custom
+    catalog=default-global|custom
+    definitions=default-global|custom
+    humanTasks=on|off  scheduler=on|off  ...
+```
+
+`definitions=default-global` means the driver is using `runtime.DefaultDefinitionRegistry()`;
+`definitions=custom` means `runtime.WithDefinitions(reg)` was called with a non-nil registry.
+This log is suppressed in production unless the consumer enables debug logging.
 
 ---
 
@@ -1049,11 +1065,20 @@ def, _  := definition.NewBuilder("travel-booking", 1).
     Add(activity.NewSubProcess("reserve-hotel", hotel)).
     /* ... */ .Build()
 
-// Call activity (separate definition resolved by name):
-reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
-r, _   := runtime.NewProcessDriver(
+// Call activity (separate definition resolved by name).
+//
+// Option A — process-global default registry (zero-config, no WithDefinitions needed):
+runtime.MustRegisterDefinition(child) // registers under "credit-check" and "credit-check:1"
+r, _ := runtime.NewProcessDriver(
     runtime.WithActionCatalog(cat),
-    runtime.WithDefinitions(reg),
+    // driver uses runtime.DefaultDefinitionRegistry() automatically
+)
+
+// Option B — explicit per-driver registry (test isolation or multiple driver instances):
+reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
+r, _ = runtime.NewProcessDriver(
+    runtime.WithActionCatalog(cat),
+    runtime.WithDefinitions(reg), // nil is ignored; pass a non-nil registry to override
 )
 ```
 
