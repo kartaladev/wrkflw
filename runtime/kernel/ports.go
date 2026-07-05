@@ -70,7 +70,7 @@ type AppliedStep struct {
 // stale (a concurrent writer advanced the instance first).
 var ErrConcurrentUpdate = errors.New("workflow-runtime: concurrent update")
 
-// Store is the transactional persistence port the Runner depends on. Commit
+// Store is the transactional persistence port the ProcessDriver depends on. Commit
 // persists snapshot + journal + outbox atomically per applied trigger.
 type Store interface {
 	Create(ctx context.Context, step AppliedStep) (Token, error)

@@ -67,7 +67,7 @@ type ProcessDriver struct {
 	mpOpt  observability.Option
 
 	// obs carries the logger/tracer/meter and the pre-built process instruments.
-	// Always non-nil after NewRunner (defaults to noop providers + slog.Default()).
+	// Always non-nil after NewProcessDriver (defaults to noop providers + slog.Default()).
 	obs *driverObs
 
 	// msgMu guards msgWaiters.

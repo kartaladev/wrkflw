@@ -10,7 +10,7 @@ One or more of the following:
 - `WrkflwActionNonRetryableFailures` alert fires (any non-retryable failures detected).
 - Process instances are stalled; incidents visible on `GET /admin/instances/{id}/lineage`.
 
-Actions in the `wrkflw` engine are implementations of `ServiceAction` (HTTP calls, email
+Actions in the `wrkflw` engine are implementations of `action.Action` (HTTP calls, email
 sends, transforms, log actions, or consumer-custom implementations).  A failure may be
 retryable (the engine re-queues automatically up to the configured retry limit) or
 non-retryable (the engine immediately raises an incident and halts the instance's current
@@ -89,8 +89,9 @@ recover:
 1. Identify the root cause from the lineage response (`GET /admin/instances/{id}/lineage`).
 2. Fix the root cause (correct the process definition expression, fix the upstream, supply
    the missing variable, etc.).
-3. Resolve the incident via the gRPC `ResolveIncident` RPC (or the corresponding REST
-   endpoint) to allow the engine to retry or continue from the failed node.
+3. Resolve the incident via `POST /admin/instances/{id}/incidents/{incidentID}/resolve`
+   (or `service.Service.ResolveIncident`) to allow the engine to retry or continue from
+   the failed node.
 
 **High failure rate across many actions — check the engine's shared dependencies.**
 

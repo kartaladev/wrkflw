@@ -13,7 +13,7 @@ import (
 // The engine depends on this interface, not on a concrete evaluator, so a
 // consumer that must evaluate UNTRUSTED definitions can supply a
 // timeout-capable evaluator (see [StepOptions.Evaluator] and the runtime
-// Runner's WithExpressionTimeout / WithConditionEvaluator options) without the
+// ProcessDriver's WithExpressionTimeout / WithConditionEvaluator options) without the
 // default deterministic path acquiring any wall-clock dependency.
 //
 // The in-repo *expreval.Evaluator satisfies this interface.

@@ -103,7 +103,7 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 }
 
 // NewMySQLTimerStore returns a kernel.TimerStore backed by MySQL, for
-// Runner.RehydrateTimers. The db must already have migrations applied.
+// ProcessDriver.RehydrateTimers. The db must already have migrations applied.
 // Mirrors NewTimerStore for Postgres.
 //
 // Example:
@@ -280,7 +280,7 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.Owne
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	links := persistence.NewMySQLChainLinkStore(db)
-//	chainer, err := runtime.NewChainer(runner, policy, runtime.WithChainLinks(links))
+//	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 func NewMySQLChainLinkStore(db *sql.DB) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewMySQL())
 }

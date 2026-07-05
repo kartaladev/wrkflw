@@ -1,9 +1,9 @@
 # service
 
-Package `service` is the single **application-layer seam** between the transport
-adapters (REST, gRPC) and the workflow engine. Every operation is
-transport-neutral — request and result types carry no HTTP/gRPC concerns — so the
-REST and gRPC handlers are thin translators over this one interface.
+Package `service` is the single **application-layer seam** between the HTTP transport
+adapters (`transport/http/{stdlib,gin,fiber}`) and the workflow engine. Every operation is
+transport-neutral — request and result types carry no HTTP concerns — so the HTTP
+handlers are thin translators over this one interface.
 
 The package plays three roles:
 1. **Operation façade** — `Service` exposes the full consumer-facing operation
@@ -11,11 +11,12 @@ The package plays three roles:
    without a real engine.
 2. **Error normalization** — domain errors from `runtime`, `humantask`, `authz`,
    and `engine` are propagated as-is; `service.ErrConflict` is the only locally
-   defined sentinel. Transport layers classify them to HTTP status codes / gRPC
-   codes without needing to import every sub-package.
+   defined sentinel. Transport layers classify them to HTTP status codes (via
+   `httpcore.ClassifyError`) without needing to import every sub-package.
 3. **Admin port composition** — optional administrative capabilities (dead-letter
    management, timer inspection, lineage queries, policy management) are wired
-   separately via `With*Admin` options so a minimal deployment omits the overhead.
+   separately as fields on the adapter's `AdminRoutes` struct so a minimal deployment
+   omits the overhead.
 
 Import path: `github.com/zakyalvan/krtlwrkflw/service`
 
@@ -40,7 +41,7 @@ are propagated **as-is** so the transport layer can classify them.
 |---|---|---|---|
 | `StartInstance` | `StartInstanceRequest` | `(engine.InstanceState, error)` | Resolve the definition by `DefRef`, start a new instance, return the resulting state. |
 | `GetInstance` | `instanceID string` | `(engine.InstanceState, error)` | Load the current state of an existing instance. |
-| `GetInstanceWithDefinition` | `instanceID string` | `(engine.InstanceState, *definition.ProcessDefinition, error)` | Load state **and** resolve its definition (for building a snapshot / actionable view). |
+| `GetInstanceWithDefinition` | `instanceID string` | `(engine.InstanceState, *model.ProcessDefinition, error)` | Load state **and** resolve its definition (for building a snapshot / actionable view). |
 | `DeliverSignal` | `DeliverSignalRequest` | `(engine.InstanceState, error)` | Deliver a `SignalReceived` trigger to a parked instance. `ErrConflict` if terminal. |
 | `DeliverMessage` | `DeliverMessageRequest` | `error` | Route a message to the waiting instance via the runner's waiter table. |
 | `ClaimTask` | `ClaimTaskRequest` | `(engine.InstanceState, error)` | Authorize + claim a human task, deliver the trigger, return state. |
@@ -56,13 +57,13 @@ are propagated **as-is** so the transport layer can classify them.
 
 ```go
 func New(
-    runner    *runtime.Runner,           // 1. required
-    tasks     *runtime.TaskService,       // 2. required
-    reg       runtime.DefinitionRegistry, // 3. required
-    store     runtime.Store,              // 4. required
-    lister    runtime.InstanceLister,     // 5. required
-    taskStore humantask.TaskStore,        // 6. required
-    opts      ...EngineOption,            //    optional
+    runner    *runtime.ProcessDriver,    // 1. required
+    tasks     *task.TaskService,         // 2. required
+    reg       kernel.DefinitionRegistry, // 3. required
+    store     kernel.Store,              // 4. required
+    lister    kernel.InstanceLister,     // 5. required
+    taskStore humantask.TaskStore,       // 6. required
+    opts      ...EngineOption,           //    optional
 ) *Engine
 ```
 
@@ -70,11 +71,11 @@ The six required collaborators must be wired by hand (no DI container is imposed
 
 | # | Parameter | Type | Role |
 |---|---|---|---|
-| 1 | `runner` | `*runtime.Runner` | Drives execution — `Run` / `Deliver` / `DeliverMessage` / `ResolveIncident` / `CancelInstance`. |
-| 2 | `tasks` | `*runtime.TaskService` | Authorizes human-task ops and returns the resulting engine trigger (`Claim`/`Complete`/`Reassign`). |
-| 3 | `reg` | `runtime.DefinitionRegistry` | Resolves `DefRef` strings to `*definition.ProcessDefinition`. |
-| 4 | `store` | `runtime.Store` | Loads instance state for `GetInstance` and definition resolution. |
-| 5 | `lister` | `runtime.InstanceLister` | Enumerates instance summaries for `ListInstances`. |
+| 1 | `runner` | `*runtime.ProcessDriver` | Drives execution — `Run` / `Deliver` / `DeliverMessage` / `ResolveIncident` / `CancelInstance`. |
+| 2 | `tasks` | `*task.TaskService` (`runtime/task`) | Authorizes human-task ops and returns the resulting engine trigger (`Claim`/`Complete`/`Reassign`). |
+| 3 | `reg` | `kernel.DefinitionRegistry` (`runtime/kernel`) | Resolves `DefRef` strings to `*model.ProcessDefinition`. |
+| 4 | `store` | `kernel.Store` | Loads instance state for `GetInstance` and definition resolution. |
+| 5 | `lister` | `kernel.InstanceLister` | Enumerates instance summaries for `ListInstances`. |
 | 6 | `taskStore` | `humantask.TaskStore` | Resolves the owning instance ID from a task token in task-lifecycle ops. |
 
 > **Registry key contract:** the `DefinitionRegistry` must be keyed by
@@ -93,13 +94,13 @@ lister, _  := persistence.NewLister(pool)
 az, _, _ := casbinauthz.NewCasbinAuthorizer(
     casbinauthz.FromStrings(modelText, policyText))
 
-// 3. Build the runner:
-reg := runtime.NewMapDefinitionRegistry(map[string]*definition.ProcessDefinition{...})
-cat := action.NewMapCatalog(map[string]action.ServiceAction{...})
-runner, _ := runtime.NewRunner(cat, pgStore, runtime.WithDefinitions(reg))
+// 3. Build the process driver:
+reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{...})
+cat := action.NewMapCatalog(map[string]action.Action{...})
+runner, _ := runtime.NewProcessDriver(cat, pgStore, runtime.WithDefinitions(reg))
 
 // 4. Build TaskService:
-tasks, _ := runtime.NewTaskService(taskStore, az)
+tasks, _ := task.NewTaskService(taskStore, az)
 
 // 5. Assemble the service:
 svc := service.New(runner, tasks, reg, pgStore, lister, taskStore)
@@ -186,11 +187,11 @@ from their owning packages so the transport layer classifies them uniformly.
 
 | Sentinel | Meaning | Returned when |
 |---|---|---|
-| `ErrConflict` | Wrong-state operation against an instance/task. Transports map it to HTTP 422 / gRPC `FailedPrecondition`. The cause is wrapped, so `errors.Is(err, ErrConflict)` holds. | `DeliverSignal`/`CancelInstance` on a terminal instance; a task that is not open or whose instance is terminal; an `engine.ErrInvalidTransition` from a task trigger. |
+| `ErrConflict` | Wrong-state operation against an instance/task. Transports map it to HTTP 422. The cause is wrapped, so `errors.Is(err, ErrConflict)` holds. | `DeliverSignal`/`CancelInstance` on a terminal instance; a task that is not open or whose instance is terminal; an `engine.ErrInvalidTransition` from a task trigger. |
 
-Propagated (defined elsewhere, classified by transports): `runtime.ErrInstanceNotFound`
-(→ 404 / `NotFound`), `runtime.ErrDefinitionNotFound`, `authz.ErrNotAuthorized`
-(→ 403 / `PermissionDenied`), `runtime.ErrConcurrentUpdate` (→ 409 / `Aborted`),
+Propagated (defined elsewhere, classified by `httpcore.ClassifyError`): `runtime.ErrInstanceNotFound`
+(→ HTTP 404), `runtime.ErrDefinitionNotFound`, `authz.ErrNotAuthorized`
+(→ HTTP 403), `runtime.ErrConcurrentUpdate` (→ HTTP 409),
 `humantask.ErrTaskNotFound`.
 
 ---
@@ -198,8 +199,11 @@ Propagated (defined elsewhere, classified by transports): `runtime.ErrInstanceNo
 ## Admin ports
 
 Optional, single-method-ish interfaces the transports mount **separately** from
-`Service` (each behind its own `With*Admin` option and the transport's default-deny
-gate). A consumer wires only the ports its infrastructure supports.
+`Service`. Each is supplied as a **field on the adapter's `AdminRoutes` struct**
+(`transport/http/{stdlib,gin,fiber}`); a field left nil simply does not register its
+routes. Admin routes are **default-absent by composition** (ADR-0095) — they exist only
+when you mount `AdminRoutes` on a router group your own auth middleware already protects.
+A consumer wires only the ports its infrastructure supports.
 
 ### `DeadLetterAdmin` (`deadletter.go`)
 
@@ -209,7 +213,7 @@ gate). A consumer wires only the ports its infrastructure supports.
 | `Redrive` | `(ctx, ids ...int64) (int, error)` | Reset the given dead rows to pending; returns the count re-queued (no ids → `(0, nil)`). |
 
 Satisfied by the outbox **relay** (`persistence.Relay`, whose methods are a superset).
-Wired via `transport/{rest,grpc}.WithDeadLetterAdmin`.
+Wired via the `AdminRoutes.DeadLetters` field.
 
 ### `RelayStatsAdmin` (`opsadmin.go`)
 
@@ -217,7 +221,7 @@ Wired via `transport/{rest,grpc}.WithDeadLetterAdmin`.
 |---|---|---|
 | `OutboxStats` | `(ctx) (runtime.OutboxStats, error)` | Outbox health snapshot (pending count, dead count, oldest-pending age). |
 
-Satisfied by the relay. Wired via `WithRelayStatsAdmin`.
+Satisfied by the relay. Wired via the `AdminRoutes.RelayStats` field.
 
 ### `TimerAdmin` (`opsadmin.go`)
 
@@ -227,7 +231,7 @@ Satisfied by the relay. Wired via `WithRelayStatsAdmin`.
 | `ListArmed` | `(ctx) ([]runtime.ArmedTimer, error)` | All armed timers, in `(FireAt, InstanceID, TimerID)` order. |
 
 Satisfied by the persistence `TimerStore` (Postgres/MySQL/SQLite). `runtime.MemTimerStore`
-implements only `ListArmed`, so it is **not** a full `TimerAdmin`. Wired via `WithTimerAdmin`.
+implements only `ListArmed`, so it is **not** a full `TimerAdmin`. Wired via the `AdminRoutes.Timers` field.
 
 ### `LineageAdmin` (`lineage.go`)
 
@@ -235,7 +239,7 @@ implements only `ListArmed`, so it is **not** a full `TimerAdmin`. Wired via `Wi
 |---|---|---|
 | `Lineage` | `(ctx, instanceID string) (runtime.InstanceLineage, error)` | Single-hop lineage: call parent (nil when root), call children, chain predecessor, chain successors. |
 
-Satisfied by `*runtime.LineageReader`. Wired via `WithLineageAdmin`.
+Satisfied by `*runtime.LineageReader`. Wired via the `AdminRoutes.Lineage` field.
 
 ### `PolicyAdmin` (`policyadmin.go`)
 
@@ -255,4 +259,4 @@ interface consistency; the casbin implementation runs synchronously and ignores 
 | `ListRoles` | `(ctx) ([]RoleBinding, error)` | All role-inheritance rules in effect. |
 
 Satisfied by the casbin policy admin, obtained via
-`casbinauthz.PolicyAdminFor(authz.Authorizer) (service.PolicyAdmin, bool)`. Wired via `WithPolicyAdmin`.
+`casbinauthz.PolicyAdminFor(authz.Authorizer) (service.PolicyAdmin, bool)`. Wired via the `AdminRoutes.Policies` field.

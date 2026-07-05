@@ -17,14 +17,14 @@ Every interaction obeys the same three-part contract:
 ```mermaid
 sequenceDiagram
     participant E as engine (pure)
-    participant R as runtime (Runner)
+    participant R as runtime (ProcessDriver)
     participant P as ports / impls
 
     E->>R: 1. emits a Command (names a value type, never does I/O)
-    R->>P: 2. Runner.perform() fulfils it via an injected port<br/>(Scheduler, TaskStore, Publisher, CallLinkStore, …)
+    R->>P: 2. ProcessDriver.perform() fulfils it via an injected port<br/>(Scheduler, TaskStore, Publisher, CallLinkStore, …)
     P-->>R: 3. the port produces a Trigger (later, async, or in the same call)
     Note over P: async / deferred
-    R->>E: 4. Runner.Deliver(trigger) re-enters the engine<br/>(journalled, CAS-guarded)
+    R->>E: 4. ProcessDriver.Deliver(trigger) re-enters the engine<br/>(journalled, CAS-guarded)
     Note over E: engine.Step advances the parked token
 ```
 
@@ -33,9 +33,9 @@ Load-bearing invariants:
 - The **engine core never touches a clock, scheduler, broker, store, or catalog.**
   It emits commands that *name* value types and parks tokens on a `CommandID` /
   timer ID; it depends on interfaces only.
-- The **runtime `Runner` owns every port.** It is the single adapter that turns a
+- The **runtime `ProcessDriver` owns every port.** It is the single adapter that turns a
   command into an effect and turns an effect's result back into a trigger.
-- **Everything re-enters through `Runner.Deliver`**, keyed by the parked token's
+- **Everything re-enters through `ProcessDriver.Deliver`**, keyed by the parked token's
   `AwaitCommand`. A person claiming a task, a timer firing, a retry, a child
   instance completing, and an incident being resolved are all indistinguishable
   to the engine — each is just a `Trigger` applied by one `Step`.
@@ -71,7 +71,7 @@ earlier flows are summarized for cross-reference.
 **Why this seam exists.** The engine must never do I/O: it cannot call a user
 directory, persist a task record, or evaluate a policy. Instead it emits `AwaitHuman`
 carrying only a typed value (`TaskToken`, `Eligibility`) and parks the token.
-`runtime.Runner` owns all the side effects: it resolves candidates, writes the task
+`runtime.ProcessDriver` owns all the side effects: it resolves candidates, writes the task
 record, and later reads it back to authorize the claim. `runtime.TaskService` is the
 authorization adapter exposed to transport layers so the engine core remains untouched
 by any authorization SDK.
@@ -81,7 +81,7 @@ by any authorization SDK.
 `humantask/taskstore.go` (port interface), `authz/authz.go` (Authorizer interface).
 
 `humantask/` holds pure types + ports; `runtime.TaskService` is the behavioural
-adapter. The `Runner` writes tasks into a `humantask.TaskStore`; `TaskService`
+adapter. The `ProcessDriver` writes tasks into a `humantask.TaskStore`; `TaskService`
 reads from it to authorize actor actions.
 
 ```mermaid
@@ -106,11 +106,11 @@ sequenceDiagram
     AZ-->>R: authorized
     R->>R: engine.NewHumanClaimed(...)
     Note over R: Trigger
-    R->>E: Runner.Deliver(trigger) → Step advances token
+    R->>E: ProcessDriver.Deliver(trigger) → Step advances token
 ```
 
 **Guarantees and ownership:**
-- `humantask.TaskStore` is the meeting point: `Runner` writes through it
+- `humantask.TaskStore` is the meeting point: `ProcessDriver` writes through it
   (`runner.go` `AwaitHuman` case), `TaskService` reads through it
   (`runtime/taskservice.go`). The store owns persistence; the runner never re-reads
   its own write — the next read happens during claim/complete.
@@ -150,7 +150,7 @@ sequenceDiagram
     Note over S: ⏰ fireAt reached
     S-->>R: fire() callback
     R->>R: engine.NewTimerFired(now, id)
-    R->>E: Runner.Deliver(...) → Step advances the token
+    R->>E: ProcessDriver.Deliver(...) → Step advances the token
 ```
 
 **Guarantees and ownership:**
@@ -185,7 +185,7 @@ for the `msgWaiters` update), `runtime/broadcast.go` (`SignalBus`),
 
 Two directions, two ports.
 
-**Inbound** — a transport calls `Runner.DeliverMessage(name, correlationKey)`,
+**Inbound** — a transport calls `ProcessDriver.DeliverMessage(name, correlationKey)`,
 which correlates to a parked instance via an internal `msgWaiters` index (synced
 after each `deliverLoop`) and injects `engine.MessageReceived`. No matching waiter
 is a clean no-op.
@@ -206,21 +206,21 @@ sequenceDiagram
     else found(instanceID)
         MW-->>R: instanceID
         R->>R: engine.NewMessageReceived(now, name, corrKey, payload)
-        R->>E: Runner.Deliver(def, instanceID, trg) → Step fires the message-boundary event
+        R->>E: ProcessDriver.Deliver(def, instanceID, trg) → Step fires the message-boundary event
     end
 ```
 
 **Guarantees and ownership (inbound):** `msgWaiters` is an in-memory map; it is
 rebuilt from `InstanceState` after every `deliverLoop` pass. It survives restarts
-only if the consumer calls `Runner.Sync` on process startup (not currently
+only if the consumer calls `ProcessDriver.Sync` on process startup (not currently
 exposed — the `MemStore` path is restart-free by construction; the SQL-backed path
 relies on a fresh `Run`/`Deliver` call per instance to re-register). A message with
 no waiter is silently dropped — the transport is responsible for retry if the
 receive task has not yet armed.
 
-**Outbound** — `engine.ThrowSignal` → `Runner.perform` → `SignalBus.Publish`,
+**Outbound** — `engine.ThrowSignal` → `ProcessDriver.perform` → `SignalBus.Publish`,
 which fans out to subscribed instances through an injected `DeliverFunc` (wrapping
-`Runner.Deliver`). `engine.SendMessage` is purely a transactional-outbox event
+`ProcessDriver.Deliver`). `engine.SendMessage` is purely a transactional-outbox event
 (see flow 7) — `perform` returns `nil, nil`.
 
 ```mermaid
@@ -234,7 +234,7 @@ sequenceDiagram
     R->>SB: sigbus.Publish(name, payload)
     Note over SB: fan-out to Subscribe(id, name) subscribers
     SB-->>R: deliver(ctx, id, trg) per subscriber
-    R->>E: Runner.Deliver(...) back into each waiting instance
+    R->>E: ProcessDriver.Deliver(...) back into each waiting instance
 
     Note over E,R: SendMessage path
     E->>R: SendMessage {Name, CorrelationKey, Payload}
@@ -243,7 +243,7 @@ sequenceDiagram
 
 **Guarantees and ownership (outbound signals):** `SignalBus.Publish` is synchronous
 and in-process: all subscribed `DeliverFunc` callbacks run before `Publish` returns.
-Subscription is per `(instanceID, signalName)` pair; `Runner.Sync` re-registers
+Subscription is per `(instanceID, signalName)` pair; `ProcessDriver.Sync` re-registers
 after each `deliverLoop`. If `Deliver` fails for a given subscriber the error is
 returned from `Publish`, the signal delivery attempt counts as failed, and the
 engine records the throw command as failed — no at-least-once guarantee for signals.
@@ -270,7 +270,7 @@ PHASE 1 — forward: each activity with a CompensationAction appends a
           (oldest-first). Sub-process scopes archive theirs on close.
 
 PHASE 2 — rollback (admin CompensateRequested trigger, or cancel/error path):
-   Runner.Deliver(trigger) ─► stepCompensateRequested → beginCompensation:
+   ProcessDriver.Deliver(trigger) ─► stepCompensateRequested → beginCompensation:
      ├─ consolidate archived sub-process records
      ├─ cancel in-flight tokens
      ├─ walk records reverse (len-1 → 0), emit ONE InvokeAction at a time
@@ -300,8 +300,8 @@ but the timer that defers re-invocation is a side effect. The engine emits
 `ScheduleTimer{TimerRetry}` and parks; the runtime arms it via the same `Scheduler`
 port used by all timers. Incidents are persisted inside `InstanceState.Incidents` —
 no external port is needed to raise one — but clearing an incident requires an
-external trigger (`ResolveIncident`) from an admin flow (REST/gRPC or direct
-`Runner.ResolveIncident` call).
+external trigger (`ResolveIncident`) from an admin flow (the HTTP admin route or a direct
+`ProcessDriver.ResolveIncident` call).
 
 **Files to read:** `engine/step_timers.go` (`handleTimerFired`, `reinvokeServiceAction`),
 `engine/step_triggers.go` (`handleActionFailed`, `handleResolveIncident`),
@@ -319,7 +319,7 @@ InvokeAction fails → ActionFailed{Retryable} ─► handleActionFailed:
         (2) error boundary handler   → propagateError catches
         (3) no handler               → raise Incident, PARK token (instance stays alive)
                                               │
-                admin: Runner.ResolveIncident ▼ → ResolveIncident trigger
+                admin: ProcessDriver.ResolveIncident ▼ → ResolveIncident trigger
                   → clear incident, grant budget, reinvokeServiceAction (same InvokeAction)
 ```
 
@@ -377,14 +377,14 @@ token reaches KindSubProcess node
 ```
 
 **Call activity (sync, no `CallLinkStore`)** runs the child to completion inline
-through the same `Runner` and translates the child's terminal status into the
+through the same `ProcessDriver` and translates the child's terminal status into the
 resume trigger in the same `perform` call. A child that *parks* returns a
 diagnosable `SubInstanceFailed` (sync mode can't re-enter a parked child).
 
 ```mermaid
 sequenceDiagram
     participant EP as engine (parent)
-    participant R as runtime (Runner.perform)
+    participant R as runtime (ProcessDriver.perform)
 
     Note over EP: KindCallActivity node
     EP->>R: StartSubInstance {cmdID, DefRef, Input(copy)}
@@ -418,7 +418,7 @@ bounded via `LookupChild` even for recursive definitions.
 ```mermaid
 sequenceDiagram
     participant EP as engine (parent)
-    participant R as runtime (Runner.perform)
+    participant R as runtime (ProcessDriver.perform)
     participant CLS as CallLinkStore
     participant CN as CallNotifier
 
@@ -485,14 +485,14 @@ never lost and never published without its state change also committing.
 
 ### 7a. Write side — events derived and committed atomically with state
 
-The engine does **not** emit an explicit "publish" command. Instead, the `Runner`
+The engine does **not** emit an explicit "publish" command. Instead, the `ProcessDriver`
 *derives* outbox events from the step's result at the terminal / send edge, and
 hands them to `Store.Commit` inside the **same transaction** as the new snapshot
 and journal append.
 
 ```mermaid
 sequenceDiagram
-    participant R as Runner.deliverLoop
+    participant R as ProcessDriver.deliverLoop
     participant OB as runtime/outbox.go
     participant SC as Store.Commit
 
@@ -604,7 +604,7 @@ stays watermill-free:
   returning a `runtime.Publisher`, a `message.Subscriber`, and an `io.Closer`.
   Useful for tests and single-process deployments.
 - **`eventing.NewMessageHandler`** — consume `message.*` events (from `SendTask`)
-  and deliver them to a parked `ReceiveTask` via `Runner.DeliverMessage` (closing
+  and deliver them to a parked `ReceiveTask` via `ProcessDriver.DeliverMessage` (closing
   the loop back to flow 3).
 - **`eventing.NewChainHandler` / `NewChainerRunner`** — process-instance chaining
   (ADR-0045): subscribe the three status-accurate terminal topics
@@ -614,11 +614,11 @@ stays watermill-free:
 ### Where it sits in the unifying pattern
 
 The outbox flow is the pattern **run one-way**: the engine still never imports a
-broker; the `Runner` derives events and commits them through the `Store` port
+broker; the `ProcessDriver` derives events and commits them through the `Store` port
 (atomic with state); a separate `Relay` process turns committed rows into
 `Publisher` calls with at-least-once delivery, poison isolation, and a DLQ. The
 only difference from the wake-up flows is that the result is a message on a broker
-rather than a `Trigger` re-entering `Runner.Deliver` — though a consumer's
+rather than a `Trigger` re-entering `ProcessDriver.Deliver` — though a consumer's
 subscriber (message handler, chainer) frequently *does* loop an event back into
 the engine as the next interaction.
 
@@ -646,19 +646,19 @@ A constructor returns `T` (no error) when:
 
 | Constructor | Sentinel when nil dep |
 |---|---|
-| `runtime.NewRunner(cat, store, opts...)` | `runtime.ErrNilDependency` |
-| `runtime.NewTaskService(store, az, opts...)` | `runtime.ErrNilDependency` |
-| `runtime.NewCachingStore(backing, owner, opts...)` | `runtime.ErrNilDependency` |
-| `runtime.NewCachingDefinitionRegistry(backing, ttl, opts...)` | `runtime.ErrNilDependency` |
-| `runtime.NewSignalBus(deliver, opts...)` | `runtime.ErrNilDependency` |
-| `runtime.NewCallNotifier(cl, deliver, reg, opts...)` | `runtime.ErrNilDependency` |
-| `runtime.NewChainer(starter, policy, opts...)` | `runtime.ErrNilDependency` |
-| `runtime.NewLineageReader(calls, chains)` | `runtime.ErrNilDependency` |
-| `runtime.NewMemStore(opts...)` | `runtime.ErrNilDependency` (option validation) |
+| `runtime.NewProcessDriver(cat, store, opts...)` | `kernel.ErrNilDependency` |
+| `task.NewTaskService(store, az, opts...)` | `kernel.ErrNilDependency` |
+| `kernel.NewCachingStore(backing, owner, opts...)` | `kernel.ErrNilDependency` |
+| `kernel.NewCachingDefinitionRegistry(backing, ttl, opts...)` | `kernel.ErrNilDependency` |
+| `signal.NewSignalBus(deliver, opts...)` | `kernel.ErrNilDependency` |
+| `calllink.NewCallNotifier(cl, deliver, reg, opts...)` | `kernel.ErrNilDependency` |
+| `chain.NewChainer(starter, policy, opts...)` | `kernel.ErrNilDependency` |
+| `monitor.NewLineageReader(calls, chains)` | `kernel.ErrNilDependency` |
+| `kernel.NewMemStore(opts...)` | `kernel.ErrNilDependency` (option validation) |
 | `internal/persistence/store` constructors | `store.ErrNilDependency` |
 
 Sentinel values:
-- `runtime.ErrNilDependency` = `"workflow-runtime: nil required dependency"` (in `runtime/errors_construct.go`)
+- `kernel.ErrNilDependency` = `"workflow-runtime: nil required dependency"` (in `runtime/kernel/errors_construct.go`)
 - `store.ErrNilDependency` = `"workflow-store: nil required dependency"` (internal; exposed via persistence façade errors)
 
 Both follow the `"workflow-<package>: ..."` prefix convention (ADR-0026).
@@ -667,18 +667,17 @@ Both follow the `"workflow-<package>: ..."` prefix convention (ADR-0026).
 
 Three APIs consolidated multiple old constructors into a single constructor plus options:
 
-**`runtime.NewMemStore(opts ...MemStoreOption) (*MemStore, error)`**
+**`kernel.NewMemStore(opts ...MemStoreOption) (*MemStore, error)`**
 
-Replaces the old `NewMemStore()` / `NewMemStoreWithCallLinks(cl)` / `NewMemStoreWithTimers(mts)`.
-Options: `runtime.WithCallLinks(cl *MemCallLinkStore)`, `runtime.WithTimers(mts *MemTimerStore)`.
+Options: `kernel.WithCallLinks(cl *MemCallLinkStore)`, `kernel.WithTimers(mts *MemTimerStore)`.
 Either, both, or neither may be passed; the zero-option call tracks neither.
 
 ```go
-cl  := runtime.NewMemCallLinkStore()
-mts := runtime.NewMemTimerStore()
-store, err := runtime.NewMemStore(
-    runtime.WithCallLinks(cl),
-    runtime.WithTimers(mts),
+cl  := kernel.NewMemCallLinkStore()
+mts := kernel.NewMemTimerStore()
+store, err := kernel.NewMemStore(
+    kernel.WithCallLinks(cl),
+    kernel.WithTimers(mts),
 )
 ```
 
@@ -703,7 +702,7 @@ call `closer.Close()` if non-nil.
 ### When a constructor does NOT return an error
 
 Value types, triggers, and stateless helpers keep their simple form:
-- `model.NewDefinition(id, version)` — returns `DefinitionBuilder` (no deps, no I/O).
+- `definition.NewBuilder(id, version)` — returns `*build.Builder` (no deps, no I/O).
 - `engine.NewStartInstance(at, vars)` — returns an `engine.StartInstance` value.
 - `action.NewMapCatalog(m)` — stateless read-only wrapper (no required interface).
 - `humantask.NewMemTaskStore()` — no required non-nilable dep.
@@ -712,19 +711,29 @@ Value types, triggers, and stateless helpers keep their simple form:
 
 ## 9. Builder vs. Loader
 
-`model` provides two interfaces for constructing a `*ProcessDefinition`: one for
-Go-authored definitions, one for YAML-loaded ones. They share the same underlying
-`definitionCore` and differ only in what they expose.
+The `definition` root package is a thin authoring aggregator with two entry points,
+one for Go-authored definitions and one for YAML-loaded ones. Both produce a
+`*model.ProcessDefinition`; the underlying `model.DefinitionBuilder` /
+`model.DefinitionLoader` interfaces (in `definition/model`) share the same core and
+differ only in what they expose.
 
-### `DefinitionBuilder` — full authoring surface
+### `definition.NewBuilder` — full authoring surface
+
+`definition.NewBuilder(id, version)` returns the **concrete** `*build.Builder`, which
+layers one fluent `Add<Kind>` per node kind over the node-agnostic
+`model.DefinitionBuilder` interface:
 
 ```go
+// Concrete *build.Builder (definition/build): fluent per-kind sugar + the interface below.
+func (b *Builder) AddServiceTask(id string, opts ...activity.ServiceTaskOption) *Builder
+func (b *Builder) AddUserTask(id string, roles []string, opts ...activity.UserTaskOption) *Builder
+// ... one AddX per node kind (event / gateway / activity) ...
+
+// Underlying model.DefinitionBuilder interface (definition/model), node-agnostic:
 type DefinitionBuilder interface {
     Add(n Node) DefinitionBuilder
-    AddServiceTask(id string, opts ...serviceTaskOption) DefinitionBuilder
-    // ... one AddX per node kind ...
-    Connect(fromID, toID string, opts ...FlowOption) DefinitionBuilder
-    RegisterAction(name string, a action.ServiceAction) DefinitionBuilder
+    Connect(fromID, toID string, opts ...flow.Option) DefinitionBuilder
+    RegisterAction(name string, a action.Action) DefinitionBuilder
     RegisterActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) DefinitionBuilder
     CancelActions(names ...string) DefinitionBuilder
     Build() (*ProcessDefinition, error)
@@ -732,24 +741,25 @@ type DefinitionBuilder interface {
 }
 ```
 
-`NewDefinition(id, version)` returns a `DefinitionBuilder`. Structural elements
-(nodes, flows) and action registrations can be chained in any order — both the
-"actions-first" and "structure-first" idioms compile identically because every
-mutating method returns `DefinitionBuilder`. `Build()` assembles, validates, and
-locks the scoped action catalog.
+Structural elements (nodes, flows) and action registrations can be chained in any
+order — both the "actions-first" and "structure-first" idioms compile identically
+because every mutating method returns the builder. `Build()` assembles, validates,
+and locks the scoped action catalog. (A lower-level `model.NewBuilder(id, version)`
+returns the node-agnostic interface — `Add` only, no per-kind sugar — for programmatic
+construction.)
 
-### `DefinitionLoader` — post-parse, actions only
+### `model.DefinitionLoader` — post-parse, actions only
 
 ```go
 type DefinitionLoader interface {
-    RegisterAction(name string, a action.ServiceAction) DefinitionLoader
+    RegisterAction(name string, a action.Action) DefinitionLoader
     RegisterActionFunc(name string, fn func(...) (...)) DefinitionLoader
     CancelActions(names ...string) DefinitionLoader
     Build() (*ProcessDefinition, error)
 }
 ```
 
-`ParseYAML(data []byte)` and `LoadYAML(r io.Reader)` return a `DefinitionLoader`.
+`definition.NewLoader(r io.Reader)` parses the YAML and returns a `DefinitionLoader`.
 The structural elements (nodes, flows, kind, options) are all decoded from YAML —
 the `DefinitionLoader` has no `Add*` or `Connect` methods because the structure is
 already declared. It exposes only what YAML cannot carry: **runtime action
@@ -762,7 +772,7 @@ function. The load → register-actions → `Build()` sequence is therefore mand
 for any YAML-loaded definition that uses definition-scoped actions:
 
 ```go
-ld, err := model.ParseYAML(data)
+ld, err := definition.NewLoader(r) // r is any io.Reader
 if err != nil {
     return err
 }
@@ -778,20 +788,20 @@ definition uses the global catalog only). Registering the same name twice return
 
 ### The `Loader()` bridge
 
-`DefinitionBuilder` exposes a `.Loader()` method that returns a `DefinitionLoader`
+The builder exposes a `.Loader()` method that returns a `model.DefinitionLoader`
 backed by the same core. This allows passing a builder to code that only needs the
 loader API (e.g. a test helper that only registers actions):
 
 ```go
-b := model.NewDefinition("order", 1).
-    AddServiceTask("charge", model.WithActionName("charge-card"))
+b := definition.NewBuilder("order", 1).
+    AddServiceTask("charge", activity.WithActionName("charge-card"))
 // hand off to a helper that knows nothing about the structure:
 myHelper(b.Loader())
 ```
 
 ### Summary
 
-| | `NewDefinition` → `DefinitionBuilder` | `ParseYAML`/`LoadYAML` → `DefinitionLoader` |
+| | `definition.NewBuilder` → `*build.Builder` | `definition.NewLoader` → `DefinitionLoader` |
 |---|---|---|
 | Adds nodes | Yes (`Add`, `AddX`) | No (declared in YAML) |
 | Adds flows | Yes (`Connect`) | No (declared in YAML) |
@@ -799,8 +809,9 @@ myHelper(b.Loader())
 | Calls `Build()` | Yes | Yes (mandatory) |
 | Typical use | Go-authored definitions, tests | Config-driven pipelines |
 
-**Files to read:** `model/builder.go` (interfaces + `definitionCore`),
-`model/yaml.go` (`ParseYAML`, `LoadYAML`, `definitionLoader` wrapper).
+**Files to read:** `definition/build/build.go` (fluent builder + per-kind sugar),
+`definition/model/builder.go` (interfaces + core), `definition/model/yaml.go`
+(`ParseYAML` + loader wrapper).
 
 ---
 

@@ -41,7 +41,7 @@ conventions (`_bucket`, `_sum`, `_count`).
 | Metric | Labels | Meaning |
 |---|---|---|
 | `wrkflw_step_duration_seconds` | — | Wall-clock time to execute a single process-graph node step (token advance through one node). |
-| `wrkflw_action_duration_seconds` | — | Wall-clock time for a single `ServiceAction` invocation, successful or not. |
+| `wrkflw_action_duration_seconds` | — | Wall-clock time for a single `Action` invocation, successful or not. |
 | `wrkflw_relay_batch_duration_seconds` | — | Wall-clock time for one relay poll-and-publish batch. |
 | `wrkflw_store_duration_seconds` | — | Wall-clock time for persistence-layer (store) operations. |
 | `wrkflw_rest_request_duration_seconds` | — | End-to-end REST request latency. |
@@ -148,26 +148,24 @@ deployment strategy can tolerate it.
 
 ## Admin endpoints
 
-All admin endpoints sit behind the engine's default-deny admin middleware.  Mount the admin
-router at a path restricted to internal/privileged callers.
+Admin endpoints are **default-absent by composition** (ADR-0095): they exist only when you
+mount `AdminRoutes` (from any of the `transport/http/{stdlib,gin,fiber}` adapters) on a router
+group your own auth middleware already protects. They carry no built-in authentication — mount
+them at a path restricted to internal/privileged callers.
 
-### REST
-
-| Method | Path | Description |
+| Method | Path | Enabled by (`AdminRoutes` field) |
 |---|---|---|
-| `GET` | `/admin/relay-stats` | Relay queue depth, last-poll time, error rates. |
-| `GET` | `/admin/timers` | Snapshot of armed timers: ID, fire-at, process instance. |
-| `GET` | `/admin/instances/{id}/lineage` | Full lineage of a process instance: token history, open incidents, chain ancestry. |
-| `GET` | `/admin/dead-letters` | List dead-letter events. Filter by `?category=outbox` (or other categories). |
-| `POST` | `/admin/dead-letters/redrive` | Redrive dead-letter events. Body: `{"ids":["<id>",...]}`. Omit `ids` to redrive all. |
+| `GET` | `/admin/instances` | `Svc` (always) |
+| `POST` | `/admin/instances/{id}/cancel` | `Svc` (always) |
+| `POST` | `/admin/instances/{id}/incidents/{incidentID}/resolve` | `Svc` (always) |
+| `GET` | `/admin/relay-stats` | `RelayStats` |
+| `GET` | `/admin/timers` | `Timers` |
+| `GET` | `/admin/instances/{id}/lineage` | `Lineage` |
+| `GET` | `/admin/dead-letters` | `DeadLetters` |
+| `POST` | `/admin/dead-letters/redrive` | `DeadLetters` — body `{"ids":["<id>",...]}`; omit `ids` to redrive all. |
+| `GET`/`POST`/`DELETE` | `/admin/policies`, `/admin/role-bindings` | `Policies` |
 
-### gRPC
-
-| RPC | Description |
-|---|---|
-| `GetRelayStats` | Equivalent to `GET /admin/relay-stats`. |
-| `ListTimers` | Equivalent to `GET /admin/timers`. |
-| `GetInstanceLineage` | Equivalent to `GET /admin/instances/{id}/lineage`. |
+Each optional field is nil-guarded: its routes register only when the field is set.
 
 ---
 

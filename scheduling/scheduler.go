@@ -164,7 +164,7 @@ func WithLogger(l *slog.Logger) Option {
 
 // WithTracerProvider sets the OTel TracerProvider for the scheduler.
 // Default: the OTel global provider. The scheduler emits no spans in this
-// track (API parity only — consistent with relay/rest/grpc). A nil value is
+// track (API parity only — consistent with the relay and HTTP transport). A nil value is
 // ignored.
 func WithTracerProvider(tp trace.TracerProvider) Option {
 	return func(c *config) {
@@ -176,7 +176,7 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 
 // WithMeterProvider sets the OTel MeterProvider for the scheduler.
 // Default: the OTel global provider. The scheduler emits no metrics in this
-// track (API parity only — consistent with relay/rest/grpc). A nil value is
+// track (API parity only — consistent with the relay and HTTP transport). A nil value is
 // ignored.
 func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(c *config) {

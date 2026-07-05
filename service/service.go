@@ -14,9 +14,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
-// Service is the single application-layer seam between the transport adapters
-// (REST, gRPC) and the workflow engine. All operations are transport-neutral:
-// request and result types carry no HTTP/gRPC concerns.
+// Service is the single application-layer seam between the HTTP transport
+// adapters and the workflow engine. All operations are transport-neutral:
+// request and result types carry no HTTP-transport concerns.
 //
 // Domain errors (kernel.ErrInstanceNotFound, kernel.ErrDefinitionNotFound,
 // authz.ErrNotAuthorized, kernel.ErrConcurrentUpdate, humantask.ErrTaskNotFound)
@@ -57,7 +57,7 @@ type Service interface {
 
 	// ResolveIncident clears an open incident on a process instance, grants
 	// addAttempts additional execution attempts (≤ 0 defaults to 1), and
-	// re-drives the instance. It delegates to Runner.ResolveIncident after
+	// re-drives the instance. It delegates to ProcessDriver.ResolveIncident after
 	// resolving the process definition from the registry.
 	//
 	// Returns the resulting InstanceState (parked or completed) on success.
@@ -265,7 +265,7 @@ func (e *Engine) ListInstances(ctx context.Context, filter kernel.InstanceFilter
 }
 
 // ResolveIncident resolves an open incident on a process instance by resolving
-// its definition from the registry and delegating to Runner.ResolveIncident.
+// its definition from the registry and delegating to ProcessDriver.ResolveIncident.
 // AddAttempts ≤ 0 is coerced to 1 so callers always grant at least one attempt.
 func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (engine.InstanceState, error) {
 	def, _, err := e.resolveDefinition(ctx, req.InstanceID)
@@ -284,7 +284,7 @@ func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest
 }
 
 // CancelInstance resolves the instance's definition, rejects an already-terminal
-// instance with ErrConflict, and delegates to Runner.CancelInstance.
+// instance with ErrConflict, and delegates to ProcessDriver.CancelInstance.
 func (e *Engine) CancelInstance(ctx context.Context, req CancelInstanceRequest) (engine.InstanceState, error) {
 	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {

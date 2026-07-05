@@ -79,7 +79,7 @@ func (r *ProcessDriver) armTimer(def *model.ProcessDefinition, instanceID, timer
 }
 
 // RehydrateTimers re-arms every persisted armed timer on the scheduler. Call it
-// once at startup, after constructing the Runner, to recover timers lost when the
+// once at startup, after constructing the ProcessDriver, to recover timers lost when the
 // process restarted. Requires WithScheduler, WithTimerStore, and WithDefinitions.
 // A timer whose FireAt is already in the past fires immediately; a re-fire of an
 // already-consumed timer is an idempotent engine no-op. Timers whose definition

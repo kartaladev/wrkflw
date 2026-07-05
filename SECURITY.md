@@ -34,7 +34,9 @@ Please include:
 `wrkflw` is an embeddable library; the consumer owns the deployed surface. A few responsibilities sit
 with the embedder and are documented rather than enforced by default:
 
-- **Authorization** of the gRPC service (gate admin RPCs with an interceptor / `NewSecureServer`).
+- **Authorization** of the admin HTTP routes. Admin endpoints are default-absent by
+  composition (ADR-0095): they exist only when you mount `AdminRoutes` on a router group
+  that your own auth middleware already protects. They carry no built-in authentication.
 - **TLS** for the database, SMTP, and transport servers.
 - **Untrusted definitions** — enable the expression-evaluation timeout (injectable evaluator) before
   loading process definitions from untrusted input.

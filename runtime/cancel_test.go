@@ -22,7 +22,7 @@ import (
 )
 
 // cancelDef parks at a human task so Run returns with the instance Running;
-// CancelActions lists the names of ServiceActions to run best-effort on cancel.
+// CancelActions lists the names of Actions to run best-effort on cancel.
 func cancelDef(cancelActions []string) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "cancel-def", Version: 1,

@@ -9,7 +9,7 @@ import (
 // targeted instance/token is not in a state that accepts it. The instance exists —
 // this is a conflict, not a "not found". Consumers classify wrong-state transitions
 // with errors.Is(err, ErrInvalidTransition); the service layer maps it to ErrConflict
-// and transports map it to HTTP 422 / gRPC FailedPrecondition.
+// and transports map it to HTTP 422.
 var ErrInvalidTransition = errors.New("workflow-engine: invalid state transition")
 
 var (
