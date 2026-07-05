@@ -72,9 +72,9 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched.Close() })
 
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	r, err := runtime.NewProcessDriver(cat, store, runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
+	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
 	require.NoError(t, err)
 
 	def := timerIntermediateE2EDef()

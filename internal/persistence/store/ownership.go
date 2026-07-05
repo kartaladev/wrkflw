@@ -14,13 +14,13 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// Compile-time assertion: AdvisoryLockOwnership must satisfy kernel.Ownership.
-var _ kernel.Ownership = (*AdvisoryLockOwnership)(nil)
+// Compile-time assertion: AdvisoryLockOwnership must satisfy kernel.InstanceOwnership.
+var _ kernel.InstanceOwnership = (*AdvisoryLockOwnership)(nil)
 
 // ErrOwnershipClosed is returned by Acquire and Release when called after Close.
 var ErrOwnershipClosed = errors.New("workflow-store: ownership: closed")
 
-// AdvisoryLockOwnership implements [kernel.Ownership] for multi-process
+// AdvisoryLockOwnership implements [kernel.InstanceOwnership] for multi-process
 // deployments using database-level advisory locks. The concrete locking
 // mechanism is supplied via an injected [dialect.Locker]:
 //
@@ -94,7 +94,7 @@ func NewMySQLOwnership(ctx context.Context, db *sql.DB) (*AdvisoryLockOwnership,
 // is a no-op for an un-held lock.
 //
 // Use this constructor to satisfy the ownership parameter required by
-// [kernel.NewCachingStore] in single-node SQLite deployments. Ownership-dependent
+// [kernel.NewCachingInstanceStore] in single-node SQLite deployments. Ownership-dependent
 // flows must guard against [dialect.ErrUnsupported] and skip the ownership path
 // when running on SQLite.
 //

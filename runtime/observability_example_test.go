@@ -61,13 +61,13 @@ func ExampleProcessDriver_observability() {
 		}),
 	})
 
-	mem, err := kernel.NewMemStore()
+	mem, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		panic(err)
 	}
 	r, err := runtime.NewProcessDriver(
-		cat,
-		mem,
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(mem),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 		runtime.WithLogger(slog.Default()),

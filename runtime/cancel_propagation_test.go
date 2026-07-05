@@ -89,7 +89,7 @@ func (c *countingCallLinkStore) listCount(parentID string) int {
 // cancelPropRunner builds a Runner with CallLinks + Definitions + HumanTasks wired.
 // The registry is populated with BOTH plain "defID" keys (for StartSubInstance
 // DefRef lookup) and "defID:version" keys (for propagateCancel's def resolution).
-func cancelPropRunner(t *testing.T, store *kernel.MemStore, cl *kernel.MemCallLinkStore, defs map[string]*model.ProcessDefinition) *runtime.ProcessDriver {
+func cancelPropRunner(t *testing.T, store *kernel.MemInstanceStore, cl *kernel.MemCallLinkStore, defs map[string]*model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 	reg := cancelPropRegistry(defs)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
@@ -266,8 +266,8 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	ctx := t.Context()
 	cl := kernel.NewMemCallLinkStore()
 
-	// We need to insert links directly via the MemStore path, but MemCallLinkStore
-	// exposes record/markTerminal only internally. Use NewMemStore(WithCallLinks(cl))
+	// We need to insert links directly via the MemInstanceStore path, but MemCallLinkStore
+	// exposes record/markTerminal only internally. Use NewMemInstanceStore(WithCallLinks(cl))
 	// and a minimal runner run to populate the store, or test via the exported
 	// NewMemCallLinkStore + manual setup.
 	//

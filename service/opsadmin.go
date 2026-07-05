@@ -11,7 +11,7 @@ import (
 // RelayStatsAdmin is the optional admin port for inspecting aggregate statistics
 // about the outbox relay. It is intentionally separate from Service: outbox
 // relay statistics are an infrastructure concern not available when only using an
-// in-memory store (e.g. kernel.MemStore-only consumers simply never wire it).
+// in-memory store (e.g. kernel.MemInstanceStore-only consumers simply never wire it).
 //
 // The concrete Postgres Relay satisfies RelayStatsAdmin directly — pass the relay
 // to a transport's WithRelayStatsAdmin option with no adapter.

@@ -7,8 +7,8 @@ package persistence
 // no LISTEN/NOTIFY mechanism (no relay notifier). Outbox relay and timer stores
 // work via poll-only paths identical to the MySQL backend.
 //
-// Consumers who need multi-replica exclusivity (kernel.CachingStore +
-// Ownership) must use the Postgres or MySQL backend. The SQLite backend is
+// Consumers who need multi-replica exclusivity (kernel.CachingInstanceStore +
+// InstanceOwnership) must use the Postgres or MySQL backend. The SQLite backend is
 // well-suited for embedded single-process deployments, CLI tools, integration
 // tests, and local development where a network database is unavailable.
 
@@ -36,9 +36,9 @@ type SQLiteRelayOption = RelayOption
 // MySQLCallLinkOption).
 type SQLiteCallLinkOption = store.CallLinkOption
 
-// OpenSQLite constructs a SQLite-backed kernel.Store + JournalReader over db.
+// OpenSQLite constructs a SQLite-backed kernel.InstanceStore + JournalReader over db.
 //
-// The returned Store satisfies both kernel.Store and kernel.JournalReader,
+// The returned InstanceStore satisfies both kernel.InstanceStore and kernel.JournalReader,
 // identical to the interface returned by [OpenPostgres] and [OpenMySQL].
 // [MigrateSQLite] must be called before OpenSQLite so the required tables exist
 // (or use [dbtest.RunTestSQLite] in tests, which auto-migrates).
@@ -61,9 +61,9 @@ type SQLiteCallLinkOption = store.CallLinkOption
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	store, _ := persistence.OpenSQLite(ctx, db, persistence.WithHistoryCap(50))
-//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 //	if err != nil { log.Fatal(err) }
-func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (Store, error) {
+func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (InstanceStore, error) {
 	q, err := database.From(db)
 	if err != nil {
 		return nil, err
@@ -93,14 +93,14 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 	return store.MigrateSQLite(ctx, db)
 }
 
-// NewSQLiteAdvisoryLockOwnership returns a fail-loud [kernel.Ownership] for
+// NewSQLiteAdvisoryLockOwnership returns a fail-loud [kernel.InstanceOwnership] for
 // SQLite deployments. SQLite provides no distributed advisory locking
-// mechanism: [kernel.Ownership.Acquire] returns [dialect.ErrUnsupported] on
-// every call; [kernel.Ownership.Release] is a no-op (returns nil) for a lock
+// mechanism: [kernel.InstanceOwnership.Acquire] returns [dialect.ErrUnsupported] on
+// every call; [kernel.InstanceOwnership.Release] is a no-op (returns nil) for a lock
 // that was never held.
 //
 // This constructor exists so SQLite consumers can satisfy the ownership
-// parameter required by [kernel.NewCachingStore] while making the
+// parameter required by [kernel.NewCachingInstanceStore] while making the
 // unsupported-locking contract explicit. Ownership-dependent flows must guard
 // against [dialect.ErrUnsupported] and skip the exclusivity path when running
 // on SQLite.
@@ -115,9 +115,9 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 //	owner, closer, _ := persistence.NewSQLiteAdvisoryLockOwnership()
 //	defer closer.Close()
 //	store, _ := persistence.OpenSQLite(ctx, db)
-//	cachingStore, err := kernel.NewCachingStore(store, owner)
+//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
 //	// Acquire will return (false, dialect.ErrUnsupported) — guard accordingly.
-func NewSQLiteAdvisoryLockOwnership() (kernel.Ownership, io.Closer, error) {
+func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewSQLiteOwnership()
 	if err != nil {
 		return nil, nil, err
@@ -170,7 +170,7 @@ func NewSQLiteTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewSQLiteRelay(db *sql.DB, pub kernel.Publisher, opts ...SQLiteRelayOption) (Relay, error) {
+func NewSQLiteRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...SQLiteRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)

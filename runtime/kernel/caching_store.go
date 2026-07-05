@@ -15,8 +15,8 @@ import (
 
 // Compile-time assertions.
 var (
-	_ Store         = (*CachingStore)(nil)
-	_ JournalReader = (*CachingStore)(nil)
+	_ InstanceStore = (*CachingInstanceStore)(nil)
+	_ JournalReader = (*CachingInstanceStore)(nil)
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 	defaultCacheMaxEntries = 1024
 )
 
-// CachingStore is a write-through, single-writer cache in front of a Store
+// CachingInstanceStore is a write-through, single-writer cache in front of a Store
 // (ADR-0020). It is correct ONLY when each cached instance has exactly one
 // writing process, which the Ownership port guarantees: only owned instances are
 // cached/served; a non-owned instance bypasses the cache and reads the backing
@@ -34,17 +34,17 @@ const (
 //
 // # Multi-replica safety (READ THIS)
 //
-// Pairing a CachingStore with [AlwaysOwn] is SINGLE-WRITER / SINGLE-REPLICA ONLY.
+// Pairing a CachingInstanceStore with [AlwaysOwn] is SINGLE-WRITER / SINGLE-REPLICA ONLY.
 // AlwaysOwn unconditionally reports ownership, so two replicas both caching the
 // same instance would each serve their own stale snapshot and could fire a
 // routing decision and its side-effects before the version-CAS rejected the
 // write — a stale-read footgun (ADR-0020, ADR-0054). For ANY multi-replica
 // deployment use a real lease — [persistence.NewAdvisoryLockOwnership] — so only
-// the owning replica caches an instance. As a guard, [NewCachingStore] logs a
+// the owning replica caches an instance. As a guard, [NewCachingInstanceStore] logs a
 // one-time Warn when it is constructed with AlwaysOwn.
-type CachingStore struct {
-	backing    Store
-	owner      Ownership
+type CachingInstanceStore struct {
+	backing    InstanceStore
+	owner      InstanceOwnership
 	clk        clock.Clock
 	logger     *slog.Logger
 	ttl        time.Duration
@@ -61,7 +61,7 @@ type CachingStore struct {
 type cacheNode struct {
 	id        string
 	state     engine.InstanceState
-	token     Token
+	token     Version
 	expiresAt time.Time // zero when ttl <= 0 (never expires)
 	elem      *list.Element
 }
@@ -71,24 +71,26 @@ type keyLock struct {
 	refs int
 }
 
-// CachingStoreOption configures a CachingStore.
-type CachingStoreOption func(*CachingStore)
+// CachingInstanceStoreOption configures a CachingInstanceStore.
+type CachingInstanceStoreOption func(*CachingInstanceStore)
 
 // WithCacheTTL sets the maximum age of a cached instance entry before it is
 // reloaded from the backing Store. <= 0 disables TTL expiry. Default: 5m.
-func WithCacheTTL(d time.Duration) CachingStoreOption { return func(c *CachingStore) { c.ttl = d } }
+func WithCacheTTL(d time.Duration) CachingInstanceStoreOption {
+	return func(c *CachingInstanceStore) { c.ttl = d }
+}
 
 // WithCacheMaxEntries caps the number of cached instances (LRU eviction beyond
 // the cap). <= 0 means unbounded. Default: 1024.
-func WithCacheMaxEntries(n int) CachingStoreOption {
-	return func(c *CachingStore) { c.maxEntries = n }
+func WithCacheMaxEntries(n int) CachingInstanceStoreOption {
+	return func(c *CachingInstanceStore) { c.maxEntries = n }
 }
 
 // WithCacheLogger sets the structured logger used for the one-time AlwaysOwn
 // single-replica warning emitted at construction. Default: slog.Default(). A nil
 // value is ignored.
-func WithCacheLogger(l *slog.Logger) CachingStoreOption {
-	return func(c *CachingStore) {
+func WithCacheLogger(l *slog.Logger) CachingInstanceStoreOption {
+	return func(c *CachingInstanceStore) {
 		if l != nil {
 			c.logger = l
 		}
@@ -97,25 +99,25 @@ func WithCacheLogger(l *slog.Logger) CachingStoreOption {
 
 // WithCachingStoreClock sets the time source used to evaluate cache TTL.
 // Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithCachingStoreClock(clk clock.Clock) CachingStoreOption {
-	return func(c *CachingStore) {
+func WithCachingStoreClock(clk clock.Clock) CachingInstanceStoreOption {
+	return func(c *CachingInstanceStore) {
 		if clk != nil {
 			c.clk = clk
 		}
 	}
 }
 
-// NewCachingStore wraps backing with a single-writer, write-through cache gated
+// NewCachingInstanceStore wraps backing with a single-writer, write-through cache gated
 // by owner. The clock defaults to clock.System(); inject a fake clock in tests
 // via [WithCachingStoreClock].
-func NewCachingStore(backing Store, owner Ownership, opts ...CachingStoreOption) (*CachingStore, error) {
+func NewCachingInstanceStore(backing InstanceStore, owner InstanceOwnership, opts ...CachingInstanceStoreOption) (*CachingInstanceStore, error) {
 	if backing == nil {
 		return nil, fmt.Errorf("%w: backing store", ErrNilDependency)
 	}
 	if owner == nil {
 		return nil, fmt.Errorf("%w: owner", ErrNilDependency)
 	}
-	c := &CachingStore{
+	c := &CachingInstanceStore{
 		backing:    backing,
 		owner:      owner,
 		clk:        clock.System(),
@@ -135,14 +137,14 @@ func NewCachingStore(backing Store, owner Ownership, opts ...CachingStoreOption)
 	// visible in logs; the safe alternative is a real lease
 	// (persistence.NewAdvisoryLockOwnership).
 	if _, ok := owner.(AlwaysOwn); ok {
-		c.logger.Warn("runtime: CachingStore paired with AlwaysOwn is single-replica only; " +
+		c.logger.Warn("runtime: CachingInstanceStore paired with AlwaysOwn is single-replica only; " +
 			"use persistence.NewAdvisoryLockOwnership for multi-replica deployments to avoid stale cached reads")
 	}
 	return c, nil
 }
 
 // lockFor returns an unlock func after taking a refcounted per-instance lock.
-func (c *CachingStore) lockFor(id string) func() {
+func (c *CachingInstanceStore) lockFor(id string) func() {
 	c.klMu.Lock()
 	kl := c.keyLocks[id]
 	if kl == nil {
@@ -165,7 +167,7 @@ func (c *CachingStore) lockFor(id string) func() {
 }
 
 // get returns a fresh cached node (moving it to the LRU front) or false.
-func (c *CachingStore) get(id string) (*cacheNode, bool) {
+func (c *CachingInstanceStore) get(id string) (*cacheNode, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	n, ok := c.entries[id]
@@ -181,7 +183,7 @@ func (c *CachingStore) get(id string) (*cacheNode, bool) {
 }
 
 // put upserts an entry, refreshing TTL and evicting the LRU tail if over cap.
-func (c *CachingStore) put(id string, state engine.InstanceState, token Token) {
+func (c *CachingInstanceStore) put(id string, state engine.InstanceState, token Version) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var exp time.Time
@@ -203,7 +205,7 @@ func (c *CachingStore) put(id string, state engine.InstanceState, token Token) {
 	}
 }
 
-func (c *CachingStore) evict(id string) {
+func (c *CachingInstanceStore) evict(id string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if n, ok := c.entries[id]; ok {
@@ -212,14 +214,14 @@ func (c *CachingStore) evict(id string) {
 }
 
 // removeLocked drops a node; caller holds c.mu.
-func (c *CachingStore) removeLocked(n *cacheNode) {
+func (c *CachingInstanceStore) removeLocked(n *cacheNode) {
 	c.lru.Remove(n.elem)
 	delete(c.entries, n.id)
 }
 
 // Create delegates to the backing Store, then write-through caches the new state
 // when this process owns the instance.
-func (c *CachingStore) Create(ctx context.Context, step AppliedStep) (Token, error) {
+func (c *CachingInstanceStore) Create(ctx context.Context, step AppliedStep) (Version, error) {
 	tok, err := c.backing.Create(ctx, step)
 	if err != nil {
 		return 0, err
@@ -239,7 +241,7 @@ func (c *CachingStore) Create(ctx context.Context, step AppliedStep) (Token, err
 // Load serves owned instances from cache (populating on a miss under the
 // per-instance lock so a concurrent Commit cannot interleave a stale write).
 // Non-owned instances bypass the cache entirely.
-func (c *CachingStore) Load(ctx context.Context, id string) (engine.InstanceState, Token, error) {
+func (c *CachingInstanceStore) Load(ctx context.Context, id string) (engine.InstanceState, Version, error) {
 	owned, err := c.owner.Acquire(ctx, id)
 	if err != nil || !owned {
 		return c.backing.Load(ctx, id) // bypass; do not populate
@@ -259,7 +261,7 @@ func (c *CachingStore) Load(ctx context.Context, id string) (engine.InstanceStat
 
 // Commit delegates under the per-instance lock; on success it write-through
 // caches the new state, on ErrConcurrentUpdate it evicts the stale entry.
-func (c *CachingStore) Commit(ctx context.Context, expected Token, step AppliedStep) (Token, error) {
+func (c *CachingInstanceStore) Commit(ctx context.Context, expected Version, step AppliedStep) (Version, error) {
 	id := step.State.InstanceID
 	unlock := c.lockFor(id)
 	defer unlock()
@@ -277,21 +279,21 @@ func (c *CachingStore) Commit(ctx context.Context, expected Token, step AppliedS
 }
 
 // Release relinquishes ownership of an instance and evicts its cached state,
-// so a future re-acquisition re-reads the backing Store rather than serving a
-// now-possibly-stale cached entry. Consumers using a CachingStore MUST relinquish
-// ownership through THIS method (not the bare Ownership), or a re-acquired
+// so a future re-acquisition re-reads the backing InstanceStore rather than serving a
+// now-possibly-stale cached entry. Consumers using a CachingInstanceStore MUST relinquish
+// ownership through THIS method (not the bare InstanceOwnership), or a re-acquired
 // instance may serve stale state until its TTL expires (ADR-0020).
 //
 // The eviction is performed before forwarding to owner.Release so the cache entry
 // is gone even if the underlying Release call errors.
-func (c *CachingStore) Release(ctx context.Context, id string) error {
+func (c *CachingInstanceStore) Release(ctx context.Context, id string) error {
 	c.evict(id) // evict FIRST so the entry is gone even if owner.Release errors
 	return c.owner.Release(ctx, id)
 }
 
 // Entries forwards to the backing Store's JournalReader if it implements one;
 // the journal is never cached. Returns an error if the backing is not a reader.
-func (c *CachingStore) Entries(ctx context.Context, id string) ([]engine.Trigger, error) {
+func (c *CachingInstanceStore) Entries(ctx context.Context, id string) ([]engine.Trigger, error) {
 	jr, ok := c.backing.(JournalReader)
 	if !ok {
 		return nil, errors.New("workflow-runtime: backing store is not a JournalReader")

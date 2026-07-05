@@ -81,12 +81,14 @@ func main() {
 	})
 	az := authz.RoleAuthorizer{}
 	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(cat, store,
+	r, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),

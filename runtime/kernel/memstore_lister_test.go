@@ -20,8 +20,8 @@ func newInstanceState(id string, st engine.Status, at time.Time) engine.Instance
 	}
 }
 
-// seedMemStore creates a MemStore and inserts each InstanceState via Create, returning the store.
-func seedMemStore(t *testing.T, states ...engine.InstanceState) *kernel.MemStore {
+// seedMemStore creates a MemInstanceStore and inserts each InstanceState via Create, returning the store.
+func seedMemStore(t *testing.T, states ...engine.InstanceState) *kernel.MemInstanceStore {
 	t.Helper()
 	ms := runtimetest.MustMemStore(t)
 	for _, st := range states {
@@ -46,13 +46,13 @@ func TestMemStoreList(t *testing.T) {
 	tests := []struct {
 		name   string
 		filter kernel.InstanceFilter
-		seed   func(t *testing.T) *kernel.MemStore
+		seed   func(t *testing.T) *kernel.MemInstanceStore
 		assert func(t *testing.T, page kernel.InstancePage)
 	}{
 		{
 			name:   "orders by started_at desc then instance_id desc",
 			filter: kernel.InstanceFilter{},
-			seed: func(t *testing.T) *kernel.MemStore {
+			seed: func(t *testing.T) *kernel.MemInstanceStore {
 				return seedMemStore(t,
 					newInstanceState("a", engine.StatusRunning, base),
 					newInstanceState("b", engine.StatusRunning, base.Add(time.Minute)),
@@ -75,7 +75,7 @@ func TestMemStoreList(t *testing.T) {
 		{
 			name:   "same started_at: tiebreak on instance_id desc",
 			filter: kernel.InstanceFilter{},
-			seed: func(t *testing.T) *kernel.MemStore {
+			seed: func(t *testing.T) *kernel.MemInstanceStore {
 				return seedMemStore(t,
 					newInstanceState("alpha", engine.StatusRunning, base),
 					newInstanceState("beta", engine.StatusRunning, base),
@@ -96,7 +96,7 @@ func TestMemStoreList(t *testing.T) {
 		{
 			name:   "status filter returns only matching instances",
 			filter: kernel.InstanceFilter{Status: &completed},
-			seed: func(t *testing.T) *kernel.MemStore {
+			seed: func(t *testing.T) *kernel.MemInstanceStore {
 				return seedMemStore(t,
 					newInstanceState("r1", engine.StatusRunning, base),
 					newInstanceState("c1", engine.StatusCompleted, base.Add(time.Minute)),
@@ -117,7 +117,7 @@ func TestMemStoreList(t *testing.T) {
 		{
 			name:   "limit=1 yields HasMore=true and usable NextCursor",
 			filter: kernel.InstanceFilter{Status: &running, Limit: 1},
-			seed: func(t *testing.T) *kernel.MemStore {
+			seed: func(t *testing.T) *kernel.MemInstanceStore {
 				return seedMemStore(t,
 					newInstanceState("i1", engine.StatusRunning, base),
 					newInstanceState("i2", engine.StatusRunning, base.Add(time.Minute)),

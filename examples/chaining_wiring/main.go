@@ -54,7 +54,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
@@ -78,7 +77,7 @@ func main() {
 // store holds process-instance state; links persists chain lineage;
 // relay drains the transactional outbox; cleanup releases held resources.
 type backend struct {
-	store   persistence.Store
+	store   persistence.InstanceStore
 	links   kernel.ChainLinkStore
 	relay   persistence.Relay
 	cleanup func()
@@ -91,7 +90,7 @@ type backend struct {
 //
 // kind must be one of "sqlite", "postgres", or "mysql".
 // dsn is the connection string for postgres/mysql; it is ignored for sqlite.
-func openBackend(ctx context.Context, kind, dsn string, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
+func openBackend(ctx context.Context, kind, dsn string, pub kernel.OutboxPublisher, logger *slog.Logger) (backend, error) {
 	switch kind {
 	case "sqlite":
 		return openSQLite(ctx, pub, logger)
@@ -110,7 +109,7 @@ func openBackend(ctx context.Context, kind, dsn string, pub kernel.Publisher, lo
 // SetMaxOpenConns(1) is REQUIRED for SQLite: a second concurrent connection races
 // on WAL writes. :memory: with MaxOpenConns(1) ensures the relay and store share
 // the same connection and see each other's writes immediately.
-func openSQLite(ctx context.Context, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
+func openSQLite(ctx context.Context, pub kernel.OutboxPublisher, logger *slog.Logger) (backend, error) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		return backend{}, fmt.Errorf("open sqlite: %w", err)
@@ -154,7 +153,7 @@ func openSQLite(ctx context.Context, pub kernel.Publisher, logger *slog.Logger) 
 // dsn must be a valid pgx/libpq connection string, e.g.:
 //
 //	"postgres://user:pass@localhost:5432/wrkflw?sslmode=disable"
-func openPostgres(ctx context.Context, dsn string, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
+func openPostgres(ctx context.Context, dsn string, pub kernel.OutboxPublisher, logger *slog.Logger) (backend, error) {
 	if dsn == "" {
 		return backend{}, errors.New("-dsn is required for -db postgres")
 	}
@@ -210,7 +209,7 @@ func openPostgres(ctx context.Context, dsn string, pub kernel.Publisher, logger 
 //
 // multiStatements=true is added manually so MigrateMySQL can execute multi-
 // statement migration files (goose requires it).
-func openMySQL(ctx context.Context, dsn string, pub kernel.Publisher, logger *slog.Logger) (backend, error) {
+func openMySQL(ctx context.Context, dsn string, pub kernel.OutboxPublisher, logger *slog.Logger) (backend, error) {
 	if dsn == "" {
 		return backend{}, errors.New("-dsn is required for -db mysql")
 	}
@@ -310,7 +309,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// ── Wire ProcessDriver, Chainer, and ChainerRunner ───────────────────────────────
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), be.store)
+	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(be.store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}

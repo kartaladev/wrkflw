@@ -18,18 +18,18 @@ import (
 
 // countingStore wraps a backing Store and counts Load calls (cache-miss proxy).
 type countingStore struct {
-	backing kernel.Store
+	backing kernel.InstanceStore
 	loads   atomic.Int64
 }
 
-func (c *countingStore) Create(ctx context.Context, s kernel.AppliedStep) (kernel.Token, error) {
+func (c *countingStore) Create(ctx context.Context, s kernel.AppliedStep) (kernel.Version, error) {
 	return c.backing.Create(ctx, s)
 }
-func (c *countingStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Token, error) {
+func (c *countingStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Version, error) {
 	c.loads.Add(1)
 	return c.backing.Load(ctx, id)
 }
-func (c *countingStore) Commit(ctx context.Context, e kernel.Token, s kernel.AppliedStep) (kernel.Token, error) {
+func (c *countingStore) Commit(ctx context.Context, e kernel.Version, s kernel.AppliedStep) (kernel.Version, error) {
 	return c.backing.Commit(ctx, e, s)
 }
 
@@ -232,16 +232,16 @@ func TestNewCachingStoreFailsFast(t *testing.T) {
 	mem := runtimetest.MustMemStore(t)
 	type testCase struct {
 		name    string
-		backing kernel.Store
-		owner   kernel.Ownership
-		assert  func(t *testing.T, s *kernel.CachingStore, err error)
+		backing kernel.InstanceStore
+		owner   kernel.InstanceOwnership
+		assert  func(t *testing.T, s *kernel.CachingInstanceStore, err error)
 	}
 	cases := []testCase{
 		{
 			name:    "nil backing",
 			backing: nil,
 			owner:   kernel.AlwaysOwn{},
-			assert: func(t *testing.T, s *kernel.CachingStore, err error) {
+			assert: func(t *testing.T, s *kernel.CachingInstanceStore, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, s)
 			},
@@ -250,7 +250,7 @@ func TestNewCachingStoreFailsFast(t *testing.T) {
 			name:    "nil owner",
 			backing: mem,
 			owner:   nil,
-			assert: func(t *testing.T, s *kernel.CachingStore, err error) {
+			assert: func(t *testing.T, s *kernel.CachingInstanceStore, err error) {
 				require.ErrorIs(t, err, kernel.ErrNilDependency)
 				require.Nil(t, s)
 			},
@@ -259,7 +259,7 @@ func TestNewCachingStoreFailsFast(t *testing.T) {
 			name:    "valid args",
 			backing: mem,
 			owner:   kernel.AlwaysOwn{},
-			assert: func(t *testing.T, s *kernel.CachingStore, err error) {
+			assert: func(t *testing.T, s *kernel.CachingInstanceStore, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, s)
 			},
@@ -268,7 +268,7 @@ func TestNewCachingStoreFailsFast(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			s, err := kernel.NewCachingStore(tc.backing, tc.owner)
+			s, err := kernel.NewCachingInstanceStore(tc.backing, tc.owner)
 			tc.assert(t, s, err)
 		})
 	}

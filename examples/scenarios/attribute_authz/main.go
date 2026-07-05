@@ -46,16 +46,19 @@ const casbinPolicy = `
 p, approver, finance-task, claim
 `
 
-func mustMemStore() *kernel.MemStore {
-	m, err := kernel.NewMemStore()
+func mustMemStore() *kernel.MemInstanceStore {
+	m, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 	return m
 }
 
-func mustRunner(cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
-	r, err := runtime.NewProcessDriver(cat, store, opts...)
+func mustRunner(cat action.Catalog, store kernel.InstanceStore, opts ...runtime.Option) *runtime.ProcessDriver {
+	allOpts := make([]runtime.Option, 0, 2+len(opts))
+	allOpts = append(allOpts, runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+	allOpts = append(allOpts, opts...)
+	r, err := runtime.NewProcessDriver(allOpts...)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -111,7 +114,8 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- EU instance: should be ALLOWED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), mustMemStore(),
+		r, err := runtime.NewProcessDriver(
+			runtime.WithInstanceStore(mustMemStore()),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 		if err != nil {
@@ -154,7 +158,8 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- US instance: should be DENIED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), mustMemStore(),
+		r, err := runtime.NewProcessDriver(
+			runtime.WithInstanceStore(mustMemStore()),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
 		if err != nil {

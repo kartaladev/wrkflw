@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -18,10 +19,30 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
 
-// Option is a functional option for ProcessDriver. Optional capability bundles (human
-// tasks, scheduler) are configured via options; required core dependencies are
-// positional in NewProcessDriver.
+// Option is a functional option for ProcessDriver. All dependencies — including
+// the service-action catalog and instance store — are configurable via options.
+// NewProcessDriver applies in-memory defaults before running the option list.
 type Option func(*ProcessDriver)
+
+// WithActionCatalog sets the service-action catalog. A nil cat is ignored, so
+// the process-global action.DefaultCatalog() registry remains in effect.
+func WithActionCatalog(cat action.Catalog) Option {
+	return func(r *ProcessDriver) {
+		if cat != nil {
+			r.cat = cat
+		}
+	}
+}
+
+// WithInstanceStore sets the transactional instance store. A nil store is
+// ignored, so the default in-memory MemInstanceStore remains in effect.
+func WithInstanceStore(store kernel.InstanceStore) Option {
+	return func(r *ProcessDriver) {
+		if store != nil {
+			r.store = store
+		}
+	}
+}
 
 // defaultActionTimeout bounds each service-action invocation unless overridden
 // via [WithActionTimeout]. It guards against a hung action stalling an instance

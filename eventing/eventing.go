@@ -27,7 +27,7 @@ import (
 )
 
 // Compile-time guard: the internal adapter satisfies the public port.
-var _ kernel.Publisher = (*watermillpub.Publisher)(nil)
+var _ kernel.OutboxPublisher = (*watermillpub.Publisher)(nil)
 
 // Option configures a publisher.
 type Option func(*options)
@@ -47,9 +47,9 @@ func WithTracerProvider(tp trace.TracerProvider) Option { return func(o *options
 // WithMeterProvider sets the meter provider (default: otel global).
 func WithMeterProvider(mp metric.MeterProvider) Option { return func(o *options) { o.mp = mp } }
 
-// NewPublisher wraps a watermill message.Publisher as a kernel.Publisher,
+// NewPublisher wraps a watermill message.Publisher as a kernel.OutboxPublisher,
 // mapping each OutboxEvent to a watermill message.
-func NewPublisher(pub message.Publisher, opts ...Option) kernel.Publisher {
+func NewPublisher(pub message.Publisher, opts ...Option) kernel.OutboxPublisher {
 	var o options
 	for _, fn := range opts {
 		fn(&o)
@@ -58,10 +58,10 @@ func NewPublisher(pub message.Publisher, opts ...Option) kernel.Publisher {
 }
 
 // NewGoChannelPublisher builds an in-process GoChannel pub/sub and returns a
-// kernel.Publisher over it, the matching Subscriber (for in-process consumers
+// kernel.OutboxPublisher over it, the matching Subscriber (for in-process consumers
 // or tests), and an io.Closer to release it. No external broker is required.
 // GoChannel ships in watermill core, so this adds no broker dependency.
-func NewGoChannelPublisher(opts ...Option) (kernel.Publisher, message.Subscriber, io.Closer) {
+func NewGoChannelPublisher(opts ...Option) (kernel.OutboxPublisher, message.Subscriber, io.Closer) {
 	var o options
 	for _, fn := range opts {
 		fn(&o)

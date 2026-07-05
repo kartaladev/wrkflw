@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -12,7 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// ExampleNewCachingStore shows how a library consumer wires a [kernel.CachingStore]
+// ExampleNewCachingInstanceStore shows how a library consumer wires a [kernel.CachingInstanceStore]
 // as the store for a [runtime.ProcessDriver]. In this configuration:
 //
 //   - [kernel.AlwaysOwn] is used — correct for single-replica or sticky-routed
@@ -22,17 +21,17 @@ import (
 // The example drives a single instance through a park→resume cycle using a
 // signal-catch definition (start → signal-catch("approved") → end). The second
 // [runtime.ProcessDriver.Deliver] call is served from the write-through cache because
-// [kernel.AlwaysOwn] grants ownership on every [kernel.CachingStore.Load].
-func ExampleNewCachingStore() {
+// [kernel.AlwaysOwn] grants ownership on every [kernel.CachingInstanceStore.Load].
+func ExampleNewCachingInstanceStore() {
 	ctx := context.Background()
 
 	// Wrap an in-memory backing store with the write-through cache.
 	// AlwaysOwn is appropriate for a single-process embedding.
-	backing, err := kernel.NewMemStore()
+	backing, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		panic(err)
 	}
-	store, err := kernel.NewCachingStore(
+	store, err := kernel.NewCachingInstanceStore(
 		backing,
 		kernel.AlwaysOwn{},
 	)
@@ -42,7 +41,7 @@ func ExampleNewCachingStore() {
 
 	def := runtimetest.SignalCatchDef("approved")
 
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	if err != nil {
 		panic(err)
 	}

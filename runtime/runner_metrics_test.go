@@ -112,7 +112,7 @@ func TestActionFailuresCounter(t *testing.T) {
 
 	cases := []testCase{
 		{
-			// Plain error: IsRetryable returns true by default (no Retryabler interface).
+			// Plain error: IsRetryable returns true by default (no RetryableError interface).
 			name:       "plain error increments action_failures with retryable=true",
 			actionErr:  errors.New("transient failure"),
 			wantAction: "fail",

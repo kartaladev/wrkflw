@@ -10,7 +10,7 @@
 //
 //	store, err := persistence.OpenPostgres(ctx, pool)
 //	if err != nil { log.Fatal(err) }
-//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 //	if err != nil { log.Fatal(err) }
 //
 // # Relay (transactional outbox drain)
@@ -40,12 +40,12 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
-// Store is the stable public interface for the Postgres-backed store.
-// It composes kernel.Store (Create/Load/Commit) and kernel.JournalReader
+// InstanceStore is the stable public interface for the Postgres-backed store.
+// It composes kernel.InstanceStore (Create/Load/Commit) and kernel.JournalReader
 // (Entries) so consumers never need to reference internal package paths.
 // OpenPostgres returns this interface; internal churn never affects this type.
-type Store interface {
-	kernel.Store
+type InstanceStore interface {
+	kernel.InstanceStore
 	kernel.JournalReader
 }
 
@@ -95,8 +95,8 @@ type Relay interface {
 	OutboxStats(ctx context.Context) (kernel.OutboxStats, error)
 }
 
-// Publisher is the broker-agnostic outbox publisher alias (same as kernel.Publisher).
-type Publisher = kernel.Publisher
+// OutboxPublisher is the broker-agnostic outbox publisher alias (same as kernel.OutboxPublisher).
+type OutboxPublisher = kernel.OutboxPublisher
 
 // Option configures the Store returned by OpenPostgres (alias of the neutral
 // store.Option). The same underlying type also backs OpenMySQL's MySQLOption:
@@ -173,7 +173,7 @@ var (
 // Compile-time checks: the neutral store concrete types must satisfy the public
 // interfaces so the facade constructors can return them.
 var (
-	_ Store                 = (*store.Store)(nil)
+	_ InstanceStore         = (*store.Store)(nil)
 	_ DefinitionStore       = (*store.DefinitionStore)(nil)
 	_ Relay                 = (*store.Relay)(nil)
 	_ kernel.InstanceLister = (*store.Lister)(nil)
@@ -186,9 +186,9 @@ var (
 // exists (re-exported so consumers can errors.Is without importing runtime).
 var ErrInstanceExists = kernel.ErrInstanceExists
 
-// OpenPostgres constructs a Postgres-backed kernel.Store + JournalReader over pool.
+// OpenPostgres constructs a Postgres-backed kernel.InstanceStore + JournalReader over pool.
 //
-// The returned Store satisfies both kernel.Store and kernel.JournalReader.
+// The returned InstanceStore satisfies both kernel.InstanceStore and kernel.JournalReader.
 // Migrate must be called before OpenPostgres so the required tables exist.
 //
 // Example:
@@ -196,9 +196,9 @@ var ErrInstanceExists = kernel.ErrInstanceExists
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
 //	store, _ := persistence.OpenPostgres(ctx, pool, persistence.WithHistoryCap(50))
-//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 //	if err != nil { log.Fatal(err) }
-func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Store, error) {
+func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (InstanceStore, error) {
 	q, err := database.From(pool)
 	if err != nil {
 		return nil, err
@@ -258,7 +258,7 @@ func NewCachingDefinitionRegistry(backing kernel.DefinitionRegistry, ttl time.Du
 // persistence.WithRelayBackoff. The relay isolates publish failures per row
 // (a poison event never blocks healthy peers) and quarantines a row to a
 // dead-letter status after MaxDeliveryAttempts (ADR-0017).
-func NewRelay(pool *pgxpool.Pool, pub kernel.Publisher, opts ...RelayOption) (Relay, error) {
+func NewRelay(pool *pgxpool.Pool, pub kernel.OutboxPublisher, opts ...RelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -338,15 +338,15 @@ func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 	return store.NewLister(pool, dialect.NewPostgres())
 }
 
-// NewAdvisoryLockOwnership constructs a multi-process [kernel.Ownership]
+// NewAdvisoryLockOwnership constructs a multi-process [kernel.InstanceOwnership]
 // backed by Postgres session advisory locks (ADR-0020), for use with
-// [kernel.NewCachingStore] across multiple replicas sharing one database.
+// [kernel.NewCachingInstanceStore] across multiple replicas sharing one database.
 //
 // It holds a dedicated pool connection for its lifetime; close the returned
 // [io.Closer] at shutdown to release every held lock and return the connection.
 //
-// When used with a [kernel.CachingStore], always relinquish ownership through
-// [kernel.CachingStore.Release] (not the bare [kernel.Ownership.Release]), so
+// When used with a [kernel.CachingInstanceStore], always relinquish ownership through
+// [kernel.CachingInstanceStore.Release] (not the bare [kernel.InstanceOwnership.Release]), so
 // the cache evicts the instance's state on hand-off and a re-acquiring process
 // does not serve a stale cached entry.
 //
@@ -355,9 +355,9 @@ func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 //	owner, closer, _ := persistence.NewAdvisoryLockOwnership(ctx, pool)
 //	defer closer.Close()
 //	store, _ := persistence.OpenPostgres(ctx, pool)
-//	cachingStore, err := kernel.NewCachingStore(store, owner)
+//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
 //	if err != nil { log.Fatal(err) }
-func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.Ownership, io.Closer, error) {
+func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewPostgresOwnership(ctx, pool)
 	if err != nil {
 		return nil, nil, err

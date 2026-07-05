@@ -103,7 +103,7 @@ func (postgres) IncidentCountExpr() string {
 
 // KeysetCursorPredicate returns the Postgres row-value keyset predicate.
 // Postgres evaluates (col1, col2) < ($n, $m) correctly for TIMESTAMPTZ
-// and VARCHAR comparisons, matching the MemStore skip logic exactly.
+// and VARCHAR comparisons, matching the MemInstanceStore skip logic exactly.
 func (postgres) KeysetCursorPredicate() string {
 	return "AND (started_at, instance_id) < (?, ?) "
 }

@@ -72,11 +72,11 @@ func main() {
 		}),
 	})
 
-	memSt, err := kernel.NewMemStore()
+	memSt, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(cat, memSt)
+	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}

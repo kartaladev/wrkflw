@@ -33,7 +33,7 @@ import (
 // and capture the resulting task token) can reach through it.
 type Harness struct {
 	Runner    *runtime.ProcessDriver
-	Store     *kernel.MemStore
+	Store     *kernel.MemInstanceStore
 	TaskStore *humantask.MemTaskStore
 	Clock     *clockwork.FakeClock
 }
@@ -58,7 +58,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 
 	fc := clockwork.NewFakeClock()
 
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 
 	taskStore := humantask.NewMemTaskStore()
@@ -72,7 +72,9 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 		"greet": greetAction{},
 	})
 
-	runner, err := runtime.NewProcessDriver(cat, store,
+	runner, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)

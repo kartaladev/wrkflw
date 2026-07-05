@@ -95,13 +95,13 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(scheduler) // *Scheduler is an io.Closer
 
 	// --- Store, relay, and readiness probe (Postgres when DATABASE_URL is set) ---
-	memStore, merr := kernel.NewMemStore()
+	memStore, merr := kernel.NewMemInstanceStore()
 	if merr != nil {
 		return merr
 	}
 	var (
-		store       kernel.Store = memStore
-		lister                   = memStore
+		store       kernel.InstanceStore = memStore
+		lister                           = memStore
 		readyChecks []httpcore.HealthCheck
 	)
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
@@ -164,7 +164,9 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err := runtime.NewProcessDriver(cat, store,
+	runner, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 	if err != nil {

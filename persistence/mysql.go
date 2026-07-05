@@ -63,9 +63,9 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 	return store.WithStoreMeterProvider(mp)
 }
 
-// OpenMySQL constructs a MySQL-backed kernel.Store + JournalReader over db.
+// OpenMySQL constructs a MySQL-backed kernel.InstanceStore + JournalReader over db.
 //
-// The returned Store satisfies both kernel.Store and kernel.JournalReader,
+// The returned InstanceStore satisfies both kernel.InstanceStore and kernel.JournalReader,
 // identical to the interface returned by OpenPostgres. MigrateMySQL must be
 // called before OpenMySQL so the required tables exist (or use RunTestMySQL in
 // tests which auto-migrates).
@@ -75,9 +75,9 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
-//	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+//	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 //	if err != nil { log.Fatal(err) }
-func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (Store, error) {
+func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (InstanceStore, error) {
 	q, err := database.From(db)
 	if err != nil {
 		return nil, err
@@ -197,7 +197,7 @@ func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewMySQLRelay(db *sql.DB, pub kernel.Publisher, opts ...MySQLRelayOption) (Relay, error) {
+func NewMySQLRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...MySQLRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -243,8 +243,8 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 	return store.NewCallLinkStore(db, dialect.NewMySQL(), opts...)
 }
 
-// NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.Ownership]
-// backed by MySQL GET_LOCK advisory locks, for use with [kernel.NewCachingStore]
+// NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.InstanceOwnership]
+// backed by MySQL GET_LOCK advisory locks, for use with [kernel.NewCachingInstanceStore]
 // across multiple replicas sharing one database.
 //
 // It holds a dedicated *sql.Conn for its lifetime; close the returned [io.Closer]
@@ -259,8 +259,8 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 //	owner, closer, _ := persistence.NewMySQLAdvisoryLockOwnership(ctx, db)
 //	defer closer.Close()
 //	store, _ := persistence.OpenMySQL(ctx, db)
-//	cachingStore, err := kernel.NewCachingStore(store, owner)
-func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.Ownership, io.Closer, error) {
+//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
+func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {
 		return nil, nil, err
@@ -391,14 +391,14 @@ func MySQLDSN(base string) (string, error) {
 // Compile-time checks: the neutral store concrete types must satisfy the same
 // public interfaces as their Postgres analogs.
 var (
-	_ Store                     = (*store.Store)(nil)
+	_ InstanceStore             = (*store.Store)(nil)
 	_ kernel.TimerStore         = (*store.TimerStore)(nil)
 	_ Relay                     = (*store.Relay)(nil)
 	_ Deduper                   = (*store.Deduper)(nil)
 	_ kernel.CallLinkStore      = (*store.CallLinkStore)(nil)
 	_ kernel.ChainLinkStore     = (*store.ChainLinkStore)(nil)
 	_ kernel.InstanceLister     = (*store.Lister)(nil)
-	_ kernel.Ownership          = (*store.AdvisoryLockOwnership)(nil)
+	_ kernel.InstanceOwnership  = (*store.AdvisoryLockOwnership)(nil)
 	_ DefinitionStore           = (*store.DefinitionStore)(nil)
 	_ Pruner                    = (*store.Pruner)(nil)
 	_ kernel.DefinitionRegistry = (*store.DefinitionStore)(nil)

@@ -12,7 +12,7 @@ import (
 )
 
 // seedMemCallLink seeds one running call-link into a MemCallLinkStore via the
-// shared runtimetest.SeedCallLink helper (public MemStore path).
+// shared runtimetest.SeedCallLink helper (public MemInstanceStore path).
 func seedMemCallLink(t *testing.T, s *kernel.MemCallLinkStore, childID, parentID string) {
 	t.Helper()
 	runtimetest.SeedCallLink(t, s, kernel.CallLink{

@@ -42,9 +42,9 @@ func retryContractDef() *model.ProcessDefinition {
 // an action.NonRetryable error, the runtime emits ActionFailed with Retryable=false,
 // and that a plain error stays Retryable=true (the historical default).
 //
-// Harness: runtime.NewProcessDriver + kernel.NewMemStore (same as retry_test.go /
+// Harness: runtime.NewProcessDriver + kernel.NewMemInstanceStore (same as retry_test.go /
 // action_panic_test.go). The runner drives the process to terminal state (StatusFailed,
-// no retry policy). The MemStore.Entries journal records every applied trigger;
+// no retry policy). The MemInstanceStore.Entries journal records every applied trigger;
 // the ActionFailed trigger is the one immediately preceding the FailInstance
 // terminal step. We locate it by type-asserting each journal entry.
 func TestActionFailedHonoursRetryContract(t *testing.T) {

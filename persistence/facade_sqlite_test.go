@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -171,7 +170,7 @@ func TestNewSQLiteCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), sqliteMinimalDef(), "sqlite-parent-cls-1", nil)
 	require.NoError(t, err)
@@ -219,7 +218,7 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 
 	link := kernel.ChainLink{
 		PredecessorID:            "sqlite-pred-1",
-		Outcome:                  kernel.Outcome("success"),
+		Outcome:                  kernel.ChainOutcome("success"),
 		SuccessorID:              "sqlite-succ-1",
 		PredecessorDefinitionRef: "def-a:1",
 		SuccessorDefinitionRef:   "def-b:2",
@@ -234,7 +233,7 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "sqlite-pred-1", got.PredecessorID)
-	assert.Equal(t, kernel.Outcome("success"), got.Outcome)
+	assert.Equal(t, kernel.ChainOutcome("success"), got.Outcome)
 	assert.Equal(t, "sqlite-succ-1", got.SuccessorID)
 
 	// ListByPredecessor.
@@ -254,7 +253,7 @@ func TestNewSQLiteLister_ListsInstances(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	for _, id := range []string{"sqlite-lst-inst-a", "sqlite-lst-inst-b"} {
 		_, err := r.Run(t.Context(), sqliteMinimalDef(), id, nil)
@@ -287,7 +286,7 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	require.NoError(t, err)
 
 	def := sqliteMinimalDef()
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	_, err = r.Run(t.Context(), def, "sqlite-notifier-parent-1", nil)
 	require.NoError(t, err)

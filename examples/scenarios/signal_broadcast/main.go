@@ -63,7 +63,7 @@ func main() {
 		}),
 	})
 
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
@@ -78,7 +78,7 @@ func main() {
 	if err != nil {
 		log.Fatal("signal bus:", err)
 	}
-	r, err = runtime.NewProcessDriver(cat, store, runtime.WithSignalBus(bus))
+	r, err = runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithSignalBus(bus))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}

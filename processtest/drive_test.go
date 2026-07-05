@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -19,7 +18,7 @@ import (
 )
 
 // buildSignalCase builds a start → signal-catch → end definition, a driver over a
-// fresh MemStore, and runs one instance that parks awaiting the "go" signal.
+// fresh MemInstanceStore, and runs one instance that parks awaiting the "go" signal.
 func buildSignalCase(t *testing.T) (*runtime.ProcessDriver, engine.InstanceState, *model.ProcessDefinition) {
 	t.Helper()
 
@@ -32,9 +31,9 @@ func buildSignalCase(t *testing.T) (*runtime.ProcessDriver, engine.InstanceState
 		Build()
 	require.NoError(t, err)
 
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	driver, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 
 	parked, err := driver.Run(t.Context(), def, "i1", nil)

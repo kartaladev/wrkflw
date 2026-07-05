@@ -31,7 +31,7 @@ type TimerStore interface {
 }
 
 // MemTimerStore is the in-memory reference TimerStore. It is both the write
-// target (MemStore records arms/cancels into it) and the read source.
+// target (MemInstanceStore records arms/cancels into it) and the read source.
 type MemTimerStore struct {
 	mu    sync.Mutex
 	armed map[timerKey]ArmedTimer

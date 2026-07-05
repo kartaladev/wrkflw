@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 type ProcessDriver struct {
 	cat        action.Catalog
 	clk        clock.Clock
-	store      kernel.Store
+	store      kernel.InstanceStore
 	resolver   humantask.ActorResolver
 	tasks      humantask.TaskStore
 	authz      authz.Authorizer
@@ -78,44 +79,39 @@ type ProcessDriver struct {
 	msgWaiters map[msgKey]string
 }
 
-// NewProcessDriver constructs a ProcessDriver with the two required core ports (cat, store)
-// and any optional capability bundles supplied as functional options.
+// NewProcessDriver constructs a ProcessDriver with sensible in-memory defaults
+// and any optional overrides supplied as functional options.
 //
-// Required ports:
-//   - cat: the service-action catalog (may be nil for processes with no service tasks).
-//   - store: the transactional persistence port (snapshot + journal + outbox).
-//     See [Store]; the in-memory [MemStore] is the reference fake.
-//
-// The time source defaults to [clock.System]. Inject a fake clock in tests via
-// [WithClock] for deterministic timestamps (ADR-0003).
-//
-// ADR-0007 amends ADR-0005: the former store/jnl/out positionals collapse to
-// one transactional Store, so snapshot, journal, and outbox commit atomically
-// per applied trigger.
+// Defaults (applied before options):
+//   - Catalog: [action.DefaultCatalog] — the process-global action registry.
+//     Override via [WithActionCatalog].
+//   - Store: [kernel.NewMemInstanceStore] — a transactional in-memory instance
+//     store suitable for single-process and test deployments. Override via
+//     [WithInstanceStore] to supply a persistent SQL-backed store.
+//   - Time source: [clock.System]. Override via [WithClock] (ADR-0003).
 //
 // Optional capabilities are supplied via functional options; the full set of
 // With* functions returning [Option] is (see each for details):
+//   - Core overrides: [WithActionCatalog], [WithInstanceStore].
 //   - Node-kind capabilities: [WithHumanTasks], [WithScheduler], [WithSignalBus],
 //     [WithDefinitions], [WithCallLinkStore], [WithTimerStore].
 //   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
 //     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
 //   - Time source: [WithClock] (default [clock.System]).
 //   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
-func NewProcessDriver(
-	cat action.Catalog,
-	store kernel.Store,
-	opts ...Option,
-) (*ProcessDriver, error) {
-	if cat == nil {
-		return nil, fmt.Errorf("%w: catalog", kernel.ErrNilDependency)
+func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
+	memStore, err := kernel.NewMemInstanceStore()
+	if err != nil {
+		return nil, fmt.Errorf("workflow-runtime: default instance store: %w", err)
 	}
-	if store == nil {
-		return nil, fmt.Errorf("%w: store", kernel.ErrNilDependency)
-	}
+	// Capture the default sentinels before the option loop so we can detect
+	// whether the consumer replaced them with custom implementations.
+	defaultStore := memStore
+
 	r := &ProcessDriver{
-		cat:           cat,
+		cat:           action.DefaultCatalog(),
 		clk:           clock.System(),
-		store:         store,
+		store:         memStore,
 		jitter:        kernel.NewJitterSource(),
 		actionTimeout: defaultActionTimeout,
 		msgWaiters:    make(map[msgKey]string),
@@ -124,7 +120,51 @@ func NewProcessDriver(
 		o(r)
 	}
 	r.obs = newDriverObs(r.logOpt, r.tpOpt, r.mpOpt)
+	r.logConstructionSummary(defaultStore)
 	return r, nil
+}
+
+// onOff returns "on" when v is true and "off" otherwise.
+func onOff(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
+}
+
+// logConstructionSummary emits a single DEBUG log record summarising the
+// ProcessDriver's wiring after construction. defaultStore is the MemInstanceStore
+// that was created inside NewProcessDriver as the pre-option default; when r.store
+// still points to that same value after the option loop, the store is in-memory
+// (non-durable); otherwise a custom implementation was supplied.
+func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore) {
+	storeLabel := "in-memory(non-durable)"
+	if r.store != defaultStore {
+		storeLabel = "custom"
+	}
+
+	catalogLabel := "custom"
+	if r.cat == action.DefaultCatalog() {
+		catalogLabel = "default-global"
+	}
+
+	r.obs.tel.Logger.LogAttrs(
+		context.Background(),
+		slog.LevelDebug,
+		"ProcessDriver constructed",
+		slog.String("store", storeLabel),
+		slog.String("catalog", catalogLabel),
+		slog.String("scheduler", onOff(r.sched != nil)),
+		slog.String("signalBus", onOff(r.sigbus != nil)),
+		slog.String("humanTasks", onOff(r.tasks != nil)),
+		slog.String("definitions", onOff(r.defsReg != nil)),
+		slog.String("callLinks", onOff(r.callLinks != nil)),
+		slog.String("timerStore", onOff(r.timerStore != nil)),
+		slog.String("actionTimeout", r.actionTimeout.String()),
+		slog.Bool("retryDefault", r.defaultRetryPolicy != nil),
+		slog.Bool("conditionEval", r.conditionEval != nil),
+		slog.String("hint", "in-memory store is not durable; for production wire persistence.OpenPostgres/OpenMySQL/OpenSQLite + runtime.WithInstanceStore, and enable WithScheduler/WithTimerStore/WithCallLinkStore as needed"),
+	)
 }
 
 // Run starts an instance and drives it to a terminal state or until the engine
@@ -201,7 +241,7 @@ func (r *ProcessDriver) deliverLoop(
 	ctx context.Context,
 	def *model.ProcessDefinition,
 	st engine.InstanceState,
-	token kernel.Token,
+	token kernel.Version,
 	create bool,
 	firstCallLink *kernel.CallLink,
 	trg engine.Trigger,
@@ -259,9 +299,9 @@ func (r *ProcessDriver) deliverLoop(
 		events = append(events, outboundMessageEvents(st, res.Commands)...)
 
 		// Compute a CallOutcome when this step transitions the instance into a
-		// terminal status AND a CallLinkStore is configured. The Store's Commit
+		// terminal status AND a CallLinkStore is configured. The InstanceStore's Commit
 		// implementation uses this to flip the call link to terminal atomically
-		// (one transaction / one MemStore lock). For root instances the Store
+		// (one transaction / one MemInstanceStore lock). For root instances the Store
 		// treats a missing link as a no-op, so setting CallOutcome unconditionally
 		// on terminal is safe even without special-casing here.
 		var outcome *kernel.CallOutcome

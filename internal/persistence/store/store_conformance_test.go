@@ -74,14 +74,14 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		s, err := store.New(b.conn, b.dialect)
 		require.NoError(t, err)
-		var _ kernel.Store = s         // compile-time interface check
+		var _ kernel.InstanceStore = s // compile-time interface check
 		var _ kernel.JournalReader = s // compile-time JournalReader check
 
 		// --- Create → Load round-trip (with time round-trip) ---
 		inst := newTestInstance(t, "i1")
 		tok, err := s.Create(t.Context(), inst)
 		require.NoError(t, err, "%s: create", b.name)
-		require.Equal(t, kernel.Token(1), tok, "%s: first token is 1", b.name)
+		require.Equal(t, kernel.Version(1), tok, "%s: first token is 1", b.name)
 
 		got, loaded, err := s.Load(t.Context(), "i1")
 		require.NoError(t, err, "%s: load", b.name)
@@ -105,7 +105,7 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 		// --- Commit advances version + persists journal + outbox ---
 		next, err := s.Commit(t.Context(), tok, appliedStep("i1", "b"))
 		require.NoError(t, err, "%s: commit", b.name)
-		require.Equal(t, kernel.Token(2), next, "%s: commit advances token", b.name)
+		require.Equal(t, kernel.Version(2), next, "%s: commit advances token", b.name)
 
 		require.Equal(t, 1, countRows(t, b,
 			`SELECT COUNT(*) FROM wrkflw_journal WHERE instance_id = ? AND seq = 2`, "i1"),

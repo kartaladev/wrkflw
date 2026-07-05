@@ -32,7 +32,7 @@ type ChainEvent struct {
 	// that does not set the "def" metadata key.
 	PredecessorDefinitionRef string
 	// Outcome is the terminal outcome that fired the event.
-	Outcome kernel.Outcome
+	Outcome kernel.ChainOutcome
 	// Result is the event payload: the terminal variables (completed) or
 	// {"error": …} (failed/terminated).
 	Result map[string]any
@@ -146,7 +146,7 @@ const chainerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/chai
 // outcome) hop. Determinism is the first idempotency layer: a redelivered
 // terminal event computes the same id, so Store.Create rejects the second start
 // with ErrInstanceExists even when no ChainLinkStore is configured.
-func successorID(predecessorID string, outcome kernel.Outcome) string {
+func successorID(predecessorID string, outcome kernel.ChainOutcome) string {
 	return predecessorID + "-next-" + string(outcome)
 }
 

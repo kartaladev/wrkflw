@@ -23,24 +23,24 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// errStore is a Store whose Create and Commit always fail with a concurrency error.
-// It embeds *kernel.MemStore so that Load still works for Deliver-based tests
+// errStore is an InstanceStore whose Create and Commit always fail with a concurrency error.
+// It embeds *kernel.MemInstanceStore so that Load still works for Deliver-based tests
 // that need an initial state.
-type errStore struct{ *kernel.MemStore }
+type errStore struct{ *kernel.MemInstanceStore }
 
-func (errStore) Create(_ context.Context, _ kernel.AppliedStep) (kernel.Token, error) {
+func (errStore) Create(_ context.Context, _ kernel.AppliedStep) (kernel.Version, error) {
 	return 0, kernel.ErrConcurrentUpdate
 }
 
-func (errStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) (kernel.Token, error) {
+func (errStore) Commit(_ context.Context, _ kernel.Version, _ kernel.AppliedStep) (kernel.Version, error) {
 	return 0, kernel.ErrConcurrentUpdate
 }
 
 // commitErrStore is a Store whose Create succeeds but Commit always fails
 // with ErrConcurrentUpdate. Used to test the Commit failure path independently.
-type commitErrStore struct{ *kernel.MemStore }
+type commitErrStore struct{ *kernel.MemInstanceStore }
 
-func (s *commitErrStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) (kernel.Token, error) {
+func (s *commitErrStore) Commit(_ context.Context, _ kernel.Version, _ kernel.AppliedStep) (kernel.Version, error) {
 	return 0, kernel.ErrConcurrentUpdate
 }
 
@@ -221,26 +221,26 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 		"ScheduleTimer/CancelTimer nil-guard must mention 'no Scheduler configured'")
 }
 
-// onceConflictStore wraps *kernel.MemStore and injects a single ErrConcurrentUpdate
+// onceConflictStore wraps *kernel.MemInstanceStore and injects a single ErrConcurrentUpdate
 // on the first Commit call whose step.Trigger is an engine.TimerFired. All other
 // calls (before or after the triggered conflict) delegate to the inner store.
 //
 // This lets TestTimerFireRetriesOnCASConflict drive a deterministic CAS conflict on
 // the timer-fire path without any concurrency or timing gymnastics.
 type onceConflictStore struct {
-	inner     *kernel.MemStore
+	inner     *kernel.MemInstanceStore
 	triggered atomic.Bool
 }
 
-func (s *onceConflictStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *onceConflictStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Version, error) {
 	return s.inner.Create(ctx, step)
 }
 
-func (s *onceConflictStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Token, error) {
+func (s *onceConflictStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Version, error) {
 	return s.inner.Load(ctx, id)
 }
 
-func (s *onceConflictStore) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *onceConflictStore) Commit(ctx context.Context, expected kernel.Version, step kernel.AppliedStep) (kernel.Version, error) {
 	if _, ok := step.Trigger.(engine.TimerFired); ok && s.triggered.CompareAndSwap(false, true) {
 		// First TimerFired Commit → simulate CAS conflict.
 		return 0, kernel.ErrConcurrentUpdate
@@ -363,38 +363,47 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 		"StartedAt must equal fake clock's epoch")
 }
 
-func TestNewRunnerFailsFast(t *testing.T) {
+// TestNewProcessDriverAlwaysSucceeds verifies that NewProcessDriver always
+// constructs a valid driver regardless of whether WithActionCatalog /
+// WithInstanceStore are supplied, because nil options are silently ignored
+// and sensible in-memory defaults apply.
+func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 	t.Parallel()
-	store := runtimetest.MustMemStore(t)
-	cat := action.NewMapCatalog(nil)
 	cases := []struct {
 		name   string
-		cat    action.Catalog
-		store  kernel.Store
+		opts   []runtime.Option
 		assert func(t *testing.T, r *runtime.ProcessDriver, err error)
 	}{
 		{
-			name:  "nil catalog",
-			cat:   nil,
-			store: store,
+			name: "zero args — defaults apply",
+			opts: nil,
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
-				require.ErrorIs(t, err, kernel.ErrNilDependency)
-				require.Nil(t, r)
+				require.NoError(t, err)
+				require.NotNil(t, r)
 			},
 		},
 		{
-			name:  "nil store",
-			cat:   cat,
-			store: nil,
+			name: "WithActionCatalog(nil) — ignored, defaults apply",
+			opts: []runtime.Option{runtime.WithActionCatalog(nil)},
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
-				require.ErrorIs(t, err, kernel.ErrNilDependency)
-				require.Nil(t, r)
+				require.NoError(t, err)
+				require.NotNil(t, r)
 			},
 		},
 		{
-			name:  "valid args",
-			cat:   cat,
-			store: store,
+			name: "WithInstanceStore(nil) — ignored, defaults apply",
+			opts: []runtime.Option{runtime.WithInstanceStore(nil)},
+			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, r)
+			},
+		},
+		{
+			name: "explicit catalog and store",
+			opts: []runtime.Option{
+				runtime.WithActionCatalog(action.NewMapCatalog(nil)),
+				runtime.WithInstanceStore(runtimetest.MustMemStore(t)),
+			},
 			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, r)
@@ -403,7 +412,8 @@ func TestNewRunnerFailsFast(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := runtime.NewProcessDriver(tc.cat, tc.store)
+			t.Parallel()
+			r, err := runtime.NewProcessDriver(tc.opts...)
 			tc.assert(t, r, err)
 		})
 	}

@@ -3,7 +3,7 @@
 //
 // The engine writes domain events (status-accurate terminal events like
 // instance.completed, and SendTask outbound messages) into the transactional
-// outbox. A relay drains the outbox and hands each event to a kernel.Publisher.
+// outbox. A relay drains the outbox and hands each event to a kernel.OutboxPublisher.
 // eventing.NewPublisher adapts ANY watermill message.Publisher to that port — so
 // reaching Kafka, NATS JetStream, Redis Streams, or watermill-SQL is a one-line
 // swap: replace demoPublisher below with your broker's watermill publisher.
@@ -26,7 +26,6 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (ADR-0082)
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
@@ -88,7 +87,7 @@ func run() error {
 		return err
 	}
 
-	driver, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	if err != nil {
 		return err
 	}

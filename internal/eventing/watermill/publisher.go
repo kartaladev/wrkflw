@@ -19,7 +19,7 @@ import (
 
 const instrumentationName = "github.com/zakyalvan/krtlwrkflw/eventing"
 
-// Publisher adapts a watermill message.Publisher to kernel.Publisher. It maps
+// Publisher adapts a watermill message.Publisher to kernel.OutboxPublisher. It maps
 // one OutboxEvent to one watermill message: the message UUID is the event's
 // DedupKey (or a fresh UUID when empty) so redeliveries are deduplicable, and
 // the instance id is set as metadata for per-instance partitioning/ordering.
@@ -32,7 +32,7 @@ type Publisher struct {
 }
 
 // Compile-time check.
-var _ kernel.Publisher = (*Publisher)(nil)
+var _ kernel.OutboxPublisher = (*Publisher)(nil)
 
 // NewPublisher wraps a watermill message.Publisher.
 func NewPublisher(pub message.Publisher, opts ...Option) *Publisher {

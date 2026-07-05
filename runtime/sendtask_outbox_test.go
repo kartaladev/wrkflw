@@ -17,18 +17,18 @@ import (
 
 // recordingStore wraps an in-memory Store and captures every committed AppliedStep.
 type recordingStore struct {
-	kernel.Store
+	kernel.InstanceStore
 	steps []kernel.AppliedStep
 }
 
-func (s *recordingStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *recordingStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Version, error) {
 	s.steps = append(s.steps, step)
-	return s.Store.Create(ctx, step)
+	return s.InstanceStore.Create(ctx, step)
 }
 
-func (s *recordingStore) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *recordingStore) Commit(ctx context.Context, expected kernel.Version, step kernel.AppliedStep) (kernel.Version, error) {
 	s.steps = append(s.steps, step)
-	return s.Store.Commit(ctx, expected, step)
+	return s.InstanceStore.Commit(ctx, expected, step)
 }
 
 // buildOrderPlacedSendTaskDef constructs: start → sendTask("OrderPlaced") → end.
@@ -52,7 +52,7 @@ func buildOrderPlacedSendTaskDef() *model.ProcessDefinition {
 // and that Run succeeds without any MessageSink configured.
 func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	def := buildOrderPlacedSendTaskDef()
-	store := &recordingStore{Store: runtimetest.MustMemStore(t)}
+	store := &recordingStore{InstanceStore: runtimetest.MustMemStore(t)}
 	r := runtimetest.MustRunner(t, nil, store) // NO MessageSink — must not error
 	_, err := r.Run(t.Context(), def, "i-1", map[string]any{"k": "v"})
 	require.NoError(t, err)

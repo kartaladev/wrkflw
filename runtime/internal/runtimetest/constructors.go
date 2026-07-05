@@ -27,22 +27,28 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
-// MustMemStore builds a MemStore or fails the test. Keeps option-free call sites terse.
-func MustMemStore(t *testing.T, opts ...kernel.MemStoreOption) *kernel.MemStore {
+// MustMemStore builds a MemInstanceStore or fails the test. Keeps option-free call sites terse.
+func MustMemStore(t *testing.T, opts ...kernel.MemInstanceStoreOption) *kernel.MemInstanceStore {
 	t.Helper()
-	m, err := kernel.NewMemStore(opts...)
+	m, err := kernel.NewMemInstanceStore(opts...)
 	require.NoError(t, err)
 	return m
 }
 
 // MustRunner builds a ProcessDriver with the given catalog and store, failing the
-// test on any error. A nil catalog defaults to an empty MapCatalog.
-func MustRunner(t *testing.T, cat action.Catalog, store kernel.Store, opts ...runtime.Option) *runtime.ProcessDriver {
+// test on any error. A nil catalog is given a FRESH, EMPTY isolated catalog
+// (action.NewMapCatalog(nil)) — deliberately NOT the process-global
+// action.DefaultCatalog() — so tests never share mutable global catalog state via
+// this helper. A nil store defaults to a fresh in-memory MemInstanceStore.
+func MustRunner(t *testing.T, cat action.Catalog, store kernel.InstanceStore, opts ...runtime.Option) *runtime.ProcessDriver {
 	t.Helper()
 	if cat == nil {
 		cat = action.NewMapCatalog(nil)
 	}
-	r, err := runtime.NewProcessDriver(cat, store, opts...)
+	allOpts := make([]runtime.Option, 0, 2+len(opts))
+	allOpts = append(allOpts, runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+	allOpts = append(allOpts, opts...)
+	r, err := runtime.NewProcessDriver(allOpts...)
 	require.NoError(t, err)
 	return r
 }
@@ -56,10 +62,10 @@ func MustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 	return svc
 }
 
-// MustCachingStore builds a CachingStore or fails the test.
-func MustCachingStore(t *testing.T, backing kernel.Store, owner kernel.Ownership, opts ...kernel.CachingStoreOption) *kernel.CachingStore {
+// MustCachingStore builds a CachingInstanceStore or fails the test.
+func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.InstanceOwnership, opts ...kernel.CachingInstanceStoreOption) *kernel.CachingInstanceStore {
 	t.Helper()
-	s, err := kernel.NewCachingStore(backing, owner, opts...)
+	s, err := kernel.NewCachingInstanceStore(backing, owner, opts...)
 	require.NoError(t, err)
 	return s
 }

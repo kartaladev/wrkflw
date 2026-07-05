@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -176,17 +175,17 @@ func TestChainerRunSubscribeError(t *testing.T) {
 }
 
 // TestChainerRunStartsSuccessorEndToEnd drives the full subscription loop over a
-// real GoChannel pub/sub + a real Runner + MemStore + MemChainLinkStore: a
+// real GoChannel pub/sub + a real ProcessDriver + MemInstanceStore + MemChainLinkStore: a
 // published instance.completed event starts the mapped successor exactly once.
 func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	clk := clockwork.NewFakeClock()
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clk))
+	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clk))
 	require.NoError(t, err)
 
 	succ := &model.ProcessDefinition{

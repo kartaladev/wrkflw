@@ -2,7 +2,7 @@ package runtime_test
 
 // async_callactivity_e2e_test.go — cross-cutting e2e scenarios for the async
 // call-activity track (Task 8). All scenarios run on the in-memory path:
-// MemStore + MemCallLinkStore + runtime.CallNotifier.
+// MemInstanceStore + MemCallLinkStore + runtime.CallNotifier.
 //
 // Scenarios:
 //  1. Nested async (parent → child → grandchild): cascade resume via DrainOnce
@@ -472,7 +472,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	ctx := t.Context()
 
 	clk := clock.System()
-	// Standard MemStore — NO call-link tracking.
+	// Standard MemInstanceStore — NO call-link tracking.
 	store := runtimetest.MustMemStore(t)
 
 	// Child that parks at a human task; parent calls it via a call activity.

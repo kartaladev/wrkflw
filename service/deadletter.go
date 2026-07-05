@@ -11,7 +11,7 @@ import (
 // DeadLetterAdmin is the optional admin port for inspecting and redriving
 // dead-lettered outbox events. It is intentionally separate from Service: the
 // dead-letter queue is an outbox-relay concern, not an engine/runtime one, and a
-// consumer without the Postgres outbox relay (e.g. MemStore-only) simply never
+// consumer without the Postgres outbox relay (e.g. MemInstanceStore-only) simply never
 // wires it.
 //
 // Its methods are a subset of persistence.Relay's (which also has Run and

@@ -213,7 +213,7 @@ sequenceDiagram
 **Guarantees and ownership (inbound):** `msgWaiters` is an in-memory map; it is
 rebuilt from `InstanceState` after every `deliverLoop` pass. It survives restarts
 only if the consumer calls `ProcessDriver.Sync` on process startup (not currently
-exposed — the `MemStore` path is restart-free by construction; the SQL-backed path
+exposed — the `MemInstanceStore` path is restart-free by construction; the SQL-backed path
 relies on a fresh `Run`/`Deliver` call per instance to re-register). A message with
 no waiter is silently dropped — the transport is responsible for retry if the
 receive task has not yet armed.
@@ -646,15 +646,15 @@ A constructor returns `T` (no error) when:
 
 | Constructor | Sentinel when nil dep |
 |---|---|
-| `runtime.NewProcessDriver(cat, store, opts...)` | `kernel.ErrNilDependency` |
+| `runtime.NewProcessDriver(opts...)` | only a default `MemInstanceStore` construction failure (practically never); nil option args are silently ignored, so defaults stand |
 | `task.NewTaskService(store, az, opts...)` | `kernel.ErrNilDependency` |
-| `kernel.NewCachingStore(backing, owner, opts...)` | `kernel.ErrNilDependency` |
+| `kernel.NewCachingInstanceStore(backing, owner, opts...)` | `kernel.ErrNilDependency` |
 | `kernel.NewCachingDefinitionRegistry(backing, ttl, opts...)` | `kernel.ErrNilDependency` |
 | `signal.NewSignalBus(deliver, opts...)` | `kernel.ErrNilDependency` |
 | `calllink.NewCallNotifier(cl, deliver, reg, opts...)` | `kernel.ErrNilDependency` |
 | `chain.NewChainer(starter, policy, opts...)` | `kernel.ErrNilDependency` |
 | `monitor.NewLineageReader(calls, chains)` | `kernel.ErrNilDependency` |
-| `kernel.NewMemStore(opts...)` | `kernel.ErrNilDependency` (option validation) |
+| `kernel.NewMemInstanceStore(opts...)` | `kernel.ErrNilDependency` (option validation) |
 | `internal/persistence/store` constructors | `store.ErrNilDependency` |
 
 Sentinel values:
@@ -667,7 +667,7 @@ Both follow the `"workflow-<package>: ..."` prefix convention (ADR-0026).
 
 Three APIs consolidated multiple old constructors into a single constructor plus options:
 
-**`kernel.NewMemStore(opts ...MemStoreOption) (*MemStore, error)`**
+**`kernel.NewMemInstanceStore(opts ...MemInstanceStoreOption) (*MemInstanceStore, error)`**
 
 Options: `kernel.WithCallLinks(cl *MemCallLinkStore)`, `kernel.WithTimers(mts *MemTimerStore)`.
 Either, both, or neither may be passed; the zero-option call tracks neither.
@@ -675,7 +675,7 @@ Either, both, or neither may be passed; the zero-option call tracks neither.
 ```go
 cl  := kernel.NewMemCallLinkStore()
 mts := kernel.NewMemTimerStore()
-store, err := kernel.NewMemStore(
+store, err := kernel.NewMemInstanceStore(
     kernel.WithCallLinks(cl),
     kernel.WithTimers(mts),
 )

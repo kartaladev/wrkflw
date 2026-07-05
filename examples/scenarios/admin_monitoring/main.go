@@ -10,7 +10,7 @@
 //     then call [runtime.ProcessDriver.ResolveIncident] to clear it and resume the
 //     instance to completion.
 //  3. Outbox stats + dead-letter + redrive — wire a deliberately-failing
-//     [kernel.Publisher] and a low MaxDeliveryAttempts (1) so the relay
+//     [kernel.OutboxPublisher] and a low MaxDeliveryAttempts (1) so the relay
 //     quarantines terminal-event rows to status='dead' after one publish
 //     attempt; then call [persistence.Relay.ListDeadLettered] to inspect
 //     them, [persistence.Relay.Redrive] to re-queue them, and verify the
@@ -118,7 +118,7 @@ func run() error {
 
 // demonstrateLister starts three instances (two completed, one parked with an
 // incident so it stays running) and pages through them via the SQLite lister.
-func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) error {
+func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.InstanceStore) error {
 	// Simple linear definition: start → greet → end.
 	def, err := definition.NewBuilder("greet", 1).
 		Add(event.NewStart("start")).
@@ -137,7 +137,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 		}),
 	})
 
-	runner, err := runtime.NewProcessDriver(cat, store)
+	runner, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}
@@ -195,7 +195,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.Store) erro
 // demonstrateIncident wires a service action that fails on the first invocation
 // (MaxAttempts=1 so no retry, incident raised immediately) then calls
 // ResolveIncident to resume the instance to completion.
-func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) error {
+func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceStore) error {
 	def, err := definition.NewBuilder("incident-demo", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("risky-op", activity.WithActionName("risky"))).
@@ -222,7 +222,9 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
-	runner, err := runtime.NewProcessDriver(cat, store,
+	runner, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: 0,
@@ -271,7 +273,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.Store) err
 // Section 3: Outbox stats + dead-letter + redrive
 // ──────────────────────────────────────────────────────────────────────────
 
-// failPublisher is a kernel.Publisher that always returns an error.
+// failPublisher is a kernel.OutboxPublisher that always returns an error.
 // It simulates a permanently unavailable broker — every DrainOnce call
 // increments retry_count on the row. With MaxDeliveryAttempts=1 the row
 // is quarantined to status='dead' after the very first publish attempt.
@@ -288,7 +290,7 @@ func (failPublisher) Publish(_ context.Context, _ kernel.OutboxEvent) error {
 //   - lists the dead row via ListDeadLettered;
 //   - redrives the row via Redrive;
 //   - confirms OutboxStats.Dead == 0 after redrive (row is pending again).
-func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) error {
+func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.InstanceStore) error {
 	// A simple definition that completes immediately → emits a terminal outbox event.
 	def, err := definition.NewBuilder("dl-demo", 1).
 		Add(event.NewStart("start")).
@@ -307,7 +309,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Store) 
 		}),
 	})
 
-	runner, err := runtime.NewProcessDriver(cat, store)
+	runner, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}

@@ -307,7 +307,7 @@ func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (kernel.ChainLink, 
 		link.CreatedAt = link.CreatedAt.UTC() // normalise to UTC (ADR-0080)
 	}
 
-	link.Outcome = kernel.Outcome(outcome)
+	link.Outcome = kernel.ChainOutcome(outcome)
 	if len(startVarsJSON) > 0 {
 		if err := json.Unmarshal(startVarsJSON, &link.StartVars); err != nil {
 			return kernel.ChainLink{}, fmt.Errorf("workflow-store: chain links: unmarshal start vars: %w", err)

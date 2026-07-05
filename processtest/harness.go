@@ -21,7 +21,7 @@ import (
 var defaultClockStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // Harness is an in-memory test fixture that wires a [runtime.ProcessDriver]
-// together with a [MemStore], a [FakeClock], a [kernel.MemScheduler], and the
+// together with a [kernel.MemInstanceStore], a [FakeClock], a [kernel.MemScheduler], and the
 // spy fakes ([SpyCatalog], [SpyAuthorizer]) plus an in-memory human-task stack.
 // It drives a definition to completion without any external infrastructure.
 //
@@ -29,7 +29,7 @@ var defaultClockStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 // [Harness.DriveToCompletion]. Accessors expose the owned collaborators for
 // assertions.
 type Harness struct {
-	store    *kernel.MemStore
+	store    *kernel.MemInstanceStore
 	clk      *FakeClock
 	sched    *kernel.MemScheduler
 	catalog  *SpyCatalog
@@ -140,7 +140,7 @@ func New(opts ...Option) (*Harness, error) {
 		cfg.resolver = humantask.NewStaticActorResolver(nil)
 	}
 
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func New(opts ...Option) (*Harness, error) {
 		driverOpts = append(driverOpts, runtime.WithSignalBus(bus))
 	}
 
-	driver, err := runtime.NewProcessDriver(catalog, store, driverOpts...)
+	driver, err := runtime.NewProcessDriver(append([]runtime.Option{runtime.WithActionCatalog(catalog), runtime.WithInstanceStore(store)}, driverOpts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func (e harnessEnv) limit() int { return e.h.driveLimit }
 func (h *Harness) Driver() *runtime.ProcessDriver { return h.driver }
 
 // Store returns the in-memory store.
-func (h *Harness) Store() *kernel.MemStore { return h.store }
+func (h *Harness) Store() *kernel.MemInstanceStore { return h.store }
 
 // Clock returns the fake clock shared by the driver and scheduler.
 func (h *Harness) Clock() *FakeClock { return h.clk }

@@ -6,7 +6,6 @@ import (
 
 	clockwork "github.com/jonboulle/clockwork"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -26,12 +25,12 @@ import (
 // this example drives Chainer.Handle directly so the output is deterministic.
 func ExampleChainer() {
 	ctx := context.Background()
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		panic(err)
 	}
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
+	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clockwork.NewFakeClock()))
 	if err != nil {
 		panic(err)
 	}

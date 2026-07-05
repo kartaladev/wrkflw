@@ -18,8 +18,10 @@
 // For most consumers the entry sequence is: (1) author a [model.ProcessDefinition]
 // with [definition.NewBuilder] (Go) or [definition.NewLoader] (YAML),
 // calling [model.DefinitionLoader.Build] in both cases; (2) construct a
-// [runtime.ProcessDriver] with [runtime.NewProcessDriver](catalog, store, opts) — all required
-// deps are non-nil interfaces; passing nil returns [kernel.ErrNilDependency];
+// [runtime.ProcessDriver] with [runtime.NewProcessDriver] — zero arguments give
+// an in-memory driver backed by [action.DefaultCatalog] and
+// [kernel.NewMemInstanceStore]; supply [runtime.WithActionCatalog] and
+// [runtime.WithInstanceStore] for durable production wiring;
 // (3) call [runtime.ProcessDriver.Run] to start an instance and [runtime.ProcessDriver.Deliver]
 // to resume it after a human-task claim, timer fire, or signal.
 //
@@ -29,7 +31,7 @@
 //     and DefinitionLoader (NewLoader, post-parse action registration).
 //   - runtime      Run a process: the reference driver that performs engine
 //     commands, persists state, and feeds triggers back. Provides ProcessDriver,
-//     MemStore, CachingStore, TaskService, SignalBus, Chainer, CallNotifier.
+//     MemInstanceStore, CachingInstanceStore, TaskService, SignalBus, Chainer, CallNotifier.
 //     All stateful constructors return (T, error) and reject nil required deps.
 //   - engine       The core token state machine. Pure of transport, storage
 //     vendor, and event-bus specifics; depends on interfaces only. Reach for
@@ -39,9 +41,9 @@
 // # Activities and people
 //
 //   - action       The service-action catalog: named, interface-based actions
-//     referenced from definition nodes. Provides MapCatalog, Registry, Func
-//     adapter, and retry-contract helpers (NonRetryable, IsRetryable).
-//     Subpackages: httpcall, email, transform, logaction.
+//     referenced from definition nodes. Provides DefaultCatalog, MapCatalog,
+//     Registry, ActionFunc adapter, and retry-contract helpers (NonRetryable,
+//     IsRetryable). Subpackages: httpcall, email, transform, logaction.
 //   - humantask    Human-task model and the ports that drive human work (claim,
 //     complete, reassign). MemTaskStore for tests; wire a SQL-backed store for
 //     production.
@@ -73,7 +75,7 @@
 //
 //   - persistence  The persistence façade over the neutral SQL store: OpenPostgres,
 //     OpenMySQL, and OpenSQLite backends (Postgres/MySQL/SQLite dialects, ADR-0081/0082).
-//     Provides Store, Relay, CallLinkStore, TimerStore, ChainLinkStore, Lister,
+//     Provides InstanceStore, Relay, CallLinkStore, TimerStore, ChainLinkStore, Lister,
 //     DefinitionStore, and their constructors.
 //   - eventing     The eventing façade for publishing domain events (outbox).
 //     Keeps watermill confined: runtime/engine never import it. Provides

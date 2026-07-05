@@ -95,12 +95,14 @@ func main() {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"fulfiller": {fulfiller},
 	})
-	store, err := kernel.NewMemStore()
+	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(cat, store,
+	r, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
 	)

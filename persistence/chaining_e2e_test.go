@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -52,10 +51,10 @@ func buildDef(t *testing.T, id string, version int) *model.ProcessDefinition {
 
 // chainingDialect bundles the objects needed by each dialect sub-test.
 type chainingDialect struct {
-	store  persistence.Store
+	store  persistence.InstanceStore
 	links  kernel.ChainLinkStore
 	relay  persistence.Relay
-	pub    kernel.Publisher
+	pub    kernel.OutboxPublisher
 	sub    message.Subscriber
 	closer io.Closer
 }
@@ -133,8 +132,7 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 
-	catalog := action.NewMapCatalog(nil)
-	runner, err := runtime.NewProcessDriver(catalog, d.store)
+	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(d.store))
 	require.NoError(t, err)
 
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.

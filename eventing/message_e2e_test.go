@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
@@ -81,7 +80,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 2. In-process GoChannel broker ───────────────────────────────────────
-	// pub is a kernel.Publisher backed by a GoChannel; sub is the matching
+	// pub is a kernel.OutboxPublisher backed by a GoChannel; sub is the matching
 	// message.Subscriber; closer tears the GoChannel down at test end.
 	pub, sub, closer := eventing.NewGoChannelPublisher()
 	defer func() { require.NoError(t, closer.Close()) }()
@@ -92,7 +91,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 3. Runner (shared by receiver and sender) ────────────────────────────
-	r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), store)
+	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 
 	// ── 4. Park the receiver instance ────────────────────────────────────────
