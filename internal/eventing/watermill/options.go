@@ -1,5 +1,5 @@
 // Package watermill adapts a watermill message.Publisher to the
-// kernel.Publisher port. It is the only package besides eventing/ that imports
+// kernel.OutboxPublisher port. It is the only package besides eventing/ that imports
 // watermill; engine/model/runtime never do.
 package watermill
 

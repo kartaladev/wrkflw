@@ -55,7 +55,7 @@ type chainingDialect struct {
 	store  persistence.InstanceStore
 	links  kernel.ChainLinkStore
 	relay  persistence.Relay
-	pub    kernel.Publisher
+	pub    kernel.OutboxPublisher
 	sub    message.Subscriber
 	closer io.Closer
 }

@@ -170,7 +170,7 @@ func NewSQLiteTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewSQLiteRelay(db *sql.DB, pub kernel.Publisher, opts ...SQLiteRelayOption) (Relay, error) {
+func NewSQLiteRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...SQLiteRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)

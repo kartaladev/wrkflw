@@ -15,5 +15,5 @@ func (f *fakePub) Publish(_ context.Context, ev kernel.OutboxEvent) error {
 }
 
 func TestPublisherInterface(t *testing.T) {
-	var _ kernel.Publisher = (*fakePub)(nil)
+	var _ kernel.OutboxPublisher = (*fakePub)(nil)
 }

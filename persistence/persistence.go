@@ -95,8 +95,8 @@ type Relay interface {
 	OutboxStats(ctx context.Context) (kernel.OutboxStats, error)
 }
 
-// Publisher is the broker-agnostic outbox publisher alias (same as kernel.Publisher).
-type Publisher = kernel.Publisher
+// OutboxPublisher is the broker-agnostic outbox publisher alias (same as kernel.OutboxPublisher).
+type OutboxPublisher = kernel.OutboxPublisher
 
 // Option configures the Store returned by OpenPostgres (alias of the neutral
 // store.Option). The same underlying type also backs OpenMySQL's MySQLOption:
@@ -258,7 +258,7 @@ func NewCachingDefinitionRegistry(backing kernel.DefinitionRegistry, ttl time.Du
 // persistence.WithRelayBackoff. The relay isolates publish failures per row
 // (a poison event never blocks healthy peers) and quarantines a row to a
 // dead-letter status after MaxDeliveryAttempts (ADR-0017).
-func NewRelay(pool *pgxpool.Pool, pub kernel.Publisher, opts ...RelayOption) (Relay, error) {
+func NewRelay(pool *pgxpool.Pool, pub kernel.OutboxPublisher, opts ...RelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)

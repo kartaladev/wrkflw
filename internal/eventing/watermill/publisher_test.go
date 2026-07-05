@@ -82,7 +82,7 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 }
 
 func TestPublisherImplementsRuntimePublisher(t *testing.T) {
-	var _ kernel.Publisher = (*watermillpub.Publisher)(nil)
+	var _ kernel.OutboxPublisher = (*watermillpub.Publisher)(nil)
 }
 
 func TestPublishMarshalErrorPropagates(t *testing.T) {

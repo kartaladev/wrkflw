@@ -23,7 +23,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
-// Relay drains wrkflw_outbox and hands each event to a [kernel.Publisher]
+// Relay drains wrkflw_outbox and hands each event to a [kernel.OutboxPublisher]
 // (at-least-once delivery). It branches on dialect capabilities to claim due
 // pending rows without double-publishing:
 //
@@ -45,7 +45,7 @@ import (
 type Relay struct {
 	conn    any
 	d       dialect.Dialect
-	pub     kernel.Publisher
+	pub     kernel.OutboxPublisher
 	clk     clock.Clock
 	poll    time.Duration
 	batch   int
@@ -181,7 +181,7 @@ func WithRelayMeterProvider(mp metric.MeterProvider) RelayOption {
 // each event via pub. conn must be a *pgxpool.Pool (Postgres) or *sql.DB
 // (MySQL / SQLite); d is the matching [dialect.Dialect].
 // Returns [ErrNilDependency] when conn is nil or d is nil.
-func NewRelay(conn any, d dialect.Dialect, pub kernel.Publisher, opts ...RelayOption) (*Relay, error) {
+func NewRelay(conn any, d dialect.Dialect, pub kernel.OutboxPublisher, opts ...RelayOption) (*Relay, error) {
 	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}

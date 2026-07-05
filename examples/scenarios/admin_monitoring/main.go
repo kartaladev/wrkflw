@@ -10,7 +10,7 @@
 //     then call [runtime.ProcessDriver.ResolveIncident] to clear it and resume the
 //     instance to completion.
 //  3. Outbox stats + dead-letter + redrive — wire a deliberately-failing
-//     [kernel.Publisher] and a low MaxDeliveryAttempts (1) so the relay
+//     [kernel.OutboxPublisher] and a low MaxDeliveryAttempts (1) so the relay
 //     quarantines terminal-event rows to status='dead' after one publish
 //     attempt; then call [persistence.Relay.ListDeadLettered] to inspect
 //     them, [persistence.Relay.Redrive] to re-queue them, and verify the
@@ -271,7 +271,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 // Section 3: Outbox stats + dead-letter + redrive
 // ──────────────────────────────────────────────────────────────────────────
 
-// failPublisher is a kernel.Publisher that always returns an error.
+// failPublisher is a kernel.OutboxPublisher that always returns an error.
 // It simulates a permanently unavailable broker — every DrainOnce call
 // increments retry_count on the row. With MaxDeliveryAttempts=1 the row
 // is quarantined to status='dead' after the very first publish attempt.

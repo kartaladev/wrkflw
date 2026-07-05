@@ -81,7 +81,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 2. In-process GoChannel broker ───────────────────────────────────────
-	// pub is a kernel.Publisher backed by a GoChannel; sub is the matching
+	// pub is a kernel.OutboxPublisher backed by a GoChannel; sub is the matching
 	// message.Subscriber; closer tears the GoChannel down at test end.
 	pub, sub, closer := eventing.NewGoChannelPublisher()
 	defer func() { require.NoError(t, closer.Close()) }()

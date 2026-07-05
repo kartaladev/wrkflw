@@ -197,7 +197,7 @@ func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
 //	    persistence.MySQLWithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewMySQLRelay(db *sql.DB, pub kernel.Publisher, opts ...MySQLRelayOption) (Relay, error) {
+func NewMySQLRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...MySQLRelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)

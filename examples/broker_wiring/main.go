@@ -3,7 +3,7 @@
 //
 // The engine writes domain events (status-accurate terminal events like
 // instance.completed, and SendTask outbound messages) into the transactional
-// outbox. A relay drains the outbox and hands each event to a kernel.Publisher.
+// outbox. A relay drains the outbox and hands each event to a kernel.OutboxPublisher.
 // eventing.NewPublisher adapts ANY watermill message.Publisher to that port — so
 // reaching Kafka, NATS JetStream, Redis Streams, or watermill-SQL is a one-line
 // swap: replace demoPublisher below with your broker's watermill publisher.
