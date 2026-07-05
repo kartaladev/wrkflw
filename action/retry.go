@@ -2,10 +2,10 @@ package action
 
 import "errors"
 
-// Retryabler lets an action error state whether the runtime should retry it.
+// RetryableError lets an action error state whether the runtime should retry it.
 // An action returns an error implementing this interface (e.g. via NonRetryable)
 // to override the runtime's retry-by-default policy.
-type Retryabler interface {
+type RetryableError interface {
 	error
 	Retryable() bool
 }
@@ -33,7 +33,7 @@ func IsRetryable(err error) bool {
 	if err == nil {
 		return true
 	}
-	var r Retryabler
+	var r RetryableError
 	if errors.As(err, &r) {
 		return r.Retryable()
 	}
