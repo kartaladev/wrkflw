@@ -16,17 +16,17 @@ func TestToken(t *testing.T) {
 	}{
 		"is comparable": {
 			assert: func(t *testing.T) {
-				tok1 := kernel.Token(42)
-				tok2 := kernel.Token(42)
-				tok3 := kernel.Token(43)
+				tok1 := kernel.Version(42)
+				tok2 := kernel.Version(42)
+				tok3 := kernel.Version(43)
 				require.Equal(t, tok1, tok2)
 				require.NotEqual(t, tok1, tok3)
 			},
 		},
 		"orders as int64": {
 			assert: func(t *testing.T) {
-				tok1 := kernel.Token(1)
-				tok2 := kernel.Token(2)
+				tok1 := kernel.Version(1)
+				tok2 := kernel.Version(2)
 				assert.True(t, tok1 < tok2)
 				assert.True(t, tok2 > tok1)
 			},

@@ -22,14 +22,14 @@ type countingStore struct {
 	loads   atomic.Int64
 }
 
-func (c *countingStore) Create(ctx context.Context, s kernel.AppliedStep) (kernel.Token, error) {
+func (c *countingStore) Create(ctx context.Context, s kernel.AppliedStep) (kernel.Version, error) {
 	return c.backing.Create(ctx, s)
 }
-func (c *countingStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Token, error) {
+func (c *countingStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Version, error) {
 	c.loads.Add(1)
 	return c.backing.Load(ctx, id)
 }
-func (c *countingStore) Commit(ctx context.Context, e kernel.Token, s kernel.AppliedStep) (kernel.Token, error) {
+func (c *countingStore) Commit(ctx context.Context, e kernel.Version, s kernel.AppliedStep) (kernel.Version, error) {
 	return c.backing.Commit(ctx, e, s)
 }
 

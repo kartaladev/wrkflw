@@ -201,7 +201,7 @@ func (r *ProcessDriver) deliverLoop(
 	ctx context.Context,
 	def *model.ProcessDefinition,
 	st engine.InstanceState,
-	token kernel.Token,
+	token kernel.Version,
 	create bool,
 	firstCallLink *kernel.CallLink,
 	trg engine.Trigger,

@@ -44,7 +44,7 @@ func (s *Store) timeArgP(t *time.Time) any {
 // version is set to 1; journal seq is 1; outbox dedup_key is "<id>:1:<i>".
 // All writes are performed atomically in one transaction (joining an ambient
 // one if present, otherwise beginning a fresh leaf).
-func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Version, error) {
 	const version int64 = 1
 
 	q, err := transaction.JoinOrBegin(ctx, s.conn)
@@ -108,7 +108,7 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Tok
 		return 0, s.mapConflict(fmt.Errorf("workflow-store: create: commit: %w", err))
 	}
 	committed = true
-	return kernel.Token(version), nil
+	return kernel.Version(version), nil
 }
 
 // Load returns the persisted snapshot and the current optimistic-concurrency
@@ -117,7 +117,7 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Tok
 //
 // Emits a "wrkflw.store.load" OTel span and records a data point in the
 // wrkflw_store_duration_seconds histogram with attribute op=load.
-func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Token, error) {
+func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Version, error) {
 	ctx, span := s.tel.Tracer.Start(ctx, "wrkflw.store.load")
 	defer span.End()
 	start := time.Now()
@@ -154,7 +154,7 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, kern
 		span.SetStatus(otelcodes.Error, wrapped.Error())
 		return engine.InstanceState{}, 0, wrapped
 	}
-	return stateOut, kernel.Token(version), nil
+	return stateOut, kernel.Version(version), nil
 }
 
 // Commit atomically applies one step against a running instance:
@@ -172,7 +172,7 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, kern
 // mismatch (optimistic-CAS conflict) is recorded as attribute
 // wrkflw.concurrent_update=true and does NOT mark the span as Error — it is
 // expected, retryable control flow that must not pollute error-rate dashboards.
-func (s *Store) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *Store) Commit(ctx context.Context, expected kernel.Version, step kernel.AppliedStep) (kernel.Version, error) {
 	ctx, span := s.tel.Tracer.Start(ctx, "wrkflw.store.commit")
 	defer span.End()
 	start := time.Now()
@@ -277,7 +277,7 @@ func (s *Store) Commit(ctx context.Context, expected kernel.Token, step kernel.A
 		return 0, mapped
 	}
 	committed = true
-	return kernel.Token(next), nil
+	return kernel.Version(next), nil
 }
 
 // Entries returns the recorded trigger history for the given instance id,

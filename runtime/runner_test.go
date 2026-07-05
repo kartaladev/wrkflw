@@ -28,11 +28,11 @@ import (
 // that need an initial state.
 type errStore struct{ *kernel.MemInstanceStore }
 
-func (errStore) Create(_ context.Context, _ kernel.AppliedStep) (kernel.Token, error) {
+func (errStore) Create(_ context.Context, _ kernel.AppliedStep) (kernel.Version, error) {
 	return 0, kernel.ErrConcurrentUpdate
 }
 
-func (errStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) (kernel.Token, error) {
+func (errStore) Commit(_ context.Context, _ kernel.Version, _ kernel.AppliedStep) (kernel.Version, error) {
 	return 0, kernel.ErrConcurrentUpdate
 }
 
@@ -40,7 +40,7 @@ func (errStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) 
 // with ErrConcurrentUpdate. Used to test the Commit failure path independently.
 type commitErrStore struct{ *kernel.MemInstanceStore }
 
-func (s *commitErrStore) Commit(_ context.Context, _ kernel.Token, _ kernel.AppliedStep) (kernel.Token, error) {
+func (s *commitErrStore) Commit(_ context.Context, _ kernel.Version, _ kernel.AppliedStep) (kernel.Version, error) {
 	return 0, kernel.ErrConcurrentUpdate
 }
 
@@ -232,15 +232,15 @@ type onceConflictStore struct {
 	triggered atomic.Bool
 }
 
-func (s *onceConflictStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *onceConflictStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Version, error) {
 	return s.inner.Create(ctx, step)
 }
 
-func (s *onceConflictStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Token, error) {
+func (s *onceConflictStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Version, error) {
 	return s.inner.Load(ctx, id)
 }
 
-func (s *onceConflictStore) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *onceConflictStore) Commit(ctx context.Context, expected kernel.Version, step kernel.AppliedStep) (kernel.Version, error) {
 	if _, ok := step.Trigger.(engine.TimerFired); ok && s.triggered.CompareAndSwap(false, true) {
 		// First TimerFired Commit → simulate CAS conflict.
 		return 0, kernel.ErrConcurrentUpdate

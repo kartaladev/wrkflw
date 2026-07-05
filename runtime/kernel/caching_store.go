@@ -61,7 +61,7 @@ type CachingInstanceStore struct {
 type cacheNode struct {
 	id        string
 	state     engine.InstanceState
-	token     Token
+	token     Version
 	expiresAt time.Time // zero when ttl <= 0 (never expires)
 	elem      *list.Element
 }
@@ -183,7 +183,7 @@ func (c *CachingInstanceStore) get(id string) (*cacheNode, bool) {
 }
 
 // put upserts an entry, refreshing TTL and evicting the LRU tail if over cap.
-func (c *CachingInstanceStore) put(id string, state engine.InstanceState, token Token) {
+func (c *CachingInstanceStore) put(id string, state engine.InstanceState, token Version) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var exp time.Time
@@ -221,7 +221,7 @@ func (c *CachingInstanceStore) removeLocked(n *cacheNode) {
 
 // Create delegates to the backing Store, then write-through caches the new state
 // when this process owns the instance.
-func (c *CachingInstanceStore) Create(ctx context.Context, step AppliedStep) (Token, error) {
+func (c *CachingInstanceStore) Create(ctx context.Context, step AppliedStep) (Version, error) {
 	tok, err := c.backing.Create(ctx, step)
 	if err != nil {
 		return 0, err
@@ -241,7 +241,7 @@ func (c *CachingInstanceStore) Create(ctx context.Context, step AppliedStep) (To
 // Load serves owned instances from cache (populating on a miss under the
 // per-instance lock so a concurrent Commit cannot interleave a stale write).
 // Non-owned instances bypass the cache entirely.
-func (c *CachingInstanceStore) Load(ctx context.Context, id string) (engine.InstanceState, Token, error) {
+func (c *CachingInstanceStore) Load(ctx context.Context, id string) (engine.InstanceState, Version, error) {
 	owned, err := c.owner.Acquire(ctx, id)
 	if err != nil || !owned {
 		return c.backing.Load(ctx, id) // bypass; do not populate
@@ -261,7 +261,7 @@ func (c *CachingInstanceStore) Load(ctx context.Context, id string) (engine.Inst
 
 // Commit delegates under the per-instance lock; on success it write-through
 // caches the new state, on ErrConcurrentUpdate it evicts the stale entry.
-func (c *CachingInstanceStore) Commit(ctx context.Context, expected Token, step AppliedStep) (Token, error) {
+func (c *CachingInstanceStore) Commit(ctx context.Context, expected Version, step AppliedStep) (Version, error) {
 	id := step.State.InstanceID
 	unlock := c.lockFor(id)
 	defer unlock()

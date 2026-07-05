@@ -24,8 +24,8 @@ type JournalReader interface {
 	Entries(ctx context.Context, id string) ([]engine.Trigger, error)
 }
 
-// Token is an opaque optimistic-concurrency token (Postgres: a bigint version).
-type Token int64
+// Version is an opaque optimistic-concurrency token (Postgres: a bigint version).
+type Version int64
 
 // OutboxEvent is one domain event to relay. DedupKey and InstanceID are
 // populated when the event is read back from a persisted outbox row; they let a
@@ -73,7 +73,7 @@ var ErrConcurrentUpdate = errors.New("workflow-runtime: concurrent update")
 // InstanceStore is the transactional persistence port the ProcessDriver depends on. Commit
 // persists snapshot + journal + outbox atomically per applied trigger.
 type InstanceStore interface {
-	Create(ctx context.Context, step AppliedStep) (Token, error)
-	Load(ctx context.Context, id string) (engine.InstanceState, Token, error)
-	Commit(ctx context.Context, expected Token, step AppliedStep) (Token, error)
+	Create(ctx context.Context, step AppliedStep) (Version, error)
+	Load(ctx context.Context, id string) (engine.InstanceState, Version, error)
+	Commit(ctx context.Context, expected Version, step AppliedStep) (Version, error)
 }

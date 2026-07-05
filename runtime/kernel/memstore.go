@@ -20,7 +20,7 @@ var (
 // memInstance is the in-memory record for one instance.
 type memInstance struct {
 	state   engine.InstanceState
-	version Token
+	version Version
 }
 
 // MemInstanceStore is an in-memory transactional Store + JournalReader for tests and
@@ -90,10 +90,10 @@ func NewMemInstanceStore(opts ...MemInstanceStoreOption) (*MemInstanceStore, err
 
 // Create inserts a brand-new instance from its first applied step and returns
 // its initial token.
-func (m *MemInstanceStore) Create(_ context.Context, step AppliedStep) (Token, error) {
+func (m *MemInstanceStore) Create(_ context.Context, step AppliedStep) (Version, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	const initial Token = 1
+	const initial Version = 1
 	if _, exists := m.instances[step.State.InstanceID]; exists {
 		return 0, ErrInstanceExists
 	}
@@ -115,7 +115,7 @@ func (m *MemInstanceStore) Create(_ context.Context, step AppliedStep) (Token, e
 }
 
 // Load returns the current snapshot and its concurrency token.
-func (m *MemInstanceStore) Load(_ context.Context, id string) (engine.InstanceState, Token, error) {
+func (m *MemInstanceStore) Load(_ context.Context, id string) (engine.InstanceState, Version, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	inst, ok := m.instances[id]
@@ -128,7 +128,7 @@ func (m *MemInstanceStore) Load(_ context.Context, id string) (engine.InstanceSt
 // Commit atomically applies one step under an optimistic CAS on expected.
 // It buffers the snapshot, journal append, and outbox events, applying them
 // only after the CAS succeeds, so a stale token leaves the store untouched.
-func (m *MemInstanceStore) Commit(_ context.Context, expected Token, step AppliedStep) (Token, error) {
+func (m *MemInstanceStore) Commit(_ context.Context, expected Version, step AppliedStep) (Version, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	inst, ok := m.instances[step.State.InstanceID]

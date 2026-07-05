@@ -21,12 +21,12 @@ type recordingStore struct {
 	steps []kernel.AppliedStep
 }
 
-func (s *recordingStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *recordingStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Version, error) {
 	s.steps = append(s.steps, step)
 	return s.InstanceStore.Create(ctx, step)
 }
 
-func (s *recordingStore) Commit(ctx context.Context, expected kernel.Token, step kernel.AppliedStep) (kernel.Token, error) {
+func (s *recordingStore) Commit(ctx context.Context, expected kernel.Version, step kernel.AppliedStep) (kernel.Version, error) {
 	s.steps = append(s.steps, step)
 	return s.InstanceStore.Commit(ctx, expected, step)
 }
