@@ -13,6 +13,10 @@ import (
 // errors.Is(err, ErrConflict) holds while the cause stays inspectable.
 var ErrConflict = errors.New("workflow-service: conflicting state")
 
+// ErrNilDependency is returned by NewEngine when a required dependency resolves
+// to nil (an explicitly-nil leaf, or a DurableProvider returning a nil leaf).
+var ErrNilDependency = errors.New("workflow-service: nil required dependency")
+
 // isTerminal reports whether an instance status rejects further triggers.
 func isTerminal(s engine.Status) bool {
 	return s == engine.StatusCompleted || s == engine.StatusFailed || s == engine.StatusTerminated

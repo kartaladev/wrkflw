@@ -21,7 +21,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -87,9 +86,15 @@ func TestEngineResolveIncident(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	taskSvc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
+	svc, err := service.NewEngine(
+		service.WithProcessDriver(r),
+		service.WithInstanceStore(store),
+		service.WithDefinitions(reg),
+		service.WithLister(store),
+		service.WithHumanTasks(taskStore, az),
+		service.WithClock(clk),
+	)
 	require.NoError(t, err)
-	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	// Start the instance — parks with an incident after the first failure.
 	ctx := t.Context()
@@ -107,8 +112,8 @@ func TestEngineResolveIncident(t *testing.T) {
 			AddAttempts: 2,
 		})
 		require.NoError(t, err)
-		assert.Empty(t, st.Incidents, "incident must be cleared after ResolveIncident")
-		assert.Equal(t, engine.StatusCompleted, st.Status, "instance must complete after resolve")
+		assert.Empty(t, st.State().Incidents, "incident must be cleared after ResolveIncident")
+		assert.Equal(t, engine.StatusCompleted, st.State().Status, "instance must complete after resolve")
 	})
 }
 
@@ -154,9 +159,15 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		def.ID:         def,
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
-	taskSvc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
+	svc, err := service.NewEngine(
+		service.WithProcessDriver(r),
+		service.WithInstanceStore(store),
+		service.WithDefinitions(reg),
+		service.WithLister(store),
+		service.WithHumanTasks(taskStore, az),
+		service.WithClock(clk),
+	)
 	require.NoError(t, err)
-	svc := service.New(r, taskSvc, reg, store, store, taskStore, service.WithEngineClock(clk))
 
 	ctx := t.Context()
 	parked, err := r.Run(ctx, def, "inc-inst-zero", nil)
@@ -171,14 +182,14 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 		AddAttempts: 0,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, engine.StatusCompleted, st.Status, "AddAttempts=0 must default to 1 and allow completion")
+	assert.Equal(t, engine.StatusCompleted, st.State().Status, "AddAttempts=0 must default to 1 and allow completion")
 }
 
 // TestEngineResolveIncidentInstanceNotFound verifies that ResolveIncident propagates
 // ErrInstanceNotFound for an unknown instance ID.
 func TestEngineResolveIncidentInstanceNotFound(t *testing.T) {
 	h := newHarness(t, linearDef())
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+	svc := h.newEngine(t)
 
 	_, err := svc.ResolveIncident(t.Context(), service.ResolveIncidentRequest{
 		InstanceID:  "no-such-instance",

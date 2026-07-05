@@ -17,7 +17,7 @@ import (
 func TestErrConflict_ClosedTask(t *testing.T) {
 	def := approvalDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+	svc := h.newEngine(t)
 
 	ctx := t.Context()
 
@@ -52,7 +52,7 @@ func TestErrConflict_ClosedTask(t *testing.T) {
 func TestErrConflict_TerminalInstance(t *testing.T) {
 	def := linearDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+	svc := h.newEngine(t)
 
 	ctx := t.Context()
 
@@ -76,7 +76,7 @@ func TestErrConflict_TerminalInstance(t *testing.T) {
 func TestErrConflict_CancelledTask(t *testing.T) {
 	def := approvalDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+	svc := h.newEngine(t)
 
 	ctx := t.Context()
 
@@ -114,7 +114,7 @@ func TestErrConflict_CancelledTask(t *testing.T) {
 func TestErrConflict_EngineWrongStateClassified(t *testing.T) {
 	def := approvalDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+	svc := h.newEngine(t)
 
 	ctx := t.Context()
 
@@ -154,7 +154,7 @@ func TestErrConflict_EngineWrongStateClassified(t *testing.T) {
 func TestErrConflict_HappyPath_ClaimOpen(t *testing.T) {
 	def := approvalDef()
 	h := newHarness(t, def)
-	svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+	svc := h.newEngine(t)
 
 	ctx := t.Context()
 

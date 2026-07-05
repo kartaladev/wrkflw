@@ -1,8 +1,8 @@
 // Package service_test covers previously-uncovered branches in service.go.
 //
 // This file targets the specific per-function gaps identified in the H2 hygiene
-// pass: GetInstanceWithDefinition (0%), and error branches in StartInstance,
-// DeliverMessage, ClaimTask, ListInstances, and deliverTaskTrigger.
+// pass: GetInstance definition-resolution leniency, and error branches in
+// StartInstance, DeliverMessage, ClaimTask, ListInstances, and deliverTaskTrigger.
 package service_test
 
 import (
@@ -31,16 +31,19 @@ func (l *errLister) List(_ context.Context, _ kernel.InstanceFilter) (kernel.Ins
 	return kernel.InstancePage{}, l.err
 }
 
-// ---- TestGetInstanceWithDefinition ----
+// ---- GetInstance definition-resolution behaviour ----
 
-// TestGetInstanceWithDefinition covers the 0%-coverage happy path and the two
-// not-found error paths through GetInstanceWithDefinition.
-func TestGetInstanceWithDefinition(t *testing.T) {
+// TestGetInstanceNilDefinitionWhenUnresolved covers the leniency contract of the
+// unified GetInstance (which replaced the removed GetInstanceWithDefinition): an
+// instance whose definition is not in the registry is returned with a nil fused
+// definition and NO error — only instance-not-found / store errors surface. The
+// happy path (definition resolves) and the unknown-instance error path are also
+// exercised here.
+func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 	t.Parallel()
 
 	type result struct {
-		st  engine.InstanceState
-		def *model.ProcessDefinition
+		pi  service.ProcessInstance
 		err error
 	}
 
@@ -57,24 +60,24 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 				t.Helper()
 				def := linearDef()
 				h := newHarness(t, def)
-				svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+				svc := h.newEngine(t)
 
 				// Start a linear instance so it exists in the store.
-				st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
 					DefRef:     defRefFor(def),
 					InstanceID: "gwid-happy-1",
 					Vars:       map[string]any{"name": "world"},
 				})
 				require.NoError(t, err)
-				require.Equal(t, engine.StatusCompleted, st.Status)
+				require.Equal(t, engine.StatusCompleted, pi.State().Status)
 
 				return svc, "gwid-happy-1"
 			},
 			assert: func(t *testing.T, r result) {
 				require.NoError(t, r.err)
-				assert.Equal(t, "gwid-happy-1", r.st.InstanceID)
-				assert.NotNil(t, r.def, "definition must be non-nil on the happy path")
-				assert.Equal(t, "greeting", r.def.ID)
+				assert.Equal(t, "gwid-happy-1", r.pi.State().InstanceID)
+				require.NotNil(t, r.pi.Definition(), "definition must be non-nil on the happy path")
+				assert.Equal(t, "greeting", r.pi.Definition().ID)
 			},
 		},
 		{
@@ -82,7 +85,7 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 			setup: func(t *testing.T) (*service.Engine, string) {
 				t.Helper()
 				h := newHarness(t) // no defs, no instances
-				svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+				svc := h.newEngine(t)
 				return svc, "no-such-instance"
 			},
 			assert: func(t *testing.T, r result) {
@@ -91,7 +94,7 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 			},
 		},
 		{
-			name: "instance exists but definition missing returns ErrDefinitionNotFound",
+			name: "instance exists but definition missing returns nil definition and no error",
 			setup: func(t *testing.T) (*service.Engine, string) {
 				t.Helper()
 				def := linearDef()
@@ -102,14 +105,25 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, engine.StatusCompleted, st.Status)
 
-				// Build the service with an EMPTY registry so resolveDefinition fails.
+				// Build the service with an EMPTY registry so the definition cannot
+				// be resolved. GetInstance must NOT error — it returns a nil def.
 				emptyReg := kernel.NewMapDefinitionRegistry(nil)
-				svc := service.New(h.runner, h.tasks, emptyReg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+				svc, err := service.NewEngine(
+					service.WithProcessDriver(h.runner),
+					service.WithInstanceStore(h.store),
+					service.WithDefinitions(emptyReg),
+					service.WithLister(h.lister),
+					service.WithHumanTasks(h.taskStore, h.az),
+					service.WithClock(h.clk),
+				)
+				require.NoError(t, err)
 				return svc, "gwid-nodef-1"
 			},
 			assert: func(t *testing.T, r result) {
-				require.Error(t, r.err)
-				assert.ErrorIs(t, r.err, kernel.ErrDefinitionNotFound)
+				require.NoError(t, r.err, "a missing definition must NOT be an error on GetInstance")
+				require.NotNil(t, r.pi)
+				assert.Nil(t, r.pi.Definition(), "definition must be nil when unresolved")
+				assert.Equal(t, "gwid-nodef-1", r.pi.State().InstanceID)
 			},
 		},
 	}
@@ -119,8 +133,8 @@ func TestGetInstanceWithDefinition(t *testing.T) {
 			t.Parallel()
 
 			svc, instanceID := tc.setup(t)
-			st, def, err := svc.GetInstanceWithDefinition(t.Context(), instanceID)
-			tc.assert(t, result{st: st, def: def, err: err})
+			pi, err := svc.GetInstance(t.Context(), instanceID)
+			tc.assert(t, result{pi: pi, err: err})
 		})
 	}
 }
@@ -146,7 +160,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 	type testCase struct {
 		name   string
 		def    func() *model.ProcessDefinition
-		assert func(t *testing.T, st engine.InstanceState, err error)
+		assert func(t *testing.T, pi service.ProcessInstance, err error)
 	}
 
 	cases := []testCase{
@@ -163,7 +177,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 					Flows:   []flow.SequenceFlow{},
 				}
 			},
-			assert: func(t *testing.T, _ engine.InstanceState, err error) {
+			assert: func(t *testing.T, _ service.ProcessInstance, err error) {
 				require.Error(t, err)
 				// The error must NOT be ErrDefinitionNotFound (def was found).
 				assert.False(t, errors.Is(err, kernel.ErrDefinitionNotFound),
@@ -178,7 +192,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 
 			def := tc.def()
 			h := newHarness(t, def)
-			svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+			svc := h.newEngine(t)
 
 			st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
 				DefRef:     defRefFor(def),
@@ -199,7 +213,7 @@ func TestClaimTaskStoreGetError(t *testing.T) {
 	type testCase struct {
 		name      string
 		taskToken string
-		assert    func(t *testing.T, st engine.InstanceState, err error)
+		assert    func(t *testing.T, pi service.ProcessInstance, err error)
 	}
 
 	cases := []testCase{
@@ -208,7 +222,7 @@ func TestClaimTaskStoreGetError(t *testing.T) {
 			// exercises the "get task" error branch in deliverTaskTrigger.
 			name:      "unknown task token returns ErrTaskNotFound",
 			taskToken: "no-such-token",
-			assert: func(t *testing.T, _ engine.InstanceState, err error) {
+			assert: func(t *testing.T, _ service.ProcessInstance, err error) {
 				require.Error(t, err)
 				assert.ErrorIs(t, err, humantask.ErrTaskNotFound)
 			},
@@ -221,7 +235,7 @@ func TestClaimTaskStoreGetError(t *testing.T) {
 
 			def := approvalDef()
 			h := newHarness(t, def)
-			svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+			svc := h.newEngine(t)
 
 			manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 			st, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
@@ -266,7 +280,15 @@ func TestListInstancesListerError(t *testing.T) {
 			h := newHarness(t, def)
 
 			// Override the lister with one that always fails.
-			svc := service.New(h.runner, h.tasks, h.reg, h.store, &errLister{err: sentinel}, h.taskStore, service.WithEngineClock(h.clk))
+			svc, err := service.NewEngine(
+				service.WithProcessDriver(h.runner),
+				service.WithInstanceStore(h.store),
+				service.WithDefinitions(h.reg),
+				service.WithLister(&errLister{err: sentinel}),
+				service.WithHumanTasks(h.taskStore, h.az),
+				service.WithClock(h.clk),
+			)
+			require.NoError(t, err)
 
 			page, err := svc.ListInstances(t.Context(), kernel.InstanceFilter{Limit: 10})
 			tc.assert(t, page, err)
@@ -290,14 +312,14 @@ func TestClaimTaskAuthorizationFailure(t *testing.T) {
 	type testCase struct {
 		name   string
 		actor  authz.Actor
-		assert func(t *testing.T, st engine.InstanceState, err error)
+		assert func(t *testing.T, pi service.ProcessInstance, err error)
 	}
 
 	cases := []testCase{
 		{
 			name:  "unauthorized actor causes Claim to fail",
 			actor: authz.Actor{ID: "eve", Roles: []string{"viewer"}},
-			assert: func(t *testing.T, _ engine.InstanceState, err error) {
+			assert: func(t *testing.T, _ service.ProcessInstance, err error) {
 				require.Error(t, err)
 				// tasks.Claim propagates ErrNotAuthorized when the actor's roles
 				// don't satisfy the task's eligibility spec.
@@ -321,7 +343,7 @@ func TestClaimTaskAuthorizationFailure(t *testing.T) {
 			taskToken := parked.Tokens[0].AwaitCommand
 			require.NotEmpty(t, taskToken)
 
-			svc := service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+			svc := h.newEngine(t)
 
 			st, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
 				TaskToken: taskToken,
