@@ -32,7 +32,11 @@ func TestDefaultCatalog_RegisterFuncNil(t *testing.T) {
 
 func TestDefaultCatalog_Identity(t *testing.T) {
 	t.Parallel()
-	if action.DefaultCatalog() != action.DefaultCatalog() {
+	// Bind to locals so staticcheck (SA4000) does not misread the deliberate
+	// same-call comparison as an accidental identical-expression bug: the point
+	// is that both calls return the one process-global registry.
+	first, second := action.DefaultCatalog(), action.DefaultCatalog()
+	if first != second {
 		t.Fatal("DefaultCatalog() must return the same process-global registry")
 	}
 }
