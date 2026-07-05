@@ -21,7 +21,7 @@ import (
 var defaultClockStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // Harness is an in-memory test fixture that wires a [runtime.ProcessDriver]
-// together with a [MemStore], a [FakeClock], a [kernel.MemScheduler], and the
+// together with a [kernel.MemInstanceStore], a [FakeClock], a [kernel.MemScheduler], and the
 // spy fakes ([SpyCatalog], [SpyAuthorizer]) plus an in-memory human-task stack.
 // It drives a definition to completion without any external infrastructure.
 //

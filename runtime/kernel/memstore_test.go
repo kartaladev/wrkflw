@@ -159,7 +159,7 @@ func TestNewMemStoreOptions(t *testing.T) {
 	}
 }
 
-// TestMemStoreConcurrentSafe verifies that MemStore is safe for concurrent use
+// TestMemStoreConcurrentSafe verifies that MemInstanceStore is safe for concurrent use
 // from multiple goroutines. The test is designed to expose data races when run
 // with -race.
 func TestMemStoreConcurrentSafe(t *testing.T) {

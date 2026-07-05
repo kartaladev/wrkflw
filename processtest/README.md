@@ -75,7 +75,7 @@ That's the whole shape: **`New` → `Start` → `DriveToCompletion(..., handler)
 
 | Collaborator | Concrete | Accessor |
 |---|---|---|
-| store | `kernel.MemStore` | `h.Store()` |
+| store | `kernel.MemInstanceStore` | `h.Store()` |
 | clock | `processtest.FakeClock` (shared) | `h.Clock()` |
 | scheduler | `kernel.MemScheduler` (clock-shared) | `h.Scheduler()` |
 | action catalog | `*SpyCatalog` | `h.Catalog()` |

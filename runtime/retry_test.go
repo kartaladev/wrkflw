@@ -149,7 +149,7 @@ func incidentTaskDef() *model.ProcessDefinition {
 // Runner.ResolveIncident and asserts the incident is cleared and the action
 // re-invoked successfully.
 //
-// The test also verifies that MemStore.List reports IncidentCount==1 while the
+// The test also verifies that MemInstanceStore.List reports IncidentCount==1 while the
 // incident is open and IncidentCount==0 after it is resolved.
 func TestRunnerResolveIncident(t *testing.T) {
 	T := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -187,11 +187,11 @@ func TestRunnerResolveIncident(t *testing.T) {
 
 	incID := st.Incidents[0].ID
 
-	// MemStore lister must report IncidentCount==1 while the incident is open.
+	// MemInstanceStore lister must report IncidentCount==1 while the incident is open.
 	page, err := store.List(t.Context(), kernel.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
-	assert.Equal(t, 1, page.Items[0].IncidentCount, "MemStore lister: want IncidentCount==1 before resolve")
+	assert.Equal(t, 1, page.Items[0].IncidentCount, "MemInstanceStore lister: want IncidentCount==1 before resolve")
 
 	// ResolveIncident: grant 2 additional attempts; action now succeeds.
 	st2, err := runner.ResolveIncident(t.Context(), def, "p", incID, 2)
@@ -199,9 +199,9 @@ func TestRunnerResolveIncident(t *testing.T) {
 	assert.Empty(t, st2.Incidents, "incident must be cleared after ResolveIncident")
 	assert.Equal(t, engine.StatusCompleted, st2.Status, "instance must complete after resolve+reinvoke")
 
-	// MemStore lister must report IncidentCount==0 after resolve.
+	// MemInstanceStore lister must report IncidentCount==0 after resolve.
 	page2, err := store.List(t.Context(), kernel.InstanceFilter{})
 	require.NoError(t, err)
 	require.Len(t, page2.Items, 1)
-	assert.Equal(t, 0, page2.Items[0].IncidentCount, "MemStore lister: want IncidentCount==0 after resolve")
+	assert.Equal(t, 0, page2.Items[0].IncidentCount, "MemInstanceStore lister: want IncidentCount==0 after resolve")
 }

@@ -71,7 +71,7 @@ type keyLock struct {
 	refs int
 }
 
-// CachingInstanceStoreOption configures a CachingStore.
+// CachingInstanceStoreOption configures a CachingInstanceStore.
 type CachingInstanceStoreOption func(*CachingInstanceStore)
 
 // WithCacheTTL sets the maximum age of a cached instance entry before it is
@@ -137,7 +137,7 @@ func NewCachingInstanceStore(backing InstanceStore, owner InstanceOwnership, opt
 	// visible in logs; the safe alternative is a real lease
 	// (persistence.NewAdvisoryLockOwnership).
 	if _, ok := owner.(AlwaysOwn); ok {
-		c.logger.Warn("runtime: CachingStore paired with AlwaysOwn is single-replica only; " +
+		c.logger.Warn("runtime: CachingInstanceStore paired with AlwaysOwn is single-replica only; " +
 			"use persistence.NewAdvisoryLockOwnership for multi-replica deployments to avoid stale cached reads")
 	}
 	return c, nil
@@ -279,9 +279,9 @@ func (c *CachingInstanceStore) Commit(ctx context.Context, expected Version, ste
 }
 
 // Release relinquishes ownership of an instance and evicts its cached state,
-// so a future re-acquisition re-reads the backing Store rather than serving a
-// now-possibly-stale cached entry. Consumers using a CachingStore MUST relinquish
-// ownership through THIS method (not the bare Ownership), or a re-acquired
+// so a future re-acquisition re-reads the backing InstanceStore rather than serving a
+// now-possibly-stale cached entry. Consumers using a CachingInstanceStore MUST relinquish
+// ownership through THIS method (not the bare InstanceOwnership), or a re-acquired
 // instance may serve stale state until its TTL expires (ADR-0020).
 //
 // The eviction is performed before forwarding to owner.Release so the cache entry

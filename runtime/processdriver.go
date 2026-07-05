@@ -299,9 +299,9 @@ func (r *ProcessDriver) deliverLoop(
 		events = append(events, outboundMessageEvents(st, res.Commands)...)
 
 		// Compute a CallOutcome when this step transitions the instance into a
-		// terminal status AND a CallLinkStore is configured. The Store's Commit
+		// terminal status AND a CallLinkStore is configured. The InstanceStore's Commit
 		// implementation uses this to flip the call link to terminal atomically
-		// (one transaction / one MemStore lock). For root instances the Store
+		// (one transaction / one MemInstanceStore lock). For root instances the Store
 		// treats a missing link as a no-op, so setting CallOutcome unconditionally
 		// on terminal is safe even without special-casing here.
 		var outcome *kernel.CallOutcome

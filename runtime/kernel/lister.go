@@ -123,7 +123,7 @@ type InstancePage struct {
 // InstanceLister is the read-side port for enumerating process instances.
 // Implementations must return items ordered by (StartedAt DESC, InstanceID DESC),
 // where InstanceID uses lexicographic (string) comparison. This ordering is consistent
-// between MemStore and Postgres (varchar), so callers should use sortable instance IDs
+// between MemInstanceStore and Postgres (varchar), so callers should use sortable instance IDs
 // (e.g. UUIDs/ULIDs) for intuitive ordering.
 type InstanceLister interface {
 	// List returns a page of process-instance summaries matching filter.

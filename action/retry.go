@@ -28,7 +28,7 @@ func (n nonRetryable) Retryable() bool { return false }
 
 // IsRetryable reports whether the runtime should retry a failed action's error.
 // A nil error and any plain error are retryable (the historical default); an
-// error implementing Retryabler anywhere in its chain overrides that.
+// error implementing RetryableError anywhere in its chain overrides that.
 func IsRetryable(err error) bool {
 	if err == nil {
 		return true

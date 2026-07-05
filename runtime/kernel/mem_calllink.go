@@ -70,14 +70,14 @@ func NewMemCallLinkStore(opts ...MemCallLinkOption) *MemCallLinkStore {
 	return s
 }
 
-// record inserts a new link (called by MemStore on Create with NewCallLink).
+// record inserts a new link (called by MemInstanceStore on Create with NewCallLink).
 func (m *MemCallLinkStore) record(link CallLink) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.links[link.ChildInstanceID] = &memLink{link: link}
 }
 
-// markTerminal flips a child's link to terminal (called by MemStore on Commit with
+// markTerminal flips a child's link to terminal (called by MemInstanceStore on Commit with
 // CallOutcome). No-op when the instance has no link (root instance).
 func (m *MemCallLinkStore) markTerminal(childID string, out CallOutcome) {
 	m.mu.Lock()

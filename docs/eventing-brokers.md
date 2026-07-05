@@ -2,7 +2,7 @@
 
 wrkflw emits domain events through a **transactional outbox**: state changes and
 their events commit in the same transaction, and a **relay** drains the outbox and
-publishes each event. The publish port is `kernel.Publisher`; the eventing package
+publishes each event. The publish port is `kernel.OutboxPublisher`; the eventing package
 adapts **any** [watermill](https://github.com/ThreeDotsLabs/watermill) publisher to
 it, so reaching Kafka, NATS, Redis Streams, or a SQL-backed queue is a **one-line
 swap** — with watermill confined to the `eventing`/`internal` packages
@@ -25,7 +25,7 @@ import (
 )
 
 // brokerPub is your broker's watermill message.Publisher (see below).
-pub := eventing.NewPublisher(brokerPub)          // kernel.Publisher
+pub := eventing.NewPublisher(brokerPub)          // kernel.OutboxPublisher
 relay, err := persistence.NewRelay(pool, pub)    // Postgres; or NewSQLiteRelay / NewMySQLRelay
 // ...
 go relay.Run(ctx)                                // or relay.DrainOnce(ctx) synchronously

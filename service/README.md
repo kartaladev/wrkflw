@@ -60,7 +60,7 @@ func New(
     runner    *runtime.ProcessDriver,    // 1. required
     tasks     *task.TaskService,         // 2. required
     reg       kernel.DefinitionRegistry, // 3. required
-    store     kernel.Store,              // 4. required
+    store     kernel.InstanceStore,      // 4. required
     lister    kernel.InstanceLister,     // 5. required
     taskStore humantask.TaskStore,       // 6. required
     opts      ...EngineOption,           //    optional
@@ -74,7 +74,7 @@ The six required collaborators must be wired by hand (no DI container is imposed
 | 1 | `runner` | `*runtime.ProcessDriver` | Drives execution — `Run` / `Deliver` / `DeliverMessage` / `ResolveIncident` / `CancelInstance`. |
 | 2 | `tasks` | `*task.TaskService` (`runtime/task`) | Authorizes human-task ops and returns the resulting engine trigger (`Claim`/`Complete`/`Reassign`). |
 | 3 | `reg` | `kernel.DefinitionRegistry` (`runtime/kernel`) | Resolves `DefRef` strings to `*model.ProcessDefinition`. |
-| 4 | `store` | `kernel.Store` | Loads instance state for `GetInstance` and definition resolution. |
+| 4 | `store` | `kernel.InstanceStore` | Loads instance state for `GetInstance` and definition resolution. |
 | 5 | `lister` | `kernel.InstanceLister` | Enumerates instance summaries for `ListInstances`. |
 | 6 | `taskStore` | `humantask.TaskStore` | Resolves the owning instance ID from a task token in task-lifecycle ops. |
 

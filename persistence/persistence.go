@@ -186,9 +186,9 @@ var (
 // exists (re-exported so consumers can errors.Is without importing runtime).
 var ErrInstanceExists = kernel.ErrInstanceExists
 
-// OpenPostgres constructs a Postgres-backed kernel.Store + JournalReader over pool.
+// OpenPostgres constructs a Postgres-backed kernel.InstanceStore + JournalReader over pool.
 //
-// The returned Store satisfies both kernel.Store and kernel.JournalReader.
+// The returned InstanceStore satisfies both kernel.InstanceStore and kernel.JournalReader.
 // Migrate must be called before OpenPostgres so the required tables exist.
 //
 // Example:
@@ -355,7 +355,7 @@ func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 //	owner, closer, _ := persistence.NewAdvisoryLockOwnership(ctx, pool)
 //	defer closer.Close()
 //	store, _ := persistence.OpenPostgres(ctx, pool)
-//	cachingStore, err := kernel.NewCachingStore(store, owner)
+//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
 //	if err != nil { log.Fatal(err) }
 func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewPostgresOwnership(ctx, pool)

@@ -184,15 +184,12 @@ func main() {
 		Connect("charge", "e").
 		Build()
 
-	cat := action.NewMapCatalog(map[string]action.Action{
-		"charge-card": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
-			return map[string]any{"charged": true}, nil
-		}),
-	})
-
-	store, err := kernel.NewMemStore()
-	if err != nil { log.Fatal(err) }
-	r, err := runtime.NewProcessDriver(cat, store)
+	// Zero-argument: in-memory driver with action.DefaultCatalog() + kernel.NewMemInstanceStore().
+	// For a process with service tasks, supply a catalog via runtime.WithActionCatalog.
+	action.MustRegister("charge-card", action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
+		return map[string]any{"charged": true}, nil
+	}))
+	r, err := runtime.NewProcessDriver()
 	if err != nil { log.Fatal(err) }
 
 	state, err := r.Run(ctx, def, "order-001", map[string]any{"amount": 99.0})
@@ -227,7 +224,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 |---|---|
 | `definition` | Authoring entry: `NewBuilder` (Go) and `NewLoader` (YAML) only. Types/validation/serialization live in `definition/model`; sequence flows in `definition/flow`; node constructors in `definition/{event,gateway,activity}`; fluent builder in `definition/build`; deserialization bundle `definition/kinds`. Pure data + validation; no I/O. |
 | `engine` | Core token state machine. Pure of transport, storage, and event-bus specifics — depends on interfaces only. |
-| `runtime` | Reference driver `ProcessDriver` that wires the engine to persistence, scheduling, and actions, plus lifecycle helpers (`ShutdownGroup`). Supporting pieces live in sub-packages: `runtime/kernel` (in-memory `MemStore`/`CachingStore`, schedulers, definition registry, ownership), `runtime/view` (snapshot DTOs), `runtime/chain` (instance chaining), `runtime/task` (human-task service), plus `runtime/signal`, `runtime/calllink`, `runtime/monitor`. |
+| `runtime` | Reference driver `ProcessDriver` that wires the engine to persistence, scheduling, and actions, plus lifecycle helpers (`ShutdownGroup`). Supporting pieces live in sub-packages: `runtime/kernel` (in-memory `MemInstanceStore`/`CachingInstanceStore`, schedulers, definition registry, ownership), `runtime/view` (snapshot DTOs), `runtime/chain` (instance chaining), `runtime/task` (human-task service), plus `runtime/signal`, `runtime/calllink`, `runtime/monitor`. |
 | `action` | Service-action catalog (`Catalog`, `Action`, `MapCatalog`, `ActionFunc` adapter). |
 | `humantask` | Human-task model and ports that drive human work (claim, complete, reassign). |
 | `authz` | Pluggable `Authorizer` abstraction: role, resource-privilege, and attribute-based rules. |
@@ -483,7 +480,8 @@ around every engine step and service-action invocation:
 
 ```go
 r, err := runtime.NewProcessDriver(
-    cat, store,
+    runtime.WithActionCatalog(cat),
+    runtime.WithInstanceStore(store),
     runtime.WithTracerProvider(tp),
     runtime.WithMeterProvider(mp),
     runtime.WithLogger(slog.Default()),
@@ -1003,12 +1001,8 @@ start → approve[UserTask, roles: manager] → end
 ```
 
 ```go
-memSt, err := kernel.NewMemStore()
-if err != nil {
-    log.Fatal(err)
-}
-// This process has no service tasks, so pass an empty catalog (nil is rejected).
-r, err := runtime.NewProcessDriver(action.NewMapCatalog(nil), memSt,
+// This process has no service tasks; zero-arg driver uses the default in-memory catalog and store.
+r, err := runtime.NewProcessDriver(
     runtime.WithClock(clk),
     runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 if err != nil {
@@ -1057,8 +1051,10 @@ def, _  := definition.NewBuilder("travel-booking", 1).
 
 // Call activity (separate definition resolved by name):
 reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
-memSt, _ := kernel.NewMemStore()
-r, _   := runtime.NewProcessDriver(cat, memSt, runtime.WithDefinitions(reg))
+r, _   := runtime.NewProcessDriver(
+    runtime.WithActionCatalog(cat),
+    runtime.WithDefinitions(reg),
+)
 ```
 
 **At runtime:** the SubProcess example books a room inside the nested scope and merges
@@ -1265,7 +1261,10 @@ db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=forei
 db.SetMaxOpenConns(1) // single-writer serialisation (required)
 persistence.MigrateSQLite(ctx, db)
 store, _ := persistence.OpenSQLite(ctx, db)
-runner, _ := runtime.NewProcessDriver(cat, store)
+runner, _ := runtime.NewProcessDriver(
+    runtime.WithActionCatalog(cat),
+    runtime.WithInstanceStore(store),
+)
 ```
 
 See [`examples/sqlite_wiring/`](examples/sqlite_wiring/) for the complete reference wiring.
@@ -1292,10 +1291,10 @@ clean production embedding ergonomic (ADR-0054):
   chainer) keep their idiomatic stop story: you start their goroutines and stop them by
   cancelling the context you passed.
 
-- **Single-replica caching guard.** Pairing `kernel.NewCachingStore` with
+- **Single-replica caching guard.** Pairing `kernel.NewCachingInstanceStore` with
   `kernel.AlwaysOwn` is single-writer / single-replica **only** — across replicas it is
-  a stale-read footgun. `NewCachingStore` now logs a one-time warning when constructed
-  with `AlwaysOwn`; for multi-replica deployments use
+  a stale-read footgun. `NewCachingInstanceStore` now logs a one-time warning when
+  constructed with `AlwaysOwn`; for multi-replica deployments use
   `persistence.NewAdvisoryLockOwnership` so only the owning replica caches an instance.
 
 The full assembly — engine + scheduler + relay + mounted HTTP and health routes +

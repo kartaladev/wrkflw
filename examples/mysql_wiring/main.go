@@ -101,7 +101,7 @@ func run(logger *slog.Logger) error {
 		return merr
 	}
 
-	// Open the MySQL-backed kernel.Store (and JournalReader).
+	// Open the MySQL-backed kernel.InstanceStore (and JournalReader).
 	store, oerr := persistence.OpenMySQL(workerCtx, db)
 	if oerr != nil {
 		return oerr

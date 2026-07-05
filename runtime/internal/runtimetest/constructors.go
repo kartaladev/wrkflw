@@ -27,7 +27,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
 
-// MustMemStore builds a MemStore or fails the test. Keeps option-free call sites terse.
+// MustMemStore builds a MemInstanceStore or fails the test. Keeps option-free call sites terse.
 func MustMemStore(t *testing.T, opts ...kernel.MemInstanceStoreOption) *kernel.MemInstanceStore {
 	t.Helper()
 	m, err := kernel.NewMemInstanceStore(opts...)
@@ -58,7 +58,7 @@ func MustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 	return svc
 }
 
-// MustCachingStore builds a CachingStore or fails the test.
+// MustCachingStore builds a CachingInstanceStore or fails the test.
 func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.InstanceOwnership, opts ...kernel.CachingInstanceStoreOption) *kernel.CachingInstanceStore {
 	t.Helper()
 	s, err := kernel.NewCachingInstanceStore(backing, owner, opts...)

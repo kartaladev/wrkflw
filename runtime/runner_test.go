@@ -23,8 +23,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// errStore is a Store whose Create and Commit always fail with a concurrency error.
-// It embeds *kernel.MemStore so that Load still works for Deliver-based tests
+// errStore is an InstanceStore whose Create and Commit always fail with a concurrency error.
+// It embeds *kernel.MemInstanceStore so that Load still works for Deliver-based tests
 // that need an initial state.
 type errStore struct{ *kernel.MemInstanceStore }
 
@@ -221,7 +221,7 @@ func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
 		"ScheduleTimer/CancelTimer nil-guard must mention 'no Scheduler configured'")
 }
 
-// onceConflictStore wraps *kernel.MemStore and injects a single ErrConcurrentUpdate
+// onceConflictStore wraps *kernel.MemInstanceStore and injects a single ErrConcurrentUpdate
 // on the first Commit call whose step.Trigger is an engine.TimerFired. All other
 // calls (before or after the triggered conflict) delegate to the inner store.
 //

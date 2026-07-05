@@ -4,7 +4,7 @@ import "context"
 
 // InstanceOwnership decides whether THIS process is the single writer for an instance,
 // and therefore whether its mutable state may be cached and served from memory
-// by a CachingStore (ADR-0020).
+// by a CachingInstanceStore (ADR-0020).
 //
 // Caching mutable instance state is safe only under a single-writer-per-instance
 // guarantee: a stale cached read would otherwise drive a routing decision and
@@ -18,9 +18,9 @@ type InstanceOwnership interface {
 	// Acquire reports whether this process owns instanceID, taking ownership if
 	// it is free. owned=false means another process owns it: do not cache.
 	Acquire(ctx context.Context, instanceID string) (owned bool, err error)
-	// Release relinquishes ownership of instanceID. A CachingStore must evict
+	// Release relinquishes ownership of instanceID. A CachingInstanceStore must evict
 	// the instance's cached state when ownership is relinquished — relinquish
-	// through CachingStore.Release so the cache stays coherent (a re-acquired
+	// through CachingInstanceStore.Release so the cache stays coherent (a re-acquired
 	// instance must not serve a stale cached entry, ADR-0020).
 	Release(ctx context.Context, instanceID string) error
 }

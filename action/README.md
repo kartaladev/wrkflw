@@ -118,9 +118,9 @@ wrapping it.
 
 | Symbol | Signature | Behaviour |
 |---|---|---|
-| `Retryabler` | `interface { error; Retryable() bool }` | An error that declares whether the runtime should retry it, overriding the retry-by-default policy. |
+| `RetryableError` | `interface { error; Retryable() bool }` | An error that declares whether the runtime should retry it, overriding the retry-by-default policy. |
 | `NonRetryable` | `NonRetryable(err error) error` | Wraps `err` so the runtime will **not** retry. The wrapper unwraps to `err` (so `errors.Is`/`errors.As` see through it); `NonRetryable(nil)` returns `nil`. |
-| `IsRetryable` | `IsRetryable(err error) bool` | **Default true**: a nil error and any plain error are retryable. Uses `errors.As` to find a `Retryabler` anywhere in the chain and, if found, returns its `Retryable()`. |
+| `IsRetryable` | `IsRetryable(err error) bool` | **Default true**: a nil error and any plain error are retryable. Uses `errors.As` to find a `RetryableError` anywhere in the chain and, if found, returns its `Retryable()`. |
 
 ---
 

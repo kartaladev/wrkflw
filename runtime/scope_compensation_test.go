@@ -6,7 +6,7 @@ package runtime_test
 // Design: docs/specs/2026-06-23-scope-targeted-compensation-design.md
 // ADR: 0039
 //
-// Verifies end-to-end (through the public Runner + MemStore + service-action
+// Verifies end-to-end (through the public ProcessDriver + MemInstanceStore + service-action
 // catalog) that a process with a completed compensable sub-process, followed by
 // a compensation throw event referencing that sub-process, runs the inner
 // compensation action and then continues to completion.

@@ -63,9 +63,9 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 	return store.WithStoreMeterProvider(mp)
 }
 
-// OpenMySQL constructs a MySQL-backed kernel.Store + JournalReader over db.
+// OpenMySQL constructs a MySQL-backed kernel.InstanceStore + JournalReader over db.
 //
-// The returned Store satisfies both kernel.Store and kernel.JournalReader,
+// The returned InstanceStore satisfies both kernel.InstanceStore and kernel.JournalReader,
 // identical to the interface returned by OpenPostgres. MigrateMySQL must be
 // called before OpenMySQL so the required tables exist (or use RunTestMySQL in
 // tests which auto-migrates).
@@ -259,7 +259,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 //	owner, closer, _ := persistence.NewMySQLAdvisoryLockOwnership(ctx, db)
 //	defer closer.Close()
 //	store, _ := persistence.OpenMySQL(ctx, db)
-//	cachingStore, err := kernel.NewCachingStore(store, owner)
+//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
 func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {

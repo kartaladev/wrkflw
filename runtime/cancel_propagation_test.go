@@ -266,8 +266,8 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	ctx := t.Context()
 	cl := kernel.NewMemCallLinkStore()
 
-	// We need to insert links directly via the MemStore path, but MemCallLinkStore
-	// exposes record/markTerminal only internally. Use NewMemStore(WithCallLinks(cl))
+	// We need to insert links directly via the MemInstanceStore path, but MemCallLinkStore
+	// exposes record/markTerminal only internally. Use NewMemInstanceStore(WithCallLinks(cl))
 	// and a minimal runner run to populate the store, or test via the exported
 	// NewMemCallLinkStore + manual setup.
 	//

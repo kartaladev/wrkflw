@@ -7,8 +7,8 @@ package persistence
 // no LISTEN/NOTIFY mechanism (no relay notifier). Outbox relay and timer stores
 // work via poll-only paths identical to the MySQL backend.
 //
-// Consumers who need multi-replica exclusivity (kernel.CachingStore +
-// Ownership) must use the Postgres or MySQL backend. The SQLite backend is
+// Consumers who need multi-replica exclusivity (kernel.CachingInstanceStore +
+// InstanceOwnership) must use the Postgres or MySQL backend. The SQLite backend is
 // well-suited for embedded single-process deployments, CLI tools, integration
 // tests, and local development where a network database is unavailable.
 
@@ -36,9 +36,9 @@ type SQLiteRelayOption = RelayOption
 // MySQLCallLinkOption).
 type SQLiteCallLinkOption = store.CallLinkOption
 
-// OpenSQLite constructs a SQLite-backed kernel.Store + JournalReader over db.
+// OpenSQLite constructs a SQLite-backed kernel.InstanceStore + JournalReader over db.
 //
-// The returned Store satisfies both kernel.Store and kernel.JournalReader,
+// The returned InstanceStore satisfies both kernel.InstanceStore and kernel.JournalReader,
 // identical to the interface returned by [OpenPostgres] and [OpenMySQL].
 // [MigrateSQLite] must be called before OpenSQLite so the required tables exist
 // (or use [dbtest.RunTestSQLite] in tests, which auto-migrates).
@@ -115,7 +115,7 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 //	owner, closer, _ := persistence.NewSQLiteAdvisoryLockOwnership()
 //	defer closer.Close()
 //	store, _ := persistence.OpenSQLite(ctx, db)
-//	cachingStore, err := kernel.NewCachingStore(store, owner)
+//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
 //	// Acquire will return (false, dialect.ErrUnsupported) — guard accordingly.
 func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewSQLiteOwnership()

@@ -11,7 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// ExampleNewCachingStore shows how a library consumer wires a [kernel.CachingInstanceStore]
+// ExampleNewCachingInstanceStore shows how a library consumer wires a [kernel.CachingInstanceStore]
 // as the store for a [runtime.ProcessDriver]. In this configuration:
 //
 //   - [kernel.AlwaysOwn] is used — correct for single-replica or sticky-routed

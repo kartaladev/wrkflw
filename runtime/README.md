@@ -24,9 +24,9 @@ nothing is invoked. `runtime.ProcessDriver` is the driver that makes it real:
 
 The package also provides:
 
-- `kernel.MemStore` — in-memory `Store` for development and testing.
-- `kernel.CachingStore` — write-through, single-writer LRU cache in front of any
-  `Store`.
+- `kernel.MemInstanceStore` — in-memory `InstanceStore` for development and testing.
+- `kernel.CachingInstanceStore` — write-through, single-writer LRU cache in front of any
+  `InstanceStore`.
 - `kernel.MemScheduler` — clock-driven in-memory `Scheduler` for tests.
 - `signal.SignalBus` — fan-out signal delivery to parked instances.
 - `task.NewTaskService` — human-task authorization and trigger production.
@@ -43,7 +43,7 @@ one-directional import graph (ADR-0087). Import direction:
 | Package | Import path | Contains |
 |---|---|---|
 | `runtime` (root) | `.../runtime` | The `ProcessDriver` (token-driving loop) and its options, action resolution, outbox derivation, timer ops, observability, shutdown. |
-| `kernel` | `.../runtime/kernel` | All value types (`Token`, `AppliedStep`, `CallLink`, `Outcome`, …), port interfaces (`Store`, `Scheduler`, `TimerStore`, `CallLinkStore`, `DefinitionRegistry`, `InstanceLister`, …), sentinel errors, and the in-memory reference implementations (`MemStore`, `CachingStore`, `MemScheduler`, `MemCallLinkStore`, `MapDefinitionRegistry`, …). The leaf everything else imports. |
+| `kernel` | `.../runtime/kernel` | All value types (`Version`, `AppliedStep`, `CallLink`, `ChainOutcome`, …), port interfaces (`InstanceStore`, `Scheduler`, `TimerStore`, `CallLinkStore`, `DefinitionRegistry`, `InstanceLister`, `InstanceOwnership`, `OutboxPublisher`, …), sentinel errors, and the in-memory reference implementations (`MemInstanceStore`, `CachingInstanceStore`, `MemScheduler`, `MemCallLinkStore`, `MapDefinitionRegistry`, …). The leaf everything else imports. |
 | `signal` | `.../runtime/signal` | `SignalBus` — fan-out signal delivery to parked instances. |
 | `calllink` | `.../runtime/calllink` | `CallNotifier` — resumes parents of completed async call activities. |
 | `chain` | `.../runtime/chain` | `Chainer` — starts successor instances on terminal events. |
@@ -69,14 +69,12 @@ import (
     "github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-cat := action.NewMapCatalog(map[string]action.Action{
-    "greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
-        return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
-    }),
-})
-store, err := kernel.NewMemStore()
-if err != nil { log.Fatal(err) }
-r, err := runtime.NewProcessDriver(cat, store) // clock defaults to clock.System()
+action.MustRegister("greet", action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+    return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
+}))
+// Zero-arg: in-memory driver with action.DefaultCatalog() + kernel.NewMemInstanceStore().
+// Use runtime.WithActionCatalog / runtime.WithInstanceStore to override.
+r, err := runtime.NewProcessDriver() // clock defaults to clock.System()
 if err != nil { log.Fatal(err) }
 
 def := &model.ProcessDefinition{
@@ -97,30 +95,30 @@ st, err := r.Run(context.Background(), def, "inst-1", map[string]any{"name": "Ad
 // st.Variables["greeting"] == "hi Ada"
 ```
 
-Use `action.NewMapCatalog(nil)` for `cat` when the process has no service tasks (nil is rejected with `ErrNilDependency`).
-
 ## ProcessDriver construction and options
 
 ```go
-func NewProcessDriver(
-    cat   action.Catalog, // 1. required — service-action catalog
-    store Store,          // 2. required — transactional persistence port
-    opts  ...Option,      //    optional capabilities (functional options)
-) (*ProcessDriver, error)
+func NewProcessDriver(opts ...Option) (*ProcessDriver, error)
 ```
 
-**Positional argument 1 — `cat action.Catalog`.** The service-action catalog
-resolving action names to `Action` implementations. Required non-nil; pass
-`action.NewMapCatalog(nil)` when the process has no service or business-rule tasks.
+**Zero-argument (quickstart).** `runtime.NewProcessDriver()` returns a fully usable
+driver backed by `action.DefaultCatalog()` and `kernel.NewMemInstanceStore()` — no
+explicit catalog or store needed. A DEBUG log at construction reports what is wired and
+advises how to go durable. Suitable for unit tests and rapid prototyping.
 
-**Positional argument 2 — `store Store`.** The transactional persistence port
-(snapshot + journal + outbox committed atomically per applied trigger). Use
-`NewMemStore()` for dev/tests; wire the Postgres/MySQL store via the
-`persistence` package for production.
+**Catalog option — `runtime.WithActionCatalog(cat action.Catalog)`.** The
+service-action catalog resolving action names to `Action` implementations. Replaces the
+default catalog. Pass `action.NewMapCatalog(nil)` for processes with no service or
+business-rule tasks. Alternatively, populate the default catalog globally via
+`action.Register` / `action.MustRegister` before constructing the driver.
 
-> The **clock is no longer positional** — it defaults to `clock.System()` and is
-> overridden with the `WithClock` option (inject a fake clock in tests for
-> deterministic timers).
+**Store option — `runtime.WithInstanceStore(store kernel.InstanceStore)`.** The
+transactional persistence port (snapshot + journal + outbox committed atomically per
+applied trigger). Use `kernel.NewMemInstanceStore()` for dev/tests; wire the
+Postgres/MySQL store via the `persistence` package for production.
+
+> The **clock** defaults to `clock.System()` and is overridden with the `WithClock`
+> option (inject a fake clock in tests for deterministic timers).
 
 **Optional capabilities (functional options).** The complete set of `With*`
 functions accepted by `NewProcessDriver`:
@@ -150,14 +148,14 @@ a required, non-nilable dependency is nil. The sentinel is `kernel.ErrNilDepende
 (`"workflow-runtime: nil required dependency"`), wrapped with the argument name:
 
 ```go
-r, err := runtime.NewProcessDriver(cat, store)
-// err wraps ErrNilDependency if cat==nil ("catalog") or store==nil ("store")
+r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+// err wraps ErrNilDependency if a non-nil option receives a nil argument
 if errors.Is(err, kernel.ErrNilDependency) { ... }
 ```
 
-The same rule applies to `NewTaskService`, `NewCachingStore`,
+The same rule applies to `NewTaskService`, `NewCachingInstanceStore`,
 `NewCachingDefinitionRegistry`, `NewSignalBus`, `NewCallNotifier`, `NewChainer`,
-`NewLineageReader`, and `NewMemStore` (whose options validate eagerly). Value types
+`NewLineageReader`, and `NewMemInstanceStore` (whose options validate eagerly). Value types
 (`engine.NewStartInstance`, `humantask.NewMemTaskStore`,
 `action.NewMapCatalog`) are zero-dep or all-optional and do not return errors.
 
@@ -257,10 +255,9 @@ resolver  := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 })
 az  := authz.RoleAuthorizer{}
 
-memSt, _ := kernel.NewMemStore()
 r, _ := runtime.NewProcessDriver(
-    action.NewMapCatalog(nil), // no service actions for this example
-    memSt,
+    // no service actions: omit WithActionCatalog (uses DefaultCatalog)
+    // no durable store: omit WithInstanceStore (uses MemInstanceStore)
     runtime.WithHumanTasks(resolver, taskStore, az),
 )
 
@@ -444,16 +441,21 @@ Both DTOs are also exposed over the HTTP transport (`transport/http/{stdlib,gin,
 
 ## Stores and caching
 
-### `MemStore` (development and tests)
+### `MemInstanceStore` (development and tests)
 
-`NewMemStore(opts ...MemStoreOption) (*MemStore, error)` is an in-memory `Store`
-+ `JournalReader` + `InstanceLister` backed by a plain map with per-instance
-optimistic-CAS versioning. It is concurrency-safe and does not require a database.
+`NewMemInstanceStore(opts ...MemInstanceStoreOption) (*MemInstanceStore, error)` is an
+in-memory `InstanceStore` + `JournalReader` + `InstanceLister` backed by a plain map
+with per-instance optimistic-CAS versioning. It is concurrency-safe and does not require
+a database.
+
+The zero-arg driver already uses `kernel.NewMemInstanceStore()` internally, so explicit
+construction is only needed when you want direct access to the store for assertions or
+shared call-link / timer state:
 
 ```go
-store, err := kernel.NewMemStore()
+store, err := kernel.NewMemInstanceStore()
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewProcessDriver(cat, store)
+r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 if err != nil { log.Fatal(err) }
 ```
 
@@ -462,9 +464,10 @@ and the runner so the link is visible to both sides:
 
 ```go
 cl    := kernel.NewMemCallLinkStore()
-store, err := kernel.NewMemStore(runtime.WithCallLinks(cl))
+store, err := kernel.NewMemInstanceStore(kernel.WithCallLinks(cl))
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewProcessDriver(cat, store,
+r, err := runtime.NewProcessDriver(
+    runtime.WithInstanceStore(store),
     runtime.WithCallLinkStore(cl),
     runtime.WithDefinitions(reg),
 )
@@ -474,40 +477,41 @@ r, err := runtime.NewProcessDriver(cat, store,
 
 ```go
 mts   := kernel.NewMemTimerStore()
-store, err := kernel.NewMemStore(runtime.WithTimers(mts))
+store, err := kernel.NewMemInstanceStore(kernel.WithTimers(mts))
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewProcessDriver(cat, store,
+r, err := runtime.NewProcessDriver(
+    runtime.WithInstanceStore(store),
     runtime.WithTimerStore(mts),
     runtime.WithScheduler(sched),
 )
 ```
 
-`MemStore` options `WithCallLinks` and `WithTimers` may both be passed together or
-independently; neither is required for a basic store.
+`MemInstanceStore` options `WithCallLinks` and `WithTimers` may both be passed together
+or independently; neither is required for a basic store.
 
 Access the trigger history for audit assertions in tests:
 ```go
 entries, _ := store.Entries(ctx, instanceID) // []engine.Trigger
 ```
 
-### `CachingStore` (production hot path)
+### `CachingInstanceStore` (production hot path)
 
-`CachingStore` is a write-through, bounded LRU cache in front of any `Store`.
-It is correct only when exactly one process writes each instance
-(`Ownership` guarantees that invariant). `AlwaysOwn` is appropriate for
+`CachingInstanceStore` is a write-through, bounded LRU cache in front of any
+`InstanceStore`. It is correct only when exactly one process writes each instance
+(`InstanceOwnership` guarantees that invariant). `AlwaysOwn` is appropriate for
 single-process embedding; multi-replica deployments need a real lease
 (`persistence.NewAdvisoryLockOwnership`).
 
 ```go
-cachingStore, err := kernel.NewCachingStore(
-    pgStore,           // backing Store (e.g. a Postgres/MySQL/SQLite store from persistence; note: SQLite provides only the fail-loud persistence.NewSQLiteAdvisoryLockOwnership, so CachingStore on SQLite is single-process only)
+cachingStore, err := kernel.NewCachingInstanceStore(
+    pgStore,           // backing InstanceStore (e.g. a Postgres/MySQL/SQLite store from persistence; note: SQLite provides only the fail-loud persistence.NewSQLiteAdvisoryLockOwnership, so CachingInstanceStore on SQLite is single-process only)
     kernel.AlwaysOwn{},
-    runtime.WithCacheTTL(5*time.Minute),
-    runtime.WithCacheMaxEntries(1024),
-    // clock defaults to clock.System(); override with runtime.WithCachingStoreClock(...)
+    kernel.WithCacheTTL(5*time.Minute),
+    kernel.WithCacheMaxEntries(1024),
+    // clock defaults to clock.System(); override with kernel.WithCachingStoreClock(...)
 )
 if err != nil { log.Fatal(err) }
-r, err := runtime.NewProcessDriver(cat, cachingStore)
+r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(cachingStore))
 if err != nil { log.Fatal(err) }
 ```
 
@@ -521,22 +525,26 @@ For hot-path definition resolution, wrap any `DefinitionRegistry` with
 // clock.System() and is overridden with WithCachingDefinitionRegistryClock(...).
 reg, err := kernel.NewCachingDefinitionRegistry(pgDefRegistry, 5*time.Minute)
 if err != nil { log.Fatal(err) }
-r, err   := runtime.NewProcessDriver(cat, store, runtime.WithDefinitions(reg))
+r, err   := runtime.NewProcessDriver(
+    runtime.WithInstanceStore(store),
+    runtime.WithDefinitions(reg),
+)
 if err != nil { log.Fatal(err) }
 ```
 
 ### SQL store (production)
 
-The production `Store` implementation lives in the neutral `internal/persistence/store`
-parametrized by an `internal/persistence/dialect` (Postgres, MySQL, or SQLite — ADR-0081/0082).
-It satisfies the `kernel.Store` interface. Wire it via the `persistence` package's exported
-constructors — consumers do not import `internal/` directly:
+The production `InstanceStore` implementation lives in the neutral
+`internal/persistence/store` parametrized by an `internal/persistence/dialect` (Postgres,
+MySQL, or SQLite — ADR-0081/0082). It satisfies the `kernel.InstanceStore` interface.
+Wire it via the `persistence` package's exported constructors — consumers do not import
+`internal/` directly:
 
 - `persistence.OpenPostgres(ctx, pool, opts...)` — Postgres 17 (LISTEN/NOTIFY relay, advisory-lock ownership).
 - `persistence.OpenMySQL(ctx, db, opts...)` — MySQL 8.0+ (poll-only relay, advisory-lock ownership).
 - `persistence.OpenSQLite(ctx, db, opts...)` — SQLite (WAL, single-writer, single-node/test/embedded).
   `persistence.NewSQLiteAdvisoryLockOwnership` is fail-loud (every acquire returns `dialect.ErrUnsupported`),
-  so `CachingStore` on SQLite is single-process only. Use Postgres or MySQL for multi-replica.
+  so `CachingInstanceStore` on SQLite is single-process only. Use Postgres or MySQL for multi-replica.
 
 All three backends expose relay/lister/store constructors: `New*` (unprefixed) for Postgres (e.g. `NewRelay`, `NewTimerStore`, `NewCallLinkStore`, `NewLister`, `NewChainLinkStore`, `NewCallNotifier`, `NewDefinitionStore`, `NewPruner`), `NewMySQL*` for MySQL, and `NewSQLite*` for SQLite.
 
@@ -558,7 +566,7 @@ and returns a `SuccessorDecision`:
 |---|---|---|
 | `PredecessorID` | `string` | The instance that reached a terminal state. |
 | `PredecessorDefinitionRef` | `string` | The `"defID:version"` of the predecessor, carried end-to-end through the outbox (ADR-0047) so a policy can route on the predecessor's definition. Empty only for pre-ADR-0047 events. |
-| `Outcome` | `Outcome` | The terminal outcome that fired the event (`OutcomeCompleted` / `OutcomeFailed` / `OutcomeTerminated`). |
+| `Outcome` | `ChainOutcome` | The terminal outcome that fired the event (`OutcomeCompleted` / `OutcomeFailed` / `OutcomeTerminated`). |
 | `Result` | `map[string]any` | The event payload: terminal variables (completed) or `{"error": …}` (failed/terminated). |
 
 **`SuccessorDecision`** (returned by the policy):
@@ -583,7 +591,7 @@ Three pieces:
 
 ```go
 policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
-    if ev.Outcome != runtime.OutcomeCompleted {
+    if ev.Outcome != kernel.OutcomeCompleted {
         return chain.SuccessorDecision{}, false
     }
     return chain.SuccessorDecision{Def: fulfillmentDef, Vars: ev.Result}, true

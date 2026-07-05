@@ -18,7 +18,7 @@ import (
 )
 
 // buildSignalCase builds a start → signal-catch → end definition, a driver over a
-// fresh MemStore, and runs one instance that parks awaiting the "go" signal.
+// fresh MemInstanceStore, and runs one instance that parks awaiting the "go" signal.
 func buildSignalCase(t *testing.T) (*runtime.ProcessDriver, engine.InstanceState, *model.ProcessDefinition) {
 	t.Helper()
 

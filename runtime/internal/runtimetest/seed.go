@@ -11,7 +11,7 @@ import (
 )
 
 // SeedCallLink records a running (non-terminal) call link into cl by driving the
-// public MemStore.Create path — the same path production uses when a parent
+// public MemInstanceStore.Create path — the same path production uses when a parent
 // starts a child. It lets tests in packages other than kernel pre-populate the
 // reference call-link store without reaching its unexported internals (which is
 // why the former MemCallLinkStore.Seed test-only method could be removed from the
@@ -28,7 +28,7 @@ func SeedCallLink(t *testing.T, cl *kernel.MemCallLinkStore, link kernel.CallLin
 }
 
 // SeedTerminalCallLink records link and then flips it to terminal with out, by
-// driving the public MemStore Create+Commit path (record + markTerminal — the
+// driving the public MemInstanceStore Create+Commit path (record + markTerminal — the
 // same calls production makes when a child instance completes). It replaces the
 // former MemCallLinkStore.Seed/SeedTerminal test-only methods, keeping seeding
 // off the shipped production API.

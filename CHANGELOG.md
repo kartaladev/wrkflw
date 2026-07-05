@@ -15,6 +15,45 @@ feature set, built across ADRs 0001–0095. Because nothing has shipped yet, eve
 is **Added** — the list describes the engine as it stands today, not a delta from a prior
 release.
 
+### Breaking changes (pre-v0.1.0 — no stability promise)
+
+- **`runtime.NewProcessDriver` is now all-optional.** The two required positional
+  arguments (`cat action.Catalog`, `store kernel.InstanceStore`) have been replaced with
+  functional options. A zero-argument call — `d, _ := runtime.NewProcessDriver()` — gives
+  a fully usable in-memory, non-durable driver backed by `action.DefaultCatalog()` and
+  `kernel.NewMemInstanceStore()`. A DEBUG log at construction reports the wired collaborators
+  and advises how to go durable.
+  - Supply your own catalog via `runtime.WithActionCatalog(cat)`.
+  - Supply a durable store via `runtime.WithInstanceStore(store)`.
+  - Populate the default catalog with `action.Register(name, fn)`,
+    `action.RegisterFunc(name, fn)`, `action.MustRegister`, or `action.MustRegisterFunc`.
+
+- **`InstanceStore` / `MemInstanceStore` / `CachingInstanceStore` renames (breaking).**
+  All references to the old names must be updated:
+  - `kernel.Store` → `kernel.InstanceStore`
+  - `kernel.MemStore` → `kernel.MemInstanceStore`; `kernel.NewMemStore(` → `kernel.NewMemInstanceStore(`; `kernel.MemStoreOption` → `kernel.MemInstanceStoreOption`
+  - `kernel.CachingStore` → `kernel.CachingInstanceStore`; `kernel.NewCachingStore(` → `kernel.NewCachingInstanceStore(`; `kernel.CachingStoreOption` → `kernel.CachingInstanceStoreOption`
+  - `persistence.Store` (the façade interface) → `persistence.InstanceStore`
+
+- **`kernel.Token` → `kernel.Version`** — the optimistic-concurrency version scalar is
+  now named `Version` throughout the kernel package.
+
+- **`kernel.Outcome` → `kernel.ChainOutcome`** — the chain-outcome type is renamed to
+  avoid colliding with the generic word "outcome".
+
+- **`kernel.Ownership` → `kernel.InstanceOwnership`** — the ownership port interface is
+  renamed for clarity.
+
+- **`kernel.Publisher` → `kernel.OutboxPublisher`** (and `persistence.Publisher` alias
+  → `persistence.OutboxPublisher`) — the outbox-publish port is renamed to be explicit
+  about its role.
+
+- **`action.Retryabler` → `action.RetryableError`** — the retry-classification interface
+  is renamed to follow Go error-interface naming conventions.
+
+- **`action.Default()` → `action.DefaultCatalog()`** — the zero-argument catalog accessor
+  is renamed to be unambiguous.
+
 ### Added
 
 - **Token-based, BPMN-inspired engine core** — process definitions across 19 typed node
@@ -45,7 +84,7 @@ release.
   advisory lock) are opt-in per dialect. Facade constructors `persistence.Open{Postgres,MySQL,SQLite}`
   and `persistence.Migrate{Postgres,MySQL,SQLite}` (plus a public `persistence.Migrator`).
   Optimistic-concurrency (CAS) writes, a transactional **outbox** relay with poison isolation +
-  DLQ + redrive, hot-path caching (`kernel.CachingStore`, `kernel.CachingDefinitionRegistry`),
+  DLQ + redrive, hot-path caching (`kernel.CachingInstanceStore`, `kernel.CachingDefinitionRegistry`),
   and data-retention pruners.
 
 - **Runtime driver** — `runtime.ProcessDriver` wires the engine to persistence, scheduling,

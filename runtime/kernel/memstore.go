@@ -10,7 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
-// Compile-time checks: MemStore satisfies both ports.
+// Compile-time checks: MemInstanceStore satisfies both ports.
 var (
 	_ InstanceStore  = (*MemInstanceStore)(nil)
 	_ JournalReader  = (*MemInstanceStore)(nil)
@@ -36,13 +36,13 @@ type MemInstanceStore struct {
 	timers    *MemTimerStore    // optional; nil means no timer tracking
 }
 
-// memStoreConfig holds the optional collaborators for a MemStore.
+// memStoreConfig holds the optional collaborators for a MemInstanceStore.
 type memStoreConfig struct {
 	callLinks *MemCallLinkStore
 	timers    *MemTimerStore
 }
 
-// MemInstanceStoreOption configures a MemStore. Options validate eagerly and may return
+// MemInstanceStoreOption configures a MemInstanceStore. Options validate eagerly and may return
 // an error.
 type MemInstanceStoreOption func(*memStoreConfig) error
 

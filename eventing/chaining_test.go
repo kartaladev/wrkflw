@@ -175,7 +175,7 @@ func TestChainerRunSubscribeError(t *testing.T) {
 }
 
 // TestChainerRunStartsSuccessorEndToEnd drives the full subscription loop over a
-// real GoChannel pub/sub + a real Runner + MemStore + MemChainLinkStore: a
+// real GoChannel pub/sub + a real ProcessDriver + MemInstanceStore + MemChainLinkStore: a
 // published instance.completed event starts the mapped successor exactly once.
 func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())

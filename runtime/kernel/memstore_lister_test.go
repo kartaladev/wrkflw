@@ -20,7 +20,7 @@ func newInstanceState(id string, st engine.Status, at time.Time) engine.Instance
 	}
 }
 
-// seedMemStore creates a MemStore and inserts each InstanceState via Create, returning the store.
+// seedMemStore creates a MemInstanceStore and inserts each InstanceState via Create, returning the store.
 func seedMemStore(t *testing.T, states ...engine.InstanceState) *kernel.MemInstanceStore {
 	t.Helper()
 	ms := runtimetest.MustMemStore(t)
