@@ -1,7 +1,7 @@
 # Default DefinitionRegistry + `runtime.RegisterDefinition`
 
 - **Date:** 2026-07-05
-- **Status:** Approved (design), pending implementation
+- **Status:** Implemented (branch feat/default-definition-registry; ADR-0097)
 - **Related:** follows the sensible-default-driver work (ADR-0096); new ADR-0097
 - **Scope:** `runtime/kernel`, `runtime`, docs
 
