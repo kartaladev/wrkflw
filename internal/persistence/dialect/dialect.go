@@ -45,6 +45,11 @@ type Dialect interface {
 	// base INSERT for the process-definition upsert site.
 	UpsertDefinition() string
 
+	// UpsertTask returns the dialect-specific conflict clause appended to an
+	// INSERT INTO wrkflw_human_task ... VALUES(...) so the write is an
+	// idempotent insert-or-replace keyed on (task_token).
+	UpsertTask() string
+
 	// InsertIgnorePrefix returns the INSERT keyword prefix used for the
 	// dedup idempotency check. The full statement is assembled as:
 	//

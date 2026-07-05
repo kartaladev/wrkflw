@@ -41,6 +41,16 @@ func (sqliteDialect) UpsertDefinition() string {
 	return " ON CONFLICT (def_id, version) DO UPDATE SET definition = excluded.definition"
 }
 
+// UpsertTask returns the ON CONFLICT clause for the human-task upsert site.
+// Mirrors the Postgres dialect with lowercase "excluded." per SQLite convention.
+func (sqliteDialect) UpsertTask() string {
+	return " ON CONFLICT (task_token) DO UPDATE SET" +
+		" instance_id = excluded.instance_id, node_id = excluded.node_id," +
+		" state = excluded.state, claimed_by = excluded.claimed_by," +
+		" eligibility = excluded.eligibility, candidates = excluded.candidates," +
+		" vars = excluded.vars, created_at = excluded.created_at, due_at = excluded.due_at"
+}
+
 // InsertIgnorePrefix returns the INSERT keyword prefix for the dedup
 // idempotency check. SQLite uses a plain "INSERT" prefix paired with an
 // "ON CONFLICT DO NOTHING" suffix ([InsertIgnoreDedup]), identical to Postgres.
