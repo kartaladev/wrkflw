@@ -20,13 +20,17 @@ release.
 - **`runtime.NewProcessDriver` is now all-optional.** The two required positional
   arguments (`cat action.Catalog`, `store kernel.InstanceStore`) have been replaced with
   functional options. A zero-argument call — `d, _ := runtime.NewProcessDriver()` — gives
-  a fully usable in-memory, non-durable driver backed by `action.DefaultCatalog()` and
-  `kernel.NewMemInstanceStore()`. A DEBUG log at construction reports the wired collaborators
-  and advises how to go durable.
+  a fully usable in-memory, non-durable driver backed by `action.DefaultCatalog()`,
+  `kernel.NewMemInstanceStore()`, and `runtime.DefaultDefinitionRegistry()`. A DEBUG log
+  at construction reports the wired collaborators and advises how to go durable.
   - Supply your own catalog via `runtime.WithActionCatalog(cat)`.
   - Supply a durable store via `runtime.WithInstanceStore(store)`.
+  - Supply an explicit definition registry via `runtime.WithDefinitions(reg)` (passing
+    `nil` is a no-op — the default stands).
   - Populate the default catalog with `action.Register(name, fn)`,
     `action.RegisterFunc(name, fn)`, `action.MustRegister`, or `action.MustRegisterFunc`.
+  - Populate the default definition registry with `runtime.RegisterDefinition(def)` or
+    `runtime.MustRegisterDefinition(def)`.
 
 - **`InstanceStore` / `MemInstanceStore` / `CachingInstanceStore` renames (breaking).**
   All references to the old names must be updated:
@@ -76,6 +80,28 @@ release.
   actions: `httpcall` (10 MiB body cap by default via `WithMaxResponseSize`), `email`,
   `transform`, and `logaction`. Service-action invocations time out after 30s by default
   (`runtime.WithActionTimeout`); a timeout surfaces as a retryable failure.
+
+- **Default `DefinitionRegistry` for zero-config call activities (ADR-0097, follows ADR-0096).**
+  `runtime.NewProcessDriver()` now wires `runtime.DefaultDefinitionRegistry()` automatically,
+  giving `KindCallActivity` nodes a working registry without any `WithDefinitions` call —
+  symmetric with how `action.DefaultCatalog()` works for service tasks. New API:
+  - `runtime.DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry` — returns the
+    process-global mutable registry.
+  - `runtime.RegisterDefinition(def *model.ProcessDefinition) error` — registers `def`
+    into the global registry under both `"<ID>"` and `"<ID>:<Version>"`. Bare `"<ID>"`
+    resolves to the most recently registered version. Returns `ErrDefinitionExists` if the
+    exact `"<ID>:<Version>"` is already registered.
+  - `runtime.MustRegisterDefinition(def *model.ProcessDefinition)` — panics on error
+    (init-time wiring, mirrors `action.MustRegister`).
+  - `kernel.MemDefinitionRegistry` — the new concurrency-safe, mutable sibling of the
+    immutable `MapDefinitionRegistry`. Obtain with `kernel.NewMemDefinitionRegistry()`.
+    New sentinel errors: `kernel.ErrNilDefinition`, `kernel.ErrEmptyDefinitionID`,
+    `kernel.ErrDefinitionExists`.
+  - **`runtime.WithDefinitions(nil)` is now a no-op** (nil-ignored, matching
+    `WithActionCatalog` / `WithInstanceStore`). A nil argument no longer clobbers the
+    default registry. Passing a non-nil registry overrides the default, as before. Tests
+    needing a fully isolated, empty registry should pass
+    `WithDefinitions(kernel.NewMemDefinitionRegistry())`.
 
 - **Persistence** — SQL backends for **PostgreSQL 17**, **MySQL 8.0+**, and **SQLite**
   (`modernc.org/sqlite`, pure-Go, WAL, single-writer; single-node/test/embedded only) behind

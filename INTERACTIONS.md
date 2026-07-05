@@ -56,8 +56,8 @@ Load-bearing invariants:
 | Retry | `ScheduleTimer{TimerRetry}` | `runtime.Scheduler` | `TimerFired` → re-invoke | yes |
 | Incident resolve | *(admin trigger)* | — | `ResolveIncident` → re-invoke | yes (admin) |
 | Sub-process | *(nothing — scope only)* | none (pure engine) | *(token flow)* | no |
-| Call activity (sync) | `StartSubInstance` | `DefinitionRegistry` | `SubInstanceCompleted/Failed` | no |
-| Call activity (async) | `StartSubInstance` | `DefinitionRegistry` + `CallLinkStore` + `CallNotifier` | `SubInstanceCompleted/Failed` | yes |
+| Call activity (sync) | `StartSubInstance` | `DefinitionRegistry` (default-global or `WithDefinitions`) | `SubInstanceCompleted/Failed` | no |
+| Call activity (async) | `StartSubInstance` | `DefinitionRegistry` (default-global or `WithDefinitions`) + `CallLinkStore` + `CallNotifier` | `SubInstanceCompleted/Failed` | yes |
 | **Eventing / outbox** | *(events derived at commit)* | `Store` (write) + `Publisher` (relay) | *(one-way, to the broker)* | yes |
 
 The last row is the one flow that does **not** wake a parked token — it carries
@@ -376,6 +376,21 @@ token reaches KindSubProcess node
    └─ re-emit a token on the sub-process node's OUTGOING flow (parent scope)
 ```
 
+**`DefinitionRegistry` wiring.** The driver must be able to resolve a `KindCallActivity`
+node's `DefRef` string to a `*model.ProcessDefinition`. There are two ways to supply
+this:
+
+- **Process-global default (zero-config):** call `runtime.RegisterDefinition(def)` or
+  `runtime.MustRegisterDefinition(def)` at program start. `NewProcessDriver()` uses
+  `runtime.DefaultDefinitionRegistry()` automatically — no `WithDefinitions` needed.
+  Definitions are indexed under both `"<ID>"` and `"<ID>:<Version>"` so either form of
+  `DefRef` resolves. Bare `"<ID>"` resolves to the most recently registered version.
+  Test-isolation caveat: the global is process-wide; tests must use unique IDs or pass
+  `WithDefinitions(kernel.NewMemDefinitionRegistry())` to avoid cross-test collisions.
+- **Explicit per-driver registry:** `runtime.WithDefinitions(reg)` overrides the default.
+  Passing `nil` is a no-op — the default stands. Use an explicit registry when you need
+  multiple driver instances with different definition sets, or for strict test isolation.
+
 **Call activity (sync, no `CallLinkStore`)** runs the child to completion inline
 through the same `ProcessDriver` and translates the child's terminal status into the
 resume trigger in the same `perform` call. A child that *parks* returns a
@@ -390,7 +405,7 @@ sequenceDiagram
     EP->>R: StartSubInstance {cmdID, DefRef, Input(copy)}
     Note over EP: parent token parks on cmdID
     R->>R: depth guard (cycle protection)
-    R->>R: reg.Lookup(DefRef) → childDef
+    R->>R: reg.Lookup(DefRef) → childDef<br/>(reg = DefaultDefinitionRegistry() unless WithDefinitions was called)
     R->>R: childSt := r.Run(childCtx, childDef, childID, Input)<br/>(child shares store/journal/outbox/catalog/scheduler,<br/>drives its OWN deliverLoop)
     alt Completed
         R-->>EP: NewSubInstanceCompleted(cmdID, vars) → resume parent token
