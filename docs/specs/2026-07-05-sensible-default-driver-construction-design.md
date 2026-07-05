@@ -1,7 +1,7 @@
 # Sensible-default `ProcessDriver` construction
 
 - **Date:** 2026-07-05
-- **Status:** Approved (brainstorming), pending implementation plan
+- **Status:** Implemented (branch feat/sensible-default-driver; ADR-0096)
 - **Related ADRs:** amends ADR-0083 (fail-fast constructors); new ADR-0096 to record this decision
 - **Scope:** `runtime`, `runtime/kernel`, `action`, `persistence` (façade), `internal/persistence/store` (rename touch-through), `examples/**`, docs
 
