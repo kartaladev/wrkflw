@@ -37,7 +37,7 @@ func TestNewCachingStoreAlwaysOwnWarning(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		owner  kernel.Ownership
+		owner  kernel.InstanceOwnership
 		assert func(t *testing.T, logged string)
 	}
 

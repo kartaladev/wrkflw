@@ -61,7 +61,7 @@ func TestOpenSQLite(t *testing.T) {
 
 // TestOpenSQLiteErrUnsupported verifies the end-to-end fail-loud contract for
 // SQLite advisory locking: NewSQLiteAdvisoryLockOwnership returns a valid
-// kernel.Ownership whose Acquire method returns dialect.ErrUnsupported. This
+// kernel.InstanceOwnership whose Acquire method returns dialect.ErrUnsupported. This
 // proves the full wiring from facade → store.AdvisoryLockOwnership →
 // store.sqliteLocker → dialect.ErrUnsupported, not just that the sentinel
 // equals itself.

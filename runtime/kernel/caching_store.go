@@ -44,7 +44,7 @@ const (
 // one-time Warn when it is constructed with AlwaysOwn.
 type CachingInstanceStore struct {
 	backing    InstanceStore
-	owner      Ownership
+	owner      InstanceOwnership
 	clk        clock.Clock
 	logger     *slog.Logger
 	ttl        time.Duration
@@ -110,7 +110,7 @@ func WithCachingStoreClock(clk clock.Clock) CachingInstanceStoreOption {
 // NewCachingInstanceStore wraps backing with a single-writer, write-through cache gated
 // by owner. The clock defaults to clock.System(); inject a fake clock in tests
 // via [WithCachingStoreClock].
-func NewCachingInstanceStore(backing InstanceStore, owner Ownership, opts ...CachingInstanceStoreOption) (*CachingInstanceStore, error) {
+func NewCachingInstanceStore(backing InstanceStore, owner InstanceOwnership, opts ...CachingInstanceStoreOption) (*CachingInstanceStore, error) {
 	if backing == nil {
 		return nil, fmt.Errorf("%w: backing store", ErrNilDependency)
 	}

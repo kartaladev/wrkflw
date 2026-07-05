@@ -338,7 +338,7 @@ func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 	return store.NewLister(pool, dialect.NewPostgres())
 }
 
-// NewAdvisoryLockOwnership constructs a multi-process [kernel.Ownership]
+// NewAdvisoryLockOwnership constructs a multi-process [kernel.InstanceOwnership]
 // backed by Postgres session advisory locks (ADR-0020), for use with
 // [kernel.NewCachingInstanceStore] across multiple replicas sharing one database.
 //
@@ -346,7 +346,7 @@ func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 // [io.Closer] at shutdown to release every held lock and return the connection.
 //
 // When used with a [kernel.CachingInstanceStore], always relinquish ownership through
-// [kernel.CachingInstanceStore.Release] (not the bare [kernel.Ownership.Release]), so
+// [kernel.CachingInstanceStore.Release] (not the bare [kernel.InstanceOwnership.Release]), so
 // the cache evicts the instance's state on hand-off and a re-acquiring process
 // does not serve a stale cached entry.
 //
@@ -357,7 +357,7 @@ func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 //	store, _ := persistence.OpenPostgres(ctx, pool)
 //	cachingStore, err := kernel.NewCachingStore(store, owner)
 //	if err != nil { log.Fatal(err) }
-func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.Ownership, io.Closer, error) {
+func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewPostgresOwnership(ctx, pool)
 	if err != nil {
 		return nil, nil, err

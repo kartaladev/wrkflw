@@ -396,7 +396,7 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 }
 
 // TestNewMySQLAdvisoryLockOwnership_AcquireAndClose verifies the facade ctor
-// returns a kernel.Ownership that can Acquire an instance and Close cleanly.
+// returns a kernel.InstanceOwnership that can Acquire an instance and Close cleanly.
 func TestNewMySQLAdvisoryLockOwnership_AcquireAndClose(t *testing.T) {
 	t.Parallel()
 	db := dbtest.RunTestMySQL(t)

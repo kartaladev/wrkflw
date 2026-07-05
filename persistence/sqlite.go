@@ -93,10 +93,10 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 	return store.MigrateSQLite(ctx, db)
 }
 
-// NewSQLiteAdvisoryLockOwnership returns a fail-loud [kernel.Ownership] for
+// NewSQLiteAdvisoryLockOwnership returns a fail-loud [kernel.InstanceOwnership] for
 // SQLite deployments. SQLite provides no distributed advisory locking
-// mechanism: [kernel.Ownership.Acquire] returns [dialect.ErrUnsupported] on
-// every call; [kernel.Ownership.Release] is a no-op (returns nil) for a lock
+// mechanism: [kernel.InstanceOwnership.Acquire] returns [dialect.ErrUnsupported] on
+// every call; [kernel.InstanceOwnership.Release] is a no-op (returns nil) for a lock
 // that was never held.
 //
 // This constructor exists so SQLite consumers can satisfy the ownership
@@ -117,7 +117,7 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 //	store, _ := persistence.OpenSQLite(ctx, db)
 //	cachingStore, err := kernel.NewCachingStore(store, owner)
 //	// Acquire will return (false, dialect.ErrUnsupported) — guard accordingly.
-func NewSQLiteAdvisoryLockOwnership() (kernel.Ownership, io.Closer, error) {
+func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewSQLiteOwnership()
 	if err != nil {
 		return nil, nil, err

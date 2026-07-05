@@ -57,7 +57,7 @@ func MustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 }
 
 // MustCachingStore builds a CachingStore or fails the test.
-func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.Ownership, opts ...kernel.CachingInstanceStoreOption) *kernel.CachingInstanceStore {
+func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.InstanceOwnership, opts ...kernel.CachingInstanceStoreOption) *kernel.CachingInstanceStore {
 	t.Helper()
 	s, err := kernel.NewCachingInstanceStore(backing, owner, opts...)
 	require.NoError(t, err)

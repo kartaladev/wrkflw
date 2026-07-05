@@ -233,7 +233,7 @@ func TestNewCachingStoreFailsFast(t *testing.T) {
 	type testCase struct {
 		name    string
 		backing kernel.InstanceStore
-		owner   kernel.Ownership
+		owner   kernel.InstanceOwnership
 		assert  func(t *testing.T, s *kernel.CachingInstanceStore, err error)
 	}
 	cases := []testCase{

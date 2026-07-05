@@ -9,7 +9,7 @@ import (
 )
 
 func TestAlwaysOwnAlwaysAcquires(t *testing.T) {
-	var o kernel.Ownership = kernel.AlwaysOwn{}
+	var o kernel.InstanceOwnership = kernel.AlwaysOwn{}
 
 	owned, err := o.Acquire(t.Context(), "any-instance")
 	require.NoError(t, err)

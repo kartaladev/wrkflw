@@ -243,7 +243,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 	return store.NewCallLinkStore(db, dialect.NewMySQL(), opts...)
 }
 
-// NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.Ownership]
+// NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.InstanceOwnership]
 // backed by MySQL GET_LOCK advisory locks, for use with [kernel.NewCachingInstanceStore]
 // across multiple replicas sharing one database.
 //
@@ -260,7 +260,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 //	defer closer.Close()
 //	store, _ := persistence.OpenMySQL(ctx, db)
 //	cachingStore, err := kernel.NewCachingStore(store, owner)
-func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.Ownership, io.Closer, error) {
+func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {
 		return nil, nil, err
@@ -398,7 +398,7 @@ var (
 	_ kernel.CallLinkStore      = (*store.CallLinkStore)(nil)
 	_ kernel.ChainLinkStore     = (*store.ChainLinkStore)(nil)
 	_ kernel.InstanceLister     = (*store.Lister)(nil)
-	_ kernel.Ownership          = (*store.AdvisoryLockOwnership)(nil)
+	_ kernel.InstanceOwnership  = (*store.AdvisoryLockOwnership)(nil)
 	_ DefinitionStore           = (*store.DefinitionStore)(nil)
 	_ Pruner                    = (*store.Pruner)(nil)
 	_ kernel.DefinitionRegistry = (*store.DefinitionStore)(nil)

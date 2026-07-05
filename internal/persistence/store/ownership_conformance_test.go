@@ -19,8 +19,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// Compile-time assertion: both locker-backed ownership types satisfy kernel.Ownership.
-var _ kernel.Ownership = (*store.AdvisoryLockOwnership)(nil)
+// Compile-time assertion: both locker-backed ownership types satisfy kernel.InstanceOwnership.
+var _ kernel.InstanceOwnership = (*store.AdvisoryLockOwnership)(nil)
 
 // ── Postgres ──────────────────────────────────────────────────────────────────
 
