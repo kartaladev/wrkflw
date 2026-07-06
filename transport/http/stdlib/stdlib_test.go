@@ -139,9 +139,8 @@ func TestMount_StartInstance(t *testing.T) {
 	stdlib.Mount(mux, svc)
 
 	req := newPostRequest(t, "/instances", map[string]any{
-		"def_ref":     "greeting",
-		"instance_id": "start-stdlib-1",
-		"vars":        map[string]any{"name": "ada"},
+		"def_ref": "greeting",
+		"vars":    map[string]any{"name": "ada"},
 	})
 	rr := do(mux, req)
 
@@ -405,8 +404,7 @@ func TestMount_5xx_NoRawError(t *testing.T) {
 	stdlib.Mount(mux, svc)
 
 	req := newPostRequest(t, "/instances", map[string]any{
-		"def_ref":     "greeting",
-		"instance_id": "x",
+		"def_ref": "greeting",
 	})
 	rr := do(mux, req)
 

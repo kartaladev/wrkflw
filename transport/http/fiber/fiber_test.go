@@ -204,9 +204,8 @@ func TestMount_StartInstance(t *testing.T) {
 
 	var result map[string]any
 	status := appDoJSON(t, app, newPostRequest(t, "/instances", map[string]any{
-		"def_ref":     "greeting",
-		"instance_id": "start-fiber-1",
-		"vars":        map[string]any{"name": "ada"},
+		"def_ref": "greeting",
+		"vars":    map[string]any{"name": "ada"},
 	}), &result)
 
 	if status != http.StatusCreated {
@@ -504,8 +503,7 @@ func TestMount_5xx_NoRawError(t *testing.T) {
 	fiber.Mount(app, svc)
 
 	status, body := appDo(t, app, newPostRequest(t, "/instances", map[string]any{
-		"def_ref":     "greeting",
-		"instance_id": "x",
+		"def_ref": "greeting",
 	}))
 
 	if status != http.StatusInternalServerError {

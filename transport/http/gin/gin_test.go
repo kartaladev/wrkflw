@@ -119,9 +119,8 @@ func TestInstanceRoutes_StartInstance_201(t *testing.T) {
 	srv, _ := newSrv(t)
 
 	resp := post(t, srv, "/instances", map[string]any{
-		"def_ref":     "greeting",
-		"instance_id": "gin-start-1",
-		"vars":        map[string]any{"name": "world"},
+		"def_ref": "greeting",
+		"vars":    map[string]any{"name": "world"},
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("want 201, got %d", resp.StatusCode)
@@ -138,9 +137,7 @@ func TestInstanceRoutes_StartInstance_400_MissingField(t *testing.T) {
 	srv, _ := newSrv(t)
 
 	// Missing def_ref.
-	resp := post(t, srv, "/instances", map[string]any{
-		"instance_id": "gin-start-bad",
-	})
+	resp := post(t, srv, "/instances", map[string]any{})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
@@ -300,9 +297,7 @@ func TestMount_WithBasePath(t *testing.T) {
 	}
 
 	// Route with base → 400 (bad input — no def_ref, correct routing).
-	resp := post(t, srv, "/api/v1/instances", map[string]any{
-		"instance_id": "bp-test",
-	})
+	resp := post(t, srv, "/api/v1/instances", map[string]any{})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400 with base path, got %d", resp.StatusCode)
 	}
@@ -323,7 +318,7 @@ func TestMount_NativeGroup(t *testing.T) {
 
 	// The native group prefix must be honoured.
 	resp := post(t, srv, "/v2/instances", map[string]any{
-		"def_ref": "greeting", "instance_id": "ng-1", "vars": map[string]any{"name": "y"},
+		"def_ref": "greeting", "vars": map[string]any{"name": "y"},
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("want 201 via native group /v2, got %d", resp.StatusCode)
@@ -349,7 +344,7 @@ func TestMount_WithMiddleware(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	post(t, srv, "/instances", map[string]any{
-		"def_ref": "greeting", "instance_id": "mw-1", "vars": map[string]any{"name": "z"},
+		"def_ref": "greeting", "vars": map[string]any{"name": "z"},
 	})
 	if !headerSet {
 		t.Fatal("middleware was not called before handler")
@@ -600,8 +595,7 @@ func TestInternalError_NoRawErrorLeak(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	resp := post(t, srv, "/instances", map[string]any{
-		"def_ref":     "anything",
-		"instance_id": "5xx-1",
+		"def_ref": "anything",
 	})
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", resp.StatusCode)

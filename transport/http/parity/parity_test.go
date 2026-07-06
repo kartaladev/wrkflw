@@ -223,18 +223,17 @@ func TestParity_PostInstances_201(t *testing.T) {
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	// Adapters share one svc; use distinct ids so each POST creates a new instance.
-	mkReqFor := func(instanceID string) reqFactory {
+	// The server generates a fresh instance ID per POST, so no client-supplied id is needed.
+	mkReqFor := func() reqFactory {
 		return jsonReqFactory(http.MethodPost, "/instances", map[string]any{
-			"def_ref":     "greeting",
-			"instance_id": instanceID,
-			"vars":        map[string]any{"name": "ada"},
+			"def_ref": "greeting",
+			"vars":    map[string]any{"name": "ada"},
 		})
 	}
 
-	s := hitStdlib(t, svc, mkReqFor("parity-start-stdlib"), false)
-	g := hitGin(t, svc, mkReqFor("parity-start-gin"), false)
-	f := hitFiber(t, svc, mkReqFor("parity-start-fiber"), false)
+	s := hitStdlib(t, svc, mkReqFor(), false)
+	g := hitGin(t, svc, mkReqFor(), false)
+	f := hitFiber(t, svc, mkReqFor(), false)
 
 	if s.status != http.StatusCreated {
 		t.Fatalf("stdlib: want 201 got %d (body=%s)", s.status, s.rawBody)
