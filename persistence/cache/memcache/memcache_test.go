@@ -39,6 +39,24 @@ func TestMemcacheNilClient(t *testing.T) {
 	}
 }
 
+func TestMemcacheZeroTTLStoresWithoutExpiry(t *testing.T) {
+	addr := cachetest.RunTestMemcached(t)
+	client := gomc.New(addr)
+	_ = client.DeleteAll()
+	c, err := memcache.New(client).Cache("ns")
+	if err != nil {
+		t.Fatalf("cache: %v", err)
+	}
+	// ttl <= 0 must map to Expiration=0 (never expire), i.e. the entry is set and reachable.
+	if err := c.Set(t.Context(), "z", []byte("v"), 0); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, ok, err := c.Get(t.Context(), "z")
+	if err != nil || !ok || string(got) != "v" {
+		t.Fatalf("zero-ttl get = %q ok=%v err=%v", got, ok, err)
+	}
+}
+
 func TestMemcacheWithKeyPrefix(t *testing.T) {
 	addr := cachetest.RunTestMemcached(t)
 	client := gomc.New(addr)
