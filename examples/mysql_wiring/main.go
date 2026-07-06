@@ -45,7 +45,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -231,15 +230,20 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := task.NewTaskService(taskStore, az)
-	if err != nil {
-		return err
-	}
 	lister, err := persistence.NewMySQLLister(db)
 	if err != nil {
 		return fmt.Errorf("new mysql lister: %w", err)
 	}
-	svc := service.New(runner, tasks, reg, cachingStore, lister, taskStore)
+	svc, err := service.NewEngine(
+		service.WithProcessDriver(runner),
+		service.WithInstanceStore(cachingStore),
+		service.WithDefinitions(reg),
+		service.WithLister(lister),
+		service.WithHumanTasks(taskStore, az),
+	)
+	if err != nil {
+		return err
+	}
 
 	// --- Health probe (MySQL ping) ---
 	readyChecks := []httpcore.HealthCheck{persistence.NewMySQLPingCheck(db)}

@@ -15,7 +15,6 @@ import (
 
 	ginlib "github.com/gin-gonic/gin"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -487,12 +486,12 @@ func (fakeAdminSvc) ListInstances(_ context.Context, _ kernel.InstanceFilter) (k
 	return kernel.InstancePage{Items: []kernel.InstanceSummary{}}, nil
 }
 
-func (fakeAdminSvc) CancelInstance(_ context.Context, _ service.CancelInstanceRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, fmt.Errorf("workflow-kernel: instance not found")
+func (fakeAdminSvc) CancelInstance(_ context.Context, _ service.CancelInstanceRequest) (service.ProcessInstance, error) {
+	return nil, fmt.Errorf("workflow-kernel: instance not found")
 }
 
-func (fakeAdminSvc) ResolveIncident(_ context.Context, _ service.ResolveIncidentRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, fmt.Errorf("workflow-kernel: instance not found")
+func (fakeAdminSvc) ResolveIncident(_ context.Context, _ service.ResolveIncidentRequest) (service.ProcessInstance, error) {
+	return nil, fmt.Errorf("workflow-kernel: instance not found")
 }
 
 func TestAdminRoutes_ListInstances_200(t *testing.T) {
@@ -616,8 +615,8 @@ func TestInternalError_NoRawErrorLeak(t *testing.T) {
 // errSvc is a minimal service.Service fake that returns an opaque internal error.
 type errSvc struct{ service.Service }
 
-func (e *errSvc) StartInstance(_ context.Context, _ service.StartInstanceRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, fmt.Errorf("some internal DB error: connection pool exhausted")
+func (e *errSvc) StartInstance(_ context.Context, _ service.StartInstanceRequest) (service.ProcessInstance, error) {
+	return nil, fmt.Errorf("some internal DB error: connection pool exhausted")
 }
 
 // ─── MountHealth convenience function ────────────────────────────────────────
