@@ -3,6 +3,8 @@ package kernel
 import (
 	"context"
 	"time"
+
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // OutboxStats summarises the current health of the wrkflw_outbox table for
@@ -63,7 +65,7 @@ type CallLinkRef struct {
 // reference and the chaining outcome that connected the two instances.
 type ChainLinkRef struct {
 	InstanceID    string
-	DefinitionRef string
+	DefinitionRef model.Qualifier
 	Outcome       string
 }
 

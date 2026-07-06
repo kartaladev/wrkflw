@@ -316,7 +316,7 @@ func run(logger *slog.Logger) error {
 
 	// SuccessorPolicy: when proc-a:1 completes, start proc-a-succ with carried vars.
 	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
-		if ev.PredecessorDefinitionRef == "proc-a:1" {
+		if ev.PredecessorDefinitionRef == definition.Version("proc-a", 1) {
 			return chain.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
 		}
 		return chain.SuccessorDecision{}, false

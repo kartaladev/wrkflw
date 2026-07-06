@@ -3,6 +3,7 @@ package activity_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
@@ -50,6 +51,44 @@ func TestInlineActionOptions(t *testing.T) {
 	}
 }
 
+func TestNewCallActivityQualifier(t *testing.T) {
+	n := activity.NewCallActivity("call", model.Version("order", 2))
+	ca, ok := n.(activity.CallActivity)
+	if !ok {
+		t.Fatalf("want CallActivity, got %T", n)
+	}
+	if ca.DefRef != model.Version("order", 2) {
+		t.Fatalf("DefRef = %+v", ca.DefRef)
+	}
+}
+
+// TestCallActivityWireDefRefString verifies the CallActivity DefRef survives a
+// JSON wire round-trip as its string form (ToWire String() / FromWire parse).
+func TestCallActivityWireDefRefString(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{activity.NewCallActivity("call", model.Version("order", 3))},
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"defRef":"order:3"`) {
+		t.Fatalf("wire not string-form: %s", data)
+	}
+	var got model.ProcessDefinition
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	ca, ok := got.Nodes[0].(activity.CallActivity)
+	if !ok {
+		t.Fatalf("want CallActivity, got %T", got.Nodes[0])
+	}
+	if ca.DefRef != model.Version("order", 3) {
+		t.Fatalf("round-trip DefRef = %+v", ca.DefRef)
+	}
+}
+
 func TestOtherActivityConstructors(t *testing.T) {
 	sub := &model.ProcessDefinition{ID: "s", Version: 1}
 	nodes := []struct {
@@ -61,7 +100,7 @@ func TestOtherActivityConstructors(t *testing.T) {
 		{activity.NewSendTask("s", "msg", activity.WithCorrelationKey("k")), model.KindSendTask},
 		{activity.NewBusinessRuleTask("b", activity.WithActionName("rule")), model.KindBusinessRuleTask},
 		{activity.NewSubProcess("sp", sub, activity.WithName("Sub")), model.KindSubProcess},
-		{activity.NewCallActivity("ca", "ref", activity.WithName("Call")), model.KindCallActivity},
+		{activity.NewCallActivity("ca", model.Version("ref", 1), activity.WithName("Call")), model.KindCallActivity},
 	}
 	for _, c := range nodes {
 		if c.n.Kind() != c.k {
@@ -82,7 +121,7 @@ func TestSharedOptionsAllConstructors(t *testing.T) {
 		activity.NewSendTask("snt", "m", activity.WithName("N"), activity.WithRetryPolicy(rp)),
 		activity.NewBusinessRuleTask("br", activity.WithName("N"), activity.WithRetryPolicy(rp)),
 		activity.NewSubProcess("sp", sub, activity.WithName("N"), activity.WithRetryPolicy(rp)),
-		activity.NewCallActivity("ca", "ref", activity.WithName("N"), activity.WithRetryPolicy(rp)),
+		activity.NewCallActivity("ca", model.Version("ref", 1), activity.WithName("N"), activity.WithRetryPolicy(rp)),
 	}
 	for _, n := range nodes {
 		if n.Name() != "N" {
@@ -102,7 +141,7 @@ func TestActivityRoundTrip(t *testing.T) {
 			activity.NewUserTask("ut", []string{"mgr"}, activity.WithEligibilityExpr("x")),
 			activity.NewReceiveTask("rt", "m", activity.WithCorrelationKey("k")),
 			activity.NewSendTask("snt", "m"),
-			activity.NewCallActivity("ca", "ref"),
+			activity.NewCallActivity("ca", model.Version("ref", 2)),
 		},
 	}
 	data, err := json.Marshal(def)

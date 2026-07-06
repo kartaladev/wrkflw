@@ -1,5 +1,7 @@
 package httpcore
 
+import "github.com/zakyalvan/krtlwrkflw/definition/model"
+
 // Actor carries identity and role membership for task-related requests.
 // It mirrors the original inline actorBody request structs.
 type Actor struct {
@@ -10,8 +12,8 @@ type Actor struct {
 // StartInput is the request body for POST /instances (start a process instance).
 // DefRef is required; the instance ID is server-generated.
 type StartInput struct {
-	DefRef string         `json:"def_ref" validate:"required"`
-	Vars   map[string]any `json:"vars"`
+	DefRef model.Qualifier `json:"def_ref" validate:"required"`
+	Vars   map[string]any  `json:"vars"`
 }
 
 // SignalInput is the request body for POST /instances/{id}/signals.
@@ -24,10 +26,10 @@ type SignalInput struct {
 // MessageInput is the request body for POST /messages (deliver a message).
 // DefRef and Name are required on the wire.
 type MessageInput struct {
-	DefRef         string         `json:"def_ref"         validate:"required"`
-	Name           string         `json:"name"            validate:"required"`
-	CorrelationKey string         `json:"correlation_key"`
-	Payload        map[string]any `json:"payload"`
+	DefRef         model.Qualifier `json:"def_ref"         validate:"required"`
+	Name           string          `json:"name"            validate:"required"`
+	CorrelationKey string          `json:"correlation_key"`
+	Payload        map[string]any  `json:"payload"`
 }
 
 // ClaimInput is the request body for POST /tasks/{token}/claim.

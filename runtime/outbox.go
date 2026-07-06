@@ -1,17 +1,16 @@
 package runtime
 
 import (
-	"fmt"
-
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// instanceDefRef renders the "defID:version" reference of an instance, carried
-// on terminal outbox events so a consumer (chaining's PredecessorDefinitionRef) can route
-// on the source definition (ADR-0047).
-func instanceDefRef(st engine.InstanceState) string {
-	return fmt.Sprintf("%s:%d", st.DefID, st.DefVersion)
+// instanceDefRef builds the id:version Qualifier of an instance, carried on
+// terminal outbox events so a consumer (chaining's PredecessorDefinitionRef) can
+// route on the source definition (ADR-0047).
+func instanceDefRef(st engine.InstanceState) model.Qualifier {
+	return model.Version(st.DefID, st.DefVersion)
 }
 
 // terminalOutboxEvent derives the single domain event to relay when a step

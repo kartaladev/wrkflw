@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -37,10 +38,11 @@ type OutboxEvent struct {
 	Payload    map[string]any
 	DedupKey   string
 	InstanceID string
-	// DefinitionRef is the "defID:version" of the instance that produced the event,
-	// carried through to a consumer (e.g. chaining's PredecessorDefinitionRef). It is
-	// best-effort routing context — empty for events/rows produced before ADR-0047.
-	DefinitionRef string
+	// DefinitionRef is the id:version reference of the instance that produced the
+	// event, carried through to a consumer (e.g. chaining's PredecessorDefinitionRef).
+	// It is best-effort routing context — the zero Qualifier for events/rows
+	// produced before ADR-0047.
+	DefinitionRef model.Qualifier
 }
 
 // AppliedStep is the atomic persistence unit for exactly one applied trigger:

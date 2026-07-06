@@ -88,12 +88,14 @@ type SubProcess struct {
 // Kind returns model.KindSubProcess.
 func (SubProcess) Kind() model.NodeKind { return model.KindSubProcess }
 
-// CallActivity delegates to a top-level process definition resolved by name.
+// CallActivity delegates to a top-level process definition resolved by
+// reference (id, or id:version).
 type CallActivity struct {
 	model.Base
 	model.ActivityFields
-	// DefRef is the name of the top-level process definition to call.
-	DefRef string
+	// DefRef is the reference (id, or id:version) of the top-level process
+	// definition to call. A zero Version selects the latest.
+	DefRef model.Qualifier
 }
 
 // Kind returns model.KindCallActivity.
@@ -156,9 +158,10 @@ func NewSubProcess(id string, sub *model.ProcessDefinition, opts ...ActivityOpti
 	return n
 }
 
-// NewCallActivity constructs a CallActivity with the given id and definition reference.
-func NewCallActivity(id, defRef string, opts ...ActivityOption) model.Node {
-	n := CallActivity{Base: model.NewBase(id, ""), DefRef: defRef}
+// NewCallActivity constructs a CallActivity with the given id and definition
+// reference (id, or id:version — a zero Version selects the latest).
+func NewCallActivity(id string, ref model.Qualifier, opts ...ActivityOption) model.Node {
+	n := CallActivity{Base: model.NewBase(id, ""), DefRef: ref}
 	applyActivityOpts(&n.Base, &n.ActivityFields, opts)
 	return n
 }
@@ -168,6 +171,15 @@ func NewCallActivity(id, defRef string, opts ...ActivityOption) model.Node {
 // actionFunc adapts a plain function to action.Action for WithActionFunc.
 func actionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) action.Action {
 	return action.ActionFunc(fn)
+}
+
+// parseOrZero parses a CallActivity def-ref wire string into a model.Qualifier,
+// returning the zero Qualifier on a parse error or empty input. FromWire has no
+// error return, so an invalid/empty ref hydrates to the zero value and is
+// rejected by definition validation (the call-activity def-ref required check).
+func parseOrZero(s string) model.Qualifier {
+	q, _ := model.ParseQualifier(s)
+	return q
 }
 
 // --- serialization registration ---
@@ -242,11 +254,11 @@ func init() {
 	model.RegisterKind(model.KindCallActivity, model.NodeSpec{
 		Name: "callActivity",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return CallActivity{Base: b, ActivityFields: w.Activity(), DefRef: w.DefRef}
+			return CallActivity{Base: b, ActivityFields: w.Activity(), DefRef: parseOrZero(w.DefRef)}
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(CallActivity)
-			w.DefRef = v.DefRef
+			w.DefRef = v.DefRef.String()
 			w.PutActivity(v.ActivityFields)
 		},
 	})

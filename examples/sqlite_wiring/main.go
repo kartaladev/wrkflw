@@ -232,10 +232,7 @@ func run(logger *slog.Logger) error {
 	// definitions survive restarts. For illustrative purposes we also seed a
 	// well-known definition via the map registry; in production you would use
 	// persistence.NewSQLiteDefinitionStore exclusively.
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"order":   def,
-		"order:1": def,
-	})
+	reg := kernel.NewMapDefinitionRegistry(def)
 
 	// --- Timer store for rehydration ---
 	timerStore, err := persistence.NewSQLiteTimerStore(db)

@@ -103,7 +103,7 @@ func (p *Publisher) publish(ctx context.Context, ev kernel.OutboxEvent) error {
 	msg := message.NewMessage(id, payload)
 	msg.Metadata.Set("topic", ev.Topic)
 	msg.Metadata.Set("instance_id", ev.InstanceID)
-	msg.Metadata.Set("definition_ref", ev.DefinitionRef)
+	msg.Metadata.Set("definition_ref", ev.DefinitionRef.String())
 	msg.SetContext(ctx)
 
 	if err := p.pub.Publish(ev.Topic, msg); err != nil {

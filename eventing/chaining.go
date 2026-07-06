@@ -9,6 +9,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -56,9 +57,12 @@ func NewChainHandler(core *chain.Chainer) message.NoPublishHandlerFunc {
 				return nil // poison payload: ack so the broker does not loop on it
 			}
 		}
+		// Best-effort: an empty/malformed definition_ref yields the zero Qualifier
+		// (the metadata is routing context, not authoritative — see ChainEvent).
+		predDefRef, _ := model.ParseQualifier(msg.Metadata.Get("definition_ref"))
 		ev := chain.ChainEvent{
 			PredecessorID:            msg.Metadata.Get("instance_id"),
-			PredecessorDefinitionRef: msg.Metadata.Get("definition_ref"),
+			PredecessorDefinitionRef: predDefRef,
 			Outcome:                  outcome,
 			Result:                   result,
 		}

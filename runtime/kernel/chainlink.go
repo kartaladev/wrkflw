@@ -7,6 +7,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // ChainOutcome is the terminal outcome that triggered a chaining decision (ADR-0045).
@@ -31,10 +33,10 @@ const (
 // backstop under at-least-once terminal-event delivery.
 type ChainLink struct {
 	PredecessorID            string
-	PredecessorDefinitionRef string
+	PredecessorDefinitionRef model.Qualifier
 	Outcome                  ChainOutcome
 	SuccessorID              string
-	SuccessorDefinitionRef   string
+	SuccessorDefinitionRef   model.Qualifier
 	StartVars                map[string]any
 	CreatedAt                time.Time
 }

@@ -102,8 +102,8 @@ func (c *ChainLinkStore) Record(ctx context.Context, link kernel.ChainLink) erro
 		link.PredecessorID,
 		string(link.Outcome),
 		link.SuccessorID,
-		link.PredecessorDefinitionRef,
-		link.SuccessorDefinitionRef,
+		link.PredecessorDefinitionRef.String(),
+		link.SuccessorDefinitionRef.String(),
 		startVarsJSON,
 		timeArg(c.dialect, at.UTC()),
 	)
@@ -278,6 +278,8 @@ func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (kernel.ChainLink, 
 	var (
 		link          kernel.ChainLink
 		outcome       string
+		predDefRef    string
+		succDefRef    string
 		startVarsJSON []byte
 	)
 
@@ -285,7 +287,7 @@ func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (kernel.ChainLink, 
 		var createdAtStr string
 		if err := row.Scan(
 			&link.PredecessorID, &outcome, &link.SuccessorID,
-			&link.PredecessorDefinitionRef, &link.SuccessorDefinitionRef,
+			&predDefRef, &succDefRef,
 			&startVarsJSON, &createdAtStr,
 		); err != nil {
 			return kernel.ChainLink{}, err
@@ -299,12 +301,20 @@ func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (kernel.ChainLink, 
 		// Native time.Time path (Postgres TIMESTAMPTZ / MySQL DATETIME(6)).
 		if err := row.Scan(
 			&link.PredecessorID, &outcome, &link.SuccessorID,
-			&link.PredecessorDefinitionRef, &link.SuccessorDefinitionRef,
+			&predDefRef, &succDefRef,
 			&startVarsJSON, &link.CreatedAt,
 		); err != nil {
 			return kernel.ChainLink{}, err
 		}
 		link.CreatedAt = link.CreatedAt.UTC() // normalise to UTC (ADR-0080)
+	}
+
+	var err error
+	if link.PredecessorDefinitionRef, err = parseDefRef(predDefRef); err != nil {
+		return kernel.ChainLink{}, fmt.Errorf("workflow-store: chain links: predecessor def ref: %w", err)
+	}
+	if link.SuccessorDefinitionRef, err = parseDefRef(succDefRef); err != nil {
+		return kernel.ChainLink{}, fmt.Errorf("workflow-store: chain links: successor def ref: %w", err)
 	}
 
 	link.Outcome = kernel.ChainOutcome(outcome)

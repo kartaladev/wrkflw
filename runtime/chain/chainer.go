@@ -25,12 +25,13 @@ import (
 type ChainEvent struct {
 	// PredecessorID is the instance that reached a terminal state.
 	PredecessorID string
-	// PredecessorDefinitionRef is the "defID:version" of the instance that reached a terminal
-	// state, carried end-to-end through the outbox by the built-in publisher/relay
-	// (ADR-0047) so a SuccessorPolicy can route on the predecessor's definition. It
-	// is empty only for events produced before ADR-0047 or by a consumer pipeline
-	// that does not set the "def" metadata key.
-	PredecessorDefinitionRef string
+	// PredecessorDefinitionRef is the id:version reference of the instance that
+	// reached a terminal state, carried end-to-end through the outbox by the
+	// built-in publisher/relay (ADR-0047) so a SuccessorPolicy can route on the
+	// predecessor's definition. It is the zero Qualifier only for events produced
+	// before ADR-0047 or by a consumer pipeline that does not set the
+	// "definition_ref" metadata key.
+	PredecessorDefinitionRef model.Qualifier
 	// Outcome is the terminal outcome that fired the event.
 	Outcome kernel.ChainOutcome
 	// Result is the event payload: the terminal variables (completed) or
@@ -183,7 +184,7 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 			PredecessorDefinitionRef: ev.PredecessorDefinitionRef,
 			Outcome:                  ev.Outcome,
 			SuccessorID:              id,
-			SuccessorDefinitionRef:   defRef(dec.Def),
+			SuccessorDefinitionRef:   dec.Def.Qualifier(),
 			StartVars:                dec.Vars,
 			CreatedAt:                c.clk.Now(),
 		}
@@ -221,9 +222,4 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 		slog.String("outcome", string(ev.Outcome)),
 		slog.String("successor_id", id))
 	return nil
-}
-
-// defRef renders a "defID:version" reference for a definition.
-func defRef(def *model.ProcessDefinition) string {
-	return fmt.Sprintf("%s:%d", def.ID, def.Version)
 }
