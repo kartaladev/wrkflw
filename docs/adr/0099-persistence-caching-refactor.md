@@ -2,7 +2,8 @@
 
 Status: **Accepted — 2026-07-06.**
 Spec: `docs/specs/2026-07-06-persistence-caching-refactor.md`.
-Follows: [ADR-0081](0081-store-unification-dialect.md) (neutral store + dialect), [ADR-0098](0098-service-coherent-graph-refactor.md) (durable `TaskStore`). Closes the caching-placement gap noted in [ADR-0020](0020-instance-store-ownership-cache.md) (ownership-gated instance cache) and [ADR-0054](0054-always-own-single-replica-warning.md) (single-replica warning).
+Plan: `docs/plans/2026-07-06-persistence-caching-refactor.md`.
+Follows: [ADR-0081](0081-store-unification-dialect.md) (neutral store + dialect), [ADR-0098](0098-service-coherent-graph-refactor.md) (durable `TaskStore`). Closes the caching-placement gap noted in [ADR-0020](0020-owned-instance-state-cache.md) (ownership-gated instance cache) and [ADR-0054](0054-graceful-shutdown-and-health.md) (graceful shutdown, health handlers, and `AlwaysOwn` caching guard).
 
 ## Context
 

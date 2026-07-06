@@ -18,7 +18,9 @@ release.
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
 - **`persistence.NewCachingInstanceStore` now requires a `cache.Provider` argument**
-  (previously `runtime/kernel.NewCachingInstanceStore` took no provider). The type also
+  (previously `runtime/kernel.NewCachingInstanceStore` took no provider; that name was itself
+  renamed from `kernel.NewCachingStore` in ADR-0096 — full lineage: `kernel.NewCachingStore` →
+  `kernel.NewCachingInstanceStore` → `persistence.NewCachingInstanceStore`). The type also
   moved from `runtime/kernel` to `persistence`. Supply `hotcache.New()` (the default) or any
   other `cache.Provider` from `persistence/cache/{hotcache,ottercache,rediscache,memcache}`.
   Consumers using `NewDurableProvider` / `NewMySQLDurableProvider` / `NewSQLiteDurableProvider`
