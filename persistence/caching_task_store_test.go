@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // countingTaskStore counts backing Get calls to prove cache hits skip the backing.
@@ -77,6 +79,7 @@ func TestCachingTaskStore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			backing := &countingTaskStore{MemTaskStore: humantask.NewMemTaskStore()}
 			cs, err := persistence.NewCachingTaskStore(backing, hotcache.New(), persistence.WithHumanTaskCacheTTL(time.Minute))
 			if err != nil {
@@ -89,47 +92,24 @@ func TestCachingTaskStore(t *testing.T) {
 
 func TestNewCachingTaskStoreFailsFast(t *testing.T) {
 	t.Parallel()
-
-	type testCase struct {
-		name    string
-		backing humantask.TaskStore
-		wantErr bool
-	}
-	cases := []testCase{
-		{
-			name:    "nil backing",
-			backing: nil,
-			wantErr: true,
-		},
-		{
-			name:    "nil provider — checked by constructor",
-			backing: humantask.NewMemTaskStore(),
-			// provider nil is tested inline below
-			wantErr: false, // handled separately
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if tc.name == "nil provider — checked by constructor" {
-				_, err := persistence.NewCachingTaskStore(tc.backing, nil)
-				if err == nil {
-					t.Fatal("expected error for nil provider, got nil")
-				}
-				return
-			}
-			_, err := persistence.NewCachingTaskStore(tc.backing, hotcache.New())
-			if tc.wantErr && err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-		})
-	}
+	t.Run("nil backing", func(t *testing.T) {
+		t.Parallel()
+		_, err := persistence.NewCachingTaskStore(nil, hotcache.New())
+		if !errors.Is(err, kernel.ErrNilDependency) {
+			t.Fatalf("want ErrNilDependency, got %v", err)
+		}
+	})
+	t.Run("nil provider", func(t *testing.T) {
+		t.Parallel()
+		_, err := persistence.NewCachingTaskStore(humantask.NewMemTaskStore(), nil)
+		if !errors.Is(err, kernel.ErrNilDependency) {
+			t.Fatalf("want ErrNilDependency, got %v", err)
+		}
+	})
 }
 
 func TestCachingTaskStorePassThroughMethods(t *testing.T) {
+	t.Parallel()
 	// AssignedTo and ClaimableBy must pass straight through to backing.
 	backing := humantask.NewMemTaskStore()
 	cs, err := persistence.NewCachingTaskStore(backing, hotcache.New())
@@ -153,4 +133,10 @@ func TestCachingTaskStorePassThroughMethods(t *testing.T) {
 	if len(assigned) != 1 || assigned[0].TaskToken != "tok1" {
 		t.Fatalf("unexpected AssignedTo result: %v", assigned)
 	}
+
+	claimable, err := cs.ClaimableBy(ctx, authz.Actor{ID: "bob"})
+	if err != nil {
+		t.Fatalf("claimable-by: %v", err)
+	}
+	_ = claimable
 }
