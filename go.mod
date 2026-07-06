@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jonboulle/clockwork v0.5.0
+	github.com/maypok86/otter/v2 v2.3.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/samber/hot v0.13.0
 	github.com/stretchr/testify v1.11.1
