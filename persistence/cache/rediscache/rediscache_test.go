@@ -1,6 +1,7 @@
 package rediscache_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/redis/go-redis/v9"
@@ -32,10 +33,11 @@ func TestRediscacheIsNotValueCache(t *testing.T) {
 }
 
 func TestRediscacheNilClient(t *testing.T) {
+	t.Parallel()
 	p := rediscache.New(nil)
 	_, err := p.Cache("ns")
-	if err == nil {
-		t.Fatal("expected error for nil client")
+	if !errors.Is(err, cache.ErrNilCache) {
+		t.Fatalf("expected cache.ErrNilCache, got %v", err)
 	}
 }
 
