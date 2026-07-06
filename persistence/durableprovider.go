@@ -36,7 +36,8 @@ func (p *DurableProvider) CallLinkStore() kernel.CallLinkStore    { return p.cal
 
 // NewDurableProvider builds a PostgreSQL-backed provider over pool. The schema
 // must already be migrated (persistence.Migrate).
-func NewDurableProvider(ctx context.Context, pool *pgxpool.Pool) (*DurableProvider, error) {
+func NewDurableProvider(ctx context.Context, pool *pgxpool.Pool, opts ...DurableOption) (*DurableProvider, error) {
+	cfg := applyDurableOptions(opts)
 	is, err := OpenPostgres(ctx, pool)
 	if err != nil {
 		return nil, err
@@ -61,11 +62,15 @@ func NewDurableProvider(ctx context.Context, pool *pgxpool.Pool) (*DurableProvid
 	if err != nil {
 		return nil, err
 	}
+	instances, taskStore, err := cfg.wrapCaching(is, tasks)
+	if err != nil {
+		return nil, err
+	}
 	return &DurableProvider{
-		instanceStore: is,
+		instanceStore: instances,
 		definitions:   defs,
 		lister:        lister,
-		taskStore:     tasks,
+		taskStore:     taskStore,
 		timerStore:    timers,
 		callLinkStore: links,
 	}, nil
@@ -73,7 +78,8 @@ func NewDurableProvider(ctx context.Context, pool *pgxpool.Pool) (*DurableProvid
 
 // NewMySQLDurableProvider builds a MySQL-backed provider over db. The schema
 // must already be migrated (persistence.MigrateMySQL).
-func NewMySQLDurableProvider(ctx context.Context, db *sql.DB) (*DurableProvider, error) {
+func NewMySQLDurableProvider(ctx context.Context, db *sql.DB, opts ...DurableOption) (*DurableProvider, error) {
+	cfg := applyDurableOptions(opts)
 	is, err := OpenMySQL(ctx, db)
 	if err != nil {
 		return nil, err
@@ -98,11 +104,15 @@ func NewMySQLDurableProvider(ctx context.Context, db *sql.DB) (*DurableProvider,
 	if err != nil {
 		return nil, err
 	}
+	instances, taskStore, err := cfg.wrapCaching(is, tasks)
+	if err != nil {
+		return nil, err
+	}
 	return &DurableProvider{
-		instanceStore: is,
+		instanceStore: instances,
 		definitions:   defs,
 		lister:        lister,
-		taskStore:     tasks,
+		taskStore:     taskStore,
 		timerStore:    timers,
 		callLinkStore: links,
 	}, nil
@@ -111,7 +121,8 @@ func NewMySQLDurableProvider(ctx context.Context, db *sql.DB) (*DurableProvider,
 // NewSQLiteDurableProvider builds a SQLite-backed provider over db. The schema
 // must already be migrated (persistence.MigrateSQLite). Remember SQLite requires
 // db.SetMaxOpenConns(1).
-func NewSQLiteDurableProvider(ctx context.Context, db *sql.DB) (*DurableProvider, error) {
+func NewSQLiteDurableProvider(ctx context.Context, db *sql.DB, opts ...DurableOption) (*DurableProvider, error) {
+	cfg := applyDurableOptions(opts)
 	is, err := OpenSQLite(ctx, db)
 	if err != nil {
 		return nil, err
@@ -136,11 +147,15 @@ func NewSQLiteDurableProvider(ctx context.Context, db *sql.DB) (*DurableProvider
 	if err != nil {
 		return nil, err
 	}
+	instances, taskStore, err := cfg.wrapCaching(is, tasks)
+	if err != nil {
+		return nil, err
+	}
 	return &DurableProvider{
-		instanceStore: is,
+		instanceStore: instances,
 		definitions:   defs,
 		lister:        lister,
-		taskStore:     tasks,
+		taskStore:     taskStore,
 		timerStore:    timers,
 		callLinkStore: links,
 	}, nil
