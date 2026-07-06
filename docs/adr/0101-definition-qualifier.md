@@ -72,8 +72,8 @@ bad/empty ref is caught by definition validation).
 
 ### D3 — TEXT column storage via `q.String()` (no migration)
 
-The `definition_ref` TEXT columns in `wrkflw_chainlinks` and the `definition_ref` metadata
-field in `wrkflw_outbox` continue to store the joined `"id:version"` or `"id"` string.
+The `definition_ref` TEXT column in `wrkflw_chain_links` and the `definition_ref` TEXT
+column in `wrkflw_outbox` continue to store the joined `"id:version"` or `"id"` string.
 Write paths call `q.String()`; read paths call `parseDefRef(s)` — a thin wrapper around
 `ParseQualifier` that maps an empty string to the zero `Qualifier` (preserving compatibility
 with pre-ADR-0047 rows where the column is empty) and wraps any other parse error as a
@@ -150,6 +150,10 @@ internal sites. The only remaining string conversion points are the wire/storage
   `DefinitionRef` fields and the constructor/parameter types change. Pre-v0.1.0 — no
   stability promise applies; all call sites inside the module are updated, and the
   wire+DB formats are unchanged so consumers using only the HTTP transport are unaffected.
+- **Earlier validation failure point.** Malformed `def_ref` / `defRef` values in HTTP
+  request bodies or YAML definitions now fail at request decode / definition validation
+  rather than at registry lookup; both are error paths with no change to observable
+  request/process semantics.
 - **Version-0-as-latest sentinel.** `ParseQualifier` explicitly rejects `":0"` — callers
   cannot express "latest" via an explicit zero version; they must use the bare `"id"` form.
   This is intentional: `Version == 0` is reserved so `Qualifier` can be used as a map key
