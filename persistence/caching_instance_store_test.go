@@ -397,12 +397,17 @@ func assertCreateLoadCommit(t *testing.T, store *persistence.CachingInstanceStor
 	tok, err := store.Create(t.Context(), kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
 	require.NoError(t, err)
 
+	want := runningState(id)
+
 	// Owned Load is served from cache — no backing Load.
 	st, ltok, err := store.Load(t.Context(), id)
 	require.NoError(t, err)
 	assert.Equal(t, id, st.InstanceID)
 	assert.Equal(t, tok, ltok)
 	assert.Equal(t, int64(0), cs.loads.Load(), "owned Load must be served from cache")
+	// Verify non-trivial payload fields survive the cache round-trip (catches JSON codec bugs on the byte path).
+	assert.Equal(t, want.Status, st.Status, "byte-path round-trip must preserve Status")
+	assert.Equal(t, want.StartedAt, st.StartedAt, "byte-path round-trip must preserve StartedAt")
 
 	// Commit advances the token and refreshes the cache.
 	next, err := store.Commit(t.Context(), tok, kernel.AppliedStep{State: runningState(id), Trigger: startTrg()})
@@ -413,6 +418,9 @@ func assertCreateLoadCommit(t *testing.T, store *persistence.CachingInstanceStor
 	assert.Equal(t, id, st2.InstanceID)
 	assert.Equal(t, next, ltok2)
 	assert.Equal(t, int64(0), cs.loads.Load(), "post-commit Load must still be served from cache")
+	// Verify payload fields also survive after Commit refreshes the cache.
+	assert.Equal(t, want.Status, st2.Status, "byte-path round-trip must preserve Status after Commit")
+	assert.Equal(t, want.StartedAt, st2.StartedAt, "byte-path round-trip must preserve StartedAt after Commit")
 }
 
 func TestCachingInstanceStoreEntriesDelegatesToJournalReader(t *testing.T) {
@@ -440,7 +448,7 @@ func TestCachingInstanceStoreEntriesErrorsWhenBackingNotReader(t *testing.T) {
 	assert.Contains(t, err.Error(), "JournalReader")
 }
 
-func TestCachingInstanceStore_Substrates(t *testing.T) {
+func TestCachingInstanceStoreSubstrates(t *testing.T) {
 	providers := map[string]func() cache.Provider{
 		"hotcache-value": func() cache.Provider { return hotcache.New() },
 		"byte-only":      func() cache.Provider { return newByteOnlyProvider() }, // JSON path
