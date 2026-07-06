@@ -70,7 +70,7 @@ func TestRegisterDefinitionDelegatesToDefault(t *testing.T) {
 	err := runtime.RegisterDefinition(def)
 	require.NoError(t, err)
 
-	got, lookupErr := runtime.DefaultDefinitionRegistry().Lookup(t.Context(), def.ID)
+	got, lookupErr := runtime.DefaultDefinitionRegistry().Lookup(t.Context(), model.Latest(def.ID))
 	require.NoError(t, lookupErr)
 	assert.Equal(t, def.ID, got.ID)
 }
@@ -155,7 +155,7 @@ func ensureDefaultSubDef(t *testing.T) (parentDef *model.ProcessDefinition) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("p-start"),
-			activity.NewCallActivity("call", defaultDefSubID),
+			activity.NewCallActivity("call", model.Latest(defaultDefSubID)),
 			event.NewEnd("p-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -250,7 +250,7 @@ func TestWithDefinitionsCustomOverridesDefault(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("p-start"),
-			activity.NewCallActivity("call", subID),
+			activity.NewCallActivity("call", model.Latest(subID)),
 			event.NewEnd("p-end"),
 		},
 		Flows: []flow.SequenceFlow{

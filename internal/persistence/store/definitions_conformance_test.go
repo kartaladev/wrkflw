@@ -68,7 +68,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 				event.WithBoundaryNonInterrupting(),
 				event.WithBoundarySignal("sig-cancel"),
 			),
-			activity.NewCallActivity("call", "sub-def:3",
+			activity.NewCallActivity("call", model.Version("sub-def", 3),
 				activity.WithName("Call Sub-process"),
 			),
 			event.NewEnd("end", "Done"),

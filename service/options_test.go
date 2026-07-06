@@ -15,10 +15,7 @@ import (
 // ID and its "ID:Version" key, returning the registry.
 func regWith(t *testing.T, def *model.ProcessDefinition) kernel.DefinitionRegistry {
 	t.Helper()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		def.ID:         def,
-		defRefFor(def): def,
-	})
+	reg := kernel.NewMapDefinitionRegistry(def)
 	return reg
 }
 

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -27,10 +28,10 @@ func TestChainLinkStore(t *testing.T) {
 
 			link := kernel.ChainLink{
 				PredecessorID:            "pred-lookup-1",
-				PredecessorDefinitionRef: "order:1",
+				PredecessorDefinitionRef: model.Version("order", 1),
 				Outcome:                  kernel.OutcomeCompleted,
 				SuccessorID:              "succ-lookup-1",
-				SuccessorDefinitionRef:   "fulfillment:1",
+				SuccessorDefinitionRef:   model.Version("fulfillment", 1),
 				StartVars:                map[string]any{"orderID": "o-99"},
 				CreatedAt:                time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC),
 			}
@@ -41,8 +42,8 @@ func TestChainLinkStore(t *testing.T) {
 			require.True(t, ok, "%s: expected ok=true for known successor", b.name)
 
 			assert.Equal(t, "pred-lookup-1", got.PredecessorID, "%s: PredecessorID", b.name)
-			assert.Equal(t, "order:1", got.PredecessorDefinitionRef, "%s: PredecessorDefinitionRef", b.name)
-			assert.Equal(t, "fulfillment:1", got.SuccessorDefinitionRef, "%s: SuccessorDefinitionRef", b.name)
+			assert.Equal(t, model.Version("order", 1), got.PredecessorDefinitionRef, "%s: PredecessorDefinitionRef", b.name)
+			assert.Equal(t, model.Version("fulfillment", 1), got.SuccessorDefinitionRef, "%s: SuccessorDefinitionRef", b.name)
 			assert.Equal(t, kernel.OutcomeCompleted, got.Outcome, "%s: Outcome", b.name)
 			assert.Equal(t, "succ-lookup-1", got.SuccessorID, "%s: SuccessorID", b.name)
 			assert.Equal(t, map[string]any{"orderID": "o-99"}, got.StartVars, "%s: StartVars", b.name)
@@ -196,10 +197,10 @@ func TestChainLinkStore(t *testing.T) {
 
 			link := kernel.ChainLink{
 				PredecessorID:            "lineage-pred-1",
-				PredecessorDefinitionRef: "order:2",
+				PredecessorDefinitionRef: model.Version("order", 2),
 				Outcome:                  kernel.OutcomeCompleted,
 				SuccessorID:              "lineage-succ-1",
-				SuccessorDefinitionRef:   "fulfillment:2",
+				SuccessorDefinitionRef:   model.Version("fulfillment", 2),
 				StartVars:                map[string]any{"k": "v"},
 				CreatedAt:                time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC),
 			}
@@ -210,10 +211,10 @@ func TestChainLinkStore(t *testing.T) {
 			require.NotNil(t, got, "%s: expected non-nil result for known successor", b.name)
 
 			assert.Equal(t, "lineage-pred-1", got.PredecessorID, "%s: PredecessorID", b.name)
-			assert.Equal(t, "order:2", got.PredecessorDefinitionRef, "%s: PredecessorDefinitionRef", b.name)
+			assert.Equal(t, model.Version("order", 2), got.PredecessorDefinitionRef, "%s: PredecessorDefinitionRef", b.name)
 			assert.Equal(t, kernel.OutcomeCompleted, got.Outcome, "%s: Outcome", b.name)
 			assert.Equal(t, "lineage-succ-1", got.SuccessorID, "%s: SuccessorID", b.name)
-			assert.Equal(t, "fulfillment:2", got.SuccessorDefinitionRef, "%s: SuccessorDefinitionRef", b.name)
+			assert.Equal(t, model.Version("fulfillment", 2), got.SuccessorDefinitionRef, "%s: SuccessorDefinitionRef", b.name)
 			assert.Equal(t, map[string]any{"k": "v"}, got.StartVars, "%s: StartVars", b.name)
 			assert.Equal(t, time.UTC, got.CreatedAt.Location(), "%s: CreatedAt must be UTC", b.name)
 			assert.WithinDuration(t, link.CreatedAt, got.CreatedAt, time.Millisecond, "%s: CreatedAt round-trip", b.name)
@@ -239,18 +240,18 @@ func TestChainLinkStore(t *testing.T) {
 
 			require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 				PredecessorID:            "sof-pred",
-				PredecessorDefinitionRef: "proc:1",
+				PredecessorDefinitionRef: model.Version("proc", 1),
 				Outcome:                  kernel.OutcomeCompleted,
 				SuccessorID:              "sof-succ-completed",
-				SuccessorDefinitionRef:   "next:1",
+				SuccessorDefinitionRef:   model.Version("next", 1),
 				CreatedAt:                time.Now().UTC(),
 			}), "%s: Record completed", b.name)
 			require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 				PredecessorID:            "sof-pred",
-				PredecessorDefinitionRef: "proc:1",
+				PredecessorDefinitionRef: model.Version("proc", 1),
 				Outcome:                  kernel.OutcomeTerminated,
 				SuccessorID:              "sof-succ-terminated",
-				SuccessorDefinitionRef:   "terminated-next:1",
+				SuccessorDefinitionRef:   model.Version("terminated-next", 1),
 				CreatedAt:                time.Now().UTC(),
 			}), "%s: Record terminated", b.name)
 			// Unrelated predecessor — must not appear.
@@ -269,7 +270,7 @@ func TestChainLinkStore(t *testing.T) {
 			assert.Equal(t, "sof-succ-completed", links[0].SuccessorID, "%s: links[0].SuccessorID", b.name)
 			assert.Equal(t, kernel.OutcomeTerminated, links[1].Outcome, "%s: links[1].Outcome", b.name)
 			assert.Equal(t, "sof-succ-terminated", links[1].SuccessorID, "%s: links[1].SuccessorID", b.name)
-			assert.Equal(t, "proc:1", links[0].PredecessorDefinitionRef, "%s: links[0].PredecessorDefinitionRef", b.name)
+			assert.Equal(t, model.Version("proc", 1), links[0].PredecessorDefinitionRef, "%s: links[0].PredecessorDefinitionRef", b.name)
 		})
 	})
 

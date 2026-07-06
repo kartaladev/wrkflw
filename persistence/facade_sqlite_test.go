@@ -220,8 +220,8 @@ func TestNewSQLiteChainLinkStore_RecordAndLookup(t *testing.T) {
 		PredecessorID:            "sqlite-pred-1",
 		Outcome:                  kernel.ChainOutcome("success"),
 		SuccessorID:              "sqlite-succ-1",
-		PredecessorDefinitionRef: "def-a:1",
-		SuccessorDefinitionRef:   "def-b:2",
+		PredecessorDefinitionRef: model.Version("def-a", 1),
+		SuccessorDefinitionRef:   model.Version("def-b", 2),
 		StartVars:                map[string]any{"k": "v"},
 		CreatedAt:                at,
 	}

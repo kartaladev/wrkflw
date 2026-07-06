@@ -45,7 +45,7 @@ func TestChainerHandle(t *testing.T) {
 
 	completedEv := chain.ChainEvent{
 		PredecessorID:            "p1",
-		PredecessorDefinitionRef: "approval:1",
+		PredecessorDefinitionRef: model.Version("approval", 1),
 		Outcome:                  kernel.OutcomeCompleted,
 		Result:                   map[string]any{"orderID": "o-7"},
 	}

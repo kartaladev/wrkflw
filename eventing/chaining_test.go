@@ -71,7 +71,7 @@ func TestChainHandlerProjection(t *testing.T) {
 				require.Len(t, seen, 1)
 				assert.Equal(t, kernel.OutcomeCompleted, seen[0].Outcome)
 				assert.Equal(t, "p1", seen[0].PredecessorID)
-				assert.Equal(t, "approval:1", seen[0].PredecessorDefinitionRef, "def metadata must project into PredecessorDefinitionRef (ADR-0047)")
+				assert.Equal(t, model.Version("approval", 1), seen[0].PredecessorDefinitionRef, "def metadata must project into PredecessorDefinitionRef (ADR-0047)")
 				assert.Equal(t, map[string]any{"orderID": "o-7"}, seen[0].Result)
 				assert.Equal(t, []string{"p1-next-completed"}, starter.startedIDs())
 			},

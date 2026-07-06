@@ -52,7 +52,7 @@ func notifierParentDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "notifier-child"),
+			activity.NewCallActivity("call", model.Latest("notifier-child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -83,10 +83,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	parent := notifierParentDef()
 
 	// Parent definition must be resolvable under the "id:version" ref format.
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"notifier-child":    child,
-		"notifier-parent:1": parent,
-	})
+	reg := kernel.NewMapDefinitionRegistry(child, parent)
 
 	// Wire human tasks: "worker" role → bob.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
@@ -168,7 +165,7 @@ func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
+	reg := kernel.NewMapDefinitionRegistry()
 
 	n := runtimetest.MustCallNotifier(t, cl, deliver, reg)
 	assert.NotNil(t, n)
@@ -191,9 +188,7 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 
 	// Wire minimal parent def so the registry resolves the parent ref.
 	parentDef := &model.ProcessDefinition{ID: "opt-parent", Version: 1}
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"opt-parent:1": parentDef,
-	})
+	reg := kernel.NewMapDefinitionRegistry(parentDef)
 
 	n := runtimetest.MustCallNotifier(t, cl, deliver, reg, calllink.WithClock(fake))
 	require.NotNil(t, n)

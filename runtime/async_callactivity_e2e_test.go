@@ -66,7 +66,7 @@ func e2eChildDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("c-start"),
-			activity.NewCallActivity("c-call", "e2e-grandchild"),
+			activity.NewCallActivity("c-call", model.Latest("e2e-grandchild")),
 			event.NewEnd("c-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -85,7 +85,7 @@ func e2eParentDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("p-start"),
-			activity.NewCallActivity("p-call", "e2e-child"),
+			activity.NewCallActivity("p-call", model.Latest("e2e-child")),
 			event.NewEnd("p-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -121,16 +121,9 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 
-	// Registry: definitions are looked up by "defID:version" format for the notifier,
-	// and by plain "defID" for runtime call-activity DefRef resolution.
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"e2e-grandchild":   gcDef,
-		"e2e-child":        cDef,
-		"e2e-parent":       pDef,
-		"e2e-grandchild:1": gcDef,
-		"e2e-child:1":      cDef,
-		"e2e-parent:1":     pDef,
-	})
+	// Registry: NewMapDefinitionRegistry auto-indexes by both "defID" (latest)
+	// and "defID:version" (pinned), so pass defs directly as variadic args.
+	reg := kernel.NewMapDefinitionRegistry(gcDef, cDef, pDef)
 
 	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
@@ -239,13 +232,8 @@ func TestFailurePathCallActivity(t *testing.T) {
 	child := asyncFailingChildDef()
 	parent := asyncFailingParentDef()
 
-	// Register under both plain "defID" (for call activity resolution) and
-	// "defID:version" (for notifier parent-def lookup).
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"async-fail-child":    child,
-		"async-fail-parent":   parent,
-		"async-fail-parent:1": parent,
-	})
+	// NewMapDefinitionRegistry auto-indexes by both "defID" (latest) and "defID:N" (pinned).
+	reg := kernel.NewMapDefinitionRegistry(child, parent)
 
 	runner := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(clk),
@@ -305,7 +293,7 @@ func selfCallDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("self-start"),
-			activity.NewCallActivity("self-call", "self-call"),
+			activity.NewCallActivity("self-call", model.Latest("self-call")),
 			event.NewEnd("self-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -337,13 +325,8 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 
 	def := selfCallDef()
 
-	// The registry must answer for:
-	// - "self-call"   (call activity DefRef resolution during child spawning)
-	// - "self-call:1" (parent def lookup by CallNotifier)
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"self-call":   def,
-		"self-call:1": def,
-	})
+	// NewMapDefinitionRegistry auto-indexes by both "defID" (latest) and "defID:N" (pinned).
+	reg := kernel.NewMapDefinitionRegistry(def)
 
 	runner := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
@@ -479,9 +462,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	child := asyncChildDef()
 	parent := asyncParentDef()
 
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"async-child": child,
-	})
+	reg := kernel.NewMapDefinitionRegistry(child)
 
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()

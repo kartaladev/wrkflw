@@ -884,7 +884,7 @@ func TestValidateSubProcess(t *testing.T) {
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewCallActivity("ca", "some-external-process"),
+					activity.NewCallActivity("ca", model.Latest("some-external-process")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -901,7 +901,7 @@ func TestValidateSubProcess(t *testing.T) {
 				ID: "outer", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewCallActivity("ca", ""),
+					activity.NewCallActivity("ca", model.Qualifier{}),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{

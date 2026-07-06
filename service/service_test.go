@@ -3,7 +3,6 @@ package service_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -119,9 +118,9 @@ func messageCatchDef(msgName string) *model.ProcessDefinition {
 	}
 }
 
-// defRefFor returns the "DefID:DefVersion" key used by MapDefinitionRegistry.
-func defRefFor(def *model.ProcessDefinition) string {
-	return fmt.Sprintf("%s:%d", def.ID, def.Version)
+// defRefFor returns the Qualifier for a given process definition.
+func defRefFor(def *model.ProcessDefinition) model.Qualifier {
+	return def.Qualifier()
 }
 
 // newHarness builds a harness wired with the given process definitions.
@@ -153,13 +152,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	require.NoError(t, err)
 
 	// Build the definition registry with all provided definitions.
-	defsMap := make(map[string]*model.ProcessDefinition, len(defs))
-	for _, d := range defs {
-		defsMap[defRefFor(d)] = d
-		// Also register by ID alone for convenience.
-		defsMap[d.ID] = d
-	}
-	reg := kernel.NewMapDefinitionRegistry(defsMap)
+	reg := kernel.NewMapDefinitionRegistry(defs...)
 
 	return &harness{
 		runner:    r,
@@ -190,7 +183,7 @@ func TestStartInstance(t *testing.T) {
 	svc := h.newEngine(t)
 
 	st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting",
+		DefRef: model.Latest("greeting"),
 		Vars:   map[string]any{"name": "ada"},
 	})
 	require.NoError(t, err)
@@ -205,7 +198,7 @@ func TestStartInstanceUnknownDefRef(t *testing.T) {
 	svc := h.newEngine(t)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "non-existent",
+		DefRef: model.Latest("non-existent"),
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrDefinitionNotFound)
@@ -220,7 +213,7 @@ func TestGetInstance(t *testing.T) {
 
 	// Start an instance first.
 	started, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting",
+		DefRef: model.Latest("greeting"),
 		Vars:   map[string]any{"name": "world"},
 	})
 	require.NoError(t, err)
@@ -372,13 +365,13 @@ func TestListInstances(t *testing.T) {
 
 	// Start two instances.
 	_, err := svc.StartInstance(ctx, service.StartInstanceRequest{
-		DefRef: "greeting",
+		DefRef: model.Latest("greeting"),
 		Vars:   map[string]any{"name": "a"},
 	})
 	require.NoError(t, err)
 
 	_, err = svc.StartInstance(ctx, service.StartInstanceRequest{
-		DefRef: "greeting",
+		DefRef: model.Latest("greeting"),
 		Vars:   map[string]any{"name": "b"},
 	})
 	require.NoError(t, err)
@@ -396,7 +389,7 @@ func TestDeliverMessageUnknownDefRef(t *testing.T) {
 	svc := h.newEngine(t)
 
 	err := svc.DeliverMessage(t.Context(), service.DeliverMessageRequest{
-		DefRef:         "non-existent:1",
+		DefRef:         model.Version("non-existent", 1),
 		Name:           "order-shipped",
 		CorrelationKey: "100",
 	})
@@ -456,7 +449,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 	require.Equal(t, engine.StatusRunning, parked.Status)
 
 	// Build a registry WITHOUT the definition so resolveDefinition fails.
-	emptyReg := kernel.NewMapDefinitionRegistry(nil)
+	emptyReg := kernel.NewMapDefinitionRegistry()
 	svc, err := service.NewEngine(
 		service.WithProcessDriver(h.runner),
 		service.WithInstanceStore(h.store),

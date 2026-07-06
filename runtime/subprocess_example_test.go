@@ -49,7 +49,7 @@ func parentCallDef() *model.ProcessDefinition {
 		ID: "parent", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "child"),
+			activity.NewCallActivity("call", model.Latest("child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -98,9 +98,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 
 	// Build the definition registry with the child def.
 	child := childDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"child": child,
-	})
+	reg := kernel.NewMapDefinitionRegistry(child)
 
 	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
@@ -167,7 +165,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		ID: "parent-fail", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "failing-child"),
+			activity.NewCallActivity("call", model.Latest("failing-child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -176,9 +174,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		},
 	}
 
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"failing-child": failingChild,
-	})
+	reg := kernel.NewMapDefinitionRegistry(failingChild)
 
 	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
@@ -217,7 +213,7 @@ func parkingParentDef() *model.ProcessDefinition {
 		ID: "parking-parent", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "parking-child"),
+			activity.NewCallActivity("call", model.Latest("parking-child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -248,9 +244,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	parkingChild := parkingChildDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"parking-child": parkingChild,
-	})
+	reg := kernel.NewMapDefinitionRegistry(parkingChild)
 
 	// Wire human tasks so the child can park at the user task (StatusRunning).
 	// The child will reach AwaitHuman, resolve candidates (empty list is fine),
@@ -313,7 +307,7 @@ func selfRefDef() *model.ProcessDefinition {
 		ID: "self-ref", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("sr-start"),
-			activity.NewCallActivity("sr-call", "self-ref"),
+			activity.NewCallActivity("sr-call", model.Latest("self-ref")),
 			event.NewEnd("sr-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -340,9 +334,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	def := selfRefDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"self-ref": def,
-	})
+	reg := kernel.NewMapDefinitionRegistry(def)
 
 	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 

@@ -5,14 +5,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
 )
 
 func TestValidate(t *testing.T) {
-	if err := httpcore.Validate(httpcore.StartInput{DefRef: "o"}); err != nil {
+	if err := httpcore.Validate(httpcore.StartInput{DefRef: model.Latest("o")}); err != nil {
 		t.Fatalf("valid struct should pass: %v", err)
 	}
-	err := httpcore.Validate(httpcore.StartInput{DefRef: ""}) // missing required fields
+	err := httpcore.Validate(httpcore.StartInput{DefRef: model.Qualifier{}}) // missing required fields
 	if err == nil || !errors.Is(err, httpcore.ErrBadInput) {
 		t.Fatalf("missing required must wrap ErrBadInput, got %v", err)
 	}
@@ -28,13 +29,13 @@ func TestValidateSignalInput(t *testing.T) {
 }
 
 func TestValidateMessageInput(t *testing.T) {
-	if err := httpcore.Validate(httpcore.MessageInput{DefRef: "order", Name: "payment"}); err != nil {
+	if err := httpcore.Validate(httpcore.MessageInput{DefRef: model.Latest("order"), Name: "payment"}); err != nil {
 		t.Fatalf("valid MessageInput should pass: %v", err)
 	}
 	if err := httpcore.Validate(httpcore.MessageInput{Name: "payment"}); err == nil || !errors.Is(err, httpcore.ErrBadInput) {
 		t.Fatalf("missing def_ref must wrap ErrBadInput, got %v", err)
 	}
-	if err := httpcore.Validate(httpcore.MessageInput{DefRef: "order"}); err == nil || !errors.Is(err, httpcore.ErrBadInput) {
+	if err := httpcore.Validate(httpcore.MessageInput{DefRef: model.Latest("order")}); err == nil || !errors.Is(err, httpcore.ErrBadInput) {
 		t.Fatalf("missing name must wrap ErrBadInput, got %v", err)
 	}
 }

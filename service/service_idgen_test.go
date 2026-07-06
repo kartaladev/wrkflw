@@ -38,7 +38,7 @@ func TestStartInstanceGeneratesID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-	pi, err := eng.StartInstance(t.Context(), service.StartInstanceRequest{DefRef: "d", Vars: map[string]any{}})
+	pi, err := eng.StartInstance(t.Context(), service.StartInstanceRequest{DefRef: model.Latest("d"), Vars: map[string]any{}})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestStartInstancePropagatesGeneratorError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-	_, err = eng.StartInstance(t.Context(), service.StartInstanceRequest{DefRef: "d", Vars: map[string]any{}})
+	_, err = eng.StartInstance(t.Context(), service.StartInstanceRequest{DefRef: model.Latest("d"), Vars: map[string]any{}})
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected generator error, got %v", err)
 	}

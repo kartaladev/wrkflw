@@ -138,9 +138,9 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.
 	policy := func(ctx context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		switch ev.PredecessorDefinitionRef {
-		case "proc-a:1":
+		case model.Version("proc-a", 1):
 			return chain.SuccessorDecision{Def: defSA, Vars: ev.Result}, true
-		case "proc-b:1":
+		case model.Version("proc-b", 1):
 			return chain.SuccessorDecision{Def: defSB, Vars: ev.Result}, true
 		default:
 			return chain.SuccessorDecision{}, false
@@ -221,7 +221,7 @@ func TestChainingE2E(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, ok, "chain link must be recorded")
 			assert.Equal(t, "inst-a", link.PredecessorID)
-			assert.Equal(t, "proc-a-succ:1", link.SuccessorDefinitionRef)
+			assert.Equal(t, model.Version("proc-a-succ", 1), link.SuccessorDefinitionRef)
 			assert.NotNil(t, link.StartVars)
 		})
 
@@ -245,7 +245,7 @@ func TestChainingE2E(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, ok, "chain link must be recorded for proc-b successor")
 			assert.Equal(t, "inst-b", link.PredecessorID)
-			assert.Equal(t, "proc-b-succ:1", link.SuccessorDefinitionRef,
+			assert.Equal(t, model.Version("proc-b-succ", 1), link.SuccessorDefinitionRef,
 				"branch routing must wire P_B → S_B, not S_A")
 		})
 

@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
@@ -46,7 +47,7 @@ func TestAdminListInstances(t *testing.T) {
 		"one instance → 200 with items": {
 			setup: func(svc service.Service) {
 				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", Vars: map[string]any{"name": "z"},
+					DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "z"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -80,7 +81,7 @@ func TestAdminListInstances(t *testing.T) {
 		"status=completed filter → 200": {
 			setup: func(svc service.Service) {
 				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", Vars: map[string]any{"name": "z"},
+					DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "z"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -209,7 +210,7 @@ func TestCancelInstance(t *testing.T) {
 		"running instance → 200 with body": {
 			setup: func(svc service.Service) string {
 				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "approval",
+					DefRef: model.Latest("approval"),
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -1009,8 +1010,8 @@ func TestAdminInstanceLineage(t *testing.T) {
 							InstanceID: "parent-inst", DefID: "parent-def", DefVersion: 1, Depth: 0,
 						},
 						CallChildren:     []kernel.CallLinkRef{{InstanceID: "child-inst", DefID: "", DefVersion: 0, Depth: 1}},
-						ChainPredecessor: &kernel.ChainLinkRef{InstanceID: "pred-inst", DefinitionRef: "pred-def:1", Outcome: "approved"},
-						ChainSuccessors:  []kernel.ChainLinkRef{{InstanceID: "succ-inst", DefinitionRef: "succ-def:1", Outcome: "done"}},
+						ChainPredecessor: &kernel.ChainLinkRef{InstanceID: "pred-inst", DefinitionRef: model.Version("pred-def", 1), Outcome: "approved"},
+						ChainSuccessors:  []kernel.ChainLinkRef{{InstanceID: "succ-inst", DefinitionRef: model.Version("succ-def", 1), Outcome: "done"}},
 					}, nil)
 				return m
 			},

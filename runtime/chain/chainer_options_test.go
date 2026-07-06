@@ -12,6 +12,7 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -37,7 +38,7 @@ func TestChainerObservabilityOptionsHandleSuccessor(t *testing.T) {
 
 	ev := chain.ChainEvent{
 		PredecessorID:            "p1",
-		PredecessorDefinitionRef: "approval:1",
+		PredecessorDefinitionRef: model.Version("approval", 1),
 		Outcome:                  kernel.OutcomeCompleted,
 		Result:                   map[string]any{"orderID": "o-7"},
 	}

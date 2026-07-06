@@ -8,6 +8,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/build"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
 // TestNewLoader covers the YAML authoring entry — the symmetric counterpart to
@@ -77,7 +78,7 @@ func TestFluentAllAdders(t *testing.T) {
 		AddSendTask("send", "msg").
 		AddBusinessRuleTask("rule", activity.WithActionName("r")).
 		AddSubProcess("sp", subDef).
-		AddCallActivity("call", "sub:1").
+		AddCallActivity("call", model.Version("sub", 1)).
 		AddEventSubProcess("esp", subDef).
 		AddIntermediateCatchEvent("catch").
 		AddIntermediateThrowEvent("throw").

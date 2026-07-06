@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -97,10 +98,10 @@ func TestMemChainLinkStore_PredecessorOf(t *testing.T) {
 
 		require.NoError(t, cls.Record(ctx, kernel.ChainLink{
 			PredecessorID:            "pred-1",
-			PredecessorDefinitionRef: "order:1",
+			PredecessorDefinitionRef: model.Version("order", 1),
 			Outcome:                  kernel.OutcomeCompleted,
 			SuccessorID:              "succ-1",
-			SuccessorDefinitionRef:   "fulfillment:1",
+			SuccessorDefinitionRef:   model.Version("fulfillment", 1),
 			CreatedAt:                time.Now().UTC(),
 		}))
 
@@ -110,8 +111,8 @@ func TestMemChainLinkStore_PredecessorOf(t *testing.T) {
 		assert.Equal(t, "pred-1", got.PredecessorID)
 		assert.Equal(t, "succ-1", got.SuccessorID)
 		assert.Equal(t, kernel.OutcomeCompleted, got.Outcome)
-		assert.Equal(t, "order:1", got.PredecessorDefinitionRef)
-		assert.Equal(t, "fulfillment:1", got.SuccessorDefinitionRef)
+		assert.Equal(t, model.Version("order", 1), got.PredecessorDefinitionRef)
+		assert.Equal(t, model.Version("fulfillment", 1), got.SuccessorDefinitionRef)
 	})
 
 	t.Run("returns nil nil when successor is a chain root", func(t *testing.T) {
