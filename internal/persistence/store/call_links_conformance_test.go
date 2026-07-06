@@ -504,11 +504,11 @@ func TestCallLinkStore(t *testing.T) {
 	})
 
 	t.Run("immediate second claim by another worker returns nothing while lease is live", func(t *testing.T) {
-		// SQLite is single-writer (no SKIP LOCKED), so skip concurrency on SQLite.
+		// The lease is enforced by a WHERE predicate (leased_until in the future),
+		// not SKIP LOCKED, so a second worker is excluded on every backend —
+		// including single-writer SQLite, where worker B simply reads the
+		// already-committed lease that worker A wrote.
 		forEachDialect(t, func(t *testing.T, b backend) {
-			if b.name == "sqlite" {
-				t.Skip("SQLite is single-writer; concurrency assertion not applicable")
-			}
 			fc := clockwork.NewFakeClockAt(leaseClockBase())
 			clsA, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("replica-A", callLinkLeaseTTL),
@@ -600,36 +600,38 @@ func TestCallLinkStore(t *testing.T) {
 		})
 	})
 
-	t.Run("SQLite leased claim correctness (single-writer, no SKIP LOCKED)", func(t *testing.T) {
+	t.Run("same-worker live lease excludes re-claim then reclaims after TTL", func(t *testing.T) {
+		// Single-worker lease semantics hold on every backend: a live lease
+		// (leased_until in the future) excludes even the leaser's own re-claim
+		// via the WHERE predicate, and expiry re-exposes the row. This is the
+		// single-writer correctness the SQLite path relies on, but the predicate
+		// is dialect-agnostic so it runs on Postgres and MySQL too.
 		forEachDialect(t, func(t *testing.T, b backend) {
-			if b.name != "sqlite" {
-				t.Skip("SQLite-only single-writer correctness test")
-			}
 			fc := clockwork.NewFakeClockAt(leaseClockBase())
 			cls, err := store.NewCallLinkStore(b.conn, b.dialect,
 				store.WithCallLinkLease("single-writer", callLinkLeaseTTL),
 				store.WithCallLinkClock(fc),
 			)
-			require.NoError(t, err, "sqlite: NewCallLinkStore leased")
-			seedCompletedCallLink(t, b, "sqlite-lease-1", kernel.CallOutcome{Completed: true})
+			require.NoError(t, err, "%s: NewCallLinkStore leased", b.name)
+			seedCompletedCallLink(t, b, "sw-lease-1", kernel.CallOutcome{Completed: true})
 
 			// First claim succeeds.
 			first, err := cls.ClaimPending(t.Context(), 10)
-			require.NoError(t, err, "sqlite: first claim")
-			require.Len(t, first, 1, "sqlite: must get 1")
-			assert.Equal(t, "sqlite-lease-1", first[0].Link.ChildInstanceID, "sqlite: ChildInstanceID")
+			require.NoError(t, err, "%s: first claim", b.name)
+			require.Len(t, first, 1, "%s: must get 1", b.name)
+			assert.Equal(t, "sw-lease-1", first[0].Link.ChildInstanceID, "%s: ChildInstanceID", b.name)
 
 			// Immediate second claim returns nothing (lease is live).
 			second, err := cls.ClaimPending(t.Context(), 10)
-			require.NoError(t, err, "sqlite: second claim")
-			assert.Empty(t, second, "sqlite: second claim must be empty while lease is live")
+			require.NoError(t, err, "%s: second claim", b.name)
+			assert.Empty(t, second, "%s: second claim must be empty while lease is live", b.name)
 
 			// After TTL expiry, reclaim.
 			fc.Advance(callLinkLeaseTTL + time.Second)
 			reclaimed, err := cls.ClaimPending(t.Context(), 10)
-			require.NoError(t, err, "sqlite: reclaim after TTL")
-			require.Len(t, reclaimed, 1, "sqlite: must reclaim after TTL")
-			assert.Equal(t, "sqlite-lease-1", reclaimed[0].Link.ChildInstanceID, "sqlite: ChildInstanceID after TTL")
+			require.NoError(t, err, "%s: reclaim after TTL", b.name)
+			require.Len(t, reclaimed, 1, "%s: must reclaim after TTL", b.name)
+			assert.Equal(t, "sw-lease-1", reclaimed[0].Link.ChildInstanceID, "%s: ChildInstanceID after TTL", b.name)
 		})
 	})
 }
