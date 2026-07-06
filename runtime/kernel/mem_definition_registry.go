@@ -81,7 +81,9 @@ func (r *MemDefinitionRegistry) Register(def *model.ProcessDefinition) error {
 	}
 
 	r.m[pinned] = def
-	r.m[latest] = def // overwrite latest key to track newest registered version
+	// Last-registered-wins for the latest key (NOT highest-version);
+	// MapDefinitionRegistry keeps the highest version instead.
+	r.m[latest] = def
 
 	return nil
 }

@@ -138,3 +138,30 @@ func TestMemDefinitionRegistry_MustRegisterPanicsOnError(t *testing.T) {
 		reg.MustRegister(&model.ProcessDefinition{ID: "panic-test", Version: 1})
 	}, "MustRegister should panic on duplicate Qualifier")
 }
+
+func TestMemDefinitionRegistryLatestIsLastRegistered(t *testing.T) {
+	t.Parallel()
+
+	reg := kernel.NewMemDefinitionRegistry()
+	v2 := &model.ProcessDefinition{ID: "order", Version: 2}
+	v1 := &model.ProcessDefinition{ID: "order", Version: 1}
+
+	// Register the HIGHER version first, then the lower one.
+	require.NoError(t, reg.Register(v2))
+	require.NoError(t, reg.Register(v1))
+
+	// Latest resolves to the LAST-registered def (v1), not the highest version.
+	// This is intentional and differs from MapDefinitionRegistry behavior.
+	got, err := reg.Lookup(t.Context(), model.Latest("order"))
+	require.NoError(t, err)
+	assert.Equal(t, v1, got, "Latest should resolve to the last-registered definition (v1), not the highest version (v2)")
+
+	// Pinned lookups still resolve each exact version.
+	p2, err := reg.Lookup(t.Context(), model.Version("order", 2))
+	require.NoError(t, err)
+	assert.Equal(t, v2, p2, "Pinned Version(order,2) should still resolve to v2")
+
+	p1, err := reg.Lookup(t.Context(), model.Version("order", 1))
+	require.NoError(t, err)
+	assert.Equal(t, v1, p1, "Pinned Version(order,1) should still resolve to v1")
+}
