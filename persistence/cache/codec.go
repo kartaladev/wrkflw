@@ -69,5 +69,8 @@ func (cd *Codec[V]) Set(ctx context.Context, key string, v V, ttl time.Duration)
 
 // Delete removes key.
 func (cd *Codec[V]) Delete(ctx context.Context, key string) error {
+	if cd.val != nil {
+		return cd.val.Delete(ctx, key)
+	}
 	return cd.raw.Delete(ctx, key)
 }

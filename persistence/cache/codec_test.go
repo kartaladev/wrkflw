@@ -3,6 +3,7 @@ package cache_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -44,6 +45,11 @@ func (f *valueFake) GetValue(_ context.Context, k string) (any, bool, error) {
 func (f *valueFake) SetValue(_ context.Context, k string, v any, _ time.Duration) error {
 	f.setCall++
 	f.vals[k] = v
+	return nil
+}
+func (f *valueFake) Delete(_ context.Context, k string) error {
+	delete(f.vals, k)
+	delete(f.m, k)
 	return nil
 }
 
@@ -104,6 +110,23 @@ func TestCodec(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:     "value path delete removes entry",
+			newCache: func() cache.Cache { return newValueFake() },
+			assert: func(t *testing.T, cd *cache.Codec[payload], _ cache.Cache) {
+				ctx := t.Context()
+				if err := cd.Set(ctx, "k", payload{N: 42}, time.Minute); err != nil {
+					t.Fatalf("set: %v", err)
+				}
+				if err := cd.Delete(ctx, "k"); err != nil {
+					t.Fatalf("delete: %v", err)
+				}
+				_, ok, err := cd.Get(ctx, "k")
+				if err != nil || ok {
+					t.Fatalf("after value-path delete: ok=%v err=%v", ok, err)
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,7 +171,7 @@ func TestCodecDelete(t *testing.T) {
 
 func TestNewCodecNilCache(t *testing.T) {
 	_, err := cache.NewCodec[payload](nil, func(v payload) ([]byte, error) { return json.Marshal(v) }, nil, clonePayload)
-	if err == nil {
-		t.Fatal("expected error for nil cache")
+	if !errors.Is(err, cache.ErrNilCache) {
+		t.Fatalf("expected ErrNilCache, got %v", err)
 	}
 }
