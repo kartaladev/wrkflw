@@ -24,7 +24,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -88,10 +87,15 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 	}
 	reg := kernel.NewMapDefinitionRegistry(defsMap)
 
-	taskSvc, err := task.NewTaskService(taskStore, az, task.WithClock(fc))
+	svc, err := service.NewEngine(
+		service.WithProcessDriver(runner),
+		service.WithInstanceStore(store),
+		service.WithDefinitions(reg),
+		service.WithLister(store),
+		service.WithHumanTasks(taskStore, az),
+		service.WithClock(fc),
+	)
 	require.NoError(t, err)
-
-	svc := service.New(runner, taskSvc, reg, store, store, taskStore, service.WithEngineClock(fc))
 
 	h := &Harness{
 		Runner:    runner,

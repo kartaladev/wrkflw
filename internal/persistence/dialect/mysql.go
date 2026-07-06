@@ -37,6 +37,16 @@ func (mysql) UpsertDefinition() string {
 	return "\n\t\t\t ON DUPLICATE KEY UPDATE definition = VALUES(definition)"
 }
 
+// UpsertTask returns the ON DUPLICATE KEY UPDATE clause for the human-task
+// upsert site.
+func (mysql) UpsertTask() string {
+	return " ON DUPLICATE KEY UPDATE" +
+		" instance_id=VALUES(instance_id), node_id=VALUES(node_id)," +
+		" state=VALUES(state), claimed_by=VALUES(claimed_by)," +
+		" eligibility=VALUES(eligibility), candidates=VALUES(candidates)," +
+		" vars=VALUES(vars), created_at=VALUES(created_at), due_at=VALUES(due_at)"
+}
+
 // InsertIgnorePrefix returns the INSERT keyword prefix for the dedup
 // idempotency check. MySQL uses INSERT IGNORE as a prefix; the suffix
 // ([InsertIgnoreDedup]) is empty.

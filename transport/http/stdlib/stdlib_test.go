@@ -15,7 +15,6 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -105,8 +104,8 @@ type alwaysErrorService struct {
 	service.Service // embed to satisfy unused methods
 }
 
-func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartInstanceRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, s.err
+func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartInstanceRequest) (service.ProcessInstance, error) {
+	return nil, s.err
 }
 
 // newAlwaysPoliciesAdmin returns a MockPolicyAdmin configured to succeed on

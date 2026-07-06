@@ -55,7 +55,7 @@ func newCancelTestService(t *testing.T) *service.Engine {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, done2.Status, "ci-done must be terminal")
 
-	return service.New(h.runner, h.tasks, h.reg, h.store, h.lister, h.taskStore, service.WithEngineClock(h.clk))
+	return h.newEngine(t)
 }
 
 func TestCancelInstance(t *testing.T) {
@@ -68,8 +68,8 @@ func TestCancelInstance(t *testing.T) {
 			assert: func(t *testing.T, svc *service.Engine) {
 				st, err := svc.CancelInstance(t.Context(), service.CancelInstanceRequest{InstanceID: "ci-run"})
 				require.NoError(t, err)
-				assert.Equal(t, engine.StatusTerminated, st.Status)
-				assert.Empty(t, st.Tokens)
+				assert.Equal(t, engine.StatusTerminated, st.State().Status)
+				assert.Empty(t, st.State().Tokens)
 			},
 		},
 		{

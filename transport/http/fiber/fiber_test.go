@@ -16,7 +16,6 @@ import (
 	fiberlib "github.com/gofiber/fiber/v3"
 	"go.uber.org/mock/gomock"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -127,8 +126,8 @@ type alwaysErrorService struct {
 	service.Service // embed to satisfy unused methods
 }
 
-func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartInstanceRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, s.err
+func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartInstanceRequest) (service.ProcessInstance, error) {
+	return nil, s.err
 }
 
 // ---------------------------------------------------------------------------

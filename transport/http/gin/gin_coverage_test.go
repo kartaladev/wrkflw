@@ -10,8 +10,6 @@ import (
 
 	ginlib "github.com/gin-gonic/gin"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -23,38 +21,35 @@ import (
 
 type errInstanceSvc struct{ service.Service }
 
-func (e *errInstanceSvc) StartInstance(_ context.Context, _ service.StartInstanceRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) StartInstance(_ context.Context, _ service.StartInstanceRequest) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
-func (e *errInstanceSvc) GetInstance(_ context.Context, _ string) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) GetInstance(_ context.Context, _ string) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
-func (e *errInstanceSvc) GetInstanceWithDefinition(_ context.Context, _ string) (engine.InstanceState, *model.ProcessDefinition, error) {
-	return engine.InstanceState{}, nil, kernel.ErrInstanceNotFound
-}
-func (e *errInstanceSvc) DeliverSignal(_ context.Context, _ service.DeliverSignalRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) DeliverSignal(_ context.Context, _ service.DeliverSignalRequest) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
 func (e *errInstanceSvc) DeliverMessage(_ context.Context, _ service.DeliverMessageRequest) error {
 	return kernel.ErrInstanceNotFound
 }
-func (e *errInstanceSvc) ClaimTask(_ context.Context, _ service.ClaimTaskRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) ClaimTask(_ context.Context, _ service.ClaimTaskRequest) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
-func (e *errInstanceSvc) CompleteTask(_ context.Context, _ service.CompleteTaskRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) CompleteTask(_ context.Context, _ service.CompleteTaskRequest) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
-func (e *errInstanceSvc) ReassignTask(_ context.Context, _ service.ReassignTaskRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) ReassignTask(_ context.Context, _ service.ReassignTaskRequest) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
 func (e *errInstanceSvc) ListInstances(_ context.Context, _ kernel.InstanceFilter) (kernel.InstancePage, error) {
 	return kernel.InstancePage{}, kernel.ErrInstanceNotFound
 }
-func (e *errInstanceSvc) CancelInstance(_ context.Context, _ service.CancelInstanceRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) CancelInstance(_ context.Context, _ service.CancelInstanceRequest) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
-func (e *errInstanceSvc) ResolveIncident(_ context.Context, _ service.ResolveIncidentRequest) (engine.InstanceState, error) {
-	return engine.InstanceState{}, kernel.ErrInstanceNotFound
+func (e *errInstanceSvc) ResolveIncident(_ context.Context, _ service.ResolveIncidentRequest) (service.ProcessInstance, error) {
+	return nil, kernel.ErrInstanceNotFound
 }
 
 // ─── InstanceRoutes error path tests ─────────────────────────────────────────
@@ -75,8 +70,8 @@ func TestInstanceRoutes_GetInstance_ErrorPath(t *testing.T) {
 func TestInstanceRoutes_Snapshot_ErrorPath(t *testing.T) {
 	t.Parallel()
 
-	// GetInstanceWithDefinition is not in service.Service; we test via a real svc
-	// by requesting an unknown instance.
+	// The snapshot endpoint now reads via GetInstance; we test the error path via
+	// a real svc by requesting an unknown instance.
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 

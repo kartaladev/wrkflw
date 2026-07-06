@@ -48,6 +48,15 @@ func (postgres) UpsertDefinition() string {
 	return " ON CONFLICT (def_id, version) DO UPDATE SET definition = EXCLUDED.definition"
 }
 
+// UpsertTask returns the ON CONFLICT clause for the human-task upsert site.
+func (postgres) UpsertTask() string {
+	return " ON CONFLICT (task_token) DO UPDATE SET" +
+		" instance_id = EXCLUDED.instance_id, node_id = EXCLUDED.node_id," +
+		" state = EXCLUDED.state, claimed_by = EXCLUDED.claimed_by," +
+		" eligibility = EXCLUDED.eligibility, candidates = EXCLUDED.candidates," +
+		" vars = EXCLUDED.vars, created_at = EXCLUDED.created_at, due_at = EXCLUDED.due_at"
+}
+
 // InsertIgnorePrefix returns the INSERT keyword prefix for the dedup idempotency
 // check. Postgres uses a plain "INSERT" prefix paired with an
 // "ON CONFLICT DO NOTHING" suffix ([InsertIgnoreDedup]).

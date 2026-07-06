@@ -48,7 +48,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -172,11 +171,16 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := task.NewTaskService(taskStore, az)
+	svc, err := service.NewEngine(
+		service.WithProcessDriver(runner),
+		service.WithInstanceStore(store),
+		service.WithDefinitions(reg),
+		service.WithLister(lister),
+		service.WithHumanTasks(taskStore, az),
+	)
 	if err != nil {
 		return err
 	}
-	svc := service.New(runner, tasks, reg, store, lister, taskStore)
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---
 	mux := http.NewServeMux()

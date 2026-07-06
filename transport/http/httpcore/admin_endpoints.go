@@ -100,7 +100,7 @@ func AdminListInstances(ctx context.Context, svc service.Service, q ListInstance
 // granting additional execution attempts via in.AddAttempts. Returns (200,
 // InstanceView, nil) on success.
 func ResolveIncident(ctx context.Context, svc service.Service, instanceID, incidentID string, in ResolveIncidentInput) (int, any, error) {
-	st, err := svc.ResolveIncident(ctx, service.ResolveIncidentRequest{
+	pi, err := svc.ResolveIncident(ctx, service.ResolveIncidentRequest{
 		InstanceID:  instanceID,
 		IncidentID:  incidentID,
 		AddAttempts: in.AddAttempts,
@@ -108,17 +108,17 @@ func ResolveIncident(ctx context.Context, svc service.Service, instanceID, incid
 	if err != nil {
 		return 0, nil, err
 	}
-	return http.StatusOK, NewInstanceView(st), nil
+	return http.StatusOK, NewInstanceView(pi.State()), nil
 }
 
 // CancelInstance cancels the given process instance. Returns (200,
 // InstanceView, nil) on success.
 func CancelInstance(ctx context.Context, svc service.Service, instanceID string) (int, any, error) {
-	st, err := svc.CancelInstance(ctx, service.CancelInstanceRequest{InstanceID: instanceID})
+	pi, err := svc.CancelInstance(ctx, service.CancelInstanceRequest{InstanceID: instanceID})
 	if err != nil {
 		return 0, nil, err
 	}
-	return http.StatusOK, NewInstanceView(st), nil
+	return http.StatusOK, NewInstanceView(pi.State()), nil
 }
 
 // dlqListResponse is the JSON envelope returned by ListDeadLetters.

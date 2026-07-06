@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 )
 
@@ -15,5 +16,43 @@ func TestErrUnsupportedIsSentinel(t *testing.T) {
 	wrapped := errors.Join(errors.New("ctx"), dialect.ErrUnsupported)
 	if !errors.Is(wrapped, dialect.ErrUnsupported) {
 		t.Fatal("ErrUnsupported must be matchable via errors.Is")
+	}
+}
+
+func TestUpsertTaskClause(t *testing.T) {
+	tests := []struct {
+		name   string
+		d      dialect.Dialect
+		assert func(t *testing.T, clause string)
+	}{
+		{
+			name: "postgres on-conflict",
+			d:    dialect.NewPostgres(),
+			assert: func(t *testing.T, clause string) {
+				assert.Contains(t, clause, "ON CONFLICT (task_token)")
+				assert.Contains(t, clause, "EXCLUDED.state")
+			},
+		},
+		{
+			name: "mysql on-duplicate-key",
+			d:    dialect.NewMySQL(),
+			assert: func(t *testing.T, clause string) {
+				assert.Contains(t, clause, "ON DUPLICATE KEY UPDATE")
+				assert.Contains(t, clause, "VALUES(state)")
+			},
+		},
+		{
+			name: "sqlite on-conflict-excluded",
+			d:    dialect.NewSQLite(),
+			assert: func(t *testing.T, clause string) {
+				assert.Contains(t, clause, "ON CONFLICT (task_token)")
+				assert.Contains(t, clause, "excluded.state")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.assert(t, tt.d.UpsertTask())
+		})
 	}
 }
