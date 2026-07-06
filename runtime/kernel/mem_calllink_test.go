@@ -16,6 +16,8 @@ func runningChild(id string) engine.InstanceState {
 	return engine.InstanceState{InstanceID: id, DefID: "child", DefVersion: 1, Status: engine.StatusRunning}
 }
 
+func startTrg() engine.Trigger { return engine.NewStartInstance(time.Unix(0, 0).UTC(), nil) }
+
 func TestMemStoreRecordsCallLinkOnCreate(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))

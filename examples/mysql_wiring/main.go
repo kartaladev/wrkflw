@@ -42,6 +42,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -160,7 +161,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(ownerCloser)
 
 	// Wrap the store in the caching store so hot instances are served from memory.
-	cachingStore, err := kernel.NewCachingInstanceStore(store, ownership)
+	cachingStore, err := persistence.NewCachingInstanceStore(store, ownership, hotcache.New())
 	if err != nil {
 		return fmt.Errorf("caching store: %w", err)
 	}

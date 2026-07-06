@@ -244,7 +244,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 }
 
 // NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.InstanceOwnership]
-// backed by MySQL GET_LOCK advisory locks, for use with [kernel.NewCachingInstanceStore]
+// backed by MySQL GET_LOCK advisory locks, for use with [NewCachingInstanceStore]
 // across multiple replicas sharing one database.
 //
 // It holds a dedicated *sql.Conn for its lifetime; close the returned [io.Closer]
@@ -259,7 +259,7 @@ func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.Call
 //	owner, closer, _ := persistence.NewMySQLAdvisoryLockOwnership(ctx, db)
 //	defer closer.Close()
 //	store, _ := persistence.OpenMySQL(ctx, db)
-//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
+//	cachingStore, err := persistence.NewCachingInstanceStore(store, owner, hotcache.New())
 func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewMySQLOwnership(ctx, db)
 	if err != nil {

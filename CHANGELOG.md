@@ -17,6 +17,15 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **`persistence.NewCachingInstanceStore` now requires a `cache.Provider` argument**
+  (previously `runtime/kernel.NewCachingInstanceStore` took no provider; that name was itself
+  renamed from `kernel.NewCachingStore` in ADR-0096 — full lineage: `kernel.NewCachingStore` →
+  `kernel.NewCachingInstanceStore` → `persistence.NewCachingInstanceStore`). The type also
+  moved from `runtime/kernel` to `persistence`. Supply `hotcache.New()` (the default) or any
+  other `cache.Provider` from `persistence/cache/{hotcache,ottercache,rediscache,memcache}`.
+  Consumers using `NewDurableProvider` / `NewMySQLDurableProvider` / `NewSQLiteDurableProvider`
+  are unaffected — caching is wired automatically by the provider constructors.
+
 - **`runtime.NewProcessDriver` is now all-optional.** The two required positional
   arguments (`cat action.Catalog`, `store kernel.InstanceStore`) have been replaced with
   functional options. A zero-argument call — `d, _ := runtime.NewProcessDriver()` — gives
@@ -110,8 +119,27 @@ release.
   advisory lock) are opt-in per dialect. Facade constructors `persistence.Open{Postgres,MySQL,SQLite}`
   and `persistence.Migrate{Postgres,MySQL,SQLite}` (plus a public `persistence.Migrator`).
   Optimistic-concurrency (CAS) writes, a transactional **outbox** relay with poison isolation +
-  DLQ + redrive, hot-path caching (`kernel.CachingInstanceStore`, `kernel.CachingDefinitionRegistry`),
-  and data-retention pruners.
+  DLQ + redrive, hot-path caching (see below), and data-retention pruners.
+
+- **Persistence caching layer (ADR-0099)** — a neutral `persistence/cache` port (`Cache`,
+  optional `ValueCache` capability, `Provider`, generic `Codec[V]`) with **four swappable
+  adapter subpackages**: `persistence/cache/hotcache` (`github.com/samber/hot`, **default**,
+  in-memory), `persistence/cache/ottercache` (`github.com/maypok86/otter/v2`, in-memory
+  alternative), `persistence/cache/rediscache` (`github.com/redis/go-redis/v9`, distributed),
+  and `persistence/cache/memcache` (`github.com/bradfitz/gomemcache`, distributed). Each
+  adapter lives in its own subpackage so its library dependency is optional. `CachingInstanceStore`
+  is relocated from `runtime/kernel` into `persistence` and re-substrated onto the `Cache`
+  port (all correctness-bearing behavior preserved: ownership gate, per-instance keyed locks,
+  evict-on-`ErrConcurrentUpdate`, `AlwaysOwn` single-replica `Warn`, `Release`-evict-first).
+  A new `CachingTaskStore` provides read-through / write-through point-read caching over
+  `humantask.TaskStore` (set-wide queries `AssignedTo`/`ClaimableBy` are uncached in v1).
+  Caching is **default-on** on all three `DurableProvider` constructors (`NewDurableProvider`,
+  `NewMySQLDurableProvider`, `NewSQLiteDurableProvider`) using `hotcache` in-memory, `AlwaysOwn`
+  + one-time Warn, instance TTL 5m, human-task TTL 30s. New `DurableOption`s:
+  `WithCacheProvider`, `WithInstanceCacheProvider`, `WithHumanTaskCacheProvider`,
+  `WithDurableInstanceCacheOwnership`, `WithDurableInstanceCacheTTL`,
+  `WithDurableHumanTaskCacheTTL`, and `WithoutCache` (escape hatch). Definition caching is
+  deferred; human-task query caching (`AssignedTo`/`ClaimableBy`) is deferred.
 
 - **Runtime driver** — `runtime.ProcessDriver` wires the engine to persistence, scheduling,
   and actions; supporting pieces live in `runtime/{kernel,view,chain,task,signal,calllink,monitor}`.

@@ -31,7 +31,7 @@
 //     and DefinitionLoader (NewLoader, post-parse action registration).
 //   - runtime      Run a process: the reference driver that performs engine
 //     commands, persists state, and feeds triggers back. Provides ProcessDriver,
-//     MemInstanceStore, CachingInstanceStore, TaskService, SignalBus, Chainer, CallNotifier.
+//     MemInstanceStore, TaskService, SignalBus, Chainer, CallNotifier.
 //     All stateful constructors return (T, error) and reject nil required deps.
 //   - engine       The core token state machine. Pure of transport, storage
 //     vendor, and event-bus specifics; depends on interfaces only. Reach for
@@ -75,8 +75,14 @@
 //
 //   - persistence  The persistence façade over the neutral SQL store: OpenPostgres,
 //     OpenMySQL, and OpenSQLite backends (Postgres/MySQL/SQLite dialects, ADR-0081/0082).
-//     Provides InstanceStore, Relay, CallLinkStore, TimerStore, ChainLinkStore, Lister,
-//     DefinitionStore, and their constructors.
+//     Provides InstanceStore, CachingInstanceStore, CachingTaskStore, Relay, CallLinkStore,
+//     TimerStore, ChainLinkStore, Lister, DefinitionStore, and their constructors.
+//     Hot-path caching is default-on on the DurableProvider constructors (ADR-0099).
+//   - persistence/cache  Neutral cache port: Cache, ValueCache, Provider, Codec[V].
+//     Four swappable adapter subpackages: persistence/cache/hotcache (samber/hot, default),
+//     persistence/cache/ottercache (maypok86/otter, in-memory), persistence/cache/rediscache
+//     (go-redis, distributed), persistence/cache/memcache (gomemcache, distributed).
+//     Each adapter is an optional dependency imported only by its subpackage.
 //   - eventing     The eventing façade for publishing domain events (outbox).
 //     Keeps watermill confined: runtime/engine never import it. Provides
 //     NewGoChannelPublisher, NewMessageHandler, NewChainerRunner.
