@@ -176,7 +176,9 @@ func (c *CachingInstanceStore) lockFor(id string) func() {
 	}
 }
 
-// put write-through caches state under id at the given version.
+// put write-through caches state under id at the given version. The codec owns
+// isolation (it deep-clones on the value path and marshals on the byte path), so
+// callers may pass their own live state without a defensive copy.
 func (c *CachingInstanceStore) put(ctx context.Context, id string, state engine.InstanceState, version kernel.Version) {
 	_ = c.codec.Set(ctx, id, instanceEntry{State: state, Version: version}, c.ttl)
 }
@@ -199,7 +201,7 @@ func (c *CachingInstanceStore) Create(ctx context.Context, step kernel.AppliedSt
 		// same invariant Load/Commit rely on: every cache write for an id is
 		// serialized so a concurrent Load-populate cannot interleave.
 		unlock := c.lockFor(id)
-		c.put(ctx, id, step.State.Clone(), tok)
+		c.put(ctx, id, step.State, tok)
 		unlock()
 	}
 	return tok, nil
@@ -216,13 +218,17 @@ func (c *CachingInstanceStore) Load(ctx context.Context, id string) (engine.Inst
 	unlock := c.lockFor(id)
 	defer unlock()
 	if e, ok, gerr := c.codec.Get(ctx, id); gerr == nil && ok {
-		return e.State.Clone(), e.Version, nil
+		// codec.Get already returns an isolated clone (value path) or a fresh
+		// unmarshal (byte path); no further copy is needed here.
+		return e.State, e.Version, nil
 	}
 	st, tok, lerr := c.backing.Load(ctx, id)
 	if lerr != nil {
 		return engine.InstanceState{}, 0, lerr
 	}
-	c.put(ctx, id, st.Clone(), tok)
+	// codec.Set (via put) clones internally on the value path, so caching st does
+	// not alias the value we return to the caller.
+	c.put(ctx, id, st, tok)
 	return st, tok, nil
 }
 
@@ -240,7 +246,7 @@ func (c *CachingInstanceStore) Commit(ctx context.Context, expected kernel.Versi
 		return 0, err
 	}
 	if owned, oerr := c.owner.Acquire(ctx, id); oerr == nil && owned {
-		c.put(ctx, id, step.State.Clone(), tok)
+		c.put(ctx, id, step.State, tok)
 	}
 	return tok, nil
 }

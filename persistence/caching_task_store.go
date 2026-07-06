@@ -129,5 +129,9 @@ func cloneTask(t humantask.HumanTask) humantask.HumanTask {
 	if t.Vars != nil {
 		t.Vars = maps.Clone(t.Vars)
 	}
+	if t.DueAt != nil {
+		d := *t.DueAt
+		t.DueAt = &d
+	}
 	return t
 }

@@ -184,9 +184,9 @@ are additive (existing `NewDurableProvider(ctx, pool)` calls keep compiling):
 ```go
 p, err := persistence.NewDurableProvider(ctx, pool,
     persistence.WithCacheProvider(rediscache.New(client)), // default: hotcache.New()
-    persistence.WithInstanceCacheOwnership(owner),         // default: kernel.AlwaysOwn{} + one-time Warn
-    persistence.WithInstanceCacheTTL(5*time.Minute),       // default: 5m
-    persistence.WithHumanTaskCacheTTL(30*time.Second),     // default: short/bounded
+    persistence.WithDurableInstanceCacheOwnership(owner),  // default: kernel.AlwaysOwn{} + one-time Warn
+    persistence.WithDurableInstanceCacheTTL(5*time.Minute), // default: 5m
+    persistence.WithDurableHumanTaskCacheTTL(30*time.Second), // default: short/bounded
     persistence.WithoutCache(),                            // escape hatch: disable entirely
 )
 ```
