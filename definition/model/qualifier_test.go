@@ -3,6 +3,7 @@ package model_test
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -97,6 +98,11 @@ func TestQualifierYAMLRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
+		// Assert the marshaled YAML bytes match the expected scalar form.
+		wantYAML := "ref: " + q.String() + "\n"
+		if string(b) != wantYAML {
+			t.Fatalf("yaml bytes = %q, want %q", string(b), wantYAML)
+		}
 		var back holder
 		if err := yaml.Unmarshal(b, &back); err != nil {
 			t.Fatalf("unmarshal: %v", err)
@@ -104,6 +110,25 @@ func TestQualifierYAMLRoundTrip(t *testing.T) {
 		if back.Ref != q {
 			t.Fatalf("yaml round-trip: got %+v want %+v", back.Ref, q)
 		}
+	}
+}
+
+func TestQualifierUnmarshalRejectsInvalid(t *testing.T) {
+	for _, bad := range []string{"order:0", "", "order:x", ":3"} {
+		t.Run("json/"+bad, func(t *testing.T) {
+			var q model.Qualifier
+			err := json.Unmarshal([]byte(strconv.Quote(bad)), &q)
+			if !errors.Is(err, model.ErrInvalidQualifier) {
+				t.Fatalf("json unmarshal %q: err = %v, want ErrInvalidQualifier", bad, err)
+			}
+		})
+		t.Run("yaml/"+bad, func(t *testing.T) {
+			var q model.Qualifier
+			err := yaml.Unmarshal([]byte(strconv.Quote(bad)), &q)
+			if !errors.Is(err, model.ErrInvalidQualifier) {
+				t.Fatalf("yaml unmarshal %q: err = %v, want ErrInvalidQualifier", bad, err)
+			}
+		})
 	}
 }
 
