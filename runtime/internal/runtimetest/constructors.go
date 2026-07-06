@@ -18,6 +18,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
@@ -62,11 +64,13 @@ func MustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 	return svc
 }
 
-// MustCachingStore builds a CachingInstanceStore or fails the test.
-func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.InstanceOwnership, opts ...kernel.CachingInstanceStoreOption) *kernel.CachingInstanceStore {
+// MustCachingStore builds a persistence.CachingInstanceStore or fails the test.
+func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.InstanceOwnership, opts ...persistence.CachingInstanceStoreOption) *persistence.CachingInstanceStore {
 	t.Helper()
-	s, err := kernel.NewCachingInstanceStore(backing, owner, opts...)
-	require.NoError(t, err)
+	s, err := persistence.NewCachingInstanceStore(backing, owner, hotcache.New(), opts...)
+	if err != nil {
+		t.Fatalf("new caching store: %v", err)
+	}
 	return s
 }
 

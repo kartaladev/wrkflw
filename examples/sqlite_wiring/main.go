@@ -14,7 +14,7 @@
 //   - No distributed advisory locking: NewSQLiteAdvisoryLockOwnership returns a
 //     fail-loud Ownership whose Acquire always returns (false, ErrUnsupported).
 //     For a single-process deployment, kernel.AlwaysOwn{} is the correct
-//     ownership value for kernel.NewCachingInstanceStore — it avoids the error path and
+//     ownership value for persistence.NewCachingInstanceStore — it avoids the error path and
 //     gives the in-process cache its full benefit.
 //   - No multi-replica timer elector: scheduling.NewScheduler with no elector
 //     option (unlike the MySQL/Postgres examples, which pass WithMySQLTimerElector
@@ -52,6 +52,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -193,7 +194,7 @@ func run(logger *slog.Logger) error {
 
 	// Use AlwaysOwn for single-process caching — the fail-loud SQLite ownership
 	// value is not passed to NewCachingInstanceStore.
-	cachingStore, err := kernel.NewCachingInstanceStore(store, kernel.AlwaysOwn{})
+	cachingStore, err := persistence.NewCachingInstanceStore(store, kernel.AlwaysOwn{}, hotcache.New())
 	if err != nil {
 		return err
 	}

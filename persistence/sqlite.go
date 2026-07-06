@@ -7,7 +7,7 @@ package persistence
 // no LISTEN/NOTIFY mechanism (no relay notifier). Outbox relay and timer stores
 // work via poll-only paths identical to the MySQL backend.
 //
-// Consumers who need multi-replica exclusivity (kernel.CachingInstanceStore +
+// Consumers who need multi-replica exclusivity (CachingInstanceStore +
 // InstanceOwnership) must use the Postgres or MySQL backend. The SQLite backend is
 // well-suited for embedded single-process deployments, CLI tools, integration
 // tests, and local development where a network database is unavailable.
@@ -100,7 +100,7 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 // that was never held.
 //
 // This constructor exists so SQLite consumers can satisfy the ownership
-// parameter required by [kernel.NewCachingInstanceStore] while making the
+// parameter required by [NewCachingInstanceStore] while making the
 // unsupported-locking contract explicit. Ownership-dependent flows must guard
 // against [dialect.ErrUnsupported] and skip the exclusivity path when running
 // on SQLite.
@@ -115,7 +115,7 @@ func MigrateSQLite(ctx context.Context, db *sql.DB) error {
 //	owner, closer, _ := persistence.NewSQLiteAdvisoryLockOwnership()
 //	defer closer.Close()
 //	store, _ := persistence.OpenSQLite(ctx, db)
-//	cachingStore, err := kernel.NewCachingInstanceStore(store, owner)
+//	cachingStore, err := persistence.NewCachingInstanceStore(store, owner, hotcache.New())
 //	// Acquire will return (false, dialect.ErrUnsupported) — guard accordingly.
 func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, error) {
 	o, err := store.NewSQLiteOwnership()

@@ -31,13 +31,14 @@ type InstanceOwnership interface {
 // correct and free for single-process embedding.
 //
 // SINGLE-REPLICA / SINGLE-WRITER ONLY. AlwaysOwn unconditionally grants
-// ownership, so pairing it with a [CachingInstanceStore] across more than one replica is
-// a stale-read footgun: every replica would cache the same instance and serve its
-// own out-of-date snapshot, firing a routing decision and side-effects before the
-// version-CAS could reject the write (ADR-0020, ADR-0054). For ANY multi-replica
-// deployment use a real lease — persistence.NewAdvisoryLockOwnership — so only the
-// owning replica caches. [NewCachingInstanceStore] logs a one-time Warn when it is
-// constructed with AlwaysOwn to make a misconfiguration visible.
+// ownership, so pairing it with a persistence.CachingInstanceStore across more than one
+// replica is a stale-read footgun: every replica would cache the same instance
+// and serve its own out-of-date snapshot, firing a routing decision and
+// side-effects before the version-CAS could reject the write (ADR-0020, ADR-0054).
+// For ANY multi-replica deployment use a real lease —
+// persistence.NewAdvisoryLockOwnership — so only the owning replica caches.
+// persistence.NewCachingInstanceStore logs a one-time Warn when it is constructed
+// with AlwaysOwn to make a misconfiguration visible.
 type AlwaysOwn struct{}
 
 // Compile-time assertion.
