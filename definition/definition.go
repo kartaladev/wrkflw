@@ -30,6 +30,18 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
+// Qualifier references a process definition by id and version (0 == latest).
+type Qualifier = model.Qualifier
+
+// Latest returns a Qualifier resolving the newest registered version of id.
+func Latest(id string) Qualifier { return model.Latest(id) }
+
+// Version returns a Qualifier pinned to (id, v).
+func Version(id string, v int) Qualifier { return model.Version(id, v) }
+
+// ParseQualifier parses "id" or "id:version" into a Qualifier.
+func ParseQualifier(s string) (Qualifier, error) { return model.ParseQualifier(s) }
+
 // NewBuilder starts the fluent builder for a definition with the given id and
 // version. Each AddX method mirrors a node-family constructor; Build returns a
 // *model.ProcessDefinition.
