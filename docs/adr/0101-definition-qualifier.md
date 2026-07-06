@@ -59,7 +59,7 @@ definition itself, used to index the definition under its exact version key.
 
 `Qualifier` implements `json.Marshaler` / `json.Unmarshaler` and the YAML equivalent,
 emitting and parsing the `String()` representation. All HTTP DTO fields typed `model.Qualifier`
-(`StartInput.DefRef`, `DeliverMessageInput.DefRef`) serialise identically to their former
+(`StartInput.DefRef`, `MessageInput.DefRef`) serialise identically to their former
 `string` counterparts. The HTTP `def_ref` JSON key is unchanged.
 
 HTTP DTOs add an explicit `DefRef.ID == ""` guard returning HTTP 400 because
