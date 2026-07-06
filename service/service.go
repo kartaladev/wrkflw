@@ -269,7 +269,11 @@ var _ Service = (*Engine)(nil)
 // instance ID via the configured generator, and returns the resulting
 // ProcessInstance (completed or parked).
 func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (ProcessInstance, error) {
-	def, err := e.reg.Lookup(ctx, req.DefRef)
+	startQ, parseErr := model.ParseQualifier(req.DefRef)
+	if parseErr != nil {
+		return nil, fmt.Errorf("workflow-service: start instance: bad def ref %q: %w", req.DefRef, parseErr)
+	}
+	def, err := e.reg.Lookup(ctx, startQ)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: %w", err)
 	}
@@ -293,7 +297,7 @@ func (e *Engine) GetInstance(ctx context.Context, instanceID string) (ProcessIns
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: get instance: %w", err)
 	}
-	def, _ := e.reg.Lookup(ctx, fmt.Sprintf("%s:%d", st.DefID, st.DefVersion))
+	def, _ := e.reg.Lookup(ctx, model.Version(st.DefID, st.DefVersion))
 	return NewProcessInstance(def, st), nil
 }
 
@@ -323,7 +327,11 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 // DeliverMessage routes a message to the waiting instance via the runner's
 // message-waiter table. No-op when no instance is waiting.
 func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
-	def, err := e.reg.Lookup(ctx, req.DefRef)
+	msgQ, parseErr := model.ParseQualifier(req.DefRef)
+	if parseErr != nil {
+		return fmt.Errorf("workflow-service: deliver message: bad def ref %q: %w", req.DefRef, parseErr)
+	}
+	def, err := e.reg.Lookup(ctx, msgQ)
 	if err != nil {
 		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
@@ -419,8 +427,7 @@ func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*mod
 	if err != nil {
 		return nil, engine.InstanceState{}, err
 	}
-	defRef := fmt.Sprintf("%s:%d", st.DefID, st.DefVersion)
-	def, err := e.reg.Lookup(ctx, defRef)
+	def, err := e.reg.Lookup(ctx, model.Version(st.DefID, st.DefVersion))
 	if err != nil {
 		return nil, engine.InstanceState{}, err
 	}

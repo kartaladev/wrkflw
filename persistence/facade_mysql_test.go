@@ -271,10 +271,10 @@ type staticReg struct {
 	defs map[string]*model.ProcessDefinition
 }
 
-func (r *staticReg) Lookup(_ context.Context, defRef string) (*model.ProcessDefinition, error) {
-	d, ok := r.defs[defRef]
+func (r *staticReg) Lookup(_ context.Context, q model.Qualifier) (*model.ProcessDefinition, error) {
+	d, ok := r.defs[q.String()]
 	if !ok {
-		return nil, fmt.Errorf("def not found: %s", defRef)
+		return nil, fmt.Errorf("def not found: %s", q)
 	}
 	return d, nil
 }
@@ -451,15 +451,15 @@ func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
 	}
 	require.NoError(t, ds.PutDefinition(t.Context(), def))
 
-	// Exact lookup "defID:version".
-	got, err := ds.Lookup(t.Context(), "facade-def-1:1")
+	// Pinned lookup Version(id, version).
+	got, err := ds.Lookup(t.Context(), model.Version("facade-def-1", 1))
 	require.NoError(t, err)
 	require.Equal(t, "facade-def-1", got.ID)
 	require.Equal(t, 1, got.Version)
 	require.Equal(t, []string{"rollback"}, got.CancelActions)
 
-	// Latest-version lookup "defID".
-	got2, err := ds.Lookup(t.Context(), "facade-def-1")
+	// Latest-version lookup Latest(id).
+	got2, err := ds.Lookup(t.Context(), model.Latest("facade-def-1"))
 	require.NoError(t, err)
 	require.Equal(t, "facade-def-1", got2.ID)
 }

@@ -104,35 +104,42 @@ func TestDefinitionStorePutGetRoundTrip(t *testing.T) {
 	})
 }
 
-// TestDefinitionStoreLookupExact verifies Lookup("defID:version") on all 3 dialects.
-func TestDefinitionStoreLookupExact(t *testing.T) {
+// TestDefinitionStoreLookupByQualifier verifies Lookup(ctx, model.Qualifier) for
+// latest, pinned, and not-found cases on all 3 dialects.
+func TestDefinitionStoreLookupByQualifier(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
 		require.NoError(t, err)
 
-		def := &model.ProcessDefinition{ID: "d-lx", Version: 1}
-		require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: PutDefinition", b.name)
+		v1 := &model.ProcessDefinition{ID: "d-lq", Version: 1}
+		v2 := &model.ProcessDefinition{ID: "d-lq", Version: 2}
+		require.NoError(t, ds.PutDefinition(t.Context(), v1), "%s: PutDefinition v1", b.name)
+		require.NoError(t, ds.PutDefinition(t.Context(), v2), "%s: PutDefinition v2", b.name)
 
-		got, err := ds.Lookup(t.Context(), "d-lx:1")
-		require.NoError(t, err, "%s: Lookup exact", b.name)
-		assert.Equal(t, "d-lx", got.ID, "%s: ID", b.name)
-		assert.Equal(t, 1, got.Version, "%s: Version", b.name)
-	})
-}
+		// Pinned: Version(id, 1) must return v1.
+		got1, err := ds.Lookup(t.Context(), model.Version("d-lq", 1))
+		require.NoError(t, err, "%s: Lookup pinned v1", b.name)
+		assert.Equal(t, 1, got1.Version, "%s: pinned must return v1", b.name)
 
-// TestDefinitionStoreLookupLatest verifies that Lookup("defID") returns the
-// definition with the highest version when multiple versions exist.
-func TestDefinitionStoreLookupLatest(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, b backend) {
-		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
-		require.NoError(t, err)
+		// Pinned: Version(id, 2) must return v2.
+		got2, err := ds.Lookup(t.Context(), model.Version("d-lq", 2))
+		require.NoError(t, err, "%s: Lookup pinned v2", b.name)
+		assert.Equal(t, 2, got2.Version, "%s: pinned must return v2", b.name)
 
-		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d-ll", Version: 1}))
-		require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d-ll", Version: 2}))
-
-		got, err := ds.Lookup(t.Context(), "d-ll")
+		// Latest: Latest(id) must return the highest version.
+		gotLatest, err := ds.Lookup(t.Context(), model.Latest("d-lq"))
 		require.NoError(t, err, "%s: Lookup latest", b.name)
-		assert.Equal(t, 2, got.Version, "%s: must return highest version", b.name)
+		assert.Equal(t, 2, gotLatest.Version, "%s: latest must return highest version", b.name)
+
+		// Not found: pinned qualifier for non-existent version must wrap ErrDefinitionNotFound.
+		_, err = ds.Lookup(t.Context(), model.Version("d-lq", 99))
+		require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
+			"%s: pinned not-found must wrap ErrDefinitionNotFound; got %v", b.name, err)
+
+		// Not found: latest qualifier for non-existent ID must wrap ErrDefinitionNotFound.
+		_, err = ds.Lookup(t.Context(), model.Latest("no-such-id"))
+		require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
+			"%s: latest not-found must wrap ErrDefinitionNotFound; got %v", b.name, err)
 	})
 }
 
@@ -171,39 +178,6 @@ func TestDefinitionStoreGetNotFound(t *testing.T) {
 	})
 }
 
-// TestDefinitionStoreLookupNotFound verifies that Lookup wraps
-// kernel.ErrDefinitionNotFound for both exact and latest forms.
-func TestDefinitionStoreLookupNotFound(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, b backend) {
-		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
-		require.NoError(t, err)
-
-		// Exact ref not found.
-		_, err = ds.Lookup(t.Context(), "no-such:1")
-		require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
-			"%s: exact Lookup must wrap ErrDefinitionNotFound; got %v", b.name, err)
-
-		// Latest ref not found.
-		_, err = ds.Lookup(t.Context(), "no-such-either")
-		require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
-			"%s: latest Lookup must wrap ErrDefinitionNotFound; got %v", b.name, err)
-	})
-}
-
-// TestDefinitionStoreLookupBadVersion verifies that Lookup returns an error
-// containing "bad version segment" when the version segment cannot be parsed.
-func TestDefinitionStoreLookupBadVersion(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, b backend) {
-		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
-		require.NoError(t, err)
-
-		_, err = ds.Lookup(t.Context(), "proc:notanumber")
-		require.Error(t, err, "%s: bad version must error", b.name)
-		require.Contains(t, err.Error(), "bad version segment",
-			"%s: error must mention 'bad version segment'", b.name)
-	})
-}
-
 // TestDefinitionStoreLookupCancelledContext verifies that Lookup propagates ctx
 // to the SQL query: a pre-cancelled context causes the query to fail immediately.
 func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
@@ -220,7 +194,7 @@ func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 		cctx, cancel := context.WithCancel(t.Context())
 		cancel() // pre-cancel
 
-		_, err = ds.Lookup(cctx, "cancel-ctx-"+b.name+":1")
+		_, err = ds.Lookup(cctx, model.Version("cancel-ctx-"+b.name, 1))
 		require.Error(t, err, "%s: cancelled context must return an error", b.name)
 	})
 }

@@ -343,15 +343,15 @@ func TestNewSQLiteDefinitionStore_RoundTrip(t *testing.T) {
 	}
 	require.NoError(t, ds.PutDefinition(t.Context(), def))
 
-	// Exact lookup "defID:version".
-	got, err := ds.Lookup(t.Context(), "sqlite-facade-def-1:1")
+	// Pinned lookup Version(id, version).
+	got, err := ds.Lookup(t.Context(), model.Version("sqlite-facade-def-1", 1))
 	require.NoError(t, err)
 	require.Equal(t, "sqlite-facade-def-1", got.ID)
 	require.Equal(t, 1, got.Version)
 	require.Equal(t, []string{"rollback"}, got.CancelActions)
 
-	// Latest-version lookup "defID".
-	got2, err := ds.Lookup(t.Context(), "sqlite-facade-def-1")
+	// Latest-version lookup Latest(id).
+	got2, err := ds.Lookup(t.Context(), model.Latest("sqlite-facade-def-1"))
 	require.NoError(t, err)
 	require.Equal(t, "sqlite-facade-def-1", got2.ID)
 }

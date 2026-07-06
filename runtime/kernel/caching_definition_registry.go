@@ -26,7 +26,7 @@ type cacheEntry struct {
 //
 // Correctness guarantees:
 //   - A cache hit (within TTL) never calls the backing registry.
-//   - Concurrent misses for the same DefRef collapse to exactly one backing call
+//   - Concurrent misses for the same Qualifier collapse to exactly one backing call
 //     via [singleflight.Group].
 //   - Error responses (including [ErrDefinitionNotFound]) are NOT cached so that
 //     transient failures do not persist beyond the next call.
@@ -78,23 +78,27 @@ func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration,
 	return c, nil
 }
 
-// Lookup returns the ProcessDefinition for defRef. On a cache miss (or after
+// Lookup returns the ProcessDefinition for q. On a cache miss (or after
 // TTL expiry) the backing registry is consulted exactly once per key (concurrent
 // callers share the same in-flight request via singleflight). Errors from the
 // backing registry are returned as-is and never cached.
-func (c *CachingDefinitionRegistry) Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error) {
+//
+// The internal cache is keyed on q.String() (a stable string representation of
+// the Qualifier) to satisfy singleflight's string-key requirement.
+func (c *CachingDefinitionRegistry) Lookup(ctx context.Context, q model.Qualifier) (*model.ProcessDefinition, error) {
+	key := q.String()
 	now := c.clk.Now()
 
 	// Fast path: cache hit within TTL — no lock contention on the singleflight group.
 	c.mu.Lock()
-	if e, ok := c.entries[defRef]; ok && now.Before(e.expiresAt) {
+	if e, ok := c.entries[key]; ok && now.Before(e.expiresAt) {
 		c.mu.Unlock()
 		return e.def, nil
 	}
 	c.mu.Unlock()
 
 	// Slow path: single-flight to ensure exactly one backing call per key.
-	v, err, _ := c.group.Do(defRef, func() (any, error) {
+	v, err, _ := c.group.Do(key, func() (any, error) {
 		// Double-check the cache inside the flight. The fast-path check above and
 		// this Do are not atomic: a prior flight for this key may have completed
 		// (populating the cache and freeing the singleflight key) in the window
@@ -104,19 +108,19 @@ func (c *CachingDefinitionRegistry) Lookup(ctx context.Context, defRef string) (
 		// goroutine-scheduling skew, not just to strictly-overlapping flights.
 		now := c.clk.Now()
 		c.mu.Lock()
-		if e, ok := c.entries[defRef]; ok && now.Before(e.expiresAt) {
+		if e, ok := c.entries[key]; ok && now.Before(e.expiresAt) {
 			c.mu.Unlock()
 			return e.def, nil
 		}
 		c.mu.Unlock()
 
-		def, err := c.backing.Lookup(ctx, defRef)
+		def, err := c.backing.Lookup(ctx, q)
 		if err != nil {
 			// Do NOT cache errors — let the next caller retry the backing.
 			return nil, err
 		}
 		c.mu.Lock()
-		c.entries[defRef] = cacheEntry{def: def, expiresAt: c.clk.Now().Add(c.ttl)}
+		c.entries[key] = cacheEntry{def: def, expiresAt: c.clk.Now().Add(c.ttl)}
 		c.mu.Unlock()
 		return def, nil
 	})

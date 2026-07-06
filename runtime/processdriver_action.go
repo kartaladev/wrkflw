@@ -270,7 +270,11 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured"+
 				" (use runtime.RegisterDefinition to populate the default registry, or supply one via WithDefinitions)", cmd.DefRef)
 		}
-		childDef, err := r.defsReg.Lookup(ctx, cmd.DefRef)
+		defQ, parseErr := model.ParseQualifier(cmd.DefRef)
+		if parseErr != nil {
+			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: bad definition ref: %w", cmd.DefRef, parseErr)
+		}
+		childDef, err := r.defsReg.Lookup(ctx, defQ)
 		if err != nil {
 			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: definition not found"+
 				" (register it via runtime.RegisterDefinition or supply a registry via WithDefinitions): %w", cmd.DefRef, err)

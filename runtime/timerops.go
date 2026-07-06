@@ -94,13 +94,13 @@ func (r *ProcessDriver) RehydrateTimers(ctx context.Context) error {
 	}
 	var unresolved int
 	for _, a := range armed {
-		ref := fmt.Sprintf("%s:%d", a.DefID, a.DefVersion)
-		def, err := r.defsReg.Lookup(ctx, ref)
+		defQ := model.Version(a.DefID, a.DefVersion)
+		def, err := r.defsReg.Lookup(ctx, defQ)
 		if err != nil {
 			unresolved++
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: rehydrate: definition not found, skipping timer",
 				append(r.obs.tel.LogAttrs(ctx),
-					slog.String("def_ref", ref),
+					slog.String("def_ref", defQ.String()),
 					slog.String("timer_id", a.TimerID),
 					slog.String("instance_id", a.InstanceID))...)
 			continue

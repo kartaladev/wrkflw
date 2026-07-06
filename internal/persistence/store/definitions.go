@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	// kinds registers every node kind so definitions read back from the store
@@ -135,42 +133,38 @@ func (ds *DefinitionStore) GetDefinition(ctx context.Context, defID string, vers
 	return &def, nil
 }
 
-// Lookup satisfies [kernel.DefinitionRegistry]. defRef is interpreted as:
-//   - "defID:version" — exact (defID, version) lookup via [GetDefinition].
-//   - "defID"         — the definition with the highest version for defID.
+// Lookup satisfies [kernel.DefinitionRegistry]. q is interpreted as:
+//   - q.IsLatest() (Version == 0) — the definition with the highest version for q.ID.
+//   - otherwise                   — exact (q.ID, q.Version) lookup via [GetDefinition].
 //
 // Returns [kernel.ErrDefinitionNotFound] when no matching row exists.
 // ctx is propagated to the underlying SQL query for cancellation support.
-func (ds *DefinitionStore) Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error) {
-	if id, ver, ok := strings.Cut(defRef, ":"); ok {
-		n, err := strconv.Atoi(ver)
-		if err != nil {
-			return nil, fmt.Errorf("workflow-store: lookup %q: bad version segment: %w", defRef, err)
-		}
-		return ds.GetDefinition(ctx, id, n)
+func (ds *DefinitionStore) Lookup(ctx context.Context, q model.Qualifier) (*model.ProcessDefinition, error) {
+	if !q.IsLatest() {
+		return ds.GetDefinition(ctx, q.ID, q.Version)
 	}
 
-	// No colon: return the definition with the highest version.
-	q := ds.querier(ctx)
+	// Latest: return the definition with the highest version.
+	dbq := ds.querier(ctx)
 
 	var data []byte
-	err := q.QueryRow(ctx, ds.dialect.Rebind(
+	err := dbq.QueryRow(ctx, ds.dialect.Rebind(
 		`SELECT definition FROM wrkflw_definitions
 		 WHERE def_id = ?
 		 ORDER BY version DESC
 		 LIMIT 1`),
-		defRef,
+		q.ID,
 	).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s", kernel.ErrDefinitionNotFound, defRef)
+		return nil, fmt.Errorf("%w: %s", kernel.ErrDefinitionNotFound, q)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("workflow-store: lookup %q: %w", defRef, err)
+		return nil, fmt.Errorf("workflow-store: lookup %q: %w", q, err)
 	}
 
 	var def model.ProcessDefinition
 	if err := json.Unmarshal(data, &def); err != nil {
-		return nil, fmt.Errorf("workflow-store: lookup %q: unmarshal: %w", defRef, err)
+		return nil, fmt.Errorf("workflow-store: lookup %q: unmarshal: %w", q, err)
 	}
 	return &def, nil
 }
