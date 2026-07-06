@@ -36,3 +36,40 @@ func TestSQLiteDurableProviderPowersEngine(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, e)
 }
+
+// TestPostgresDurableProviderPowersEngine builds a Postgres-backed provider over
+// a testcontainers pool (migrated first) and wires it into an engine.
+func TestPostgresDurableProviderPowersEngine(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.RunTestDatabase(t) // bare pool — migrate before use
+	require.NoError(t, persistence.Migrate(t.Context(), pool))
+
+	p, err := persistence.NewDurableProvider(t.Context(), pool)
+	require.NoError(t, err)
+	require.NotNil(t, p.InstanceStore())
+	require.NotNil(t, p.TaskStore())
+	require.NotNil(t, p.TimerStore())
+	require.NotNil(t, p.CallLinkStore())
+
+	e, err := service.NewEngine(service.WithDurableStore(p))
+	require.NoError(t, err)
+	require.NotNil(t, e)
+}
+
+// TestMySQLDurableProviderPowersEngine builds a MySQL-backed provider over a
+// testcontainers db (already migrated) and wires it into an engine.
+func TestMySQLDurableProviderPowersEngine(t *testing.T) {
+	t.Parallel()
+	db := dbtest.RunTestMySQL(t) // already migrated
+
+	p, err := persistence.NewMySQLDurableProvider(t.Context(), db)
+	require.NoError(t, err)
+	require.NotNil(t, p.InstanceStore())
+	require.NotNil(t, p.TaskStore())
+	require.NotNil(t, p.TimerStore())
+	require.NotNil(t, p.CallLinkStore())
+
+	e, err := service.NewEngine(service.WithDurableStore(p))
+	require.NoError(t, err)
+	require.NotNil(t, e)
+}
