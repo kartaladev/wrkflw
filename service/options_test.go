@@ -39,13 +39,12 @@ func TestNewEngineDefaultGraphRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 
 	pi, err := e.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef:     defRefFor(def),
-		InstanceID: "i-1",
-		Vars:       map[string]any{"name": "ada"},
+		DefRef: defRefFor(def),
+		Vars:   map[string]any{"name": "ada"},
 	})
 	require.NoError(t, err)
 
-	got, err := e.GetInstance(t.Context(), "i-1")
+	got, err := e.GetInstance(t.Context(), pi.State().InstanceID)
 	require.NoError(t, err)
 	assert.Equal(t, pi.State().InstanceID, got.State().InstanceID)
 }

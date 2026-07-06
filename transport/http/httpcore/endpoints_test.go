@@ -24,15 +24,7 @@ func TestStartInstance(t *testing.T) {
 		assert func(t *testing.T, status int, body any, err error)
 	}{
 		"missing def_ref → ErrBadInput, no service call": {
-			in: httpcore.StartInput{DefRef: "", InstanceID: "i1"},
-			assert: func(t *testing.T, _ int, _ any, err error) {
-				if !errors.Is(err, httpcore.ErrBadInput) {
-					t.Fatalf("want ErrBadInput, got %v", err)
-				}
-			},
-		},
-		"missing instance_id → ErrBadInput, no service call": {
-			in: httpcore.StartInput{DefRef: "greeting", InstanceID: ""},
+			in: httpcore.StartInput{DefRef: ""},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if !errors.Is(err, httpcore.ErrBadInput) {
 					t.Fatalf("want ErrBadInput, got %v", err)
@@ -40,7 +32,7 @@ func TestStartInstance(t *testing.T) {
 			},
 		},
 		"success → 201 default mapped body": {
-			in: httpcore.StartInput{DefRef: "greeting", InstanceID: "start-ok-1", Vars: map[string]any{"name": "ada"}},
+			in: httpcore.StartInput{DefRef: "greeting", Vars: map[string]any{"name": "ada"}},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -54,7 +46,7 @@ func TestStartInstance(t *testing.T) {
 			},
 		},
 		"custom mapper → returned in body": {
-			in:     httpcore.StartInput{DefRef: "greeting", InstanceID: "start-ok-mapper-1", Vars: map[string]any{"name": "ada"}},
+			in:     httpcore.StartInput{DefRef: "greeting", Vars: map[string]any{"name": "ada"}},
 			mapper: func(_ engine.InstanceState) any { return map[string]string{"custom": "yes"} },
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -70,7 +62,7 @@ func TestStartInstance(t *testing.T) {
 			},
 		},
 		"unknown definition → service error propagated": {
-			in: httpcore.StartInput{DefRef: "no-such-def", InstanceID: "start-err-1"},
+			in: httpcore.StartInput{DefRef: "no-such-def"},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
 					t.Fatal("want error for unknown definition")
@@ -104,13 +96,13 @@ func TestGetInstance(t *testing.T) {
 	}{
 		"existing instance → 200 with body": {
 			setup: func(svc service.Service) string {
-				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", InstanceID: "get-inst-ok", Vars: map[string]any{"name": "x"},
+				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+					DefRef: "greeting", Vars: map[string]any{"name": "x"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
 				}
-				return "get-inst-ok"
+				return pi.State().InstanceID
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -157,13 +149,13 @@ func TestGetInstanceSnapshot(t *testing.T) {
 	}{
 		"existing instance → 200 snapshot body": {
 			setup: func(svc service.Service) string {
-				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", InstanceID: "snap-ok-1", Vars: map[string]any{"name": "x"},
+				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+					DefRef: "greeting", Vars: map[string]any{"name": "x"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
 				}
-				return "snap-ok-1"
+				return pi.State().InstanceID
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -210,13 +202,13 @@ func TestGetActionableView(t *testing.T) {
 	}{
 		"existing instance → 200 actionable body": {
 			setup: func(svc service.Service) string {
-				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "approval", InstanceID: "actionable-ok-1",
+				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+					DefRef: "approval",
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
 				}
-				return "actionable-ok-1"
+				return pi.State().InstanceID
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -273,13 +265,13 @@ func TestDeliverSignal(t *testing.T) {
 		},
 		"success → 200 with body": {
 			setup: func(svc service.Service) string {
-				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "signal-catch-approved", InstanceID: "sig-ok-1",
+				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+					DefRef: "signal-catch-approved",
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
 				}
-				return "sig-ok-1"
+				return pi.State().InstanceID
 			},
 			in: httpcore.SignalInput{Signal: "approved", Payload: map[string]any{"decision": "yes"}},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -351,8 +343,8 @@ func TestDeliverMessage(t *testing.T) {
 		"success → 202 nil body": {
 			setup: func(svc service.Service) {
 				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "message-catch-order-shipped", InstanceID: "msg-ok-1",
-					Vars: map[string]any{"orderId": "42"},
+					DefRef: "message-catch-order-shipped",
+					Vars:   map[string]any{"orderId": "42"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)

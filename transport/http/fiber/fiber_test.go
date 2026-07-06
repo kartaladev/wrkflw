@@ -229,12 +229,7 @@ func TestMount_StartInstance_MissingFields(t *testing.T) {
 
 	tests := map[string]map[string]any{
 		"missing def_ref": {
-			"def_ref":     "",
-			"instance_id": "x",
-		},
-		"missing instance_id": {
-			"def_ref":     "greeting",
-			"instance_id": "",
+			"def_ref": "",
 		},
 	}
 
@@ -262,23 +257,24 @@ func TestMount_GetInstance(t *testing.T) {
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "get-fiber-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	instanceID := pi.State().InstanceID
 
 	app := newApp()
 	fiber.Mount(app, svc)
 
 	var result map[string]any
-	status := appDoJSON(t, app, newGetRequest(t, "/instances/get-fiber-1"), &result)
+	status := appDoJSON(t, app, newGetRequest(t, "/instances/"+instanceID), &result)
 	if status != http.StatusOK {
 		t.Fatalf("want 200, got %d", status)
 	}
-	if result["instance_id"] != "get-fiber-1" {
-		t.Fatalf("want instance_id=get-fiber-1, got %v", result)
+	if result["instance_id"] != instanceID {
+		t.Fatalf("want instance_id=%s, got %v", instanceID, result)
 	}
 }
 
@@ -304,24 +300,25 @@ func TestMount_WithBasePath(t *testing.T) {
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "base-path-fiber-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	instanceID := pi.State().InstanceID
 
 	app := newApp()
 	fiber.Mount(app, svc, fiber.WithBasePath("/api/v1/workflow"))
 
 	// Route under base path works.
-	status, body := appDo(t, app, newGetRequest(t, "/api/v1/workflow/instances/base-path-fiber-1"))
+	status, body := appDo(t, app, newGetRequest(t, "/api/v1/workflow/instances/"+instanceID))
 	if status != http.StatusOK {
 		t.Fatalf("want 200 under base path, got %d (body=%s)", status, body)
 	}
 
 	// The un-prefixed path is now 404 (no route registered there).
-	status2, _ := appDo(t, app, newGetRequest(t, "/instances/base-path-fiber-1"))
+	status2, _ := appDo(t, app, newGetRequest(t, "/instances/"+instanceID))
 	if status2 != http.StatusNotFound {
 		t.Fatalf("want 404 (no route) for old path, got %d", status2)
 	}
@@ -334,8 +331,8 @@ func TestMount_NativeGroup(t *testing.T) {
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "native-group-fiber-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -345,7 +342,7 @@ func TestMount_NativeGroup(t *testing.T) {
 	grp := app.Group("/v2")
 	fiber.Mount(grp, svc)
 
-	status, body := appDo(t, app, newGetRequest(t, "/v2/instances/native-group-fiber-1"))
+	status, body := appDo(t, app, newGetRequest(t, "/v2/instances/"+pi.State().InstanceID))
 	if status != http.StatusOK {
 		t.Fatalf("want 200 via native group, got %d (body=%s)", status, body)
 	}
@@ -399,7 +396,7 @@ func TestAdminRoutes_Customize(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "admin-list-fiber-1", Vars: map[string]any{"name": "x"},
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -534,8 +531,8 @@ func TestMessageRoutes_Customize(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "message-catch-order-shipped", InstanceID: "msg-fiber-1",
-		Vars: map[string]any{"orderId": "42"},
+		DefRef: "message-catch-order-shipped",
+		Vars:   map[string]any{"orderId": "42"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -643,8 +640,8 @@ func TestInstanceRoutes_Snapshot(t *testing.T) {
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "snap-fiber-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -653,7 +650,7 @@ func TestInstanceRoutes_Snapshot(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	status, body := appDo(t, app, newGetRequest(t, "/instances/snap-fiber-1/snapshot"))
+	status, body := appDo(t, app, newGetRequest(t, "/instances/"+pi.State().InstanceID+"/snapshot"))
 	if status != http.StatusOK {
 		t.Fatalf("want 200 snapshot, got %d (body=%s)", status, body)
 	}
@@ -666,8 +663,8 @@ func TestInstanceRoutes_ActionableView(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "approval", InstanceID: "actionable-fiber-1",
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "approval",
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -676,7 +673,7 @@ func TestInstanceRoutes_ActionableView(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	status, body := appDo(t, app, newGetRequest(t, "/instances/actionable-fiber-1/actionable"))
+	status, body := appDo(t, app, newGetRequest(t, "/instances/"+pi.State().InstanceID+"/actionable"))
 	if status != http.StatusOK {
 		t.Fatalf("want 200 actionable, got %d (body=%s)", status, body)
 	}
@@ -689,8 +686,8 @@ func TestDeliverSignal_Fiber(t *testing.T) {
 	def := transporttest.SignalProcess("approved")
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "signal-catch-approved", InstanceID: "signal-fiber-1",
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "signal-catch-approved",
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -699,7 +696,7 @@ func TestDeliverSignal_Fiber(t *testing.T) {
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	status, body := appDo(t, app, newPostRequest(t, "/instances/signal-fiber-1/signals", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/instances/"+pi.State().InstanceID+"/signals", map[string]any{
 		"signal": "approved",
 	}))
 
@@ -941,7 +938,7 @@ func TestAdminListInstances_WithStatusFilter(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "admin-status-fiber-1", Vars: map[string]any{"name": "x"},
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)

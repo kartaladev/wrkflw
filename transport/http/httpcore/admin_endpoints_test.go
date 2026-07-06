@@ -46,7 +46,7 @@ func TestAdminListInstances(t *testing.T) {
 		"one instance → 200 with items": {
 			setup: func(svc service.Service) {
 				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", InstanceID: "admin-list-ok-1", Vars: map[string]any{"name": "z"},
+					DefRef: "greeting", Vars: map[string]any{"name": "z"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -80,7 +80,7 @@ func TestAdminListInstances(t *testing.T) {
 		"status=completed filter → 200": {
 			setup: func(svc service.Service) {
 				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", InstanceID: "admin-list-completed-1", Vars: map[string]any{"name": "z"},
+					DefRef: "greeting", Vars: map[string]any{"name": "z"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -208,13 +208,13 @@ func TestCancelInstance(t *testing.T) {
 	}{
 		"running instance → 200 with body": {
 			setup: func(svc service.Service) string {
-				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "approval", InstanceID: "cancel-ok-1",
+				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+					DefRef: "approval",
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
 				}
-				return "cancel-ok-1"
+				return pi.State().InstanceID
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {

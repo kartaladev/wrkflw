@@ -281,17 +281,18 @@ func TestAdminRoutes_CancelInstance(t *testing.T) {
 	approvalDef := transporttest.ApprovalProcess()
 	_, svcApproval := transporttest.NewHarness(t, approvalDef)
 
-	_, err := svcApproval.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "approval", InstanceID: "cancel-stdlib-1",
+	pi, err := svcApproval.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "approval",
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	cancelID := pi.State().InstanceID
 
 	mux := http.NewServeMux()
 	stdlib.AdminRoutes{Svc: svcApproval}.Customize(mux)
 
-	rr := do(mux, newPostRequest(t, "/admin/instances/cancel-stdlib-1/cancel", nil))
+	rr := do(mux, newPostRequest(t, "/admin/instances/"+cancelID+"/cancel", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200 cancel, got %d (body=%s)", rr.Code, rr.Body)
 	}
@@ -323,7 +324,7 @@ func TestAdminRoutes_ListInstances_WithFilter(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "admin-filter-1", Vars: map[string]any{"name": "x"},
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)

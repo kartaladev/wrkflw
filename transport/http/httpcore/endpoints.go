@@ -26,9 +26,8 @@ func StartInstance(ctx context.Context, svc service.Service, in StartInput, mapp
 		return 0, nil, err
 	}
 	pi, err := svc.StartInstance(ctx, service.StartInstanceRequest{
-		DefRef:     in.DefRef,
-		InstanceID: in.InstanceID,
-		Vars:       in.Vars,
+		DefRef: in.DefRef,
+		Vars:   in.Vars,
 	})
 	if err != nil {
 		return 0, nil, err

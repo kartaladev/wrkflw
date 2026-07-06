@@ -313,13 +313,14 @@ func TestParity_GetInstance_200(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	// Seed via the service — state is visible to all three adapters.
-	if _, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "parity-get-1", Vars: map[string]any{"name": "x"},
-	}); err != nil {
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+	})
+	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	mkReq := getReqFactory("/instances/parity-get-1")
+	mkReq := getReqFactory("/instances/" + pi.State().InstanceID)
 
 	s := hitStdlib(t, svc, mkReq, false)
 	g := hitGin(t, svc, mkReq, false)
@@ -361,30 +362,32 @@ func TestParity_PostSignals_200(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	if _, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "signal-catch-approved", InstanceID: "parity-signal-1",
+		DefRef: "signal-catch-approved",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
 	// Only ONE of the three can deliver the signal before the instance reaches an end
 	// state; after that the signal delivery will 422/404. Strategy: each adapter
-	// gets its OWN seeded instance (distinct IDs) to avoid state-conflict.
-	makeInstanceAndSignalReq := func(instanceID string) (service.Service, reqFactory) {
+	// gets its OWN seeded instance to avoid state-conflict.
+	makeInstanceAndSignalReq := func() (service.Service, reqFactory) {
 		_, svcLocal := transporttest.NewHarness(t, transporttest.SignalProcess("approved"))
-		if _, err := svcLocal.StartInstance(context.Background(), service.StartInstanceRequest{
-			DefRef: "signal-catch-approved", InstanceID: instanceID,
-		}); err != nil {
-			t.Fatalf("seed %s: %v", instanceID, err)
+		pi, err := svcLocal.StartInstance(context.Background(), service.StartInstanceRequest{
+			DefRef: "signal-catch-approved",
+		})
+		if err != nil {
+			t.Fatalf("seed: %v", err)
 		}
+		instanceID := pi.State().InstanceID
 		mkReq := jsonReqFactory(http.MethodPost, "/instances/"+instanceID+"/signals", map[string]any{
 			"signal": "approved",
 		})
 		return svcLocal, mkReq
 	}
 
-	svcS, mkS := makeInstanceAndSignalReq("parity-signal-stdlib")
-	svcG, mkG := makeInstanceAndSignalReq("parity-signal-gin")
-	svcF, mkF := makeInstanceAndSignalReq("parity-signal-fiber")
+	svcS, mkS := makeInstanceAndSignalReq()
+	svcG, mkG := makeInstanceAndSignalReq()
+	svcF, mkF := makeInstanceAndSignalReq()
 
 	s := hitStdlib(t, svcS, mkS, false)
 	g := hitGin(t, svcG, mkG, false)
@@ -424,8 +427,8 @@ func TestParity_PostMessages_202(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	if _, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "message-catch-order-shipped", InstanceID: "parity-msg-1",
-		Vars: map[string]any{"orderId": "42"},
+		DefRef: "message-catch-order-shipped",
+		Vars:   map[string]any{"orderId": "42"},
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -542,19 +545,13 @@ func TestParity_ErrorEnvelopes(t *testing.T) {
 		{
 			name:       "400 missing def_ref",
 			buildSvc:   func(t *testing.T) service.Service { _, svc := transporttest.NewHarness(t); return svc },
-			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{"instance_id": "x"}),
+			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{}),
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "400 empty JSON body",
 			buildSvc:   func(t *testing.T) service.Service { _, svc := transporttest.NewHarness(t); return svc },
 			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{}),
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "400 missing instance_id",
-			buildSvc:   func(t *testing.T) service.Service { _, svc := transporttest.NewHarness(t); return svc },
-			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{"def_ref": "greeting"}),
 			wantStatus: http.StatusBadRequest,
 		},
 		{

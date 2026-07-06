@@ -8,11 +8,10 @@ type Actor struct {
 }
 
 // StartInput is the request body for POST /instances (start a process instance).
-// Both DefRef and InstanceID are required on the wire.
+// DefRef is required; the instance ID is server-generated.
 type StartInput struct {
-	DefRef     string         `json:"def_ref"     validate:"required"`
-	InstanceID string         `json:"instance_id" validate:"required"`
-	Vars       map[string]any `json:"vars"`
+	DefRef string         `json:"def_ref" validate:"required"`
+	Vars   map[string]any `json:"vars"`
 }
 
 // SignalInput is the request body for POST /instances/{id}/signals.

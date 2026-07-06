@@ -167,12 +167,7 @@ func TestMount_StartInstance_MissingFields(t *testing.T) {
 
 	tests := map[string]map[string]any{
 		"missing def_ref": {
-			"def_ref":     "",
-			"instance_id": "x",
-		},
-		"missing instance_id": {
-			"def_ref":     "greeting",
-			"instance_id": "",
+			"def_ref": "",
 		},
 	}
 
@@ -203,24 +198,25 @@ func TestMount_GetInstance(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	// Seed an instance.
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "get-stdlib-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	instanceID := pi.State().InstanceID
 
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	rr := do(mux, newGetRequest(t, "/instances/get-stdlib-1"))
+	rr := do(mux, newGetRequest(t, "/instances/"+instanceID))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d (body=%s)", rr.Code, rr.Body)
 	}
 	var resp map[string]any
 	decodeJSON(t, rr.Body, &resp)
-	if resp["instance_id"] != "get-stdlib-1" {
-		t.Fatalf("want instance_id=get-stdlib-1, got %v", resp)
+	if resp["instance_id"] != instanceID {
+		t.Fatalf("want instance_id=%s, got %v", instanceID, resp)
 	}
 }
 
@@ -250,21 +246,22 @@ func TestMount_WithBasePath(t *testing.T) {
 	stdlib.Mount(mux, svc, stdlib.WithBasePath("/api/v1/workflow"))
 
 	// Seed an instance.
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "base-path-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	instanceID := pi.State().InstanceID
 
 	// Route under base path works.
-	rrGood := do(mux, newGetRequest(t, "/api/v1/workflow/instances/base-path-1"))
+	rrGood := do(mux, newGetRequest(t, "/api/v1/workflow/instances/"+instanceID))
 	if rrGood.Code != http.StatusOK {
 		t.Fatalf("want 200 under base path, got %d (body=%s)", rrGood.Code, rrGood.Body)
 	}
 
 	// The un-prefixed path is now 404 (no route registered there).
-	rrOld := do(mux, newGetRequest(t, "/instances/base-path-1"))
+	rrOld := do(mux, newGetRequest(t, "/instances/"+instanceID))
 	if rrOld.Code != http.StatusNotFound {
 		t.Fatalf("want 404 (no route) for old path, got %d (body=%s)", rrOld.Code, rrOld.Body)
 	}
@@ -296,7 +293,7 @@ func TestAdminRoutes_Customize(t *testing.T) {
 
 	// Seed an instance so GET /admin/instances returns a result.
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "admin-list-1", Vars: map[string]any{"name": "x"},
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -437,8 +434,8 @@ func TestMessageRoutes_Customize(t *testing.T) {
 
 	// Seed a waiting instance.
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "message-catch-order-shipped", InstanceID: "msg-stdlib-1",
-		Vars: map[string]any{"orderId": "42"},
+		DefRef: "message-catch-order-shipped",
+		Vars:   map[string]any{"orderId": "42"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -488,8 +485,8 @@ func TestInstanceRoutes_Snapshot(t *testing.T) {
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "snap-stdlib-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -498,7 +495,7 @@ func TestInstanceRoutes_Snapshot(t *testing.T) {
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	rr := do(mux, newGetRequest(t, "/instances/snap-stdlib-1/snapshot"))
+	rr := do(mux, newGetRequest(t, "/instances/"+pi.State().InstanceID+"/snapshot"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200 snapshot, got %d (body=%s)", rr.Code, rr.Body)
 	}
@@ -511,8 +508,8 @@ func TestInstanceRoutes_ActionableView(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "approval", InstanceID: "actionable-stdlib-1",
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "approval",
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -521,7 +518,7 @@ func TestInstanceRoutes_ActionableView(t *testing.T) {
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	rr := do(mux, newGetRequest(t, "/instances/actionable-stdlib-1/actionable"))
+	rr := do(mux, newGetRequest(t, "/instances/"+pi.State().InstanceID+"/actionable"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200 actionable, got %d (body=%s)", rr.Code, rr.Body)
 	}
@@ -534,8 +531,8 @@ func TestDeliverSignal_Stdlib(t *testing.T) {
 	def := transporttest.SignalProcess("approved")
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "signal-catch-approved", InstanceID: "signal-stdlib-1",
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "signal-catch-approved",
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -544,7 +541,7 @@ func TestDeliverSignal_Stdlib(t *testing.T) {
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	req := newPostRequest(t, "/instances/signal-stdlib-1/signals", map[string]any{
+	req := newPostRequest(t, "/instances/"+pi.State().InstanceID+"/signals", map[string]any{
 		"signal": "approved",
 	})
 	rr := do(mux, req)

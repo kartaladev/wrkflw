@@ -190,12 +190,11 @@ func TestStartInstance(t *testing.T) {
 	svc := h.newEngine(t)
 
 	st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef:     "greeting",
-		InstanceID: "inst-1",
-		Vars:       map[string]any{"name": "ada"},
+		DefRef: "greeting",
+		Vars:   map[string]any{"name": "ada"},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "inst-1", st.State().InstanceID)
+	assert.NotEmpty(t, st.State().InstanceID)
 	assert.Equal(t, engine.StatusCompleted, st.State().Status)
 }
 
@@ -206,8 +205,7 @@ func TestStartInstanceUnknownDefRef(t *testing.T) {
 	svc := h.newEngine(t)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef:     "non-existent",
-		InstanceID: "inst-x",
+		DefRef: "non-existent",
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrDefinitionNotFound)
@@ -222,16 +220,15 @@ func TestGetInstance(t *testing.T) {
 
 	// Start an instance first.
 	started, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef:     "greeting",
-		InstanceID: "inst-get-1",
-		Vars:       map[string]any{"name": "world"},
+		DefRef: "greeting",
+		Vars:   map[string]any{"name": "world"},
 	})
 	require.NoError(t, err)
 
 	// GetInstance for the started instance.
 	got, err := svc.GetInstance(t.Context(), started.State().InstanceID)
 	require.NoError(t, err)
-	assert.Equal(t, "inst-get-1", got.State().InstanceID)
+	assert.Equal(t, started.State().InstanceID, got.State().InstanceID)
 
 	// GetInstance for unknown ID.
 	_, err = svc.GetInstance(t.Context(), "no-such-id")
@@ -375,16 +372,14 @@ func TestListInstances(t *testing.T) {
 
 	// Start two instances.
 	_, err := svc.StartInstance(ctx, service.StartInstanceRequest{
-		DefRef:     "greeting",
-		InstanceID: "list-inst-1",
-		Vars:       map[string]any{"name": "a"},
+		DefRef: "greeting",
+		Vars:   map[string]any{"name": "a"},
 	})
 	require.NoError(t, err)
 
 	_, err = svc.StartInstance(ctx, service.StartInstanceRequest{
-		DefRef:     "greeting",
-		InstanceID: "list-inst-2",
-		Vars:       map[string]any{"name": "b"},
+		DefRef: "greeting",
+		Vars:   map[string]any{"name": "b"},
 	})
 	require.NoError(t, err)
 

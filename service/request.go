@@ -12,8 +12,6 @@ type StartInstanceRequest struct {
 	// in the registry. The registry keys are either "DefID:DefVersion" or a
 	// short alias registered by the consumer.
 	DefRef string
-	// InstanceID is the caller-supplied identifier for the new instance.
-	InstanceID string
 	// Vars is the initial set of process variables.
 	Vars map[string]any
 }

@@ -107,8 +107,8 @@ func TestInstanceRoutes_Signal_BadJSON(t *testing.T) {
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "sig-badjson-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
@@ -121,7 +121,7 @@ func TestInstanceRoutes_Signal_BadJSON(t *testing.T) {
 
 	// Malformed JSON body — a bare string where the handler expects an object —
 	// is transmitted intact and fails ShouldBindJSON server-side → 400.
-	resp := post(t, srv, "/instances/sig-badjson-1/signals", "not-json")
+	resp := post(t, srv, "/instances/"+pi.State().InstanceID+"/signals", "not-json")
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400 for bad JSON, got %d", resp.StatusCode)
 	}
