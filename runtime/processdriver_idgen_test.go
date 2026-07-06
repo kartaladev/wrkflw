@@ -67,10 +67,13 @@ func TestRunPropagatesGeneratorError(t *testing.T) {
 
 	def := buildStartEndDefinition(t)
 	boom := errors.New("no entropy")
-	r, _ := runtime.NewProcessDriver(
+	r, err := runtime.NewProcessDriver(
 		runtime.WithIDGenerator(idgen.Func(func() (string, error) { return "", boom })),
 	)
-	_, err := r.Run(t.Context(), def, "", map[string]any{})
+	if err != nil {
+		t.Fatalf("new driver: %v", err)
+	}
+	_, err = r.Run(t.Context(), def, "", map[string]any{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected generator error to propagate, got %v", err)
 	}
