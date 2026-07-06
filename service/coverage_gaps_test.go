@@ -64,18 +64,17 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 
 				// Start a linear instance so it exists in the store.
 				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef:     defRefFor(def),
-					InstanceID: "gwid-happy-1",
-					Vars:       map[string]any{"name": "world"},
+					DefRef: defRefFor(def),
+					Vars:   map[string]any{"name": "world"},
 				})
 				require.NoError(t, err)
 				require.Equal(t, engine.StatusCompleted, pi.State().Status)
 
-				return svc, "gwid-happy-1"
+				return svc, pi.State().InstanceID
 			},
 			assert: func(t *testing.T, r result) {
 				require.NoError(t, r.err)
-				assert.Equal(t, "gwid-happy-1", r.pi.State().InstanceID)
+				assert.NotEmpty(t, r.pi.State().InstanceID)
 				require.NotNil(t, r.pi.Definition(), "definition must be non-nil on the happy path")
 				assert.Equal(t, "greeting", r.pi.Definition().ID)
 			},
@@ -195,8 +194,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 			svc := h.newEngine(t)
 
 			st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-				DefRef:     defRefFor(def),
-				InstanceID: "broken-inst-1",
+				DefRef: defRefFor(def),
 			})
 			tc.assert(t, st, err)
 		})

@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 )
@@ -113,6 +114,7 @@ type Engine struct {
 	lister    kernel.InstanceLister
 	taskStore humantask.TaskStore
 	clk       clock.Clock
+	idgen     idgen.Generator
 }
 
 // NewEngine constructs an Engine facade from functional options over a coherent
@@ -153,6 +155,9 @@ func NewEngine(opts ...Option) (*Engine, error) {
 	if c.clk == nil {
 		c.clk = clock.System()
 	}
+	if c.idgen == nil {
+		c.idgen = idgen.XID()
+	}
 	if c.authz == nil {
 		c.authz = authz.AllowAll{}
 	}
@@ -182,6 +187,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 			runtime.WithInstanceStore(c.store),
 			runtime.WithDefinitions(c.reg),
 			runtime.WithClock(c.clk),
+			runtime.WithIDGenerator(c.idgen),
 		}
 		if c.timerStore != nil {
 			dopts = append(dopts, runtime.WithTimerStore(c.timerStore))
@@ -207,6 +213,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 		lister:    c.lister,
 		taskStore: c.taskStore,
 		clk:       c.clk,
+		idgen:     c.idgen,
 	}
 	e.logConstructionSummary(c)
 	return e, nil
@@ -258,14 +265,19 @@ func (e *Engine) logConstructionSummary(c *engineConfig) {
 // Compile-time assertion: *Engine satisfies Service.
 var _ Service = (*Engine)(nil)
 
-// StartInstance resolves the process definition by req.DefRef, starts a new
-// instance, and returns the resulting ProcessInstance.
+// StartInstance resolves the process definition by req.DefRef, mints a new
+// instance ID via the configured generator, and returns the resulting
+// ProcessInstance (completed or parked).
 func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (ProcessInstance, error) {
 	def, err := e.reg.Lookup(ctx, req.DefRef)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: %w", err)
 	}
-	st, err := e.runner.Run(ctx, def, req.InstanceID, req.Vars)
+	id, err := e.idgen.NewID()
+	if err != nil {
+		return nil, fmt.Errorf("workflow-service: start instance: generate id: %w", err)
+	}
+	st, err := e.runner.Run(ctx, def, id, req.Vars)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: run: %w", err)
 	}

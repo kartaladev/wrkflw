@@ -17,6 +17,15 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **`instance_id` removed from the start-instance request body; `StartInstanceRequest.InstanceID` removed.**
+  Process-instance IDs are now server-generated (ADR-0100). Remove the `instance_id` field from
+  any `POST /instances` request body and any direct use of `service.StartInstanceRequest.InstanceID`;
+  the server mints the ID using `runtime/idgen.XID()` by default and returns it in the response.
+  To use a different strategy, pass `service.WithIDGenerator(idgen.UUIDv7())` (or
+  `idgen.Func(...)` in tests). The `instance_id` key is unchanged in all **response** bodies.
+  Requests that address an existing instance (`DeliverSignal`, `CancelInstance`, `CompleteTask`,
+  etc.) are unaffected.
+
 - **`persistence.NewCachingInstanceStore` now requires a `cache.Provider` argument**
   (previously `runtime/kernel.NewCachingInstanceStore` took no provider; that name was itself
   renamed from `kernel.NewCachingStore` in ADR-0096 — full lineage: `kernel.NewCachingStore` →
@@ -68,6 +77,15 @@ release.
   is renamed to be unambiguous.
 
 ### Added
+
+- **Server-generated process-instance IDs via pluggable `runtime/idgen` (ADR-0100).**
+  New nested package `runtime/idgen` with three constructors: `XID()` (default — `github.com/rs/xid`,
+  ~20-char lowercase base32hex, k-sortable, never errors), `UUIDv7()` (`github.com/google/uuid`
+  NewV7, RFC 9562, propagates rare entropy errors), and `Func(fn)` (deterministic test adapter).
+  `Generator` interface: `NewID() (string, error)`. New option `WithIDGenerator(gen)` on both
+  `runtime.ProcessDriver` and `service.Engine` (nil-guarded, default `idgen.XID()`); mirrors the
+  existing `WithClock` seam. `service.Engine.StartInstance` always mints the ID; the service option
+  also threads the generator into the default driver so both layers agree on the strategy.
 
 - **Token-based, BPMN-inspired engine core** — process definitions across 19 typed node
   kinds (start/end/terminate/error events, service/user/business-rule/send/receive tasks,

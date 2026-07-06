@@ -5,6 +5,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/clock"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -23,6 +24,7 @@ type engineConfig struct {
 	timerStore    kernel.TimerStore
 	callLinkStore kernel.CallLinkStore
 	clk           clock.Clock
+	idgen         idgen.Generator
 	durable       bool
 }
 
@@ -83,6 +85,17 @@ func WithClock(clk clock.Clock) Option {
 	return func(c *engineConfig) {
 		if clk != nil {
 			c.clk = clk
+		}
+	}
+}
+
+// WithIDGenerator sets the strategy used to mint every new process-instance ID.
+// Default: idgen.XID(). A nil generator is ignored. It is also threaded into the
+// default driver, so runtime and service agree on the strategy.
+func WithIDGenerator(gen idgen.Generator) Option {
+	return func(c *engineConfig) {
+		if gen != nil {
+			c.idgen = gen
 		}
 	}
 }

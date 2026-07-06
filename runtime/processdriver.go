@@ -19,6 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
@@ -27,6 +28,7 @@ import (
 type ProcessDriver struct {
 	cat        action.Catalog
 	clk        clock.Clock
+	idgen      idgen.Generator
 	store      kernel.InstanceStore
 	resolver   humantask.ActorResolver
 	tasks      humantask.TaskStore
@@ -111,6 +113,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	r := &ProcessDriver{
 		cat:           action.DefaultCatalog(),
 		clk:           clock.System(),
+		idgen:         idgen.XID(),
 		store:         memStore,
 		defsReg:       defaultDefinitionRegistry,
 		jitter:        kernel.NewJitterSource(),
@@ -187,6 +190,14 @@ func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, i
 		attribute.Int("wrkflw.def_version", def.Version),
 	))
 	defer span.End()
+	if instanceID == "" {
+		id, gerr := r.idgen.NewID()
+		if gerr != nil {
+			span.RecordError(gerr)
+			return engine.InstanceState{}, fmt.Errorf("workflow-runtime: run: generate id: %w", gerr)
+		}
+		instanceID = id
+	}
 	st := engine.InstanceState{InstanceID: instanceID}
 	out, err := r.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(r.clk.Now(), vars))
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidate(t *testing.T) {
-	if err := httpcore.Validate(httpcore.StartInput{DefRef: "o", InstanceID: "o-1"}); err != nil {
+	if err := httpcore.Validate(httpcore.StartInput{DefRef: "o"}); err != nil {
 		t.Fatalf("valid struct should pass: %v", err)
 	}
 	err := httpcore.Validate(httpcore.StartInput{DefRef: ""}) // missing required fields

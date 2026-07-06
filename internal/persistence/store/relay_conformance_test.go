@@ -724,21 +724,19 @@ func TestRelayDrainOnce_NilConn(t *testing.T) {
 }
 
 // TestRelayDrainOnce_ClaimQueryFails verifies that a claim-query failure
-// (cancelled context after tx begin) is reported as an infra error from
-// DrainOnce and does NOT panic or leak. Only exercised on SupportsSkipLocked
-// backends; the SQLite (non-SkipLocked) DrainOnce infra-error path is covered
-// separately by TestRelayDrainOnce_SQLiteInfraError below.
+// (pre-cancelled context) is reported as an infra error from DrainOnce and does
+// NOT panic or leak. This path is dialect-agnostic — a cancelled context makes
+// the claim query fail regardless of the SKIP LOCKED capability — so it runs on
+// all three backends. TestRelayDrainOnce_SQLiteInfraError additionally covers
+// the SQLite dropped-table variant of the claim-query error path.
 func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		if !b.dialect.SupportsSkipLocked() {
-			t.Skipf("skip SQLite — non-SkipLocked path covered by TestRelayDrainOnce_SQLiteInfraError")
-		}
 		relay, err := store.NewRelay(b.conn, b.dialect, &recordingRelayPub{})
 		require.NoError(t, err)
 
-		// A pre-cancelled context causes the claim query to fail immediately
-		// after transaction.Begin succeeds (begin uses a background context under
-		// the hood in pgx/sql; the query honours the caller's context).
+		// A pre-cancelled context causes the claim query (or the transaction
+		// begin) to fail immediately; the caller's context is honoured on pgx
+		// and database/sql alike.
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel() // cancel before DrainOnce
 
@@ -887,13 +885,13 @@ func (p *blockingRelayPub) dedupCounts() map[string]int {
 // skips already-locked rows so each dedup_key is published exactly once and
 // the total equals N.
 //
-// SQLite is excluded: it is single-writer (no concurrent Relay replicas
-// expected) and SupportsSkipLocked()==false.
+// SQLite reaches the same no-double-publish guarantee by a different mechanism:
+// it is single-writer (db.SetMaxOpenConns(1)), so the two DrainOnce calls
+// serialize on the sole connection rather than racing under SKIP LOCKED. The
+// dedup invariant (each dedup_key published exactly once, total == N) must hold
+// on all three backends, so the test runs everywhere.
 func TestRelayDrainOnce_NoConcurrentDoublePublish(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
-		if !b.dialect.SupportsSkipLocked() {
-			t.Skipf("SKIP LOCKED not supported on %s — single-writer, concurrent relay not expected", b.name)
-		}
 
 		const N = 20
 		seedRelayOutbox(t, b, N)

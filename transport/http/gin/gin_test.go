@@ -119,9 +119,8 @@ func TestInstanceRoutes_StartInstance_201(t *testing.T) {
 	srv, _ := newSrv(t)
 
 	resp := post(t, srv, "/instances", map[string]any{
-		"def_ref":     "greeting",
-		"instance_id": "gin-start-1",
-		"vars":        map[string]any{"name": "world"},
+		"def_ref": "greeting",
+		"vars":    map[string]any{"name": "world"},
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("want 201, got %d", resp.StatusCode)
@@ -138,9 +137,7 @@ func TestInstanceRoutes_StartInstance_400_MissingField(t *testing.T) {
 	srv, _ := newSrv(t)
 
 	// Missing def_ref.
-	resp := post(t, srv, "/instances", map[string]any{
-		"instance_id": "gin-start-bad",
-	})
+	resp := post(t, srv, "/instances", map[string]any{})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
@@ -156,14 +153,14 @@ func TestInstanceRoutes_GetInstance_200(t *testing.T) {
 	srv, svc := newSrv(t)
 
 	// Seed instance.
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "gin-get-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
 	}
 
-	resp := get(t, srv, "/instances/gin-get-1")
+	resp := get(t, srv, "/instances/"+pi.State().InstanceID)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
 	}
@@ -188,14 +185,14 @@ func TestInstanceRoutes_GetInstanceSnapshot_200(t *testing.T) {
 	t.Parallel()
 	srv, svc := newSrv(t)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "gin-snap-1", Vars: map[string]any{"name": "x"},
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
 	}
 
-	resp := get(t, srv, "/instances/gin-snap-1/snapshot")
+	resp := get(t, srv, "/instances/"+pi.State().InstanceID+"/snapshot")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
 	}
@@ -211,14 +208,14 @@ func TestInstanceRoutes_GetActionableView_200(t *testing.T) {
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "approval", InstanceID: "gin-actionable-1",
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "approval",
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
 	}
 
-	resp := get(t, srv, "/instances/gin-actionable-1/actionable")
+	resp := get(t, srv, "/instances/"+pi.State().InstanceID+"/actionable")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
 	}
@@ -234,14 +231,14 @@ func TestInstanceRoutes_DeliverSignal_200(t *testing.T) {
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "signal-catch-approved", InstanceID: "gin-signal-1",
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: "signal-catch-approved",
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
 	}
 
-	resp := post(t, srv, "/instances/gin-signal-1/signals", map[string]any{
+	resp := post(t, srv, "/instances/"+pi.State().InstanceID+"/signals", map[string]any{
 		"signal": "approved",
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -257,14 +254,15 @@ func TestInstanceRoutes_PathParam(t *testing.T) {
 	t.Parallel()
 	srv, svc := newSrv(t)
 
-	ids := []string{"pp-inst-1", "pp-inst-2"}
-	for _, id := range ids {
-		_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-			DefRef: "greeting", InstanceID: id, Vars: map[string]any{"name": "x"},
+	var ids []string
+	for range 2 {
+		pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+			DefRef: "greeting", Vars: map[string]any{"name": "x"},
 		})
 		if err != nil {
-			t.Fatalf("StartInstance(%q): %v", id, err)
+			t.Fatalf("StartInstance: %v", err)
 		}
+		ids = append(ids, pi.State().InstanceID)
 	}
 
 	for _, id := range ids {
@@ -299,9 +297,7 @@ func TestMount_WithBasePath(t *testing.T) {
 	}
 
 	// Route with base → 400 (bad input — no def_ref, correct routing).
-	resp := post(t, srv, "/api/v1/instances", map[string]any{
-		"instance_id": "bp-test",
-	})
+	resp := post(t, srv, "/api/v1/instances", map[string]any{})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400 with base path, got %d", resp.StatusCode)
 	}
@@ -322,7 +318,7 @@ func TestMount_NativeGroup(t *testing.T) {
 
 	// The native group prefix must be honoured.
 	resp := post(t, srv, "/v2/instances", map[string]any{
-		"def_ref": "greeting", "instance_id": "ng-1", "vars": map[string]any{"name": "y"},
+		"def_ref": "greeting", "vars": map[string]any{"name": "y"},
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("want 201 via native group /v2, got %d", resp.StatusCode)
@@ -348,7 +344,7 @@ func TestMount_WithMiddleware(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	post(t, srv, "/instances", map[string]any{
-		"def_ref": "greeting", "instance_id": "mw-1", "vars": map[string]any{"name": "z"},
+		"def_ref": "greeting", "vars": map[string]any{"name": "z"},
 	})
 	if !headerSet {
 		t.Fatal("middleware was not called before handler")
@@ -368,8 +364,8 @@ func TestMessageRoutes_DeliverMessage_202(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "message-catch-order-shipped", InstanceID: "gin-msg-1",
-		Vars: map[string]any{"orderId": "42"},
+		DefRef: "message-catch-order-shipped",
+		Vars:   map[string]any{"orderId": "42"},
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
@@ -599,8 +595,7 @@ func TestInternalError_NoRawErrorLeak(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	resp := post(t, srv, "/instances", map[string]any{
-		"def_ref":     "anything",
-		"instance_id": "5xx-1",
+		"def_ref": "anything",
 	})
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", resp.StatusCode)

@@ -15,6 +15,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
@@ -199,6 +200,17 @@ func WithClock(clk clock.Clock) Option {
 	return func(r *ProcessDriver) {
 		if clk != nil {
 			r.clk = clk
+		}
+	}
+}
+
+// WithIDGenerator sets the strategy used to mint a process-instance ID when
+// ProcessDriver.Run is called with an empty instanceID. Default: idgen.XID().
+// A nil generator is ignored. Inject idgen.Func in tests for determinism.
+func WithIDGenerator(gen idgen.Generator) Option {
+	return func(r *ProcessDriver) {
+		if gen != nil {
+			r.idgen = gen
 		}
 	}
 }

@@ -225,7 +225,7 @@ func TestAdminRoutes_ListInstances_Total_1(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", InstanceID: "admin-total-1", Vars: map[string]any{"name": "x"},
+		DefRef: "greeting", Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)

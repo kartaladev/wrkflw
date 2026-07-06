@@ -8,12 +8,12 @@ import (
 )
 
 func TestStartInputJSONTags(t *testing.T) {
-	const in = `{"def_ref":"order","instance_id":"o-1","vars":{"amount":42}}`
+	const in = `{"def_ref":"order","vars":{"amount":42}}`
 	var got httpcore.StartInput
 	if err := json.Unmarshal([]byte(in), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.DefRef != "order" || got.InstanceID != "o-1" || got.Vars["amount"].(float64) != 42 {
+	if got.DefRef != "order" || got.Vars["amount"].(float64) != 42 {
 		t.Fatalf("wire tags mismatch: %+v", got)
 	}
 }
