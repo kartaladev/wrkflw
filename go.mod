@@ -16,6 +16,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/pressly/goose/v3 v3.27.1
+	github.com/redis/go-redis/v9 v9.21.0
 	github.com/samber/hot v0.13.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
@@ -129,6 +130,7 @@ require (
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/arch v0.22.0 // indirect
