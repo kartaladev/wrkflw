@@ -99,6 +99,13 @@ func WithClock(clk clock.Clock) Option {
 // (e.g. WithInstanceStore) placed AFTER WithDurableStore replaces that single
 // leaf; placed before, it is overwritten by the provider. A nil provider is
 // ignored.
+//
+// The driver NewEngine builds from the provider's leaves wires only the
+// instance store, definitions, timer store, and call-link store — it does not
+// arm human-task nodes or a scheduler. For a durable graph whose processes use
+// human tasks or timers, supply a fully-wired *runtime.ProcessDriver via
+// WithProcessDriver (built with runtime.WithHumanTasks/WithScheduler) alongside
+// WithDurableStore; the service still reads the provider's stores/registries.
 func WithDurableStore(p DurableProvider) Option {
 	return func(c *engineConfig) {
 		if p == nil {
