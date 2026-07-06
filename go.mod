@@ -4,6 +4,7 @@ go 1.25.7
 
 require (
 	github.com/ThreeDotsLabs/watermill v1.5.2
+	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/casbin/casbin/v2 v2.135.0
 	github.com/expr-lang/expr v1.17.8
 	github.com/gin-gonic/gin v1.12.0
@@ -17,6 +18,7 @@ require (
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/redis/go-redis/v9 v9.21.0
+	github.com/rs/xid v1.6.0
 	github.com/samber/hot v0.13.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
@@ -43,7 +45,6 @@ require (
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
-	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
