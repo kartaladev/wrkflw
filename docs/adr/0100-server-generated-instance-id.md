@@ -3,7 +3,7 @@
 Status: **Accepted — 2026-07-06.**
 Spec: `docs/specs/2026-07-06-server-generated-instance-id.md`.
 Plan: `docs/plans/2026-07-06-server-generated-instance-id.md`.
-Follows: [ADR-0099](0099-persistence-caching-refactor.md) (persistence caching refactor). Mirrors the `clock.Clock` pluggability seam from [ADR-0003](0003-clock-interface.md).
+Follows: [ADR-0099](0099-persistence-caching-refactor.md) (persistence caching refactor). Mirrors the `clock.Clock` pluggability seam from [ADR-0003](0003-clockwork-as-time-source.md).
 
 ## Context
 
@@ -46,7 +46,7 @@ Three constructors:
 |---|---|---|---|
 | `XID()` | `github.com/rs/xid` v1.6.0 | ~20-char lowercase base32hex, no hyphens, k-sortable, no coordination | never (`nil`) |
 | `UUIDv7()` | `github.com/google/uuid` (already present) | RFC 9562 UUIDv7, chronologically sortable, hyphenated | propagates rare entropy error |
-| `Func(fn func()(string,error))` | — | deterministic caller-supplied sequence | caller-defined |
+| `Func(fn func() (string, error))` | — | deterministic caller-supplied sequence | caller-defined |
 
 `XID` is the default everywhere. `UUIDv7` is offered as an alternative for consumers who need
 standard UUID format. `Func` is the test adapter — inject a counter or fixed sequence via
