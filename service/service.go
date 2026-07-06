@@ -156,10 +156,19 @@ func NewEngine(opts ...Option) (*Engine, error) {
 	if c.authz == nil {
 		c.authz = authz.AllowAll{}
 	}
-	if c.lister == nil {
+	// In the non-durable path, derive the lister from the in-memory store when
+	// possible. In the durable path the provider must supply the lister
+	// explicitly (a real durable InstanceStore does not double as a lister), so
+	// a nil provider lister surfaces via validation instead of being rescued.
+	if !c.durable && c.lister == nil {
 		if l, ok := c.store.(kernel.InstanceLister); ok {
 			c.lister = l
 		}
+	}
+
+	// Fail-fast on required leaves before building collaborators from them.
+	if err := validateEngineLeaves(c); err != nil {
+		return nil, err
 	}
 
 	tasks, err := task.NewTaskService(c.taskStore, c.authz, task.WithClock(c.clk))
@@ -186,9 +195,8 @@ func NewEngine(opts ...Option) (*Engine, error) {
 		}
 		driver = d
 	}
-
-	if err := validateEngineDeps(driver, c); err != nil {
-		return nil, err
+	if driver == nil {
+		return nil, fmt.Errorf("%w: process driver", ErrNilDependency)
 	}
 
 	e := &Engine{
@@ -204,12 +212,12 @@ func NewEngine(opts ...Option) (*Engine, error) {
 	return e, nil
 }
 
-// validateEngineDeps ensures every required collaborator resolved to a non-nil
-// value before an Engine is returned.
-func validateEngineDeps(driver *runtime.ProcessDriver, c *engineConfig) error {
+// validateEngineLeaves ensures every required leaf resolved to a non-nil value
+// before any collaborator is built from it. Run before constructing the task
+// service and driver so a nil leaf (e.g. from a DurableProvider) surfaces as
+// service.ErrNilDependency rather than a downstream kernel/runtime error.
+func validateEngineLeaves(c *engineConfig) error {
 	switch {
-	case driver == nil:
-		return fmt.Errorf("%w: process driver", ErrNilDependency)
 	case c.store == nil:
 		return fmt.Errorf("%w: instance store", ErrNilDependency)
 	case c.reg == nil:

@@ -86,3 +86,30 @@ func WithClock(clk clock.Clock) Option {
 		}
 	}
 }
+
+// WithDurableStore flips the whole graph durable in one call, setting every
+// leaf from the provider and (because the driver is built from those leaves)
+// rebuilding the driver durable-coherent. Marking the config durable disables
+// the in-memory defaults, so a provider that returns a nil REQUIRED leaf
+// (instance store, definitions, lister, or task store) surfaces as
+// ErrNilDependency during NewEngine validation rather than being silently
+// replaced by an in-memory default.
+//
+// Precedence is last-writer-wins in option order: a finer per-leaf override
+// (e.g. WithInstanceStore) placed AFTER WithDurableStore replaces that single
+// leaf; placed before, it is overwritten by the provider. A nil provider is
+// ignored.
+func WithDurableStore(p DurableProvider) Option {
+	return func(c *engineConfig) {
+		if p == nil {
+			return
+		}
+		c.durable = true
+		c.store = p.InstanceStore()
+		c.reg = p.Definitions()
+		c.lister = p.Lister()
+		c.taskStore = p.TaskStore()
+		c.timerStore = p.TimerStore()
+		c.callLinkStore = p.CallLinkStore()
+	}
+}
