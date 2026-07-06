@@ -18,6 +18,12 @@ const (
 	defaultTTL      = 5 * time.Minute
 )
 
+// Compile-time interface conformance checks.
+var (
+	_ cache.Cache      = (*hotCache)(nil)
+	_ cache.ValueCache = (*hotCache)(nil)
+)
+
 // Option configures the provider.
 type Option func(*provider)
 
@@ -87,8 +93,11 @@ type hotCache struct {
 // Get implements cache.Cache.
 func (c *hotCache) Get(_ context.Context, k string) ([]byte, bool, error) {
 	v, found, err := c.hc.Get(k)
-	if err != nil || !found {
-		return nil, found, err
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
 	}
 	b, _ := v.([]byte)
 	return b, true, nil
@@ -100,7 +109,9 @@ func (c *hotCache) Set(_ context.Context, k string, v []byte, ttl time.Duration)
 	return nil
 }
 
-// GetValue implements cache.ValueCache.
+// GetValue implements cache.ValueCache. The returned value's dynamic type
+// matches whatever was stored — including []byte if the entry was written via
+// the byte-path Set.
 func (c *hotCache) GetValue(_ context.Context, k string) (any, bool, error) {
 	return c.hc.Get(k)
 }
