@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -139,4 +142,44 @@ func TestCachingTaskStorePassThroughMethods(t *testing.T) {
 		t.Fatalf("claimable-by: %v", err)
 	}
 	_ = claimable
+}
+
+// TestCachingTaskStoreByteSubstrate proves that a HumanTask survives the JSON
+// marshal→unmarshal round-trip exercised by the byte-only (non-ValueCache) substrate
+// path — the path used by distributed caches such as Redis or Memcached.
+//
+// The byteOnlyProvider/byteOnlyCache test double is defined in
+// caching_instance_store_test.go (same persistence_test package).
+func TestCachingTaskStoreByteSubstrate(t *testing.T) {
+	t.Parallel()
+
+	backing := &countingTaskStore{MemTaskStore: humantask.NewMemTaskStore()}
+	cs, err := persistence.NewCachingTaskStore(backing, newByteOnlyProvider(), persistence.WithHumanTaskCacheTTL(time.Minute))
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	want := humantask.HumanTask{
+		TaskToken:  "byte-tok-1",
+		InstanceID: "inst-99",
+		State:      humantask.Claimed,
+		ClaimedBy:  "alice",
+		Candidates: []string{"alice", "bob"},
+		Eligibility: authz.AuthzSpec{
+			Roles: []string{"reviewer", "approver"},
+		},
+	}
+
+	// Upsert write-through populates the byte cache.
+	require.NoError(t, cs.Upsert(ctx, want))
+
+	// First Get: should be served from the byte cache (write-through), not the backing.
+	backingGetsBefore := backing.gets
+	got, err := cs.Get(ctx, want.TaskToken)
+	require.NoError(t, err)
+	assert.Equal(t, backingGetsBefore, backing.gets, "first Get after Upsert should be a cache hit (byte path)")
+
+	// Non-trivial field assertions — prove JSON unmarshal fidelity.
+	assert.Equal(t, humantask.Claimed, got.State, "State must survive JSON round-trip")
+	assert.Equal(t, "alice", got.ClaimedBy, "ClaimedBy must survive JSON round-trip")
+	assert.Equal(t, want.Candidates, got.Candidates, "Candidates slice must survive JSON round-trip")
 }
