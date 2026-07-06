@@ -489,7 +489,7 @@ type InstanceState struct {
 	// (TokenWaitingCommand, not consumed) and enqueued here. stepCompensationFinish
 	// re-activates exactly one per finish, draining the queue one walk at a time
 	// (ADR-0071). It is engine bookkeeping (persisted with the state, excluded from
-	// the view.InstanceSnapshot DTO like Compensating/PendingCancel).
+	// the service.ProcessInstance JSON projection like Compensating/PendingCancel).
 	DeferredCompensationThrows []string
 
 	// Deterministic ID counters (never randomness or the clock).
