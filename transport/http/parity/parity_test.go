@@ -545,7 +545,7 @@ func TestParity_ErrorEnvelopes(t *testing.T) {
 		{
 			name:       "400 missing def_ref",
 			buildSvc:   func(t *testing.T) service.Service { _, svc := transporttest.NewHarness(t); return svc },
-			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{}),
+			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{"def_ref": ""}),
 			wantStatus: http.StatusBadRequest,
 		},
 		{
