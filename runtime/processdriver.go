@@ -345,7 +345,7 @@ func (r *ProcessDriver) deliverLoop(
 			// consumed. It reads the armed set lazily — timerOpsFor only calls it
 			// for a TimerFired trigger — and defaults to non-recurring (safe:
 			// consume) on any lookup failure or unknown timer.
-			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID,
+			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID, r.clk.Now(),
 				func(timerID string) bool { return r.armedTimerRecurring(stepCtx, st.InstanceID, timerID) })
 		}
 

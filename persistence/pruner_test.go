@@ -125,12 +125,12 @@ func TestPruner_PruneTimers_ThroughInterface(t *testing.T) {
 	after := cutoff.Add(1 * time.Hour)   // after cutoff → must survive
 
 	_, err = pool.Exec(t.Context(),
-		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
+		`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version)
 		 VALUES ('inst-prune','timer-old',$1,1,'def1',1)`, before)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(t.Context(),
-		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
+		`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version)
 		 VALUES ('inst-prune','timer-new',$1,1,'def1',1)`, after)
 	require.NoError(t, err)
 

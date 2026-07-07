@@ -35,7 +35,8 @@ func TestTimerOpsFor(t *testing.T) {
 				assert.Len(t, arms, 1)
 				assert.Equal(t, "t1", arms[0].TimerID)
 				assert.Equal(t, oneShot, arms[0].Trigger)
-				assert.True(t, arms[0].NextRun.IsZero(), "NextRun is populated by Plan 3 persistence; zero here")
+				assert.True(t, arms[0].NextRun.Equal(at.Add(time.Hour)),
+					"one-shot AfterDuration NextRun must be now+duration (truthful, crash-safe): want %v got %v", at.Add(time.Hour), arms[0].NextRun)
 				assert.Empty(t, cancels)
 			},
 		},
@@ -100,14 +101,102 @@ func TestTimerOpsFor(t *testing.T) {
 				assert.Len(t, arms, 1)
 				assert.Equal(t, recurring, arms[0].Trigger)
 				assert.True(t, arms[0].Trigger.Recurring())
+				assert.True(t, arms[0].NextRun.Equal(at.Add(15*time.Minute)),
+					"recurring Every persists a truthful first-fire next_run (now+interval) for Stats; rehydration still re-arms from Trigger: want %v got %v", at.Add(15*time.Minute), arms[0].NextRun)
 				assert.Empty(t, cancels)
 			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			arms, cancels := timerOpsFor(tc.cmds, tc.trg, "d", 1, "i1", tc.armedFn)
+			arms, cancels := timerOpsFor(tc.cmds, tc.trg, "d", 1, "i1", at, tc.armedFn)
 			tc.assert(t, arms, cancels)
+		})
+	}
+}
+
+func TestNextRunFor(t *testing.T) {
+	now := time.Date(2026, 6, 22, 11, 0, 0, 0, time.UTC)
+	absTime := time.Date(2026, 6, 22, 15, 30, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		trig schedule.TriggerSpec
+		want time.Time
+	}{
+		{
+			name: "At one-shot returns the absolute time (UTC)",
+			trig: schedule.At(absTime.In(time.FixedZone("x", 3600))),
+			want: absTime,
+		},
+		{
+			name: "AfterDuration one-shot returns now + duration",
+			trig: schedule.AfterDuration(2 * time.Hour),
+			want: now.Add(2 * time.Hour),
+		},
+		{
+			name: "recurring Every returns now + interval (truthful for Stats)",
+			trig: schedule.Every(15 * time.Minute),
+			want: now.Add(15 * time.Minute),
+		},
+		{
+			name: "cron recurring returns zero (interim: rehydrated from Trigger)",
+			trig: schedule.Cron("0 9 * * *"),
+			want: time.Time{},
+		},
+		{
+			name: "unset trigger returns zero",
+			trig: schedule.TriggerSpec{},
+			want: time.Time{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := nextRunFor(tc.trig, now)
+			assert.True(t, got.Equal(tc.want), "want %v got %v", tc.want, got)
+			if !tc.want.IsZero() {
+				assert.Equal(t, time.UTC, got.Location(), "next run must be UTC-located")
+			}
+		})
+	}
+}
+
+func TestRehydrateTrigger(t *testing.T) {
+	nextRun := time.Date(2026, 6, 22, 14, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name   string
+		armed  kernel.ArmedTimer
+		assert func(t *testing.T, got schedule.TriggerSpec)
+	}{
+		{
+			name:  "non-recurring with NextRun re-arms via At(NextRun)",
+			armed: kernel.ArmedTimer{Trigger: schedule.AfterDuration(time.Hour), NextRun: nextRun},
+			assert: func(t *testing.T, got schedule.TriggerSpec) {
+				at, ok := got.AbsTime()
+				assert.True(t, ok, "must be an At trigger")
+				assert.True(t, at.Equal(nextRun), "At time must equal persisted NextRun")
+			},
+		},
+		{
+			name:  "recurring re-arms via its Trigger (scheduler recomputes)",
+			armed: kernel.ArmedTimer{Trigger: schedule.Every(15 * time.Minute), NextRun: nextRun},
+			assert: func(t *testing.T, got schedule.TriggerSpec) {
+				assert.Equal(t, schedule.KindDuration, got.Kind(), "recurring keeps its Trigger")
+				assert.True(t, got.Recurring())
+			},
+		},
+		{
+			name:  "non-recurring without NextRun falls back to its Trigger",
+			armed: kernel.ArmedTimer{Trigger: schedule.AfterDuration(time.Hour)},
+			assert: func(t *testing.T, got schedule.TriggerSpec) {
+				d, ok := got.Duration()
+				assert.True(t, ok, "falls back to the AfterDuration trigger")
+				assert.Equal(t, time.Hour, d)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, rehydrateTrigger(tc.armed))
 		})
 	}
 }

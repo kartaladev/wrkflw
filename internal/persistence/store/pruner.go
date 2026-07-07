@@ -170,7 +170,7 @@ func (p *Pruner) PruneProcessedMessages(ctx context.Context, cutoff time.Time) (
 	return d.Prune(ctx, cutoff)
 }
 
-// PruneTimers deletes timer rows whose fire_at is strictly before cutoff.
+// PruneTimers deletes timer rows whose next_run is strictly before cutoff.
 // Returns the number of rows deleted.
 //
 // Fired timers that are no longer needed can accumulate in wrkflw_timers; this
@@ -186,7 +186,7 @@ func (p *Pruner) PruneTimers(ctx context.Context, cutoff time.Time) (int64, erro
 	}
 
 	res, err := q.Exec(ctx,
-		p.dialect.Rebind(`DELETE FROM wrkflw_timers WHERE fire_at < ?`),
+		p.dialect.Rebind(`DELETE FROM wrkflw_timers WHERE next_run < ?`),
 		timeArg(p.dialect, cutoff.UTC()),
 	)
 	if err != nil {

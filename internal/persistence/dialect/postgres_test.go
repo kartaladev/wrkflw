@@ -212,8 +212,9 @@ func TestPostgresUpsertClauses(t *testing.T) {
 			assert: func(t *testing.T, got string) {
 				t.Helper()
 				const want = " ON CONFLICT (instance_id, timer_id)" +
-					" DO UPDATE SET fire_at = EXCLUDED.fire_at, kind = EXCLUDED.kind," +
-					" def_id = EXCLUDED.def_id, def_version = EXCLUDED.def_version"
+					" DO UPDATE SET next_run = EXCLUDED.next_run, kind = EXCLUDED.kind," +
+					" def_id = EXCLUDED.def_id, def_version = EXCLUDED.def_version," +
+					" trigger_kind = EXCLUDED.trigger_kind, trigger_payload = EXCLUDED.trigger_payload"
 				assert.Equal(t, want, got)
 			},
 		},

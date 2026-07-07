@@ -25,7 +25,7 @@ type OutboxStats struct {
 type TimerStats struct {
 	// Armed is the total number of armed timer rows.
 	Armed int64
-	// NextFireAt is the earliest fire_at among all armed timers, or nil when the
+	// NextFireAt is the earliest next_run among all armed timers, or nil when the
 	// table is empty.
 	NextFireAt *time.Time
 }

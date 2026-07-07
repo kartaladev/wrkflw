@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
@@ -25,7 +26,7 @@ import (
 // pre-recurrence safe default. An explicit CancelTimer command always cancels,
 // recurring or not — that is how a scope-exit / instance-terminate stops a
 // recurring native job. Pure; kind-agnostic so it covers every timer kind.
-func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVersion int, instanceID string, armedRecurring func(timerID string) bool) ([]kernel.ArmedTimer, []string) {
+func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVersion int, instanceID string, now time.Time, armedRecurring func(timerID string) bool) ([]kernel.ArmedTimer, []string) {
 	var arms []kernel.ArmedTimer
 	var cancels []string
 	for _, c := range cmds {
@@ -37,9 +38,15 @@ func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVer
 				DefVersion: defVersion,
 				TimerID:    cmd.TimerID,
 				Trigger:    cmd.Trigger,
-				// NextRun is populated by the scheduler; durable descriptor
-				// persistence (and a faithful NextRun) lands in Plan 3.
-				Kind: cmd.Kind,
+				// NextRun is the persisted authoritative next-run instant so a
+				// SQL-backed one-shot re-arms at its original absolute time after
+				// a restart (rather than restarting its delay from "now"). It is
+				// computed synchronously here — in the same tx as the timer row —
+				// so it is crash-safe. armTimer refines it post-Schedule with the
+				// scheduler's own next-run (interim until the Plan-3 JobStore owns
+				// the arm/persist lifecycle under one ambient tx).
+				NextRun: nextRunFor(cmd.Trigger, now),
+				Kind:    cmd.Kind,
 			})
 		case engine.CancelTimer:
 			cancels = append(cancels, cmd.TimerID)
@@ -53,6 +60,34 @@ func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVer
 		}
 	}
 	return arms, cancels
+}
+
+// nextRunFor computes the absolute next-run instant to persist for a timer arm,
+// in UTC, synchronously and in the state-commit transaction (crash-safe):
+//
+//   - At one-shot → the trigger's absolute time.
+//   - AfterDuration one-shot → now + duration, so a restart re-arms at the
+//     ORIGINAL instant (not restart + duration). RehydrateTimers re-arms it via
+//     schedule.At(NextRun).
+//   - Every (fixed-interval recurring) → now + interval, a truthful first-fire
+//     instant so the persisted next_run keeps timer Stats (MIN(next_run))
+//     meaningful. Rehydration still re-arms it from its Trigger.
+//
+// It returns the zero time for triggers whose next occurrence cannot be computed
+// without the scheduler (cron, calendar). Those keep next_run zero and are
+// rehydrated purely from their persisted Trigger; recording their true next-run
+// is deferred to the Plan-3 scheduler-owned lifecycle (interim gap). Engine-
+// resolved Expr forms are resolved to concrete one-shot/interval triggers before
+// reaching here, so they take the branches above.
+func nextRunFor(trig schedule.TriggerSpec, now time.Time) time.Time {
+	if at, ok := trig.AbsTime(); ok {
+		return at.UTC()
+	}
+	if d, ok := trig.Duration(); ok {
+		// Covers both AfterDuration (one-shot) and Every (recurring interval).
+		return now.UTC().Add(d)
+	}
+	return time.Time{}
 }
 
 // armedTimerRecurring reports whether the timer (instanceID, timerID) is
@@ -141,16 +176,26 @@ func (r *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefiniti
 			slog.Time("next_run", nextRun))...)
 }
 
-// RehydrateTimers re-arms every persisted armed timer on the scheduler from its
-// stored [schedule.TriggerSpec]. Call it once at startup, after constructing the
-// ProcessDriver, to recover timers lost when the process restarted. Requires
-// WithScheduler, WithTimerStore, and WithDefinitions. Each timer is re-armed via
-// its Trigger, so recurring timers resume their native recurrence; a re-fire of an
-// already-consumed one-shot timer is an idempotent engine no-op. Note: for an
-// AfterDuration one-shot this restarts the delay from now rather than firing at
-// the original absolute instant — an accepted Plan-2 gap; NextRun-faithful
-// rehydration lands in Plan 3. Timers whose definition the registry cannot
-// resolve are skipped and counted in the returned error.
+// RehydrateTimers re-arms every persisted armed timer on the scheduler. Call it
+// once at startup, after constructing the ProcessDriver, to recover timers lost
+// when the process restarted. Requires WithScheduler, WithTimerStore, and
+// WithDefinitions.
+//
+// Re-arm is faithful to the original fire time:
+//
+//   - A NON-recurring timer with a valid persisted NextRun is re-armed via
+//     schedule.At(NextRun), so it fires at its ORIGINAL absolute instant. This
+//     correctly handles an AfterDuration one-shot, which would otherwise restart
+//     its delay from "now" (the Plan-2 rehydration regression this closes). A
+//     re-fire of an already-consumed one-shot is an idempotent engine no-op.
+//   - A RECURRING timer is re-armed via its stored Trigger, so the scheduler
+//     recomputes the next occurrence natively.
+//   - A non-recurring timer whose NextRun was not persisted (e.g. an
+//     engine-resolved dynamic trigger, or a row written before this column
+//     existed) falls back to re-arming from its Trigger.
+//
+// Timers whose definition the registry cannot resolve are skipped and counted in
+// the returned error.
 func (r *ProcessDriver) RehydrateTimers(ctx context.Context) error {
 	if r.sched == nil || r.timerStore == nil || r.defsReg == nil {
 		return fmt.Errorf("workflow-runtime: RehydrateTimers requires WithScheduler, WithTimerStore, and WithDefinitions")
@@ -172,10 +217,22 @@ func (r *ProcessDriver) RehydrateTimers(ctx context.Context) error {
 					slog.String("instance_id", a.InstanceID))...)
 			continue
 		}
-		r.armTimer(ctx, def, a.InstanceID, a.TimerID, a.Trigger)
+		r.armTimer(ctx, def, a.InstanceID, a.TimerID, rehydrateTrigger(a))
 	}
 	if unresolved > 0 {
 		return fmt.Errorf("workflow-runtime: RehydrateTimers: %d timer(s) skipped (definition not found)", unresolved)
 	}
 	return nil
+}
+
+// rehydrateTrigger picks the TriggerSpec to re-arm a persisted timer with. A
+// non-recurring timer with a valid persisted NextRun re-arms via
+// schedule.At(NextRun) so it fires at its original absolute instant; every other
+// case (recurring, or a one-shot with no persisted NextRun) re-arms from the
+// stored Trigger.
+func rehydrateTrigger(a kernel.ArmedTimer) schedule.TriggerSpec {
+	if !a.Trigger.Recurring() && !a.NextRun.IsZero() {
+		return schedule.At(a.NextRun)
+	}
+	return a.Trigger
 }

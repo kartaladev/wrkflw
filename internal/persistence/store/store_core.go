@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
@@ -416,14 +417,37 @@ func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link ker
 // state commit (ADR-0027). Re-arming the same (instance, timer) overwrites the
 // row via the dialect's UpsertTimer conflict clause.
 func (s *Store) upsertTimer(ctx context.Context, q database.Querier, tm kernel.ArmedTimer) error {
-	_, err := q.Exec(ctx, s.dialect.Rebind(
-		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
-		 VALUES (?,?,?,?,?,?)`+s.dialect.UpsertTimer()),
-		tm.InstanceID, tm.TimerID, timeArg(s.dialect, tm.NextRun), int16(tm.Kind), tm.DefID, tm.DefVersion)
+	payload, err := triggerPayloadArg(tm.Trigger)
+	if err != nil {
+		return fmt.Errorf("workflow-store: upsert timer %q/%q: %w", tm.InstanceID, tm.TimerID, err)
+	}
+	_, err = q.Exec(ctx, s.dialect.Rebind(
+		`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version, trigger_kind, trigger_payload)
+		 VALUES (?,?,?,?,?,?,?,?)`+s.dialect.UpsertTimer()),
+		tm.InstanceID, tm.TimerID, timeArg(s.dialect, tm.NextRun), int16(tm.Kind), tm.DefID, tm.DefVersion,
+		int16(tm.Trigger.Kind()), payload)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert timer %q/%q: %w", tm.InstanceID, tm.TimerID, err)
 	}
 	return nil
+}
+
+// triggerPayloadArg encodes an armed timer's TriggerSpec descriptor for the
+// trigger_payload column: the JSON of [model.PutTrigger], or nil (SQL NULL) for
+// an unset trigger. The JSON form is dialect-agnostic — Postgres JSONB, MySQL
+// JSON, and SQLite TEXT all accept the same []byte. It is the authoritative
+// descriptor from which RehydrateTimers reconstructs the trigger; trigger_kind
+// is only a query/index convenience.
+func triggerPayloadArg(trig schedule.TriggerSpec) (any, error) {
+	w := model.PutTrigger(trig)
+	if w == nil {
+		return nil, nil // unset trigger → SQL NULL
+	}
+	b, err := json.Marshal(w)
+	if err != nil {
+		return nil, fmt.Errorf("marshal trigger payload: %w", err)
+	}
+	return b, nil
 }
 
 // deleteTimer removes a wrkflw_timers row on q (fired or cancelled). A zero-row

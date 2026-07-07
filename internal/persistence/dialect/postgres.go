@@ -38,8 +38,9 @@ func (postgres) Rebind(query string) string {
 // UpsertTimer returns the ON CONFLICT clause for the timer upsert site.
 func (postgres) UpsertTimer() string {
 	return " ON CONFLICT (instance_id, timer_id)" +
-		" DO UPDATE SET fire_at = EXCLUDED.fire_at, kind = EXCLUDED.kind," +
-		" def_id = EXCLUDED.def_id, def_version = EXCLUDED.def_version"
+		" DO UPDATE SET next_run = EXCLUDED.next_run, kind = EXCLUDED.kind," +
+		" def_id = EXCLUDED.def_id, def_version = EXCLUDED.def_version," +
+		" trigger_kind = EXCLUDED.trigger_kind, trigger_payload = EXCLUDED.trigger_payload"
 }
 
 // UpsertDefinition returns the ON CONFLICT clause for the process-definition

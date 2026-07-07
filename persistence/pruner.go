@@ -40,7 +40,7 @@ type Pruner interface {
 	// messages are never evicted. Returns the number of rows deleted.
 	PruneProcessedMessages(ctx context.Context, cutoff time.Time) (int64, error)
 
-	// PruneTimers deletes timer rows whose fire_at is strictly before cutoff.
+	// PruneTimers deletes timer rows whose next_run is strictly before cutoff.
 	// Fired/expired timers accumulate in wrkflw_timers; a retention job uses
 	// this to drop them. Choose a cutoff safely past any window in which a timer
 	// could still fire or be rescheduled. Applies to all dialects (Postgres,

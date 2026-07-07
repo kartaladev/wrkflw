@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -184,6 +185,104 @@ func TestTimerStoreStats(t *testing.T) {
 			"%s: NextFireAt round-trip: want %v got %v", b.name, sooner, *stats.NextFireAt)
 		assert.Equal(t, time.UTC, stats.NextFireAt.Location(),
 			"%s: NextFireAt must be UTC-located", b.name)
+	})
+}
+
+// TestTimerStoreDescriptorRoundTrip verifies that an armed timer's TriggerSpec
+// descriptor and NextRun survive a persist → ListArmed round-trip on all three
+// dialects. This is the durability contract that lets RehydrateTimers re-arm a
+// SQL-backed one-shot timer at its original absolute fire time after a restart
+// (the regression this task closes). The trigger_payload column holds the
+// JSON-encoded descriptor; trigger_kind is the query-convenience discriminator.
+func TestTimerStoreDescriptorRoundTrip(t *testing.T) {
+	base := time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC)
+
+	type descCase struct {
+		timerID string
+		trigger schedule.TriggerSpec
+		nextRun time.Time
+		assert  func(t *testing.T, got kernel.ArmedTimer)
+	}
+
+	cases := []descCase{
+		{
+			timerID: "cron-timer",
+			trigger: schedule.Cron("0 9 * * *"),
+			nextRun: base.Add(24 * time.Hour),
+			assert: func(t *testing.T, got kernel.ArmedTimer) {
+				t.Helper()
+				assert.Equal(t, schedule.KindCron, got.Trigger.Kind(), "cron kind survives")
+				expr, ok := got.Trigger.CronExpr()
+				assert.True(t, ok, "cron expr present")
+				assert.Equal(t, "0 9 * * *", expr, "cron expr survives")
+				assert.True(t, got.Trigger.Recurring(), "cron is recurring")
+			},
+		},
+		{
+			timerID: "after-timer",
+			trigger: schedule.AfterDuration(90 * time.Minute),
+			nextRun: base.Add(90 * time.Minute),
+			assert: func(t *testing.T, got kernel.ArmedTimer) {
+				t.Helper()
+				assert.Equal(t, schedule.KindOneTime, got.Trigger.Kind(), "one-time kind survives")
+				d, ok := got.Trigger.Duration()
+				assert.True(t, ok, "duration present for AfterDuration")
+				assert.Equal(t, 90*time.Minute, d, "duration survives")
+				assert.False(t, got.Trigger.Recurring(), "AfterDuration is non-recurring")
+				assert.True(t, got.NextRun.Equal(base.Add(90*time.Minute)),
+					"NextRun survives: want %v got %v", base.Add(90*time.Minute), got.NextRun)
+			},
+		},
+		{
+			timerID: "at-timer",
+			trigger: schedule.At(base.Add(3 * time.Hour)),
+			nextRun: base.Add(3 * time.Hour),
+			assert: func(t *testing.T, got kernel.ArmedTimer) {
+				t.Helper()
+				assert.Equal(t, schedule.KindOneTime, got.Trigger.Kind(), "one-time kind survives")
+				at, ok := got.Trigger.AbsTime()
+				assert.True(t, ok, "abs time present for At")
+				assert.True(t, at.Equal(base.Add(3*time.Hour)), "At time survives: want %v got %v", base.Add(3*time.Hour), at)
+				assert.False(t, got.Trigger.Recurring(), "At is non-recurring")
+			},
+		},
+	}
+
+	forEachDialect(t, func(t *testing.T, b backend) {
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ts, err := store.NewTimerStore(b.conn, b.dialect)
+		require.NoError(t, err)
+
+		arms := make([]kernel.ArmedTimer, 0, len(cases))
+		for _, c := range cases {
+			arms = append(arms, kernel.ArmedTimer{
+				InstanceID: "desc-inst",
+				DefID:      "d",
+				DefVersion: 1,
+				TimerID:    c.timerID,
+				Trigger:    c.trigger,
+				NextRun:    c.nextRun,
+				Kind:       engine.TimerIntermediate,
+			})
+		}
+		seedTimerInstance(t, s, "desc-inst", base, arms)
+
+		armed, err := ts.ListArmed(t.Context())
+		require.NoError(t, err, "%s: ListArmed", b.name)
+		require.Len(t, armed, len(cases), "%s: want %d timers", b.name, len(cases))
+
+		byID := make(map[string]kernel.ArmedTimer, len(armed))
+		for _, a := range armed {
+			byID[a.TimerID] = a
+		}
+		for _, c := range cases {
+			got, ok := byID[c.timerID]
+			require.True(t, ok, "%s: timer %q present", b.name, c.timerID)
+			t.Run(b.name+"/"+c.timerID, func(t *testing.T) {
+				c.assert(t, got)
+			})
+		}
 	})
 }
 

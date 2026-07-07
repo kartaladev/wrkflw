@@ -3,10 +3,13 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
@@ -21,7 +24,7 @@ import (
 //
 // SQL is written once with ? placeholders and run through
 // [dialect.Dialect.Rebind] for the backend's native placeholder style. Timestamp
-// codec for the fire_at column is dialect-aware: Postgres and MySQL bind and
+// codec for the next_run column is dialect-aware: Postgres and MySQL bind and
 // scan time.Time natively; SQLite stores TEXT as RFC3339Nano and needs the
 // [parseTimeText] helper on the read side (ADR-0080). The codec is gated on
 // [dialect.Dialect.TimestampsAsText] — NEVER compare [dialect.Dialect.Name]
@@ -67,16 +70,16 @@ func NewTimerStore(conn any, d dialect.Dialect) (*TimerStore, error) {
 }
 
 // ListArmed implements [kernel.TimerStore]. It returns all timers currently
-// present in wrkflw_timers, ordered by (fire_at ASC, instance_id ASC,
+// present in wrkflw_timers, ordered by (next_run ASC, instance_id ASC,
 // timer_id ASC) for deterministic re-arm order on engine startup or
 // rehydration. FireAt is always UTC-normalised (ADR-0080).
 func (s *TimerStore) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error) {
 	q := s.querier()
 
 	rows, err := q.Query(ctx, s.dialect.Rebind(`
-		SELECT instance_id, def_id, def_version, timer_id, fire_at, kind
+		SELECT instance_id, def_id, def_version, timer_id, next_run, kind, trigger_payload
 		FROM   wrkflw_timers
-		ORDER  BY fire_at, instance_id, timer_id`))
+		ORDER  BY next_run, instance_id, timer_id`))
 	if err != nil {
 		return nil, fmt.Errorf("workflow-store: list armed timers: %w", err)
 	}
@@ -97,7 +100,7 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error)
 }
 
 // Stats implements [kernel.TimerStatsReader]. It returns the total count of
-// armed timers and the earliest fire_at in the wrkflw_timers table.
+// armed timers and the earliest next_run in the wrkflw_timers table.
 // NextFireAt is nil when the table is empty. All timestamps are UTC-normalised.
 func (s *TimerStore) Stats(ctx context.Context) (kernel.TimerStats, error) {
 	q := s.querier()
@@ -107,12 +110,12 @@ func (s *TimerStore) Stats(ctx context.Context) (kernel.TimerStats, error) {
 	return s.statsNative(ctx, q)
 }
 
-// statsNative handles the Stats query for Postgres and MySQL, where fire_at
-// is a native time.Time column. MIN(fire_at) scans into a *time.Time directly.
+// statsNative handles the Stats query for Postgres and MySQL, where next_run
+// is a native time.Time column. MIN(next_run) scans into a *time.Time directly.
 func (s *TimerStore) statsNative(ctx context.Context, q database.Querier) (kernel.TimerStats, error) {
 	var armed int64
 	var nextFireAt *time.Time
-	err := q.QueryRow(ctx, `SELECT count(*), MIN(fire_at) FROM wrkflw_timers`).
+	err := q.QueryRow(ctx, `SELECT count(*), MIN(next_run) FROM wrkflw_timers`).
 		Scan(&armed, &nextFireAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return kernel.TimerStats{}, fmt.Errorf("workflow-store: timer stats: %w", err)
@@ -124,13 +127,13 @@ func (s *TimerStore) statsNative(ctx context.Context, q database.Querier) (kerne
 	return kernel.TimerStats{Armed: armed, NextFireAt: nextFireAt}, nil
 }
 
-// statsText handles the Stats query for SQLite, where fire_at is an
-// RFC3339Nano TEXT column. MIN(fire_at) is scanned into a *string and then
+// statsText handles the Stats query for SQLite, where next_run is an
+// RFC3339Nano TEXT column. MIN(next_run) is scanned into a *string and then
 // parsed via [parseTimeText] (ADR-0080).
 func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (kernel.TimerStats, error) {
 	var armed int64
 	var nextStr *string
-	err := q.QueryRow(ctx, `SELECT count(*), MIN(fire_at) FROM wrkflw_timers`).
+	err := q.QueryRow(ctx, `SELECT count(*), MIN(next_run) FROM wrkflw_timers`).
 		Scan(&armed, &nextStr)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return kernel.TimerStats{}, fmt.Errorf("workflow-store: timer stats (text): %w", err)
@@ -147,9 +150,13 @@ func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (kernel.
 }
 
 // scanArmedTimer reads one row from the query result into an [kernel.ArmedTimer].
-// The fire_at column is handled via the time codec: TEXT-timestamp (SQLite) is
+// The next_run column is handled via the time codec: TEXT-timestamp (SQLite) is
 // parsed from the RFC3339Nano string; native paths (Postgres/MySQL) scan into
-// time.Time directly and are then normalised to UTC (ADR-0080).
+// time.Time directly and are then normalised to UTC (ADR-0080). The
+// trigger_payload column (JSONB/JSON/TEXT, nullable) is unmarshalled into a
+// [model.TriggerWire] and decoded back to a [schedule.TriggerSpec] via
+// [model.ReadTrigger] — the authoritative descriptor RehydrateTimers re-arms
+// from. A NULL payload yields the zero (unset) trigger.
 func (s *TimerStore) scanArmedTimer(rows interface {
 	Scan(dest ...any) error
 }) (kernel.ArmedTimer, error) {
@@ -159,40 +166,59 @@ func (s *TimerStore) scanArmedTimer(rows interface {
 		defVersion int
 		timerID    string
 		kind       int16
+		payload    []byte
 	)
 
+	var nextRun time.Time
 	if s.dialect.TimestampsAsText() {
-		var fireAtStr string
-		if err := rows.Scan(&instanceID, &defID, &defVersion, &timerID, &fireAtStr, &kind); err != nil {
+		var nextRunStr string
+		if err := rows.Scan(&instanceID, &defID, &defVersion, &timerID, &nextRunStr, &kind, &payload); err != nil {
 			return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer (text): %w", err)
 		}
-		fireAt, err := parseTimeText(fireAtStr)
+		parsed, err := parseTimeText(nextRunStr)
 		if err != nil {
-			return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: parse fire_at: %w", err)
+			return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: parse next_run: %w", err)
 		}
-		return kernel.ArmedTimer{
-			InstanceID: instanceID,
-			DefID:      defID,
-			DefVersion: defVersion,
-			TimerID:    timerID,
-			NextRun:    fireAt, // already UTC from parseTimeText; the fire_at column carries the next-run instant
-			Kind:       engine.TimerKind(kind),
-		}, nil
+		nextRun = parsed // already UTC from parseTimeText
+	} else {
+		// Native time.Time path (Postgres / MySQL).
+		var t time.Time
+		if err := rows.Scan(&instanceID, &defID, &defVersion, &timerID, &t, &kind, &payload); err != nil {
+			return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: %w", err)
+		}
+		nextRun = t.UTC() // normalise TIMESTAMPTZ / DATETIME to UTC
 	}
 
-	// Native time.Time path (Postgres / MySQL).
-	var fireAt time.Time
-	if err := rows.Scan(&instanceID, &defID, &defVersion, &timerID, &fireAt, &kind); err != nil {
-		return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer: %w", err)
+	trig, err := decodeTriggerPayload(payload)
+	if err != nil {
+		return kernel.ArmedTimer{}, fmt.Errorf("workflow-store: scan armed timer %q/%q: %w", instanceID, timerID, err)
 	}
+
 	return kernel.ArmedTimer{
 		InstanceID: instanceID,
 		DefID:      defID,
 		DefVersion: defVersion,
 		TimerID:    timerID,
-		NextRun:    fireAt.UTC(), // normalise TIMESTAMPTZ / DATETIME to UTC; the fire_at column carries the next-run instant
+		Trigger:    trig,
+		NextRun:    nextRun, // the next_run column carries the authoritative next-run instant
 		Kind:       engine.TimerKind(kind),
 	}, nil
+}
+
+// decodeTriggerPayload reconstructs a [schedule.TriggerSpec] from the raw
+// trigger_payload column bytes. A nil/empty payload (NULL column, or a row
+// written before this column existed) yields the zero trigger. Non-empty bytes
+// are unmarshalled into a [model.TriggerWire] and decoded via
+// [model.ReadTrigger] — the inverse of [triggerPayloadArg].
+func decodeTriggerPayload(payload []byte) (schedule.TriggerSpec, error) {
+	if len(payload) == 0 {
+		return schedule.TriggerSpec{}, nil
+	}
+	var w model.TriggerWire
+	if err := json.Unmarshal(payload, &w); err != nil {
+		return schedule.TriggerSpec{}, fmt.Errorf("unmarshal trigger payload: %w", err)
+	}
+	return model.ReadTrigger(&w, "", false), nil
 }
 
 // querier returns a pool-backed [database.Querier]. TimerStore is read-only so
