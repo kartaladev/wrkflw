@@ -3,7 +3,52 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-04 evening) — NEXT: HTTP-only transport refactor
+## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: Plan 3 (scheduler JobStore durability) → boundary-event plans
+
+> **State:** `origin/main == main == ada9436` (+ a small follow-up cleanup branch merging after it),
+> working tree clean, all gates green (`go build ./...`, `go test -race ./...` 58 pkgs / 0 fail / 0 races
+> with PG+MySQL+SQLite testcontainers, `golangci-lint run ./...` 0 issues). **Next free ADR: 0102.**
+>
+> **Recently shipped since 2026-07-04 (all MERGED + PUSHED to origin/main):**
+> - **ADR-0094/0095** HTTP-only transport — removed gRPC; `transport/http/{httpcore,stdlib,gin,fiber}` mountable route-group adapters.
+> - **ADR-0096/0097** sensible-default `NewProcessDriver`/`action.DefaultCatalog` + self-explaining renames.
+> - **ADR-0098** `NewEngine` coherent in-mem graph; **ADR-0099** neutral `persistence/cache` + adapters.
+> - **ADR-0100** `runtime/idgen` (`WithIDGenerator`); **ADR-0101** typed `definition.Qualifier{ID,Version}`.
+> - **Timer TriggerSpec + scheduler-subsystem redesign + durable rehydration** (merge `ada9436`, the big
+>   `feat/timer-triggerspec-and-boundary-events` branch): `definition/schedule.TriggerSpec` (full gocron
+>   parity) + nested `TriggerWire`; native gocron scheduling behind the `kernel.Scheduler` port; public
+>   `scheduling` package NEUTRALIZED and now **transitively DB-vendor-free** (backend electors relocated to
+>   `internal/scheduling/gocron/{pgelector,myelector}`, dead `PostgresLocker` pruned); **goroutine-free
+>   `scheduling.NewScheduler` + `Scheduler.Start(ctx)`** (auto-starts on first `Schedule`; ctx-cancel stops;
+>   idempotent `Close`); **sensible-default in-process scheduler + `ProcessDriver.Start(ctx)`/`Shutdown(ctx)`**
+>   (owned-vs-injected) + **`service.Engine.Start/Shutdown`**; `WithTimeSkew`; **durable timers**
+>   (`next_run`/`trigger_kind`/`trigger_payload`, 3-dialect migration) with faithful rehydration proven
+>   end-to-end on **Postgres, MySQL, and SQLite**; API polish `ProcessDriver.Run`→`Drive` and `*ProcessDriver`
+>   values named `driver`; `scheduling.WithSchedulerClock`→`WithClock` (unified with the rest of the codebase).
+>
+> **▶ NEXT WORK — Plan 3: scheduler JobStore-owned lifecycle & durability (ADR-0102, NOT STARTED):** full
+> workflow-provided `kernel.JobStore` the scheduler CALLS; `JobStore.Save/Update/Delete` on the AMBIENT
+> state-commit tx (timer+state atomic — supersedes the timer-write portion of ADR-0027); scheduler
+> **self-rehydrates on start** (no explicit `RehydrateTimers`); gocron in-mem = reconciled projection. Plan is
+> written and self-contained: [`docs/plans/2026-07-07-scheduler-jobstore-durability.md`](2026-07-07-scheduler-jobstore-durability.md)
+> (Tasks 3–5; Tasks 1–2 subset — the durable descriptor + faithful rehydration — already shipped in `ada9436`).
+> **Then boundary-event enhancements (ADR-0103/0104):** spec written
+> ([`docs/specs/2026-07-07-boundary-event-enhancements.md`](../specs/2026-07-07-boundary-event-enhancements.md))
+> — `WithBoundaryAction`, flexible error matching (Check→Expr→Code), `WithDeadlineFlow`/`WithDeadlineAction`
+> split, `WithWaitReminder` — but the **implementation plan is NOT yet written** (write it after Plan 3, since
+> boundary timer/deadline options adopt `schedule.TriggerSpec`).
+>
+> **Backlog:** [`docs/plans/2026-06-30-production-readiness-backlog.md`](2026-06-30-production-readiness-backlog.md)
+> — all P0 + P1-A…P1-E done; **P1-F moot** (gRPC removed); **P1-G recursive instance lineage** still QUEUED;
+> **P2 DX** items open (more built-in actions, structured validation + CLI, YAML round-trip, definition
+> versioning/migration guide, admin UI — NOT a BPMN2 XML loader, which CLAUDE.md rules out). No GitHub issues
+> are filed (`gh` unauthenticated). Non-blocking follow-ups: `service` facade coverage 48%; cron/calendar
+> `next_run=0` in SQL `Stats` (rehydration still correct via Trigger); idgen span attribute; relay double-wrap.
+>
+> **⚠️ Everything below this block is HISTORICAL** — dated resume points kept for provenance. The
+> 2026-07-04 "HTTP-only transport" block immediately following is DONE (ADR-0094/0095 merged).
+
+## 🗄️ HISTORICAL RESUME POINT (superseded — updated 2026-07-04 evening) — HTTP-only transport refactor (DONE)
 
 > **State:** `origin/main == main == 97e18c1`, working tree clean, all gates green
 > (`go build ./...`, `go test ./...` 0 fail, `golangci-lint run ./...` 0 issues).

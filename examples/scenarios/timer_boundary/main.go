@@ -2,7 +2,7 @@
 // attached to a waiting activity that fires if the activity does not complete in
 // time — a per-activity SLA/timeout.
 //
-// NOTE: this is distinct from the sibling boundary_timer example, which
+// NOTE: this is distinct from the sibling usertask_deadline example, which
 // demonstrates activity.WithDeadline (a different feature). This one uses the
 // true boundary-event API, event.NewBoundary + event.WithBoundaryTimer.
 //

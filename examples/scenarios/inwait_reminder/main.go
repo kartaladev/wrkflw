@@ -8,7 +8,7 @@
 // reminders simply run as a side effect until the task is completed, cancelled,
 // or breaches a deadline — at which point the recurring timer goes stale and stops.
 //
-// This differs from boundary_timer, which shows a one-shot deadline (WithDeadline)
+// This differs from usertask_deadline, which shows a one-shot deadline (WithDeadline)
 // that escalates on breach. Here the action fires repeatedly and the task still
 // completes normally.
 //

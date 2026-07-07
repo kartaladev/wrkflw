@@ -972,7 +972,7 @@ fire-once `notify-overdue` breach action, cancels the host user task, routes to
 parks) and `WithScheduler` (so the timer arms).
 (For edge-attached `BoundaryEvent` timers/signals/errors/messages, see the
 `WithBoundary*` options in the node reference above.)
-→ [`examples/scenarios/boundary_timer`](examples/scenarios/boundary_timer)
+→ [`examples/scenarios/usertask_deadline`](examples/scenarios/usertask_deadline)
 
 ### 4. Compensation / saga rollback
 
@@ -1042,7 +1042,7 @@ task for the manager actor; `Claim` then `Complete` (each followed by `r.Deliver
 the instance to `StatusCompleted`, merging the completion output (`approved`) into the
 variables. See `runtime/human_example_test.go` for the authoritative end-to-end test
 (including attribute-based eligibility and deadline escalation).
-→ [`examples/scenarios/human_task_approval`](examples/scenarios/human_task_approval)
+→ [`examples/scenarios/usertask_approval`](examples/scenarios/usertask_approval)
 
 ### 6. Sub-process and call activity
 

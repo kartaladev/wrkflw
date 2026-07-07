@@ -128,15 +128,21 @@ divergence. If any replay path exists, the Check closure must be documented as
 "prefer vars/`err.Error()` for deterministic decisions." `ErrorExpr` (over vars
 + `_error` string) is fully deterministic and serializable regardless.
 
-## Feature 3: rename example `boundary_timer` → `user_deadline`
+## Feature 3: rename example `boundary_timer` → `usertask_deadline` ✅ DONE (2026-07-08)
 
-`examples/scenarios/boundary_timer` demonstrates `activity.WithDeadline` on a
-UserTask — not a boundary event; the name misleads.
-- `git mv examples/scenarios/boundary_timer examples/scenarios/user_deadline`.
-- Rewrite its package doc to frame it as a user-task deadline (`WithDeadline`)
-  demo; drop "boundary" wording. No code/behavior change.
-- Update the cross-reference note in `examples/scenarios/timer_boundary/main.go`
-  to point to `user_deadline`.
+`examples/scenarios/boundary_timer` demonstrated `activity.WithDeadline` on a
+UserTask — not a boundary event; the name misled. The directory rename has
+already been done (ahead of this ADR, alongside `human_task_approval` →
+`usertask_approval`), using the `usertask_` prefix rather than the originally
+proposed `user_deadline`:
+- `examples/scenarios/boundary_timer` → `examples/scenarios/usertask_deadline` ✅.
+- README + the sibling cross-reference notes in `timer_boundary`/`inwait_reminder`/
+  `message_boundary` main.go already point to `usertask_deadline` ✅.
+- REMAINING for this ADR: rewrite the example's package doc to frame it as a
+  user-task deadline (`WithDeadline`) demo and drop any "boundary" wording (no
+  code/behavior change).
+
+Elsewhere in this spec, `user_deadline` refers to the now-named `usertask_deadline`.
 
 ## Feature 4: new scenario `boundary_action`
 

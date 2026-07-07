@@ -1,6 +1,6 @@
 // Package main demonstrates message BOUNDARY events attached to an activity —
 // the true event.NewBoundary API, distinct from the activity WithDeadline shown
-// in the sibling boundary_timer example.
+// in the sibling usertask_deadline example.
 //
 // An order-approval process parks at a UserTask("approve") that hosts TWO
 // message boundary events, showing both interrupting and non-interrupting
