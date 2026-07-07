@@ -255,6 +255,9 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 				ice, ok := n.(event.IntermediateCatchEvent)
 				require.True(t, ok)
 				assert.False(t, ice.Timer.IsZero(), "Timer should be set")
+				expr, _, exprOk := ice.Timer.Expr()
+				require.True(t, exprOk, "Timer should be an expr form")
+				assert.Equal(t, "PT1H", expr, "Timer expr value should be PT1H")
 				assert.Equal(t, "Wait 1 hour", n.Name())
 			},
 		},

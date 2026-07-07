@@ -61,7 +61,7 @@ func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
 	}
 	b := event.NewBoundary("b", "host",
 		event.WithName("B"),
-		event.WithBoundaryTimer(schedule.AfterDuration(time.Hour)),
+		event.WithBoundaryTimer(schedule.AfterExpr("5m")),
 		event.WithBoundarySignal("s"),
 		event.WithBoundaryMessage("m", "k"),
 		event.WithBoundaryErrorCode("E"),
@@ -73,9 +73,9 @@ func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
 	if b.Timer.IsZero() {
 		t.Errorf("boundary Timer not set: %+v", b)
 	}
-	exp, ok := b.Timer.Duration()
-	if !ok || exp != time.Hour {
-		t.Errorf("boundary Timer duration = %v, %v", exp, ok)
+	bExpr, _, bOk := b.Timer.Expr()
+	if !bOk || bExpr != "5m" {
+		t.Errorf("boundary Timer expr = %q, ok=%v", bExpr, bOk)
 	}
 	sub := &model.ProcessDefinition{ID: "s", Version: 1}
 	esp := event.NewEventSubProcess("esp", sub, event.WithName("ESP"), event.WithEventSubProcessNonInterrupting()).(event.EventSubProcess)
@@ -139,6 +139,9 @@ func TestEventRoundTrip(t *testing.T) {
 	catchTimer := got.Nodes[1].(event.IntermediateCatchEvent).Timer
 	if catchTimer.IsZero() {
 		t.Error("catch Timer lost in round-trip")
+	}
+	if expr, _, ok := catchTimer.Expr(); !ok || expr != `"1h"` {
+		t.Errorf("catch Timer expr lost: %q, ok=%v", expr, ok)
 	}
 	boundTimer := got.Nodes[3].(event.BoundaryEvent).Timer
 	if boundTimer.IsZero() {

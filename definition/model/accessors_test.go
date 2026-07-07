@@ -281,6 +281,9 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	ice, ok := def.Nodes[3].(event.IntermediateCatchEvent)
 	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")
 	assert.False(t, ice.Timer.IsZero(), "Timer should be set")
+	iceExpr, _, iceExprOk := ice.Timer.Expr()
+	require.True(t, iceExprOk, "legacy timerDuration should decode as expr form")
+	assert.Equal(t, "PT1H", iceExpr, "legacy timerDuration PT1H should be preserved as expr value")
 
 	ite, ok := def.Nodes[4].(event.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[4] should be IntermediateThrowEvent")

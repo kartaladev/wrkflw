@@ -33,6 +33,9 @@ func TestServiceTaskOptions(t *testing.T) {
 	if d.IsZero() || f != "sla" || a != "notify" {
 		t.Errorf("DeadlineOf = %v,%q,%q", d, f, a)
 	}
+	if dExpr, _, dOk := d.Expr(); !dOk || dExpr != `"2h"` {
+		t.Errorf("deadline Timer expr = %q, ok=%v", dExpr, dOk)
+	}
 	re, ra := model.ReminderOf(n)
 	if re.IsZero() || ra != "ping" {
 		t.Errorf("ReminderOf = %v,%q", re, ra)
@@ -160,5 +163,7 @@ func TestActivityRoundTrip(t *testing.T) {
 	}
 	if d, _, _ := model.DeadlineOf(got.Nodes[0]); d.IsZero() {
 		t.Errorf("deadline lost after round-trip")
+	} else if dExpr, _, dOk := d.Expr(); !dOk || dExpr != `"1h"` {
+		t.Errorf("deadline Timer expr after round-trip = %q, ok=%v", dExpr, dOk)
 	}
 }
