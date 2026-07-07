@@ -14,8 +14,8 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
 
 // captureHandler records slog records for assertions.

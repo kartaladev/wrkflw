@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 )
 
 // TestGocronScheduler_WithClock_NilFallback verifies that supplying WithClock(nil)
