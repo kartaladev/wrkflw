@@ -42,9 +42,11 @@ func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVer
 				// SQL-backed one-shot re-arms at its original absolute time after
 				// a restart (rather than restarting its delay from "now"). It is
 				// computed synchronously here — in the same tx as the timer row —
-				// so it is crash-safe. armTimer refines it post-Schedule with the
-				// scheduler's own next-run (interim until the Plan-3 JobStore owns
-				// the arm/persist lifecycle under one ambient tx).
+				// so it is crash-safe (no out-of-band write-back). Cron/calendar
+				// triggers persist a zero NextRun for now and rehydrate from their
+				// Trigger; the true scheduler-computed next-run for those is
+				// deferred to the Plan-3 JobStore, which will own the arm/persist
+				// lifecycle under one ambient tx.
 				NextRun: nextRunFor(cmd.Trigger, now),
 				Kind:    cmd.Kind,
 			})
