@@ -44,6 +44,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -64,7 +65,7 @@ func main() {
 	def, err := definition.NewBuilder("review-escalation", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("review", []string{"reviewer"},
-			activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"),
+			activity.WithDeadline(schedule.AfterDuration(time.Hour), "review-overdue", "notify-overdue"),
 		)).
 		Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
 		Add(event.NewEnd("approved-end")).

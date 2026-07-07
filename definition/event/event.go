@@ -86,10 +86,10 @@ type BoundaryEvent struct {
 	AttachedTo string
 	// NonInterrupting controls interrupting behavior: false = interrupting (default).
 	NonInterrupting bool
-	ErrorCode      string
-	SignalName     string
-	MessageName    string
-	CorrelationKey string
+	ErrorCode       string
+	SignalName      string
+	MessageName     string
+	CorrelationKey  string
 	// Timer is the trigger spec for a timer boundary event (e.g. schedule.AfterDuration(72*time.Hour)).
 	Timer schedule.TriggerSpec
 }

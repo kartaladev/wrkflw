@@ -10,6 +10,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/processtest"
 )
@@ -20,7 +21,7 @@ func timerDef(t *testing.T, id string, waits int) *model.ProcessDefinition {
 	prev := "start"
 	for i := range waits {
 		name := "wait" + string(rune('1'+i))
-		b = b.Add(event.NewCatch(name, event.WithCatchTimer(`"1h"`))).Connect(prev, name)
+		b = b.Add(event.NewCatch(name, event.WithCatchTimer(schedule.AfterExpr(`"1h"`)))).Connect(prev, name)
 		prev = name
 	}
 	b = b.Add(event.NewEnd("end")).Connect(prev, "end")

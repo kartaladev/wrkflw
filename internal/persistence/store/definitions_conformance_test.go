@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -41,8 +42,8 @@ func richConformanceDefinition() *model.ProcessDefinition {
 			activity.NewUserTask("review", []string{"reviewer", "manager"},
 				activity.WithName("Review Order"),
 				activity.WithEligibilityExpr("vars.amount > 100"),
-				activity.WithDeadline("PT24H", "sla-breach", "notify-manager"),
-				activity.WithReminder("PT6H", "send-reminder"),
+				activity.WithDeadline(schedule.AfterExpr("PT24H"), "sla-breach", "notify-manager"),
+				activity.WithReminder(schedule.EveryExpr("PT6H"), "send-reminder"),
 				activity.WithCompensation("cancel-review"),
 			),
 			gateway.NewExclusive("approve", "Approved?"),

@@ -35,6 +35,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -52,7 +53,7 @@ func main() {
 	def, err := definition.NewBuilder("periodic-review", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("review", []string{"reviewer"},
-			activity.WithReminder(`"30m"`, "nudge-reviewer"),
+			activity.WithReminder(schedule.Every(30*time.Minute), "nudge-reviewer"),
 		)).
 		Add(event.NewEnd("end")).
 		Connect("start", "review").

@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -150,7 +151,7 @@ func timerOnlyDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("wait", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -256,7 +257,7 @@ func conflictTimerDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait10s", event.WithCatchTimer(`"10s"`)),
+			event.NewCatch("wait10s", event.WithCatchTimer(schedule.AfterExpr(`"10s"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

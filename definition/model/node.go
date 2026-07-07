@@ -57,7 +57,9 @@ type WaitFields struct {
 func (w WaitFields) deadline() (schedule.TriggerSpec, string, string) {
 	return w.DeadlineTimer, w.DeadlineFlow, w.DeadlineAction
 }
-func (w WaitFields) reminder() (schedule.TriggerSpec, string) { return w.ReminderEvery, w.ReminderAction }
+func (w WaitFields) reminder() (schedule.TriggerSpec, string) {
+	return w.ReminderEvery, w.ReminderAction
+}
 
 // ActivityFields holds the cross-cutting fields every activity kind shares (retry,
 // recovery, compensation, cancel, plus the embedded WaitFields). Embedded into

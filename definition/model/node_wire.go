@@ -11,37 +11,37 @@ import (
 // serialization shape; previously stored definitions decode through it
 // unchanged. Field names/order mirror the pre-interface Node struct.
 type NodeWire struct {
-	ID                    string             `json:"id"`
-	Kind                  NodeKind           `json:"kind"`
-	Name                  string             `json:"name,omitempty"`
-	Action                string             `json:"action,omitempty"`
-	CandidateRoles        []string           `json:"candidateRoles,omitempty"`
-	EligibilityPrivileges []string           `json:"eligibilityPrivileges,omitempty"`
-	EligibilityExpr       string             `json:"eligibilityExpr,omitempty"`
+	ID                    string   `json:"id"`
+	Kind                  NodeKind `json:"kind"`
+	Name                  string   `json:"name,omitempty"`
+	Action                string   `json:"action,omitempty"`
+	CandidateRoles        []string `json:"candidateRoles,omitempty"`
+	EligibilityPrivileges []string `json:"eligibilityPrivileges,omitempty"`
+	EligibilityExpr       string   `json:"eligibilityExpr,omitempty"`
 	// legacy flat forms (decoded via ReadTrigger's flatExpr path; not written by ToWire)
-	TimerDuration    string       `json:"timerDuration,omitempty"`
-	DeadlineDuration string       `json:"deadlineDuration,omitempty"`
-	ReminderEvery    string       `json:"reminderEvery,omitempty"`
+	TimerDuration    string `json:"timerDuration,omitempty"`
+	DeadlineDuration string `json:"deadlineDuration,omitempty"`
+	ReminderEvery    string `json:"reminderEvery,omitempty"`
 	// nested trigger forms (canonical)
-	TimerTrigger    *TriggerWire `json:"timerTrigger,omitempty"`
-	DeadlineTrigger *TriggerWire `json:"deadlineTrigger,omitempty"`
-	ReminderTrigger *TriggerWire `json:"reminderTrigger,omitempty"`
-	DeadlineFlow   string       `json:"deadlineFlow,omitempty"`
-	DeadlineAction string       `json:"deadlineAction,omitempty"`
-	ReminderAction string       `json:"reminderAction,omitempty"`
-	RetryPolicy           *RetryPolicy       `json:"retryPolicy,omitempty"`
-	RecoveryFlow          string             `json:"recoveryFlow,omitempty"`
-	CompensationAction    string             `json:"compensationAction,omitempty"`
-	CompensateRef         string             `json:"compensateRef,omitempty"`
-	CancelHandler         string             `json:"cancelHandler,omitempty"`
-	SignalName            string             `json:"signalName,omitempty"`
-	MessageName           string             `json:"messageName,omitempty"`
-	CorrelationKey        string             `json:"correlationKey,omitempty"`
-	ErrorCode             string             `json:"errorCode,omitempty"`
-	AttachedTo            string             `json:"attachedTo,omitempty"`
-	NonInterrupting       bool               `json:"nonInterrupting,omitempty"`
-	Subprocess            *ProcessDefinition `json:"subprocess,omitempty"`
-	DefRef                string             `json:"defRef,omitempty"`
+	TimerTrigger       *TriggerWire       `json:"timerTrigger,omitempty"`
+	DeadlineTrigger    *TriggerWire       `json:"deadlineTrigger,omitempty"`
+	ReminderTrigger    *TriggerWire       `json:"reminderTrigger,omitempty"`
+	DeadlineFlow       string             `json:"deadlineFlow,omitempty"`
+	DeadlineAction     string             `json:"deadlineAction,omitempty"`
+	ReminderAction     string             `json:"reminderAction,omitempty"`
+	RetryPolicy        *RetryPolicy       `json:"retryPolicy,omitempty"`
+	RecoveryFlow       string             `json:"recoveryFlow,omitempty"`
+	CompensationAction string             `json:"compensationAction,omitempty"`
+	CompensateRef      string             `json:"compensateRef,omitempty"`
+	CancelHandler      string             `json:"cancelHandler,omitempty"`
+	SignalName         string             `json:"signalName,omitempty"`
+	MessageName        string             `json:"messageName,omitempty"`
+	CorrelationKey     string             `json:"correlationKey,omitempty"`
+	ErrorCode          string             `json:"errorCode,omitempty"`
+	AttachedTo         string             `json:"attachedTo,omitempty"`
+	NonInterrupting    bool               `json:"nonInterrupting,omitempty"`
+	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
+	DefRef             string             `json:"defRef,omitempty"`
 }
 
 // toWire flattens a Node into its wire form via the kind's registered spec.

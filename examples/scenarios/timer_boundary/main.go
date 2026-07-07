@@ -42,6 +42,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -61,7 +62,7 @@ func main() {
 		Add(activity.NewReceiveTask("await-payment", "payment.confirmed",
 			activity.WithCorrelationKey("orderID"))).
 		Add(event.NewBoundary("bnd-timeout", "await-payment",
-			event.WithBoundaryTimer(`"30m"`))).
+			event.WithBoundaryTimer(schedule.AfterDuration(30*time.Minute)))).
 		Add(activity.NewServiceTask("escalate", activity.WithActionName("escalate-payment"))).
 		Add(event.NewEnd("end-settled")).
 		Add(event.NewEnd("end-escalated")).

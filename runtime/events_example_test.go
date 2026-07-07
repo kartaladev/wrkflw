@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
@@ -50,7 +51,7 @@ func eventGatewayDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("gw"),
-			event.NewCatch("timer-arm", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("timer-arm", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewCatch("signal-arm", event.WithCatchSignal("approved")),
 			event.NewEnd("timer-end"),
 			event.NewEnd("signal-end"),

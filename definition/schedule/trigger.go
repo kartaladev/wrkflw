@@ -9,10 +9,10 @@ import "time"
 type Kind uint8
 
 const (
-	KindUnset Kind = iota
-	KindOneTime      // AfterDuration / At
-	KindDuration     // Every
-	KindDurationRand // EveryRandom
+	KindUnset        Kind = iota
+	KindOneTime           // AfterDuration / At
+	KindDuration          // Every
+	KindDurationRand      // EveryRandom
 	KindCron
 	KindDaily
 	KindWeekly

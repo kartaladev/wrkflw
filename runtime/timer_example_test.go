@@ -16,6 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
@@ -86,7 +87,7 @@ func deadlineUserTaskDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(`"30m"`, "escalate", "notify-escalation")),
+			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(schedule.AfterExpr(`"30m"`), "escalate", "notify-escalation")),
 			event.NewEnd("end-normal"),
 			event.NewEnd("end-escalated"),
 		},

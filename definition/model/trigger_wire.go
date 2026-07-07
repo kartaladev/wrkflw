@@ -8,17 +8,17 @@ import (
 
 // TriggerWire is the JSON encoding of a schedule.TriggerSpec.
 type TriggerWire struct {
-	Kind        string              `json:"kind"`
-	Nanos       int64               `json:"nanos,omitempty"`
-	At          *time.Time          `json:"at,omitempty"`
-	Expr        string              `json:"expr,omitempty"`
-	Cron        string              `json:"cron,omitempty"`
-	MinNanos    int64               `json:"minNanos,omitempty"`
-	MaxNanos    int64               `json:"maxNanos,omitempty"`
-	Interval    uint                `json:"interval,omitempty"`
+	Kind        string               `json:"kind"`
+	Nanos       int64                `json:"nanos,omitempty"`
+	At          *time.Time           `json:"at,omitempty"`
+	Expr        string               `json:"expr,omitempty"`
+	Cron        string               `json:"cron,omitempty"`
+	MinNanos    int64                `json:"minNanos,omitempty"`
+	MaxNanos    int64                `json:"maxNanos,omitempty"`
+	Interval    uint                 `json:"interval,omitempty"`
 	AtTimes     []schedule.ClockTime `json:"atTimes,omitempty"`
-	Weekdays    []int               `json:"weekdays,omitempty"`
-	DaysOfMonth []int               `json:"daysOfMonth,omitempty"`
+	Weekdays    []int                `json:"weekdays,omitempty"`
+	DaysOfMonth []int                `json:"daysOfMonth,omitempty"`
 }
 
 // PutTrigger encodes s, or returns nil when s is unset.
