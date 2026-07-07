@@ -31,7 +31,7 @@ func TestRetryPolicyOf(t *testing.T) {
 		activity.NewSendTask("st", "msg", activity.WithRetryPolicy(p)),
 		activity.NewBusinessRuleTask("brt", activity.WithActionName("act"), activity.WithRetryPolicy(p)),
 		activity.NewSubProcess("sp", nil, activity.WithRetryPolicy(p)),
-		activity.NewCallActivity("ca", "ref", activity.WithRetryPolicy(p)),
+		activity.NewCallActivity("ca", model.Latest("ref"), activity.WithRetryPolicy(p)),
 	}
 	for _, c := range cases {
 		require.Equal(t, p, model.RetryPolicyOf(c), "kind %v should return policy", c.Kind())
@@ -292,7 +292,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 
 	ca, ok := def.Nodes[7].(activity.CallActivity)
 	require.True(t, ok, "nodes[7] should be CallActivity")
-	assert.Equal(t, "ext-process", ca.DefRef)
+	assert.Equal(t, model.Latest("ext-process"), ca.DefRef)
 
 	_, ok = def.Nodes[8].(gateway.ExclusiveGateway)
 	require.True(t, ok, "nodes[8] should be ExclusiveGateway")

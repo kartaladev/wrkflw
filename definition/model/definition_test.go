@@ -223,7 +223,7 @@ func TestNodeCallActivityDefRef(t *testing.T) {
 	d := &model.ProcessDefinition{
 		ID:      "outer3",
 		Version: 1,
-		Nodes:   []model.Node{activity.NewCallActivity("call-1", "external-process-v2", activity.WithName("Call External Process"))},
+		Nodes:   []model.Node{activity.NewCallActivity("call-1", model.Latest("external-process-v2"), activity.WithName("Call External Process"))},
 		Flows:   []flow.SequenceFlow{},
 	}
 
@@ -232,7 +232,7 @@ func TestNodeCallActivityDefRef(t *testing.T) {
 	assert.Equal(t, model.KindCallActivity, n.Kind())
 	ca, ok := n.(activity.CallActivity)
 	require.True(t, ok)
-	assert.Equal(t, "external-process-v2", ca.DefRef)
+	assert.Equal(t, model.Latest("external-process-v2"), ca.DefRef)
 }
 
 // TestNodeTimerDeadlineReminderFields asserts that the six new timer/deadline/reminder

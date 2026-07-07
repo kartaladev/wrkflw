@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -24,7 +25,7 @@ func TestStartInstance(t *testing.T) {
 		assert func(t *testing.T, status int, body any, err error)
 	}{
 		"missing def_ref → ErrBadInput, no service call": {
-			in: httpcore.StartInput{DefRef: ""},
+			in: httpcore.StartInput{DefRef: model.Qualifier{}},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if !errors.Is(err, httpcore.ErrBadInput) {
 					t.Fatalf("want ErrBadInput, got %v", err)
@@ -32,7 +33,7 @@ func TestStartInstance(t *testing.T) {
 			},
 		},
 		"success → 201 default mapped body": {
-			in: httpcore.StartInput{DefRef: "greeting", Vars: map[string]any{"name": "ada"}},
+			in: httpcore.StartInput{DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "ada"}},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -46,7 +47,7 @@ func TestStartInstance(t *testing.T) {
 			},
 		},
 		"custom mapper → returned in body": {
-			in:     httpcore.StartInput{DefRef: "greeting", Vars: map[string]any{"name": "ada"}},
+			in:     httpcore.StartInput{DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "ada"}},
 			mapper: func(_ engine.InstanceState) any { return map[string]string{"custom": "yes"} },
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -62,7 +63,7 @@ func TestStartInstance(t *testing.T) {
 			},
 		},
 		"unknown definition → service error propagated": {
-			in: httpcore.StartInput{DefRef: "no-such-def"},
+			in: httpcore.StartInput{DefRef: model.Latest("no-such-def")},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
 					t.Fatal("want error for unknown definition")
@@ -97,7 +98,7 @@ func TestGetInstance(t *testing.T) {
 		"existing instance → 200 with body": {
 			setup: func(svc service.Service) string {
 				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", Vars: map[string]any{"name": "x"},
+					DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -150,7 +151,7 @@ func TestGetInstanceSnapshot(t *testing.T) {
 		"existing instance → 200 snapshot body": {
 			setup: func(svc service.Service) string {
 				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "greeting", Vars: map[string]any{"name": "x"},
+					DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -203,7 +204,7 @@ func TestGetActionableView(t *testing.T) {
 		"existing instance → 200 actionable body": {
 			setup: func(svc service.Service) string {
 				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "approval",
+					DefRef: model.Latest("approval"),
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -266,7 +267,7 @@ func TestDeliverSignal(t *testing.T) {
 		"success → 200 with body": {
 			setup: func(svc service.Service) string {
 				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "signal-catch-approved",
+					DefRef: model.Latest("signal-catch-approved"),
 				})
 				if err != nil {
 					t.Fatalf("StartInstance: %v", err)
@@ -324,7 +325,7 @@ func TestDeliverMessage(t *testing.T) {
 	}{
 		"missing def_ref → ErrBadInput": {
 			setup: func(_ service.Service) {},
-			in:    httpcore.MessageInput{DefRef: "", Name: "order-shipped"},
+			in:    httpcore.MessageInput{DefRef: model.Qualifier{}, Name: "order-shipped"},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if !errors.Is(err, httpcore.ErrBadInput) {
 					t.Fatalf("want ErrBadInput, got %v", err)
@@ -333,7 +334,7 @@ func TestDeliverMessage(t *testing.T) {
 		},
 		"missing name → ErrBadInput": {
 			setup: func(_ service.Service) {},
-			in:    httpcore.MessageInput{DefRef: "message-catch-order-shipped:1", Name: ""},
+			in:    httpcore.MessageInput{DefRef: model.Version("message-catch-order-shipped", 1), Name: ""},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if !errors.Is(err, httpcore.ErrBadInput) {
 					t.Fatalf("want ErrBadInput, got %v", err)
@@ -343,7 +344,7 @@ func TestDeliverMessage(t *testing.T) {
 		"success → 202 nil body": {
 			setup: func(svc service.Service) {
 				_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-					DefRef: "message-catch-order-shipped",
+					DefRef: model.Latest("message-catch-order-shipped"),
 					Vars:   map[string]any{"orderId": "42"},
 				})
 				if err != nil {
@@ -351,7 +352,7 @@ func TestDeliverMessage(t *testing.T) {
 				}
 			},
 			in: httpcore.MessageInput{
-				DefRef:         "message-catch-order-shipped:1",
+				DefRef:         model.Version("message-catch-order-shipped", 1),
 				Name:           "order-shipped",
 				CorrelationKey: "42",
 				Payload:        map[string]any{"shipped": true},
@@ -370,7 +371,7 @@ func TestDeliverMessage(t *testing.T) {
 		},
 		"unknown definition → service error propagated": {
 			setup: func(_ service.Service) {},
-			in:    httpcore.MessageInput{DefRef: "no-such-def:1", Name: "order-shipped"},
+			in:    httpcore.MessageInput{DefRef: model.Version("no-such-def", 1), Name: "order-shipped"},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err == nil {
 					t.Fatal("want error for unknown definition")

@@ -81,11 +81,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	require.NoError(t, err)
 
 	def := incidentDef()
-	defsMap := map[string]*model.ProcessDefinition{
-		defRefFor(def): def,
-		def.ID:         def,
-	}
-	reg := kernel.NewMapDefinitionRegistry(defsMap)
+	reg := kernel.NewMapDefinitionRegistry(def)
 	svc, err := service.NewEngine(
 		service.WithProcessDriver(r),
 		service.WithInstanceStore(store),
@@ -154,11 +150,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	require.NoError(t, err)
 
 	def := incidentDef()
-	defsMap := map[string]*model.ProcessDefinition{
-		defRefFor(def): def,
-		def.ID:         def,
-	}
-	reg := kernel.NewMapDefinitionRegistry(defsMap)
+	reg := kernel.NewMapDefinitionRegistry(def)
 	svc, err := service.NewEngine(
 		service.WithProcessDriver(r),
 		service.WithInstanceStore(store),

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -45,7 +46,7 @@ func ExampleNewPublisher() {
 	_ = pub.Publish(context.Background(), kernel.OutboxEvent{
 		Topic:         "instance.completed",
 		InstanceID:    "order-42",
-		DefinitionRef: "order-flow:1",
+		DefinitionRef: model.Version("order-flow", 1),
 		DedupKey:      "order-42:3:0",
 		Payload:       map[string]any{"status": "completed"},
 	})

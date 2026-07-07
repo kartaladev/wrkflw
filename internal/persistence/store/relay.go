@@ -432,12 +432,16 @@ func scanClaimRows(rows database.Rows) ([]claimRow, error) {
 		if err := json.Unmarshal(rawPayload, &payload); err != nil {
 			return nil, fmt.Errorf("workflow-store: relay: unmarshal payload id=%d: %w", id, err)
 		}
+		defRef, err := parseDefRef(definitionRef)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-store: relay: def ref id=%d: %w", id, err)
+		}
 		out = append(out, claimRow{id: id, retryCount: retryCount, event: kernel.OutboxEvent{
 			Topic:         topic,
 			Payload:       payload,
 			DedupKey:      dedupKey,
 			InstanceID:    instanceID,
-			DefinitionRef: definitionRef,
+			DefinitionRef: defRef,
 		}})
 	}
 	return out, nil

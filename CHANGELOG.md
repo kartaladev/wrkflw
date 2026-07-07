@@ -17,6 +17,22 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **`DefinitionRegistry.Lookup(ctx, defRef string)` → `Lookup(ctx, model.Qualifier)`;
+  def-ref fields, params, and constructors now typed `definition.Qualifier` (ADR-0101).**
+  The following Go symbols are now `definition.Qualifier` (or `model.Qualifier` internally)
+  rather than `string`: `service.StartInstanceRequest.DefRef`,
+  `service.DeliverMessageRequest.DefRef`, `engine.StartSubInstance.DefRef`,
+  `activity.CallActivity.DefRef`, `kernel.OutboxEvent.DefinitionRef`,
+  `kernel.ChainLink.{Predecessor,Successor}DefinitionRef`,
+  `kernel.ChainLinkRef.DefinitionRef`, `chain.ChainEvent.PredecessorDefinitionRef`.
+  Constructors `activity.NewCallActivity(id, ref model.Qualifier, …)` and
+  `build.(*Builder).AddCallActivity(id, ref model.Qualifier, …)` take the typed value.
+  `NewMapDefinitionRegistry` is now variadic (`...*model.ProcessDefinition`).
+  The HTTP `def_ref` JSON key and the `definition_ref` TEXT database columns are
+  **unchanged** — wire and schema remain byte-identical.
+  Use `definition.Latest(id)`, `definition.Version(id, v)`, or `definition.ParseQualifier(s)`
+  to construct a `Qualifier`.
+
 - **`instance_id` removed from the start-instance request body; `StartInstanceRequest.InstanceID` removed.**
   Process-instance IDs are now server-generated (ADR-0100). Remove the `instance_id` field from
   any `POST /instances` request body and any direct use of `service.StartInstanceRequest.InstanceID`;
@@ -77,6 +93,16 @@ release.
   is renamed to be unambiguous.
 
 ### Added
+
+- **`definition.Qualifier`: typed process-definition reference (ADR-0101).**
+  New value type `definition.Qualifier{ID string; Version int}` (`Version == 0` = latest)
+  with helpers `definition.Latest(id)`, `definition.Version(id, v)`,
+  `definition.ParseQualifier(s) (Qualifier, error)`, `q.IsLatest()`, and `q.String()`
+  (`"id"` or `"id:version"`). JSON and YAML marshalers keep the wire byte-identical to the
+  former string encoding. `ErrInvalidQualifier` (`"workflow-model: invalid qualifier"`)
+  is returned for empty id, non-numeric/negative/zero explicit version (`:0` is rejected —
+  zero is the reserved latest sentinel). `model.ParseQualifier` is re-exported from the
+  `definition` root package as `definition.ParseQualifier`.
 
 - **Server-generated process-instance IDs via pluggable `runtime/idgen` (ADR-0100).**
   New nested package `runtime/idgen` with three constructors: `XID()` (default — `github.com/rs/xid`,

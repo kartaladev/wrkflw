@@ -15,6 +15,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
@@ -198,7 +199,7 @@ func TestMount_GetInstance(t *testing.T) {
 
 	// Seed an instance.
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -246,7 +247,7 @@ func TestMount_WithBasePath(t *testing.T) {
 
 	// Seed an instance.
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -292,7 +293,7 @@ func TestAdminRoutes_Customize(t *testing.T) {
 
 	// Seed an instance so GET /admin/instances returns a result.
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -432,7 +433,7 @@ func TestMessageRoutes_Customize(t *testing.T) {
 
 	// Seed a waiting instance.
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "message-catch-order-shipped",
+		DefRef: model.Latest("message-catch-order-shipped"),
 		Vars:   map[string]any{"orderId": "42"},
 	})
 	if err != nil {
@@ -484,7 +485,7 @@ func TestInstanceRoutes_Snapshot(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -507,7 +508,7 @@ func TestInstanceRoutes_ActionableView(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "approval",
+		DefRef: model.Latest("approval"),
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -530,7 +531,7 @@ func TestDeliverSignal_Stdlib(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "signal-catch-approved",
+		DefRef: model.Latest("signal-catch-approved"),
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)

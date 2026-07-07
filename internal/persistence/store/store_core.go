@@ -12,11 +12,26 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/internal/database"
 	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
+
+// parseDefRef hydrates a definition_ref TEXT column into a model.Qualifier. An
+// empty string (rows produced before ADR-0047, or an unset ref) yields the zero
+// Qualifier without error; a non-empty malformed value is a genuine scan error.
+func parseDefRef(s string) (model.Qualifier, error) {
+	if s == "" {
+		return model.Qualifier{}, nil
+	}
+	q, err := model.ParseQualifier(s)
+	if err != nil {
+		return model.Qualifier{}, fmt.Errorf("workflow-store: parse definition_ref: %w", err)
+	}
+	return q, nil
+}
 
 // Compile-time checks that *Store satisfies both persistence ports.
 var (
@@ -368,7 +383,7 @@ func (s *Store) writeOutbox(ctx context.Context, q database.Querier, instanceID 
 		if _, err := q.Exec(ctx, s.dialect.Rebind(
 			`INSERT INTO wrkflw_outbox (instance_id, topic, payload, dedup_key, created_at, next_attempt_at, definition_ref)
 			 VALUES (?,?,?,?,?,?,?)`),
-			instanceID, ev.Topic, payload, dedup, timeArg(s.dialect, createdAt), timeArg(s.dialect, createdAt), ev.DefinitionRef,
+			instanceID, ev.Topic, payload, dedup, timeArg(s.dialect, createdAt), timeArg(s.dialect, createdAt), ev.DefinitionRef.String(),
 		); err != nil {
 			return fmt.Errorf("workflow-store: write outbox: %w", err)
 		}

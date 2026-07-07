@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -14,10 +15,10 @@ func TestMemChainLinkStoreRecordAndLookup(t *testing.T) {
 
 	link := kernel.ChainLink{
 		PredecessorID:            "approval-1",
-		PredecessorDefinitionRef: "approval:1",
+		PredecessorDefinitionRef: model.Version("approval", 1),
 		Outcome:                  kernel.OutcomeCompleted,
 		SuccessorID:              "approval-1-next-completed",
-		SuccessorDefinitionRef:   "fulfillment:1",
+		SuccessorDefinitionRef:   model.Version("fulfillment", 1),
 		StartVars:                map[string]any{"orderID": "o-7"},
 	}
 	require.NoError(t, cls.Record(ctx, link))

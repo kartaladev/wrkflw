@@ -7,6 +7,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/require"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -40,7 +41,7 @@ func TestPublishMapsEventToMessage(t *testing.T) {
 				Payload:       map[string]any{"ok": true},
 				DedupKey:      "inst-1:3:0",
 				InstanceID:    "inst-1",
-				DefinitionRef: "approval:2",
+				DefinitionRef: model.Version("approval", 2),
 			},
 			assert: func(t *testing.T, fp *fakePub, err error) {
 				require.NoError(t, err)

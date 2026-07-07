@@ -4,14 +4,16 @@
 // engine core directly.
 package service
 
-import "github.com/zakyalvan/krtlwrkflw/authz"
+import (
+	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
+)
 
 // StartInstanceRequest carries the parameters for starting a new process instance.
 type StartInstanceRequest struct {
-	// DefRef is the process-definition reference used to look up the definition
-	// in the registry. The registry keys are either "DefID:DefVersion" or a
-	// short alias registered by the consumer.
-	DefRef string
+	// DefRef is the process-definition reference (id, or id:version) used to look
+	// up the definition in the registry. A zero Version selects the latest.
+	DefRef model.Qualifier
 	// Vars is the initial set of process variables.
 	Vars map[string]any
 }
@@ -32,9 +34,10 @@ type DeliverSignalRequest struct {
 // correct instance by (Name, CorrelationKey) without needing the caller
 // to know which instance is waiting.
 type DeliverMessageRequest struct {
-	// DefRef is the process-definition reference; the definition is resolved
-	// via the registry before calling ProcessDriver.DeliverMessage.
-	DefRef string
+	// DefRef is the process-definition reference (id, or id:version); the
+	// definition is resolved via the registry before calling
+	// ProcessDriver.DeliverMessage. A zero Version selects the latest.
+	DefRef model.Qualifier
 	// Name is the message name.
 	Name string
 	// CorrelationKey is the value that routes the message to a specific instance.

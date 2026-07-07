@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
@@ -141,8 +142,8 @@ func TestLineageReader_Lineage(t *testing.T) {
 						PredecessorID:            "inst-pred",
 						SuccessorID:              "inst-A",
 						Outcome:                  kernel.OutcomeCompleted,
-						SuccessorDefinitionRef:   "def-A:1",
-						PredecessorDefinitionRef: "def-pred:1",
+						SuccessorDefinitionRef:   model.Version("def-A", 1),
+						PredecessorDefinitionRef: model.Version("def-pred", 1),
 						CreatedAt:                now,
 					}, nil
 				}
@@ -155,8 +156,8 @@ func TestLineageReader_Lineage(t *testing.T) {
 							PredecessorID:            "inst-A",
 							SuccessorID:              "inst-succ-1",
 							Outcome:                  kernel.OutcomeCompleted,
-							SuccessorDefinitionRef:   "def-succ:1",
-							PredecessorDefinitionRef: "def-A:1",
+							SuccessorDefinitionRef:   model.Version("def-succ", 1),
+							PredecessorDefinitionRef: model.Version("def-A", 1),
 							CreatedAt:                now,
 						},
 					}, nil
@@ -193,13 +194,13 @@ func TestLineageReader_Lineage(t *testing.T) {
 		// Chain predecessor.
 		require.NotNil(t, lin.ChainPredecessor)
 		assert.Equal(t, "inst-pred", lin.ChainPredecessor.InstanceID)
-		assert.Equal(t, "def-pred:1", lin.ChainPredecessor.DefinitionRef)
+		assert.Equal(t, model.Version("def-pred", 1), lin.ChainPredecessor.DefinitionRef)
 		assert.Equal(t, string(kernel.OutcomeCompleted), lin.ChainPredecessor.Outcome)
 
 		// Chain successors.
 		require.Len(t, lin.ChainSuccessors, 1)
 		assert.Equal(t, "inst-succ-1", lin.ChainSuccessors[0].InstanceID)
-		assert.Equal(t, "def-succ:1", lin.ChainSuccessors[0].DefinitionRef)
+		assert.Equal(t, model.Version("def-succ", 1), lin.ChainSuccessors[0].DefinitionRef)
 		assert.Equal(t, string(kernel.OutcomeCompleted), lin.ChainSuccessors[0].Outcome)
 	})
 

@@ -113,8 +113,8 @@ func (b *Builder) AddBusinessRuleTask(id string, opts ...activity.BusinessRuleOp
 func (b *Builder) AddSubProcess(id string, sub *model.ProcessDefinition, opts ...activity.ActivityOption) *Builder {
 	return b.Add(activity.NewSubProcess(id, sub, opts...))
 }
-func (b *Builder) AddCallActivity(id, defRef string, opts ...activity.ActivityOption) *Builder {
-	return b.Add(activity.NewCallActivity(id, defRef, opts...))
+func (b *Builder) AddCallActivity(id string, ref model.Qualifier, opts ...activity.ActivityOption) *Builder {
+	return b.Add(activity.NewCallActivity(id, ref, opts...))
 }
 
 // --- passthroughs to the underlying builder ---

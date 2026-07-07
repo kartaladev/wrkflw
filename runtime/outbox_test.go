@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -31,7 +32,7 @@ func TestTerminalOutboxEvent(t *testing.T) {
 					Topic:         "instance.completed",
 					Payload:       map[string]any{"ok": true},
 					InstanceID:    "i1",
-					DefinitionRef: "approval:2",
+					DefinitionRef: model.Version("approval", 2),
 				}}, got)
 			},
 		},
@@ -50,7 +51,7 @@ func TestTerminalOutboxEvent(t *testing.T) {
 					Topic:         "instance.failed",
 					Payload:       map[string]any{"error": "boom"},
 					InstanceID:    "i2",
-					DefinitionRef: "approval:1",
+					DefinitionRef: model.Version("approval", 1),
 				}}, got)
 			},
 		},
@@ -80,7 +81,7 @@ func TestTerminalOutboxEvent(t *testing.T) {
 					Topic:         "instance.terminated",
 					Payload:       map[string]any{"error": "instance terminated"},
 					InstanceID:    "i3",
-					DefinitionRef: "approval:1",
+					DefinitionRef: model.Version("approval", 1),
 				}}, got)
 			},
 		},
@@ -147,7 +148,7 @@ func TestOutboundMessageEvents(t *testing.T) {
 				require.Len(t, got, 1)
 				assert.Equal(t, "message.OrderPlaced", got[0].Topic)
 				assert.Equal(t, "i-1", got[0].InstanceID)
-				assert.Equal(t, "shipping:2", got[0].DefinitionRef)
+				assert.Equal(t, model.Version("shipping", 2), got[0].DefinitionRef)
 				assert.Equal(t, "OrderPlaced", got[0].Payload["messageName"])
 				assert.Equal(t, "ord-7", got[0].Payload["correlationKey"])
 				assert.Equal(t, map[string]any{"amount": 10}, got[0].Payload["variables"])

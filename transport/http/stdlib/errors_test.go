@@ -10,6 +10,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -225,7 +226,7 @@ func TestAdminRoutes_ListInstances_Total_1(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)

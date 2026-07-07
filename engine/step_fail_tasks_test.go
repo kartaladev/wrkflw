@@ -178,7 +178,7 @@ func TestSubInstanceFailureReconcilesOpenTasks(t *testing.T) {
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			activity.NewUserTask("user", []string{"r"}),
-			activity.NewCallActivity("call", "child"),
+			activity.NewCallActivity("call", model.Latest("child")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -220,7 +221,7 @@ func TestCloneStateDeepCopiesIncidents(t *testing.T) {
 func TestStartSubInstanceSatisfiesCommand(t *testing.T) {
 	cmd := engine.StartSubInstance{
 		CommandID: "cmd-1",
-		DefRef:    "sub-proc-def",
+		DefRef:    model.Latest("sub-proc-def"),
 		Input:     map[string]any{"key": "val"},
 	}
 
@@ -228,7 +229,7 @@ func TestStartSubInstanceSatisfiesCommand(t *testing.T) {
 	_ = c                      // suppress unused-var warning
 
 	assert.Equal(t, "cmd-1", cmd.CommandID)
-	assert.Equal(t, "sub-proc-def", cmd.DefRef)
+	assert.Equal(t, model.Latest("sub-proc-def"), cmd.DefRef)
 	assert.Equal(t, map[string]any{"key": "val"}, cmd.Input)
 }
 
@@ -237,11 +238,11 @@ func TestStartSubInstanceFieldsRoundTrip(t *testing.T) {
 	cases := []struct {
 		name      string
 		commandID string
-		defRef    string
+		defRef    model.Qualifier
 		input     map[string]any
 	}{
-		{"no-input", "c1", "def-A", nil},
-		{"with-input", "c2", "def-B", map[string]any{"x": 42, "y": "hello"}},
+		{"no-input", "c1", model.Latest("def-A"), nil},
+		{"with-input", "c2", model.Latest("def-B"), map[string]any{"x": 42, "y": "hello"}},
 	}
 	for _, tc := range cases {
 		tc := tc

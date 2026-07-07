@@ -106,7 +106,7 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 
 				// Build the service with an EMPTY registry so the definition cannot
 				// be resolved. GetInstance must NOT error — it returns a nil def.
-				emptyReg := kernel.NewMapDefinitionRegistry(nil)
+				emptyReg := kernel.NewMapDefinitionRegistry()
 				svc, err := service.NewEngine(
 					service.WithProcessDriver(h.runner),
 					service.WithInstanceStore(h.store),

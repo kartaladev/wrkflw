@@ -55,9 +55,7 @@ func seedTerminalLink(t *testing.T, cl *kernel.MemCallLinkStore, child, parent s
 // branch, then asserts the second drain does not redeliver already-notified links.
 func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"parent:1": minimalDef("parent"),
-	})
+	reg := kernel.NewMapDefinitionRegistry(minimalDef("parent"))
 
 	seedTerminalLink(t, cl, "c-ok", "p-ok", true)
 	seedTerminalLink(t, cl, "c-fail", "p-fail", false)
@@ -107,9 +105,7 @@ func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 // drain has already returned, so the late delivery must come from the ticker.
 func TestCallNotifierRunRedrainsOnTick(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"parent:1": minimalDef("parent"),
-	})
+	reg := kernel.NewMapDefinitionRegistry(minimalDef("parent"))
 
 	var delivered atomic.Int64
 	deliver := func(context.Context, *model.ProcessDefinition, string, engine.Trigger) error {

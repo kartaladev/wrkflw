@@ -270,8 +270,8 @@ func NewSQLiteCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg ker
 }
 
 // NewSQLiteDefinitionStore constructs the durable SQLite-backed definition store.
-// It satisfies kernel.DefinitionRegistry via its Lookup method, which resolves
-// a DefRef of the form "defID:version" (exact match) or "defID" (latest version).
+// It satisfies kernel.DefinitionRegistry via its Lookup method, which accepts a
+// model.Qualifier: Latest(id) returns the highest version; Version(id,v) is exact.
 //
 // Use this together with [NewCachingDefinitionRegistry] to cache hot definitions.
 // It returns the same [DefinitionStore] interface as [NewMySQLDefinitionStore] and

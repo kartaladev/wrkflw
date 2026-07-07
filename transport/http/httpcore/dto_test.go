@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
 )
 
@@ -13,7 +14,7 @@ func TestStartInputJSONTags(t *testing.T) {
 	if err := json.Unmarshal([]byte(in), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.DefRef != "order" || got.Vars["amount"].(float64) != 42 {
+	if got.DefRef != model.Latest("order") || got.Vars["amount"].(float64) != 42 {
 		t.Fatalf("wire tags mismatch: %+v", got)
 	}
 }
@@ -35,7 +36,7 @@ func TestMessageInputJSONTags(t *testing.T) {
 	if err := json.Unmarshal([]byte(in), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.DefRef != "order" || got.Name != "payment" || got.CorrelationKey != "ord-1" {
+	if got.DefRef != model.Latest("order") || got.Name != "payment" || got.CorrelationKey != "ord-1" {
 		t.Fatalf("wire tags mismatch: %+v", got)
 	}
 }

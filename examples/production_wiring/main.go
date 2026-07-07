@@ -42,7 +42,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
@@ -154,10 +153,7 @@ func run(logger *slog.Logger) error {
 			return map[string]any{"charged": true}, nil
 		}),
 	})
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"order":   def,
-		"order:1": def,
-	})
+	reg := kernel.NewMapDefinitionRegistry(def)
 
 	// --- Engine + human-task plumbing + Service facade ---
 	taskStore := humantask.NewMemTaskStore()

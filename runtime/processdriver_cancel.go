@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
@@ -60,13 +59,13 @@ func (r *ProcessDriver) propagateCancel(ctx context.Context, parentID string, vi
 			continue
 		}
 
-		ref := fmt.Sprintf("%s:%d", childSt.DefID, childSt.DefVersion)
-		childDef, lookupErr := r.defsReg.Lookup(ctx, ref)
+		childQ := model.Version(childSt.DefID, childSt.DefVersion)
+		childDef, lookupErr := r.defsReg.Lookup(ctx, childQ)
 		if lookupErr != nil {
 			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
 				"runtime: propagateCancel: child def not found",
 				slog.String("child_id", child.ChildInstanceID),
-				slog.String("def_ref", ref),
+				slog.String("def_ref", childQ.String()),
 				slog.String("error", lookupErr.Error()),
 			)
 			continue

@@ -10,6 +10,7 @@ import (
 
 	ginlib "github.com/gin-gonic/gin"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -108,7 +109,7 @@ func TestInstanceRoutes_Signal_BadJSON(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)

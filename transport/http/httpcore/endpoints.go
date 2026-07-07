@@ -2,6 +2,7 @@ package httpcore
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
@@ -24,6 +25,12 @@ func mapInstance(mapper func(engine.InstanceState) any, st engine.InstanceState)
 func StartInstance(ctx context.Context, svc service.Service, in StartInput, mapper func(engine.InstanceState) any) (int, any, error) {
 	if err := Validate(&in); err != nil {
 		return 0, nil, err
+	}
+	// validate:"required" does not reject a zero Qualifier struct (it is not a
+	// zero scalar), so def_ref presence is enforced explicitly to preserve the
+	// "missing def_ref → 400" behavior.
+	if in.DefRef.ID == "" {
+		return 0, nil, fmt.Errorf("%w: def_ref is required", ErrBadInput)
 	}
 	pi, err := svc.StartInstance(ctx, service.StartInstanceRequest{
 		DefRef: in.DefRef,
@@ -93,6 +100,11 @@ func DeliverSignal(ctx context.Context, svc service.Service, id string, in Signa
 func DeliverMessage(ctx context.Context, svc service.Service, in MessageInput) (int, any, error) {
 	if err := Validate(&in); err != nil {
 		return 0, nil, err
+	}
+	// See StartInstance: a zero Qualifier passes validate:"required", so enforce
+	// def_ref presence explicitly for the "missing def_ref → 400" behavior.
+	if in.DefRef.ID == "" {
+		return 0, nil, fmt.Errorf("%w: def_ref is required", ErrBadInput)
 	}
 	if err := svc.DeliverMessage(ctx, service.DeliverMessageRequest{
 		DefRef:         in.DefRef,

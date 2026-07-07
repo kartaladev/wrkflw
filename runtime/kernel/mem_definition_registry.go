@@ -20,7 +20,7 @@ var ErrNilDefinition = errors.New("workflow-runtime: nil definition")
 var ErrEmptyDefinitionID = errors.New("workflow-runtime: empty definition ID")
 
 // ErrDefinitionExists is returned by MemDefinitionRegistry.Register when a
-// definition with the same "<ID>:<Version>" key has already been registered
+// definition with the same Qualifier (ID+Version) key has already been registered
 // (first-registration-wins on the versioned key).
 var ErrDefinitionExists = errors.New("workflow-runtime: definition already registered")
 
@@ -32,9 +32,9 @@ var ErrDefinitionExists = errors.New("workflow-runtime: definition already regis
 // (e.g. the process-global default populated at application init).
 //
 // Register indexes each definition under two keys:
-//   - "<ID>:<Version>"  — exact versioned key; first-registration-wins.
-//   - "<ID>"            — bare ID key; overwritten to the most-recently-registered
-//     version so a DefRef without a version always resolves the latest registered.
+//   - def.Qualifier()     — exact versioned key; first-registration-wins.
+//   - model.Latest(def.ID) — latest key; overwritten to the most-recently-registered
+//     version so a Latest Qualifier always resolves the newest registered version.
 //
 // # Concurrency
 //
@@ -42,24 +42,26 @@ var ErrDefinitionExists = errors.New("workflow-runtime: definition already regis
 // after first use — it contains a sync.RWMutex that must not be copied.
 type MemDefinitionRegistry struct {
 	mu sync.RWMutex
-	m  map[string]*model.ProcessDefinition
+	m  map[model.Qualifier]*model.ProcessDefinition
 }
 
 // NewMemDefinitionRegistry returns an empty, ready-to-use MemDefinitionRegistry.
 func NewMemDefinitionRegistry() *MemDefinitionRegistry {
 	return &MemDefinitionRegistry{
-		m: make(map[string]*model.ProcessDefinition),
+		m: make(map[model.Qualifier]*model.ProcessDefinition),
 	}
 }
 
-// Register indexes def under both "<ID>" and "<ID>:<Version>". It returns:
+// Register indexes def under both its pinned Qualifier and its latest Qualifier.
+// It returns:
 //   - [ErrNilDefinition] if def is nil.
 //   - [ErrEmptyDefinitionID] if def.ID is empty.
-//   - [ErrDefinitionExists] (wrapped with the versioned key) if "<ID>:<Version>"
-//     was already registered (first-registration-wins on the versioned key).
+//   - [ErrDefinitionExists] (wrapped with the pinned key) if the exact
+//     Qualifier was already registered (first-registration-wins on the
+//     versioned key).
 //
-// On success the bare "<ID>" key is overwritten to point at def, so subsequent
-// Lookup calls without a version resolve the most-recently-registered version.
+// On success the latest key is overwritten to point at def, so subsequent
+// Lookup calls with a Latest Qualifier resolve the most-recently-registered version.
 func (r *MemDefinitionRegistry) Register(def *model.ProcessDefinition) error {
 	if def == nil {
 		return ErrNilDefinition
@@ -68,17 +70,20 @@ func (r *MemDefinitionRegistry) Register(def *model.ProcessDefinition) error {
 		return ErrEmptyDefinitionID
 	}
 
-	versionedKey := fmt.Sprintf("%s:%d", def.ID, def.Version)
+	pinned := def.Qualifier()
+	latest := model.Latest(def.ID)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.m[versionedKey]; exists {
-		return fmt.Errorf("%w: %q", ErrDefinitionExists, versionedKey)
+	if _, exists := r.m[pinned]; exists {
+		return fmt.Errorf("%w: %q", ErrDefinitionExists, pinned)
 	}
 
-	r.m[versionedKey] = def
-	r.m[def.ID] = def // overwrite bare key to track latest registered version
+	r.m[pinned] = def
+	// Last-registered-wins for the latest key (NOT highest-version);
+	// MapDefinitionRegistry keeps the highest version instead.
+	r.m[latest] = def
 
 	return nil
 }
@@ -92,19 +97,19 @@ func (r *MemDefinitionRegistry) MustRegister(def *model.ProcessDefinition) {
 }
 
 // Lookup implements [DefinitionRegistry]. It returns the ProcessDefinition
-// registered under defRef, or ([ErrDefinitionNotFound], nil) when no definition
+// registered under q, or ([ErrDefinitionNotFound], nil) when no definition
 // matches. ctx is ignored — the lookup is entirely in-memory.
 //
-// defRef may be in either form:
-//   - "<ID>"            — resolves the most-recently-registered version.
-//   - "<ID>:<Version>"  — resolves the exact versioned registration.
-func (r *MemDefinitionRegistry) Lookup(_ context.Context, defRef string) (*model.ProcessDefinition, error) {
+// q may be either:
+//   - model.Latest(id)        — resolves the most-recently-registered version.
+//   - model.Version(id, v)    — resolves the exact versioned registration.
+func (r *MemDefinitionRegistry) Lookup(_ context.Context, q model.Qualifier) (*model.ProcessDefinition, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	def, ok := r.m[defRef]
+	def, ok := r.m[q]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrDefinitionNotFound, defRef)
+		return nil, fmt.Errorf("%w: %q", ErrDefinitionNotFound, q)
 	}
 	return def, nil
 }

@@ -293,7 +293,7 @@ func (e *Engine) GetInstance(ctx context.Context, instanceID string) (ProcessIns
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: get instance: %w", err)
 	}
-	def, _ := e.reg.Lookup(ctx, fmt.Sprintf("%s:%d", st.DefID, st.DefVersion))
+	def, _ := e.reg.Lookup(ctx, model.Version(st.DefID, st.DefVersion))
 	return NewProcessInstance(def, st), nil
 }
 
@@ -419,8 +419,7 @@ func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*mod
 	if err != nil {
 		return nil, engine.InstanceState{}, err
 	}
-	defRef := fmt.Sprintf("%s:%d", st.DefID, st.DefVersion)
-	def, err := e.reg.Lookup(ctx, defRef)
+	def, err := e.reg.Lookup(ctx, model.Version(st.DefID, st.DefVersion))
 	if err != nil {
 		return nil, engine.InstanceState{}, err
 	}

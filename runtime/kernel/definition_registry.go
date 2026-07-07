@@ -9,18 +9,17 @@ import (
 )
 
 // ErrDefinitionNotFound is returned by DefinitionRegistry.Lookup when no
-// definition is registered for the given DefRef.
+// definition is registered for the given Qualifier.
 var ErrDefinitionNotFound = errors.New("workflow-runtime: definition not found in registry")
 
-// DefinitionRegistry resolves a DefRef string (as stored on a KindCallActivity
-// node) to a *model.ProcessDefinition. Implementations must be safe for
-// concurrent read access by multiple goroutines.
+// DefinitionRegistry resolves a [model.Qualifier] to a *model.ProcessDefinition.
+// Implementations must be safe for concurrent read access by multiple goroutines.
 //
-// Contract: Lookup returns (nil, ErrDefinitionNotFound) when the DefRef is not
+// Contract: Lookup returns (nil, ErrDefinitionNotFound) when the Qualifier is not
 // registered. Any other error indicates a transient or structural problem and
 // the caller should propagate it.
 type DefinitionRegistry interface {
-	Lookup(ctx context.Context, defRef string) (*model.ProcessDefinition, error)
+	Lookup(ctx context.Context, q model.Qualifier) (*model.ProcessDefinition, error)
 }
 
 // MapDefinitionRegistry is an immutable-after-construction, in-memory
@@ -28,31 +27,33 @@ type DefinitionRegistry interface {
 //
 // Construct via NewMapDefinitionRegistry; do not use the zero value.
 type MapDefinitionRegistry struct {
-	m map[string]*model.ProcessDefinition
+	m map[model.Qualifier]*model.ProcessDefinition
 }
 
-// NewMapDefinitionRegistry constructs a MapDefinitionRegistry from the
-// supplied map. The map is shallow-copied at construction time so subsequent
-// mutations to the caller's map do not affect the registry.
-//
-// Keys are the DefRef strings referenced by KindCallActivity nodes; values are
-// the corresponding process definitions. Nil definitions are ignored (skipped).
-func NewMapDefinitionRegistry(defs map[string]*model.ProcessDefinition) *MapDefinitionRegistry {
-	m := make(map[string]*model.ProcessDefinition, len(defs))
-	for k, v := range defs {
-		if v != nil {
-			m[k] = v
+// NewMapDefinitionRegistry indexes each non-nil definition under both its pinned
+// Qualifier (def.Qualifier()) and its latest Qualifier (Latest(def.ID)); the
+// latest key resolves to the highest version seen.
+func NewMapDefinitionRegistry(defs ...*model.ProcessDefinition) *MapDefinitionRegistry {
+	m := make(map[model.Qualifier]*model.ProcessDefinition, len(defs)*2)
+	for _, d := range defs {
+		if d == nil {
+			continue
+		}
+		m[d.Qualifier()] = d
+		latest := model.Latest(d.ID)
+		if cur, ok := m[latest]; !ok || d.Version >= cur.Version {
+			m[latest] = d
 		}
 	}
 	return &MapDefinitionRegistry{m: m}
 }
 
-// Lookup returns the ProcessDefinition registered under defRef, or
+// Lookup returns the ProcessDefinition registered under q, or
 // ErrDefinitionNotFound if none is registered. ctx is ignored — in-memory lookup.
-func (r *MapDefinitionRegistry) Lookup(_ context.Context, defRef string) (*model.ProcessDefinition, error) {
-	def, ok := r.m[defRef]
+func (r *MapDefinitionRegistry) Lookup(_ context.Context, q model.Qualifier) (*model.ProcessDefinition, error) {
+	def, ok := r.m[q]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrDefinitionNotFound, defRef)
+		return nil, fmt.Errorf("%w: %q", ErrDefinitionNotFound, q)
 	}
 	return def, nil
 }

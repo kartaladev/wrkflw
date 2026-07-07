@@ -50,7 +50,7 @@ func asyncParentDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "async-child"),
+			activity.NewCallActivity("call", model.Latest("async-child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -71,9 +71,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 	child := asyncChildDef()
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"async-child": child,
-	})
+	reg := kernel.NewMapDefinitionRegistry(child)
 
 	// Wire human tasks so the child can reach AwaitHuman (parks there, StatusRunning).
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
@@ -155,7 +153,7 @@ func asyncImmediateParentDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "async-imm-child"),
+			activity.NewCallActivity("call", model.Latest("async-imm-child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -192,7 +190,7 @@ func asyncFailingParentDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "async-fail-child"),
+			activity.NewCallActivity("call", model.Latest("async-fail-child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -242,9 +240,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 
 		child := asyncImmediateChildDef()
 		parent := asyncImmediateParentDef()
-		reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-			"async-imm-child": child,
-		})
+		reg := kernel.NewMapDefinitionRegistry(child)
 
 		runner := runtimetest.MustRunner(t, cat, store,
 			runtime.WithCallLinkStore(cl),
@@ -283,9 +279,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 
 		child := asyncFailingChildDef()
 		parent := asyncFailingParentDef()
-		reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-			"async-fail-child": child,
-		})
+		reg := kernel.NewMapDefinitionRegistry(child)
 
 		runner := runtimetest.MustRunner(t, cat, store,
 			runtime.WithCallLinkStore(cl),

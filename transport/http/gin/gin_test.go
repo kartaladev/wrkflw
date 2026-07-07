@@ -15,6 +15,7 @@ import (
 
 	ginlib "github.com/gin-gonic/gin"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
@@ -154,7 +155,7 @@ func TestInstanceRoutes_GetInstance_200(t *testing.T) {
 
 	// Seed instance.
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
@@ -186,7 +187,7 @@ func TestInstanceRoutes_GetInstanceSnapshot_200(t *testing.T) {
 	srv, svc := newSrv(t)
 
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
@@ -209,7 +210,7 @@ func TestInstanceRoutes_GetActionableView_200(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "approval",
+		DefRef: model.Latest("approval"),
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
@@ -232,7 +233,7 @@ func TestInstanceRoutes_DeliverSignal_200(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "signal-catch-approved",
+		DefRef: model.Latest("signal-catch-approved"),
 	})
 	if err != nil {
 		t.Fatalf("StartInstance: %v", err)
@@ -257,7 +258,7 @@ func TestInstanceRoutes_PathParam(t *testing.T) {
 	var ids []string
 	for range 2 {
 		pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-			DefRef: "greeting", Vars: map[string]any{"name": "x"},
+			DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 		})
 		if err != nil {
 			t.Fatalf("StartInstance: %v", err)
@@ -364,7 +365,7 @@ func TestMessageRoutes_DeliverMessage_202(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "message-catch-order-shipped",
+		DefRef: model.Latest("message-catch-order-shipped"),
 		Vars:   map[string]any{"orderId": "42"},
 	})
 	if err != nil {

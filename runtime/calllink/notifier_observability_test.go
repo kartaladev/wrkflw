@@ -30,9 +30,7 @@ func newTracingCallNotifier(t *testing.T) (*calllink.CallNotifier, *tracetest.Sp
 	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"batch-span-parent:1": {ID: "batch-span-parent", Version: 1},
-	})
+	reg := kernel.NewMapDefinitionRegistry(&model.ProcessDefinition{ID: "batch-span-parent", Version: 1})
 
 	n := runtimetest.MustCallNotifier(t, cl, deliver, reg,
 		calllink.WithCallNotifierTracerProvider(tp),
@@ -65,9 +63,7 @@ func TestCallNotifierBatchSpan(t *testing.T) {
 	tp2 := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr2))
 
 	parentDef := &model.ProcessDefinition{ID: "batch-span-parent", Version: 1}
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"batch-span-parent:1": parentDef,
-	})
+	reg := kernel.NewMapDefinitionRegistry(parentDef)
 	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
@@ -122,9 +118,7 @@ func TestCallNotifierLinksNotifiedCounter(t *testing.T) {
 	}
 
 	parentDef := &model.ProcessDefinition{ID: "counter-parent", Version: 1}
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{
-		"counter-parent:1": parentDef,
-	})
+	reg := kernel.NewMapDefinitionRegistry(parentDef)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -199,7 +193,7 @@ func TestCallNotifierTelemetryOptionsAdditive(t *testing.T) {
 	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
 		return nil
 	})
-	reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{})
+	reg := kernel.NewMapDefinitionRegistry()
 
 	// All existing callers pass no telemetry options — must compile and not panic.
 	n := runtimetest.MustCallNotifier(t, cl, deliver, reg)

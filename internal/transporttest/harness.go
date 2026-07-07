@@ -8,7 +8,6 @@ package transporttest
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/jonboulle/clockwork"
@@ -79,13 +78,9 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 	)
 	require.NoError(t, err)
 
-	// Build definition map: register both short ("id") and versioned ("id:version") keys.
-	defsMap := make(map[string]*model.ProcessDefinition, len(defs)*2)
-	for _, d := range defs {
-		defsMap[d.ID] = d
-		defsMap[fmt.Sprintf("%s:%d", d.ID, d.Version)] = d
-	}
-	reg := kernel.NewMapDefinitionRegistry(defsMap)
+	// NewMapDefinitionRegistry indexes each definition under both its short ("id")
+	// and versioned ("id:version") keys internally.
+	reg := kernel.NewMapDefinitionRegistry(defs...)
 
 	svc, err := service.NewEngine(
 		service.WithProcessDriver(runner),

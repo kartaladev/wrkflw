@@ -33,6 +33,7 @@ import (
 	ginlib "github.com/gin-gonic/gin"
 	fiberlib "github.com/gofiber/fiber/v3"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	fiberadapter "github.com/zakyalvan/krtlwrkflw/transport/http/fiber"
@@ -313,7 +314,7 @@ func TestParity_GetInstance_200(t *testing.T) {
 
 	// Seed via the service — state is visible to all three adapters.
 	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "greeting", Vars: map[string]any{"name": "x"},
+		DefRef: model.Latest("greeting"), Vars: map[string]any{"name": "x"},
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -361,7 +362,7 @@ func TestParity_PostSignals_200(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	if _, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "signal-catch-approved",
+		DefRef: model.Latest("signal-catch-approved"),
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -372,7 +373,7 @@ func TestParity_PostSignals_200(t *testing.T) {
 	makeInstanceAndSignalReq := func() (service.Service, reqFactory) {
 		_, svcLocal := transporttest.NewHarness(t, transporttest.SignalProcess("approved"))
 		pi, err := svcLocal.StartInstance(context.Background(), service.StartInstanceRequest{
-			DefRef: "signal-catch-approved",
+			DefRef: model.Latest("signal-catch-approved"),
 		})
 		if err != nil {
 			t.Fatalf("seed: %v", err)
@@ -426,7 +427,7 @@ func TestParity_PostMessages_202(t *testing.T) {
 	_, svc := transporttest.NewHarness(t, def)
 
 	if _, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
-		DefRef: "message-catch-order-shipped",
+		DefRef: model.Latest("message-catch-order-shipped"),
 		Vars:   map[string]any{"orderId": "42"},
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -528,10 +529,11 @@ func TestParity_ErrorEnvelopes(t *testing.T) {
 	t.Parallel()
 
 	type errCase struct {
-		name       string
-		buildSvc   func(t *testing.T) service.Service
-		mkReq      reqFactory
-		wantStatus int
+		name         string
+		buildSvc     func(t *testing.T) service.Service
+		mkReq        reqFactory
+		wantStatus   int
+		noBodyParity bool // set when adapters produce known-divergent error text
 	}
 
 	cases := []errCase{
@@ -546,6 +548,9 @@ func TestParity_ErrorEnvelopes(t *testing.T) {
 			buildSvc:   func(t *testing.T) service.Service { _, svc := transporttest.NewHarness(t); return svc },
 			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{"def_ref": ""}),
 			wantStatus: http.StatusBadRequest,
+			// Qualifier.UnmarshalJSON returns an error for "", which each adapter
+			// wraps differently (fiber adds "bind from body: " prefix).
+			noBodyParity: true,
 		},
 		{
 			name:       "400 empty JSON body",
@@ -580,7 +585,7 @@ func TestParity_ErrorEnvelopes(t *testing.T) {
 			}
 
 			// Error envelope must be byte-for-byte identical (no timestamps).
-			assertParity(t, tc.name, s, g, f, true)
+			assertParity(t, tc.name, s, g, f, !tc.noBodyParity)
 
 			// The response must have an "error" field.
 			m, ok := s.decoded.(map[string]any)

@@ -411,7 +411,7 @@ func newLineageView(l kernel.InstanceLineage) lineageView {
 	if l.ChainPredecessor != nil {
 		r := lineageChainRefView{
 			InstanceID:    l.ChainPredecessor.InstanceID,
-			DefinitionRef: l.ChainPredecessor.DefinitionRef,
+			DefinitionRef: l.ChainPredecessor.DefinitionRef.String(),
 			Outcome:       l.ChainPredecessor.Outcome,
 		}
 		v.ChainPredecessor = &r
@@ -419,7 +419,7 @@ func newLineageView(l kernel.InstanceLineage) lineageView {
 	for i, s := range l.ChainSuccessors {
 		v.ChainSuccessors[i] = lineageChainRefView{
 			InstanceID:    s.InstanceID,
-			DefinitionRef: s.DefinitionRef,
+			DefinitionRef: s.DefinitionRef.String(),
 			Outcome:       s.Outcome,
 		}
 	}

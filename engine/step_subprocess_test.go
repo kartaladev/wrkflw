@@ -897,7 +897,7 @@ func callActivityDef() *model.ProcessDefinition {
 		ID: "parent", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("parent-start"),
-			activity.NewCallActivity("call", "child"),
+			activity.NewCallActivity("call", model.Latest("child")),
 			event.NewEnd("parent-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -926,7 +926,7 @@ func TestCallActivityEmitsStartSubInstanceAndParks(t *testing.T) {
 	require.Len(t, r1.Commands, 1, "expected exactly one command after start (StartSubInstance)")
 	ssi, ok := r1.Commands[0].(engine.StartSubInstance)
 	require.True(t, ok, "expected StartSubInstance, got %T", r1.Commands[0])
-	assert.Equal(t, "child", ssi.DefRef)
+	assert.Equal(t, model.Latest("child"), ssi.DefRef)
 	assert.NotEmpty(t, ssi.CommandID, "StartSubInstance.CommandID must be non-empty")
 
 	// Input must be a copy of the parent variables.
@@ -1029,7 +1029,7 @@ func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
 			event.NewStart("p-start"),
 			gateway.NewParallel("p-fork"),
 			activity.NewUserTask("p-user", nil, activity.WithDeadline(`"1h"`, "", "")),
-			activity.NewCallActivity("p-call", "child"),
+			activity.NewCallActivity("p-call", model.Latest("child")),
 			gateway.NewParallel("p-join"),
 			event.NewEnd("p-end"),
 		},

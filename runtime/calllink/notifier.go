@@ -186,8 +186,7 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 	for _, p := range pending {
 		// Resolve the parent definition. Failure is a skip: a transient lookup
 		// failure must not permanently block delivery; a later drain retries.
-		defRef := fmt.Sprintf("%s:%d", p.Link.ParentDefID, p.Link.ParentDefVersion)
-		parentDef, lookupErr := n.reg.Lookup(ctx, defRef)
+		parentDef, lookupErr := n.reg.Lookup(ctx, model.Version(p.Link.ParentDefID, p.Link.ParentDefVersion))
 		if lookupErr != nil {
 			continue
 		}

@@ -185,7 +185,7 @@ func TestSubProcessConstructor(t *testing.T) {
 }
 
 func TestCallActivityConstructor(t *testing.T) {
-	n := activity.NewCallActivity("ca", "external-v2")
+	n := activity.NewCallActivity("ca", model.Latest("external-v2"))
 	if n.Kind() != model.KindCallActivity {
 		t.Fatalf("Kind() = %v, want KindCallActivity", n.Kind())
 	}
@@ -193,8 +193,8 @@ func TestCallActivityConstructor(t *testing.T) {
 	if !ok {
 		t.Fatalf("node is %T, want activity.CallActivity", n)
 	}
-	if ca.DefRef != "external-v2" {
-		t.Fatalf("DefRef = %q", ca.DefRef)
+	if ca.DefRef != model.Latest("external-v2") {
+		t.Fatalf("DefRef = %v", ca.DefRef)
 	}
 }
 

@@ -58,6 +58,9 @@ type ProcessDefinition struct {
 	scopedNames []string
 }
 
+// Qualifier returns a Qualifier pinned to this definition's exact ID and Version.
+func (d *ProcessDefinition) Qualifier() Qualifier { return Qualifier{ID: d.ID, Version: d.Version} }
+
 // ScopedCatalog returns the definition-scoped action catalog, or nil when the
 // definition registered no scoped actions.
 func (d *ProcessDefinition) ScopedCatalog() action.Catalog { return d.scoped }
