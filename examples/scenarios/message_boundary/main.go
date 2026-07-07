@@ -116,7 +116,7 @@ func main() {
 	fmt.Println("--- Order Approval: Message Boundary Events ---")
 
 	// 1) Run parks at the user task; both message boundaries arm.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}

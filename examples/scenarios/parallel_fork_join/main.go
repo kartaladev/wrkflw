@@ -75,7 +75,7 @@ func main() {
 	}
 
 	fmt.Println("--- Order Fulfillment: Parallel Fork/Join ---")
-	state, err := r.Run(ctx, def, "order-001", map[string]any{"order_id": "ORD-001"})
+	state, err := r.Drive(ctx, def, "order-001", map[string]any{"order_id": "ORD-001"})
 	if err != nil {
 		log.Fatal("run:", err)
 	}

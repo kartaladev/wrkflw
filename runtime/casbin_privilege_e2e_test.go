@@ -70,7 +70,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	)
 
 	def := financePrivilegeDef()
-	parked, runErr := r.Run(ctx, def, "finance-allow-001", nil)
+	parked, runErr := r.Drive(ctx, def, "finance-allow-001", nil)
 	require.NoError(t, runErr)
 
 	// The task token is in the parked token's AwaitCommand.
@@ -109,7 +109,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	)
 
 	def := financePrivilegeDef()
-	parked, runErr := r.Run(ctx, def, "finance-deny-001", nil)
+	parked, runErr := r.Drive(ctx, def, "finance-deny-001", nil)
 	require.NoError(t, runErr)
 	require.Len(t, parked.Tokens, 1)
 	taskToken := parked.Tokens[0].AwaitCommand

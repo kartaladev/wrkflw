@@ -52,10 +52,10 @@ type SuccessorDecision struct {
 type SuccessorPolicy func(ctx context.Context, ev ChainEvent) (SuccessorDecision, bool)
 
 // InstanceStarter is the minimal seam the Chainer core needs to start a
-// successor. *ProcessDriver satisfies it (Run). Kept narrow so the core is
+// successor. *ProcessDriver satisfies it (Drive). Kept narrow so the core is
 // unit-testable without a full ProcessDriver.
 type InstanceStarter interface {
-	Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error)
+	Drive(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error)
 }
 
 // Chainer is the broker-agnostic process-instance chaining core (ADR-0045). It
@@ -205,7 +205,7 @@ func (c *Chainer) Handle(ctx context.Context, ev ChainEvent) error {
 		}
 	}
 
-	switch _, err := c.starter.Run(ctx, dec.Def, id, dec.Vars); {
+	switch _, err := c.starter.Drive(ctx, dec.Def, id, dec.Vars); {
 	case errors.Is(err, kernel.ErrInstanceExists):
 		c.tel.Logger.DebugContext(ctx, "chain: successor already started; skipping",
 			slog.String("successor_id", id))

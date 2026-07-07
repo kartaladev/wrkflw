@@ -181,7 +181,7 @@ func MessageProcess(msgName string) *model.ProcessDefinition {
 func StartedApprovalInstance(t testing.TB, h *Harness, instanceID string) (taskToken string) {
 	t.Helper()
 	def := ApprovalProcess()
-	st, err := h.Runner.Run(context.Background(), def, instanceID, nil)
+	st, err := h.Runner.Drive(context.Background(), def, instanceID, nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, st.Status, "approval instance must park at user task")
 	require.NotEmpty(t, st.Tokens, "approval instance must have at least one parked token")

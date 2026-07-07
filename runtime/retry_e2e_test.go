@@ -90,7 +90,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	const instanceID = "p"
 
 	// --- Step 1: Run → attempt 1 fails → parks on retry timer at T+1s ---
-	st, err := runner.Run(ctx, def, instanceID, nil)
+	st, err := runner.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err, "Run must not return a hard error")
 	assert.Equal(t, engine.StatusRunning, st.Status,
 		"instance must be parked (StatusRunning) after first failure — retry timer scheduled")

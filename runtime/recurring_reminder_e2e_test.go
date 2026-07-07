@@ -63,7 +63,7 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 	const instanceID = "rem-1"
 
 	// --- Run: parks at the user task with the recurring reminder armed. ---
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 

@@ -339,7 +339,7 @@ func run(logger *slog.Logger) error {
 	predID := "demo-pred"
 	startVars := map[string]any{"source": "chaining-wiring-demo", "backend": *dbKind}
 
-	st, err := runner.Run(ctx, defPA, predID, startVars)
+	st, err := runner.Drive(ctx, defPA, predID, startVars)
 	if err != nil {
 		return fmt.Errorf("run predecessor: %w", err)
 	}

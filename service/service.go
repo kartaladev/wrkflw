@@ -309,7 +309,7 @@ func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (P
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: generate id: %w", err)
 	}
-	st, err := e.runner.Run(ctx, def, id, req.Vars)
+	st, err := e.runner.Drive(ctx, def, id, req.Vars)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: run: %w", err)
 	}

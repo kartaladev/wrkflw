@@ -139,7 +139,7 @@ func main() {
 	fmt.Println("--- Review Escalation: Activity Deadline (WithDeadline) ---")
 
 	// Run parks at the user task; the deadline timer is armed.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}

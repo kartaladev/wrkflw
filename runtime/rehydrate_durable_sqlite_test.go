@@ -54,7 +54,7 @@ func TestRehydrateTimersDurableSQLite(t *testing.T) {
 		r := runtimetest.MustRunner(t, cat, sqlStore,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(timerStore), runtime.WithDefinitions(reg))
-		_, err := r.Run(t.Context(), def, "rh-sqlite-1", nil)
+		_, err := r.Drive(t.Context(), def, "rh-sqlite-1", nil)
 		require.NoError(t, err)
 	}
 

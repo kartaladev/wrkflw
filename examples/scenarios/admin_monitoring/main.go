@@ -144,7 +144,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.InstanceSto
 
 	ids := []string{"greet-001", "greet-002", "greet-003"}
 	for _, id := range ids {
-		st, err := runner.Run(ctx, def, id, nil)
+		st, err := runner.Drive(ctx, def, id, nil)
 		if err != nil {
 			return fmt.Errorf("run %s: %w", id, err)
 		}
@@ -236,7 +236,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 	}
 
 	instanceID := "incident-inst-001"
-	parked, err := runner.Run(ctx, def, instanceID, nil)
+	parked, err := runner.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
@@ -314,7 +314,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Instanc
 		return fmt.Errorf("build runner: %w", err)
 	}
 
-	st, err := runner.Run(ctx, def, "dl-inst-001", nil)
+	st, err := runner.Drive(ctx, def, "dl-inst-001", nil)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}

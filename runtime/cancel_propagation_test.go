@@ -119,7 +119,7 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 	runner := cancelPropRunner(t, store, cl, childDef, parentDef)
 
 	const parentID = "prop-parent-i1"
-	st, err := runner.Run(ctx, parentDef, parentID, nil)
+	st, err := runner.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running (parked) after Run")
 
@@ -157,7 +157,7 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	runner := cancelPropRunner(t, store, cl, grandchildDef, childDef, parentDef)
 
 	const parentID = "prop-parent-gc-i1"
-	st, err := runner.Run(ctx, parentDef, parentID, nil)
+	st, err := runner.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running (parked)")
 
@@ -218,7 +218,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	)
 
 	const parentID = "prop-missing-p1"
-	st, err := fullRunner.Run(ctx, parentDef, parentID, nil)
+	st, err := fullRunner.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status)
 
@@ -280,18 +280,18 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	)
 
 	// Run parent-ab-i1 → spawns list-child-a child (childID = "list-parent-ab-i1-sub-c1").
-	_, err := runner.Run(ctx, parentAB, "list-parent-ab-i1", nil)
+	_, err := runner.Drive(ctx, parentAB, "list-parent-ab-i1", nil)
 	require.NoError(t, err)
 
 	// Run parent-ab-i2 → spawns list-child-a child (different parent-ab instance).
 	// Build a second parent that calls list-child-b so we have two distinct children
 	// under "list-parent-ab" concept — but we only have one call node per def.
 	// Instead: run two instances of parentAB with different IDs.
-	_, err = runner.Run(ctx, parentAB, "list-parent-ab-i2", nil)
+	_, err = runner.Drive(ctx, parentAB, "list-parent-ab-i2", nil)
 	require.NoError(t, err)
 
 	// Run parent-c → spawns list-child-c child (different parent instance, should NOT appear).
-	_, err = runner.Run(ctx, parentC, "list-parent-c-i1", nil)
+	_, err = runner.Drive(ctx, parentC, "list-parent-c-i1", nil)
 	require.NoError(t, err)
 
 	// List running children of "list-parent-ab-i1" — expect only 1 child.
@@ -364,7 +364,7 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 	)
 
 	const parentID = "no-cl-parent-i1"
-	st, err := runner.Run(ctx, parentDef, parentID, nil)
+	st, err := runner.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must park at human task")
 
@@ -388,7 +388,7 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 	runner := cancelPropRunner(t, store, cl, childDef, parentDef)
 
 	const parentID = "ctx-parent-i1"
-	_, err := runner.Run(ctx, parentDef, parentID, nil)
+	_, err := runner.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 
 	type myKey struct{}
@@ -414,7 +414,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	fullRunner := cancelPropRunner(t, store, cl, childDef, parentDef)
 
 	const parentID = "no-reg-parent-i1"
-	st, err := fullRunner.Run(ctx, parentDef, parentID, nil)
+	st, err := fullRunner.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must park")
 
@@ -459,7 +459,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 // map, bypassing CancelInstance), D is marked visited before the first recursive
 // descent so the C→D branch skips it entirely.
 //
-// We construct this topology using SeedCallLink (an export-test helper) and runner.Run
+// We construct this topology using SeedCallLink (an export-test helper) and runner.Drive
 // to seed running instances directly, avoiding the need for a definition with multiple
 // call activities.
 func TestCancelPropagationDiamond(t *testing.T) {
@@ -499,7 +499,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 
 	// Start the parent → it launches B → B launches D; all three park.
 	const parentID = "dmnd-parent-i1"
-	st, err := setupRunner.Run(ctx, parentDef, parentID, nil)
+	st, err := setupRunner.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running")
 
@@ -517,7 +517,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	// Start C as a standalone instance (human-task child) and inject call links to
 	// form the diamond: parent→C and C→D (D is a shared grandchild).
 	cID := "dmnd-c-i1"
-	_, err = setupRunner.Run(ctx, cDef, cID, nil)
+	_, err = setupRunner.Drive(ctx, cDef, cID, nil)
 	require.NoError(t, err)
 
 	// Seed call links to wire the diamond topology into cl:

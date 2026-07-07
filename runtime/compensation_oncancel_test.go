@@ -86,7 +86,7 @@ func TestRunnerCompensationOnCancel(t *testing.T) {
 	const instanceID = "comp-cancel-i1"
 
 	// Run: charge completes, approve parks the instance.
-	runSt, err := r.Run(t.Context(), def, instanceID, nil)
+	runSt, err := r.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, runSt.Status, "instance must park at approve (StatusRunning)")
 	assert.EqualValues(t, 1, chargeRan.Load(), "charge action must have run exactly once")

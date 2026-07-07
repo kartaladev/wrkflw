@@ -142,7 +142,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 	def := sagaDef()
 
 	// --- Step 1: run the saga until ship fails (caught by boundary → StatusCompleted).
-	st, err := runner.Run(ctx, def, "saga-i1", nil)
+	st, err := runner.Drive(ctx, def, "saga-i1", nil)
 	require.NoError(t, err, "runner.Run must not return a hard error; ship failure is caught by boundary")
 
 	// ship failure is caught by the boundary → routes to end-fail → StatusCompleted.
@@ -227,7 +227,7 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 	def := boundaryErrorDef()
 
 	// Run: risky-action fails → boundary error catches it → recover-action runs → end.
-	st, err := runner.Run(ctx, def, "boundary-i1", nil)
+	st, err := runner.Drive(ctx, def, "boundary-i1", nil)
 	require.NoError(t, err, "runner.Run must not return a hard error: error is caught by boundary")
 
 	// Instance must have completed via the recovery path.

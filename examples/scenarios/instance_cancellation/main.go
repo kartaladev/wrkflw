@@ -115,7 +115,7 @@ func main() {
 	fmt.Println("--- Order Fulfilment: Instance Cancellation ---")
 
 	// 1. Run → parks at the user task; the instance is Running.
-	parked, err := r.Run(ctx, def, instanceID, map[string]any{"orderID": "9001"})
+	parked, err := r.Drive(ctx, def, instanceID, map[string]any{"orderID": "9001"})
 	if err != nil {
 		log.Fatal("run:", err)
 	}

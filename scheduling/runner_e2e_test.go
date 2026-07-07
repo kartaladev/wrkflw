@@ -82,7 +82,7 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	const instanceID = "gocron-e2e-1"
 
 	// Run → parks at the intermediate timer node.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tokens, 1)

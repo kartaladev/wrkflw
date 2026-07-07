@@ -23,7 +23,7 @@
 //     error. A coded error with no matching boundary propagates as an unhandled
 //     workflow error (StatusFailed / incident), not shown here.
 //   - Plain errors are non-retryable, so the boundary fires SYNCHRONOUSLY during
-//     driver.Run — no clock, scheduler, or follow-up Deliver is needed. (A
+//     driver.Drive — no clock, scheduler, or follow-up Deliver is needed. (A
 //     retryable action error would be retried first; see the retry_recovery
 //     scenario.)
 //
@@ -109,7 +109,7 @@ func main() {
 	// Run drives the process to a terminal state. The charge fails, the error
 	// boundary catches "INSUFFICIENT_FUNDS", and the instance completes via the
 	// decline path — all within this single Run call.
-	final, err := r.Run(ctx, def, instanceID, nil)
+	final, err := r.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}

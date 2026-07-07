@@ -122,7 +122,7 @@ func demoAttributeAuthz(ctx context.Context) {
 			log.Fatal("new runner EU:", err)
 		}
 
-		parked, err := r.Run(ctx, def, "region-eu-001", map[string]any{"region": "EU"})
+		parked, err := r.Drive(ctx, def, "region-eu-001", map[string]any{"region": "EU"})
 		if err != nil {
 			log.Fatal("run EU:", err)
 		}
@@ -166,7 +166,7 @@ func demoAttributeAuthz(ctx context.Context) {
 			log.Fatal("new runner US:", err)
 		}
 
-		parked, err := r.Run(ctx, def, "region-us-001", map[string]any{"region": "US"})
+		parked, err := r.Drive(ctx, def, "region-us-001", map[string]any{"region": "US"})
 		if err != nil {
 			log.Fatal("run US:", err)
 		}
@@ -237,7 +237,7 @@ func demoCasbinRBAC(ctx context.Context) {
 		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
-		parked, runErr := r.Run(ctx, def, "finance-allow-001", nil)
+		parked, runErr := r.Drive(ctx, def, "finance-allow-001", nil)
 		if runErr != nil {
 			log.Fatal("run (allow):", runErr)
 		}
@@ -260,7 +260,7 @@ func demoCasbinRBAC(ctx context.Context) {
 		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
-		parked, runErr := r.Run(ctx, def, "finance-deny-001", nil)
+		parked, runErr := r.Drive(ctx, def, "finance-deny-001", nil)
 		if runErr != nil {
 			log.Fatal("run (deny):", runErr)
 		}

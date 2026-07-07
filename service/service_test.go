@@ -235,7 +235,7 @@ func TestDeliverSignal(t *testing.T) {
 	h := newHarness(t, def)
 
 	// Start the instance — parks at signal-catch node.
-	parked, err := h.runner.Run(t.Context(), def, "sig-inst-1", nil)
+	parked, err := h.runner.Drive(t.Context(), def, "sig-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at signal catch")
 
@@ -276,7 +276,7 @@ func TestHumanTaskLifecycle(t *testing.T) {
 	ctx := t.Context()
 
 	// Start the instance — parks at the user task.
-	parked, err := h.runner.Run(ctx, def, "approval-inst-1", nil)
+	parked, err := h.runner.Drive(ctx, def, "approval-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 	require.Len(t, parked.Tokens, 1)
@@ -336,7 +336,7 @@ func TestDeliverMessage(t *testing.T) {
 	h := newHarness(t, def)
 
 	// Start instance and park at message-catch.
-	_, err := h.runner.Run(t.Context(), def, "order-100", map[string]any{"orderId": "100"})
+	_, err := h.runner.Drive(t.Context(), def, "order-100", map[string]any{"orderId": "100"})
 	require.NoError(t, err)
 
 	svc := h.newEngine(t)
@@ -406,7 +406,7 @@ func TestReassignTaskUnauthorized(t *testing.T) {
 	ctx := t.Context()
 
 	// Start and park.
-	parked, err := h.runner.Run(ctx, def, "reassign-unauth-1", nil)
+	parked, err := h.runner.Drive(ctx, def, "reassign-unauth-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 	taskToken := parked.Tokens[0].AwaitCommand
@@ -444,7 +444,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 	ctx := t.Context()
 
 	// Start and park via the runner directly (not via the service facade).
-	parked, err := h.runner.Run(ctx, def, "sig-def-missing", nil)
+	parked, err := h.runner.Drive(ctx, def, "sig-def-missing", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 

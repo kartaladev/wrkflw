@@ -79,7 +79,7 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	const instanceID = "ch-i1"
 
 	// Run: parks at the user task.
-	runSt, err := r.Run(t.Context(), def, instanceID, nil)
+	runSt, err := r.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, runSt.Status, "instance must park at approve (StatusRunning)")
 	assert.EqualValues(t, 0, cleanupRan.Load(), "cleanup must not run before cancel")
@@ -111,7 +111,7 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	def := cancelHandlerDef()
 	const instanceID = "ch-i2"
 
-	_, err := r.Run(t.Context(), def, instanceID, nil)
+	_, err := r.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 
 	cancelSt, err := r.CancelInstance(t.Context(), def, instanceID)
@@ -134,7 +134,7 @@ func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	def := cancelHandlerDef()
 	const instanceID = "ch-i3"
 
-	_, err := r.Run(t.Context(), def, instanceID, nil)
+	_, err := r.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 
 	cancelSt, err := r.CancelInstance(t.Context(), def, instanceID)

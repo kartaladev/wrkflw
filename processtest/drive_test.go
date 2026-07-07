@@ -36,7 +36,7 @@ func buildSignalCase(t *testing.T) (*runtime.ProcessDriver, engine.InstanceState
 	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 
-	parked, err := driver.Run(t.Context(), def, "i1", nil)
+	parked, err := driver.Drive(t.Context(), def, "i1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 

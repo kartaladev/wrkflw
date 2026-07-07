@@ -63,7 +63,7 @@ to construct them is through the provided constructors (never raw struct literal
 
 | Trigger | Produced by |
 |---|---|
-| `StartInstance` | ProcessDriver.Run (first step) |
+| `StartInstance` | ProcessDriver.Drive (first step) |
 | `ActionCompleted` / `ActionFailed` | Runtime (after `InvokeAction`) |
 | `HumanClaimed` / `HumanCompleted` / `HumanReassigned` | TaskService |
 | `TimerFired` | Scheduler callback |

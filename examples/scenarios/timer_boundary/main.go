@@ -122,7 +122,7 @@ func main() {
 
 	// Start both orders; each parks at the ReceiveTask with a 30m timer armed.
 	for _, id := range []string{"order-ontime", "order-late"} {
-		st, rerr := r.Run(ctx, def, id, map[string]any{"orderID": id})
+		st, rerr := r.Drive(ctx, def, id, map[string]any{"orderID": id})
 		if rerr != nil {
 			log.Fatal("run:", rerr)
 		}

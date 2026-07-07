@@ -118,7 +118,7 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 
 	def := runtimetest.TimerIntermediateDef() // reuse the helper in runtime/timer_example_test.go (1h intermediate timer)
-	_, err := r.Run(t.Context(), def, "tr-1", nil)
+	_, err := r.Drive(t.Context(), def, "tr-1", nil)
 	require.NoError(t, err)
 
 	// Armed after Run parks on the timer.

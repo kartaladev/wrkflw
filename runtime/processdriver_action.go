@@ -342,7 +342,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		//
 		// A definition whose call activity references itself (direct: A→A, or via a
 		// cycle: A→B→A) causes unbounded synchronous recursion through perform →
-		// r.Run → deliverLoop → perform, which ultimately stack-overflows. We thread
+		// r.Drive → deliverLoop → perform, which ultimately stack-overflows. We thread
 		// the depth counter through ctx so every nested call increments it; when the
 		// limit is reached we return a descriptive SubInstanceFailed instead of
 		// crashing. The synchronous runner only supports children that run to
@@ -360,9 +360,9 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 
 		// Run the child to completion (synchronous within perform). The child uses
 		// the same ProcessDriver so it shares the store, journal, outbox, catalog, and
-		// scheduler. The child's Run call drives the child's deliverLoop until the
+		// scheduler. The child's Drive call drives the child's deliverLoop until the
 		// child parks or completes.
-		childSt, err := r.Run(childCtx, childDef, childInstanceID, cmd.Input)
+		childSt, err := r.Drive(childCtx, childDef, childInstanceID, cmd.Input)
 		if err != nil {
 			// Child run returned a hard error (e.g. storage failure). Propagate as
 			// SubInstanceFailed so the parent instance can respond.
@@ -382,7 +382,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 			// The child parked (StatusRunning) without completing. This happens when
 			// the child contains a node that requires external input — a human task,
 			// timer, signal catch event, or its own call activity — that cannot be
-			// resolved within a single synchronous Run. The synchronous reference
+			// resolved within a single synchronous Drive. The synchronous reference
 			// runner does not support re-entering a parked child; async call activities
 			// are a future enhancement.
 			//

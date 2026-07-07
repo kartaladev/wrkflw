@@ -76,7 +76,7 @@ func TestOpenMySQL_RoundTrip(t *testing.T) {
 	def := mysqlMinimalDef()
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	st, err := r.Run(t.Context(), def, "mysql-rt-1", map[string]any{"key": "val"})
+	st, err := r.Drive(t.Context(), def, "mysql-rt-1", map[string]any{"key": "val"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, st.Status)
 
@@ -162,7 +162,7 @@ func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	// Drive a minimal process to confirm the option is wired through.
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	st, err := r.Run(t.Context(), &model.ProcessDefinition{
+	st, err := r.Drive(t.Context(), &model.ProcessDefinition{
 		ID:      "hist-mysql-1",
 		Version: 1,
 		Nodes:   []model.Node{event.NewStart("start"), event.NewEnd("end")},
@@ -292,7 +292,7 @@ func TestNewMySQLCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 	// Seed a parent instance.
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	_, err = r.Run(t.Context(), mysqlMinimalDef(), "parent-cls-1", nil)
+	_, err = r.Drive(t.Context(), mysqlMinimalDef(), "parent-cls-1", nil)
 	require.NoError(t, err)
 
 	// Seed a terminal call link directly (child terminated, parent waiting).
@@ -374,7 +374,7 @@ func TestNewMySQLLister_ListsInstances(t *testing.T) {
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	for _, id := range []string{"lst-inst-a", "lst-inst-b"} {
-		_, err := r.Run(t.Context(), mysqlMinimalDef(), id, nil)
+		_, err := r.Drive(t.Context(), mysqlMinimalDef(), id, nil)
 		require.NoError(t, err)
 	}
 
@@ -575,7 +575,7 @@ func TestNewMySQLCallNotifier_DeliversViaMySQLStore(t *testing.T) {
 	def := mysqlMinimalDef()
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	_, err = r.Run(t.Context(), def, "notifier-parent-1", nil)
+	_, err = r.Drive(t.Context(), def, "notifier-parent-1", nil)
 	require.NoError(t, err)
 
 	// Seed a terminal call link so the notifier has something to deliver.

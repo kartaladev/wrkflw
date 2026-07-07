@@ -31,7 +31,7 @@ type capturingStarter struct {
 	state engine.InstanceState
 }
 
-func (s *capturingStarter) Run(_ context.Context, _ *model.ProcessDefinition, id string, _ map[string]any) (engine.InstanceState, error) {
+func (s *capturingStarter) Drive(_ context.Context, _ *model.ProcessDefinition, id string, _ map[string]any) (engine.InstanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ids = append(s.ids, id)

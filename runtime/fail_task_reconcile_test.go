@@ -64,7 +64,7 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 		},
 	}
 
-	st, err := r.Run(t.Context(), def, "fe-1", nil)
+	st, err := r.Drive(t.Context(), def, "fe-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusFailed, st.Status, "unhandled action failure must fail the instance")
 

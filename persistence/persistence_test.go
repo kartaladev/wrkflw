@@ -76,7 +76,7 @@ func TestOpenPostgresEndToEnd(t *testing.T) {
 
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	st, err := r.Run(t.Context(), def, "i-e2e", map[string]any{"k": "v"})
+	st, err := r.Drive(t.Context(), def, "i-e2e", map[string]any{"k": "v"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, st.Status)
 
@@ -195,7 +195,7 @@ func TestNewRelayDrainsOutbox(t *testing.T) {
 	// Run a process to generate an outbox event.
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	st, err := r.Run(t.Context(), minimalStartEndDefinition(), "i-relay", nil)
+	st, err := r.Drive(t.Context(), minimalStartEndDefinition(), "i-relay", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, st.Status)
 

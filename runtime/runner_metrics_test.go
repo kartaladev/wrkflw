@@ -147,7 +147,7 @@ func TestActionFailuresCounter(t *testing.T) {
 				runtime.WithMeterProvider(mp),
 			)
 
-			st, err := r.Run(t.Context(), failingActionDef(), "fail-metrics-1", nil)
+			st, err := r.Drive(t.Context(), failingActionDef(), "fail-metrics-1", nil)
 			require.NoError(t, err, "Run must not return an error even when an action fails")
 			assert.Equal(t, engine.StatusFailed, st.Status,
 				"instance must reach StatusFailed after non-retried action failure")
@@ -188,7 +188,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	const instanceID = "timer-metrics-1"
 
 	// Run → parks at the intermediate timer node; no timer fired yet.
-	parked, err := r.Run(t.Context(), def, instanceID, nil)
+	parked, err := r.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 

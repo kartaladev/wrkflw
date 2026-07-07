@@ -108,7 +108,7 @@ func main() {
 	fmt.Println("--- Booking Saga: Compensation Rollback ---")
 	fmt.Println("Forward run:")
 
-	st, err := r.Run(ctx, def, instanceID, nil)
+	st, err := r.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}

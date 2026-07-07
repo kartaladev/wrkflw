@@ -205,7 +205,7 @@ func WithClock(clk clock.Clock) Option {
 }
 
 // WithIDGenerator sets the strategy used to mint a process-instance ID when
-// ProcessDriver.Run is called with an empty instanceID. Default: idgen.XID().
+// ProcessDriver.Drive is called with an empty instanceID. Default: idgen.XID().
 // A nil generator is ignored. Inject idgen.Func in tests for determinism.
 func WithIDGenerator(gen idgen.Generator) Option {
 	return func(r *ProcessDriver) {

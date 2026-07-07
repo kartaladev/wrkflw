@@ -84,7 +84,7 @@ func main() {
 	}
 
 	fmt.Println("--- Travel Booking: Embedded Sub-process ---")
-	state, err := r.Run(ctx, def, "trip-001", map[string]any{"city": "Lisbon"})
+	state, err := r.Drive(ctx, def, "trip-001", map[string]any{"city": "Lisbon"})
 	if err != nil {
 		log.Fatal("run:", err)
 	}

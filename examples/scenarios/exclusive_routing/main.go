@@ -92,7 +92,7 @@ func main() {
 	fmt.Println("--- Loan Approval: Exclusive Routing ---")
 	for _, tc := range cases {
 		fmt.Printf("\nRunning instance %q, amount=%.0f\n", tc.id, tc.amount)
-		state, err := r.Run(ctx, def, tc.id, map[string]any{"amount": tc.amount})
+		state, err := r.Drive(ctx, def, tc.id, map[string]any{"amount": tc.amount})
 		if err != nil {
 			log.Fatalf("run %s: %v", tc.id, err)
 		}

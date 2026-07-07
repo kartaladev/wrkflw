@@ -140,7 +140,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 
 	// ── step 1: run parent; parks because grandchild parks at human task ─────
 	const parentID = "e2e-nested-parent-i1"
-	st, err := runner.Run(ctx, pDef, parentID, nil)
+	st, err := runner.Drive(ctx, pDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 
@@ -249,7 +249,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 
 	// ── step 1: run parent; child fails immediately during its first burst ────
 	const parentID = "e2e-fail-parent-i1"
-	st, err := runner.Run(ctx, parent, parentID, nil)
+	st, err := runner.Drive(ctx, parent, parentID, nil)
 	require.NoError(t, err, "runner.Run must not return a hard error")
 	// The parent parks at the call node because the async path returns nil,nil.
 	// The child's first burst causes it to fail, flipping its link to terminal.
@@ -311,7 +311,7 @@ func selfCallDef() *model.ProcessDefinition {
 // rather than calling runChild, so the chain terminates at a finite depth.
 //
 // Assertions:
-//   - After runner.Run, the root is StatusRunning and the total number of call
+//   - After runner.Drive, the root is StatusRunning and the total number of call
 //     links is exactly maxCallDepth (one per child; the (maxCallDepth+1)th child
 //     is never created because the guard returns SubInstanceFailed synchronously).
 //   - After draining the notifier maxCallDepth times, the root reaches StatusFailed
@@ -347,7 +347,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	// without calling runChild. The deepest real child gets SubInstanceFailed and
 	// reaches StatusFailed during its first burst.
 	const rootID = "e2e-self-root-i1"
-	st, err := runner.Run(ctx, def, rootID, nil)
+	st, err := runner.Drive(ctx, def, rootID, nil)
 	require.NoError(t, err, "runner.Run must not return a hard error even for self-calling definition")
 
 	// Root is StatusRunning (parked at its call activity).
@@ -477,8 +477,8 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	const parentID = "e2e-optout-parent-i1"
 	// The child parks at the human task → synchronous runner translates that to
 	// SubInstanceFailed → parent receives SubInstanceFailed → StatusFailed.
-	// runner.Run does NOT return a hard error; it returns the terminal state.
-	finalSt, err := runner.Run(ctx, parent, parentID, nil)
+	// runner.Drive does NOT return a hard error; it returns the terminal state.
+	finalSt, err := runner.Drive(ctx, parent, parentID, nil)
 	require.NoError(t, err, "runner.Run must not return a hard Go error; the failure is reflected in the terminal status")
 
 	// Parent must be StatusFailed (SubInstanceFailed set it to failed).

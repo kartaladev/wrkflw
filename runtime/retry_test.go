@@ -115,7 +115,7 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 			runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), append([]runtime.Option{runtime.WithClock(clk)}, opts...)...)
 			def := noRetryServiceTaskDef()
 
-			st, err := runner.Run(t.Context(), def, "p", nil)
+			st, err := runner.Drive(t.Context(), def, "p", nil)
 			require.NoError(t, err)
 
 			tc.assert(t, st, sched, T)
@@ -183,7 +183,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	def := incidentTaskDef()
 
 	// Run: first attempt fails → incident, instance parks (StatusRunning).
-	st, err := runner.Run(t.Context(), def, "p", nil)
+	st, err := runner.Drive(t.Context(), def, "p", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park as running with an incident")
 	require.Len(t, st.Incidents, 1, "want exactly one incident after first failure")

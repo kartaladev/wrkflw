@@ -86,7 +86,7 @@ func main() {
 	}
 
 	fmt.Println("--- Application Screening: Inclusive Gateway ---")
-	state, err := r.Run(ctx, def, "app-001", map[string]any{
+	state, err := r.Drive(ctx, def, "app-001", map[string]any{
 		"score":   580,
 		"amount":  25000,
 		"flagged": false,

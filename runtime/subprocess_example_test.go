@@ -103,7 +103,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	parent := parentCallDef()
-	st, err := runner.Run(ctx, parent, "parent-i1", map[string]any{"x": 42})
+	st, err := runner.Drive(ctx, parent, "parent-i1", map[string]any{"x": 42})
 	require.NoError(t, err)
 
 	// Parent must have completed.
@@ -178,7 +178,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 
 	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
-	st, err := runner.Run(ctx, failingParent, "parent-fail-i1", nil)
+	st, err := runner.Drive(ctx, failingParent, "parent-fail-i1", nil)
 	require.NoError(t, err)
 
 	// Parent must have failed.
@@ -258,7 +258,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	)
 
 	parent := parkingParentDef()
-	st, err := runner.Run(ctx, parent, "parking-parent-i1", nil)
+	st, err := runner.Drive(ctx, parent, "parking-parent-i1", nil)
 	require.NoError(t, err, "runner.Run must not return a hard error: the failure is a SubInstanceFailed trigger")
 
 	// Parent must have failed (SubInstanceFailed causes parent failure).
@@ -341,7 +341,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	// This must not panic / stack-overflow. The depth guard must kick in and
 	// fail the parent instance with a descriptive error.
 	require.NotPanics(t, func() {
-		st, err := runner.Run(ctx, def, "self-ref-i1", nil)
+		st, err := runner.Drive(ctx, def, "self-ref-i1", nil)
 		require.NoError(t, err, "runner.Run must not return a hard error")
 		assert.Equal(t, engine.StatusFailed, st.Status,
 			"instance must be StatusFailed when call-activity depth limit is exceeded")
@@ -377,7 +377,7 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk))
 
 	parent := parentCallDef()
-	_, err := runner.Run(ctx, parent, "no-reg-i1", nil)
+	_, err := runner.Drive(ctx, parent, "no-reg-i1", nil)
 	require.Error(t, err, "expected error when no DefinitionRegistry is configured")
 	assert.Contains(t, err.Error(), "registry", "error must mention registry")
 }

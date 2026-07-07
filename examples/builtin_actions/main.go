@@ -179,7 +179,7 @@ func main() {
 
 	// --- 5. Run ————————————————————————————————————————————————————————————
 	fmt.Println("\n--- Running instance demo-001 ---")
-	state, err := r.Run(ctx, def, "demo-001", map[string]any{
+	state, err := r.Drive(ctx, def, "demo-001", map[string]any{
 		"orderID":    "ORD-2026-001",
 		"customerID": "cust-42",
 		// Neither tier nor region is pre-set. The transform mapper resolves both from

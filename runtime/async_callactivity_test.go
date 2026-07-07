@@ -61,7 +61,7 @@ func asyncParentDef() *model.ProcessDefinition {
 }
 
 // TestAsyncCallActivityParentParks verifies that when WithCallLinkStore is configured:
-//   - runner.Run(parent) returns StatusRunning (the parent parks, NOT errors)
+//   - runner.Drive(parent) returns StatusRunning (the parent parks, NOT errors)
 //   - the child instance exists in the store and is StatusRunning
 //   - cl.LookupChild(childID) returns the link with ParentCommandID == parent's call command ID
 func TestAsyncCallActivityParentParks(t *testing.T) {
@@ -85,7 +85,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 
 	parent := asyncParentDef()
 	const parentID = "async-parent-i1"
-	st, err := runner.Run(ctx, parent, parentID, nil)
+	st, err := runner.Drive(ctx, parent, parentID, nil)
 	require.NoError(t, err, "runner.Run must not return a hard error: parent should park")
 
 	// Parent must be StatusRunning (parked at the call activity, child not yet done).
@@ -251,7 +251,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		// Parent run: the parent calls the child; the child completes immediately
 		// during the parent's first burst (runChild runs it synchronously).
 		// The parent should park waiting for a SubInstanceCompleted notification.
-		_, err := runner.Run(ctx, parent, parentID, nil)
+		_, err := runner.Drive(ctx, parent, parentID, nil)
 		require.NoError(t, err, "runner.Run must not error")
 
 		// The child instance's terminal commit must have flipped the call link.
@@ -287,7 +287,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		)
 
 		const parentID = "async-fail-p1"
-		_, err := runner.Run(ctx, parent, parentID, nil)
+		_, err := runner.Drive(ctx, parent, parentID, nil)
 		require.NoError(t, err, "runner.Run must not error (parent parks; child failure is async)")
 
 		pending, claimErr := cl.ClaimPending(ctx, 10)

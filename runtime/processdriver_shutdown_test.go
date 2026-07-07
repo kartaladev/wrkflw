@@ -40,7 +40,7 @@ func TestProcessDriverDefaultScheduler(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, d.Shutdown(context.Background())) })
 
-	st, err := d.Run(t.Context(), timerOnlyDef(), "i-default-sched", nil)
+	st, err := d.Drive(t.Context(), timerOnlyDef(), "i-default-sched", nil)
 	require.NoError(t, err, "zero-config driver must arm the timer via the default scheduler")
 	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park at the timer catch")
 }
@@ -56,7 +56,7 @@ func TestProcessDriverStart(t *testing.T) {
 		require.NoError(t, d.Start(t.Context()))
 		require.NoError(t, d.Start(t.Context()), "Start must be idempotent")
 
-		st, err := d.Run(t.Context(), timerOnlyDef(), "i-drv-start", nil)
+		st, err := d.Drive(t.Context(), timerOnlyDef(), "i-drv-start", nil)
 		require.NoError(t, err)
 		assert.Equal(t, engine.StatusRunning, st.Status, "timer must arm under the started scheduler")
 	})

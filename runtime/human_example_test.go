@@ -47,7 +47,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	const instanceID = "inst-1"
 
 	// --- Run: parks at the user task ---
-	parkedState, err := r.Run(ctx, def, instanceID, nil)
+	parkedState, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parkedState.Status, "instance should be parked (running) at the user task")
 	require.Len(t, parkedState.Tokens, 1, "exactly one parked token")
@@ -156,7 +156,7 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 
 	// Start with non-nil process variables so the snapshot is meaningful.
 	instanceVars := map[string]any{"region": "EU", "priority": 1}
-	_, err := r.Run(ctx, runtimetest.ApprovalDef(), "snap-inst-1", instanceVars)
+	_, err := r.Drive(ctx, runtimetest.ApprovalDef(), "snap-inst-1", instanceVars)
 	require.NoError(t, err)
 
 	// After Run parks, the task must be in the store with Vars populated.
@@ -200,7 +200,7 @@ func approvalWithEligibilityExprDef() *model.ProcessDefinition {
 // chain: the runner snapshots process variables into HumanTask.Vars when it
 // performs an AwaitHuman command, and TaskService.Claim enforces the
 // EligibilityExpr predicate against those snapshotted vars. The task is NOT
-// pre-populated — it is created exclusively by runner.Run so the test exercises
+// pre-populated — it is created exclusively by runner.Drive so the test exercises
 // the real end-to-end path.
 //
 // Two instances are run:
@@ -250,7 +250,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 
 			// Step 1: Run the process — the runner must create the HumanTask and
 			// snapshot the process variables into task.Vars. No manual Upsert.
-			parkedState, err := r.Run(ctx, def, tc.instID, map[string]any{"region": tc.region})
+			parkedState, err := r.Drive(ctx, def, tc.instID, map[string]any{"region": tc.region})
 			require.NoError(t, err)
 			require.Equal(t, engine.StatusRunning, parkedState.Status, "instance must park at the user task")
 			require.Len(t, parkedState.Tokens, 1, "exactly one parked token expected")

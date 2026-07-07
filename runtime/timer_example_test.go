@@ -53,7 +53,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	const instanceID = "timer-e2e-1"
 
 	// Run → parks at the intermediate timer node.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tokens, 1)
@@ -135,7 +135,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	const instanceID = "sla-e2e-1"
 
 	// Run → parks at the user task, deadline timer is registered.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tokens, 1)

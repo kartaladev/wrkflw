@@ -78,7 +78,7 @@ func main() {
 
 	// Start two orders; each parks at the ReceiveTask keyed by its own orderID.
 	for _, id := range []string{"order-1", "order-2"} {
-		st, err := r.Run(ctx, def, id, map[string]any{"orderID": id})
+		st, err := r.Drive(ctx, def, id, map[string]any{"orderID": id})
 		if err != nil {
 			log.Fatal("run:", err)
 		}

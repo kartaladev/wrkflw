@@ -79,7 +79,7 @@ func main() {
 	fmt.Println("--- Expense Approval: Human Task ---")
 
 	// 1. Run → parks at the user task.
-	parked, err := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200})
+	parked, err := r.Drive(ctx, def, instanceID, map[string]any{"amount": 4200})
 	if err != nil {
 		log.Fatal("run:", err)
 	}

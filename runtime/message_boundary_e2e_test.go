@@ -62,7 +62,7 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 
 	def := messageBoundaryDef()
 
-	st, err := r.Run(ctx, def, "i1", nil)
+	st, err := r.Drive(ctx, def, "i1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, st.Status, "instance must park at the UserTask")
 	require.Len(t, st.Boundaries, 1, "message boundary must be armed on the parked host")

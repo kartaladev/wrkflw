@@ -172,7 +172,7 @@ func TestNewSQLiteCallLinkStore_ClaimAndMarkNotified(t *testing.T) {
 
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	_, err = r.Run(t.Context(), sqliteMinimalDef(), "sqlite-parent-cls-1", nil)
+	_, err = r.Drive(t.Context(), sqliteMinimalDef(), "sqlite-parent-cls-1", nil)
 	require.NoError(t, err)
 
 	// Seed a terminal call link directly.
@@ -256,7 +256,7 @@ func TestNewSQLiteLister_ListsInstances(t *testing.T) {
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 	for _, id := range []string{"sqlite-lst-inst-a", "sqlite-lst-inst-b"} {
-		_, err := r.Run(t.Context(), sqliteMinimalDef(), id, nil)
+		_, err := r.Drive(t.Context(), sqliteMinimalDef(), id, nil)
 		require.NoError(t, err)
 	}
 
@@ -288,7 +288,7 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 	def := sqliteMinimalDef()
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
-	_, err = r.Run(t.Context(), def, "sqlite-notifier-parent-1", nil)
+	_, err = r.Drive(t.Context(), def, "sqlite-notifier-parent-1", nil)
 	require.NoError(t, err)
 
 	// Seed a terminal call link so the notifier has something to deliver.

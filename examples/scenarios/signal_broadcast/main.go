@@ -88,7 +88,7 @@ func main() {
 	// Three desks start and park on the "market-open" catch event.
 	desks := []string{"desk-A", "desk-B", "desk-C"}
 	for _, d := range desks {
-		st, err := r.Run(ctx, def, d, map[string]any{"desk": d})
+		st, err := r.Drive(ctx, def, d, map[string]any{"desk": d})
 		if err != nil {
 			log.Fatal("run:", err)
 		}

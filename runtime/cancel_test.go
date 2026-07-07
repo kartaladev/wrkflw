@@ -67,7 +67,7 @@ func TestRunnerCancelInstanceRunsCancelActions(t *testing.T) {
 	r := cancelRunner(t, cat, fc)
 	def := cancelDef([]string{"notify", "boom"})
 
-	_, err := r.Run(t.Context(), def, "c1", nil)
+	_, err := r.Drive(t.Context(), def, "c1", nil)
 	require.NoError(t, err)
 
 	// Cancel: both actions run; the failing "boom" is logged but must NOT fail the cancel.
@@ -91,7 +91,7 @@ func TestRunnerCancelInstanceCancelsParkedTask(t *testing.T) {
 		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
 	def := cancelDef(nil)
 
-	_, err := r.Run(t.Context(), def, "c3", nil)
+	_, err := r.Drive(t.Context(), def, "c3", nil)
 	require.NoError(t, err)
 
 	// Precondition: the task is claimable before cancel.
@@ -123,7 +123,7 @@ func TestRunnerCancelInstanceMissingActionIsBestEffort(t *testing.T) {
 	r := cancelRunner(t, action.NewMapCatalog(nil), fc)
 	def := cancelDef([]string{"ghost"})
 
-	_, err := r.Run(t.Context(), def, "c2", nil)
+	_, err := r.Drive(t.Context(), def, "c2", nil)
 	require.NoError(t, err)
 
 	st, err := r.CancelInstance(t.Context(), def, "c2")

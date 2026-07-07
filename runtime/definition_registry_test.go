@@ -182,7 +182,7 @@ func TestDriverDefaultUsesDefaultDefinitionRegistry(t *testing.T) {
 	t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 	instanceID := fmt.Sprintf("test-default-driver-inst-%d", uniqueDefSeq.Add(1))
-	st, runErr := d.Run(t.Context(), parent, instanceID, nil)
+	st, runErr := d.Drive(t.Context(), parent, instanceID, nil)
 	require.NoError(t, runErr)
 	assert.Equal(t, engine.StatusCompleted, st.Status, "parent must complete when sub-def is in default registry")
 	assert.Greater(t, defaultDefSubCalls.Load(), baseline, "sub-definition action must have been invoked")
@@ -203,7 +203,7 @@ func TestWithDefinitionsNilIgnored(t *testing.T) {
 	t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 	instanceID := fmt.Sprintf("test-withdef-nil-inst-%d", uniqueDefSeq.Add(1))
-	st, runErr := d.Run(t.Context(), parent, instanceID, nil)
+	st, runErr := d.Drive(t.Context(), parent, instanceID, nil)
 	require.NoError(t, runErr)
 	assert.Equal(t, engine.StatusCompleted, st.Status, "nil WithDefinitions must leave default registry in effect")
 	assert.Greater(t, defaultDefSubCalls.Load(), baseline, "sub-definition action must have been invoked through default registry")
@@ -266,7 +266,7 @@ func TestWithDefinitionsCustomOverridesDefault(t *testing.T) {
 	t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 	instanceID := fmt.Sprintf("test-custom-def-inst-%d", uniqueDefSeq.Add(1))
-	st, runErr := d.Run(t.Context(), parent, instanceID, nil)
+	st, runErr := d.Drive(t.Context(), parent, instanceID, nil)
 	require.NoError(t, runErr)
 	assert.Equal(t, engine.StatusCompleted, st.Status, "parent must complete when sub-def is in custom registry")
 	assert.Greater(t, customCalls.Load(), int64(0), "sub-definition action must have been invoked from custom registry")

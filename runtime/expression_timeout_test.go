@@ -75,7 +75,7 @@ func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	}
 
 	start := time.Now()
-	_, err := r.Run(t.Context(), gatewayBlockDef(), "g1", vars)
+	_, err := r.Drive(t.Context(), gatewayBlockDef(), "g1", vars)
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
@@ -93,7 +93,7 @@ func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t), runtime.WithClock(fc))
 
-	st, err := r.Run(t.Context(), exclusiveRuntimeDef(), "d1", map[string]any{"amount": 150})
+	st, err := r.Drive(t.Context(), exclusiveRuntimeDef(), "d1", map[string]any{"amount": 150})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
 }
@@ -129,7 +129,7 @@ func TestRunnerWithConditionEvaluatorInjectsCustom(t *testing.T) {
 		runtime.WithClock(fc),
 		runtime.WithConditionEvaluator(ev))
 
-	st, err := r.Run(t.Context(), exclusiveRuntimeDef(), "c1", map[string]any{"amount": 5})
+	st, err := r.Drive(t.Context(), exclusiveRuntimeDef(), "c1", map[string]any{"amount": 5})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
 }

@@ -90,11 +90,11 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	r = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
-	parked1, err := r.Run(ctx, def, "inst-1", nil)
+	parked1, err := r.Drive(ctx, def, "inst-1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked1.Status, "inst-1 must park")
 
-	parked2, err := r.Run(ctx, def, "inst-2", nil)
+	parked2, err := r.Drive(ctx, def, "inst-2", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked2.Status, "inst-2 must park")
 
@@ -139,7 +139,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t), runtime.WithClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
-	_, err := r.Run(t.Context(), def, "i1", nil)
+	_, err := r.Drive(t.Context(), def, "i1", nil)
 	require.Error(t, err, "Run must fail with a descriptive error when no SignalBus is configured")
 	assert.Contains(t, err.Error(), "SignalBus", "error must mention the missing SignalBus")
 }
@@ -171,7 +171,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	)
 
 	const instanceID = "gw-timer-1"
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 
@@ -215,7 +215,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	)
 
 	const instanceID = "gw-signal-1"
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 
@@ -253,10 +253,10 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
 
 	// Start two instances with different orderId values.
-	_, err := r.Run(ctx, def, "order-100", map[string]any{"orderId": "100"})
+	_, err := r.Drive(ctx, def, "order-100", map[string]any{"orderId": "100"})
 	require.NoError(t, err)
 
-	_, err = r.Run(ctx, def, "order-200", map[string]any{"orderId": "200"})
+	_, err = r.Drive(ctx, def, "order-200", map[string]any{"orderId": "200"})
 	require.NoError(t, err)
 
 	// Deliver message targeting orderId=100.

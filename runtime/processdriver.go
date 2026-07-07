@@ -253,9 +253,9 @@ func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore
 	)
 }
 
-// Run starts an instance and drives it to a terminal state or until the engine
+// Drive starts an instance and drives it to a terminal state or until the engine
 // parks (e.g. awaiting a human task). It returns the state at the point it stopped.
-func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+func (r *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
 	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.def_id", def.ID),
@@ -286,7 +286,7 @@ func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, i
 // resulting commands (feeding follow-up triggers back through the loop).
 //
 // It is the entry point for external triggers such as HumanClaimed and
-// HumanCompleted that arrive after Run has returned (parked at a human task),
+// HumanCompleted that arrive after Drive has returned (parked at a human task),
 // and for TimerFired triggers delivered by the scheduler's fire callback.
 //
 // Authorization contract: human-task triggers (HumanClaimed, HumanReassigned,
@@ -318,14 +318,14 @@ func (r *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefinitio
 // deliverLoop applies triggers from queue and then any follow-up triggers emitted
 // by perform (action results, etc.) until all commands are resolved or the engine
 // parks. It encapsulates the Step→terminalOutboxEvent→Create/Commit→perform cycle
-// shared by Run and Deliver.
+// shared by Drive and Deliver.
 //
 // token is the current optimistic-concurrency token; create=true on the very
-// first step (Run path, no row yet) and false on all subsequent steps.
+// first step (Drive path, no row yet) and false on all subsequent steps.
 //
 // firstCallLink, when non-nil, is attached to the FIRST applied step's
 // AppliedStep.NewCallLink (the create step) and then cleared. All existing
-// callers (Run, Deliver) pass nil — no behavior change for them. The internal
+// callers (Drive, Deliver) pass nil — no behavior change for them. The internal
 // runChild helper passes the link so the child's Create records it atomically.
 //
 // After each committed save, if a SignalBus or message waiters are configured,

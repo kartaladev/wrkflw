@@ -101,7 +101,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 
 	// ── Step 1: run parent; it parks because the child parks at the human task ──
 	const parentID = "notifier-parent-i1"
-	st, err := runner.Run(ctx, parent, parentID, nil)
+	st, err := runner.Drive(ctx, parent, parentID, nil)
 	require.NoError(t, err, "runner.Run must not error")
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 

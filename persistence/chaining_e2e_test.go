@@ -6,7 +6,7 @@
 //	Store.Commit (writes outbox row)
 //	  → relay.DrainOnce (reads outbox, publishes via GoChannel pub/sub)
 //	    → eventing.Chainer.Run (subscribes; calls runtime.Chainer.Handle)
-//	      → runtime.Chainer.Handle (evaluates policy, starts successor via runner.Run, records ChainLink)
+//	      → runtime.Chainer.Handle (evaluates policy, starts successor via runner.Drive, records ChainLink)
 //
 // This seam has never previously been tested against a real database.
 package persistence_test
@@ -196,7 +196,7 @@ func TestChainingE2E(t *testing.T) {
 			startVars := map[string]any{"key": "value-a"}
 
 			// Run predecessor to completion.
-			st, err := runner.Run(ctx, defPA, "inst-a", startVars)
+			st, err := runner.Drive(ctx, defPA, "inst-a", startVars)
 			require.NoError(t, err)
 			assert.Equal(t, engine.StatusCompleted, st.Status, "predecessor must complete synchronously")
 
@@ -229,7 +229,7 @@ func TestChainingE2E(t *testing.T) {
 		t.Run("branch_routing", func(t *testing.T) {
 			ctx := t.Context()
 
-			_, err := runner.Run(ctx, defPB, "inst-b", map[string]any{"key": "value-b"})
+			_, err := runner.Drive(ctx, defPB, "inst-b", map[string]any{"key": "value-b"})
 			require.NoError(t, err)
 
 			_, err = d.relay.DrainOnce(ctx)
@@ -253,7 +253,7 @@ func TestChainingE2E(t *testing.T) {
 		t.Run("no_successor", func(t *testing.T) {
 			ctx := t.Context()
 
-			_, err := runner.Run(ctx, defPC, "inst-c", nil)
+			_, err := runner.Drive(ctx, defPC, "inst-c", nil)
 			require.NoError(t, err)
 
 			_, err = d.relay.DrainOnce(ctx)
@@ -296,7 +296,7 @@ func TestChainingE2E(t *testing.T) {
 		t.Run("idempotency", func(t *testing.T) {
 			ctx := t.Context()
 
-			_, err := runner.Run(ctx, defPA, "inst-a-idem", map[string]any{"x": 1})
+			_, err := runner.Drive(ctx, defPA, "inst-a-idem", map[string]any{"x": 1})
 			require.NoError(t, err)
 
 			// First drain → predecessor's outbox row published → successor created.

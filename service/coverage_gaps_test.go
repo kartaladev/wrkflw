@@ -100,7 +100,7 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 				h := newHarness(t, def)
 
 				// Start the instance via the runner directly so it lands in the store.
-				st, err := h.runner.Run(t.Context(), def, "gwid-nodef-1", map[string]any{"name": "x"})
+				st, err := h.runner.Drive(t.Context(), def, "gwid-nodef-1", map[string]any{"name": "x"})
 				require.NoError(t, err)
 				require.Equal(t, engine.StatusCompleted, st.Status)
 
@@ -140,11 +140,11 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 
 // ---- Error-branch coverage for StartInstance ----
 
-// TestStartInstanceRunnerError covers the runner.Run error branch (line 163 in
+// TestStartInstanceRunnerError covers the runner.Drive error branch (line 163 in
 // service.go) which remains at 0% because the existing happy-path and
 // unknown-defref tests never reach it.
 //
-// To make runner.Run fail we provide a definition whose only node is a service
+// To make runner.Drive fail we provide a definition whose only node is a service
 // task wired to an action that returns a terminal error. The runner exhausts
 // retries (MaxAttempts=1) and the instance parks with an incident, but Run
 // itself succeeds. Instead, we provoke a genuine Run error by passing a
@@ -166,7 +166,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 		{
 			// A definition with no nodes causes the engine to fail with an error
 			// (no start event → cannot bootstrap token). This exercises the
-			// runner.Run error branch in StartInstance.
+			// runner.Drive error branch in StartInstance.
 			name: "runner error propagates from StartInstance",
 			def: func() *model.ProcessDefinition {
 				return &model.ProcessDefinition{
@@ -334,7 +334,7 @@ func TestClaimTaskAuthorizationFailure(t *testing.T) {
 			h := newHarness(t, def)
 
 			// Start the instance — parks at the user task.
-			parked, err := h.runner.Run(t.Context(), def, "claim-auth-fail-1", nil)
+			parked, err := h.runner.Drive(t.Context(), def, "claim-auth-fail-1", nil)
 			require.NoError(t, err)
 			require.Equal(t, engine.StatusRunning, parked.Status)
 			require.Len(t, parked.Tokens, 1)

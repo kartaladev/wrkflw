@@ -46,7 +46,7 @@ func TestOpenSQLite(t *testing.T) {
 
 	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(s))
 	require.NoError(t, err)
-	st, err := r.Run(t.Context(), def, "i-sqlite-e2e", map[string]any{"backend": "sqlite"})
+	st, err := r.Drive(t.Context(), def, "i-sqlite-e2e", map[string]any{"backend": "sqlite"})
 	require.NoError(t, err, "Runner.Run must succeed on SQLite store")
 	require.Equal(t, engine.StatusCompleted, st.Status)
 

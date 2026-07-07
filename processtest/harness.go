@@ -227,7 +227,7 @@ func (h *Harness) defFor(id string) *model.ProcessDefinition {
 // Start creates and runs a new instance, returning its (likely parked) state.
 func (h *Harness) Start(ctx context.Context, def *model.ProcessDefinition, id string, vars map[string]any) (engine.InstanceState, error) {
 	h.recordDef(id, def)
-	return h.driver.Run(ctx, def, id, vars)
+	return h.driver.Drive(ctx, def, id, vars)
 }
 
 // DriveToCompletion advances instance id (already started) until it reaches a

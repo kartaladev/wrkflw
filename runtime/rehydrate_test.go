@@ -37,7 +37,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 		r := runtimetest.MustRunner(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
-		_, err := r.Run(t.Context(), def, "rh-1", nil)
+		_, err := r.Drive(t.Context(), def, "rh-1", nil)
 		require.NoError(t, err)
 	}
 

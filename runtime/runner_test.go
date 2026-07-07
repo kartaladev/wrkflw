@@ -53,7 +53,7 @@ func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	r := runtimetest.MustRunner(t, cat, store)
 
-	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	final, err := r.Drive(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, final.Status)
 
@@ -71,7 +71,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	r := runtimetest.MustRunner(t, cat, store)
 
-	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	final, err := r.Drive(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, final.Status)
 
@@ -90,7 +90,7 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 	})
 	r := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
 
-	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	_, err := r.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow-runtime: commit:")
 }
@@ -107,7 +107,7 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	// ActionCompleted is delivered).
 	r := runtimetest.MustRunner(t, cat, &commitErrStore{runtimetest.MustMemStore(t)})
 
-	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	_, err := r.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Commit must be surfaced via errors.Is")
@@ -139,7 +139,7 @@ func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t))
 	// WithHumanTasks intentionally omitted to test error path.
 
-	_, err := r.Run(t.Context(), userTaskOnlyDef(), "i1", nil)
+	_, err := r.Drive(t.Context(), userTaskOnlyDef(), "i1", nil)
 	require.Error(t, err, "Run must fail with a descriptive error, not panic")
 	assert.Contains(t, err.Error(), "ActorResolver", "error must mention the missing ActorResolver")
 }
@@ -173,7 +173,7 @@ func TestRunnerZeroConfigUsesDefaultScheduler(t *testing.T) {
 	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
 	// WithScheduler intentionally omitted — the default scheduler must handle it.
 
-	st, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
+	st, err := r.Drive(t.Context(), timerOnlyDef(), "i1", nil)
 	require.NoError(t, err, "zero-config driver must arm the timer via the default scheduler")
 	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park at the timer catch")
 }
@@ -246,7 +246,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 	const instanceID = "conflict-timer-1"
 
 	// Run → parks at the intermediate-catch timer node.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status,
 		"instance must park at the timer node")
@@ -278,7 +278,7 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 		}),
 	})
 	r := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
-	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	_, err := r.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
@@ -294,7 +294,7 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 	})
 	before := time.Now()
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
-	st, err := r.Run(t.Context(), linearDef(), "i-sys-1", nil)
+	st, err := r.Drive(t.Context(), linearDef(), "i-sys-1", nil)
 	after := time.Now()
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
@@ -313,7 +313,7 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 		}),
 	})
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fake))
-	st, err := r.Run(t.Context(), linearDef(), "i-fake-1", nil)
+	st, err := r.Drive(t.Context(), linearDef(), "i-fake-1", nil)
 	require.NoError(t, err)
 	// StartedAt is stamped from r.clk.Now() = fake.Now() = time.Unix(1000, 0).
 	assert.Equal(t, time.Unix(1000, 0), st.StartedAt,

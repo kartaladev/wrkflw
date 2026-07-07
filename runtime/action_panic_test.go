@@ -49,7 +49,7 @@ func TestRunnerRecoversActionPanic(t *testing.T) {
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fc))
 
 	// Must not panic.
-	st, err := r.Run(t.Context(), panicTaskDef(), "p1", nil)
+	st, err := r.Drive(t.Context(), panicTaskDef(), "p1", nil)
 	require.NoError(t, err, "a panicking action must not surface as a Go error from Run")
 	assert.Equal(t, engine.StatusFailed, st.Status,
 		"a panicking action (no retry policy) must drive the instance to StatusFailed, not crash")
@@ -68,7 +68,7 @@ func TestRunnerRecoversCancelActionPanic(t *testing.T) {
 	r := cancelRunner(t, cat, fc)
 	def := cancelDef([]string{"boom"})
 
-	_, err := r.Run(t.Context(), def, "c1", nil)
+	_, err := r.Drive(t.Context(), def, "c1", nil)
 	require.NoError(t, err)
 
 	st, err := r.CancelInstance(t.Context(), def, "c1")

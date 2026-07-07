@@ -116,7 +116,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 
 	const instanceID = "deadline-ff-1"
 
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 

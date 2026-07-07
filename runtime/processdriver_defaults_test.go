@@ -108,7 +108,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		require.NotNil(t, d)
 		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-zeroarg-v1"), "inst-zero-arg", nil)
+		st, runErr := d.Drive(t.Context(), oneNodeDef("test-defaults-zeroarg-v1"), "inst-zero-arg", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, zeroArgCalls.Load(), baseline, "default catalog must resolve and invoke the registered action")
@@ -130,7 +130,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		require.NotNil(t, d)
 		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("custom-action-v1"), "inst-custom-cat", nil)
+		st, runErr := d.Drive(t.Context(), oneNodeDef("custom-action-v1"), "inst-custom-cat", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.True(t, customCalled.Load(), "custom catalog action must have been called")
@@ -150,7 +150,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 		// Run a process so the instance is persisted in the custom store.
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-instancestore-v1"), "inst-custom-store", nil)
+		st, runErr := d.Drive(t.Context(), oneNodeDef("test-defaults-instancestore-v1"), "inst-custom-store", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, instanceStoreCalls.Load(), baseline, "action must have been invoked")
@@ -171,7 +171,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		require.NotNil(t, d)
 		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-nilcat-v1"), "inst-nil-cat", nil)
+		st, runErr := d.Drive(t.Context(), oneNodeDef("test-defaults-nilcat-v1"), "inst-nil-cat", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, nilCatCalls.Load(), baseline, "nil catalog must be ignored; default catalog resolves the action")
@@ -187,7 +187,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		require.NotNil(t, d)
 		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-nilstore-v1"), "inst-nil-store", nil)
+		st, runErr := d.Drive(t.Context(), oneNodeDef("test-defaults-nilstore-v1"), "inst-nil-store", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, nilStoreCalls.Load(), baseline, "action must have been invoked through the default store path")

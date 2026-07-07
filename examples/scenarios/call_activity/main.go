@@ -84,7 +84,7 @@ func main() {
 	}
 
 	fmt.Println("--- Loan Origination: Call Activity ---")
-	state, err := r.Run(ctx, parent, "loan-001", map[string]any{"applicant": "Ada"})
+	state, err := r.Drive(ctx, parent, "loan-001", map[string]any{"applicant": "Ada"})
 	if err != nil {
 		log.Fatal("run:", err)
 	}

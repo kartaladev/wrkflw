@@ -156,7 +156,7 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 }
 
 // TestStepSpanAndLifecycleMetrics verifies that running a linear process to
-// completion via [runtime.ProcessDriver.Run] produces:
+// completion via [runtime.ProcessDriver.Drive] produces:
 //   - at least one "wrkflw.step" span in the OTel trace,
 //   - wrkflw_instances_started_total == 1,
 //   - wrkflw_instances_completed_total{status="completed"} == 1,
@@ -179,7 +179,7 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 	)
 
 	// linearDef() is defined in example_test.go: start → greet (service) → end.
-	_, err := r.Run(t.Context(), linearDef(), "i1", map[string]any{"name": "world"})
+	_, err := r.Drive(t.Context(), linearDef(), "i1", map[string]any{"name": "world"})
 	require.NoError(t, err, "run must succeed for linear process")
 
 	// Assert at least one wrkflw.step span was recorded.
@@ -302,7 +302,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
 
-			_, _ = r.Run(t.Context(), paymentDef(), "i1", map[string]any{})
+			_, _ = r.Drive(t.Context(), paymentDef(), "i1", map[string]any{})
 
 			rm := collect(t, reader)
 			tc.assert(t, sr, rm)
@@ -358,7 +358,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	)
 
 	// Step 1: Run → first action failure → incident, instance parks.
-	st, err := runner.Run(t.Context(), def, "obs-inc-1", nil)
+	st, err := runner.Drive(t.Context(), def, "obs-inc-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, st.Status, "instance must park as running with an incident")
 	require.Len(t, st.Incidents, 1, "want exactly one incident after first failure")
@@ -459,7 +459,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			const instID = "htlc-inst"
 
 			// Run parks at the user task → emits {event=created}.
-			_, err := r.Run(t.Context(), def, instID, nil)
+			_, err := r.Drive(t.Context(), def, instID, nil)
 			require.NoError(t, err, "Run must succeed and park at user task")
 
 			claimable, err := taskStore.ClaimableBy(t.Context(), manager)
@@ -530,7 +530,7 @@ func TestDeliverSpan(t *testing.T) {
 	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithTracerProvider(tp))
 
 	// Run parks at the catch-message node.
-	parked, err := runner.Run(t.Context(), msgDef, "del-obs-1", nil)
+	parked, err := runner.Drive(t.Context(), msgDef, "del-obs-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "instance must park at the catch-message node")
 

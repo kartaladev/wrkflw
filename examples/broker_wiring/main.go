@@ -94,7 +94,7 @@ func run() error {
 
 	// Run one instance to completion — this writes an instance.completed event to
 	// the outbox in the same transaction as the terminal state.
-	final, err := driver.Run(ctx, def, "order-42", map[string]any{"amount": 4200})
+	final, err := driver.Drive(ctx, def, "order-42", map[string]any{"amount": 4200})
 	if err != nil {
 		return err
 	}

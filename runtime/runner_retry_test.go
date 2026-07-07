@@ -67,7 +67,7 @@ func TestActionFailedHonoursRetryContract(t *testing.T) {
 			runner := runtimetest.MustRunner(t, cat, store)
 
 			const instanceID = "rc-1"
-			st, err := runner.Run(t.Context(), retryContractDef(), instanceID, nil)
+			st, err := runner.Drive(t.Context(), retryContractDef(), instanceID, nil)
 			require.NoError(t, err)
 			assert.Equal(t, engine.StatusFailed, st.Status, "action error with no retry policy must fail instance")
 

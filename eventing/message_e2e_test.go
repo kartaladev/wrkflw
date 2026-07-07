@@ -96,7 +96,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 
 	// ── 4. Park the receiver instance ────────────────────────────────────────
 	recvDef := receiverDef()
-	recvState, err := r.Run(ctx, recvDef, "recv-inst-1", nil)
+	recvState, err := r.Drive(ctx, recvDef, "recv-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, recvState.Status,
 		"receiver must park at the ReceiveTask")
@@ -106,7 +106,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 
 	// ── 5. Run the sender: commits a message.OrderPlaced row into the outbox ─
 	sendDef := senderDef()
-	sendState, err := r.Run(ctx, sendDef, "send-inst-1", map[string]any{"orderId": "o-1"})
+	sendState, err := r.Drive(ctx, sendDef, "send-inst-1", map[string]any{"orderId": "o-1"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, sendState.Status,
 		"sender must complete synchronously (SendTask is fire-and-forget)")
