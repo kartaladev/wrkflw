@@ -23,7 +23,8 @@
 
 - **Modify** `engine/command.go` — `ScheduleTimer.FireAt time.Time` → `Trigger schedule.TriggerSpec`.
 - **Modify** engine arm sites (`step_boundaries.go`, `step_nodes.go`, `step_eventsubprocess.go`) — emit `Trigger` (drop `triggerDelay`/`FireAt`); `step_timers.go` — drop reminder reschedule (recurrence is native).
-- **Modify** `runtime/kernel/scheduler.go` — `Scheduler` interface new shape; `MemScheduler` (`OneTime`+`Every`, `NextRun`, `ErrUnsupportedTrigger`).
+- **Modify** `runtime/kernel/scheduler.go` — `Scheduler` interface new shape + `ErrUnsupportedTrigger`; **delete** `MemScheduler`.
+- **Move** `MemScheduler` → `processtest/memscheduler.go` (`OneTime`+`Every`, `NextRun`); update `processtest/harness.go`; migrate `runtime_test`/`scheduling` test call sites and the 4 timer example scenarios (→ gocron+fake clock).
 - **Modify** `runtime/kernel/timerstore.go` — `ArmedTimer.FireAt` → `NextRun` + `Trigger schedule.TriggerSpec`.
 - **Modify** `runtime/timerops.go` — `armTimer` → `sched.Schedule(ctx, …)`; `timerOpsFor` recurring-aware.
 - **Modify** `runtime/processdriver_action.go` — `perform(ScheduleTimer)` passes `Trigger`.
@@ -100,29 +101,42 @@ git commit -m "refactor(engine): ScheduleTimer carries TriggerSpec; native recur
 
 ---
 
-## Task 2: Scheduler port + `MemScheduler` (OneTime + Every)
+## Task 2: Scheduler port (in `kernel`) + relocate `MemScheduler` to `processtest`
 
-**Files:** `runtime/kernel/scheduler.go`; `runtime/kernel/scheduler_test.go`.
+The `Scheduler` port stays in `runtime/kernel`. **`MemScheduler` (and
+`WithMemSchedulerClock`, `pendingTimer`, its tests) move to `processtest`** — it
+is a test-only double, not a default, so it belongs with the public test
+harness, not beside the real defaults. `processtest` already imports `kernel`
+(for the port); the runtime tests that use it are all `runtime_test` (black-box),
+so no import cycle. The public `scheduling` package stays gocron-only.
+
+**Files:** `runtime/kernel/scheduler.go` (port + `ErrUnsupportedTrigger`; delete `MemScheduler`); **move** `MemScheduler` → `processtest/memscheduler.go` (+ `processtest/memscheduler_test.go`); update `processtest/harness.go` (uses the relocated type from its own package now).
 
 **Interfaces — Produces:**
 
 ```go
+// runtime/kernel/scheduler.go
 type Scheduler interface {
 	Schedule(ctx context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (nextRun time.Time, err error)
 	Cancel(ctx context.Context, timerID string)
 	NextRun(timerID string) (time.Time, bool)
 }
 var ErrUnsupportedTrigger = errors.New("workflow-scheduler: trigger kind not supported by this scheduler")
+
+// processtest — relocated
+func NewMemScheduler(opts ...MemSchedulerOption) *MemScheduler
+func WithMemSchedulerClock(clk clock.Clock) MemSchedulerOption
 ```
 
-`MemScheduler` supports `KindOneTime` (fire once at `now+d` or `At`) and `KindDuration` (re-arm at `last+d` on `Tick`); returns `ErrUnsupportedTrigger` for cron/calendar/random. `NextRun`/`NextFireAt`/`Pending` keep working.
+`processtest.MemScheduler` supports `KindOneTime` (fire once at `now+d` or `At`) and `KindDuration` (re-arm at `last+d` on `Tick`); returns `kernel.ErrUnsupportedTrigger` for cron/calendar/random. `NextRun`/`NextFireAt`/`Pending`/`Tick` keep working.
 
 - [ ] **Step 1: Failing test**
 
 ```go
+// processtest/memscheduler_test.go (relocated)
 func TestMemSchedulerTriggers(t *testing.T) {
 	clk := clockwork.NewFakeClock()
-	s := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	s := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(clk))
 	ctx := t.Context()
 
 	fired := 0
@@ -153,9 +167,9 @@ func TestMemSchedulerTriggers(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `go test ./runtime/kernel/... -run TestMemSchedulerTriggers` → FAIL (signature/behavior).
+- [ ] **Step 2: Run to verify it fails** — `go test ./processtest/... -run TestMemSchedulerTriggers` → FAIL (type not yet in processtest / signature).
 
-- [ ] **Step 3: Implement** — change the `Scheduler` interface + add `ErrUnsupportedTrigger`. Update `MemScheduler`:
+- [ ] **Step 3: Implement** — add `Scheduler` interface + `ErrUnsupportedTrigger` in `kernel`; **move** `MemScheduler` (+ `MemSchedulerOption`/`WithMemSchedulerClock`/`pendingTimer`) into `processtest`, then update its `Schedule`. Migrate the ~10 `runtime_test` files + `scheduling/runner_e2e_test.go` from `kernel.NewMemScheduler` → `processtest.NewMemScheduler` (mechanical import + call swap); update `processtest/harness.go` to build the now-same-package type directly.
 
 ```go
 func (s *MemScheduler) Schedule(_ context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (time.Time, error) {
@@ -399,6 +413,8 @@ func TestSchedulingHasNoDBDeps(t *testing.T) {
 - [ ] **Step 3: Implement** — define neutral `Locker`/`Elector` interfaces + `WithLocker`/`WithElector`; delete the DB-driver options/fields; the façade passes the neutral values to the internal gocron adapter (adapting to `gocron.Locker`/`gocron.Elector` inside `internal/scheduling/gocron`). Move `NewPostgresElector`/`NewMySQLElector` construction into `scheduling/backend/{postgres,mysql}` public constructors that return `scheduling.Elector`. Add the persistence-lock bridge (`scheduling.Locker` backed by `dialect.Locker`), so no PG/MySQL locker code lives in `scheduling`.
 
 - [ ] **Step 4: Run** — `go test ./scheduling/... ./scheduling/backend/...` → PASS incl. the neutrality test; migrate wiring examples (`examples/{production,mysql}_wiring`) to the new options.
+
+- [ ] **Step 4b: Migrate the 4 timer example scenarios off MemScheduler.** `user_deadline`, `timer_boundary`, `inwait_reminder`, `retry_recovery` currently use `kernel.NewMemScheduler`; that type is now in `processtest` (which examples must not import). Switch each to `scheduling.NewScheduler(scheduling.WithClock(clk))` with a `*clockwork.FakeClock`, and make firing deterministic via a done-channel signaled from the action/fire path: schedule → `clk.Advance(…)` → `<-done` → assert. Run each (`go run ./examples/scenarios/<name>/`) and confirm equivalent output; remove stray binaries.
 
 - [ ] **Step 5: Commit**
 

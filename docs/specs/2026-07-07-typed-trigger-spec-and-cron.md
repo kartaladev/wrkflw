@@ -252,12 +252,25 @@ type Scheduler interface {
   lifecycle events, calls `Save` (schedule), `Delete` (one-shot completion /
   cancel), `Update` (recurring `AfterJobRuns` → new `NextRun`). All within the
   ambient ctx tx. gocron stays behind the port.
-- **`scheduling.Scheduler` façade** delegates + owns the gocron lifecycle.
-- **`MemScheduler`** (`runtime/kernel`): supports `KindOneTime` + `KindDuration`
-  only (trivial next-run, no parser); `ErrUnsupportedTrigger` for
-  cron/calendar/random; also accepts an optional in-mem `JobStore` for the same
-  self-rehydration flow in tests. `Tick` fires due timers; `KindDuration` re-arms
-  at `last+d`.
+- **`scheduling.Scheduler` façade** delegates + owns the gocron lifecycle. The
+  public `scheduling` package is **gocron-only** — the deterministic test
+  scheduler does NOT live here.
+- **`MemScheduler` moves `runtime/kernel` → `processtest`.** It is a test-only
+  double (opt-in, never a default — unlike `kernel.MemInstanceStore`), so it
+  belongs with the public test harness, not beside the real defaults or the
+  production scheduler. The `Scheduler` *port* stays in `kernel`. `MemScheduler`
+  supports `KindOneTime` + `KindDuration` only (trivial next-run, no parser),
+  returns `ErrUnsupportedTrigger` for cron/calendar/random, and accepts an
+  optional in-mem `JobStore` for the self-rehydration flow. `Tick` fires due
+  timers; `KindDuration` re-arms at `last+d`. No import cycle: the runtime tests
+  that use it are all black-box (`runtime_test`), and `processtest` already
+  imports `kernel`.
+- **Example scenarios use the real gocron scheduler.** The timer scenarios
+  (`user_deadline`/`timer_boundary`/`inwait_reminder`/`retry_recovery`) switch
+  from `MemScheduler` to `scheduling.NewScheduler` + a fake clock, with a
+  done-channel from the fire callback for deterministic output — honest
+  reference wiring, and they never import the test harness
+  (per the examples-are-not-tests principle).
 
 ### Runtime
 
