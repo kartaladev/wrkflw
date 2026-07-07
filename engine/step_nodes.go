@@ -508,8 +508,12 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	}
 	// If the node carries a deadline, schedule the deadline timer and record the
 	// deadline on the HumanTask so callers can surface the due date.
-	if ut.DeadlineDuration != "" {
-		dur, err := c.eval.EvalDuration(ut.DeadlineDuration, c.s.Variables)
+	deadlineSpec, err := ResolveTrigger(c.eval, ut.DeadlineTimer, c.s.Variables)
+	if err != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: deadline node %q: %w", node.ID(), err)
+	}
+	if !deadlineSpec.IsZero() {
+		dur, err := triggerDelay(deadlineSpec, c.at)
 		if err != nil {
 			return cmds, false, fmt.Errorf("workflow-engine: deadline node %q: %w", node.ID(), err)
 		}
@@ -534,8 +538,12 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	// If the node carries a reminder interval, schedule the first in-wait
 	// timer. Subsequent reminders are re-scheduled each time the timer fires
 	// (see handleReminderFired), so a single ScheduleTimer is enough here.
-	if ut.ReminderEvery != "" {
-		dur, err := c.eval.EvalDuration(ut.ReminderEvery, c.s.Variables)
+	reminderSpec, err := ResolveTrigger(c.eval, ut.ReminderEvery, c.s.Variables)
+	if err != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
+	}
+	if !reminderSpec.IsZero() {
+		dur, err := triggerDelay(reminderSpec, c.at)
 		if err != nil {
 			return cmds, false, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
 		}
@@ -579,8 +587,12 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		return nil, false, nil
 	}
 	var cmds []Command
-	if ice.TimerDuration != "" {
-		dur, err := c.eval.EvalDuration(ice.TimerDuration, c.s.Variables)
+	timerSpec, err := ResolveTrigger(c.eval, ice.Timer, c.s.Variables)
+	if err != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID(), err)
+	}
+	if !timerSpec.IsZero() {
+		dur, err := triggerDelay(timerSpec, c.at)
 		if err != nil {
 			return cmds, false, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID(), err)
 		}
@@ -761,8 +773,12 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 			CatchNode:    catchNodeRaw.ID(),
 			Flow:         f.ID,
 		}
-		if ce.TimerDuration != "" {
-			dur, err := c.eval.EvalDuration(ce.TimerDuration, c.s.Variables)
+		gwTimerSpec, err := ResolveTrigger(c.eval, ce.Timer, c.s.Variables)
+		if err != nil {
+			return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID(), catchNodeRaw.ID(), err)
+		}
+		if !gwTimerSpec.IsZero() {
+			dur, err := triggerDelay(gwTimerSpec, c.at)
 			if err != nil {
 				return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID(), catchNodeRaw.ID(), err)
 			}

@@ -16,6 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -676,7 +677,7 @@ func cancelWithTimerDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithActionName("work")),
 			// Timer boundary on svc (30-second deadline).
-			event.NewBoundary("bnd-timer", "svc", event.WithBoundaryTimer(`"30s"`)),
+			event.NewBoundary("bnd-timer", "svc", event.WithBoundaryTimer(schedule.AfterExpr(`"30s"`))),
 			event.NewEnd("timeout-end"),
 			event.NewEnd("end"),
 		},

@@ -157,7 +157,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		return StepResult{}, fmt.Errorf("workflow-engine: reminder fired: node %q not found in definition", rec.NodeID)
 	}
 
-	reminderEvery, reminderAction := model.ReminderOf(node)
+	reminderSpec, reminderAction := model.ReminderOf(node)
 
 	var cmds []Command
 
@@ -176,9 +176,15 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	// Remove the old record first so the timer table stays consistent.
 	s.removeTimer(rec.TimerID)
 
-	// Re-evaluate the duration from the expression (node variables may differ,
-	// but correctness requires the same expression path as initial scheduling).
-	dur, err := eval.EvalDuration(reminderEvery, s.Variables)
+	// Re-resolve the interval from the reminder trigger (node variables may
+	// differ, but correctness requires the same resolve path as initial
+	// scheduling). Native recurring/calendar forms surface as
+	// ErrUnsupportedTrigger until a later plan wires the native scheduler.
+	resolvedSpec, err := ResolveTrigger(eval, reminderSpec, s.Variables)
+	if err != nil {
+		return StepResult{}, fmt.Errorf("workflow-engine: reminder node %q re-schedule: %w", node.ID(), err)
+	}
+	dur, err := triggerDelay(resolvedSpec, firedAt)
 	if err != nil {
 		return StepResult{}, fmt.Errorf("workflow-engine: reminder node %q re-schedule: %w", node.ID(), err)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -347,7 +348,7 @@ func eventGatewayDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewCatch("signal-catch", event.WithCatchSignal("approved")),
 			activity.NewServiceTask("timer-branch", activity.WithActionName("timer-action")),
 			activity.NewServiceTask("signal-branch", activity.WithActionName("signal-action")),
@@ -516,7 +517,7 @@ func eventGatewayMessageDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewCatch("msg-catch", event.WithCatchMessage("order", "")),
 			activity.NewServiceTask("timer-branch", activity.WithActionName("timer-action")),
 			activity.NewServiceTask("msg-branch", activity.WithActionName("msg-action")),
@@ -608,7 +609,7 @@ func interruptingBoundaryTimerDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", nil),
-			event.NewBoundary("bnd-timer", "approve", event.WithBoundaryTimer(`"3h"`)),
+			event.NewBoundary("bnd-timer", "approve", event.WithBoundaryTimer(schedule.AfterExpr(`"3h"`))),
 			activity.NewServiceTask("escalate", activity.WithActionName("escalate-action")),
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
@@ -802,7 +803,7 @@ func hostCompletionCancelsBoundaryDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("work", activity.WithActionName("work-action")),
-			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(`"1h"`)),
+			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(schedule.AfterExpr(`"1h"`))),
 			activity.NewServiceTask("alert", activity.WithActionName("alert-action")),
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
@@ -883,7 +884,7 @@ func badBoundaryDurationDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("work", activity.WithActionName("work-action")),
-			event.NewBoundary("bnd-bad", "work", event.WithBoundaryTimer(`"not a duration"`)),
+			event.NewBoundary("bnd-bad", "work", event.WithBoundaryTimer(schedule.AfterExpr(`"not a duration"`))),
 			activity.NewServiceTask("alert", activity.WithActionName("alert-action")),
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
@@ -926,7 +927,7 @@ func actionFailedCancelsArmsAndBoundariesDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("work", activity.WithActionName("work-action")),
-			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(`"2h"`)),
+			event.NewBoundary("bnd-timer", "work", event.WithBoundaryTimer(schedule.AfterExpr(`"2h"`))),
 			activity.NewServiceTask("alert", activity.WithActionName("alert-action")),
 			event.NewEnd("end"),
 			event.NewEnd("end2"),

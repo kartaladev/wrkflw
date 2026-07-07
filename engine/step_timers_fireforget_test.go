@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 // fireForgetDeadlineDef returns a user task with a 3h deadline whose breach runs
@@ -20,7 +21,7 @@ func fireForgetDeadlineDef() *model.ProcessDefinition {
 		ID: "p-ff-deadline", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify")),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(schedule.AfterExpr(`"3h"`), "escalate", "notify")),
 			event.NewEnd("normalEnd"),
 			event.NewEnd("escalateNode"),
 		},
@@ -39,7 +40,7 @@ func fireForgetReminderDef() *model.ProcessDefinition {
 		ID: "p-ff-reminder", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify"), activity.WithReminder(`"1h"`, "remind")),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(schedule.AfterExpr(`"3h"`), "escalate", "notify"), activity.WithReminder(schedule.EveryExpr(`"1h"`), "remind")),
 			event.NewEnd("normalEnd"),
 			event.NewEnd("escalateNode"),
 		},

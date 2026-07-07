@@ -16,7 +16,7 @@ import (
 //
 // Trigger encoding:
 //   - Signal trigger: the nested definition's StartNodes()[0].SignalName is non-empty.
-//   - Timer trigger: the nested definition's StartNodes()[0].TimerDuration is non-empty.
+//   - Timer trigger: the nested definition's StartNodes()[0].Timer is set (non-zero TriggerSpec).
 //   - Message trigger: the nested definition's StartNodes()[0].MessageName is non-empty.
 //
 // Timer triggers emit a ScheduleTimer command. Signal/message triggers are recorded
@@ -49,8 +49,12 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 		if se, isSE := startNode.(event.StartEvent); isSE {
 			if se.SignalName != "" {
 				arm.Signal = se.SignalName
-			} else if se.TimerDuration != "" {
-				dur, err := eval.EvalDuration(se.TimerDuration, s.Variables)
+			} else if !se.Timer.IsZero() {
+				timerSpec, err := ResolveTrigger(eval, se.Timer, s.Variables)
+				if err != nil {
+					return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
+				}
+				dur, err := triggerDelay(timerSpec, at)
 				if err != nil {
 					return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
 				}

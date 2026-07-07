@@ -15,9 +15,10 @@ import (
 // Definition-scan order is deterministic (Nodes slice order); boundary arms are
 // appended in the same order so s.Boundaries is deterministic.
 //
-// A bad TimerDuration expression is returned as a wrapped error — consistent with
+// A bad Timer trigger expression is returned as a wrapped error — consistent with
 // the intermediate-timer and deadline paths — so callers can fail fast rather than
-// silently no-arming the boundary.
+// silently no-arming the boundary. Native recurring/calendar timer forms surface
+// as ErrUnsupportedTrigger until a later plan wires the native scheduler.
 func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
@@ -40,8 +41,12 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 			NonInterrupting: n.NonInterrupting,
 		}
 
-		if n.TimerDuration != "" {
-			dur, err := eval.EvalDuration(n.TimerDuration, s.Variables)
+		timerSpec, err := ResolveTrigger(eval, n.Timer, s.Variables)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
+		}
+		if !timerSpec.IsZero() {
+			dur, err := triggerDelay(timerSpec, at)
 			if err != nil {
 				return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
 			}

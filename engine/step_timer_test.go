@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
@@ -25,7 +26,7 @@ func timerDef() *model.ProcessDefinition {
 		ID: "p-timer", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			activity.NewServiceTask("notify", activity.WithActionName("send-notification")),
 			event.NewEnd("end"),
 		},
@@ -162,7 +163,7 @@ func deadlineDef() *model.ProcessDefinition {
 		ID: "p-deadline", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify")),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(schedule.AfterExpr(`"3h"`), "escalate", "notify")),
 			event.NewEnd("normalEnd"),
 			event.NewEnd("escalateNode"),
 		},
@@ -350,7 +351,7 @@ func reminderDef() *model.ProcessDefinition {
 		ID: "p-reminder", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "escalate", "notify"), activity.WithReminder(`"1h"`, "remind")),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(schedule.AfterExpr(`"3h"`), "escalate", "notify"), activity.WithReminder(schedule.EveryExpr(`"1h"`), "remind")),
 			event.NewEnd("normalEnd"),
 			event.NewEnd("escalateNode"),
 		},
@@ -561,7 +562,7 @@ func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithReminder(`"1h"`, "")),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithReminder(schedule.EveryExpr(`"1h"`), "")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -699,7 +700,7 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(`"3h"`, "esc", "notify")),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithDeadline(schedule.AfterExpr(`"3h"`), "esc", "notify")),
 			activity.NewServiceTask("svcTask", activity.WithActionName("work")),
 			event.NewEnd("endA"),
 			event.NewEnd("endB"),
