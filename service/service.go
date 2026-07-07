@@ -115,6 +115,10 @@ type Engine struct {
 	taskStore humantask.TaskStore
 	clk       clock.Clock
 	idgen     idgen.Generator
+	// ownsDriver is true only when NewEngine built the driver itself (no driver
+	// was injected via WithProcessDriver). It gates Start/Shutdown so a
+	// consumer-injected driver is never started or torn down by the Engine.
+	ownsDriver bool
 }
 
 // NewEngine constructs an Engine facade from functional options over a coherent
@@ -182,6 +186,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 	}
 
 	driver := c.driver
+	ownsDriver := c.driver == nil
 	if driver == nil {
 		dopts := []runtime.Option{
 			runtime.WithInstanceStore(c.store),
@@ -206,17 +211,44 @@ func NewEngine(opts ...Option) (*Engine, error) {
 	}
 
 	e := &Engine{
-		runner:    driver,
-		tasks:     tasks,
-		reg:       c.reg,
-		store:     c.store,
-		lister:    c.lister,
-		taskStore: c.taskStore,
-		clk:       c.clk,
-		idgen:     c.idgen,
+		runner:     driver,
+		tasks:      tasks,
+		reg:        c.reg,
+		store:      c.store,
+		lister:     c.lister,
+		taskStore:  c.taskStore,
+		clk:        c.clk,
+		idgen:      c.idgen,
+		ownsDriver: ownsDriver,
 	}
 	e.logConstructionSummary(c)
 	return e, nil
+}
+
+// Start starts the engine's owned process driver (its in-process scheduler),
+// binding its lifetime to ctx. It is a no-op when the driver was supplied by
+// the consumer via WithProcessDriver (that driver is consumer-owned). Idempotent.
+func (e *Engine) Start(ctx context.Context) error {
+	if !e.ownsDriver {
+		return nil
+	}
+	if err := e.runner.Start(ctx); err != nil {
+		return fmt.Errorf("workflow-service: start: %w", err)
+	}
+	return nil
+}
+
+// Shutdown releases resources the engine owns — currently its owned process
+// driver. A consumer-injected driver is left untouched. Idempotent; matches
+// samber/do ShutdownerWithContextAndError.
+func (e *Engine) Shutdown(ctx context.Context) error {
+	if !e.ownsDriver {
+		return nil
+	}
+	if err := e.runner.Shutdown(ctx); err != nil {
+		return fmt.Errorf("workflow-service: shutdown: %w", err)
+	}
+	return nil
 }
 
 // validateEngineLeaves ensures every required leaf resolved to a non-nil value
