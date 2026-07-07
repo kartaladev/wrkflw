@@ -6,18 +6,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
 // ArmedTimer is one timer currently armed (scheduled, not yet fired or cancelled).
 // DefID/DefVersion are stored so RehydrateTimers can resolve the process
 // definition via the registry without loading instance state per timer.
+//
+// Trigger is the resolved [schedule.TriggerSpec] the timer was armed with; it is
+// authoritative for re-arm at rehydration and for deciding whether a fired timer
+// is recurring (and therefore survives its fire). NextRun is the next scheduled
+// run time as computed by the scheduler at arm time. Durable persistence of the
+// Trigger descriptor lands in Plan 3; today the fields exist and travel through
+// the in-memory store.
 type ArmedTimer struct {
 	InstanceID string
 	DefID      string
 	DefVersion int
 	TimerID    string
-	FireAt     time.Time
+	Trigger    schedule.TriggerSpec
+	NextRun    time.Time
 	Kind       engine.TimerKind
 }
 
@@ -26,7 +35,7 @@ type ArmedTimer struct {
 // TimerCancels), atomically with the state commit — see ADR-0027.
 type TimerStore interface {
 	// ListArmed returns all timers currently armed, ordered by
-	// (FireAt, InstanceID, TimerID) for deterministic re-arm order.
+	// (NextRun, InstanceID, TimerID) for deterministic re-arm order.
 	ListArmed(ctx context.Context) ([]ArmedTimer, error)
 }
 
@@ -67,8 +76,8 @@ func (s *MemTimerStore) ListArmed(_ context.Context) ([]ArmedTimer, error) {
 	}
 	s.mu.Unlock()
 	sort.Slice(out, func(i, j int) bool {
-		if !out[i].FireAt.Equal(out[j].FireAt) {
-			return out[i].FireAt.Before(out[j].FireAt)
+		if !out[i].NextRun.Equal(out[j].NextRun) {
+			return out[i].NextRun.Before(out[j].NextRun)
 		}
 		if out[i].InstanceID != out[j].InstanceID {
 			return out[i].InstanceID < out[j].InstanceID

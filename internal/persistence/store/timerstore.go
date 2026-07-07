@@ -175,7 +175,7 @@ func (s *TimerStore) scanArmedTimer(rows interface {
 			DefID:      defID,
 			DefVersion: defVersion,
 			TimerID:    timerID,
-			FireAt:     fireAt, // already UTC from parseTimeText
+			NextRun:    fireAt, // already UTC from parseTimeText; the fire_at column carries the next-run instant
 			Kind:       engine.TimerKind(kind),
 		}, nil
 	}
@@ -190,7 +190,7 @@ func (s *TimerStore) scanArmedTimer(rows interface {
 		DefID:      defID,
 		DefVersion: defVersion,
 		TimerID:    timerID,
-		FireAt:     fireAt.UTC(), // normalise TIMESTAMPTZ / DATETIME to UTC
+		NextRun:    fireAt.UTC(), // normalise TIMESTAMPTZ / DATETIME to UTC; the fire_at column carries the next-run instant
 		Kind:       engine.TimerKind(kind),
 	}, nil
 }

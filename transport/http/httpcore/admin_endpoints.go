@@ -347,7 +347,7 @@ func AdminTimers(ctx context.Context, a service.TimerAdmin) (int, any, error) {
 			DefID:      t.DefID,
 			DefVersion: t.DefVersion,
 			TimerID:    t.TimerID,
-			FireAt:     t.FireAt.Format(time.RFC3339),
+			FireAt:     t.NextRun.Format(time.RFC3339),
 			Kind:       t.Kind.String(),
 		}
 	}

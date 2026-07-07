@@ -95,7 +95,10 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 				}),
 			})
 
-			sched := &runtimetest.RecordingScheduler{}
+			// The engine emits an AfterDuration(backoff) trigger; the scheduler
+			// resolves it to now+backoff via its clock, so wire the fake clock in
+			// to get a deterministic fire-at (T+1s).
+			sched := &runtimetest.RecordingScheduler{Clock: clk}
 
 			var opts []runtime.Option
 			opts = append(opts, runtime.WithScheduler(sched))

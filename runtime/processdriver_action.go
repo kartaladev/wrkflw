@@ -238,14 +238,14 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		if cmd.Kind == engine.TimerRetry {
 			r.obs.actionRetries.Add(ctx, 1)
 		}
-		r.armTimer(def, st.InstanceID, cmd.TimerID, cmd.FireAt)
+		r.armTimer(ctx, def, st.InstanceID, cmd.TimerID, cmd.Trigger)
 		return nil, nil
 
 	case engine.CancelTimer:
 		if r.sched == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
 		}
-		r.sched.Cancel(cmd.TimerID)
+		r.sched.Cancel(ctx, cmd.TimerID)
 		return nil, nil
 
 	case engine.ThrowSignal:

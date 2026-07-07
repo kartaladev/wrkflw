@@ -90,7 +90,7 @@ func TestNewSQLiteTimerStore_ListArmed(t *testing.T) {
 				TimerID:    "t1",
 				DefID:      "d",
 				DefVersion: 1,
-				FireAt:     fireAt,
+				NextRun:    fireAt,
 				Kind:       engine.TimerDeadline,
 			},
 		},

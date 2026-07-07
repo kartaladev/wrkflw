@@ -167,7 +167,7 @@ func TestStoreSideEffects(t *testing.T) {
 			Depth:            1,
 		}
 		child.TimerArms = []kernel.ArmedTimer{
-			{InstanceID: "child", DefID: "d", DefVersion: 1, TimerID: "t1", FireAt: now.Add(time.Hour), Kind: engine.TimerIntermediate},
+			{InstanceID: "child", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: now.Add(time.Hour), Kind: engine.TimerIntermediate},
 		}
 		childTok, err := s.Create(t.Context(), child)
 		require.NoError(t, err, "%s: create child", b.name)

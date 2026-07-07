@@ -903,7 +903,7 @@ func TestAdminTimers(t *testing.T) {
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 1, NextFireAt: &fireAt}, nil)
 				m.EXPECT().ListArmed(gomock.Any()).Return(
 					[]kernel.ArmedTimer{
-						{InstanceID: "inst-1", DefID: "d", DefVersion: 1, TimerID: "t1", FireAt: fireAt},
+						{InstanceID: "inst-1", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: fireAt},
 					}, nil)
 				return m
 			},

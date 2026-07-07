@@ -56,7 +56,7 @@ func TestTimerStoreListArmed(t *testing.T) {
 				DefID:      "proc-def",
 				DefVersion: 2,
 				TimerID:    "later-timer",
-				FireAt:     base.Add(2 * time.Hour),
+				NextRun:    base.Add(2 * time.Hour),
 				Kind:       engine.TimerIntermediate,
 			},
 			{
@@ -64,7 +64,7 @@ func TestTimerStoreListArmed(t *testing.T) {
 				DefID:      "proc-def",
 				DefVersion: 2,
 				TimerID:    "sooner-timer",
-				FireAt:     base.Add(time.Hour),
+				NextRun:    base.Add(time.Hour),
 				Kind:       engine.TimerIntermediate,
 			},
 		})
@@ -86,9 +86,9 @@ func TestTimerStoreListArmed(t *testing.T) {
 		// FireAt UTC location (ADR-0080): must survive round-trip at the same instant
 		// and be UTC-located regardless of the host TZ (TZ=Asia/Jakarta guard).
 		wantSooner := base.Add(time.Hour)
-		assert.True(t, armed[0].FireAt.Equal(wantSooner),
-			"%s: FireAt round-trip: want %v got %v", b.name, wantSooner, armed[0].FireAt)
-		assert.Equal(t, time.UTC, armed[0].FireAt.Location(),
+		assert.True(t, armed[0].NextRun.Equal(wantSooner),
+			"%s: FireAt round-trip: want %v got %v", b.name, wantSooner, armed[0].NextRun)
+		assert.Equal(t, time.UTC, armed[0].NextRun.Location(),
 			"%s: FireAt must be UTC-located", b.name)
 	})
 }
@@ -122,13 +122,13 @@ func TestTimerStoreListArmedMultiInstance(t *testing.T) {
 		seedTimerInstance(t, s, "inst-a", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "inst-a", DefID: "d", DefVersion: 1,
-				TimerID: "ta", FireAt: base.Add(2 * time.Hour), Kind: engine.TimerIntermediate,
+				TimerID: "ta", NextRun: base.Add(2 * time.Hour), Kind: engine.TimerIntermediate,
 			},
 		})
 		seedTimerInstance(t, s, "inst-b", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "inst-b", DefID: "d", DefVersion: 1,
-				TimerID: "tb", FireAt: base.Add(time.Hour), Kind: engine.TimerIntermediate,
+				TimerID: "tb", NextRun: base.Add(time.Hour), Kind: engine.TimerIntermediate,
 			},
 		})
 
@@ -165,11 +165,11 @@ func TestTimerStoreStats(t *testing.T) {
 		seedTimerInstance(t, s, "stats-inst", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "stats-inst", DefID: "d", DefVersion: 1,
-				TimerID: "t-later", FireAt: later, Kind: engine.TimerIntermediate,
+				TimerID: "t-later", NextRun: later, Kind: engine.TimerIntermediate,
 			},
 			{
 				InstanceID: "stats-inst", DefID: "d", DefVersion: 1,
-				TimerID: "t-sooner", FireAt: sooner, Kind: engine.TimerIntermediate,
+				TimerID: "t-sooner", NextRun: sooner, Kind: engine.TimerIntermediate,
 			},
 		})
 
@@ -206,7 +206,7 @@ func TestTimerStoreFireAtSubSecond(t *testing.T) {
 		seedTimerInstance(t, s, "sub-sec-inst", at, []kernel.ArmedTimer{
 			{
 				InstanceID: "sub-sec-inst", DefID: "d", DefVersion: 1,
-				TimerID: "t-usec", FireAt: at, Kind: engine.TimerIntermediate,
+				TimerID: "t-usec", NextRun: at, Kind: engine.TimerIntermediate,
 			},
 		})
 
@@ -214,9 +214,9 @@ func TestTimerStoreFireAtSubSecond(t *testing.T) {
 		require.NoError(t, err, "%s: ListArmed sub-second", b.name)
 		require.Len(t, armed, 1, "%s: want 1 timer", b.name)
 
-		assert.True(t, armed[0].FireAt.Equal(at),
-			"%s: FireAt sub-second round-trip: want %v got %v", b.name, at, armed[0].FireAt)
-		assert.Equal(t, time.UTC, armed[0].FireAt.Location(),
+		assert.True(t, armed[0].NextRun.Equal(at),
+			"%s: FireAt sub-second round-trip: want %v got %v", b.name, at, armed[0].NextRun)
+		assert.Equal(t, time.UTC, armed[0].NextRun.Location(),
 			"%s: FireAt must be UTC-located", b.name)
 	})
 }

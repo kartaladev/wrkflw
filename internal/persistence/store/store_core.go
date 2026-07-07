@@ -419,7 +419,7 @@ func (s *Store) upsertTimer(ctx context.Context, q database.Querier, tm kernel.A
 	_, err := q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
 		 VALUES (?,?,?,?,?,?)`+s.dialect.UpsertTimer()),
-		tm.InstanceID, tm.TimerID, timeArg(s.dialect, tm.FireAt), int16(tm.Kind), tm.DefID, tm.DefVersion)
+		tm.InstanceID, tm.TimerID, timeArg(s.dialect, tm.NextRun), int16(tm.Kind), tm.DefID, tm.DefVersion)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert timer %q/%q: %w", tm.InstanceID, tm.TimerID, err)
 	}

@@ -339,7 +339,14 @@ func (r *ProcessDriver) deliverLoop(
 		var timerArms []kernel.ArmedTimer
 		var timerCancels []string
 		if r.timerStore != nil {
-			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID)
+			// armedRecurring reports whether the fired timer is armed with a
+			// recurring trigger, so timerOpsFor knows a recurring timer must
+			// survive its fire (the native scheduler re-arms it) rather than be
+			// consumed. It reads the armed set lazily — timerOpsFor only calls it
+			// for a TimerFired trigger — and defaults to non-recurring (safe:
+			// consume) on any lookup failure or unknown timer.
+			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID,
+				func(timerID string) bool { return r.armedTimerRecurring(stepCtx, st.InstanceID, timerID) })
 		}
 
 		appliedStep := kernel.AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome, TimerArms: timerArms, TimerCancels: timerCancels}
