@@ -196,15 +196,38 @@ func run() error {
 	//
 	// Service-level SQL wiring — persistence.NewDurableProvider caches ON by
 	// default (hotcache for both instance and human-task stores) and hands the
-	// already-wrapped stores to the engine in one call:
+	// already-wrapped stores to the engine in one call. The DurableProvider keeps
+	// TWO independent cache providers, one per store:
+	//
+	//	WithCacheProvider(p)            sets BOTH the instance-state and the
+	//	                               human-task cache to p.
+	//	WithInstanceCacheProvider(p)   sets ONLY the instance-state cache.
+	//	WithHumanTaskCacheProvider(p)  sets ONLY the human-task cache.
+	//
+	// Options apply in order and later ones win, so this pair COMPOSES rather than
+	// being two alternatives — WithCacheProvider puts both on Redis, then
+	// WithInstanceCacheProvider overrides just the instance store back to hotcache:
 	//
 	//	provider, _ := persistence.NewDurableProvider(ctx, pgxPool,
-	//		persistence.WithCacheProvider(rediscache.New(redisClient)),        // both stores → Redis
-	//		persistence.WithInstanceCacheProvider(hotcache.New()),             // or split them
+	//		persistence.WithCacheProvider(rediscache.New(redisClient)),        // instance=Redis, tasks=Redis
+	//		persistence.WithInstanceCacheProvider(hotcache.New()),             // instance=hotcache (overrides); tasks stay Redis
 	//		persistence.WithDurableInstanceCacheTTL(time.Minute),
 	//		// persistence.WithoutCache(),                                      // opt out entirely
 	//	)
 	//	eng, _ := service.NewEngine(service.WithDurableStore(provider))
+	//
+	// That split — instance state in the in-process hotcache, human tasks in a
+	// shared Redis — is usually what you want in a MULTI-REPLICA deployment:
+	// instance state is served from the fast in-process cache (guarded by
+	// instance ownership, so only the owning replica caches it — no cross-replica
+	// staleness), while human-task snapshots live in a shared Redis so ANY replica
+	// can serve a claim/complete coherently. The equivalent, less order-dependent
+	// way to express the same split is to set each store explicitly:
+	//
+	//	provider, _ := persistence.NewDurableProvider(ctx, pgxPool,
+	//		persistence.WithInstanceCacheProvider(hotcache.New()),             // instance state → in-process
+	//		persistence.WithHumanTaskCacheProvider(rediscache.New(redisClient)), // human tasks → shared Redis
+	//	)
 	//
 	// -------------------------------------------------------------------------
 	return nil
