@@ -15,10 +15,10 @@ type backendPIDer interface {
 // returns 0 when the scheduler is not in single-leader mode or the elector does
 // not expose a backend PID. Test-only.
 func ElectorBackendPID(s *Scheduler) uint32 {
-	if s.elector == nil {
+	if s.cfg.elector == nil {
 		return 0
 	}
-	if p, ok := s.elector.(backendPIDer); ok {
+	if p, ok := s.cfg.elector.(backendPIDer); ok {
 		return p.BackendPID()
 	}
 	return 0
@@ -28,8 +28,8 @@ func ElectorBackendPID(s *Scheduler) uint32 {
 // leadership. It returns false when the scheduler is not in single-leader mode.
 // Test-only.
 func SchedulerIsLeader(ctx context.Context, s *Scheduler) bool {
-	if s.elector == nil {
+	if s.cfg.elector == nil {
 		return false
 	}
-	return s.elector.IsLeader(ctx) == nil
+	return s.cfg.elector.IsLeader(ctx) == nil
 }

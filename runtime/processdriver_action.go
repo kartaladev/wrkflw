@@ -232,6 +232,9 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 		return nil, nil
 
 	case engine.ScheduleTimer:
+		// Defensive nil-guard: NewProcessDriver always resolves a scheduler (a
+		// consumer-injected one or the in-process default), so sched is non-nil
+		// after construction. This guard exists only as dead-safe code.
 		if driver.sched == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
 		}
@@ -242,6 +245,8 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 		return nil, nil
 
 	case engine.CancelTimer:
+		// Defensive nil-guard: see ScheduleTimer above — sched is always non-nil
+		// after NewProcessDriver, so this is dead-safe code.
 		if driver.sched == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
 		}

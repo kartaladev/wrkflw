@@ -68,12 +68,6 @@ type Scheduler struct {
 	// stopCh, when non-nil, terminates the context-cancellation watcher started
 	// by an explicit Start(ctx). Close closes it so the watcher exits.
 	stopCh chan struct{}
-
-	// elector, when single-leader mode is enabled via WithElector, holds the
-	// neutral leader elector. If it also implements io.Closer, Close closes it
-	// alongside the gocron scheduler as a convenience (ADR-0102). nil when not in
-	// elector mode.
-	elector Elector
 }
 
 // Compile-time contract assertions.
@@ -190,7 +184,7 @@ func NewScheduler(opts ...Option) (*Scheduler, error) {
 		return nil, ErrTimerLockElectorConflict
 	}
 
-	return &Scheduler{cfg: cfg, elector: cfg.elector}, nil
+	return &Scheduler{cfg: cfg}, nil
 }
 
 // internalOpts builds the internal gocron options from the resolved façade
@@ -251,6 +245,19 @@ func (s *Scheduler) ensureStarted(ctx context.Context) (*gocronsched.GocronSched
 		return nil, ErrSchedulerClosed
 	}
 	if s.impl != nil {
+		// Already running. If this is an explicit Start(ctx) carrying a
+		// cancellable context and no cancellation watcher is installed yet (e.g. a
+		// prior Schedule auto-started the scheduler with a background context),
+		// install the watcher now so cancelling ctx still stops the scheduler, as
+		// Start documents. Without this, a timer armed before Start would leave
+		// Start's ctx binding silently unhonoured.
+		if s.stopCh == nil && ctx != nil {
+			if done := ctx.Done(); done != nil {
+				stop := make(chan struct{})
+				s.stopCh = stop
+				go s.watchContext(done, stop)
+			}
+		}
 		return s.impl, nil
 	}
 
@@ -356,7 +363,7 @@ func (s *Scheduler) Close() error {
 	s.impl = nil
 	stop := s.stopCh
 	s.stopCh = nil
-	elector := s.elector
+	elector := s.cfg.elector
 	s.mu.Unlock()
 
 	if stop != nil {
