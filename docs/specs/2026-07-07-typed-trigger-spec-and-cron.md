@@ -284,6 +284,37 @@ type Scheduler interface {
   (write → `Save`/`Delete`/`Update`), all ambient-tx aware. `MemTimerStore`
   gets an in-mem `JobStore` sibling for tests.
 
+## Package structure (neutralize the public `scheduling` package)
+
+Today the public `scheduling` package hard-depends on DB drivers — it holds
+`*pgxpool.Pool`/`*sql.DB` fields and exposes `WithDistributedTimerLock(pool
+*pgxpool.Pool)`, `WithTimerElector(pool *pgxpool.Pool)`,
+`WithMySQLTimerElector(db *sql.DB)`, constructing Postgres/MySQL electors
+internally. This violates the library-first "core depends on interfaces only"
+rule that persistence already follows (ADR-0081/0082). Neutralize it:
+
+- **`scheduling` (public) becomes backend-neutral** — no `pgx`/`database/sql`
+  imports. Options take small neutral capability interfaces:
+  `WithLocker(Locker)` and `WithElector(Elector)` (multi-replica timer
+  exclusivity), plus the existing `WithClock`/`WithLogger`. The DB-driver
+  options are removed (breaking, pre-v1.0).
+- **Reuse the persistence advisory lock.** The neutral `scheduling.Locker` is
+  satisfied by the existing persistence advisory-lock capability
+  (`internal/persistence/dialect.Locker` / its PG/MySQL implementations) — no
+  duplicate `PostgresLocker`/`MySQLLocker` in scheduling. A thin public
+  constructor exposes the persistence-backed locker for wiring; the consumer
+  passes it to `scheduling.WithLocker(...)`.
+- **Backend elector adapters move to public subpackages** the consumer imports
+  and wires: `scheduling/backend/postgres` (`NewElector(pool)`) and
+  `scheduling/backend/mysql` (`NewElector(db)`), each returning the neutral
+  `Elector`. gocron internals + the concrete electors stay in
+  `internal/scheduling/gocron`, re-exported through those thin backend packages.
+- **Out of scope here:** rethinking multi-replica exclusivity as a JobStore
+  concern (deferred; the JobStore source-of-truth model in Plan 3 may later
+  subsume the elector, but this spec keeps the neutral Locker/Elector seam).
+
+This neutralization ships in Plan 2 alongside the scheduler-port redesign.
+
 ## Testing (strict TDD)
 
 - `schedule`: every constructor sets the right `Kind`/fields; `Recurring()`;
@@ -333,4 +364,7 @@ type Scheduler interface {
 - [ ] ADR-0102 written (Nygard); note it EXTENDS the expr-lang-for-durations
       decision and adds gocron-native triggers.
 - [ ] `go build ./...`, `go test ./...`, `golangci-lint run ./...` clean; ≥85%.
+- [ ] Public `scheduling` package has NO `pgx`/`database/sql` imports; neutral
+      `WithLocker(Locker)`/`WithElector(Elector)`; persistence advisory lock
+      reused; PG/MySQL electors behind `scheduling/backend/{postgres,mysql}`.
 - [ ] Boundary-enhancements spec ADR numbers remain 0103/0104.
