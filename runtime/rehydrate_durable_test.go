@@ -14,23 +14,54 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// TestRehydrateTimersDurableSQLite proves the durability regression closer: a
-// SQL-backed (SQLite) one-shot AfterDuration timer, armed then "crashed", is
-// re-armed by a FRESH driver over the SAME store and fires at its ORIGINAL
-// absolute instant — not restart-time + duration. Without the persisted
-// next_run + trigger descriptor the fresh driver would either not re-arm at all
-// (Plan-2 regression) or restart the delay from now.
-func TestRehydrateTimersDurableSQLite(t *testing.T) {
-	db := dbtest.RunTestSQLite(t) // already migrated
-	sqlStore, err := store.New(db, dialect.NewSQLite())
+// TestRehydrateTimersDurable proves the durability regression closer across all
+// three supported dialects: a SQL-backed one-shot AfterDuration timer, armed
+// then "crashed", is re-armed by a FRESH driver over the SAME store and fires at
+// its ORIGINAL absolute instant — not restart-time + duration. Without the
+// persisted next_run + trigger descriptor the fresh driver would either not
+// re-arm at all (Plan-2 regression) or restart the delay from now.
+//
+// Proving this on Postgres (primary prod DB) and MySQL — not just SQLite —
+// exercises the 3-dialect next_run/trigger_kind/trigger_payload migration end to
+// end, beyond the per-dialect persistence conformance.
+func TestRehydrateTimersDurable(t *testing.T) {
+	t.Run("postgres", func(t *testing.T) {
+		t.Parallel()
+		pool := dbtest.RunTestDatabase(t) // bare pool — no migrations yet
+		require.NoError(t, persistence.Migrate(t.Context(), pool), "migrate postgres")
+		assertDurableTimerRehydration(t, pool, dialect.NewPostgres())
+	})
+
+	t.Run("mysql", func(t *testing.T) {
+		t.Parallel()
+		db := dbtest.RunTestMySQL(t) // already migrated
+		assertDurableTimerRehydration(t, db, dialect.NewMySQL())
+	})
+
+	t.Run("sqlite", func(t *testing.T) {
+		t.Parallel()
+		db := dbtest.RunTestSQLite(t) // already migrated
+		assertDurableTimerRehydration(t, db, dialect.NewSQLite())
+	})
+}
+
+// assertDurableTimerRehydration runs the identical arm→crash→rehydrate→fire-at-
+// original-instant scenario against one dialect. It goes entirely through the
+// store/timerStore/scheduler abstractions, so the body is dialect-neutral (no
+// raw SQL, no dialect.Name() branching per ADR-0080).
+func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect) {
+	t.Helper()
+
+	sqlStore, err := store.New(conn, dlct)
 	require.NoError(t, err)
-	timerStore, err := store.NewTimerStore(db, dialect.NewSQLite())
+	timerStore, err := store.NewTimerStore(conn, dlct)
 	require.NoError(t, err)
 
 	// The timer catch resolves AfterExpr("1h") → AfterDuration(1h): a one-shot
@@ -48,13 +79,13 @@ func TestRehydrateTimersDurableSQLite(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	// Original process: arm the one-shot timer, then "crash" (discard runner +
-	// scheduler). The wrkflw_timers row persists in the SQLite store.
+	// scheduler). The wrkflw_timers row persists in the SQL store.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 		driver := runtimetest.MustRunner(t, cat, sqlStore,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(timerStore), runtime.WithDefinitions(reg))
-		_, err := driver.Drive(t.Context(), def, "rh-sqlite-1", nil)
+		_, err := driver.Drive(t.Context(), def, "rh-1", nil)
 		require.NoError(t, err)
 	}
 
@@ -73,7 +104,7 @@ func TestRehydrateTimersDurableSQLite(t *testing.T) {
 
 	// The rehydrated one-shot's next run must be the ORIGINAL absolute instant
 	// (startAt + 1h), which is already in the past — so a single Tick fires it.
-	next, ok := sched2.NextRun("rh-sqlite-1-tm1")
+	next, ok := sched2.NextRun("rh-1-tm1")
 	require.True(t, ok, "rehydrated timer must be pending on the fresh scheduler")
 	wantFire := startAt.Add(time.Hour)
 	assert.True(t, next.Equal(wantFire),
@@ -81,7 +112,7 @@ func TestRehydrateTimersDurableSQLite(t *testing.T) {
 
 	require.NoError(t, sched2.Tick(t.Context()))
 
-	final, _, err := sqlStore.Load(t.Context(), "rh-sqlite-1")
+	final, _, err := sqlStore.Load(t.Context(), "rh-1")
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status, "rehydrated durable timer must resume the instance to completion")
 }
