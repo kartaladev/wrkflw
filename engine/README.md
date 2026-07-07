@@ -206,7 +206,7 @@ runtime executes them all before persisting the new state.
 | Command | What the runtime must do |
 |---|---|
 | `InvokeAction{CommandID, Name, Inline, Scoped, Input, FireAndForget}` | Run an `action.Action`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. When `FireAndForget` is true (deadline-breach and reminder actions) the runtime runs the action for its side effect only and feeds **no** `ActionCompleted`/`ActionFailed` back. |
-| `ScheduleTimer{TimerID, Token, FireAt, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` at `FireAt`. `Kind` is `TimerIntermediate`, `TimerDeadline`, `TimerInWait`, or `TimerRetry`. |
+| `ScheduleTimer{TimerID, Token, Trigger, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` per the resolved `schedule.TriggerSpec` in `Trigger`. The engine emits the trigger verbatim (including native recurring/calendar forms) and the scheduler owns the firing math and any recurrence — there is no engine-computed `FireAt`. `Kind` is `TimerIntermediate`, `TimerDeadline`, `TimerInWait`, or `TimerRetry`. |
 | `CancelTimer{TimerID}` | Cancel a previously scheduled timer. |
 | `AwaitHuman{TaskToken, Eligibility}` | Create a human-task record; park until `HumanCompleted`. |
 | `UpdateTask{Task}` | Persist an updated `HumanTask` record (e.g. after a claim or reassignment). |

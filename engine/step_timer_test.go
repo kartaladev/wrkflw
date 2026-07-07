@@ -64,7 +64,11 @@ func TestTimerIntermediateSchedulesAndResumes(t *testing.T) {
 	// TimerID must be deterministic: <instanceID>-tm<seq> where seq starts at 1.
 	assert.Equal(t, "i1-tm1", st.TimerID)
 	assert.Equal(t, engine.TimerIntermediate, st.Kind)
-	assert.Equal(t, fireAt, st.FireAt)
+	// AfterExpr("1h") resolves to AfterDuration(1h); the timer carries the raw
+	// duration trigger (no FireAt) and the scheduler owns the fire instant.
+	d, ok := st.Trigger.Duration()
+	require.True(t, ok, "timer trigger must reduce to a duration, got %+v", st.Trigger)
+	assert.Equal(t, time.Hour, d)
 
 	// Token is parked at the timer node.
 	require.Len(t, r1.State.Tokens, 1)
@@ -215,9 +219,12 @@ func TestUserTaskDeadlineBreachTakesAlternativePath(t *testing.T) {
 	assert.Equal(t, "i1-h1", ah.TaskToken)
 	assert.Equal(t, []string{"manager"}, ah.Eligibility.Roles)
 
-	// Deadline timer properties.
+	// Deadline timer properties. AfterExpr("3h") resolves to AfterDuration(3h);
+	// the command carries the raw duration trigger (no FireAt).
 	assert.Equal(t, engine.TimerDeadline, st.Kind)
-	assert.Equal(t, fireAt, st.FireAt)
+	dd, ok := st.Trigger.Duration()
+	require.True(t, ok, "deadline trigger must reduce to a duration, got %+v", st.Trigger)
+	assert.Equal(t, 3*time.Hour, dd)
 	assert.NotEmpty(t, st.TimerID)
 	deadlineTimerID := st.TimerID
 
@@ -363,13 +370,18 @@ func reminderDef() *model.ProcessDefinition {
 	}
 }
 
-// TestInWaitReminderRepeatsUntilCompletion verifies the full reminder lifecycle:
+// TestInWaitReminderRepeatsUntilCompletion verifies the full reminder lifecycle
+// AFTER Plan 2 Task 1 moved recurrence to the scheduler (native recurring trigger,
+// no engine reschedule):
 //  1. Entering a user task with ReminderEvery emits AwaitHuman + ScheduleTimer(Deadline) + ScheduleTimer(InWait).
-//  2. Each TimerFired for the in-wait reminder emits InvokeAction("remind") + a fresh ScheduleTimer(InWait)
-//     with a new timer id and FireAt == firedAt+1h.
-//  3. Token does not move; task remains Unclaimed/Claimed.
-//  4. Fire the reminder twice to confirm repeating with distinct timer ids.
-//  5. HumanCompleted emits CancelTimer for the outstanding reminder timer.
+//     The in-wait timer carries a RECURRING Every(1h) trigger — armed ONCE.
+//  2. Each TimerFired for the in-wait reminder emits InvokeAction("remind") ONLY,
+//     and NO new ScheduleTimer: native scheduler recurrence re-delivers TimerFired
+//     on the same timer id (repeated-fire behavior is the scheduler's job, covered
+//     in Plan 2 Tasks 2–4 scheduler tests — not the engine's anymore).
+//  3. Token does not move; task remains Unclaimed/Claimed; the reminder record persists.
+//  4. Fire the reminder twice to confirm the SAME id keeps re-delivering without re-arm.
+//  5. HumanCompleted emits CancelTimer for the (single) reminder timer + the deadline.
 //  6. A late reminder TimerFired after completion is a clean no-op.
 func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	def := reminderDef()
@@ -407,14 +419,20 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	// TaskToken is deterministic.
 	assert.Equal(t, "i1-h1", ah.TaskToken)
 
-	// Deadline: 3h from start.
+	// Deadline: AfterExpr("3h") → AfterDuration(3h) (one-shot).
 	assert.Equal(t, engine.TimerDeadline, deadlineST.Kind)
-	assert.Equal(t, startAt.Add(3*time.Hour), deadlineST.FireAt)
+	dd, ok := deadlineST.Trigger.Duration()
+	require.True(t, ok, "deadline trigger must reduce to a duration, got %+v", deadlineST.Trigger)
+	assert.Equal(t, 3*time.Hour, dd)
+	assert.False(t, deadlineST.Trigger.Recurring(), "deadline is one-shot")
 	deadlineTimerID := deadlineST.TimerID
 
-	// Reminder: 1h from start.
+	// Reminder: EveryExpr("1h") → Every(1h) — a RECURRING trigger armed once.
 	assert.Equal(t, engine.TimerInWait, reminderST.Kind)
-	assert.Equal(t, startAt.Add(time.Hour), reminderST.FireAt, "first reminder should fire at start+1h")
+	rd, ok := reminderST.Trigger.Duration()
+	require.True(t, ok, "reminder trigger must expose its interval, got %+v", reminderST.Trigger)
+	assert.Equal(t, time.Hour, rd, "reminder interval must be 1h")
+	assert.True(t, reminderST.Trigger.Recurring(), "reminder trigger must be recurring (native scheduler owns re-fire)")
 
 	// Timer ids are distinct.
 	assert.NotEqual(t, deadlineTimerID, reminderST.TimerID, "deadline and reminder timer ids must differ")
@@ -430,48 +448,33 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	require.Len(t, r1.State.Tasks, 1)
 	assert.Equal(t, humantask.Unclaimed, r1.State.Tasks[0].State)
 
+	// The reminder timer id is stable across fires: native recurrence re-delivers
+	// TimerFired on this SAME id, so the engine no longer allocates a new one.
+	reminderID := reminderST.TimerID
+
 	// ---- Step 2: first reminder fires ----
-	reminder1ID := reminderST.TimerID
 	fire1At := startAt.Add(time.Hour)
 	r2, err := engine.Step(def, r1.State,
-		engine.NewTimerFired(fire1At, reminder1ID), engine.StepOptions{})
+		engine.NewTimerFired(fire1At, reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 
-	// Expect: InvokeAction("remind") + ScheduleTimer(InWait, FireAt=fire1At+1h).
-	// No CancelTimer, no UpdateTask, no CompleteInstance.
+	// Expect: InvokeAction("remind") ONLY. NO new ScheduleTimer (recurrence is native
+	// now), no CancelTimer, no UpdateTask, no CompleteInstance.
 	var ia1 engine.InvokeAction
-	var nextST1 engine.ScheduleTimer
-	var foundIA1, foundNextST1 bool
+	var foundIA1 bool
 	for _, c := range r2.Commands {
 		switch v := c.(type) {
 		case engine.InvokeAction:
 			ia1 = v
 			foundIA1 = true
-		case engine.ScheduleTimer:
-			if v.Kind == engine.TimerInWait {
-				nextST1 = v
-				foundNextST1 = true
-			}
-		case engine.CancelTimer, engine.UpdateTask, engine.CompleteInstance:
-			t.Errorf("unexpected command %T after first reminder fire: %v", c, c)
+		case engine.ScheduleTimer, engine.CancelTimer, engine.UpdateTask, engine.CompleteInstance:
+			t.Errorf("unexpected command %T after first reminder fire (engine must NOT reschedule): %v", c, c)
 		}
 	}
 	require.True(t, foundIA1, "InvokeAction not found after first reminder; got: %v", r2.Commands)
 	assert.Equal(t, "remind", ia1.Name, "InvokeAction name must be the ReminderAction")
-	require.True(t, foundNextST1, "re-schedule ScheduleTimer(InWait) not found after first reminder; got: %v", r2.Commands)
-	assert.Equal(t, engine.TimerInWait, nextST1.Kind)
-	assert.Equal(t, fire1At.Add(time.Hour), nextST1.FireAt, "next reminder must fire at firedAt+1h")
-	assert.NotEqual(t, reminder1ID, nextST1.TimerID, "re-scheduled reminder must have a new timer id")
-	// Guard against double-schedule regression: exactly ONE ScheduleTimer(InWait) per fire.
-	var inWaitCount1 int
-	for _, c := range r2.Commands {
-		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
-			inWaitCount1++
-		}
-	}
-	assert.Equal(t, 1, inWaitCount1, "exactly one ScheduleTimer(InWait) must be emitted per reminder fire; got %d", inWaitCount1)
 
-	// Token must NOT move — still parked at userTask.
+	// Token must NOT move — still parked at userTask; reminder record persists.
 	require.Len(t, r2.State.Tokens, 1)
 	assert.Equal(t, "userTask", r2.State.Tokens[0].NodeID)
 	assert.Equal(t, engine.TokenWaitingCommand, r2.State.Tokens[0].State)
@@ -481,46 +484,26 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	require.Len(t, r2.State.Tasks, 1)
 	assert.Equal(t, humantask.Unclaimed, r2.State.Tasks[0].State)
 
-	// ---- Step 3: second reminder fires (proves repeating with distinct timer ids) ----
-	reminder2ID := nextST1.TimerID
+	// ---- Step 3: second reminder fires on the SAME id (proves native re-delivery) ----
 	fire2At := fire1At.Add(time.Hour)
 	r3, err := engine.Step(def, r2.State,
-		engine.NewTimerFired(fire2At, reminder2ID), engine.StepOptions{})
+		engine.NewTimerFired(fire2At, reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 
-	var nextST2 engine.ScheduleTimer
-	var foundIA2, foundNextST2 bool
+	var foundIA2 bool
 	for _, c := range r3.Commands {
 		switch v := c.(type) {
 		case engine.InvokeAction:
 			if v.Name == "remind" {
 				foundIA2 = true
 			}
-		case engine.ScheduleTimer:
-			if v.Kind == engine.TimerInWait {
-				nextST2 = v
-				foundNextST2 = true
-			}
-		case engine.CancelTimer, engine.UpdateTask, engine.CompleteInstance:
-			t.Errorf("unexpected command %T after second reminder fire: %v", c, c)
+		case engine.ScheduleTimer, engine.CancelTimer, engine.UpdateTask, engine.CompleteInstance:
+			t.Errorf("unexpected command %T after second reminder fire (engine must NOT reschedule): %v", c, c)
 		}
 	}
 	require.True(t, foundIA2, "InvokeAction('remind') not found after second reminder; got: %v", r3.Commands)
-	require.True(t, foundNextST2, "re-schedule ScheduleTimer(InWait) not found after second reminder; got: %v", r3.Commands)
-	assert.Equal(t, fire2At.Add(time.Hour), nextST2.FireAt, "third reminder must fire at fire2At+1h")
-	assert.NotEqual(t, reminder1ID, nextST2.TimerID, "third reminder id must differ from first")
-	assert.NotEqual(t, reminder2ID, nextST2.TimerID, "third reminder id must differ from second")
-	// Guard against double-schedule regression: exactly ONE ScheduleTimer(InWait) per fire.
-	var inWaitCount2 int
-	for _, c := range r3.Commands {
-		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
-			inWaitCount2++
-		}
-	}
-	assert.Equal(t, 1, inWaitCount2, "exactly one ScheduleTimer(InWait) must be emitted per reminder fire; got %d", inWaitCount2)
 
 	// ---- Step 4: complete the task → CancelTimer for outstanding reminder ----
-	reminder3ID := nextST2.TimerID
 	actor := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	completeAt := startAt.Add(3 * time.Hour / 2) // 1.5h into the process, before deadline
 	r4, err := engine.Step(def, r3.State,
@@ -532,7 +515,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	var foundCancelReminder, foundCancelDeadline bool
 	for _, c := range r4.Commands {
 		if ct, ok := c.(engine.CancelTimer); ok {
-			if ct.TimerID == reminder3ID {
+			if ct.TimerID == reminderID {
 				foundCancelReminder = true
 			}
 			if ct.TimerID == deadlineTimerID {
@@ -540,22 +523,24 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 			}
 		}
 	}
-	assert.True(t, foundCancelReminder, "HumanCompleted must cancel the outstanding reminder timer (id=%s); got: %v", reminder3ID, r4.Commands)
+	assert.True(t, foundCancelReminder, "HumanCompleted must cancel the outstanding reminder timer (id=%s); got: %v", reminderID, r4.Commands)
 	assert.True(t, foundCancelDeadline, "HumanCompleted must cancel the deadline timer (id=%s); got: %v", deadlineTimerID, r4.Commands)
 
 	// ---- Step 5: late reminder fires after task completed → clean no-op ----
 	r5, err := engine.Step(def, r4.State,
-		engine.NewTimerFired(startAt.Add(3*time.Hour), reminder3ID), engine.StepOptions{})
+		engine.NewTimerFired(startAt.Add(3*time.Hour), reminderID), engine.StepOptions{})
 	require.NoError(t, err, "late reminder TimerFired must not error")
 	assert.Empty(t, r5.Commands, "late reminder TimerFired must emit no commands; got: %v", r5.Commands)
 	assert.Equal(t, engine.StatusCompleted, r5.State.Status, "instance must remain completed after late reminder")
 }
 
-// TestInWaitReminderNoActionStillReschedules verifies that when ReminderEvery is
-// set but ReminderAction is empty, the reminder timer still reschedules (emits a
-// fresh ScheduleTimer{TimerInWait}) but does NOT emit an InvokeAction.
-// This proves the action field is genuinely optional.
-func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
+// TestInWaitReminderNoActionEmitsNothingOnFire verifies that when ReminderEvery is
+// set but ReminderAction is empty, a reminder fire emits NO InvokeAction (no action
+// configured) AND — after Plan 2 Task 1 — NO new ScheduleTimer (recurrence is native
+// to the scheduler; the engine armed the recurring timer once at entry and does not
+// reschedule per fire). This proves the action field is genuinely optional and that
+// the engine no longer owns re-arming.
+func TestInWaitReminderNoActionEmitsNothingOnFire(t *testing.T) {
 	// Use a definition with ReminderEvery but no ReminderAction.
 	def := &model.ProcessDefinition{
 		ID:      "p-reminder-noaction",
@@ -578,11 +563,12 @@ func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
-	// Find the reminder timer ID from entry commands.
+	// The entry command must arm a single recurring in-wait reminder.
 	var reminderID string
 	for _, c := range r1.Commands {
 		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
 			reminderID = st.TimerID
+			assert.True(t, st.Trigger.Recurring(), "reminder trigger must be recurring")
 		}
 	}
 	require.NotEmpty(t, reminderID, "ScheduleTimer(InWait) must be emitted on entry")
@@ -593,25 +579,10 @@ func TestInWaitReminderNoActionStillReschedules(t *testing.T) {
 		engine.NewTimerFired(fire1At, reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 
-	// Must NOT emit InvokeAction (no ReminderAction configured).
-	for _, c := range r2.Commands {
-		if _, ok := c.(engine.InvokeAction); ok {
-			t.Errorf("InvokeAction must NOT be emitted when ReminderAction is empty; got: %v", c)
-		}
-	}
-
-	// Must emit exactly one ScheduleTimer(InWait) for the next reminder.
-	var nextReminderST engine.ScheduleTimer
-	var foundNextST bool
-	for _, c := range r2.Commands {
-		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
-			nextReminderST = st
-			foundNextST = true
-		}
-	}
-	require.True(t, foundNextST, "ScheduleTimer(InWait) must be emitted even when ReminderAction is empty; got: %v", r2.Commands)
-	assert.Equal(t, fire1At.Add(time.Hour), nextReminderST.FireAt, "next reminder fires at firedAt+interval")
-	assert.NotEqual(t, reminderID, nextReminderST.TimerID, "re-scheduled reminder must have a new timer id")
+	// A no-action reminder fire must emit NOTHING: no InvokeAction (no action) and
+	// no ScheduleTimer (the scheduler re-delivers natively, engine does not re-arm).
+	assert.Empty(t, r2.Commands,
+		"no-action reminder fire must emit no commands (no action, no reschedule); got: %v", r2.Commands)
 }
 
 // TestInWaitReminderCancelledByDeadline verifies that when the deadline fires on a user task
@@ -640,23 +611,22 @@ func TestInWaitReminderCancelledByDeadline(t *testing.T) {
 	require.NotEmpty(t, deadlineTimerID, "deadline timer must be scheduled")
 	require.NotEmpty(t, reminderTimerID, "reminder timer must be scheduled")
 
-	// Fire the first reminder so there's an outstanding re-scheduled reminder,
-	// then fire the deadline to confirm it cancels the re-scheduled one.
+	// Fire the first reminder. Recurrence is native now, so the SAME reminder id
+	// stays outstanding (the engine does not re-schedule a new one). Fire the
+	// deadline next to confirm it cancels that outstanding reminder timer.
 	fire1At := startAt.Add(time.Hour)
 	r2, err := engine.Step(def, r1.State,
 		engine.NewTimerFired(fire1At, reminderTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 
-	// Get the re-scheduled reminder id.
-	var reminder2ID string
+	// The engine must NOT re-schedule a reminder on fire (native recurrence).
 	for _, c := range r2.Commands {
 		if st, ok := c.(engine.ScheduleTimer); ok && st.Kind == engine.TimerInWait {
-			reminder2ID = st.TimerID
+			t.Errorf("engine must not re-schedule a reminder on fire; got: %v", st)
 		}
 	}
-	require.NotEmpty(t, reminder2ID, "second reminder must be scheduled after first fires")
 
-	// deadline fires while the second reminder is outstanding.
+	// deadline fires while the (single) reminder is still outstanding.
 	deadlineFireAt := startAt.Add(3 * time.Hour)
 	r3, err := engine.Step(def, r2.State,
 		engine.NewTimerFired(deadlineFireAt, deadlineTimerID), engine.StepOptions{})
@@ -665,11 +635,11 @@ func TestInWaitReminderCancelledByDeadline(t *testing.T) {
 	// deadline breach must cancel the outstanding reminder timer.
 	var foundCancelReminder bool
 	for _, c := range r3.Commands {
-		if ct, ok := c.(engine.CancelTimer); ok && ct.TimerID == reminder2ID {
+		if ct, ok := c.(engine.CancelTimer); ok && ct.TimerID == reminderTimerID {
 			foundCancelReminder = true
 		}
 	}
-	assert.True(t, foundCancelReminder, "deadline breach must emit CancelTimer for the outstanding reminder (id=%s); got: %v", reminder2ID, r3.Commands)
+	assert.True(t, foundCancelReminder, "deadline breach must emit CancelTimer for the outstanding reminder (id=%s); got: %v", reminderTimerID, r3.Commands)
 
 	// Instance completes via the escalate path.
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)

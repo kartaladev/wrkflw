@@ -17,8 +17,9 @@ import (
 //
 // A bad Timer trigger expression is returned as a wrapped error — consistent with
 // the intermediate-timer and deadline paths — so callers can fail fast rather than
-// silently no-arming the boundary. Native recurring/calendar timer forms surface
-// as ErrUnsupportedTrigger until a later plan wires the native scheduler.
+// silently no-arming the boundary. The resolved trigger (including native
+// recurring/calendar forms) is emitted verbatim on the ScheduleTimer command; the
+// scheduler owns the firing math and any native recurrence.
 func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
@@ -46,16 +47,12 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 			return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
 		}
 		if !timerSpec.IsZero() {
-			dur, err := triggerDelay(timerSpec, at)
-			if err != nil {
-				return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
-			}
 			timerID := s.nextTimerID()
 			arm.TimerID = timerID
 			cmds = append(cmds, ScheduleTimer{
 				TimerID: timerID,
 				Token:   hostTokenID,
-				FireAt:  at.Add(dur),
+				Trigger: timerSpec,
 				Kind:    TimerIntermediate,
 			})
 		} else if n.SignalName != "" {

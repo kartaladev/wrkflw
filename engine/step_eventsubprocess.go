@@ -54,16 +54,12 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 				if err != nil {
 					return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
 				}
-				dur, err := triggerDelay(timerSpec, at)
-				if err != nil {
-					return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
-				}
 				timerID := s.nextTimerID()
 				arm.TimerID = timerID
 				cmds = append(cmds, ScheduleTimer{
 					TimerID: timerID,
 					Token:   "", // no host token; keyed by enclosing scope
-					FireAt:  at.Add(dur),
+					Trigger: timerSpec,
 					Kind:    TimerIntermediate,
 				})
 			} else if se.MessageName != "" {

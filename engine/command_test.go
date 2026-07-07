@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
@@ -143,7 +144,7 @@ func TestTimerKindStringable(t *testing.T) {
 // TestTimerCommandsImplementInterface asserts ScheduleTimer and CancelTimer satisfy Command
 // and that their fields round-trip correctly.
 func TestTimerCommandsImplementInterface(t *testing.T) {
-	fireAt := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
+	trigger := schedule.AfterDuration(3 * time.Hour)
 
 	cases := []struct {
 		name string
@@ -154,7 +155,7 @@ func TestTimerCommandsImplementInterface(t *testing.T) {
 			cmd: engine.ScheduleTimer{
 				TimerID: "tmr-1",
 				Token:   "tok-1",
-				FireAt:  fireAt,
+				Trigger: trigger,
 				Kind:    engine.TimerIntermediate,
 			},
 		},
@@ -163,7 +164,7 @@ func TestTimerCommandsImplementInterface(t *testing.T) {
 			cmd: engine.ScheduleTimer{
 				TimerID: "tmr-2",
 				Token:   "tok-2",
-				FireAt:  fireAt,
+				Trigger: trigger,
 				Kind:    engine.TimerDeadline,
 			},
 		},
@@ -172,7 +173,7 @@ func TestTimerCommandsImplementInterface(t *testing.T) {
 			cmd: engine.ScheduleTimer{
 				TimerID: "tmr-3",
 				Token:   "tok-3",
-				FireAt:  fireAt,
+				Trigger: schedule.Every(time.Hour),
 				Kind:    engine.TimerInWait,
 			},
 		},
@@ -193,16 +194,18 @@ func TestTimerCommandsImplementInterface(t *testing.T) {
 
 // TestScheduleTimerFieldsRoundTrip asserts all ScheduleTimer fields are stored faithfully.
 func TestScheduleTimerFieldsRoundTrip(t *testing.T) {
-	fireAt := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	trigger := schedule.AfterDuration(90 * time.Minute)
 	cmd := engine.ScheduleTimer{
 		TimerID: "tmr-42",
 		Token:   "tok-99",
-		FireAt:  fireAt,
+		Trigger: trigger,
 		Kind:    engine.TimerDeadline,
 	}
 	assert.Equal(t, "tmr-42", cmd.TimerID)
 	assert.Equal(t, "tok-99", cmd.Token)
-	assert.Equal(t, fireAt, cmd.FireAt)
+	d, ok := cmd.Trigger.Duration()
+	assert.True(t, ok)
+	assert.Equal(t, 90*time.Minute, d)
 	assert.Equal(t, engine.TimerDeadline, cmd.Kind)
 }
 

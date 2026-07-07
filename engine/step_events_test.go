@@ -391,8 +391,11 @@ func TestEventGatewayFirstTimerWins(t *testing.T) {
 		}
 	}
 	require.NotNil(t, schedTimer, "expected ScheduleTimer for timer-catch arm")
-	// FireAt = t0 + PT1H = 1 hour later.
-	assert.Equal(t, t0.Add(time.Hour), schedTimer.FireAt)
+	// AfterExpr("1h") resolves to a concrete AfterDuration(1h) trigger (no FireAt);
+	// the scheduler derives the absolute fire instant.
+	d, ok := schedTimer.Trigger.Duration()
+	require.True(t, ok, "timer trigger must reduce to a duration, got %+v", schedTimer.Trigger)
+	assert.Equal(t, time.Hour, d)
 
 	// The gateway token must be parked (no active tokens, no regular catch-event tokens).
 	require.Len(t, r1.State.Tokens, 1, "gateway token should be parked")
@@ -654,7 +657,11 @@ func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
 	}
 	require.NotNil(t, awaitHuman, "expected AwaitHuman for approve task")
 	require.NotNil(t, boundaryTimer, "expected ScheduleTimer for boundary timer")
-	assert.Equal(t, t0.Add(3*time.Hour), boundaryTimer.FireAt, "boundary timer must fire at t0+3h")
+	// AfterExpr("3h") resolves to AfterDuration(3h); the boundary emits the raw
+	// duration trigger (no FireAt) and the scheduler owns the fire instant.
+	bd, ok := boundaryTimer.Trigger.Duration()
+	require.True(t, ok, "boundary trigger must reduce to a duration, got %+v", boundaryTimer.Trigger)
+	assert.Equal(t, 3*time.Hour, bd, "boundary timer interval must be 3h")
 
 	// One token: parked at "approve".
 	require.Len(t, r1.State.Tokens, 1)

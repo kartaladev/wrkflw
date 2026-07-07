@@ -12,8 +12,35 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
+
+// TestBoundaryEmitsTriggerNotFireAt asserts that a cron timer boundary arms a
+// ScheduleTimer carrying the raw cron TriggerSpec (native recurrence owned by the
+// scheduler), and that the engine no longer reduces it to a FireAt instant. Cron
+// used to error via triggerDelay; it must now pass through untouched on the wire.
+func TestBoundaryEmitsTriggerNotFireAt(t *testing.T) {
+	def := receiveTaskBoundaryDef(event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(schedule.Cron(`0 9 * * *`))))
+	t0 := time.Date(2026, 7, 7, 9, 0, 0, 0, time.UTC)
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var st *engine.ScheduleTimer
+	for _, c := range r1.Commands {
+		if s, ok := c.(engine.ScheduleTimer); ok {
+			vv := s
+			st = &vv
+		}
+	}
+	require.NotNil(t, st, "cron boundary must arm a ScheduleTimer")
+	cron, ok := st.Trigger.CronExpr()
+	if !ok || cron != `0 9 * * *` {
+		t.Fatalf("trigger = %+v, want cron 0 9 * * *", st.Trigger)
+	}
+	assert.Equal(t, engine.TimerIntermediate, st.Kind, "timer boundary is TimerIntermediate")
+}
 
 // interruptingMessageBoundaryDef returns a definition:
 //

@@ -1,18 +1,8 @@
 package engine
 
 import (
-	"errors"
-	"time"
-
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
-
-// ErrUnsupportedTrigger reports that a trigger form requires a native scheduler
-// (recurring/calendar/random: cron, daily, weekly, monthly, every-random) that
-// this build does not wire. The reducible one-shot and interval forms
-// (AfterDuration/At/AfterExpr and Every/EveryExpr) never return this error; the
-// native forms are wired live in a later plan.
-var ErrUnsupportedTrigger = errors.New("workflow-engine: trigger kind needs a native scheduler (not available in this build)")
 
 // ResolveTrigger resolves the dynamic expr forms of a [schedule.TriggerSpec] to
 // concrete durations and returns all other forms unchanged. The expr path reuses
@@ -34,19 +24,4 @@ func ResolveTrigger(eval ConditionEvaluator, spec schedule.TriggerSpec, env map[
 		return schedule.Every(d), nil
 	}
 	return schedule.AfterDuration(d), nil
-}
-
-// triggerDelay returns the one-shot delay for a reducible trigger measured from
-// now: AfterDuration yields its duration, At yields at.Sub(now), and Every yields
-// its interval (used as the reminder delay to the next fire). The native
-// recurring/calendar/random forms return [ErrUnsupportedTrigger]; a later plan
-// wires them onto the native scheduler.
-func triggerDelay(spec schedule.TriggerSpec, now time.Time) (time.Duration, error) {
-	if d, ok := spec.Duration(); ok { // AfterDuration or Every (interval)
-		return d, nil
-	}
-	if at, ok := spec.AbsTime(); ok {
-		return at.Sub(now), nil
-	}
-	return 0, ErrUnsupportedTrigger
 }

@@ -1,11 +1,10 @@
 package engine
 
 import (
-	"time"
-
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
@@ -48,13 +47,16 @@ func (k TimerKind) String() string {
 }
 
 // ScheduleTimer asks the runtime to schedule a timer that will deliver a
-// TimerFired trigger at FireAt. Kind distinguishes intermediate, deadline,
-// in-wait, and retry timers (see [TimerKind]) so the runtime can apply the
-// right scheduling policy.
+// TimerFired trigger. Trigger is the resolved [schedule.TriggerSpec] describing
+// WHEN (and, for recurring forms, how often) the timer fires: the engine emits
+// the trigger verbatim and the scheduler owns the firing math and any native
+// recurrence — the engine no longer reduces the trigger to a FireAt instant.
+// Kind distinguishes intermediate, deadline, in-wait, and retry timers (see
+// [TimerKind]) so the runtime can apply the right scheduling policy.
 type ScheduleTimer struct {
 	TimerID string
 	Token   string
-	FireAt  time.Time
+	Trigger schedule.TriggerSpec
 	Kind    TimerKind
 }
 
