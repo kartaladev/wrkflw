@@ -41,7 +41,7 @@ var ErrSchedulerClosed = errors.New("workflow-scheduling: scheduler is closed")
 
 // Scheduler is the production, gocron-backed [kernel.Scheduler]. Construct it
 // with [NewScheduler]; supply the same [clockwork.Clock] instance used to build
-// the runtime via [WithSchedulerClock] so one fake-clock advance drives both
+// the runtime via [WithClock] so one fake-clock advance drives both
 // engine timestamps and timer firing under test (ADR-0003). When the clock
 // option is omitted, a real clock is used.
 //
@@ -91,21 +91,17 @@ type config struct {
 // Option configures a [Scheduler].
 type Option func(*config)
 
-// WithSchedulerClock sets the [clockwork.Clock] that drives timer scheduling
+// WithClock sets the [clockwork.Clock] that drives timer scheduling
 // (default: [clockwork.NewRealClock]). Pass a fake clock in tests so that a
 // single clock.Advance drives both engine timestamps and timer firing (ADR-0003,
 // ADR-0069). A nil value is ignored (falls back to the default real clock).
-func WithSchedulerClock(clk clockwork.Clock) Option {
+func WithClock(clk clockwork.Clock) Option {
 	return func(c *config) {
 		if clk != nil {
 			c.clk = clk
 		}
 	}
 }
-
-// WithClock is an alias for [WithSchedulerClock] — it sets the [clockwork.Clock]
-// that drives timer scheduling. A nil value is ignored.
-func WithClock(clk clockwork.Clock) Option { return WithSchedulerClock(clk) }
 
 // WithLogger sets the scheduler's structured logger (default: [slog.Default]).
 // A nil value is ignored.
@@ -158,7 +154,7 @@ func WithTimeSkew(d time.Duration) Option {
 	}
 }
 
-// NewScheduler constructs a gocron-backed [Scheduler]. Pass [WithSchedulerClock]
+// NewScheduler constructs a gocron-backed [Scheduler]. Pass [WithClock]
 // to drive timer scheduling with a specific [clockwork.Clock] (default:
 // [clockwork.NewRealClock]).
 //
@@ -189,7 +185,7 @@ func NewScheduler(opts ...Option) (*Scheduler, error) {
 
 // internalOpts builds the internal gocron options from the resolved façade
 // config. The effective clock is resolved here (option-provided or real-clock
-// default) so a fake clock supplied via WithSchedulerClock drives gocron.
+// default) so a fake clock supplied via WithClock drives gocron.
 func (s *Scheduler) internalOpts() []gocronsched.Option {
 	clk := s.cfg.clk
 	if clk == nil {

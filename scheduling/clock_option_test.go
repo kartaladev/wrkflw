@@ -13,10 +13,10 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
-// TestNewScheduler_WithSchedulerClock_NilFallback verifies that supplying
-// WithSchedulerClock(nil) (or no clock option at all) does not panic and the
+// TestNewScheduler_WithClock_NilFallback verifies that supplying
+// WithClock(nil) (or no clock option at all) does not panic and the
 // scheduler constructs successfully, defaulting to a real clock.
-func TestNewScheduler_WithSchedulerClock_NilFallback(t *testing.T) {
+func TestNewScheduler_WithClock_NilFallback(t *testing.T) {
 	type tc struct {
 		name string
 		opts []scheduling.Option
@@ -29,7 +29,7 @@ func TestNewScheduler_WithSchedulerClock_NilFallback(t *testing.T) {
 		},
 		{
 			name: "explicit nil clock — falls back to real clock",
-			opts: []scheduling.Option{scheduling.WithSchedulerClock(nil)},
+			opts: []scheduling.Option{scheduling.WithClock(nil)},
 		},
 	}
 
@@ -43,14 +43,14 @@ func TestNewScheduler_WithSchedulerClock_NilFallback(t *testing.T) {
 	}
 }
 
-// TestNewScheduler_WithSchedulerClock_FakeClockDrivesFiring verifies that
-// supplying a fake clock via WithSchedulerClock makes scheduled jobs fire only
+// TestNewScheduler_WithClock_FakeClockDrivesFiring verifies that
+// supplying a fake clock via WithClock makes scheduled jobs fire only
 // when the fake clock is advanced — demonstrating the option actually controls
 // timer scheduling in the façade.
-func TestNewScheduler_WithSchedulerClock_FakeClockDrivesFiring(t *testing.T) {
+func TestNewScheduler_WithClock_FakeClockDrivesFiring(t *testing.T) {
 	clk := clockwork.NewFakeClock()
 
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(clk))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -67,13 +67,13 @@ func TestNewScheduler_WithSchedulerClock_FakeClockDrivesFiring(t *testing.T) {
 	wg.Wait()
 }
 
-// TestNewScheduler_WithSchedulerClock_NotFiredWithoutAdvance verifies that a job
-// scheduled via WithSchedulerClock(fake) does NOT fire before the fake clock is
+// TestNewScheduler_WithClock_NotFiredWithoutAdvance verifies that a job
+// scheduled via WithClock(fake) does NOT fire before the fake clock is
 // advanced (confirming the fake clock is actually used, not the real clock).
-func TestNewScheduler_WithSchedulerClock_NotFiredWithoutAdvance(t *testing.T) {
+func TestNewScheduler_WithClock_NotFiredWithoutAdvance(t *testing.T) {
 	clk := clockwork.NewFakeClock()
 
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(clk))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 

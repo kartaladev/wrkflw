@@ -58,7 +58,7 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 				pgbackend.WithElectorKey(leaderKey), pgbackend.WithClock(clk))
 			require.NoError(t, err)
 			s, err := scheduling.NewScheduler(
-				scheduling.WithSchedulerClock(clk),
+				scheduling.WithClock(clk),
 				scheduling.WithElector(elector))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
@@ -103,7 +103,7 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 		pgbackend.WithHeartbeatInterval(time.Second))
 	require.NoError(t, err)
 	s, err := scheduling.NewScheduler(
-		scheduling.WithSchedulerClock(clk),
+		scheduling.WithClock(clk),
 		scheduling.WithElector(elector))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
@@ -160,7 +160,7 @@ func TestSchedulerElectorOnLeadershipAcquired(t *testing.T) {
 		pgbackend.WithOnLeadershipAcquired(func(context.Context) { acquired <- struct{}{} }))
 	require.NoError(t, err)
 	s, err := scheduling.NewScheduler(
-		scheduling.WithSchedulerClock(clk),
+		scheduling.WithClock(clk),
 		scheduling.WithElector(elector))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
@@ -193,7 +193,7 @@ func TestSchedulerLockAndElectorConflict(t *testing.T) {
 
 	clk := clockwork.NewFakeClock()
 	_, err = scheduling.NewScheduler(
-		scheduling.WithSchedulerClock(clk),
+		scheduling.WithClock(clk),
 		scheduling.WithLocker(locker),
 		scheduling.WithElector(elector),
 	)

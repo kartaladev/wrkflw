@@ -18,7 +18,7 @@ import (
 // arms and fires a timer, and that Start is idempotent.
 func TestSchedulerStartExplicitAndFire(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(fc))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(fc))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -38,7 +38,7 @@ func TestSchedulerStartExplicitAndFire(t *testing.T) {
 // Start stops the scheduler: a subsequent Schedule reports ErrSchedulerClosed.
 func TestSchedulerCtxCancelCloses(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(fc))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(fc))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -59,7 +59,7 @@ func TestSchedulerCtxCancelCloses(t *testing.T) {
 // common ordering where a timer is armed before Start is called.
 func TestSchedulerStartAfterAutoStartInstallsWatcher(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(fc))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(fc))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -81,7 +81,7 @@ func TestSchedulerStartAfterAutoStartInstallsWatcher(t *testing.T) {
 // TestSchedulerScheduleAfterCloseErrors verifies Schedule after Close is a
 // terminal error rather than a panic or silent no-op.
 func TestSchedulerScheduleAfterCloseErrors(t *testing.T) {
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clockwork.NewFakeClock()))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(clockwork.NewFakeClock()))
 	require.NoError(t, err)
 	require.NoError(t, s.Start(t.Context()))
 	require.NoError(t, s.Close())
