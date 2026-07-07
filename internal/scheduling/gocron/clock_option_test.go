@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 // TestGocronScheduler_WithClock_NilFallback verifies that supplying WithClock(nil)
@@ -54,7 +55,8 @@ func TestGocronScheduler_WithClock_FakeClockDrivesFiring(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	s.Schedule("clk-opt-t1", clk.Now().Add(5*time.Second), func() { wg.Done() })
+	_, err = s.Schedule(t.Context(), "clk-opt-t1", schedule.At(clk.Now().Add(5*time.Second)), func() { wg.Done() })
+	require.NoError(t, err)
 
 	// MANDATORY barrier: wait until gocron armed its waiter on the fake clock.
 	require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
@@ -75,7 +77,8 @@ func TestGocronScheduler_WithClock_NotFiredWithoutAdvance(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	var fired bool
-	s.Schedule("clk-opt-t2", clk.Now().Add(5*time.Second), func() { fired = true })
+	_, err = s.Schedule(t.Context(), "clk-opt-t2", schedule.At(clk.Now().Add(5*time.Second)), func() { fired = true })
+	require.NoError(t, err)
 
 	// Wait until gocron armed its waiter, then assert the job hasn't fired.
 	require.NoError(t, clk.BlockUntilContext(t.Context(), 1))

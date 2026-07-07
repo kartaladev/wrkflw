@@ -5,6 +5,7 @@
 package gocron
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 )
 
@@ -178,12 +180,13 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	return s, nil
 }
 
-// Schedule registers a one-time timer that calls fire at or after fireAt. If a
-// timer with the same timerID already exists it is replaced. Best-effort: a
-// gocron job-creation error is logged and the timer is not armed.
+// Schedule registers a timer according to trig that calls fire each time it
+// fires. If a timer with the same timerID already exists it is replaced.
+// Returns the authoritative next scheduled run time from gocron (the first
+// fire for recurring triggers). A zero time is returned only on error.
 //
-// If fireAt is not in the future per the clock, the timer fires immediately.
-func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()) {
+// ctx is reserved for future cancellation propagation and is currently unused.
+func (s *GocronScheduler) Schedule(_ context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -192,39 +195,41 @@ func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()
 		delete(s.jobs, timerID)
 	}
 
-	var timing gocron.OneTimeJobStartAtOption
-	if fireAt.After(s.clk.Now()) {
-		timing = gocron.OneTimeJobStartDateTime(fireAt)
-	} else {
-		// fireAt is in the past or exactly now; fire immediately.
-		timing = gocron.OneTimeJobStartImmediately()
+	def, oneShot, err := jobDefinition(trig, s.clk.Now())
+	if err != nil {
+		return time.Time{}, err
 	}
 
-	job, err := s.sched.NewJob(
-		gocron.OneTimeJob(timing),
-		gocron.NewTask(fire),
-		// The job name is the distributed-lock key: with a locker configured, only
-		// one replica obtains pg lock(timerID) and runs the fire. Harmless without a
-		// locker. Two distinct armings of the same timerID still replace via the
-		// jobs map above, so the name need not be globally unique here.
+	opts := []gocron.JobOption{
 		gocron.WithName(timerID),
 		gocron.WithEventListeners(gocron.AfterJobRuns(func(jobID uuid.UUID, _ string) {
 			s.mu.Lock()
-			if cur, ok := s.jobs[timerID]; ok && cur == jobID {
-				delete(s.jobs, timerID)
+			if oneShot {
+				// One-shots remove themselves from the tracking map after firing.
+				if cur, ok := s.jobs[timerID]; ok && cur == jobID {
+					delete(s.jobs, timerID)
+				}
 			}
 			s.mu.Unlock()
 		})),
-	)
+	}
+	if oneShot {
+		opts = append(opts, gocron.WithLimitedRuns(1))
+	}
+
+	job, err := s.sched.NewJob(def, gocron.NewTask(fire), opts...)
 	if err != nil {
-		s.tel.Logger.Error("gocron: schedule timer failed", "timerID", timerID, "error", err)
-		return
+		return time.Time{}, err
 	}
 	s.jobs[timerID] = job.ID()
+	next, _ := job.NextRun()
+	return next, nil
 }
 
 // Cancel removes a pending timer. No-op if the timer is unknown or already fired.
-func (s *GocronScheduler) Cancel(timerID string) {
+//
+// ctx is reserved for future cancellation propagation and is currently unused.
+func (s *GocronScheduler) Cancel(_ context.Context, timerID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -236,6 +241,29 @@ func (s *GocronScheduler) Cancel(timerID string) {
 	if err := s.sched.RemoveJob(id); err != nil && !errors.Is(err, gocron.ErrJobNotFound) {
 		s.tel.Logger.Error("gocron: cancel timer failed", "timerID", timerID, "error", err)
 	}
+}
+
+// NextRun returns the next scheduled fire time of the timer identified by
+// timerID. Returns (time.Time{}, false) if the timer is unknown, has already
+// fired (one-shot disarmed), or has been cancelled.
+func (s *GocronScheduler) NextRun(timerID string) (time.Time, bool) {
+	s.mu.Lock()
+	id, ok := s.jobs[timerID]
+	s.mu.Unlock()
+	if !ok {
+		return time.Time{}, false
+	}
+
+	for _, job := range s.sched.Jobs() {
+		if job.ID() == id {
+			next, err := job.NextRun()
+			if err != nil || next.IsZero() {
+				return time.Time{}, false
+			}
+			return next, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // Close shuts gocron down gracefully. The scheduler cannot be reused afterward.

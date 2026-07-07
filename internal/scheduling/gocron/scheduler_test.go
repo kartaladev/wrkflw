@@ -15,6 +15,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 // captureHandler records slog records for assertions.
@@ -59,7 +60,8 @@ func TestGocronScheduler_WithLogger(t *testing.T) {
 				// Verify normal operation still works with the injected logger.
 				var wg sync.WaitGroup
 				wg.Add(1)
-				s.Schedule("log-t1", clk.Now().Add(time.Second), func() { wg.Done() })
+				_, err2 := s.Schedule(t.Context(), "log-t1", schedule.At(clk.Now().Add(time.Second)), func() { wg.Done() })
+				require.NoError(t, err2)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(time.Second)
 				wg.Wait()
@@ -102,7 +104,8 @@ func TestGocronScheduler_FiresAtTime(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	s.Schedule("t1", fakeClock.Now().Add(5*time.Second), func() { wg.Done() })
+	_, err = s.Schedule(t.Context(), "t1", schedule.At(fakeClock.Now().Add(5*time.Second)), func() { wg.Done() })
+	require.NoError(t, err)
 
 	// MANDATORY barrier: wait until gocron armed its timer (1 waiter) before
 	// advancing, else Advance can outrun the arm and the timer never fires.
@@ -128,9 +131,10 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 			name: "cancel prevents fire",
 			assert: func(t *testing.T, s *sched.GocronScheduler, clk *clockwork.FakeClock) {
 				fire, count := counter()
-				s.Schedule("c1", clk.Now().Add(5*time.Second), fire)
+				_, err := s.Schedule(t.Context(), "c1", schedule.At(clk.Now().Add(5*time.Second)), fire)
+				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
-				s.Cancel("c1")
+				s.Cancel(t.Context(), "c1")
 				// drain: confirm gocron released its fake-clock waiter before advancing
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 0))
 				clk.Advance(10 * time.Second)
@@ -147,9 +151,11 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				var n atomic.Int64
 				fire := func() { n.Add(1); wg.Done() }
 
-				s.Schedule("r1", clk.Now().Add(5*time.Second), func() { t.Error("stale timer fired") })
+				_, err := s.Schedule(t.Context(), "r1", schedule.At(clk.Now().Add(5*time.Second)), func() { t.Error("stale timer fired") })
+				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
-				s.Schedule("r1", clk.Now().Add(10*time.Second), fire) // replace
+				_, err = s.Schedule(t.Context(), "r1", schedule.At(clk.Now().Add(10*time.Second)), fire) // replace
+				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 
 				clk.Advance(5 * time.Second)
@@ -163,7 +169,7 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 		{
 			name: "cancel unknown is a no-op",
 			assert: func(t *testing.T, s *sched.GocronScheduler, _ *clockwork.FakeClock) {
-				require.NotPanics(t, func() { s.Cancel("does-not-exist") })
+				require.NotPanics(t, func() { s.Cancel(t.Context(), "does-not-exist") })
 			},
 		},
 		{
@@ -176,11 +182,13 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				wgNew.Add(1)
 
 				// Arm the first (old) job at T+5; it will be replaced before firing.
-				s.Schedule("uuid1", clk.Now().Add(5*time.Second), func() { t.Error("old job must not fire") })
+				_, err := s.Schedule(t.Context(), "uuid1", schedule.At(clk.Now().Add(5*time.Second)), func() { t.Error("old job must not fire") })
+				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 
 				// Replace with a new job at T+10.
-				s.Schedule("uuid1", clk.Now().Add(10*time.Second), func() { wgNew.Done() })
+				_, err = s.Schedule(t.Context(), "uuid1", schedule.At(clk.Now().Add(10*time.Second)), func() { wgNew.Done() })
+				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 
 				// Advance past the old T+5 — old job must NOT fire (replace removed it).
@@ -196,7 +204,7 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				// must not panic — this confirms the map is consistent (not accidentally
 				// left with a stale entry by the old job's listener, and not missing due
 				// to UUID mismatch either).
-				require.NotPanics(t, func() { s.Cancel("uuid1") })
+				require.NotPanics(t, func() { s.Cancel(t.Context(), "uuid1") })
 			},
 		},
 		{
@@ -205,7 +213,8 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				var wg sync.WaitGroup
 				wg.Add(1)
 				var n atomic.Int64
-				s.Schedule("o1", clk.Now().Add(time.Second), func() { n.Add(1); wg.Done() })
+				_, err := s.Schedule(t.Context(), "o1", schedule.At(clk.Now().Add(time.Second)), func() { n.Add(1); wg.Done() })
+				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(time.Second)
 				wg.Wait()
@@ -301,11 +310,12 @@ func TestSchedulePastFireAtFiresImmediately(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	fired := make(chan struct{}, 1)
-	// fireAt is 1 second in the past — currently dropped by the bug.
+	// fireAt is 1 second in the past — schedule.At maps to OneTimeJobStartImmediately.
 	pastFireAt := startTime.Add(-1 * time.Second)
-	s.Schedule("past-timer", pastFireAt, func() {
+	_, err = s.Schedule(t.Context(), "past-timer", schedule.At(pastFireAt), func() {
 		fired <- struct{}{}
 	})
+	require.NoError(t, err)
 
 	// OneTimeJobStartImmediately fires without any clock advance needed.
 	require.Eventually(t, func() bool {
