@@ -23,9 +23,11 @@
 // "review-overdue" flow to the escalate service task ("reassign"), the human
 // task is marked Cancelled, and the instance completes via the escalation path.
 //
-// A *clockwork.FakeClock drives both the engine and the in-memory scheduler so
-// the example is deterministic and runs instantly: advancing the fake clock and
-// ticking the scheduler fires the deadline timer without any real waiting.
+// A *clockwork.FakeClock drives both the engine and the gocron-backed scheduler
+// so the example is deterministic and runs instantly: advancing the fake clock
+// fires the deadline timer without any real waiting. Because the gocron scheduler
+// fires on its own executor goroutine, a done channel signalled from the breach
+// path makes the observation deterministic: schedule → Advance → <-done → assert.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -49,6 +51,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
 func main() {
@@ -81,6 +84,9 @@ func main() {
 	}
 
 	escalated := false
+	// Signalled from the escalation-path action so the main goroutine can wait for
+	// the async timer fire deterministically.
+	escalatedCh := make(chan struct{})
 	cat := action.NewMapCatalog(map[string]action.Action{
 		// Fire-once breach action: run by the engine the moment the deadline
 		// elapses, for its side effect only (its result is not fed back).
@@ -92,6 +98,7 @@ func main() {
 		"reassign": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			escalated = true
 			fmt.Println("  [reassign] reassigning the review to a senior reviewer")
+			close(escalatedCh)
 			return map[string]any{"escalated": true}, nil
 		}),
 	})
@@ -106,7 +113,11 @@ func main() {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"reviewer": {reviewer},
 	})
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	sched, err := scheduling.NewScheduler(scheduling.WithClock(clk))
+	if err != nil {
+		log.Fatal("scheduler:", err)
+	}
+	defer func() { _ = sched.Close() }()
 	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
@@ -135,14 +146,32 @@ func main() {
 	fmt.Printf("instance parked at %q (status=%s)\n",
 		parked.Tokens[0].NodeID, parked.Status.String())
 
-	// The reviewer never claims the task. Advance the clock past the 1h deadline
-	// and tick the scheduler — this fires the deadline timer.
+	// The reviewer never claims the task. Wait until the scheduler has armed its
+	// deadline waiter on the fake clock, then advance past the 1h deadline — the
+	// gocron executor goroutine fires the timer, delivering the deadline breach.
+	if err := clk.BlockUntilContext(ctx, 1); err != nil {
+		log.Fatal("block:", err)
+	}
 	clk.Advance(1*time.Hour + time.Minute)
-	if err := sched.Tick(ctx); err != nil {
-		log.Fatal("tick:", err)
+
+	// The timer fires asynchronously; the escalation-path action closes escalatedCh
+	// once it runs, giving a deterministic signal that the breach path executed.
+	select {
+	case <-escalatedCh:
+	case <-time.After(3 * time.Second):
+		log.Fatal("timeout: deadline breach did not fire")
 	}
 
-	final, _, err := store.Load(ctx, instanceID)
+	// The final terminal commit may still be in-flight after the action ran; poll
+	// briefly for completion.
+	var final engine.InstanceState
+	for range 200 {
+		final, _, err = store.Load(ctx, instanceID)
+		if err == nil && final.Status == engine.StatusCompleted {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if err != nil {
 		log.Fatal("load:", err)
 	}

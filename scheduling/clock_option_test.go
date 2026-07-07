@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -55,7 +56,8 @@ func TestNewScheduler_WithSchedulerClock_FakeClockDrivesFiring(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	s.Schedule("facade-clk-t1", clk.Now().Add(5*time.Second), func() { wg.Done() })
+	_, err = s.Schedule(t.Context(), "facade-clk-t1", schedule.At(clk.Now().Add(5*time.Second)), func() { wg.Done() })
+	require.NoError(t, err)
 
 	// MANDATORY barrier: wait until gocron armed its waiter on the fake clock.
 	require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
@@ -76,7 +78,8 @@ func TestNewScheduler_WithSchedulerClock_NotFiredWithoutAdvance(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	var fired bool
-	s.Schedule("facade-clk-t2", clk.Now().Add(5*time.Second), func() { fired = true })
+	_, err = s.Schedule(t.Context(), "facade-clk-t2", schedule.At(clk.Now().Add(5*time.Second)), func() { fired = true })
+	require.NoError(t, err)
 
 	// Wait until gocron armed its waiter, then assert the job hasn't fired.
 	require.NoError(t, clk.BlockUntilContext(t.Context(), 1))

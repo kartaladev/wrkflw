@@ -180,6 +180,32 @@ func (o *AdvisoryLockOwnership) Close() error {
 	return nil
 }
 
+// NewPostgresLocker acquires a dedicated session connection from pool and returns
+// a [dialect.Locker] backed by Postgres session-level advisory locks, together
+// with a closer that returns the connection to the pool. It exposes the store's
+// advisory-lock machinery for reuse by the scheduler-lock bridge
+// (persistence.NewSchedulerLocker) so no lock SQL is duplicated (ADR-0102).
+func NewPostgresLocker(ctx context.Context, pool *pgxpool.Pool) (dialect.Locker, func() error, error) {
+	l, err := newPostgresLocker(ctx, pool)
+	if err != nil {
+		return nil, nil, err
+	}
+	return l, l.closeConn, nil
+}
+
+// NewMySQLLocker acquires a dedicated session connection from db and returns a
+// [dialect.Locker] backed by MySQL GET_LOCK / RELEASE_LOCK, together with a closer
+// that releases all held locks and closes the connection. It exposes the store's
+// advisory-lock machinery for reuse by the scheduler-lock bridge
+// (persistence.NewSchedulerLocker) so no lock SQL is duplicated (ADR-0102).
+func NewMySQLLocker(ctx context.Context, db *sql.DB) (dialect.Locker, func() error, error) {
+	l, err := newMySQLLocker(ctx, db)
+	if err != nil {
+		return nil, nil, err
+	}
+	return l, l.closeConn, nil
+}
+
 // ── postgresLocker ────────────────────────────────────────────────────────────
 
 // postgresLocker implements [dialect.Locker] using Postgres session-level

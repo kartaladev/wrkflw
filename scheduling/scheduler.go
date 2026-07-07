@@ -1,33 +1,37 @@
 // Package scheduling is the consumer-facing façade over the internal gocron
-// scheduler (ADR-0008, ADR-0009). Consumers import only this root package;
-// the concrete gocron implementation stays in internal/scheduling/gocron so
-// the vendor dependency is not visible to the library API surface.
+// scheduler (ADR-0008, ADR-0009, ADR-0102). Consumers import only this root
+// package; the concrete gocron implementation stays in internal/scheduling/gocron
+// so the vendor dependency is not visible to the library API surface.
+//
+// The façade is neutral of any database driver: multi-replica coordination is
+// supplied through the [Locker] and [Elector] interfaces (see [WithLocker] /
+// [WithElector]). Database-backed implementations live in
+// scheduling/backend/{postgres,mysql} and the persistence-lock bridge, keeping
+// pgx / database/sql out of this package entirely.
 package scheduling
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
-// ErrTimerLockElectorConflict is returned by [NewScheduler] when more than one
-// multi-replica mode is configured simultaneously. [WithDistributedTimerLock],
-// [WithTimerElector] (Postgres), and [WithMySQLTimerElector] are mutually
-// exclusive — load-balanced per-timer exclusion vs. single-leader firing
-// (ADR-0050, ADR-0059); pick exactly one.
+// ErrTimerLockElectorConflict is returned by [NewScheduler] when both a [Locker]
+// and an [Elector] are configured. Load-balanced per-timer exclusion
+// ([WithLocker]) and single-leader firing ([WithElector]) are mutually exclusive
+// (ADR-0059, ADR-0102); pick exactly one.
 var ErrTimerLockElectorConflict = errors.New(
-	"workflow-scheduling: WithDistributedTimerLock and WithTimerElector are mutually exclusive — set only one")
+	"workflow-scheduling: a Locker and an Elector are mutually exclusive — set only one")
 
 // Scheduler is the production, gocron-backed [kernel.Scheduler]. Construct it
 // with [NewScheduler]; supply the same [clockwork.Clock] instance used to build
@@ -38,15 +42,11 @@ var ErrTimerLockElectorConflict = errors.New(
 type Scheduler struct {
 	impl *gocronsched.GocronScheduler
 
-	// elector, when single-leader mode is enabled via WithTimerElector (Postgres),
-	// holds the Postgres-backed leader elector. Close releases it (and its dedicated
-	// pooled connection) alongside the gocron scheduler. nil when not in elector mode.
-	elector *gocronsched.PostgresElector
-
-	// mysqlElector, when single-leader mode is enabled via WithMySQLTimerElector,
-	// holds the MySQL-backed leader elector. Close releases it (and its dedicated
-	// connection) alongside the gocron scheduler. nil when not in MySQL elector mode.
-	mysqlElector *gocronsched.MySQLElector
+	// elector, when single-leader mode is enabled via WithElector, holds the
+	// neutral leader elector. If it also implements io.Closer, Close closes it
+	// alongside the gocron scheduler as a convenience (ADR-0102). nil when not in
+	// elector mode.
+	elector Elector
 }
 
 // Compile-time contract assertions.
@@ -55,90 +55,19 @@ var (
 	_ io.Closer        = (*Scheduler)(nil)
 )
 
-// config holds façade-level options.
+// config holds façade-level options. It carries no database-driver state — only
+// the neutral locker/elector seams and observability wiring.
 type config struct {
-	clk    clockwork.Clock
-	logger *slog.Logger
-	tp     trace.TracerProvider
-	mp     metric.MeterProvider
-	pool   *pgxpool.Pool
-
-	// electorEnabled and electorPool/electorOpts capture a WithTimerElector
-	// (Postgres) request; the elector is constructed in NewScheduler so its
-	// dedicated connection is tied to the Scheduler's lifetime.
-	electorEnabled bool
-	electorPool    *pgxpool.Pool
-	electorOpts    []gocronsched.ElectorOption
-
-	// mysqlElectorEnabled and mysqlElectorDB/mysqlElectorOpts capture a
-	// WithMySQLTimerElector request; the MySQL elector is constructed in
-	// NewScheduler so its dedicated connection is tied to the Scheduler's lifetime.
-	mysqlElectorEnabled bool
-	mysqlElectorDB      *sql.DB
-	mysqlElectorOpts    []gocronsched.MySQLElectorOption
+	clk     clockwork.Clock
+	logger  *slog.Logger
+	tp      trace.TracerProvider
+	mp      metric.MeterProvider
+	locker  Locker
+	elector Elector
 }
 
 // Option configures a [Scheduler].
 type Option func(*config)
-
-// ElectorOption configures the leader elector created by [WithTimerElector].
-type ElectorOption func(*config)
-
-// WithElectorKey overrides the leader-lock key used by [WithTimerElector]
-// (Postgres) and [WithMySQLTimerElector] (MySQL) — whichever is in use receives
-// this key (default: a fixed well-known constant). Give each independent engine
-// sharing one database a distinct key so their leader elections do not contend.
-// An empty value is ignored.
-func WithElectorKey(key string) ElectorOption {
-	return func(c *config) {
-		if key != "" {
-			c.electorOpts = append(c.electorOpts, gocronsched.WithElectorKey(key))
-			c.mysqlElectorOpts = append(c.mysqlElectorOpts, gocronsched.WithMySQLElectorKey(key))
-		}
-	}
-}
-
-// WithElectorHeartbeatInterval overrides how often the elected leader re-validates
-// its dedicated connection (default: an internal sane value, currently 5s). It
-// bounds the residual split-brain window to at most one interval (ADR-0061): if the
-// leader's connection is severed server-side the heartbeat catches it within one
-// interval and the leader steps down so a follower can take over. Applies to both
-// the Postgres and MySQL electors. A non-positive value is ignored.
-func WithElectorHeartbeatInterval(d time.Duration) ElectorOption {
-	return func(c *config) {
-		if d > 0 {
-			c.electorOpts = append(c.electorOpts, gocronsched.WithHeartbeatInterval(d))
-			c.mysqlElectorOpts = append(c.mysqlElectorOpts, gocronsched.WithMySQLHeartbeatInterval(d))
-		}
-	}
-}
-
-// WithOnLeadershipAcquired registers a callback invoked each time the elected
-// leader wins (or re-wins, after a heartbeat step-down) leadership. It runs
-// asynchronously and never blocks timer firing. Wire it to
-// [runtime.ProcessDriver.RehydrateTimers] so a new leader re-arms the full persisted
-// timer set on leadership acquisition — not only at startup — closing the window
-// where timers armed at runtime would otherwise be lost on the new leader until a
-// restart (Option A, ADR-0072). Because the runner is typically built after the
-// scheduler, capture it in the closure and assign it afterwards:
-//
-//	var runner *runtime.ProcessDriver
-//	s, _ := scheduling.NewScheduler(scheduling.WithTimerElector(pool,
-//		scheduling.WithOnLeadershipAcquired(func(ctx context.Context) {
-//			_ = runner.RehydrateTimers(ctx)
-//		})))
-//	runner = buildRunner(s) // the closure observes this assignment
-//
-// A nil callback is ignored. Applies to [WithTimerElector] (Postgres) and
-// [WithMySQLTimerElector] (MySQL) — whichever is in use.
-func WithOnLeadershipAcquired(fn func(context.Context)) ElectorOption {
-	return func(c *config) {
-		if fn != nil {
-			c.electorOpts = append(c.electorOpts, gocronsched.WithOnLeadershipAcquired(fn))
-			c.mysqlElectorOpts = append(c.mysqlElectorOpts, gocronsched.WithMySQLOnLeadershipAcquired(fn))
-		}
-	}
-}
 
 // WithSchedulerClock sets the [clockwork.Clock] that drives timer scheduling
 // (default: [clockwork.NewRealClock]). Pass a fake clock in tests so that a
@@ -151,6 +80,10 @@ func WithSchedulerClock(clk clockwork.Clock) Option {
 		}
 	}
 }
+
+// WithClock is an alias for [WithSchedulerClock] — it sets the [clockwork.Clock]
+// that drives timer scheduling. A nil value is ignored.
+func WithClock(clk clockwork.Clock) Option { return WithSchedulerClock(clk) }
 
 // WithLogger sets the scheduler's structured logger (default: [slog.Default]).
 // A nil value is ignored.
@@ -186,81 +119,14 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 	}
 }
 
-// WithDistributedTimerLock enables multi-replica timer exclusivity backed by
-// Postgres advisory locks (the same database the engine persists to). When set,
-// many replicas may arm the same timer but only one runs its fire callback per
-// firing — removing the steady-state N×-replica redundant Deliver storm. The
-// engine's version-CAS plus in-tx timer-row deletion (ADR-0027) remain the
-// exactly-once backstop. A nil pool is ignored. See ADR-0050.
-func WithDistributedTimerLock(pool *pgxpool.Pool) Option {
-	return func(c *config) {
-		if pool != nil {
-			c.pool = pool
-		}
-	}
-}
-
-// WithTimerElector enables multi-replica timer firing in single-leader mode,
-// backed by a Postgres leader advisory lock (the same database the engine persists
-// to). Exactly one replica is elected leader and runs ALL timer fires; the others
-// skip. When the leader dies its connection drops and Postgres releases the lock,
-// so a follower is elected on its next attempt — natural failover with no lease
-// loop. The engine's version-CAS plus in-tx timer-row deletion (ADR-0027) remain
-// the exactly-once backstop.
-//
-// This is the single-leader ALTERNATIVE to [WithDistributedTimerLock]'s load-
-// balanced per-timer exclusion; the two are mutually exclusive (requesting both
-// returns [ErrTimerLockElectorConflict]). Pass [WithElectorKey] to scope leadership
-// when several independent engines share one database. A nil pool is ignored. The
-// elector is released by [Scheduler.Close]. See ADR-0059.
-func WithTimerElector(pool *pgxpool.Pool, opts ...ElectorOption) Option {
-	return func(c *config) {
-		if pool == nil {
-			return
-		}
-		c.electorEnabled = true
-		c.electorPool = pool
-		for _, o := range opts {
-			o(c)
-		}
-	}
-}
-
-// WithMySQLTimerElector enables multi-replica timer firing in single-leader mode,
-// backed by a MySQL advisory lock via GET_LOCK (the same database the engine
-// persists to). Exactly one replica is elected leader and runs ALL timer fires;
-// the others skip. When the leader dies its connection drops and MySQL releases
-// the lock, so a follower is elected on its next attempt — natural failover with
-// no lease loop. The engine's version-CAS plus in-tx timer-row deletion
-// (ADR-0027) remain the exactly-once backstop.
-//
-// This is the MySQL equivalent of [WithTimerElector] (Postgres). The two are
-// mutually exclusive — requesting both, or requesting either together with
-// [WithDistributedTimerLock], returns [ErrTimerLockElectorConflict]. Pass
-// [WithElectorKey] to scope leadership when several independent engines share one
-// database. A nil db is ignored. The elector is released by [Scheduler.Close].
-// See ADR-0059, ADR-0072.
-func WithMySQLTimerElector(db *sql.DB, opts ...ElectorOption) Option {
-	return func(c *config) {
-		if db == nil {
-			return
-		}
-		c.mysqlElectorEnabled = true
-		c.mysqlElectorDB = db
-		for _, o := range opts {
-			o(c)
-		}
-	}
-}
-
 // NewScheduler constructs and starts a gocron-backed [Scheduler]. Pass
 // [WithSchedulerClock] to drive timer scheduling with a specific
 // [clockwork.Clock] (default: [clockwork.NewRealClock]). The returned
 // scheduler must be closed via [Scheduler.Close] when the application shuts down.
 //
-// [WithDistributedTimerLock], [WithTimerElector], and [WithMySQLTimerElector]
-// are mutually exclusive; requesting more than one returns
-// [ErrTimerLockElectorConflict].
+// With no [WithLocker] / [WithElector] option the scheduler runs in single-node
+// mode: every armed timer fires locally. [WithLocker] and [WithElector] are
+// mutually exclusive; requesting both returns [ErrTimerLockElectorConflict].
 func NewScheduler(opts ...Option) (*Scheduler, error) {
 	cfg := &config{}
 	for _, o := range opts {
@@ -274,23 +140,11 @@ func NewScheduler(opts ...Option) (*Scheduler, error) {
 	}
 
 	// Mutual-exclusion: at most one multi-replica mode may be active.
-	modeCount := 0
-	if cfg.pool != nil {
-		modeCount++
-	}
-	if cfg.electorEnabled {
-		modeCount++
-	}
-	if cfg.mysqlElectorEnabled {
-		modeCount++
-	}
-	if modeCount > 1 {
+	if cfg.locker != nil && cfg.elector != nil {
 		return nil, ErrTimerLockElectorConflict
 	}
 
-	var internalOpts []gocronsched.Option
-	// Always pass the resolved clock to the internal adapter.
-	internalOpts = append(internalOpts, gocronsched.WithClock(clk))
+	internalOpts := []gocronsched.Option{gocronsched.WithClock(clk)}
 	if cfg.logger != nil {
 		internalOpts = append(internalOpts, gocronsched.WithLogger(cfg.logger))
 	}
@@ -300,82 +154,64 @@ func NewScheduler(opts ...Option) (*Scheduler, error) {
 	if cfg.mp != nil {
 		internalOpts = append(internalOpts, gocronsched.WithMeterProvider(cfg.mp))
 	}
-	if cfg.pool != nil {
-		internalOpts = append(internalOpts, gocronsched.WithLocker(gocronsched.NewPostgresLocker(cfg.pool)))
+	if cfg.locker != nil {
+		internalOpts = append(internalOpts, gocronsched.WithLocker(gocronsched.AdaptLocker(neutralLockerBridge{cfg.locker})))
 	}
-
-	// Construct the Postgres leader elector (single-leader mode) before the scheduler
-	// so its dedicated connection is owned for the Scheduler's lifetime and released
-	// by Close.
-	var elector *gocronsched.PostgresElector
-	if cfg.electorEnabled {
-		// Share the resolved clock so the leadership heartbeat is driven by the same
-		// time source as timer firing (ADR-0003, ADR-0069). Prepend so a caller-supplied
-		// elector clock option (in cfg.electorOpts) still wins — applied after this one.
-		electorOpts := append([]gocronsched.ElectorOption{gocronsched.WithElectorClock(clk)}, cfg.electorOpts...)
-		e, err := gocronsched.NewPostgresElector(context.Background(), cfg.electorPool, electorOpts...)
-		if err != nil {
-			return nil, err
-		}
-		elector = e
-		internalOpts = append(internalOpts, gocronsched.WithElector(elector))
-	}
-
-	// Construct the MySQL leader elector (single-leader mode) before the scheduler
-	// so its dedicated connection is owned for the Scheduler's lifetime and released
-	// by Close.
-	var mysqlElector *gocronsched.MySQLElector
-	if cfg.mysqlElectorEnabled {
-		// Share the resolved clock so the leadership heartbeat is driven by the same
-		// time source as timer firing (ADR-0003, ADR-0069). Prepend so a caller-supplied
-		// clock option (in cfg.mysqlElectorOpts) still wins — applied after this one.
-		mysqlElectorOpts := append([]gocronsched.MySQLElectorOption{gocronsched.WithMySQLElectorClock(clk)}, cfg.mysqlElectorOpts...)
-		me, err := gocronsched.NewMySQLElector(context.Background(), cfg.mysqlElectorDB, mysqlElectorOpts...)
-		if err != nil {
-			return nil, err
-		}
-		mysqlElector = me
-		internalOpts = append(internalOpts, gocronsched.WithElector(mysqlElector))
+	if cfg.elector != nil {
+		internalOpts = append(internalOpts, gocronsched.WithElector(gocronsched.AdaptElector(cfg.elector)))
 	}
 
 	impl, err := gocronsched.NewGocronScheduler(internalOpts...)
 	if err != nil {
-		if elector != nil {
-			_ = elector.Close()
-		}
-		if mysqlElector != nil {
-			_ = mysqlElector.Close()
-		}
 		return nil, err
 	}
-	return &Scheduler{impl: impl, elector: elector, mysqlElector: mysqlElector}, nil
+	return &Scheduler{impl: impl, elector: cfg.elector}, nil
 }
 
-// Schedule registers a one-time timer identified by timerID that calls fire at
-// or after fireAt. If a timer with the same timerID already exists it is
-// replaced.
-func (s *Scheduler) Schedule(timerID string, fireAt time.Time, fire func()) {
-	s.impl.Schedule(timerID, fireAt, fire)
+// neutralLockerBridge adapts the public scheduling.Locker (whose Lock returns a
+// scheduling.Lock) to the internal gocronsched.NeutralLocker shape (whose Lock
+// returns a gocronsched.NeutralLock). The two interfaces are structurally
+// identical apart from the named return type, so this one-hop bridge lets the
+// façade pass its neutral Locker to AdaptLocker without importing gocron.
+type neutralLockerBridge struct{ inner Locker }
+
+func (b neutralLockerBridge) Lock(ctx context.Context, key string) (gocronsched.NeutralLock, error) {
+	l, err := b.inner.Lock(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return l, nil // scheduling.Lock satisfies gocronsched.NeutralLock structurally
+}
+
+// Schedule registers a timer identified by timerID whose firing schedule is
+// described by trig, invoking fire when it becomes due. It returns the next
+// computed run time (the first fire for recurring triggers), or an error if the
+// trigger kind cannot be honoured. If a timer with the same timerID already
+// exists it is replaced.
+func (s *Scheduler) Schedule(ctx context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (time.Time, error) {
+	return s.impl.Schedule(ctx, timerID, trig, fire)
 }
 
 // Cancel removes a pending timer. No-op if the timer is unknown or has already
 // fired.
-func (s *Scheduler) Cancel(timerID string) {
-	s.impl.Cancel(timerID)
+func (s *Scheduler) Cancel(ctx context.Context, timerID string) {
+	s.impl.Cancel(ctx, timerID)
 }
 
-// Close shuts the underlying gocron scheduler down gracefully and, in single-
-// leader mode, releases the leader elector (and its dedicated connection).
-// The scheduler cannot be reused after this call.
+// NextRun returns the next scheduled run time of the timer identified by timerID
+// and true, or the zero time and false when no such timer is pending.
+func (s *Scheduler) NextRun(timerID string) (time.Time, bool) {
+	return s.impl.NextRun(timerID)
+}
+
+// Close shuts the underlying gocron scheduler down gracefully. If the configured
+// [Elector] also implements [io.Closer] (e.g. a backend elector holding a
+// dedicated database connection), it is closed as a convenience — its error is
+// joined with the scheduler's. The scheduler cannot be reused after this call.
 func (s *Scheduler) Close() error {
 	err := s.impl.Close()
-	if s.elector != nil {
-		// Close is idempotent; combine any elector error with the scheduler's.
-		err = errors.Join(err, s.elector.Close())
-	}
-	if s.mysqlElector != nil {
-		// Close is idempotent; combine any MySQL elector error with any prior error.
-		err = errors.Join(err, s.mysqlElector.Close())
+	if closer, ok := s.elector.(io.Closer); ok {
+		err = errors.Join(err, closer.Close())
 	}
 	return err
 }

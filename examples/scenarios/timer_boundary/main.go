@@ -21,11 +21,14 @@
 //
 //   - "order-ontime": the confirmation message is delivered before the deadline
 //     → settles normally; the timer boundary is disarmed (never fires).
-//   - "order-late": no message arrives; advancing the fake clock past 30m and
-//     ticking the scheduler fires the timer boundary → escalation path.
+//   - "order-late": no message arrives; advancing the fake clock past 30m fires
+//     the timer boundary → escalation path.
 //
-// A *clockwork.FakeClock drives both the engine and the in-memory scheduler
-// (ADR-0003) so the example is deterministic and runs instantly.
+// A *clockwork.FakeClock drives both the engine and the gocron-backed scheduler
+// (ADR-0003) so the example is deterministic and runs instantly. Because the
+// gocron scheduler fires on its own executor goroutine, a done channel signalled
+// from the escalation path makes the observation deterministic:
+// schedule → Advance → <-done → assert.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -46,6 +49,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
 func main() {
@@ -76,12 +80,17 @@ func main() {
 	}
 
 	escalated := map[string]bool{}
+	// Signalled from the escalation-path action so the main goroutine can wait for
+	// the async timer fire deterministically. Only order-late escalates, so a
+	// single close is correct.
+	escalatedCh := make(chan struct{})
 	cat := action.NewMapCatalog(map[string]action.Action{
 		// Runs on the timer-boundary escalation path.
 		"escalate-payment": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			id, _ := in["orderID"].(string)
 			escalated[id] = true
 			fmt.Printf("  [escalate-payment] %s: payment not confirmed in time — escalating\n", id)
+			close(escalatedCh)
 			return map[string]any{"escalated": true}, nil
 		}),
 	})
@@ -89,7 +98,11 @@ func main() {
 	// Fake clock shared by the engine and the scheduler (ADR-0003).
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	sched, err := scheduling.NewScheduler(scheduling.WithClock(clk))
+	if err != nil {
+		log.Fatal("scheduler:", err)
+	}
+	defer func() { _ = sched.Close() }()
 	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
@@ -124,22 +137,39 @@ func main() {
 		log.Fatal("deliver:", derr)
 	}
 
-	// order-late: no message. Advance the clock past 30m and tick the scheduler —
-	// this fires order-late's timer boundary (order-ontime's timer was cancelled
-	// when its message arrived, so only order-late's timer is due).
-	fmt.Println("advancing the clock past 30m and ticking the scheduler...")
+	// order-late: no message. Wait until order-late's timer waiter is armed on the
+	// fake clock (order-ontime's timer was cancelled when its message arrived), then
+	// advance past 30m — the gocron executor goroutine fires the timer boundary.
+	fmt.Println("advancing the clock past 30m to fire order-late's timer boundary...")
+	if berr := clk.BlockUntilContext(ctx, 1); berr != nil {
+		log.Fatal("block:", berr)
+	}
 	clk.Advance(31 * time.Minute)
-	if terr := sched.Tick(ctx); terr != nil {
-		log.Fatal("tick:", terr)
+
+	// The timer fires asynchronously; the escalation-path action closes escalatedCh
+	// once it runs, giving a deterministic signal that the breach path executed.
+	select {
+	case <-escalatedCh:
+	case <-time.After(3 * time.Second):
+		log.Fatal("timeout: order-late timer boundary did not fire")
 	}
 
-	ontime, _, err := store.Load(ctx, "order-ontime")
-	if err != nil {
-		log.Fatal("load order-ontime:", err)
-	}
-	late, _, err := store.Load(ctx, "order-late")
-	if err != nil {
-		log.Fatal("load order-late:", err)
+	// order-late's terminal commit may still be in-flight after the action ran;
+	// poll briefly for its completion (order-ontime is already terminal).
+	var ontime, late engine.InstanceState
+	for range 200 {
+		ontime, _, err = store.Load(ctx, "order-ontime")
+		if err != nil {
+			log.Fatal("load order-ontime:", err)
+		}
+		late, _, err = store.Load(ctx, "order-late")
+		if err != nil {
+			log.Fatal("load order-late:", err)
+		}
+		if late.Status == engine.StatusCompleted {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 
 	fmt.Printf("order-ontime: status=%s (settled via the message path), escalated=%v\n",

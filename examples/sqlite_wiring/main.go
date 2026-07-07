@@ -17,8 +17,8 @@
 //     ownership value for persistence.NewCachingInstanceStore — it avoids the error path and
 //     gives the in-process cache its full benefit.
 //   - No multi-replica timer elector: scheduling.NewScheduler with no elector
-//     option (unlike the MySQL/Postgres examples, which pass WithMySQLTimerElector
-//     or WithTimerElector). SQLite is inherently single-process.
+//     option (unlike the MySQL/Postgres examples, which build a backend elector
+//     and pass scheduling.WithElector). SQLite is inherently single-process.
 //
 // WAL + foreign-key pragmas are set in the DSN so they apply for every connection
 // opened from the pool (even though MaxOpenConns(1) means one at a time).

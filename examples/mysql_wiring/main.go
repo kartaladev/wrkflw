@@ -12,10 +12,11 @@
 //	parseTime=true&loc=UTC          — always required for correct DATETIME(6) round-trips
 //	multiStatements=true            — required only during migration (goose runs multi-stmt SQL)
 //
-// The scheduler is wired with WithMySQLTimerElector so exactly one replica
-// runs timer fires across a multi-replica deployment (ADR-0059, ADR-0072).
-// The on-leadership-acquired callback rehydrates persisted timers on the new
-// leader so timers armed at runtime are not lost on failover (Option A).
+// The scheduler is wired with a MySQL-backed leader elector (built from
+// scheduling/backend/mysql and passed via scheduling.WithElector) so exactly one
+// replica runs timer fires across a multi-replica deployment (ADR-0059, ADR-0072,
+// ADR-0102). The on-leadership-acquired callback rehydrates persisted timers on
+// the new leader so timers armed at runtime are not lost on failover (Option A).
 package main
 
 import (
@@ -47,6 +48,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	mysqlbackend "github.com/zakyalvan/krtlwrkflw/scheduling/backend/mysql"
 	"github.com/zakyalvan/krtlwrkflw/service"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
@@ -170,18 +172,27 @@ func run(logger *slog.Logger) error {
 	// We capture runner in a closure; it is assigned after scheduler construction.
 	// The closure reads runner at call time (after assignment below), so this
 	// forward-reference pattern is safe (mirrors the doc example for Option A).
+	//
+	// The MySQL-backed leader elector is built from the DB-specific backend package
+	// and passed to the neutral scheduling façade via WithElector (ADR-0102). The
+	// façade closes it (io.Closer) on scheduler.Close, so no separate closer needed.
+	elector, eerr := mysqlbackend.NewElector(workerCtx, db,
+		mysqlbackend.WithOnLeadershipAcquired(func(ctx context.Context) {
+			// runner is assigned below; the closure reads it at invocation time.
+			if runner != nil {
+				_ = runner.RehydrateTimers(ctx)
+			}
+		}),
+	)
+	if eerr != nil {
+		return eerr
+	}
 	scheduler, serr := scheduling.NewScheduler(
 		scheduling.WithLogger(logger),
-		scheduling.WithMySQLTimerElector(db,
-			scheduling.WithOnLeadershipAcquired(func(ctx context.Context) {
-				// runner is assigned below; the closure reads it at invocation time.
-				if runner != nil {
-					_ = runner.RehydrateTimers(ctx)
-				}
-			}),
-		),
+		scheduling.WithElector(elector),
 	)
 	if serr != nil {
+		_ = elector.Close()
 		return serr
 	}
 	shutdown.AddCloser(scheduler)

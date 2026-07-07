@@ -12,6 +12,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
@@ -28,7 +29,8 @@ func TestNewScheduler_SatisfiesPortAndFires(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	s.Schedule("t1", fakeClock.Now().Add(3*time.Second), func() { wg.Done() })
+	_, err = s.Schedule(t.Context(), "t1", schedule.At(fakeClock.Now().Add(3*time.Second)), func() { wg.Done() })
+	require.NoError(t, err)
 	require.NoError(t, fakeClock.BlockUntilContext(t.Context(), 1))
 	fakeClock.Advance(3 * time.Second)
 	wg.Wait()
@@ -41,12 +43,13 @@ func TestScheduler_Cancel_NoOp(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Cancel on an unknown ID must not panic or error.
-	s.Cancel("nonexistent")
+	s.Cancel(t.Context(), "nonexistent")
 
 	// Schedule then cancel — callback must NOT fire.
 	fired := false
-	s.Schedule("t2", fakeClock.Now().Add(1*time.Second), func() { fired = true })
-	s.Cancel("t2")
+	_, err = s.Schedule(t.Context(), "t2", schedule.At(fakeClock.Now().Add(1*time.Second)), func() { fired = true })
+	require.NoError(t, err)
+	s.Cancel(t.Context(), "t2")
 
 	// Advance past the would-be fire time; nothing should fire.
 	// Drain any remaining waiters on the fake clock.
@@ -76,7 +79,8 @@ func TestNewScheduler_WithLogger(t *testing.T) {
 				// Verify scheduler still fires correctly with injected logger.
 				var wg sync.WaitGroup
 				wg.Add(1)
-				s.Schedule("wl-t1", clk.Now().Add(time.Second), func() { wg.Done() })
+				_, err = s.Schedule(t.Context(), "wl-t1", schedule.At(clk.Now().Add(time.Second)), func() { wg.Done() })
+				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(time.Second)
 				wg.Wait()

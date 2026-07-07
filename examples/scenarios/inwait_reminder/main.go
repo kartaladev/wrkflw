@@ -16,8 +16,11 @@
 //
 //	start → review[UserTask, reminder every "30m" → action "nudge-reviewer"] → end
 //
-// A *clockwork.FakeClock drives both the engine and the in-memory scheduler, so
-// advancing the clock and ticking the scheduler fires each reminder deterministically.
+// A *clockwork.FakeClock drives both the engine and the gocron-backed scheduler,
+// so advancing the clock fires each reminder deterministically. The reminder
+// recurs natively in the scheduler (no per-fire reschedule); because it fires on
+// its own executor goroutine, the nudge action signals a channel per fire so the
+// main goroutine can observe each reminder deterministically: Advance → <-nudgeCh.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -42,6 +45,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
+	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
 func main() {
@@ -64,10 +68,17 @@ func main() {
 	}
 
 	nudges := 0
+	// Signalled once per reminder fire so the main goroutine can wait for each
+	// async reminder deterministically (the scheduler fires on its own goroutine).
+	nudgeCh := make(chan struct{}, 8)
 	cat := action.NewMapCatalog(map[string]action.Action{
 		"nudge-reviewer": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			nudges++
 			fmt.Printf("  [nudge-reviewer] reminder #%d — please review the pending item\n", nudges)
+			select {
+			case nudgeCh <- struct{}{}:
+			default:
+			}
 			return nil, nil
 		}),
 	})
@@ -81,7 +92,11 @@ func main() {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	sched, err := scheduling.NewScheduler(scheduling.WithClock(clk))
+	if err != nil {
+		log.Fatal("scheduler:", err)
+	}
+	defer func() { _ = sched.Close() }()
 	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
@@ -111,12 +126,18 @@ func main() {
 		parked.Tokens[0].NodeID, view.StatusString(parked.Status))
 
 	// The reviewer sits on the task for 90 minutes. Advance the clock in three
-	// 30-minute steps, ticking the scheduler each time to fire that interval's
-	// reminder. Each tick fires one reminder and re-arms the next.
+	// 30-minute steps. The recurring reminder timer re-arms itself natively in the
+	// scheduler, so each step: wait for the waiter to be armed, advance past it, and
+	// wait for that interval's reminder to fire.
 	for range 3 {
+		if err := clk.BlockUntilContext(ctx, 1); err != nil {
+			log.Fatal("block:", err)
+		}
 		clk.Advance(30 * time.Minute)
-		if err := sched.Tick(ctx); err != nil {
-			log.Fatal("tick:", err)
+		select {
+		case <-nudgeCh:
+		case <-time.After(3 * time.Second):
+			log.Fatal("timeout: reminder did not fire")
 		}
 	}
 	fmt.Printf("reminders fired while waiting: %d\n", nudges)
@@ -151,11 +172,15 @@ func main() {
 		log.Fatal("deliver complete:", err)
 	}
 
-	// After completion the recurring reminder is stale: further ticks fire nothing.
+	// After completion the recurring reminder is cancelled: advancing the clock
+	// further must fire nothing. The timer no longer has a waiter, so don't block on
+	// one — just advance and confirm no reminder arrives within a short window.
 	nudgesAtCompletion := nudges
 	clk.Advance(30 * time.Minute)
-	if err := sched.Tick(ctx); err != nil {
-		log.Fatal("tick:", err)
+	select {
+	case <-nudgeCh:
+		log.Fatal("unexpected reminder fired after completion")
+	case <-time.After(200 * time.Millisecond):
 	}
 
 	if final.Status == engine.StatusCompleted && nudges == nudgesAtCompletion {

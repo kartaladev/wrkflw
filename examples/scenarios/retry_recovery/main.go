@@ -5,10 +5,12 @@
 // A WithRetryPolicy on an activity turns a retryable failure into a scheduled
 // retry rather than an immediate incident. Retries are NOT automatic: a failed
 // attempt parks the instance and schedules a backoff timer on the injected
-// Scheduler. The retry fires only when the clock advances past the timer and the
-// scheduler is ticked — so this example drives a *clockwork.FakeClock and calls
-// sched.Tick between attempts, which makes the exponential backoff deterministic
-// and instant.
+// Scheduler. The retry fires only when the clock advances past the timer — so
+// this example drives a *clockwork.FakeClock shared by the engine and the
+// gocron-backed scheduler, which makes the exponential backoff deterministic and
+// instant. Because the scheduler fires on its own executor goroutine, an attempt
+// channel signalled from the action makes each retry observable:
+// BlockUntilContext → Advance → <-attemptCh.
 //
 // Backoff = InitialInterval × BackoffCoef^attempt (attempt is 0-based). With
 // InitialInterval=1s, BackoffCoef=2.0 and a fixed jitter of 1.0:
@@ -45,6 +47,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
+	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
 // fixedJitter returns the full computed backoff (no randomization) so the retry
@@ -77,23 +80,38 @@ func main() {
 		log.Fatal("build def:", err)
 	}
 
-	// Flaky action: fails the first two attempts, succeeds on the third.
+	// Flaky action: fails the first two attempts, succeeds on the third. attemptCh
+	// is signalled at the end of every invocation so the main goroutine can observe
+	// each async retry fire deterministically.
 	attempts := 0
+	attemptCh := make(chan struct{}, 8)
 	cat := action.NewMapCatalog(map[string]action.Action{
 		"charge-card": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			attempts++
 			if attempts < 3 {
 				fmt.Printf("  [charge-card] attempt %d — transient gateway error\n", attempts)
+				select {
+				case attemptCh <- struct{}{}:
+				default:
+				}
 				return nil, errors.New("payment gateway timeout")
 			}
 			fmt.Printf("  [charge-card] attempt %d — charge succeeded\n", attempts)
+			select {
+			case attemptCh <- struct{}{}:
+			default:
+			}
 			return map[string]any{"charged": true}, nil
 		}),
 	})
 
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	sched, err := scheduling.NewScheduler(scheduling.WithClock(clk))
+	if err != nil {
+		log.Fatal("scheduler:", err)
+	}
+	defer func() { _ = sched.Close() }()
 	store, err := kernel.NewMemInstanceStore()
 	if err != nil {
 		log.Fatal("memstore:", err)
@@ -121,18 +139,40 @@ func main() {
 	}
 	fmt.Printf("after first attempt: status=%s (retry scheduled)\n", view.StatusString(st.Status))
 
-	// Drive the backoff: advance the clock to each armed retry and tick. A timer
-	// armed inside a fire callback is not fired in the same Tick, so each attempt
-	// needs its own advance+tick. Advancing generously past the next fire time is
-	// safe — Tick fires every timer already due.
-	for attempts < 3 {
+	// Attempt 1 ran synchronously inside Run and already signalled attemptCh; drain
+	// that so the loop below observes only the async retry attempts.
+	select {
+	case <-attemptCh:
+	default:
+	}
+
+	// Drive the backoff: each failed attempt arms a fresh one-shot retry timer once
+	// the previous fire completes. Per iteration, wait until the scheduler has armed
+	// the next retry waiter on the fake clock, advance generously past the backoff,
+	// then wait for the retry attempt to run. The loop is capped so a stuck retry
+	// cannot spin forever.
+	for i := 0; i < 5 && attempts < 3; i++ {
+		if err := clk.BlockUntilContext(ctx, 1); err != nil {
+			log.Fatal("block:", err)
+		}
 		clk.Advance(1 * time.Minute)
-		if err := sched.Tick(ctx); err != nil {
-			log.Fatal("tick:", err)
+		select {
+		case <-attemptCh:
+		case <-time.After(3 * time.Second):
+			log.Fatal("timeout: retry attempt did not fire")
 		}
 	}
 
-	final, _, err := store.Load(ctx, instanceID)
+	// The final terminal commit may still be in-flight after the last attempt ran;
+	// poll briefly for completion.
+	var final engine.InstanceState
+	for range 200 {
+		final, _, err = store.Load(ctx, instanceID)
+		if err == nil && final.Status == engine.StatusCompleted {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if err != nil {
 		log.Fatal("load:", err)
 	}
