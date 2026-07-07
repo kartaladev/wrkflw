@@ -21,12 +21,24 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 )
 
+// defaultTimeSkew is the out-of-the-box tolerance for the past-due one-shot
+// path. A timer whose fire time is up to 5 minutes in the past fires
+// immediately and silently (expected clock skew or brief downtime). If the
+// lateness exceeds this value a WARN is logged — the timer still fires
+// (never-drop invariant). Override with [WithTimeSkew].
+const defaultTimeSkew = 5 * time.Minute
+
 // GocronScheduler is a production kernel.Scheduler backed by gocron v2. It
 // shares the engine's clockwork time source so one fake-clock advance drives
 // both engine timestamps and timer firing (ADR-0003, ADR-0009).
 type GocronScheduler struct {
 	sched gocron.Scheduler
 	clk   clockwork.Clock
+
+	// timeSkew is the maximum lateness that is accepted silently for a
+	// past-due one-shot timer. Lateness beyond this threshold emits a WARN
+	// (the timer still fires — no timer is ever dropped).
+	timeSkew time.Duration
 
 	// staged telemetry option values; assembled into tel after all Options
 	// have been applied in NewGocronScheduler.
@@ -123,6 +135,24 @@ func WithClock(clk clockwork.Clock) Option {
 	}
 }
 
+// WithTimeSkew sets the maximum past-due lateness that is accepted silently
+// for a one-shot timer whose absolute fire time has already elapsed at
+// schedule time (e.g. after a restart or DB↔process clock skew).
+//
+// Behaviour:
+//   - Lateness ≤ d  → fire immediately, no log output.
+//   - Lateness >  d → fire immediately (the timer is NEVER dropped) and emit
+//     a WARN via the configured logger with timer_id, fire_time, and lateness.
+//
+// Default when this option is omitted: [defaultTimeSkew] (5 minutes).
+// Pass 0 to warn on any past-due timer, however small.
+// Pass a very large value (e.g. math.MaxInt64) to silence the warning entirely.
+func WithTimeSkew(d time.Duration) Option {
+	return func(s *GocronScheduler) {
+		s.timeSkew = d
+	}
+}
+
 // filterNilOpts returns only the non-nil observability.Option values from opts.
 func filterNilOpts(opts ...observability.Option) []observability.Option {
 	out := opts[:0]
@@ -140,7 +170,8 @@ func filterNilOpts(opts ...observability.Option) []observability.Option {
 // leaking gocron's executor goroutine.
 func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	s := &GocronScheduler{
-		jobs: make(map[string]uuid.UUID),
+		jobs:     make(map[string]uuid.UUID),
+		timeSkew: defaultTimeSkew, // sentinel: options override this below
 	}
 	// Apply options first so locker, elector, clock (and telemetry) are known
 	// before the gocron scheduler is constructed.
@@ -195,9 +226,27 @@ func (s *GocronScheduler) Schedule(_ context.Context, timerID string, trig sched
 		delete(s.jobs, timerID)
 	}
 
-	def, oneShot, err := jobDefinition(trig, s.clk.Now())
+	now := s.clk.Now()
+	def, oneShot, err := jobDefinition(trig, now)
 	if err != nil {
 		return time.Time{}, err
+	}
+
+	// Past-due skew check: only applies to one-shot triggers with an absolute
+	// fire time that has already elapsed (the branch that resolves to
+	// OneTimeJobStartImmediately). Timers are NEVER dropped — within tolerance
+	// they fire silently; beyond tolerance they still fire and a WARN is logged.
+	if oneShot {
+		if at, ok := trig.AbsTime(); ok && !at.After(now) {
+			lateness := now.Sub(at)
+			if lateness > s.timeSkew {
+				s.tel.Logger.Warn("workflow-scheduler: past-due timer exceeds time-skew tolerance; firing immediately",
+					"timer_id", timerID,
+					"fire_time", at,
+					"lateness", lateness,
+				)
+			}
+		}
 	}
 
 	opts := []gocron.JobOption{

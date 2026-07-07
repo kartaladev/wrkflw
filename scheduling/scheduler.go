@@ -58,12 +58,13 @@ var (
 // config holds façade-level options. It carries no database-driver state — only
 // the neutral locker/elector seams and observability wiring.
 type config struct {
-	clk     clockwork.Clock
-	logger  *slog.Logger
-	tp      trace.TracerProvider
-	mp      metric.MeterProvider
-	locker  Locker
-	elector Elector
+	clk      clockwork.Clock
+	logger   *slog.Logger
+	tp       trace.TracerProvider
+	mp       metric.MeterProvider
+	locker   Locker
+	elector  Elector
+	timeSkew *time.Duration // nil = use internal default (5 minutes)
 }
 
 // Option configures a [Scheduler].
@@ -119,6 +120,23 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 	}
 }
 
+// WithTimeSkew sets the maximum past-due lateness that is accepted silently
+// for a one-shot timer whose absolute fire time has already elapsed at
+// schedule time (e.g. after a restart or DB↔process clock skew).
+//
+// Behaviour:
+//   - Lateness ≤ d  → fire immediately, no log output.
+//   - Lateness >  d → fire immediately (the timer is NEVER dropped) and emit
+//     a WARN via the configured logger with timer_id, fire_time, and lateness.
+//
+// Default when this option is omitted: 5 minutes. Pass 0 to warn on any
+// past-due timer; pass a very large value to effectively silence the warning.
+func WithTimeSkew(d time.Duration) Option {
+	return func(c *config) {
+		c.timeSkew = &d
+	}
+}
+
 // NewScheduler constructs and starts a gocron-backed [Scheduler]. Pass
 // [WithSchedulerClock] to drive timer scheduling with a specific
 // [clockwork.Clock] (default: [clockwork.NewRealClock]). The returned
@@ -153,6 +171,9 @@ func NewScheduler(opts ...Option) (*Scheduler, error) {
 	}
 	if cfg.mp != nil {
 		internalOpts = append(internalOpts, gocronsched.WithMeterProvider(cfg.mp))
+	}
+	if cfg.timeSkew != nil {
+		internalOpts = append(internalOpts, gocronsched.WithTimeSkew(*cfg.timeSkew))
 	}
 	if cfg.locker != nil {
 		internalOpts = append(internalOpts, gocronsched.WithLocker(gocronsched.AdaptLocker(neutralLockerBridge{cfg.locker})))
