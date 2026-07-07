@@ -27,8 +27,9 @@ func (mysql) Rebind(query string) string { return query }
 // UpsertTimer returns the ON DUPLICATE KEY UPDATE clause for the timer upsert
 // site.
 func (mysql) UpsertTimer() string {
-	return "\n\t\t\tON DUPLICATE KEY UPDATE fire_at=VALUES(fire_at), kind=VALUES(kind)," +
-		"\n\t\t\t                        def_id=VALUES(def_id), def_version=VALUES(def_version)"
+	return "\n\t\t\tON DUPLICATE KEY UPDATE next_run=VALUES(next_run), kind=VALUES(kind)," +
+		"\n\t\t\t                        def_id=VALUES(def_id), def_version=VALUES(def_version)," +
+		"\n\t\t\t                        trigger_kind=VALUES(trigger_kind), trigger_payload=VALUES(trigger_payload)"
 }
 
 // UpsertDefinition returns the ON DUPLICATE KEY UPDATE clause for the

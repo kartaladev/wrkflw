@@ -19,6 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -102,11 +103,12 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 
 		baseline := zeroArgCalls.Load()
 
-		d, err := runtime.NewProcessDriver()
+		driver, err := runtime.NewProcessDriver()
 		require.NoError(t, err)
-		require.NotNil(t, d)
+		require.NotNil(t, driver)
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-zeroarg-v1"), "inst-zero-arg", nil)
+		st, runErr := driver.Drive(t.Context(), oneNodeDef("test-defaults-zeroarg-v1"), "inst-zero-arg", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, zeroArgCalls.Load(), baseline, "default catalog must resolve and invoke the registered action")
@@ -123,11 +125,12 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 				return nil, nil
 			}),
 		})
-		d, err := runtime.NewProcessDriver(runtime.WithActionCatalog(custom))
+		driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(custom))
 		require.NoError(t, err)
-		require.NotNil(t, d)
+		require.NotNil(t, driver)
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("custom-action-v1"), "inst-custom-cat", nil)
+		st, runErr := driver.Drive(t.Context(), oneNodeDef("custom-action-v1"), "inst-custom-cat", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.True(t, customCalled.Load(), "custom catalog action must have been called")
@@ -141,12 +144,13 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		customStore, storeErr := kernel.NewMemInstanceStore()
 		require.NoError(t, storeErr)
 
-		d, err := runtime.NewProcessDriver(runtime.WithInstanceStore(customStore))
+		driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(customStore))
 		require.NoError(t, err)
-		require.NotNil(t, d)
+		require.NotNil(t, driver)
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
 		// Run a process so the instance is persisted in the custom store.
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-instancestore-v1"), "inst-custom-store", nil)
+		st, runErr := driver.Drive(t.Context(), oneNodeDef("test-defaults-instancestore-v1"), "inst-custom-store", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, instanceStoreCalls.Load(), baseline, "action must have been invoked")
@@ -162,11 +166,12 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 
 		baseline := nilCatCalls.Load()
 
-		d, err := runtime.NewProcessDriver(runtime.WithActionCatalog(nil))
+		driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(nil))
 		require.NoError(t, err)
-		require.NotNil(t, d)
+		require.NotNil(t, driver)
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-nilcat-v1"), "inst-nil-cat", nil)
+		st, runErr := driver.Drive(t.Context(), oneNodeDef("test-defaults-nilcat-v1"), "inst-nil-cat", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, nilCatCalls.Load(), baseline, "nil catalog must be ignored; default catalog resolves the action")
@@ -177,11 +182,12 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 
 		baseline := nilStoreCalls.Load()
 
-		d, err := runtime.NewProcessDriver(runtime.WithInstanceStore(nil))
+		driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(nil))
 		require.NoError(t, err)
-		require.NotNil(t, d)
+		require.NotNil(t, driver)
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
-		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-nilstore-v1"), "inst-nil-store", nil)
+		st, runErr := driver.Drive(t.Context(), oneNodeDef("test-defaults-nilstore-v1"), "inst-nil-store", nil)
 		require.NoError(t, runErr)
 		assert.Equal(t, engine.StatusCompleted, st.Status)
 		assert.Greater(t, nilStoreCalls.Load(), baseline, "action must have been invoked through the default store path")
@@ -211,8 +217,9 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
 		logger := slog.New(handler)
 
-		_, err := runtime.NewProcessDriver(runtime.WithLogger(logger))
+		driver, err := runtime.NewProcessDriver(runtime.WithLogger(logger))
 		require.NoError(t, err)
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
 		// Expect exactly one JSON line from the construction summary.
 		lines := splitNonEmpty(buf.Bytes())
@@ -224,7 +231,7 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		assert.Equal(t, "ProcessDriver constructed", entry.Msg)
 		assert.Equal(t, "in-memory(non-durable)", entry.Store, "zero-config must report in-memory store")
 		assert.Equal(t, "default-global", entry.Catalog, "zero-config must report default-global catalog")
-		assert.Equal(t, "off", entry.Sched, "zero-config must report scheduler=off")
+		assert.Equal(t, "default-inprocess", entry.Sched, "zero-config must report the in-process default scheduler")
 
 		// Also confirm the hint attribute is present by scanning the raw JSON.
 		assert.Contains(t, string(lines[0]), "in-memory store is not durable", "hint attribute must mention durability")
@@ -240,7 +247,7 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		customStore, err := kernel.NewMemInstanceStore()
 		require.NoError(t, err)
 
-		sched := kernel.NewMemScheduler()
+		sched := processtest.NewMemScheduler()
 
 		_, buildErr := runtime.NewProcessDriver(
 			runtime.WithLogger(logger),
@@ -257,7 +264,7 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		assert.Equal(t, "DEBUG", entry.Level)
 		assert.Equal(t, "ProcessDriver constructed", entry.Msg)
 		assert.Equal(t, "custom", entry.Store, "custom store must be reported as custom")
-		assert.Equal(t, "on", entry.Sched, "scheduler must be reported as on when wired")
+		assert.Equal(t, "custom", entry.Sched, "an injected scheduler must be reported as custom")
 	})
 }
 

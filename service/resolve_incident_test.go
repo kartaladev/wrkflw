@@ -94,7 +94,7 @@ func TestEngineResolveIncident(t *testing.T) {
 
 	// Start the instance — parks with an incident after the first failure.
 	ctx := t.Context()
-	parked, err := r.Run(ctx, def, "inc-inst-1", nil)
+	parked, err := r.Drive(ctx, def, "inc-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "instance must park with an incident")
 	require.Len(t, parked.Incidents, 1, "want exactly one incident")
@@ -162,7 +162,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := t.Context()
-	parked, err := r.Run(ctx, def, "inc-inst-zero", nil)
+	parked, err := r.Drive(ctx, def, "inc-inst-zero", nil)
 	require.NoError(t, err)
 	require.Len(t, parked.Incidents, 1)
 	incID := parked.Incidents[0].ID

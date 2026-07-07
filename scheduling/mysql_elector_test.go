@@ -8,14 +8,18 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	mysqlbackend "github.com/zakyalvan/krtlwrkflw/scheduling/backend/mysql"
+	pgbackend "github.com/zakyalvan/krtlwrkflw/scheduling/backend/postgres"
 )
 
 // TestSchedulerWithMySQLTimerElector proves the public façade plumbs the
-// MySQL-backed elector down to gocron in single-leader mode: when this instance
-// cannot win leadership (a side connection holds the leader lock) its timers are
-// skipped; when uncontended it is the leader and timers fire. Mirrors
+// MySQL-backed backend elector down to gocron in single-leader mode: when this
+// instance cannot win leadership (a side connection holds the leader lock) its
+// timers are skipped; when uncontended it is the leader and timers fire. Mirrors
 // TestSchedulerWithTimerElector for the Postgres elector.
 func TestSchedulerWithMySQLTimerElector(t *testing.T) {
 	db := dbtest.RunTestMySQL(t)
@@ -53,14 +57,18 @@ func TestSchedulerWithMySQLTimerElector(t *testing.T) {
 			}
 
 			clk := clockwork.NewFakeClock()
+			elector, err := mysqlbackend.NewElector(ctx, db,
+				mysqlbackend.WithElectorKey(leaderKey), mysqlbackend.WithClock(clk))
+			require.NoError(t, err)
 			s, err := scheduling.NewScheduler(
 				scheduling.WithSchedulerClock(clk),
-				scheduling.WithMySQLTimerElector(db, scheduling.WithElectorKey(leaderKey)))
+				scheduling.WithElector(elector))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 
 			fired := make(chan struct{}, 1)
-			s.Schedule("timer", clk.Now().Add(time.Second), func() { fired <- struct{}{} })
+			_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} })
+			require.NoError(t, err)
 			require.NoError(t, clk.BlockUntilContext(ctx, 1))
 			clk.Advance(time.Second)
 
@@ -81,26 +89,30 @@ func TestSchedulerWithMySQLTimerElector(t *testing.T) {
 	}
 }
 
-// TestSchedulerMySQLElectorOnLeadershipAcquired proves the façade plumbs the
-// on-leadership-acquired hook (Option A, ADR-0072) down to the MySQL elector:
-// when this instance wins leadership the registered callback fires.
+// TestSchedulerMySQLElectorOnLeadershipAcquired proves the MySQL backend elector's
+// on-leadership-acquired hook (Option A, ADR-0072) fires through the façade: when
+// this instance wins leadership the registered callback fires.
 func TestSchedulerMySQLElectorOnLeadershipAcquired(t *testing.T) {
 	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()
 
 	acquired := make(chan struct{}, 1)
 	clk := clockwork.NewFakeClock()
+	elector, err := mysqlbackend.NewElector(ctx, db,
+		mysqlbackend.WithElectorKey("facade-mysql-onacquire"),
+		mysqlbackend.WithClock(clk),
+		mysqlbackend.WithOnLeadershipAcquired(func(context.Context) { acquired <- struct{}{} }))
+	require.NoError(t, err)
 	s, err := scheduling.NewScheduler(
 		scheduling.WithSchedulerClock(clk),
-		scheduling.WithMySQLTimerElector(db,
-			scheduling.WithElectorKey("facade-mysql-onacquire"),
-			scheduling.WithOnLeadershipAcquired(func(context.Context) { acquired <- struct{}{} })))
+		scheduling.WithElector(elector))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
 	// A timer run makes gocron call IsLeader, so the leader wins leadership and
 	// the hook fires.
-	s.Schedule("timer", clk.Now().Add(time.Second), func() {})
+	_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() {})
+	require.NoError(t, err)
 	require.NoError(t, clk.BlockUntilContext(ctx, 1))
 	clk.Advance(time.Second)
 
@@ -111,30 +123,48 @@ func TestSchedulerMySQLElectorOnLeadershipAcquired(t *testing.T) {
 	}
 }
 
-// TestSchedulerMySQLElectorLockConflict proves the façade rejects requesting
-// both distributed modes at once with a clear error — MySQL elector is mutually
-// exclusive with WithDistributedTimerLock and with WithTimerElector.
+// TestSchedulerMySQLElectorLockConflict proves the façade rejects requesting both
+// distributed modes at once with a clear error — an Elector (MySQL) is mutually
+// exclusive with a Locker.
 func TestSchedulerMySQLElectorLockConflict(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	db := dbtest.RunTestMySQL(t)
+	ctx := t.Context()
 
 	t.Run("mysql elector + distributed lock", func(t *testing.T) {
+		locker := persistence.NewPostgresSchedulerLocker(pool)
+		elector, err := mysqlbackend.NewElector(ctx, db)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = elector.Close() })
+
 		clk := clockwork.NewFakeClock()
-		_, err := scheduling.NewScheduler(
+		_, err = scheduling.NewScheduler(
 			scheduling.WithSchedulerClock(clk),
-			scheduling.WithDistributedTimerLock(pool),
-			scheduling.WithMySQLTimerElector(db),
+			scheduling.WithLocker(locker),
+			scheduling.WithElector(elector),
 		)
-		require.Error(t, err, "requesting both a distributed lock and a MySQL elector must fail")
+		require.ErrorIs(t, err, scheduling.ErrTimerLockElectorConflict,
+			"requesting both a Locker and a MySQL elector must fail")
 	})
 
-	t.Run("mysql elector + postgres elector", func(t *testing.T) {
+	t.Run("mysql elector + postgres elector last wins (no conflict)", func(t *testing.T) {
+		// Two electors are not a conflict at the façade: the last WithElector wins.
+		// This documents that the mutual-exclusion is Locker-vs-Elector, not
+		// elector-vs-elector (the DB-specific pairing lived in the old options).
+		pgElector, err := pgbackend.NewElector(ctx, pool)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = pgElector.Close() })
+		myElector, err := mysqlbackend.NewElector(ctx, db)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = myElector.Close() })
+
 		clk := clockwork.NewFakeClock()
-		_, err := scheduling.NewScheduler(
+		s, err := scheduling.NewScheduler(
 			scheduling.WithSchedulerClock(clk),
-			scheduling.WithTimerElector(pool),
-			scheduling.WithMySQLTimerElector(db),
+			scheduling.WithElector(pgElector),
+			scheduling.WithElector(myElector),
 		)
-		require.Error(t, err, "requesting both a Postgres elector and a MySQL elector must fail")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = s.Close() })
 	})
 }

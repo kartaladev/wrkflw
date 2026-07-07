@@ -100,10 +100,13 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 	st, found := findScheduleTimerByKind(r2.Commands, engine.TimerRetry)
 	require.True(t, found, "expected a ScheduleTimer{Kind:TimerRetry} in commands")
 
-	// attempt 0 backoff = 1s × 2^0 = 1s; jitter 0.5 → delay = 500ms.
-	wantFire := failAt.Add(500 * time.Millisecond)
-	assert.True(t, st.FireAt.Equal(wantFire),
-		"FireAt = %v, want %v", st.FireAt, wantFire)
+	// attempt 0 backoff = 1s × 2^0 = 1s; jitter 0.5 → delay = 500ms. The retry
+	// timer now carries a concrete AfterDuration(delay) trigger (no FireAt); the
+	// scheduler owns the absolute fire instant.
+	gotDelay, ok := st.Trigger.Duration()
+	require.True(t, ok, "retry trigger must be a concrete duration, got %+v", st.Trigger)
+	assert.Equal(t, 500*time.Millisecond, gotDelay,
+		"retry trigger delay = %v, want 500ms", gotDelay)
 
 	// Token at "task" must have RetryAttempts == 1.
 	tok := findTokenByNodeID(t, r2.State.Tokens, "task")

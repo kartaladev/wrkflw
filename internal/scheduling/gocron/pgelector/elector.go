@@ -1,4 +1,8 @@
-package gocron
+// Package pgelector holds the Postgres-backed leader [gocron.Elector]
+// (PostgresElector). It is split out of the neutral gocron scheduler package so
+// that importing the scheduler does not transitively pull in pgx/pgxpool; the DB
+// coupling lives only here (and the parallel myelector package for MySQL).
+package pgelector
 
 import (
 	"context"
@@ -49,8 +53,8 @@ var ErrNotLeader = errors.New("workflow-scheduling: not the timer leader")
 // residual two-leader window is therefore at most one heartbeat interval, and the
 // engine's version-CAS (ADR-0027) remains the exactly-once backstop.
 //
-// The Elector is the single-leader ALTERNATIVE to the load-balanced PostgresLocker
-// (ADR-0050): use one or the other, never both (see ADR-0059).
+// The Elector is the single-leader ALTERNATIVE to a load-balanced advisory-lock
+// locker (ADR-0050): use one or the other, never both (see ADR-0059).
 type PostgresElector struct {
 	conn      *pgxpool.Conn
 	key       string

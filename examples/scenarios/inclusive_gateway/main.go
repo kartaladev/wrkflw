@@ -80,13 +80,13 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
 
 	fmt.Println("--- Application Screening: Inclusive Gateway ---")
-	state, err := r.Run(ctx, def, "app-001", map[string]any{
+	state, err := driver.Drive(ctx, def, "app-001", map[string]any{
 		"score":   580,
 		"amount":  25000,
 		"flagged": false,

@@ -1,4 +1,4 @@
-package gocron_test
+package pgelector_test
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/pgelector"
 )
 
 // TestPostgresElectorHeartbeatStepsDownOnConnLoss proves ADR-0061: a leader whose

@@ -18,11 +18,12 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // recordingHandler is a minimal slog.Handler that captures every emitted record
@@ -83,7 +84,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(`"30m"`, "escalate", "notify")),
+			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(schedule.AfterExpr(`"30m"`), "escalate", "notify")),
 			event.NewEnd("end-normal"),
 			event.NewEnd("end-escalated"),
 		},
@@ -100,7 +101,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
 	rec := &recordingHandler{}
@@ -115,7 +116,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 
 	const instanceID = "deadline-ff-1"
 
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 

@@ -22,7 +22,7 @@ func TestErrConflict_ClosedTask(t *testing.T) {
 	ctx := t.Context()
 
 	// Start the instance — parks at the user task node.
-	parked, err := h.runner.Run(ctx, def, "conflict-closed-task", nil)
+	parked, err := h.driver.Drive(ctx, def, "conflict-closed-task", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 	require.Len(t, parked.Tokens, 1)
@@ -57,7 +57,7 @@ func TestErrConflict_TerminalInstance(t *testing.T) {
 	ctx := t.Context()
 
 	// Start a linear process — it runs to completion immediately.
-	completed, err := h.runner.Run(ctx, def, "conflict-terminal-inst", map[string]any{"name": "test"})
+	completed, err := h.driver.Drive(ctx, def, "conflict-terminal-inst", map[string]any{"name": "test"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, completed.Status, "linear process must complete immediately")
 
@@ -119,7 +119,7 @@ func TestErrConflict_EngineWrongStateClassified(t *testing.T) {
 	ctx := t.Context()
 
 	// Start the instance — parks at the user task node; the engine owns token T1.
-	parked, err := h.runner.Run(ctx, def, "race-instance", nil)
+	parked, err := h.driver.Drive(ctx, def, "race-instance", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 
@@ -159,7 +159,7 @@ func TestErrConflict_HappyPath_ClaimOpen(t *testing.T) {
 	ctx := t.Context()
 
 	// Start the instance — parks at the user task node with the task in Open state.
-	parked, err := h.runner.Run(ctx, def, "happy-claim-open", nil)
+	parked, err := h.driver.Drive(ctx, def, "happy-claim-open", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 	require.Len(t, parked.Tokens, 1)

@@ -1,9 +1,14 @@
-package gocron
+// Package myelector holds the MySQL-backed leader [gocron.Elector]
+// (MySQLElector). It is split out of the neutral gocron scheduler package so that
+// importing the scheduler does not transitively pull in database/sql; the DB
+// coupling lives only here (and the parallel pgelector package for Postgres).
+package myelector
 
 import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -11,6 +16,17 @@ import (
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
 )
+
+// ErrNotLeader is returned by MySQLElector.IsLeader when another instance
+// currently holds leadership. gocron treats any IsLeader error as "do not run
+// jobs on this instance", which is exactly the single-leader behaviour we want.
+var ErrNotLeader = errors.New("workflow-scheduling: not the timer leader")
+
+// defaultHeartbeatInterval is how often a leader re-validates that its dedicated
+// connection (and thus its advisory lock) is still alive. It bounds the residual
+// split-brain window to at most one interval (ADR-0061). Five seconds keeps the
+// re-validation cheap while closing the window promptly.
+const defaultHeartbeatInterval = 5 * time.Second
 
 // defaultMySQLElectorKey is the well-known leader-lock key for the MySQL elector.
 // All replicas of one engine contend for this single key, so exactly one wins

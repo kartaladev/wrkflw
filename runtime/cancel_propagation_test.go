@@ -85,7 +85,7 @@ func (c *countingCallLinkStore) listCount(parentID string) int {
 	return c.counts[parentID]
 }
 
-// cancelPropRunner builds a Runner with CallLinks + Definitions + HumanTasks wired.
+// cancelPropRunner builds a ProcessDriver with CallLinks + Definitions + HumanTasks wired.
 // NewMapDefinitionRegistry auto-indexes both "defID" (latest) and "defID:N" (pinned).
 func cancelPropRunner(t *testing.T, store *kernel.MemInstanceStore, cl *kernel.MemCallLinkStore, defs ...*model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
@@ -116,10 +116,10 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 	childDef := cancelPropChildDef("prop-child")
 	parentDef := cancelPropParentDef("prop-parent", model.Latest("prop-child"))
 
-	runner := cancelPropRunner(t, store, cl, childDef, parentDef)
+	driver := cancelPropRunner(t, store, cl, childDef, parentDef)
 
 	const parentID = "prop-parent-i1"
-	st, err := runner.Run(ctx, parentDef, parentID, nil)
+	st, err := driver.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running (parked) after Run")
 
@@ -129,7 +129,7 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, childSt.Status, "child must be running (parked)")
 
 	// Cancel the parent — propagation must also cancel the child.
-	cancelSt, err := runner.CancelInstance(ctx, parentDef, parentID)
+	cancelSt, err := driver.CancelInstance(ctx, parentDef, parentID)
 	require.NoError(t, err, "CancelInstance must not return an error")
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "parent must be Terminated after cancel")
 
@@ -154,10 +154,10 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	// parent calls child
 	parentDef := cancelPropParentDef("prop-parent-gc", model.Latest("prop-child-gc"))
 
-	runner := cancelPropRunner(t, store, cl, grandchildDef, childDef, parentDef)
+	driver := cancelPropRunner(t, store, cl, grandchildDef, childDef, parentDef)
 
 	const parentID = "prop-parent-gc-i1"
-	st, err := runner.Run(ctx, parentDef, parentID, nil)
+	st, err := driver.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running (parked)")
 
@@ -174,7 +174,7 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, grandchildSt.Status, "grandchild must be running")
 
 	// Cancel parent → all three must terminate.
-	cancelSt, err := runner.CancelInstance(ctx, parentDef, parentID)
+	cancelSt, err := driver.CancelInstance(ctx, parentDef, parentID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "parent must be Terminated")
 
@@ -202,36 +202,36 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	// Include child in reg so Run works, but omit it from the def registry used
 	// for propagation by not including it — we achieve this by using a registry
 	// that includes child at Run time but we'll build one without it for the
-	// runner so propagation can't resolve it.
+	// driver so propagation can't resolve it.
 	//
 	// Strategy: run with a full registry (so the child starts), then wrap with a
 	// registry that omits the child def.
 
-	// First: full runner to get parent + child both Running.
+	// First: full driver to get parent + child both Running.
 	fullReg := cancelPropRegistry(childDef, parentDef)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	fullRunner := runtimetest.MustRunner(t, nil, store,
+	fullDriver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(fullReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
 
 	const parentID = "prop-missing-p1"
-	st, err := fullRunner.Run(ctx, parentDef, parentID, nil)
+	st, err := fullDriver.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status)
 
-	// Now build a runner whose registry OMITS the child def (simulates missing def).
+	// Now build a driver whose registry OMITS the child def (simulates missing def).
 	// Note: the parent's plain + versioned keys are registered, but child is absent.
 	partialReg := cancelPropRegistry(parentDef) // "prop-missing-child" intentionally absent
-	partialRunner := runtimetest.MustRunner(t, nil, store,
+	partialDriver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(partialReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
 
-	cancelSt, err := partialRunner.CancelInstance(ctx, parentDef, parentID)
+	cancelSt, err := partialDriver.CancelInstance(ctx, parentDef, parentID)
 	require.NoError(t, err, "CancelInstance must NOT fail when child def is missing (best-effort)")
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "parent must be Terminated")
 }
@@ -248,11 +248,11 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 
 	// We need to insert links directly via the MemInstanceStore path, but MemCallLinkStore
 	// exposes record/markTerminal only internally. Use NewMemInstanceStore(WithCallLinks(cl))
-	// and a minimal runner run to populate the store, or test via the exported
+	// and a minimal driver run to populate the store, or test via the exported
 	// NewMemCallLinkStore + manual setup.
 	//
 	// Since record/markTerminal are unexported, we populate via store.Create/Commit
-	// using a minimal runner setup.
+	// using a minimal driver setup.
 
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 	childA := cancelPropChildDef("list-child-a")
@@ -261,7 +261,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	parentAB := cancelPropParentDef("list-parent-ab", model.Latest("list-child-a"))
 	parentC := cancelPropParentDef("list-parent-c", model.Latest("list-child-c"))
 
-	// We need a runner that can launch multiple children from the same parent.
+	// We need a driver that can launch multiple children from the same parent.
 	// The current def model only has one call activity, so we need two separate
 	// parent instances for childA and childB, OR we test indirectly.
 	//
@@ -273,25 +273,25 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 
 	reg := cancelPropRegistry(childA, childB, childC, parentAB, parentC)
-	runner := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
 
 	// Run parent-ab-i1 → spawns list-child-a child (childID = "list-parent-ab-i1-sub-c1").
-	_, err := runner.Run(ctx, parentAB, "list-parent-ab-i1", nil)
+	_, err := driver.Drive(ctx, parentAB, "list-parent-ab-i1", nil)
 	require.NoError(t, err)
 
 	// Run parent-ab-i2 → spawns list-child-a child (different parent-ab instance).
 	// Build a second parent that calls list-child-b so we have two distinct children
 	// under "list-parent-ab" concept — but we only have one call node per def.
 	// Instead: run two instances of parentAB with different IDs.
-	_, err = runner.Run(ctx, parentAB, "list-parent-ab-i2", nil)
+	_, err = driver.Drive(ctx, parentAB, "list-parent-ab-i2", nil)
 	require.NoError(t, err)
 
 	// Run parent-c → spawns list-child-c child (different parent instance, should NOT appear).
-	_, err = runner.Run(ctx, parentC, "list-parent-c-i1", nil)
+	_, err = driver.Drive(ctx, parentC, "list-parent-c-i1", nil)
 	require.NoError(t, err)
 
 	// List running children of "list-parent-ab-i1" — expect only 1 child.
@@ -322,7 +322,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	childIDtoTerminate := "list-parent-ab-i2-sub-c1"
 	childDefForCancel := cancelPropChildDef("list-child-a") // same def, just used for CancelInstance
 	childDefForCancel.ID = "list-child-a"
-	cancelSt, err := runner.CancelInstance(ctx, childA, childIDtoTerminate)
+	cancelSt, err := driver.CancelInstance(ctx, childA, childIDtoTerminate)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status)
 
@@ -356,20 +356,20 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 		},
 	}
 
-	// Runner WITHOUT WithCallLinkStore — propagation gate disabled.
+	// ProcessDriver WITHOUT WithCallLinkStore — propagation gate disabled.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	runner := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
 
 	const parentID = "no-cl-parent-i1"
-	st, err := runner.Run(ctx, parentDef, parentID, nil)
+	st, err := driver.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must park at human task")
 
 	// CancelInstance must work as before — parent terminated, no error, no propagation attempted.
-	cancelSt, err := runner.CancelInstance(ctx, parentDef, parentID)
+	cancelSt, err := driver.CancelInstance(ctx, parentDef, parentID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status)
 }
@@ -385,15 +385,15 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 	childDef := cancelPropChildDef("ctx-child")
 	parentDef := cancelPropParentDef("ctx-parent", model.Latest("ctx-child"))
 
-	runner := cancelPropRunner(t, store, cl, childDef, parentDef)
+	driver := cancelPropRunner(t, store, cl, childDef, parentDef)
 
 	const parentID = "ctx-parent-i1"
-	_, err := runner.Run(ctx, parentDef, parentID, nil)
+	_, err := driver.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 
 	type myKey struct{}
 	markedCtx := context.WithValue(ctx, myKey{}, "marker")
-	cancelSt, err := runner.CancelInstance(markedCtx, parentDef, parentID)
+	cancelSt, err := driver.CancelInstance(markedCtx, parentDef, parentID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status)
 }
@@ -410,11 +410,11 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	childDef := cancelPropChildDef("no-reg-child")
 	parentDef := cancelPropParentDef("no-reg-parent", model.Latest("no-reg-child"))
 
-	// Use a full runner to start parent+child so the child is running.
-	fullRunner := cancelPropRunner(t, store, cl, childDef, parentDef)
+	// Use a full driver to start parent+child so the child is running.
+	fullDriver := cancelPropRunner(t, store, cl, childDef, parentDef)
 
 	const parentID = "no-reg-parent-i1"
-	st, err := fullRunner.Run(ctx, parentDef, parentID, nil)
+	st, err := fullDriver.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must park")
 
@@ -423,17 +423,17 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	require.NoError(t, loadErr)
 	assert.Equal(t, engine.StatusRunning, childSt.Status, "child must be running")
 
-	// Build a runner with CallLinks but WITHOUT WithDefinitions — propagation gate must
+	// Build a driver with CallLinks but WITHOUT WithDefinitions — propagation gate must
 	// be skipped entirely (r.defsReg == nil).
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	noRegRunner := runtimetest.MustRunner(t, nil, store,
+	noRegDriver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 		// intentionally NO WithDefinitions
 	)
 
-	cancelSt, err := noRegRunner.CancelInstance(ctx, parentDef, parentID)
+	cancelSt, err := noRegDriver.CancelInstance(ctx, parentDef, parentID)
 	require.NoError(t, err, "CancelInstance must not return an error when defsReg is nil")
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "parent must be Terminated")
 
@@ -459,7 +459,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 // map, bypassing CancelInstance), D is marked visited before the first recursive
 // descent so the C→D branch skips it entirely.
 //
-// We construct this topology using SeedCallLink (an export-test helper) and runner.Run
+// We construct this topology using SeedCallLink (an export-test helper) and driver.Drive
 // to seed running instances directly, avoiding the need for a definition with multiple
 // call activities.
 func TestCancelPropagationDiamond(t *testing.T) {
@@ -489,9 +489,9 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	// The runner used for initial Run must use cl (not countingCL) so that call links
-	// are recorded in cl's internal store. The cancel runner uses countingCL.
-	setupRunner := runtimetest.MustRunner(t, nil, store,
+	// The driver used for initial Run must use cl (not countingCL) so that call links
+	// are recorded in cl's internal store. The cancel driver uses countingCL.
+	setupDriver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -499,7 +499,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 
 	// Start the parent → it launches B → B launches D; all three park.
 	const parentID = "dmnd-parent-i1"
-	st, err := setupRunner.Run(ctx, parentDef, parentID, nil)
+	st, err := setupDriver.Drive(ctx, parentDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running")
 
@@ -517,7 +517,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	// Start C as a standalone instance (human-task child) and inject call links to
 	// form the diamond: parent→C and C→D (D is a shared grandchild).
 	cID := "dmnd-c-i1"
-	_, err = setupRunner.Run(ctx, cDef, cID, nil)
+	_, err = setupDriver.Drive(ctx, cDef, cID, nil)
 	require.NoError(t, err)
 
 	// Seed call links to wire the diamond topology into cl:
@@ -541,8 +541,8 @@ func TestCancelPropagationDiamond(t *testing.T) {
 		Depth:            2,
 	})
 
-	// Build the cancel runner with the counting wrapper so we observe the guard.
-	cancelRunner := runtimetest.MustRunner(t, nil, store,
+	// Build the cancel driver with the counting wrapper so we observe the guard.
+	cancelDriver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithCallLinkStore(countingCL),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -550,7 +550,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 
 	// Cancel parent — must propagate: parent→B→D (via B), parent→C (via C), parent→C→D
 	// (but D is already visited from the B branch, so the C→D branch must be skipped).
-	cancelSt, err := cancelRunner.CancelInstance(ctx, parentDef, parentID)
+	cancelSt, err := cancelDriver.CancelInstance(ctx, parentDef, parentID)
 	require.NoError(t, err, "CancelInstance must not return error for diamond topology")
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "parent must be Terminated")
 

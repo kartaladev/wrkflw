@@ -22,6 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
 // ProcessDriver is the reference single-process driver loop.
@@ -79,6 +80,20 @@ type ProcessDriver struct {
 	// that is waiting on it. Message catch events are 1:1 (each correlation key
 	// routes to exactly one instance), so a simple map suffices.
 	msgWaiters map[msgKey]string
+
+	// shutdown aggregates the teardown of resources the driver itself created and
+	// owns (currently the default in-process scheduler's gocron goroutine). A
+	// consumer-injected component (e.g. a WithScheduler-provided scheduler) is
+	// consumer-owned and is deliberately NOT registered here. [ProcessDriver.Shutdown]
+	// delegates to this group. The zero value is ready to use.
+	shutdown ShutdownGroup
+
+	// ownedScheduler is the in-process default scheduler the driver created when
+	// no [WithScheduler] was supplied. It is non-nil only for the owned default;
+	// [ProcessDriver.Start] starts it and [ProcessDriver.Shutdown] closes it. A
+	// consumer-injected scheduler is consumer-owned, so this stays nil and the
+	// consumer manages its lifecycle.
+	ownedScheduler *scheduling.Scheduler
 }
 
 // NewProcessDriver constructs a ProcessDriver with sensible in-memory defaults
@@ -110,7 +125,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	// whether the consumer replaced them with custom implementations.
 	defaultStore := memStore
 
-	r := &ProcessDriver{
+	driver := &ProcessDriver{
 		cat:           action.DefaultCatalog(),
 		clk:           clock.System(),
 		idgen:         idgen.XID(),
@@ -121,11 +136,61 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		msgWaiters:    make(map[msgKey]string),
 	}
 	for _, o := range opts {
-		o(r)
+		o(driver)
 	}
-	r.obs = newDriverObs(r.logOpt, r.tpOpt, r.mpOpt)
-	r.logConstructionSummary(defaultStore)
-	return r, nil
+
+	// Default scheduler: when the consumer did not wire one via [WithScheduler],
+	// create an in-process gocron-backed scheduler (real clock, single-node) so
+	// timer nodes work zero-config. The driver OWNS this default and registers it
+	// for teardown via [ProcessDriver.Shutdown]. A consumer-injected scheduler is
+	// consumer-owned — left untouched and never closed by the driver.
+	customScheduler := driver.sched != nil
+	if driver.sched == nil {
+		sched, serr := scheduling.NewScheduler()
+		if serr != nil {
+			return nil, fmt.Errorf("workflow-runtime: default scheduler: %w", serr)
+		}
+		driver.sched = sched
+		driver.ownedScheduler = sched
+		driver.shutdown.AddCloser(sched)
+	}
+
+	driver.obs = newDriverObs(driver.logOpt, driver.tpOpt, driver.mpOpt)
+	driver.logConstructionSummary(defaultStore, customScheduler)
+	return driver, nil
+}
+
+// Start starts the driver-owned in-process default scheduler (created by
+// [NewProcessDriver] when no [WithScheduler] was supplied), binding its lifetime
+// to ctx: cancelling ctx stops the scheduler. Start is idempotent.
+//
+// It is optional — the owned scheduler also auto-starts on the first timer it is
+// asked to arm — but calling Start lets a consumer tie the scheduler's goroutine
+// to their application context and fail fast if it cannot start. When the driver
+// uses a consumer-injected scheduler (via [WithScheduler]), that scheduler is
+// consumer-owned and Start is a no-op; the consumer starts it themselves.
+func (driver *ProcessDriver) Start(ctx context.Context) error {
+	if driver.ownedScheduler == nil {
+		return nil
+	}
+	if err := driver.ownedScheduler.Start(ctx); err != nil {
+		return fmt.Errorf("workflow-runtime: start scheduler: %w", err)
+	}
+	return nil
+}
+
+// Shutdown releases the resources the ProcessDriver itself created and owns —
+// currently the default in-process scheduler's gocron goroutine (see
+// [NewProcessDriver]). Consumer-injected collaborators (a [WithScheduler]-provided
+// scheduler, a [WithInstanceStore]-provided store, …) are consumer-owned and are
+// NOT torn down here.
+//
+// Shutdown honours ctx for a bounded drain, aggregates every closer's error with
+// [errors.Join], and is idempotent (a second call returns nil). Its signature
+// matches samber/do's ShutdownerWithContextAndError, so a do.Provide(driver) is
+// released by inj.ShutdownWithContext(ctx).
+func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
+	return driver.shutdown.Shutdown(ctx)
 }
 
 // onOff returns "on" when v is true and "off" otherwise.
@@ -138,7 +203,7 @@ func onOff(v bool) string {
 
 // logConstructionSummary emits a single DEBUG log record summarising the
 // ProcessDriver's wiring after construction. defaultStore is the MemInstanceStore
-// that was created inside NewProcessDriver as the pre-option default; when r.store
+// that was created inside NewProcessDriver as the pre-option default; when driver.store
 // still points to that same value after the option loop, the store is in-memory
 // (non-durable); otherwise a custom implementation was supplied.
 // defOrigin returns "default-global" when the driver is using the process-global
@@ -151,47 +216,54 @@ func defOrigin(defsReg kernel.DefinitionRegistry) string {
 	return "custom"
 }
 
-func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore) {
+func (driver *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore, customScheduler bool) {
 	storeLabel := "in-memory(non-durable)"
-	if r.store != defaultStore {
+	if driver.store != defaultStore {
 		storeLabel = "custom"
 	}
 
 	catalogLabel := "custom"
-	if r.cat == action.DefaultCatalog() {
+	if driver.cat == action.DefaultCatalog() {
 		catalogLabel = "default-global"
 	}
 
-	r.obs.tel.Logger.LogAttrs(
+	// The driver always has a scheduler after construction: a consumer-injected
+	// one (custom) or the driver-owned in-process default.
+	schedulerLabel := "default-inprocess"
+	if customScheduler {
+		schedulerLabel = "custom"
+	}
+
+	driver.obs.tel.Logger.LogAttrs(
 		context.Background(),
 		slog.LevelDebug,
 		"ProcessDriver constructed",
 		slog.String("store", storeLabel),
 		slog.String("catalog", catalogLabel),
-		slog.String("scheduler", onOff(r.sched != nil)),
-		slog.String("signalBus", onOff(r.sigbus != nil)),
-		slog.String("humanTasks", onOff(r.tasks != nil)),
-		slog.String("definitions", defOrigin(r.defsReg)),
-		slog.String("callLinks", onOff(r.callLinks != nil)),
-		slog.String("timerStore", onOff(r.timerStore != nil)),
-		slog.String("actionTimeout", r.actionTimeout.String()),
-		slog.Bool("retryDefault", r.defaultRetryPolicy != nil),
-		slog.Bool("conditionEval", r.conditionEval != nil),
+		slog.String("scheduler", schedulerLabel),
+		slog.String("signalBus", onOff(driver.sigbus != nil)),
+		slog.String("humanTasks", onOff(driver.tasks != nil)),
+		slog.String("definitions", defOrigin(driver.defsReg)),
+		slog.String("callLinks", onOff(driver.callLinks != nil)),
+		slog.String("timerStore", onOff(driver.timerStore != nil)),
+		slog.String("actionTimeout", driver.actionTimeout.String()),
+		slog.Bool("retryDefault", driver.defaultRetryPolicy != nil),
+		slog.Bool("conditionEval", driver.conditionEval != nil),
 		slog.String("hint", "in-memory store is not durable; for production wire persistence.OpenPostgres/OpenMySQL/OpenSQLite + runtime.WithInstanceStore, and enable WithScheduler/WithTimerStore/WithCallLinkStore as needed"),
 	)
 }
 
-// Run starts an instance and drives it to a terminal state or until the engine
+// Drive starts an instance and drives it to a terminal state or until the engine
 // parks (e.g. awaiting a human task). It returns the state at the point it stopped.
-func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
-	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
+func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+	ctx, span := driver.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.def_id", def.ID),
 		attribute.Int("wrkflw.def_version", def.Version),
 	))
 	defer span.End()
 	if instanceID == "" {
-		id, gerr := r.idgen.NewID()
+		id, gerr := driver.idgen.NewID()
 		if gerr != nil {
 			span.RecordError(gerr)
 			return engine.InstanceState{}, fmt.Errorf("workflow-runtime: run: generate id: %w", gerr)
@@ -199,7 +271,7 @@ func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, i
 		instanceID = id
 	}
 	st := engine.InstanceState{InstanceID: instanceID}
-	out, err := r.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(r.clk.Now(), vars))
+	out, err := driver.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(driver.clk.Now(), vars))
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -214,7 +286,7 @@ func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, i
 // resulting commands (feeding follow-up triggers back through the loop).
 //
 // It is the entry point for external triggers such as HumanClaimed and
-// HumanCompleted that arrive after Run has returned (parked at a human task),
+// HumanCompleted that arrive after Drive has returned (parked at a human task),
 // and for TimerFired triggers delivered by the scheduler's fire callback.
 //
 // Authorization contract: human-task triggers (HumanClaimed, HumanReassigned,
@@ -223,19 +295,19 @@ func (r *ProcessDriver) Run(ctx context.Context, def *model.ProcessDefinition, i
 // bypasses authorization entirely — the engine core is authorization-unaware by
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
-func (r *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
-	ctx, span := r.obs.tracer().Start(ctx, "wrkflw.runner.Deliver", trace.WithAttributes(
+func (driver *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	ctx, span := driver.obs.tracer().Start(ctx, "wrkflw.runner.Deliver", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.trigger", triggerName(trg)),
 	))
 	defer span.End()
-	st, token, err := r.store.Load(ctx, instanceID)
+	st, token, err := driver.store.Load(ctx, instanceID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return engine.InstanceState{}, fmt.Errorf("workflow-runtime: deliver: load: %w", err)
 	}
-	out, err := r.deliverLoop(ctx, def, st, token, false, nil, trg)
+	out, err := driver.deliverLoop(ctx, def, st, token, false, nil, trg)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -246,20 +318,20 @@ func (r *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefinitio
 // deliverLoop applies triggers from queue and then any follow-up triggers emitted
 // by perform (action results, etc.) until all commands are resolved or the engine
 // parks. It encapsulates the Step→terminalOutboxEvent→Create/Commit→perform cycle
-// shared by Run and Deliver.
+// shared by Drive and Deliver.
 //
 // token is the current optimistic-concurrency token; create=true on the very
-// first step (Run path, no row yet) and false on all subsequent steps.
+// first step (Drive path, no row yet) and false on all subsequent steps.
 //
 // firstCallLink, when non-nil, is attached to the FIRST applied step's
 // AppliedStep.NewCallLink (the create step) and then cleared. All existing
-// callers (Run, Deliver) pass nil — no behavior change for them. The internal
+// callers (Drive, Deliver) pass nil — no behavior change for them. The internal
 // runChild helper passes the link so the child's Create records it atomically.
 //
 // After each committed save, if a SignalBus or message waiters are configured,
 // the loop reconciles them so that a future [SignalBus.Publish] reaches this
 // instance.
-func (r *ProcessDriver) deliverLoop(
+func (driver *ProcessDriver) deliverLoop(
 	ctx context.Context,
 	def *model.ProcessDefinition,
 	st engine.InstanceState,
@@ -277,17 +349,17 @@ func (r *ProcessDriver) deliverLoop(
 		prevStatus := st.Status
 		prevIncidents := len(st.Incidents)
 
-		stepCtx, span := r.obs.tracer().Start(ctx, "wrkflw.step", trace.WithAttributes(
+		stepCtx, span := driver.obs.tracer().Start(ctx, "wrkflw.step", trace.WithAttributes(
 			attribute.String("wrkflw.instance_id", st.InstanceID),
 			attribute.String("wrkflw.def_id", def.ID),
 			attribute.String("wrkflw.trigger", triggerName(t)),
 		))
-		start := r.clk.Now()
+		start := driver.clk.Now()
 		res, err := engine.Step(def, st, t, engine.StepOptions{
-			DefaultRetryPolicy: r.defaultRetryPolicy,
-			Evaluator:          r.conditionEval,
+			DefaultRetryPolicy: driver.defaultRetryPolicy,
+			Evaluator:          driver.conditionEval,
 		})
-		r.obs.stepDuration.Record(stepCtx, r.clk.Now().Sub(start).Seconds(),
+		driver.obs.stepDuration.Record(stepCtx, driver.clk.Now().Sub(start).Seconds(),
 			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
 		if err != nil {
 			span.RecordError(err)
@@ -303,18 +375,18 @@ func (r *ProcessDriver) deliverLoop(
 		span.End()
 
 		if create {
-			r.obs.instStarted.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
-			r.obs.instActive.Add(ctx, 1)
+			driver.obs.instStarted.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+			driver.obs.instActive.Add(ctx, 1)
 		}
 		if isTerminal(st.Status) && !isTerminal(prevStatus) {
-			r.obs.instCompleted.Add(ctx, 1, metric.WithAttributes(
+			driver.obs.instCompleted.Add(ctx, 1, metric.WithAttributes(
 				attribute.String("def", def.ID),
 				attribute.String("status", statusName(st.Status)),
 			))
-			r.obs.instActive.Add(ctx, -1)
+			driver.obs.instActive.Add(ctx, -1)
 		}
 		if len(st.Incidents) > prevIncidents {
-			r.obs.incidentsRaised.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
+			driver.obs.incidentsRaised.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
 		}
 
 		events := terminalOutboxEvent(prevStatus, st, res.Commands)
@@ -327,7 +399,7 @@ func (r *ProcessDriver) deliverLoop(
 		// treats a missing link as a no-op, so setting CallOutcome unconditionally
 		// on terminal is safe even without special-casing here.
 		var outcome *kernel.CallOutcome
-		if r.callLinks != nil && isTerminal(st.Status) && !isTerminal(prevStatus) {
+		if driver.callLinks != nil && isTerminal(st.Status) && !isTerminal(prevStatus) {
 			switch st.Status {
 			case engine.StatusCompleted:
 				outcome = &kernel.CallOutcome{Completed: true, Output: copyVarsForOutcome(st.Variables)}
@@ -338,8 +410,15 @@ func (r *ProcessDriver) deliverLoop(
 
 		var timerArms []kernel.ArmedTimer
 		var timerCancels []string
-		if r.timerStore != nil {
-			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID)
+		if driver.timerStore != nil {
+			// armedRecurring reports whether the fired timer is armed with a
+			// recurring trigger, so timerOpsFor knows a recurring timer must
+			// survive its fire (the native scheduler re-arms it) rather than be
+			// consumed. It reads the armed set lazily — timerOpsFor only calls it
+			// for a TimerFired trigger — and defaults to non-recurring (safe:
+			// consume) on any lookup failure or unknown timer.
+			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID, driver.clk.Now(),
+				func(timerID string) bool { return driver.armedTimerRecurring(stepCtx, st.InstanceID, timerID) })
 		}
 
 		appliedStep := kernel.AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome, TimerArms: timerArms, TimerCancels: timerCancels}
@@ -349,20 +428,20 @@ func (r *ProcessDriver) deliverLoop(
 			// After the first iteration this is nil for all callers.
 			appliedStep.NewCallLink = firstCallLink
 			firstCallLink = nil // consumed; cleared so subsequent steps don't carry it
-			token, err = r.store.Create(ctx, appliedStep)
+			token, err = driver.store.Create(ctx, appliedStep)
 			create = false
 		} else {
-			token, err = r.store.Commit(ctx, token, appliedStep)
+			token, err = driver.store.Commit(ctx, token, appliedStep)
 		}
 		if err != nil {
 			return st, fmt.Errorf("workflow-runtime: commit: %w", err)
 		}
 
 		// Reconcile signal-bus and message waiters after each committed save.
-		r.syncWaiters(st)
+		driver.syncWaiters(st)
 
 		for _, c := range res.Commands {
-			next, err := r.perform(stepCtx, def, st, c)
+			next, err := driver.perform(stepCtx, def, st, c)
 			if err != nil {
 				return st, err
 			}

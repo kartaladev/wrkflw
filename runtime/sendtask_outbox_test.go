@@ -54,7 +54,7 @@ func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	def := buildOrderPlacedSendTaskDef()
 	store := &recordingStore{InstanceStore: runtimetest.MustMemStore(t)}
 	r := runtimetest.MustRunner(t, nil, store) // NO MessageSink — must not error
-	_, err := r.Run(t.Context(), def, "i-1", map[string]any{"k": "v"})
+	_, err := r.Drive(t.Context(), def, "i-1", map[string]any{"k": "v"})
 	require.NoError(t, err)
 
 	// Exactly one message.OrderPlaced event was committed in an AppliedStep.

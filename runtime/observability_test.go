@@ -116,29 +116,29 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 	type testCase struct {
 		name   string
 		opt    runtime.Option
-		assert func(t *testing.T, r *runtime.ProcessDriver)
+		assert func(t *testing.T, driver *runtime.ProcessDriver)
 	}
 
 	cases := []testCase{
 		{
 			name: "with logger",
 			opt:  runtime.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-			assert: func(t *testing.T, r *runtime.ProcessDriver) {
-				require.NotNil(t, r)
+			assert: func(t *testing.T, driver *runtime.ProcessDriver) {
+				require.NotNil(t, driver)
 			},
 		},
 		{
 			name: "with tracer provider",
 			opt:  runtime.WithTracerProvider(sdktrace.NewTracerProvider()),
-			assert: func(t *testing.T, r *runtime.ProcessDriver) {
-				require.NotNil(t, r)
+			assert: func(t *testing.T, driver *runtime.ProcessDriver) {
+				require.NotNil(t, driver)
 			},
 		},
 		{
 			name: "with meter provider",
 			opt:  runtime.WithMeterProvider(sdkmetric.NewMeterProvider()),
-			assert: func(t *testing.T, r *runtime.ProcessDriver) {
-				require.NotNil(t, r)
+			assert: func(t *testing.T, driver *runtime.ProcessDriver) {
+				require.NotNil(t, driver)
 			},
 		},
 	}
@@ -147,16 +147,16 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t),
+			driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t),
 				tc.opt,
 			)
-			tc.assert(t, r)
+			tc.assert(t, driver)
 		})
 	}
 }
 
 // TestStepSpanAndLifecycleMetrics verifies that running a linear process to
-// completion via [runtime.ProcessDriver.Run] produces:
+// completion via [runtime.ProcessDriver.Drive] produces:
 //   - at least one "wrkflw.step" span in the OTel trace,
 //   - wrkflw_instances_started_total == 1,
 //   - wrkflw_instances_completed_total{status="completed"} == 1,
@@ -173,13 +173,13 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 		}),
 	})
 
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 	)
 
 	// linearDef() is defined in example_test.go: start → greet (service) → end.
-	_, err := r.Run(t.Context(), linearDef(), "i1", map[string]any{"name": "world"})
+	_, err := driver.Drive(t.Context(), linearDef(), "i1", map[string]any{"name": "world"})
 	require.NoError(t, err, "run must succeed for linear process")
 
 	// Assert at least one wrkflw.step span was recorded.
@@ -299,10 +299,10 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			cat := action.NewMapCatalog(map[string]action.Action{
 				"charge": action.ActionFunc(tc.actionFunc),
 			})
-			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+			driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
 
-			_, _ = r.Run(t.Context(), paymentDef(), "i1", map[string]any{})
+			_, _ = driver.Drive(t.Context(), paymentDef(), "i1", map[string]any{})
 
 			rm := collect(t, reader)
 			tc.assert(t, sr, rm)
@@ -345,7 +345,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		},
 	}
 
-	runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithClock(clk),
 		runtime.WithMeterProvider(mp),
 		// MaxAttempts=1: first failure parks immediately as an incident.
@@ -358,7 +358,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	)
 
 	// Step 1: Run → first action failure → incident, instance parks.
-	st, err := runner.Run(t.Context(), def, "obs-inc-1", nil)
+	st, err := driver.Drive(t.Context(), def, "obs-inc-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, st.Status, "instance must park as running with an incident")
 	require.Len(t, st.Incidents, 1, "want exactly one incident after first failure")
@@ -366,7 +366,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	incID := st.Incidents[0].ID
 
 	// Step 2: ResolveIncident → action succeeds on second call → instance completes.
-	st2, err := runner.ResolveIncident(t.Context(), def, "obs-inc-1", incID, 2)
+	st2, err := driver.ResolveIncident(t.Context(), def, "obs-inc-1", incID, 2)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st2.Status, "instance must complete after resolve")
 
@@ -446,7 +446,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			az := authz.RoleAuthorizer{}
 			clk := clock.System()
 
-			r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+			driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
 				runtime.WithClock(clk),
 				runtime.WithHumanTasks(resolver, taskStore, az),
 				runtime.WithMeterProvider(mp),
@@ -459,7 +459,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			const instID = "htlc-inst"
 
 			// Run parks at the user task → emits {event=created}.
-			_, err := r.Run(t.Context(), def, instID, nil)
+			_, err := driver.Drive(t.Context(), def, instID, nil)
 			require.NoError(t, err, "Run must succeed and park at user task")
 
 			claimable, err := taskStore.ClaimableBy(t.Context(), manager)
@@ -471,7 +471,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				// Claim → emits {event=claimed}.
 				claimTrg, err := svc.Claim(t.Context(), taskToken, manager)
 				require.NoError(t, err)
-				_, err = r.Deliver(t.Context(), def, instID, claimTrg)
+				_, err = driver.Deliver(t.Context(), def, instID, claimTrg)
 				require.NoError(t, err)
 			}
 
@@ -479,7 +479,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				// Reassign → emits {event=reassigned}.
 				reassignTrg, err := svc.Reassign(t.Context(), taskToken, manager.ID, admin.ID, admin)
 				require.NoError(t, err)
-				_, err = r.Deliver(t.Context(), def, instID, reassignTrg)
+				_, err = driver.Deliver(t.Context(), def, instID, reassignTrg)
 				require.NoError(t, err)
 			}
 
@@ -487,7 +487,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				// Complete → emits {event=completed}.
 				completeTrg, err := svc.Complete(t.Context(), taskToken, admin, map[string]any{"approved": true})
 				require.NoError(t, err)
-				_, err = r.Deliver(t.Context(), def, instID, completeTrg)
+				_, err = driver.Deliver(t.Context(), def, instID, completeTrg)
 				require.NoError(t, err)
 			}
 
@@ -527,16 +527,16 @@ func TestDeliverSpan(t *testing.T) {
 	}
 
 	store := runtimetest.MustMemStore(t)
-	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithTracerProvider(tp))
+	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithTracerProvider(tp))
 
 	// Run parks at the catch-message node.
-	parked, err := runner.Run(t.Context(), msgDef, "del-obs-1", nil)
+	parked, err := driver.Drive(t.Context(), msgDef, "del-obs-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "instance must park at the catch-message node")
 
 	// Deliver a MessageReceived trigger — this is the Deliver call we want to trace.
 	trg := engine.NewMessageReceived(clk.Now(), "pay.confirmed", "ord-42", map[string]any{"ref": "pay-1"})
-	final, err := runner.Deliver(t.Context(), msgDef, "del-obs-1", trg)
+	final, err := driver.Deliver(t.Context(), msgDef, "del-obs-1", trg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status, "instance must complete after message delivery")
 

@@ -1,4 +1,4 @@
-package gocron
+package pgelector
 
 import "context"
 

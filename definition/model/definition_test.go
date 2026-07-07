@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 func linearDef() *model.ProcessDefinition {
@@ -246,13 +248,16 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		{
 			name: "timer-intermediate",
 			node: event.NewCatch("wait-1h",
-				event.WithCatchTimer("PT1H"),
+				event.WithCatchTimer(schedule.AfterExpr("PT1H")),
 				event.WithName("Wait 1 hour"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ice, ok := n.(event.IntermediateCatchEvent)
 				require.True(t, ok)
-				assert.Equal(t, "PT1H", ice.TimerDuration)
+				assert.False(t, ice.Timer.IsZero(), "Timer should be set")
+				expr, _, exprOk := ice.Timer.Expr()
+				require.True(t, exprOk, "Timer should be an expr form")
+				assert.Equal(t, "PT1H", expr, "Timer expr value should be PT1H")
 				assert.Equal(t, "Wait 1 hour", n.Name())
 			},
 		},
@@ -260,12 +265,14 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "deadline-with-flow-and-action",
 			node: activity.NewUserTask("review", nil,
 				activity.WithName("Review"),
-				activity.WithDeadline("P1D", "sla-breach-flow", "notify-manager"),
+				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach-flow", "notify-manager"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
-				assert.Equal(t, "P1D", ut.DeadlineDuration)
+				d, ok := ut.DeadlineTimer.Duration()
+				require.True(t, ok)
+				assert.Equal(t, 24*time.Hour, d)
 				assert.Equal(t, "sla-breach-flow", ut.DeadlineFlow)
 				assert.Equal(t, "notify-manager", ut.DeadlineAction)
 			},
@@ -274,12 +281,14 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "reminder-every-with-action",
 			node: activity.NewUserTask("approve", nil,
 				activity.WithName("Approve"),
-				activity.WithReminder("PT4H", "send-reminder"),
+				activity.WithReminder(schedule.Every(4*time.Hour), "send-reminder"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
-				assert.Equal(t, "PT4H", ut.ReminderEvery)
+				d, ok := ut.ReminderEvery.Duration()
+				require.True(t, ok)
+				assert.Equal(t, 4*time.Hour, d)
 				assert.Equal(t, "send-reminder", ut.ReminderAction)
 			},
 		},
@@ -287,16 +296,20 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "all-six-fields",
 			node: activity.NewUserTask("task-full", nil,
 				activity.WithName("Full Task"),
-				activity.WithDeadline("P2D", "escalate", "escalate-action"),
-				activity.WithReminder("PT6H", "remind-action"),
+				activity.WithDeadline(schedule.AfterDuration(48*time.Hour), "escalate", "escalate-action"),
+				activity.WithReminder(schedule.Every(6*time.Hour), "remind-action"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
-				assert.Equal(t, "P2D", ut.DeadlineDuration)
+				dd, ok := ut.DeadlineTimer.Duration()
+				require.True(t, ok)
+				assert.Equal(t, 48*time.Hour, dd)
 				assert.Equal(t, "escalate", ut.DeadlineFlow)
 				assert.Equal(t, "escalate-action", ut.DeadlineAction)
-				assert.Equal(t, "PT6H", ut.ReminderEvery)
+				rd, ok := ut.ReminderEvery.Duration()
+				require.True(t, ok)
+				assert.Equal(t, 6*time.Hour, rd)
 				assert.Equal(t, "remind-action", ut.ReminderAction)
 			},
 		},

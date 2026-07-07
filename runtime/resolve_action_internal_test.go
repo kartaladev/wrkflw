@@ -64,8 +64,9 @@ func TestResolveInvokeAction(t *testing.T) {
 	})
 	st, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	r, err := NewProcessDriver(WithActionCatalog(global), WithInstanceStore(st))
+	driver, err := NewProcessDriver(WithActionCatalog(global), WithInstanceStore(st))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 	def := resolveActionScopedDef(t)
 
 	// cmdScoped is the scope-effective scoped catalog carried by the engine; it
@@ -132,7 +133,7 @@ func TestResolveInvokeAction(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, ok := r.resolveInvokeAction(tc.def, tc.cmd)
+			got, ok := driver.resolveInvokeAction(tc.def, tc.cmd)
 			tc.assert(t, got, ok)
 		})
 	}
@@ -149,8 +150,9 @@ func TestResolveActionName(t *testing.T) {
 	})
 	st2, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	r, err := NewProcessDriver(WithActionCatalog(global), WithInstanceStore(st2))
+	driver, err := NewProcessDriver(WithActionCatalog(global), WithInstanceStore(st2))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 	def := resolveActionScopedDef(t)
 
 	type testCase struct {
@@ -202,7 +204,7 @@ func TestResolveActionName(t *testing.T) {
 			if tc.name == "nil def does not consult scoped catalog" {
 				d = nil
 			}
-			got, ok := r.resolveActionName(d, tc.actionName)
+			got, ok := driver.resolveActionName(d, tc.actionName)
 			tc.assert(t, got, ok)
 		})
 	}

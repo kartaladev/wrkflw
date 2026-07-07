@@ -172,14 +172,14 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
 
 	// --- 5. Run ————————————————————————————————————————————————————————————
 	fmt.Println("\n--- Running instance demo-001 ---")
-	state, err := r.Run(ctx, def, "demo-001", map[string]any{
+	state, err := driver.Drive(ctx, def, "demo-001", map[string]any{
 		"orderID":    "ORD-2026-001",
 		"customerID": "cust-42",
 		// Neither tier nor region is pre-set. The transform mapper resolves both from

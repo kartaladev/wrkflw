@@ -79,7 +79,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 				continue
 			}
 			// Must be an error boundary (no timer/signal/message fields).
-			if n.TimerDuration != "" || n.SignalName != "" || n.MessageName != "" {
+			if !n.Timer.IsZero() || n.SignalName != "" || n.MessageName != "" {
 				continue
 			}
 			// Match: catch-all or specific code.
@@ -175,14 +175,14 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			}
 			// Only boundary error events have a non-zero ErrorCode or catch-all
 			// behavior. We identify a "boundary error event" as a KindBoundaryEvent
-			// that has NO TimerDuration and NO SignalName and NO MessageName set
+			// that has NO Timer trigger and NO SignalName and NO MessageName set
 			// (i.e. it is not a timer/signal/message boundary but an error boundary).
 			// The presence of ErrorCode (specific or empty catch-all) is the marker.
 			//
-			// Design note: we check !n.SignalName && !n.TimerDuration && !n.MessageName
+			// Design note: we check !n.SignalName && n.Timer.IsZero() && !n.MessageName
 			// so timer/signal boundary events on the same host are skipped. A boundary
 			// event with no trigger fields at all defaults to error boundary semantics.
-			if n.TimerDuration != "" || n.SignalName != "" || n.MessageName != "" {
+			if !n.Timer.IsZero() || n.SignalName != "" || n.MessageName != "" {
 				continue // not an error boundary
 			}
 			// Match: catch-all (n.ErrorCode=="") or specific code match.

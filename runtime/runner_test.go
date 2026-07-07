@@ -17,7 +17,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -49,9 +51,9 @@ func (s *commitErrStore) Commit(_ context.Context, _ kernel.Version, _ kernel.Ap
 func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	cat := action.NewMapCatalog(nil)
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, cat, store)
+	driver := runtimetest.MustRunner(t, cat, store)
 
-	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	final, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, final.Status)
 
@@ -67,9 +69,9 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 		}),
 	})
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, cat, store)
+	driver := runtimetest.MustRunner(t, cat, store)
 
-	final, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	final, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, final.Status)
 
@@ -86,9 +88,9 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 			return nil, nil
 		}),
 	})
-	r := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
+	driver := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
 
-	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	_, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow-runtime: commit:")
 }
@@ -103,9 +105,9 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	})
 	// commitErrStore: Create succeeds (first step), Commit fails (second step when
 	// ActionCompleted is delivered).
-	r := runtimetest.MustRunner(t, cat, &commitErrStore{runtimetest.MustMemStore(t)})
+	driver := runtimetest.MustRunner(t, cat, &commitErrStore{runtimetest.MustMemStore(t)})
 
-	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	_, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Commit must be surfaced via errors.Is")
@@ -134,10 +136,10 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 // error — rather than panicking — when it reaches an AwaitHuman command.
 func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 	// Build a Runner with no human-task option (nil resolver and nil tasks).
-	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t))
+	driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t))
 	// WithHumanTasks intentionally omitted to test error path.
 
-	_, err := r.Run(t.Context(), userTaskOnlyDef(), "i1", nil)
+	_, err := driver.Drive(t.Context(), userTaskOnlyDef(), "i1", nil)
 	require.Error(t, err, "Run must fail with a descriptive error, not panic")
 	assert.Contains(t, err.Error(), "ActorResolver", "error must mention the missing ActorResolver")
 }
@@ -150,7 +152,7 @@ func timerOnlyDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("wait", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -160,65 +162,20 @@ func timerOnlyDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerScheduleTimerWithoutSchedulerErrors mirrors the ScheduleTimer nil-guard:
-// if no Scheduler is configured, attempting to perform a ScheduleTimer returns a
-// descriptive error rather than panicking.
-func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
-	// WithScheduler intentionally omitted.
+// TestRunnerZeroConfigUsesDefaultScheduler verifies that a driver built without an
+// explicit WithScheduler still arms timers: NewProcessDriver supplies an in-process
+// default scheduler, so a process reaching a timer-catch node schedules the timer
+// and parks (StatusRunning) rather than failing with "no Scheduler configured".
+// (The perform nil-guard remains as defensive code but is unreachable through the
+// constructor, which always resolves a scheduler.) MustRunner tears the driver
+// down via t.Cleanup, releasing the default scheduler goroutine.
+func TestRunnerZeroConfigUsesDefaultScheduler(t *testing.T) {
+	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
+	// WithScheduler intentionally omitted — the default scheduler must handle it.
 
-	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
-	require.Error(t, err, "Run must fail with a descriptive error when no Scheduler is configured")
-	assert.Contains(t, err.Error(), "Scheduler", "error must mention the missing Scheduler")
-}
-
-// TestRunnerCancelTimerWithoutSchedulerErrors verifies that performing a CancelTimer
-// command without a Scheduler configured returns a descriptive error (mirrors
-// the ScheduleTimer nil-guard). We exercise this by starting a process that
-// parks at a timer node (ScheduleTimer issued) and then manually delivering a
-// HumanCompleted-like trigger that causes a CancelTimer — but the simpler path
-// is: build a state with outstanding timer records and deliver a TimerFired
-// that triggers a deadline breach (which emits CancelTimer for the reminder timer).
-//
-// Since wiring up the full deadline scenario here is heavy, we confirm that calling
-// runner.Deliver with a trigger that causes the engine to emit a CancelTimer
-// when r.sched==nil returns "no Scheduler configured".
-//
-// The test drives the runner's perform directly via a single-step wrapper: we
-// use Run on a process that first reaches ScheduleTimer — expecting that error.
-// That proves the nil guard is present for ScheduleTimer. For CancelTimer we
-// verify the runner's error message contains "CancelTimer" when sched is nil
-// by calling Deliver with a pre-built state that causes engine.Step to emit
-// a CancelTimer (stale deadline timer scenario is hard without a working scheduler,
-// so we verify the error message format directly via the runner perform path).
-//
-// Simplest approach: use the runner's perform method indirectly by confirming
-// that the "no Scheduler configured" error is returned for ScheduleTimer, and
-// that the same guard exists for CancelTimer (same error-message pattern in runner.go).
-func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
-	// Build a definition that has a user task with a deadline; when the deadline fires
-	// the engine emits CancelTimer for the reminder. We need no scheduler so it
-	// fails on the ScheduleTimer — but we can verify the CancelTimer error path
-	// by injecting a pre-built state directly via Deliver.
-	//
-	// Approach: construct the InstanceState manually with a deadline timer record,
-	// then deliver the deadline TimerFired to engine via Deliver — the engine emits
-	// a CancelTimer (for the reminder timer) which the runner tries to perform
-	// with r.sched == nil → error.
-	//
-	// For simplicity, we test the runner's direct behavior: calling Run with a
-	// timer-intermediate def and no scheduler errors on ScheduleTimer (already
-	// confirmed in TestRunnerScheduleTimerWithoutSchedulerErrors). We verify the
-	// CancelTimer nil-guard separately by reading the runner.go source
-	// (same guard pattern), but we also add an integration assertion here:
-	// the error messages for both cases must contain "no Scheduler configured".
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
-	// WithScheduler intentionally omitted.
-	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
-	require.Error(t, err)
-	// Both ScheduleTimer and CancelTimer use the same "no Scheduler configured" pattern.
-	assert.Contains(t, err.Error(), "no Scheduler configured",
-		"ScheduleTimer/CancelTimer nil-guard must mention 'no Scheduler configured'")
+	st, err := driver.Drive(t.Context(), timerOnlyDef(), "i1", nil)
+	require.NoError(t, err, "zero-config driver must arm the timer via the default scheduler")
+	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park at the timer catch")
 }
 
 // onceConflictStore wraps *kernel.MemInstanceStore and injects a single ErrConcurrentUpdate
@@ -256,7 +213,7 @@ func conflictTimerDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait10s", event.WithCatchTimer(`"10s"`)),
+			event.NewCatch("wait10s", event.WithCatchTimer(schedule.AfterExpr(`"10s"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -281,15 +238,15 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 
 	inner := runtimetest.MustMemStore(t)
 	store := &onceConflictStore{inner: inner}
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 
-	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
+	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
 
 	def := conflictTimerDef()
 	const instanceID = "conflict-timer-1"
 
 	// Run → parks at the intermediate-catch timer node.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status,
 		"instance must park at the timer node")
@@ -320,8 +277,8 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
-	r := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
-	_, err := r.Run(t.Context(), linearDef(), "i1", nil)
+	driver := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
+	_, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
@@ -336,12 +293,12 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 		}),
 	})
 	before := time.Now()
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
-	st, err := r.Run(t.Context(), linearDef(), "i-sys-1", nil)
+	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
+	st, err := driver.Drive(t.Context(), linearDef(), "i-sys-1", nil)
 	after := time.Now()
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
-	// StartedAt is set from r.clk.Now() inside the engine's StartInstance handler.
+	// StartedAt is set from driver.clk.Now() inside the engine's StartInstance handler.
 	assert.False(t, st.StartedAt.Before(before) || st.StartedAt.After(after),
 		"StartedAt must be within [before, after] wall-clock bracket")
 }
@@ -355,10 +312,10 @@ func TestNewRunnerWithClockOption(t *testing.T) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fake))
-	st, err := r.Run(t.Context(), linearDef(), "i-fake-1", nil)
+	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fake))
+	st, err := driver.Drive(t.Context(), linearDef(), "i-fake-1", nil)
 	require.NoError(t, err)
-	// StartedAt is stamped from r.clk.Now() = fake.Now() = time.Unix(1000, 0).
+	// StartedAt is stamped from driver.clk.Now() = fake.Now() = time.Unix(1000, 0).
 	assert.Equal(t, time.Unix(1000, 0), st.StartedAt,
 		"StartedAt must equal fake clock's epoch")
 }
@@ -372,30 +329,30 @@ func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 	cases := []struct {
 		name   string
 		opts   []runtime.Option
-		assert func(t *testing.T, r *runtime.ProcessDriver, err error)
+		assert func(t *testing.T, driver *runtime.ProcessDriver, err error)
 	}{
 		{
 			name: "zero args — defaults apply",
 			opts: nil,
-			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
+			assert: func(t *testing.T, driver *runtime.ProcessDriver, err error) {
 				require.NoError(t, err)
-				require.NotNil(t, r)
+				require.NotNil(t, driver)
 			},
 		},
 		{
 			name: "WithActionCatalog(nil) — ignored, defaults apply",
 			opts: []runtime.Option{runtime.WithActionCatalog(nil)},
-			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
+			assert: func(t *testing.T, driver *runtime.ProcessDriver, err error) {
 				require.NoError(t, err)
-				require.NotNil(t, r)
+				require.NotNil(t, driver)
 			},
 		},
 		{
 			name: "WithInstanceStore(nil) — ignored, defaults apply",
 			opts: []runtime.Option{runtime.WithInstanceStore(nil)},
-			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
+			assert: func(t *testing.T, driver *runtime.ProcessDriver, err error) {
 				require.NoError(t, err)
-				require.NotNil(t, r)
+				require.NotNil(t, driver)
 			},
 		},
 		{
@@ -404,17 +361,20 @@ func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 				runtime.WithActionCatalog(action.NewMapCatalog(nil)),
 				runtime.WithInstanceStore(runtimetest.MustMemStore(t)),
 			},
-			assert: func(t *testing.T, r *runtime.ProcessDriver, err error) {
+			assert: func(t *testing.T, driver *runtime.ProcessDriver, err error) {
 				require.NoError(t, err)
-				require.NotNil(t, r)
+				require.NotNil(t, driver)
 			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := runtime.NewProcessDriver(tc.opts...)
-			tc.assert(t, r, err)
+			driver, err := runtime.NewProcessDriver(tc.opts...)
+			if driver != nil {
+				t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+			}
+			tc.assert(t, driver, err)
 		})
 	}
 }

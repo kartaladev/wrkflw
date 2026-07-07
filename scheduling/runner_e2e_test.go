@@ -14,6 +14,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -28,7 +29,7 @@ func timerIntermediateE2EDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},
@@ -74,14 +75,14 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
 	require.NoError(t, err)
 
 	def := timerIntermediateE2EDef()
 	const instanceID = "gocron-e2e-1"
 
 	// Run → parks at the intermediate timer node.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tokens, 1)

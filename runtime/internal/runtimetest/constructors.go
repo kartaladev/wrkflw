@@ -10,6 +10,7 @@
 package runtimetest
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -50,9 +51,13 @@ func MustRunner(t *testing.T, cat action.Catalog, store kernel.InstanceStore, op
 	allOpts := make([]runtime.Option, 0, 2+len(opts))
 	allOpts = append(allOpts, runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	allOpts = append(allOpts, opts...)
-	r, err := runtime.NewProcessDriver(allOpts...)
+	driver, err := runtime.NewProcessDriver(allOpts...)
 	require.NoError(t, err)
-	return r
+	// Tear the driver down when the test ends so the in-process default scheduler's
+	// goroutine is released (goleak). Shutdown only closes driver-owned resources,
+	// so a consumer-injected scheduler passed via opts is left untouched.
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+	return driver
 }
 
 // MustTaskService builds a TaskService with the given store and authorizer,

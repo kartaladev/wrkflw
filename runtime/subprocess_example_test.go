@@ -82,7 +82,7 @@ func (e *actionError) Error() string { return e.msg }
 //  1. Build a parent def (parent-start → call [DefRef:"child"] → parent-end).
 //  2. Build a child def (child-start → child-svc ["set-output"] → child-end).
 //  3. Register the child in a MapDefinitionRegistry via WithDefinitions.
-//  4. Run the parent → the runner performs StartSubInstance by running the child
+//  4. Run the parent → the driver performs StartSubInstance by running the child
 //     to completion, then SubInstanceCompleted feeds back and the parent resumes.
 //  5. Assert: parent StatusCompleted; child output ("output"="from-child") merged
 //     into parent variables.
@@ -100,10 +100,10 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	child := childDef()
 	reg := kernel.NewMapDefinitionRegistry(child)
 
-	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
+	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	parent := parentCallDef()
-	st, err := runner.Run(ctx, parent, "parent-i1", map[string]any{"x": 42})
+	st, err := driver.Drive(ctx, parent, "parent-i1", map[string]any{"x": 42})
 	require.NoError(t, err)
 
 	// Parent must have completed.
@@ -176,9 +176,9 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 
 	reg := kernel.NewMapDefinitionRegistry(failingChild)
 
-	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
+	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
-	st, err := runner.Run(ctx, failingParent, "parent-fail-i1", nil)
+	st, err := driver.Drive(ctx, failingParent, "parent-fail-i1", nil)
 	require.NoError(t, err)
 
 	// Parent must have failed.
@@ -190,7 +190,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 //
 //	child-start → child-user (KindUserTask) → child-end
 //
-// Without a resolver wired, the runner cannot proceed and the child stays
+// Without a resolver wired, the driver cannot proceed and the child stays
 // StatusRunning (parked). This is the definition for Fix 1 RED test.
 func parkingChildDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
@@ -226,7 +226,7 @@ func parkingParentDef() *model.ProcessDefinition {
 // TestCallActivityParkedChildFailsParentWithClearError (Fix 1, TDD RED→GREEN):
 //
 // When the synchronous runner drives a child that parks (e.g. a user task),
-// r.Run returns childSt.Status == StatusRunning. The runner must fail the parent
+// driver.Run returns childSt.Status == StatusRunning. The runner must fail the parent
 // with a CLEAR, diagnosable error message that:
 //   - mentions the word "parked" or "does not support" so the limitation is obvious, and
 //   - does NOT emit the misleading generic "did not complete" message.
@@ -251,14 +251,14 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	// persist the task, and return nil/nil — leaving childSt.Status == StatusRunning.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	runner := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
 
 	parent := parkingParentDef()
-	st, err := runner.Run(ctx, parent, "parking-parent-i1", nil)
+	st, err := driver.Drive(ctx, parent, "parking-parent-i1", nil)
 	require.NoError(t, err, "runner.Run must not return a hard error: the failure is a SubInstanceFailed trigger")
 
 	// Parent must have failed (SubInstanceFailed causes parent failure).
@@ -320,7 +320,7 @@ func selfRefDef() *model.ProcessDefinition {
 // TestCallActivityRecursionDepthLimited (Fix 2, TDD RED→GREEN):
 //
 // A definition whose call activity references itself causes unbounded synchronous
-// recursion in r.Run. The depth guard must stop recursion at maxCallActivityDepth
+// recursion in driver.Run. The depth guard must stop recursion at maxCallActivityDepth
 // and return a clean SubInstanceFailed with a descriptive error that mentions the
 // depth limit — NOT a stack overflow / panic.
 //
@@ -336,12 +336,12 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	def := selfRefDef()
 	reg := kernel.NewMapDefinitionRegistry(def)
 
-	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
+	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	// This must not panic / stack-overflow. The depth guard must kick in and
 	// fail the parent instance with a descriptive error.
 	require.NotPanics(t, func() {
-		st, err := runner.Run(ctx, def, "self-ref-i1", nil)
+		st, err := driver.Drive(ctx, def, "self-ref-i1", nil)
 		require.NoError(t, err, "runner.Run must not return a hard error")
 		assert.Equal(t, engine.StatusFailed, st.Status,
 			"instance must be StatusFailed when call-activity depth limit is exceeded")
@@ -365,7 +365,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 }
 
 // TestStartSubInstanceNoRegistry verifies that if StartSubInstance is performed
-// without a registry configured, the runner returns a descriptive error rather
+// without a registry configured, the driver returns a descriptive error rather
 // than panicking.
 func TestStartSubInstanceNoRegistry(t *testing.T) {
 	ctx := t.Context()
@@ -374,10 +374,10 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	// No WithDefinitions option.
-	runner := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk))
+	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk))
 
 	parent := parentCallDef()
-	_, err := runner.Run(ctx, parent, "no-reg-i1", nil)
+	_, err := driver.Drive(ctx, parent, "no-reg-i1", nil)
 	require.Error(t, err, "expected error when no DefinitionRegistry is configured")
 	assert.Contains(t, err.Error(), "registry", "error must mention registry")
 }

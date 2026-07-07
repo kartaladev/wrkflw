@@ -78,13 +78,13 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
 
 	fmt.Println("--- Travel Booking: Embedded Sub-process ---")
-	state, err := r.Run(ctx, def, "trip-001", map[string]any{"city": "Lisbon"})
+	state, err := driver.Drive(ctx, def, "trip-001", map[string]any{"city": "Lisbon"})
 	if err != nil {
 		log.Fatal("run:", err)
 	}

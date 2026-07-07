@@ -69,7 +69,7 @@ func TestStoreWriteErrors(t *testing.T) {
 			drop: "wrkflw_timers",
 			run: func(t *testing.T, s *store.Store) {
 				step := appliedStep("i", "a")
-				step.TimerArms = []kernel.ArmedTimer{{InstanceID: "i", DefID: "d", DefVersion: 1, TimerID: "t", FireAt: now, Kind: engine.TimerIntermediate}}
+				step.TimerArms = []kernel.ArmedTimer{{InstanceID: "i", DefID: "d", DefVersion: 1, TimerID: "t", NextRun: now, Kind: engine.TimerIntermediate}}
 				_, err := s.Create(t.Context(), step)
 				require.Error(t, err)
 			},

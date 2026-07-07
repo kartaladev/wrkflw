@@ -6,7 +6,7 @@
 //	Store.Commit (writes outbox row)
 //	  → relay.DrainOnce (reads outbox, publishes via GoChannel pub/sub)
 //	    → eventing.Chainer.Run (subscribes; calls runtime.Chainer.Handle)
-//	      → runtime.Chainer.Handle (evaluates policy, starts successor via runner.Run, records ChainLink)
+//	      → runtime.Chainer.Handle (evaluates policy, starts successor via driver.Drive, records ChainLink)
 //
 // This seam has never previously been tested against a real database.
 package persistence_test
@@ -128,11 +128,11 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 
 // wireChainerRunner builds the full chaining stack over d and starts the
 // ChainerRunner goroutine. It registers cleanup via t.Cleanup. The returned
-// runner is ready to call Run against.
+// driver is ready to call Run against.
 func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 
-	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(d.store))
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(d.store))
 	require.NoError(t, err)
 
 	// SuccessorPolicy: proc-a → proc-a-succ; proc-b → proc-b-succ; else no successor.
@@ -147,7 +147,7 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 		}
 	}
 
-	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(d.links))
+	core, err := chain.NewChainer(driver, policy, chain.WithChainLinks(d.links))
 	require.NoError(t, err)
 	cr := eventing.NewChainerRunner(core)
 
@@ -164,7 +164,7 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 		<-done
 	})
 
-	return runner
+	return driver
 }
 
 // ---- main test ------------------------------------------------------------------
@@ -188,7 +188,7 @@ func TestChainingE2E(t *testing.T) {
 	defSB := buildDef(t, "proc-b-succ", 1)
 
 	forEachChainingDialect(t, func(t *testing.T, d chainingDialect) {
-		runner := wireChainerRunner(t, d, defPA, defPB, defSA, defSB)
+		driver := wireChainerRunner(t, d, defPA, defPB, defSA, defSB)
 
 		// ── Scenario 1: Happy path — P_A → S_A with start-var carry ─────────────
 		t.Run("happy_path_vars_carry", func(t *testing.T) {
@@ -196,7 +196,7 @@ func TestChainingE2E(t *testing.T) {
 			startVars := map[string]any{"key": "value-a"}
 
 			// Run predecessor to completion.
-			st, err := runner.Run(ctx, defPA, "inst-a", startVars)
+			st, err := driver.Drive(ctx, defPA, "inst-a", startVars)
 			require.NoError(t, err)
 			assert.Equal(t, engine.StatusCompleted, st.Status, "predecessor must complete synchronously")
 
@@ -229,7 +229,7 @@ func TestChainingE2E(t *testing.T) {
 		t.Run("branch_routing", func(t *testing.T) {
 			ctx := t.Context()
 
-			_, err := runner.Run(ctx, defPB, "inst-b", map[string]any{"key": "value-b"})
+			_, err := driver.Drive(ctx, defPB, "inst-b", map[string]any{"key": "value-b"})
 			require.NoError(t, err)
 
 			_, err = d.relay.DrainOnce(ctx)
@@ -253,7 +253,7 @@ func TestChainingE2E(t *testing.T) {
 		t.Run("no_successor", func(t *testing.T) {
 			ctx := t.Context()
 
-			_, err := runner.Run(ctx, defPC, "inst-c", nil)
+			_, err := driver.Drive(ctx, defPC, "inst-c", nil)
 			require.NoError(t, err)
 
 			_, err = d.relay.DrainOnce(ctx)
@@ -296,7 +296,7 @@ func TestChainingE2E(t *testing.T) {
 		t.Run("idempotency", func(t *testing.T) {
 			ctx := t.Context()
 
-			_, err := runner.Run(ctx, defPA, "inst-a-idem", map[string]any{"x": 1})
+			_, err := driver.Drive(ctx, defPA, "inst-a-idem", map[string]any{"x": 1})
 			require.NoError(t, err)
 
 			// First drain → predecessor's outbox row published → successor created.

@@ -1,10 +1,13 @@
 package runtimetest
 
 import (
+	"time"
+
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 // SignalCatchDef returns: start → signal-catch(name) → end. The instance parks at
@@ -33,7 +36,7 @@ func TimerIntermediateDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},
@@ -41,6 +44,28 @@ func TimerIntermediateDef() *model.ProcessDefinition {
 			{ID: "f1", Source: "start", Target: "wait1h"},
 			{ID: "f2", Source: "wait1h", Target: "greet"},
 			{ID: "f3", Source: "greet", Target: "end"},
+		},
+	}
+}
+
+// ApprovalWithReminderDef returns the ApprovalDef process whose user task
+// carries a recurring in-wait reminder (Every reminderEvery, action
+// reminderAction). The reminder is armed once with its recurring TriggerSpec and
+// survives each fire; it is cancelled when the task completes. Used to exercise
+// the recurrence-aware timer cancel in the runtime.
+func ApprovalWithReminderDef(reminderEvery time.Duration, reminderAction string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "approval-reminder",
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"manager"},
+				activity.WithReminder(schedule.Every(reminderEvery), reminderAction)),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "approve"},
+			{ID: "f2", Source: "approve", Target: "end"},
 		},
 	}
 }

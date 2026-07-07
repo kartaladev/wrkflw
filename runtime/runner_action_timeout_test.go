@@ -114,7 +114,7 @@ func TestRunner_ActionTimeout(t *testing.T) {
 			opts := append([]runtime.Option{runtime.WithClock(clockwork.NewFakeClock())}, tc.opts...)
 			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), opts...)
 
-			st, err := r.Run(t.Context(), timeoutTaskDef(), "p1", nil)
+			st, err := r.Drive(t.Context(), timeoutTaskDef(), "p1", nil)
 			require.NoError(t, err)
 			tc.assert(t, st, o)
 		})

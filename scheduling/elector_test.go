@@ -8,13 +8,16 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	pgbackend "github.com/zakyalvan/krtlwrkflw/scheduling/backend/postgres"
 )
 
 // TestSchedulerWithTimerElector proves the public façade plumbs the Postgres-backed
-// elector down to gocron in single-leader mode: when this instance cannot win
-// leadership (a side connection holds the leader lock) its timers are skipped;
+// backend elector down to gocron in single-leader mode: when this instance cannot
+// win leadership (a side connection holds the leader lock) its timers are skipped;
 // when uncontended it is the leader and timers fire. Cases share one pool and run
 // sequentially, so they are not parallel.
 func TestSchedulerWithTimerElector(t *testing.T) {
@@ -51,14 +54,18 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 			}
 
 			clk := clockwork.NewFakeClock()
+			elector, err := pgbackend.NewElector(ctx, pool,
+				pgbackend.WithElectorKey(leaderKey), pgbackend.WithClock(clk))
+			require.NoError(t, err)
 			s, err := scheduling.NewScheduler(
 				scheduling.WithSchedulerClock(clk),
-				scheduling.WithTimerElector(pool, scheduling.WithElectorKey(leaderKey)))
+				scheduling.WithElector(elector))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 
 			fired := make(chan struct{}, 1)
-			s.Schedule("timer", clk.Now().Add(time.Second), func() { fired <- struct{}{} })
+			_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} })
+			require.NoError(t, err)
 			require.NoError(t, clk.BlockUntilContext(ctx, 1))
 			clk.Advance(time.Second)
 
@@ -80,28 +87,32 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 }
 
 // TestSchedulerElectorHeartbeatStepsDown proves the façade threads its scheduler
-// clock and a configurable heartbeat interval into the leader elector (ADR-0061):
-// after the leader's dedicated backend is severed out-of-band, advancing the shared
-// fake clock past one heartbeat interval makes the elector step down — closing the
-// split-brain window through the public façade.
+// clock and a configurable heartbeat interval into the backend leader elector
+// (ADR-0061): after the leader's dedicated backend is severed out-of-band,
+// advancing the shared fake clock past one heartbeat interval makes the elector
+// step down — closing the split-brain window through the public façade.
 func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	const leaderKey = "facade-heartbeat"
 	clk := clockwork.NewFakeClock()
+	elector, err := pgbackend.NewElector(ctx, pool,
+		pgbackend.WithElectorKey(leaderKey),
+		pgbackend.WithClock(clk),
+		pgbackend.WithHeartbeatInterval(time.Second))
+	require.NoError(t, err)
 	s, err := scheduling.NewScheduler(
 		scheduling.WithSchedulerClock(clk),
-		scheduling.WithTimerElector(pool,
-			scheduling.WithElectorKey(leaderKey),
-			scheduling.WithElectorHeartbeatInterval(time.Second)))
+		scheduling.WithElector(elector))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Fire a timer so the leader actually wins leadership (gocron calls IsLeader on
 	// the job run), starting the heartbeat.
 	fired := make(chan struct{}, 1)
-	s.Schedule("timer", clk.Now().Add(time.Second), func() { fired <- struct{}{} })
+	_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} })
+	require.NoError(t, err)
 	require.NoError(t, clk.BlockUntilContext(ctx, 1))
 	clk.Advance(time.Second)
 	select {
@@ -132,27 +143,32 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 		"the façade elector must step down after its connection is severed")
 }
 
-// TestSchedulerElectorOnLeadershipAcquired proves the façade plumbs the
-// on-leadership-acquired hook (Option A, ADR-0072) down to the elector: when this
-// instance wins leadership the registered callback fires. Wiring it to
-// Runner.RehydrateTimers re-arms persisted timers on a new leader after failover.
+// TestSchedulerElectorOnLeadershipAcquired proves the backend elector's
+// on-leadership-acquired hook (Option A, ADR-0072) fires through the façade: when
+// this instance wins leadership the registered callback fires. Wiring it to
+// ProcessDriver.RehydrateTimers re-arms persisted timers on a new leader after
+// failover.
 func TestSchedulerElectorOnLeadershipAcquired(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
 	acquired := make(chan struct{}, 1)
 	clk := clockwork.NewFakeClock()
+	elector, err := pgbackend.NewElector(ctx, pool,
+		pgbackend.WithElectorKey("facade-onacquire"),
+		pgbackend.WithClock(clk),
+		pgbackend.WithOnLeadershipAcquired(func(context.Context) { acquired <- struct{}{} }))
+	require.NoError(t, err)
 	s, err := scheduling.NewScheduler(
 		scheduling.WithSchedulerClock(clk),
-		scheduling.WithTimerElector(pool,
-			scheduling.WithElectorKey("facade-onacquire"),
-			scheduling.WithOnLeadershipAcquired(func(context.Context) { acquired <- struct{}{} })))
+		scheduling.WithElector(elector))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
 	// A timer run makes gocron call IsLeader, so the leader wins leadership and the
-	// hook fires (in production this is wired to Runner.RehydrateTimers).
-	s.Schedule("timer", clk.Now().Add(time.Second), func() {})
+	// hook fires (in production this is wired to ProcessDriver.RehydrateTimers).
+	_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() {})
+	require.NoError(t, err)
 	require.NoError(t, clk.BlockUntilContext(ctx, 1))
 	clk.Advance(time.Second)
 
@@ -167,12 +183,20 @@ func TestSchedulerElectorOnLeadershipAcquired(t *testing.T) {
 // distributed modes at once with a clear error.
 func TestSchedulerLockAndElectorConflict(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
+	ctx := t.Context()
+
+	locker := persistence.NewPostgresSchedulerLocker(pool)
+
+	elector, err := pgbackend.NewElector(ctx, pool)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = elector.Close() })
 
 	clk := clockwork.NewFakeClock()
-	_, err := scheduling.NewScheduler(
+	_, err = scheduling.NewScheduler(
 		scheduling.WithSchedulerClock(clk),
-		scheduling.WithDistributedTimerLock(pool),
-		scheduling.WithTimerElector(pool),
+		scheduling.WithLocker(locker),
+		scheduling.WithElector(elector),
 	)
-	require.Error(t, err, "requesting both a distributed lock and an elector must fail")
+	require.ErrorIs(t, err, scheduling.ErrTimerLockElectorConflict,
+		"requesting both a Locker and an Elector must fail")
 }

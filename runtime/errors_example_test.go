@@ -23,7 +23,7 @@ import (
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 // orderRecorder is a concurrency-safe ordered slice of action names that
-// records the sequence in which actions are invoked by the runner.
+// records the sequence in which actions are invoked by the driver.
 type orderRecorder struct {
 	mu    sync.Mutex
 	order []string
@@ -110,7 +110,7 @@ func sagaDef() *model.ProcessDefinition {
 //  2. ship fails; a boundary error event catches it → instance routes to end-fail
 //     → StatusCompleted (boundary path; RootCompensations preserved for admin rollback).
 //  3. Admin delivers CompensateRequested{ToNode:""} via Runner.Deliver.
-//  4. The runner drives the compensation InvokeAction stream to completion:
+//  4. The driver drives the compensation InvokeAction stream to completion:
 //     refund (for pay) runs BEFORE cancel-booking (for book) — reverse order.
 //  5. Final status is StatusTerminated (full rollback, ToNode=="").
 //
@@ -137,12 +137,12 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	store := runtimetest.MustMemStore(t)
 
-	runner := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fakeClock))
+	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fakeClock))
 
 	def := sagaDef()
 
 	// --- Step 1: run the saga until ship fails (caught by boundary → StatusCompleted).
-	st, err := runner.Run(ctx, def, "saga-i1", nil)
+	st, err := driver.Drive(ctx, def, "saga-i1", nil)
 	require.NoError(t, err, "runner.Run must not return a hard error; ship failure is caught by boundary")
 
 	// ship failure is caught by the boundary → routes to end-fail → StatusCompleted.
@@ -162,7 +162,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	// --- Step 2: admin triggers full compensation rollback.
 	trg := engine.NewCompensateRequested(fakeClock.Now(), "") // ToNode="" → full rollback
-	finalSt, err := runner.Deliver(ctx, def, "saga-i1", trg)
+	finalSt, err := driver.Deliver(ctx, def, "saga-i1", trg)
 	require.NoError(t, err, "Deliver(CompensateRequested) must not error")
 
 	// --- Step 3: assert reverse-order compensation.
@@ -208,7 +208,7 @@ func boundaryErrorDef() *model.ProcessDefinition {
 }
 
 // TestBoundaryErrorRecoveryE2E verifies that when a service task fails and a
-// boundary error event is attached to it, the runner catches the error and routes
+// boundary error event is attached to it, the driver catches the error and routes
 // execution to the recovery path, completing the instance via the recovery branch.
 func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 	ctx := t.Context()
@@ -222,12 +222,12 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 
 	store := runtimetest.MustMemStore(t)
 
-	runner := runtimetest.MustRunner(t, cat, store)
+	driver := runtimetest.MustRunner(t, cat, store)
 
 	def := boundaryErrorDef()
 
 	// Run: risky-action fails → boundary error catches it → recover-action runs → end.
-	st, err := runner.Run(ctx, def, "boundary-i1", nil)
+	st, err := driver.Drive(ctx, def, "boundary-i1", nil)
 	require.NoError(t, err, "runner.Run must not return a hard error: error is caught by boundary")
 
 	// Instance must have completed via the recovery path.

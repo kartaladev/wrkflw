@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 func TestValidate(t *testing.T) {
@@ -409,7 +410,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("t")),
-					event.NewBoundary("bnd", "task", event.WithBoundaryTimer("PT1M")),
+					event.NewBoundary("bnd", "task", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
 					activity.NewServiceTask("handler", activity.WithActionName("h")),
 					event.NewEnd("hend"),
 					event.NewEnd("end"),
@@ -425,6 +426,34 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err)
 			},
 		},
+		"timer boundary on non-error host (UserTask) is valid": {
+			// Regression: a timer boundary encodes its trigger in the nested
+			// wire field (timerTrigger), not the legacy flat timerDuration.
+			// The error-boundary classification must consult TimerTrigger, else
+			// a timer boundary on a UserTask (a non-error-throwing host) is
+			// misclassified as an error boundary and wrongly rejected.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("approve", []string{"mgr"}),
+					event.NewBoundary("bnd", "approve", event.WithBoundaryTimer(schedule.AfterExpr("PT1H"))),
+					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					event.NewEnd("hend"),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "approve"},
+					{ID: "f2", Source: "approve", Target: "end"},
+					{ID: "f3", Source: "bnd", Target: "handler"},
+					{ID: "f4", Source: "handler", Target: "hend"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+				require.NotErrorIs(t, err, model.ErrBoundaryErrorHost)
+			},
+		},
 		"node reachable only via boundary on unreachable host is unreachable": {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -433,7 +462,7 @@ func TestValidate(t *testing.T) {
 					activity.NewServiceTask("task", activity.WithActionName("t")),
 					event.NewEnd("end"),
 					activity.NewServiceTask("ghost", activity.WithActionName("g")), // unreachable host
-					event.NewBoundary("bnd", "ghost", event.WithBoundaryTimer("PT1M")),
+					event.NewBoundary("bnd", "ghost", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
 					activity.NewServiceTask("handler", activity.WithActionName("h")),
 					event.NewEnd("hend"),
 				},

@@ -150,8 +150,9 @@ func TestSQLiteUpsertClauses(t *testing.T) {
 			assert: func(t *testing.T) {
 				t.Helper()
 				const want = " ON CONFLICT (instance_id, timer_id)" +
-					" DO UPDATE SET fire_at = excluded.fire_at, kind = excluded.kind," +
-					" def_id = excluded.def_id, def_version = excluded.def_version"
+					" DO UPDATE SET next_run = excluded.next_run, kind = excluded.kind," +
+					" def_id = excluded.def_id, def_version = excluded.def_version," +
+					" trigger_kind = excluded.trigger_kind, trigger_payload = excluded.trigger_payload"
 				assert.Equal(t, want, d.UpsertTimer())
 			},
 		},

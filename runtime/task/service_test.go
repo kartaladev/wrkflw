@@ -36,7 +36,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	)
 
 	def := runtimetest.ApprovalDef()
-	_, err := r.Run(ctx, def, "inst-2", nil)
+	_, err := r.Drive(ctx, def, "inst-2", nil)
 	require.NoError(t, err)
 
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
@@ -73,7 +73,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	)
 
 	def := runtimetest.ApprovalDef()
-	_, err := r.Run(ctx, def, "inst-3", nil)
+	_, err := r.Drive(ctx, def, "inst-3", nil)
 	require.NoError(t, err)
 
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
@@ -130,7 +130,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
-	_, err := r.Run(ctx, runtimetest.ApprovalDef(), "inst-reassign-reject", nil)
+	_, err := r.Drive(ctx, runtimetest.ApprovalDef(), "inst-reassign-reject", nil)
 	require.NoError(t, err)
 
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
@@ -173,7 +173,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
-	_, err := r.Run(ctx, runtimetest.ApprovalDef(), "inst-complete-reject", nil)
+	_, err := r.Drive(ctx, runtimetest.ApprovalDef(), "inst-complete-reject", nil)
 	require.NoError(t, err)
 
 	claimable, err := taskStore.ClaimableBy(ctx, manager)

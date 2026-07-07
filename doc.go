@@ -22,7 +22,7 @@
 // an in-memory driver backed by [action.DefaultCatalog] and
 // [kernel.NewMemInstanceStore]; supply [runtime.WithActionCatalog] and
 // [runtime.WithInstanceStore] for durable production wiring;
-// (3) call [runtime.ProcessDriver.Run] to start an instance and [runtime.ProcessDriver.Deliver]
+// (3) call [runtime.ProcessDriver.Drive] to start an instance and [runtime.ProcessDriver.Deliver]
 // to resume it after a human-task claim, timer fire, or signal.
 //
 //   - definition   Define a process: nodes, gateways, sequence flows, the
@@ -87,7 +87,8 @@
 //     Keeps watermill confined: runtime/engine never import it. Provides
 //     NewGoChannelPublisher, NewMessageHandler, NewChainerRunner.
 //   - scheduling   The façade over the timer/deadline scheduler (gocron v2 behind
-//     the abstraction). Provides Scheduler, MemScheduler for tests.
+//     the abstraction). Provides the gocron-backed Scheduler; the in-memory
+//     MemScheduler test double lives in the processtest harness package.
 //   - observability Metrics, traces, and slog wiring at the runtime boundary.
 //   - clock        The clock.Clock time abstraction; supply clock.System() in
 //     production; inject a fake clock (clockwork.NewFakeClock) in tests.

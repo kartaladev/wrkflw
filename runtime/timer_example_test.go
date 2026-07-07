@@ -16,11 +16,12 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestRunnerTimerIntermediateFiresUnderFakeClock verifies the full fake-clock
@@ -43,7 +44,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 		}),
 	})
 
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
@@ -52,7 +53,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	const instanceID = "timer-e2e-1"
 
 	// Run → parks at the intermediate timer node.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tokens, 1)
@@ -86,7 +87,7 @@ func deadlineUserTaskDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(`"30m"`, "escalate", "notify-escalation")),
+			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(schedule.AfterExpr(`"30m"`), "escalate", "notify-escalation")),
 			event.NewEnd("end-normal"),
 			event.NewEnd("end-escalated"),
 		},
@@ -121,7 +122,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store,
@@ -134,7 +135,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	const instanceID = "sla-e2e-1"
 
 	// Run → parks at the user task, deadline timer is registered.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := r.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tokens, 1)

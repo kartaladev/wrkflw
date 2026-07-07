@@ -1,6 +1,11 @@
 package model
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+)
 
 // TestBaseNewAndSetName covers the exported Base embed used by every leaf
 // node package to carry node identity.
@@ -24,17 +29,21 @@ func TestBaseNewAndSetName(t *testing.T) {
 func TestActivityFieldsCarriers(t *testing.T) {
 	a := ActivityFields{
 		WaitFields: WaitFields{
-			DeadlineDuration: "2h", DeadlineFlow: "f", DeadlineAction: "act",
-			ReminderEvery: "1h", ReminderAction: "r",
+			DeadlineTimer: schedule.AfterDuration(2 * time.Hour), DeadlineFlow: "f", DeadlineAction: "act",
+			ReminderEvery: schedule.Every(time.Hour), ReminderAction: "r",
 		},
 		RetryPolicy:  &RetryPolicy{MaxAttempts: 5},
 		RecoveryFlow: "rec",
 	}
-	if d, f, act := a.deadline(); d != "2h" || f != "f" || act != "act" {
-		t.Fatalf("deadline() = %q,%q,%q", d, f, act)
+	if dt, f, act := a.deadline(); f != "f" || act != "act" {
+		t.Fatalf("deadline() flow/action = %q,%q", f, act)
+	} else if d, ok := dt.Duration(); !ok || d != 2*time.Hour {
+		t.Fatalf("deadline() duration = %v", d)
 	}
-	if e, r := a.reminder(); e != "1h" || r != "r" {
-		t.Fatalf("reminder() = %q,%q", e, r)
+	if re, r := a.reminder(); r != "r" {
+		t.Fatalf("reminder() action = %q", r)
+	} else if d, ok := re.Duration(); !ok || d != time.Hour {
+		t.Fatalf("reminder() duration = %v", d)
 	}
 	if a.retry().MaxAttempts != 5 {
 		t.Fatalf("retry() = %+v", a.retry())

@@ -62,7 +62,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 	})
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
 
-	final, err := r.Run(t.Context(), def, "i1", nil)
+	final, err := r.Drive(t.Context(), def, "i1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status)
 	assert.Empty(t, final.Tokens)
@@ -107,7 +107,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 	cat := action.NewMapCatalog(map[string]action.Action{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
 
-	final, err := r.Run(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
+	final, err := r.Drive(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status)
 	assert.Empty(t, final.Tokens)
@@ -132,7 +132,7 @@ func TestRunnerExecutesLinearProcess(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	r := runtimetest.MustRunner(t, cat, store)
 
-	final, err := r.Run(t.Context(), linearDef(), "i1", map[string]any{"name": "Ada"})
+	final, err := r.Drive(t.Context(), linearDef(), "i1", map[string]any{"name": "Ada"})
 	require.NoError(t, err)
 
 	assert.Equal(t, engine.StatusCompleted, final.Status)

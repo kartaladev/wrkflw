@@ -66,15 +66,16 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 			fc := clockwork.NewFakeClockAt(time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC))
 			st, err := kernel.NewMemInstanceStore()
 			require.NoError(t, err)
-			r, err := NewProcessDriver(WithActionCatalog(cat), WithInstanceStore(st), WithClock(fc))
+			driver, err := NewProcessDriver(WithActionCatalog(cat), WithInstanceStore(st), WithClock(fc))
 			require.NoError(t, err)
+			t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
 			cmd := engine.InvokeAction{
 				CommandID:     "cmd-1",
 				Name:          "x",
 				FireAndForget: tc.fnf,
 			}
-			trg, err := r.perform(t.Context(), &model.ProcessDefinition{}, engine.InstanceState{}, cmd)
+			trg, err := driver.perform(t.Context(), &model.ProcessDefinition{}, engine.InstanceState{}, cmd)
 			tc.assert(t, trg, err, &ran)
 		})
 	}

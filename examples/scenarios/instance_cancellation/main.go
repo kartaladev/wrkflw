@@ -100,7 +100,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
@@ -115,7 +115,7 @@ func main() {
 	fmt.Println("--- Order Fulfilment: Instance Cancellation ---")
 
 	// 1. Run → parks at the user task; the instance is Running.
-	parked, err := r.Run(ctx, def, instanceID, map[string]any{"orderID": "9001"})
+	parked, err := driver.Drive(ctx, def, instanceID, map[string]any{"orderID": "9001"})
 	if err != nil {
 		log.Fatal("run:", err)
 	}
@@ -135,7 +135,7 @@ func main() {
 	// 2. The order is retracted before anyone works it — cancel the instance.
 	//    CancelActions run best-effort; the failing "notify-customer" is swallowed.
 	fmt.Println("cancelling instance (running cleanup actions)...")
-	final, err := r.CancelInstance(ctx, def, instanceID)
+	final, err := driver.CancelInstance(ctx, def, instanceID)
 	if err != nil {
 		log.Fatal("cancel:", err)
 	}

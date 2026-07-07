@@ -58,7 +58,7 @@ type Messaging interface {
 	// ErrConflict when the instance has already reached a terminal state.
 	DeliverSignal(ctx context.Context, req DeliverSignalRequest) (ProcessInstance, error)
 
-	// DeliverMessage routes a message to the waiting instance via the runner's
+	// DeliverMessage routes a message to the waiting instance via the driver's
 	// internal message-waiter table. The definition is resolved by req.DefRef.
 	DeliverMessage(ctx context.Context, req DeliverMessageRequest) error
 }
@@ -107,7 +107,7 @@ type Service interface {
 // loading an existing instance. Short aliases (e.g. the bare definition ID)
 // may also be registered for use with StartInstance.
 type Engine struct {
-	runner    *runtime.ProcessDriver
+	driver    *runtime.ProcessDriver
 	tasks     *task.TaskService
 	reg       kernel.DefinitionRegistry
 	store     kernel.InstanceStore
@@ -115,6 +115,10 @@ type Engine struct {
 	taskStore humantask.TaskStore
 	clk       clock.Clock
 	idgen     idgen.Generator
+	// ownsDriver is true only when NewEngine built the driver itself (no driver
+	// was injected via WithProcessDriver). It gates Start/Shutdown so a
+	// consumer-injected driver is never started or torn down by the Engine.
+	ownsDriver bool
 }
 
 // NewEngine constructs an Engine facade from functional options over a coherent
@@ -182,6 +186,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 	}
 
 	driver := c.driver
+	ownsDriver := c.driver == nil
 	if driver == nil {
 		dopts := []runtime.Option{
 			runtime.WithInstanceStore(c.store),
@@ -206,17 +211,44 @@ func NewEngine(opts ...Option) (*Engine, error) {
 	}
 
 	e := &Engine{
-		runner:    driver,
-		tasks:     tasks,
-		reg:       c.reg,
-		store:     c.store,
-		lister:    c.lister,
-		taskStore: c.taskStore,
-		clk:       c.clk,
-		idgen:     c.idgen,
+		driver:     driver,
+		tasks:      tasks,
+		reg:        c.reg,
+		store:      c.store,
+		lister:     c.lister,
+		taskStore:  c.taskStore,
+		clk:        c.clk,
+		idgen:      c.idgen,
+		ownsDriver: ownsDriver,
 	}
 	e.logConstructionSummary(c)
 	return e, nil
+}
+
+// Start starts the engine's owned process driver (its in-process scheduler),
+// binding its lifetime to ctx. It is a no-op when the driver was supplied by
+// the consumer via WithProcessDriver (that driver is consumer-owned). Idempotent.
+func (e *Engine) Start(ctx context.Context) error {
+	if !e.ownsDriver {
+		return nil
+	}
+	if err := e.driver.Start(ctx); err != nil {
+		return fmt.Errorf("workflow-service: start: %w", err)
+	}
+	return nil
+}
+
+// Shutdown releases resources the engine owns — currently its owned process
+// driver. A consumer-injected driver is left untouched. Idempotent; matches
+// samber/do ShutdownerWithContextAndError.
+func (e *Engine) Shutdown(ctx context.Context) error {
+	if !e.ownsDriver {
+		return nil
+	}
+	if err := e.driver.Shutdown(ctx); err != nil {
+		return fmt.Errorf("workflow-service: shutdown: %w", err)
+	}
+	return nil
 }
 
 // validateEngineLeaves ensures every required leaf resolved to a non-nil value
@@ -277,7 +309,7 @@ func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (P
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: generate id: %w", err)
 	}
-	st, err := e.runner.Run(ctx, def, id, req.Vars)
+	st, err := e.driver.Drive(ctx, def, id, req.Vars)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: run: %w", err)
 	}
@@ -309,7 +341,7 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 		return nil, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, req.InstanceID)
 	}
 	trg := engine.NewSignalReceived(e.clk.Now(), req.Signal, req.Payload)
-	newSt, err := e.runner.Deliver(ctx, def, st.InstanceID, trg)
+	newSt, err := e.driver.Deliver(ctx, def, st.InstanceID, trg)
 	if err != nil {
 		// No ErrInvalidTransition classification here: SignalReceived uses
 		// broadcast semantics in the engine — a signal matching no awaiting
@@ -320,16 +352,16 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 	return NewProcessInstance(def, newSt), nil
 }
 
-// DeliverMessage routes a message to the waiting instance via the runner's
+// DeliverMessage routes a message to the waiting instance via the driver's
 // message-waiter table. No-op when no instance is waiting.
 func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
 	def, err := e.reg.Lookup(ctx, req.DefRef)
 	if err != nil {
 		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
-	if err := e.runner.DeliverMessage(ctx, def, req.Name, req.CorrelationKey, req.Payload); err != nil {
+	if err := e.driver.DeliverMessage(ctx, def, req.Name, req.CorrelationKey, req.Payload); err != nil {
 		// No ErrInvalidTransition classification here: DeliverMessage routes via
-		// the runner's waiter table and no-ops when no instance is waiting, so a
+		// the driver's waiter table and no-ops when no instance is waiting, so a
 		// wrong-state error is not produced on this path (see ADR-0026).
 		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
@@ -384,7 +416,7 @@ func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest
 	if addAttempts <= 0 {
 		addAttempts = 1
 	}
-	st, err := e.runner.ResolveIncident(ctx, def, req.InstanceID, req.IncidentID, addAttempts)
+	st, err := e.driver.ResolveIncident(ctx, def, req.InstanceID, req.IncidentID, addAttempts)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: resolve incident: %w", err)
 	}
@@ -401,7 +433,7 @@ func (e *Engine) CancelInstance(ctx context.Context, req CancelInstanceRequest) 
 	if isTerminal(st.Status) {
 		return nil, fmt.Errorf("%w: instance %q is already terminal", ErrConflict, req.InstanceID)
 	}
-	st, err = e.runner.CancelInstance(ctx, def, req.InstanceID)
+	st, err = e.driver.CancelInstance(ctx, def, req.InstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: cancel instance: %w", err)
 	}
@@ -445,7 +477,7 @@ func (e *Engine) deliverTaskTrigger(ctx context.Context, taskToken string, trg e
 	if isTerminal(st.Status) {
 		return nil, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, task.InstanceID)
 	}
-	newSt, err := e.runner.Deliver(ctx, def, task.InstanceID, trg)
+	newSt, err := e.driver.Deliver(ctx, def, task.InstanceID, trg)
 	if err != nil {
 		if errors.Is(err, engine.ErrInvalidTransition) {
 			return nil, fmt.Errorf("%w: %w", ErrConflict, err)

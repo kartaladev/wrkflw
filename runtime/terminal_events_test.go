@@ -54,7 +54,7 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 		},
 	}
 
-	_, err := r.Run(t.Context(), def, "ce1", nil)
+	_, err := r.Drive(t.Context(), def, "ce1", nil)
 	require.NoError(t, err)
 
 	st, err := r.CancelInstance(t.Context(), def, "ce1")
@@ -84,7 +84,7 @@ func TestCompleteEmitsInstanceCompleted(t *testing.T) {
 		},
 	}
 
-	st, err := r.Run(t.Context(), def, "co1", nil)
+	st, err := r.Drive(t.Context(), def, "co1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, st.Status)
 

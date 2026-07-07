@@ -299,8 +299,10 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 			continue // skip further checks — attachment itself is invalid
 		}
 		// If this is a boundary error event (no timer/signal/message trigger),
-		// the host must be an error-throwing activity.
-		isErrorBoundary := w.TimerDuration == "" && w.SignalName == "" && w.MessageName == ""
+		// the host must be an error-throwing activity. Check both the canonical
+		// nested TimerTrigger field (written by ToWire) and the legacy flat
+		// TimerDuration string (decoded-only; written by older serializers).
+		isErrorBoundary := w.TimerTrigger == nil && w.TimerDuration == "" && w.SignalName == "" && w.MessageName == ""
 		if isErrorBoundary && !errorBoundaryHostKinds[host.Kind()] {
 			errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, n.ID(), w.AttachedTo, host.Kind()))
 		}

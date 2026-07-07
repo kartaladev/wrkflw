@@ -2,163 +2,37 @@ package kernel
 
 import (
 	"context"
-	"sort"
-	"sync"
+	"errors"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
+// ErrUnsupportedTrigger is returned by a [Scheduler.Schedule] call when the
+// implementation cannot honour the given [schedule.TriggerSpec] kind (e.g. an
+// in-memory test scheduler that only understands one-shot and fixed-interval
+// triggers, asked to schedule a cron or calendar trigger).
+var ErrUnsupportedTrigger = errors.New("workflow-scheduler: trigger kind not supported by this scheduler")
+
 // Scheduler is the port through which the runtime registers and cancels timers.
-// Implementations may be in-memory (for tests), gocron-backed (production),
-// or any other backing store.
+// Implementations may be in-memory (for tests, see processtest.MemScheduler),
+// gocron-backed (production), or any other backing store.
+//
+// A timer is identified by an opaque timerID; scheduling a second timer with an
+// existing timerID replaces the first.
 type Scheduler interface {
-	// Schedule registers a timer with the given timerID that calls fire at or
-	// after fireAt. If a timer with the same timerID already exists it is
-	// replaced.
-	Schedule(timerID string, fireAt time.Time, fire func())
+	// Schedule registers a timer with the given timerID whose firing schedule is
+	// described by trig, invoking fire when it becomes due. It returns the next
+	// computed run time, or ErrUnsupportedTrigger if the implementation cannot
+	// honour the trigger kind. If a timer with the same timerID already exists it
+	// is replaced.
+	Schedule(ctx context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (nextRun time.Time, err error)
 
 	// Cancel removes a pending timer. It is a no-op if the timer does not exist
 	// or has already fired.
-	Cancel(timerID string)
-}
+	Cancel(ctx context.Context, timerID string)
 
-// Compile-time interface check.
-var _ Scheduler = (*MemScheduler)(nil)
-
-// pendingTimer is one entry in the MemScheduler's internal table.
-type pendingTimer struct {
-	timerID string
-	fireAt  time.Time
-	fire    func()
-}
-
-// MemScheduler is a clock-driven, concurrency-safe Scheduler for tests and
-// reference wiring. It holds pending timers in memory and fires those whose
-// FireAt <= clock.Now() when Tick is called.
-//
-// Determinism guarantee: Tick fires pending-at-tick-start timers in
-// (FireAt, TimerID) lexicographic order. Timers scheduled inside a fire
-// callback during a Tick are NOT fired in that same Tick; they fire only on a
-// subsequent Tick call. This prevents surprising infinite loops when a reminder
-// reschedules itself.
-type MemScheduler struct {
-	clk     clock.Clock
-	mu      sync.Mutex
-	pending map[string]pendingTimer
-}
-
-// MemSchedulerOption configures a MemScheduler.
-type MemSchedulerOption func(*MemScheduler)
-
-// WithMemSchedulerClock sets the time source used to evaluate timer due-ness.
-// Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithMemSchedulerClock(clk clock.Clock) MemSchedulerOption {
-	return func(s *MemScheduler) {
-		if clk != nil {
-			s.clk = clk
-		}
-	}
-}
-
-// NewMemScheduler constructs a MemScheduler. The time source defaults to
-// clock.System(); override it with WithMemSchedulerClock (e.g. a fake clock in tests).
-func NewMemScheduler(opts ...MemSchedulerOption) *MemScheduler {
-	s := &MemScheduler{
-		clk:     clock.System(),
-		pending: make(map[string]pendingTimer),
-	}
-	for _, o := range opts {
-		o(s)
-	}
-	return s
-}
-
-// Schedule registers a timer. Replaces any existing timer with the same timerID.
-func (s *MemScheduler) Schedule(timerID string, fireAt time.Time, fire func()) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pending[timerID] = pendingTimer{timerID: timerID, fireAt: fireAt, fire: fire}
-}
-
-// NextFireAt returns the fire time of the earliest pending timer and true, or
-// the zero time and false when no timers are pending. It lets a test harness
-// advance a fake clock to exactly the next due timer before calling Tick, without
-// needing visibility into the (unexported) per-instance timer bookkeeping. It is
-// concrete on MemScheduler and not part of the Scheduler interface.
-func (s *MemScheduler) NextFireAt() (time.Time, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var (
-		earliest time.Time
-		found    bool
-	)
-	for _, pt := range s.pending {
-		if !found || pt.fireAt.Before(earliest) {
-			earliest = pt.fireAt
-			found = true
-		}
-	}
-	return earliest, found
-}
-
-// Pending returns the fire time of the pending timer with the given id and true,
-// or the zero time and false if no such timer is pending. It lets a test harness
-// tell whether a specific parked token's awaited timer is armed (matching the
-// token's command id against a scheduled timer id) without scanning all timers.
-func (s *MemScheduler) Pending(timerID string) (time.Time, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	pt, ok := s.pending[timerID]
-	if !ok {
-		return time.Time{}, false
-	}
-	return pt.fireAt, true
-}
-
-// Cancel removes a pending timer. No-op if absent.
-func (s *MemScheduler) Cancel(timerID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.pending, timerID)
-}
-
-// Tick fires all timers whose FireAt <= clock.Now() in deterministic
-// (FireAt, TimerID) order. Timers scheduled inside a fire callback are NOT
-// eligible to fire during this Tick — only timers present at the moment Tick
-// begins are considered.
-//
-// ctx is reserved for future use (e.g. cancellation); currently ignored.
-func (s *MemScheduler) Tick(_ context.Context) error {
-	now := s.clk.Now()
-
-	// Snapshot the timers that are due at this instant, then remove them from
-	// the pending map before invoking any callbacks. This ensures that a newly
-	// scheduled timer (added inside a fire callback) cannot fire in this Tick.
-	s.mu.Lock()
-	var due []pendingTimer
-	for _, pt := range s.pending {
-		if !pt.fireAt.After(now) { // fireAt <= now
-			due = append(due, pt)
-			delete(s.pending, pt.timerID)
-		}
-	}
-	s.mu.Unlock()
-
-	// Sort due timers deterministically: primary FireAt (earlier first),
-	// secondary TimerID (lexicographic).
-	sort.Slice(due, func(i, j int) bool {
-		if due[i].fireAt.Equal(due[j].fireAt) {
-			return due[i].timerID < due[j].timerID
-		}
-		return due[i].fireAt.Before(due[j].fireAt)
-	})
-
-	// Invoke fire callbacks outside the lock so Schedule/Cancel can be called
-	// from within a callback without deadlocking.
-	for _, pt := range due {
-		pt.fire()
-	}
-	return nil
+	// NextRun returns the next scheduled run time of the timer with the given id
+	// and true, or the zero time and false when no such timer is pending.
+	NextRun(timerID string) (time.Time, bool)
 }

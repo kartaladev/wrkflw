@@ -5,6 +5,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 // --- option interfaces ---
@@ -133,18 +134,18 @@ func WithCancelHandler(action string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.CancelHandler = action })
 }
 
-// WithDeadline sets DeadlineDuration, DeadlineFlow, and DeadlineAction.
-func WithDeadline(duration, flowID, action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) {
-		a.DeadlineDuration, a.DeadlineFlow, a.DeadlineAction = duration, flowID, action
-	})
+// WithDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow, and
+// DeadlineAction on an activity node. Use schedule.AfterDuration, schedule.AfterExpr,
+// or any other TriggerSpec constructor.
+func WithDeadline(t schedule.TriggerSpec, flowID, action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.DeadlineTimer, a.DeadlineFlow, a.DeadlineAction = t, flowID, action })
 }
 
-// WithReminder sets ReminderEvery and ReminderAction.
-func WithReminder(every, action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) {
-		a.ReminderEvery, a.ReminderAction = every, action
-	})
+// WithReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// on an activity node. Use schedule.Every, schedule.EveryExpr, or any other
+// recurring TriggerSpec constructor.
+func WithReminder(t schedule.TriggerSpec, action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.ReminderEvery, a.ReminderAction = t, action })
 }
 
 // --- UserTask-only options ---

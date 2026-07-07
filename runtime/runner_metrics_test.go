@@ -18,10 +18,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // counterValueEmit is like counterValue (defined in observability_test.go) but
@@ -86,7 +87,7 @@ func timerMetricsDef() *model.ProcessDefinition {
 		ID: "timer-metrics", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait1h", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -146,7 +147,7 @@ func TestActionFailuresCounter(t *testing.T) {
 				runtime.WithMeterProvider(mp),
 			)
 
-			st, err := r.Run(t.Context(), failingActionDef(), "fail-metrics-1", nil)
+			st, err := r.Drive(t.Context(), failingActionDef(), "fail-metrics-1", nil)
 			require.NoError(t, err, "Run must not return an error even when an action fails")
 			assert.Equal(t, engine.StatusFailed, st.Status,
 				"instance must reach StatusFailed after non-retried action failure")
@@ -174,7 +175,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	cat := action.NewMapCatalog(nil)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store,
@@ -187,7 +188,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	const instanceID = "timer-metrics-1"
 
 	// Run → parks at the intermediate timer node; no timer fired yet.
-	parked, err := r.Run(t.Context(), def, instanceID, nil)
+	parked, err := r.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 

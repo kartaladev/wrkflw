@@ -146,7 +146,7 @@ func run() error {
 
 	// Run parks at the UserTask. The write-through caches warm both stores: the
 	// instance state and the created human-task snapshot are now in cache.
-	if _, err := driver.Run(ctx, def, instanceID, map[string]any{"amount": 100}); err != nil {
+	if _, err := driver.Drive(ctx, def, instanceID, map[string]any{"amount": 100}); err != nil {
 		return err
 	}
 

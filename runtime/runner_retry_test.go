@@ -18,7 +18,7 @@ import (
 )
 
 // retryContractDef returns a minimal process that parks a service task named "a"
-// with no node-level RetryPolicy (and no default policy supplied to the runner),
+// with no node-level RetryPolicy (and no default policy supplied to the driver),
 // so any ActionFailed is the only trigger that terminates the task. The journal
 // records the ActionFailed trigger, which the test inspects for Retryable.
 //
@@ -43,7 +43,7 @@ func retryContractDef() *model.ProcessDefinition {
 // and that a plain error stays Retryable=true (the historical default).
 //
 // Harness: runtime.NewProcessDriver + kernel.NewMemInstanceStore (same as retry_test.go /
-// action_panic_test.go). The runner drives the process to terminal state (StatusFailed,
+// action_panic_test.go). The driver drives the process to terminal state (StatusFailed,
 // no retry policy). The MemInstanceStore.Entries journal records every applied trigger;
 // the ActionFailed trigger is the one immediately preceding the FailInstance
 // terminal step. We locate it by type-asserting each journal entry.
@@ -64,10 +64,10 @@ func TestActionFailedHonoursRetryContract(t *testing.T) {
 			store := runtimetest.MustMemStore(t)
 			cat := action.NewMapCatalog(map[string]action.Action{"a": act})
 			// No retry policy: ActionFailed is terminal → instance reaches StatusFailed.
-			runner := runtimetest.MustRunner(t, cat, store)
+			driver := runtimetest.MustRunner(t, cat, store)
 
 			const instanceID = "rc-1"
-			st, err := runner.Run(t.Context(), retryContractDef(), instanceID, nil)
+			st, err := driver.Drive(t.Context(), retryContractDef(), instanceID, nil)
 			require.NoError(t, err)
 			assert.Equal(t, engine.StatusFailed, st.Status, "action error with no retry policy must fail instance")
 

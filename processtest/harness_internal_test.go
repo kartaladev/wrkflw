@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
@@ -94,7 +95,9 @@ func TestHarnessEnvClassifyPrecise(t *testing.T) {
 			h, err := New(WithClockStart(base))
 			require.NoError(t, err)
 			for id, at := range tc.schedule {
-				h.sched.Schedule(id, at, func() {})
+				if _, err := h.sched.Schedule(t.Context(), id, schedule.At(at), func() {}); err != nil {
+					t.Fatalf("Schedule(%q): %v", id, err)
+				}
 			}
 
 			env := harnessEnv{h: h}

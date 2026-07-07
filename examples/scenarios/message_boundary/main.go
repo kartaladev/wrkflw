@@ -102,7 +102,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
@@ -116,7 +116,7 @@ func main() {
 	fmt.Println("--- Order Approval: Message Boundary Events ---")
 
 	// 1) Run parks at the user task; both message boundaries arm.
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}
@@ -126,7 +126,7 @@ func main() {
 	// 2) Deliver the reminder message: the NON-INTERRUPTING boundary fires once.
 	//    The reminder runs, but the approval task stays parked and running.
 	fmt.Println("delivering order.remind (non-interrupting)...")
-	if err := r.DeliverMessage(ctx, def, "order.remind", "", nil); err != nil {
+	if err := driver.DeliverMessage(ctx, def, "order.remind", "", nil); err != nil {
 		log.Fatal("deliver remind:", err)
 	}
 	afterRemind, _, err := store.Load(ctx, instanceID)
@@ -139,7 +139,7 @@ func main() {
 	// 3) Deliver the cancel message: the INTERRUPTING boundary fires — the human
 	//    task is Cancelled and the instance completes via the cancelled path.
 	fmt.Println("delivering order.cancel (interrupting)...")
-	if err := r.DeliverMessage(ctx, def, "order.cancel", "", nil); err != nil {
+	if err := driver.DeliverMessage(ctx, def, "order.cancel", "", nil); err != nil {
 		log.Fatal("deliver cancel:", err)
 	}
 	final, _, err := store.Load(ctx, instanceID)

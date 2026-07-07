@@ -5,7 +5,10 @@
 // package.
 package event
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model"
+import (
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+)
 
 // --- concrete node types ---
 
@@ -16,7 +19,8 @@ type StartEvent struct {
 	SignalName     string
 	MessageName    string
 	CorrelationKey string
-	TimerDuration  string
+	// Timer is the trigger spec for a timer-start event (e.g. schedule.AfterExpr("...")).
+	Timer schedule.TriggerSpec
 }
 
 // Kind returns model.KindStartEvent.
@@ -49,7 +53,8 @@ func (ErrorEndEvent) Kind() model.NodeKind { return model.KindErrorEndEvent }
 type IntermediateCatchEvent struct {
 	model.Base
 	model.WaitFields
-	TimerDuration  string
+	// Timer is the trigger spec for the timer catch (e.g. schedule.AfterExpr("...")).
+	Timer          schedule.TriggerSpec
 	SignalName     string
 	MessageName    string
 	CorrelationKey string
@@ -85,7 +90,8 @@ type BoundaryEvent struct {
 	SignalName      string
 	MessageName     string
 	CorrelationKey  string
-	TimerDuration   string
+	// Timer is the trigger spec for a timer boundary event (e.g. schedule.AfterDuration(72*time.Hour)).
+	Timer schedule.TriggerSpec
 }
 
 // Kind returns model.KindBoundaryEvent.
@@ -184,11 +190,13 @@ func init() {
 	model.RegisterKind(model.KindStartEvent, model.NodeSpec{
 		Name: "startEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey, TimerDuration: w.TimerDuration}
+			return StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
+				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(StartEvent)
-			w.SignalName, w.MessageName, w.CorrelationKey, w.TimerDuration = v.SignalName, v.MessageName, v.CorrelationKey, v.TimerDuration
+			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
+			w.TimerTrigger = model.PutTrigger(v.Timer)
 		},
 	})
 	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
@@ -209,11 +217,13 @@ func init() {
 	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return IntermediateCatchEvent{Base: b, WaitFields: w.Wait(), TimerDuration: w.TimerDuration, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
+			return IntermediateCatchEvent{Base: b, WaitFields: w.Wait(),
+				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false), SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(IntermediateCatchEvent)
-			w.TimerDuration, w.SignalName, w.MessageName, w.CorrelationKey = v.TimerDuration, v.SignalName, v.MessageName, v.CorrelationKey
+			w.TimerTrigger = model.PutTrigger(v.Timer)
+			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.PutWait(v.WaitFields)
 		},
 	})
@@ -230,12 +240,15 @@ func init() {
 	model.RegisterKind(model.KindBoundaryEvent, model.NodeSpec{
 		Name: "boundaryEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return BoundaryEvent{Base: b, AttachedTo: w.AttachedTo, NonInterrupting: w.NonInterrupting, ErrorCode: w.ErrorCode, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey, TimerDuration: w.TimerDuration}
+			return BoundaryEvent{Base: b, AttachedTo: w.AttachedTo, NonInterrupting: w.NonInterrupting, ErrorCode: w.ErrorCode,
+				SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
+				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(BoundaryEvent)
 			w.AttachedTo, w.NonInterrupting, w.ErrorCode = v.AttachedTo, v.NonInterrupting, v.ErrorCode
-			w.SignalName, w.MessageName, w.CorrelationKey, w.TimerDuration = v.SignalName, v.MessageName, v.CorrelationKey, v.TimerDuration
+			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
+			w.TimerTrigger = model.PutTrigger(v.Timer)
 		},
 	})
 	model.RegisterKind(model.KindEventSubProcess, model.NodeSpec{

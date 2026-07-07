@@ -30,7 +30,7 @@ func ExampleChainer() {
 		panic(err)
 	}
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clockwork.NewFakeClock()))
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clockwork.NewFakeClock()))
 	if err != nil {
 		panic(err)
 	}
@@ -51,7 +51,7 @@ func ExampleChainer() {
 		return chain.SuccessorDecision{Def: fulfillment, Vars: ev.Result}, true
 	}
 
-	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
+	chainer, err := chain.NewChainer(driver, policy, chain.WithChainLinks(links))
 	if err != nil {
 		panic(err)
 	}

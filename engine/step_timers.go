@@ -123,10 +123,10 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 //     Cancelled), the reminder is stale: clean no-op, stale record removed.
 //   - If the task is still open:
 //     (1) emits InvokeAction(node.ReminderAction) if non-empty (fire-and-forget),
-//     (2) removes the fired reminder record and schedules the next reminder at
-//     firedAt + every (new timer id from the counter), recording the new
-//     timerRecord; the token does NOT move.
-func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, firedAt time.Time, eval ConditionEvaluator) (StepResult, error) {
+//     (2) does NOT reschedule — the reminder was armed once at task entry with
+//     its recurring trigger and the scheduler re-delivers TimerFired natively;
+//     the reminder record stays in place and the token does NOT move.
+func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord) (StepResult, error) {
 	// If the parked token is gone (task completed/cancelled and advanced), the
 	// reminder fired late → clean no-op, remove the stale record.
 	tok := s.tokenAwaiting(rec.TaskToken)
@@ -157,7 +157,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		return StepResult{}, fmt.Errorf("workflow-engine: reminder fired: node %q not found in definition", rec.NodeID)
 	}
 
-	reminderEvery, reminderAction := model.ReminderOf(node)
+	_, reminderAction := model.ReminderOf(node)
 
 	var cmds []Command
 
@@ -172,33 +172,13 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		})
 	}
 
-	// (2) Replace the fired reminder record with a new one for the next interval.
-	// Remove the old record first so the timer table stays consistent.
-	s.removeTimer(rec.TimerID)
-
-	// Re-evaluate the duration from the expression (node variables may differ,
-	// but correctness requires the same expression path as initial scheduling).
-	dur, err := eval.EvalDuration(reminderEvery, s.Variables)
-	if err != nil {
-		return StepResult{}, fmt.Errorf("workflow-engine: reminder node %q re-schedule: %w", node.ID(), err)
-	}
-	newTimerID := s.nextTimerID()
-	cmds = append(cmds, ScheduleTimer{
-		TimerID: newTimerID,
-		Token:   rec.Token,
-		FireAt:  firedAt.Add(dur),
-		Kind:    TimerInWait,
-	})
-	s.Timers = append(s.Timers, timerRecord{
-		TimerID:   newTimerID,
-		Kind:      TimerInWait,
-		Token:     rec.Token,
-		TaskToken: rec.TaskToken,
-		NodeID:    rec.NodeID,
-		ScopeID:   rec.ScopeID,
-	})
-
-	// The token does NOT move — the task is still pending.
+	// (2) No engine reschedule: the reminder timer was armed once at task entry
+	// with the recurring trigger (Every/EveryExpr), and native scheduler
+	// recurrence re-delivers TimerFired on the interval. The reminder record
+	// therefore STAYS in s.Timers (do NOT remove it) so the guard above keeps
+	// finding it on each fire, and the token does NOT move — the task is still
+	// pending. (Repeated-fire behavior is now the scheduler's responsibility,
+	// covered in Plan 2 Tasks 2–4, not re-armed here.)
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 

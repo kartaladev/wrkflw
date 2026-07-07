@@ -58,11 +58,11 @@ func mustRunner(cat action.Catalog, store kernel.InstanceStore, opts ...runtime.
 	allOpts := make([]runtime.Option, 0, 2+len(opts))
 	allOpts = append(allOpts, runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	allOpts = append(allOpts, opts...)
-	r, err := runtime.NewProcessDriver(allOpts...)
+	driver, err := runtime.NewProcessDriver(allOpts...)
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
-	return r
+	return driver
 }
 
 func main() {
@@ -114,7 +114,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- EU instance: should be ALLOWED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewProcessDriver(
+		driver, err := runtime.NewProcessDriver(
 			runtime.WithInstanceStore(mustMemStore()),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
@@ -122,7 +122,7 @@ func demoAttributeAuthz(ctx context.Context) {
 			log.Fatal("new runner EU:", err)
 		}
 
-		parked, err := r.Run(ctx, def, "region-eu-001", map[string]any{"region": "EU"})
+		parked, err := driver.Drive(ctx, def, "region-eu-001", map[string]any{"region": "EU"})
 		if err != nil {
 			log.Fatal("run EU:", err)
 		}
@@ -142,10 +142,10 @@ func demoAttributeAuthz(ctx context.Context) {
 			if cerr != nil {
 				log.Fatal("complete EU:", cerr)
 			}
-			if _, cerr = r.Deliver(ctx, def, "region-eu-001", claimTrg); cerr != nil {
+			if _, cerr = driver.Deliver(ctx, def, "region-eu-001", claimTrg); cerr != nil {
 				log.Fatal("deliver claim EU:", cerr)
 			}
-			final, cerr := r.Deliver(ctx, def, "region-eu-001", completeTrg)
+			final, cerr := driver.Deliver(ctx, def, "region-eu-001", completeTrg)
 			if cerr != nil {
 				log.Fatal("deliver complete EU:", cerr)
 			}
@@ -158,7 +158,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	// --- US instance: should be DENIED ---
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r, err := runtime.NewProcessDriver(
+		driver, err := runtime.NewProcessDriver(
 			runtime.WithInstanceStore(mustMemStore()),
 			runtime.WithHumanTasks(resolver, taskStore, az),
 		)
@@ -166,7 +166,7 @@ func demoAttributeAuthz(ctx context.Context) {
 			log.Fatal("new runner US:", err)
 		}
 
-		parked, err := r.Run(ctx, def, "region-us-001", map[string]any{"region": "US"})
+		parked, err := driver.Drive(ctx, def, "region-us-001", map[string]any{"region": "US"})
 		if err != nil {
 			log.Fatal("run US:", err)
 		}
@@ -234,10 +234,10 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITH the "approver" role → casbin policy grants finance-task claim.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
+		driver := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
-		parked, runErr := r.Run(ctx, def, "finance-allow-001", nil)
+		parked, runErr := driver.Drive(ctx, def, "finance-allow-001", nil)
 		if runErr != nil {
 			log.Fatal("run (allow):", runErr)
 		}
@@ -257,10 +257,10 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITHOUT the "approver" role → casbin denies.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		r := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
+		driver := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
-		parked, runErr := r.Run(ctx, def, "finance-deny-001", nil)
+		parked, runErr := driver.Drive(ctx, def, "finance-deny-001", nil)
 		if runErr != nil {
 			log.Fatal("run (deny):", runErr)
 		}

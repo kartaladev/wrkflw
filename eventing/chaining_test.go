@@ -31,7 +31,7 @@ type capturingStarter struct {
 	state engine.InstanceState
 }
 
-func (s *capturingStarter) Run(_ context.Context, _ *model.ProcessDefinition, id string, _ map[string]any) (engine.InstanceState, error) {
+func (s *capturingStarter) Drive(_ context.Context, _ *model.ProcessDefinition, id string, _ map[string]any) (engine.InstanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ids = append(s.ids, id)
@@ -185,7 +185,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	links := kernel.NewMemChainLinkStore()
-	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clk))
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clk))
 	require.NoError(t, err)
 
 	succ := &model.ProcessDefinition{
@@ -196,7 +196,7 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		return chain.SuccessorDecision{Def: succ, Vars: ev.Result}, true
 	}
-	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links), chain.WithClock(clk))
+	core, err := chain.NewChainer(driver, policy, chain.WithChainLinks(links), chain.WithClock(clk))
 	require.NoError(t, err)
 
 	pub, sub, closer := eventing.NewGoChannelPublisher()

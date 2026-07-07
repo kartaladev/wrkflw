@@ -12,6 +12,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/processtest"
 )
@@ -72,7 +73,7 @@ func TestReview_BusSignalUsesFakeClock(t *testing.T) {
 	def, err := definition.NewBuilder("sigtimer", 1).
 		Add(event.NewStart("start")).
 		Add(event.NewCatch("await", event.WithCatchSignal("go"))).
-		Add(event.NewCatch("wait", event.WithCatchTimer(`"1h"`))).
+		Add(event.NewCatch("wait", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").Connect("await", "wait").Connect("wait", "end").
 		Build()

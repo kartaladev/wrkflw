@@ -508,17 +508,16 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	}
 	// If the node carries a deadline, schedule the deadline timer and record the
 	// deadline on the HumanTask so callers can surface the due date.
-	if ut.DeadlineDuration != "" {
-		dur, err := c.eval.EvalDuration(ut.DeadlineDuration, c.s.Variables)
-		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: deadline node %q: %w", node.ID(), err)
-		}
-		fireAt := c.at.Add(dur)
+	deadlineSpec, err := ResolveTrigger(c.eval, ut.DeadlineTimer, c.s.Variables)
+	if err != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: deadline node %q: %w", node.ID(), err)
+	}
+	if !deadlineSpec.IsZero() {
 		deadlineTimerID := c.s.nextTimerID()
 		cmds = append(cmds, ScheduleTimer{
 			TimerID: deadlineTimerID,
 			Token:   tok.ID,
-			FireAt:  fireAt,
+			Trigger: deadlineSpec,
 			Kind:    TimerDeadline,
 		})
 		c.s.Timers = append(c.s.Timers, timerRecord{
@@ -529,21 +528,32 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			NodeID:    node.ID(),
 			ScopeID:   tok.ScopeID,
 		})
-		ht.DueAt = &fireAt
-	}
-	// If the node carries a reminder interval, schedule the first in-wait
-	// timer. Subsequent reminders are re-scheduled each time the timer fires
-	// (see handleReminderFired), so a single ScheduleTimer is enough here.
-	if ut.ReminderEvery != "" {
-		dur, err := c.eval.EvalDuration(ut.ReminderEvery, c.s.Variables)
-		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
+		// Surface the human-task due date ONLY when the resolved deadline reduces
+		// to a concrete one-shot: an absolute time is the due date directly, and a
+		// concrete delay makes it c.at + delay. Recurring/native forms have no
+		// single due instant, so DueAt stays nil (the scheduler owns their firing).
+		if at, ok := deadlineSpec.AbsTime(); ok {
+			due := at
+			ht.DueAt = &due
+		} else if d, ok := deadlineSpec.Duration(); ok {
+			due := c.at.Add(d)
+			ht.DueAt = &due
 		}
+	}
+	// If the node carries a reminder interval, arm a single recurring in-wait
+	// timer carrying the raw trigger (e.g. Every/EveryExpr). Recurrence is native
+	// to the scheduler: it re-fires on the interval on its own, so the engine arms
+	// once here and handleReminderFired only runs the reminder action per fire.
+	reminderSpec, err := ResolveTrigger(c.eval, ut.ReminderEvery, c.s.Variables)
+	if err != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
+	}
+	if !reminderSpec.IsZero() {
 		reminderTimerID := c.s.nextTimerID()
 		cmds = append(cmds, ScheduleTimer{
 			TimerID: reminderTimerID,
 			Token:   tok.ID,
-			FireAt:  c.at.Add(dur),
+			Trigger: reminderSpec,
 			Kind:    TimerInWait,
 		})
 		c.s.Timers = append(c.s.Timers, timerRecord{
@@ -579,16 +589,16 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		return nil, false, nil
 	}
 	var cmds []Command
-	if ice.TimerDuration != "" {
-		dur, err := c.eval.EvalDuration(ice.TimerDuration, c.s.Variables)
-		if err != nil {
-			return cmds, false, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID(), err)
-		}
+	timerSpec, err := ResolveTrigger(c.eval, ice.Timer, c.s.Variables)
+	if err != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID(), err)
+	}
+	if !timerSpec.IsZero() {
 		timerID := c.s.nextTimerID()
 		cmds = append(cmds, ScheduleTimer{
 			TimerID: timerID,
 			Token:   tok.ID,
-			FireAt:  c.at.Add(dur),
+			Trigger: timerSpec,
 			Kind:    TimerIntermediate,
 		})
 		tok.State = TokenWaitingCommand
@@ -761,16 +771,16 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 			CatchNode:    catchNodeRaw.ID(),
 			Flow:         f.ID,
 		}
-		if ce.TimerDuration != "" {
-			dur, err := c.eval.EvalDuration(ce.TimerDuration, c.s.Variables)
-			if err != nil {
-				return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID(), catchNodeRaw.ID(), err)
-			}
+		gwTimerSpec, err := ResolveTrigger(c.eval, ce.Timer, c.s.Variables)
+		if err != nil {
+			return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID(), catchNodeRaw.ID(), err)
+		}
+		if !gwTimerSpec.IsZero() {
 			timerID := c.s.nextTimerID()
 			cmds = append(cmds, ScheduleTimer{
 				TimerID: timerID,
 				Token:   tok.ID,
-				FireAt:  c.at.Add(dur),
+				Trigger: gwTimerSpec,
 				Kind:    TimerIntermediate,
 			})
 			ae.TimerID = timerID

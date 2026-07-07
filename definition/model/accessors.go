@@ -1,6 +1,9 @@
 package model
 
-import "github.com/zakyalvan/krtlwrkflw/action"
+import (
+	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+)
 
 // The kind-agnostic accessors below dispatch on the unexported carrier methods
 // of the shared embed types (ActivityFields, WaitFields, TaskAction) rather than
@@ -19,26 +22,30 @@ func RetryPolicyOf(n Node) *RetryPolicy {
 	return nil
 }
 
-// DeadlineOf returns the DeadlineDuration, DeadlineFlow, and DeadlineAction of a
-// Node that carries deadline fields (activities and IntermediateCatchEvent).
-// Returns ("", "", "") for nodes that do not carry deadline fields.
-func DeadlineOf(n Node) (duration, flow, action string) {
+// DeadlineOf returns the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow, and
+// DeadlineAction of a Node that carries deadline fields (activities and
+// IntermediateCatchEvent). Returns a zero TriggerSpec and empty strings for nodes
+// that do not carry deadline fields.
+func DeadlineOf(n Node) (schedule.TriggerSpec, string, string) {
 	if w, ok := n.(interface {
-		deadline() (string, string, string)
+		deadline() (schedule.TriggerSpec, string, string)
 	}); ok {
 		return w.deadline()
 	}
-	return "", "", ""
+	return schedule.TriggerSpec{}, "", ""
 }
 
-// ReminderOf returns the ReminderEvery and ReminderAction of a Node that carries
-// reminder fields (activities and IntermediateCatchEvent). Returns ("", "") for
-// nodes that do not carry reminder fields.
-func ReminderOf(n Node) (every, action string) {
-	if w, ok := n.(interface{ reminder() (string, string) }); ok {
+// ReminderOf returns the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// of a Node that carries reminder fields (activities and IntermediateCatchEvent).
+// Returns a zero TriggerSpec and an empty string for nodes that do not carry
+// reminder fields.
+func ReminderOf(n Node) (schedule.TriggerSpec, string) {
+	if w, ok := n.(interface {
+		reminder() (schedule.TriggerSpec, string)
+	}); ok {
 		return w.reminder()
 	}
-	return "", ""
+	return schedule.TriggerSpec{}, ""
 }
 
 // ActionOf returns the Action field of a node that has one (ServiceTask or

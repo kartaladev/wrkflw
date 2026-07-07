@@ -15,8 +15,8 @@
 // task to completion.
 //
 // The bus needs a DeliverFunc to push the resume trigger back into an instance,
-// and the runner needs the bus — a forward-reference (declare r, build bus with a
-// closure over r, then assign r) wires the cycle. After each run the runner
+// and the runner needs the bus — a forward-reference (declare driver, build bus with a
+// closure over driver, then assign driver) wires the cycle. After each run the runner
 // auto-subscribes parked catchers to the bus, so no manual Subscribe is needed.
 //
 // This is a reference wiring example — not a shipped binary.
@@ -68,17 +68,17 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	// Forward-reference wiring: the bus delivers resume triggers via r.Deliver,
-	// and r is constructed with the bus. Declare r first, close over it, assign later.
-	var r *runtime.ProcessDriver
+	// Forward-reference wiring: the bus delivers resume triggers via driver.Deliver,
+	// and driver is constructed with the bus. Declare driver first, close over it, assign later.
+	var driver *runtime.ProcessDriver
 	bus, err := signal.NewSignalBus(func(ctx context.Context, instanceID string, trg engine.Trigger) error {
-		_, derr := r.Deliver(ctx, def, instanceID, trg)
+		_, derr := driver.Deliver(ctx, def, instanceID, trg)
 		return derr
 	})
 	if err != nil {
 		log.Fatal("signal bus:", err)
 	}
-	r, err = runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithSignalBus(bus))
+	driver, err = runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithSignalBus(bus))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -88,7 +88,7 @@ func main() {
 	// Three desks start and park on the "market-open" catch event.
 	desks := []string{"desk-A", "desk-B", "desk-C"}
 	for _, d := range desks {
-		st, err := r.Run(ctx, def, d, map[string]any{"desk": d})
+		st, err := driver.Drive(ctx, def, d, map[string]any{"desk": d})
 		if err != nil {
 			log.Fatal("run:", err)
 		}

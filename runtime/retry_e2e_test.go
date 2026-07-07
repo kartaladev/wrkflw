@@ -16,9 +16,9 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // retryE2EDef returns a process with one service-task node "task" (action "a")
@@ -59,7 +59,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 
 	T := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(T)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 
 	// runtimetest.FixedJitter{F: 1.0}: Fraction() always returns 1.0, so FireAt = clk.Now() + 1.0×Backoff(attempt).
 	// Attempt 0: Backoff(0) = InitialInterval×BackoffCoef^0 = 1s×1 = 1s → FireAt = T+1s.
@@ -80,7 +80,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	})
 
 	store := runtimetest.MustMemStore(t)
-	runner := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(jitter),
@@ -90,7 +90,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	const instanceID = "p"
 
 	// --- Step 1: Run → attempt 1 fails → parks on retry timer at T+1s ---
-	st, err := runner.Run(ctx, def, instanceID, nil)
+	st, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err, "Run must not return a hard error")
 	assert.Equal(t, engine.StatusRunning, st.Status,
 		"instance must be parked (StatusRunning) after first failure — retry timer scheduled")

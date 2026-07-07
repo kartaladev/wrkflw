@@ -5,6 +5,7 @@
 package gocron
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"sync"
@@ -16,8 +17,16 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 )
+
+// defaultTimeSkew is the out-of-the-box tolerance for the past-due one-shot
+// path. A timer whose fire time is up to 5 minutes in the past fires
+// immediately and silently (expected clock skew or brief downtime). If the
+// lateness exceeds this value a WARN is logged — the timer still fires
+// (never-drop invariant). Override with [WithTimeSkew].
+const defaultTimeSkew = 5 * time.Minute
 
 // GocronScheduler is a production kernel.Scheduler backed by gocron v2. It
 // shares the engine's clockwork time source so one fake-clock advance drives
@@ -25,6 +34,11 @@ import (
 type GocronScheduler struct {
 	sched gocron.Scheduler
 	clk   clockwork.Clock
+
+	// timeSkew is the maximum lateness that is accepted silently for a
+	// past-due one-shot timer. Lateness beyond this threshold emits a WARN
+	// (the timer still fires — no timer is ever dropped).
+	timeSkew time.Duration
 
 	// staged telemetry option values; assembled into tel after all Options
 	// have been applied in NewGocronScheduler.
@@ -86,8 +100,8 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 
 // WithLocker configures a distributed locker so that, across replicas, only one
 // instance runs each timer's fire callback. The lock key is the timerID. A nil
-// value is ignored. Pair with a Postgres-backed locker (NewPostgresLocker) for
-// multi-replica deployments.
+// value is ignored. Pair with the persistence advisory-lock bridge (see
+// persistence.NewSchedulerLocker) for multi-replica deployments.
 func WithLocker(l gocron.Locker) Option {
 	return func(s *GocronScheduler) {
 		if l != nil {
@@ -99,8 +113,9 @@ func WithLocker(l gocron.Locker) Option {
 // WithElector configures a distributed elector so that, across replicas, only the
 // elected leader runs timer fires (single-leader mode). It is the mutually-
 // exclusive alternative to WithLocker (setting both errors at construction — see
-// ErrLockerElectorConflict). A nil value is ignored. Pair with a Postgres-backed
-// elector (NewPostgresElector) for multi-replica deployments.
+// ErrLockerElectorConflict). A nil value is ignored. Pair with a database-backed
+// leader elector (see scheduling/backend/{postgres,mysql}) for multi-replica
+// deployments.
 func WithElector(e gocron.Elector) Option {
 	return func(s *GocronScheduler) {
 		if e != nil {
@@ -121,6 +136,24 @@ func WithClock(clk clockwork.Clock) Option {
 	}
 }
 
+// WithTimeSkew sets the maximum past-due lateness that is accepted silently
+// for a one-shot timer whose absolute fire time has already elapsed at
+// schedule time (e.g. after a restart or DB↔process clock skew).
+//
+// Behaviour:
+//   - Lateness ≤ d  → fire immediately, no log output.
+//   - Lateness >  d → fire immediately (the timer is NEVER dropped) and emit
+//     a WARN via the configured logger with timer_id, fire_time, and lateness.
+//
+// Default when this option is omitted: [defaultTimeSkew] (5 minutes).
+// Pass 0 to warn on any past-due timer, however small.
+// Pass a very large value (e.g. math.MaxInt64) to silence the warning entirely.
+func WithTimeSkew(d time.Duration) Option {
+	return func(s *GocronScheduler) {
+		s.timeSkew = d
+	}
+}
+
 // filterNilOpts returns only the non-nil observability.Option values from opts.
 func filterNilOpts(opts ...observability.Option) []observability.Option {
 	out := opts[:0]
@@ -138,7 +171,8 @@ func filterNilOpts(opts ...observability.Option) []observability.Option {
 // leaking gocron's executor goroutine.
 func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	s := &GocronScheduler{
-		jobs: make(map[string]uuid.UUID),
+		jobs:     make(map[string]uuid.UUID),
+		timeSkew: defaultTimeSkew, // sentinel: options override this below
 	}
 	// Apply options first so locker, elector, clock (and telemetry) are known
 	// before the gocron scheduler is constructed.
@@ -178,12 +212,13 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	return s, nil
 }
 
-// Schedule registers a one-time timer that calls fire at or after fireAt. If a
-// timer with the same timerID already exists it is replaced. Best-effort: a
-// gocron job-creation error is logged and the timer is not armed.
+// Schedule registers a timer according to trig that calls fire each time it
+// fires. If a timer with the same timerID already exists it is replaced.
+// Returns the authoritative next scheduled run time from gocron (the first
+// fire for recurring triggers). A zero time is returned only on error.
 //
-// If fireAt is not in the future per the clock, the timer fires immediately.
-func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()) {
+// ctx is reserved for future cancellation propagation and is currently unused.
+func (s *GocronScheduler) Schedule(_ context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -192,39 +227,59 @@ func (s *GocronScheduler) Schedule(timerID string, fireAt time.Time, fire func()
 		delete(s.jobs, timerID)
 	}
 
-	var timing gocron.OneTimeJobStartAtOption
-	if fireAt.After(s.clk.Now()) {
-		timing = gocron.OneTimeJobStartDateTime(fireAt)
-	} else {
-		// fireAt is in the past or exactly now; fire immediately.
-		timing = gocron.OneTimeJobStartImmediately()
+	now := s.clk.Now()
+	def, oneShot, err := jobDefinition(trig, now)
+	if err != nil {
+		return time.Time{}, err
 	}
 
-	job, err := s.sched.NewJob(
-		gocron.OneTimeJob(timing),
-		gocron.NewTask(fire),
-		// The job name is the distributed-lock key: with a locker configured, only
-		// one replica obtains pg lock(timerID) and runs the fire. Harmless without a
-		// locker. Two distinct armings of the same timerID still replace via the
-		// jobs map above, so the name need not be globally unique here.
+	// Past-due skew check: only applies to one-shot triggers with an absolute
+	// fire time that has already elapsed (the branch that resolves to
+	// OneTimeJobStartImmediately). Timers are NEVER dropped — within tolerance
+	// they fire silently; beyond tolerance they still fire and a WARN is logged.
+	if oneShot {
+		if at, ok := trig.AbsTime(); ok && !at.After(now) {
+			lateness := now.Sub(at)
+			if lateness > s.timeSkew {
+				s.tel.Logger.Warn("workflow-scheduler: past-due timer exceeds time-skew tolerance; firing immediately",
+					"timer_id", timerID,
+					"fire_time", at,
+					"lateness", lateness,
+				)
+			}
+		}
+	}
+
+	opts := []gocron.JobOption{
 		gocron.WithName(timerID),
 		gocron.WithEventListeners(gocron.AfterJobRuns(func(jobID uuid.UUID, _ string) {
 			s.mu.Lock()
-			if cur, ok := s.jobs[timerID]; ok && cur == jobID {
-				delete(s.jobs, timerID)
+			if oneShot {
+				// One-shots remove themselves from the tracking map after firing.
+				if cur, ok := s.jobs[timerID]; ok && cur == jobID {
+					delete(s.jobs, timerID)
+				}
 			}
 			s.mu.Unlock()
 		})),
-	)
+	}
+	if oneShot {
+		opts = append(opts, gocron.WithLimitedRuns(1))
+	}
+
+	job, err := s.sched.NewJob(def, gocron.NewTask(fire), opts...)
 	if err != nil {
-		s.tel.Logger.Error("gocron: schedule timer failed", "timerID", timerID, "error", err)
-		return
+		return time.Time{}, err
 	}
 	s.jobs[timerID] = job.ID()
+	next, _ := job.NextRun()
+	return next, nil
 }
 
 // Cancel removes a pending timer. No-op if the timer is unknown or already fired.
-func (s *GocronScheduler) Cancel(timerID string) {
+//
+// ctx is reserved for future cancellation propagation and is currently unused.
+func (s *GocronScheduler) Cancel(_ context.Context, timerID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -236,6 +291,29 @@ func (s *GocronScheduler) Cancel(timerID string) {
 	if err := s.sched.RemoveJob(id); err != nil && !errors.Is(err, gocron.ErrJobNotFound) {
 		s.tel.Logger.Error("gocron: cancel timer failed", "timerID", timerID, "error", err)
 	}
+}
+
+// NextRun returns the next scheduled fire time of the timer identified by
+// timerID. Returns (time.Time{}, false) if the timer is unknown, has already
+// fired (one-shot disarmed), or has been cancelled.
+func (s *GocronScheduler) NextRun(timerID string) (time.Time, bool) {
+	s.mu.Lock()
+	id, ok := s.jobs[timerID]
+	s.mu.Unlock()
+	if !ok {
+		return time.Time{}, false
+	}
+
+	for _, job := range s.sched.Jobs() {
+		if job.ID() == id {
+			next, err := job.NextRun()
+			if err != nil || next.IsZero() {
+				return time.Time{}, false
+			}
+			return next, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // Close shuts gocron down gracefully. The scheduler cannot be reused afterward.

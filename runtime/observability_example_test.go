@@ -65,7 +65,7 @@ func ExampleProcessDriver_observability() {
 	if err != nil {
 		panic(err)
 	}
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(mem),
 		runtime.WithTracerProvider(tp),
@@ -76,6 +76,8 @@ func ExampleProcessDriver_observability() {
 		panic(err)
 	}
 
-	_, _ = r.Run(context.Background(), def, "demo-1", map[string]any{})
+	defer func() { _ = driver.Shutdown(context.Background()) }()
+
+	_, _ = driver.Drive(context.Background(), def, "demo-1", map[string]any{})
 	// Output:
 }

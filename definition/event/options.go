@@ -1,5 +1,7 @@
 package event
 
+import "github.com/zakyalvan/krtlwrkflw/definition/schedule"
+
 // --- option interfaces ---
 
 // StartOption configures a StartEvent.
@@ -56,9 +58,10 @@ func WithStartMessage(msg, key string) StartOption {
 	return startFuncOpt{func(n *StartEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
-// WithStartTimer sets TimerDuration on a StartEvent.
-func WithStartTimer(dur string) StartOption {
-	return startFuncOpt{func(n *StartEvent) { n.TimerDuration = dur }}
+// WithStartTimer sets the Timer trigger on a StartEvent. Use schedule.AfterExpr,
+// schedule.AfterDuration, schedule.Cron, etc. to build the TriggerSpec.
+func WithStartTimer(t schedule.TriggerSpec) StartOption {
+	return startFuncOpt{func(n *StartEvent) { n.Timer = t }}
 }
 
 // --- IntermediateCatchEvent options (renamed from the WithICE*/WithTimerDuration family) ---
@@ -67,9 +70,11 @@ type catchFuncOpt struct{ fn func(*IntermediateCatchEvent) }
 
 func (o catchFuncOpt) applyCatch(n *IntermediateCatchEvent) { o.fn(n) }
 
-// WithCatchTimer sets the timer trigger duration (was WithTimerDuration).
-func WithCatchTimer(dur string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.TimerDuration = dur }}
+// WithCatchTimer sets the Timer trigger on an IntermediateCatchEvent. Use
+// schedule.AfterExpr, schedule.AfterDuration, schedule.Cron, etc. to build
+// the TriggerSpec.
+func WithCatchTimer(t schedule.TriggerSpec) CatchOption {
+	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.Timer = t }}
 }
 
 // WithCatchSignal sets the signal reference (was WithSignalName).
@@ -82,16 +87,20 @@ func WithCatchMessage(msg, key string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
-// WithCatchDeadline sets DeadlineDuration/DeadlineFlow/DeadlineAction (was WithICEDeadline).
-func WithCatchDeadline(duration, flowID, action string) CatchOption {
+// WithCatchDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow,
+// and DeadlineAction on an IntermediateCatchEvent. Use schedule.AfterDuration,
+// schedule.AfterExpr, or any other TriggerSpec constructor.
+func WithCatchDeadline(t schedule.TriggerSpec, flowID, action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) {
-		n.DeadlineDuration, n.DeadlineFlow, n.DeadlineAction = duration, flowID, action
+		n.DeadlineTimer, n.DeadlineFlow, n.DeadlineAction = t, flowID, action
 	}}
 }
 
-// WithCatchReminder sets ReminderEvery/ReminderAction (was WithICEReminder).
-func WithCatchReminder(every, action string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = every, action }}
+// WithCatchReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// on an IntermediateCatchEvent. Use schedule.Every, schedule.EveryExpr, or any
+// other recurring TriggerSpec constructor.
+func WithCatchReminder(t schedule.TriggerSpec, action string) CatchOption {
+	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = t, action }}
 }
 
 // --- IntermediateThrowEvent options ---
@@ -127,9 +136,11 @@ func WithBoundaryMessage(msg, key string) BoundaryOption {
 	return boundaryFuncOpt{func(n *BoundaryEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
-// WithBoundaryTimer sets TimerDuration on a BoundaryEvent.
-func WithBoundaryTimer(dur string) BoundaryOption {
-	return boundaryFuncOpt{func(n *BoundaryEvent) { n.TimerDuration = dur }}
+// WithBoundaryTimer sets the Timer trigger on a BoundaryEvent. Use
+// schedule.AfterDuration, schedule.AfterExpr, schedule.Cron, etc. to build
+// the TriggerSpec.
+func WithBoundaryTimer(t schedule.TriggerSpec) BoundaryOption {
+	return boundaryFuncOpt{func(n *BoundaryEvent) { n.Timer = t }}
 }
 
 // WithBoundaryErrorCode sets ErrorCode on a BoundaryEvent (empty = catch-all).

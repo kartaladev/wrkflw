@@ -15,9 +15,11 @@ import (
 // Definition-scan order is deterministic (Nodes slice order); boundary arms are
 // appended in the same order so s.Boundaries is deterministic.
 //
-// A bad TimerDuration expression is returned as a wrapped error — consistent with
+// A bad Timer trigger expression is returned as a wrapped error — consistent with
 // the intermediate-timer and deadline paths — so callers can fail fast rather than
-// silently no-arming the boundary.
+// silently no-arming the boundary. The resolved trigger (including native
+// recurring/calendar forms) is emitted verbatim on the ScheduleTimer command; the
+// scheduler owns the firing math and any native recurrence.
 func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, hostNode string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
@@ -40,17 +42,17 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 			NonInterrupting: n.NonInterrupting,
 		}
 
-		if n.TimerDuration != "" {
-			dur, err := eval.EvalDuration(n.TimerDuration, s.Variables)
-			if err != nil {
-				return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
-			}
+		timerSpec, err := ResolveTrigger(eval, n.Timer, s.Variables)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-engine: boundary %q on %q: %w", n.ID(), hostNode, err)
+		}
+		if !timerSpec.IsZero() {
 			timerID := s.nextTimerID()
 			arm.TimerID = timerID
 			cmds = append(cmds, ScheduleTimer{
 				TimerID: timerID,
 				Token:   hostTokenID,
-				FireAt:  at.Add(dur),
+				Trigger: timerSpec,
 				Kind:    TimerIntermediate,
 			})
 		} else if n.SignalName != "" {

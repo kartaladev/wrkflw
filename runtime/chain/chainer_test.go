@@ -31,7 +31,7 @@ type recordingStarter struct {
 	state engine.InstanceState
 }
 
-func (s *recordingStarter) Run(_ context.Context, def *model.ProcessDefinition, id string, vars map[string]any) (engine.InstanceState, error) {
+func (s *recordingStarter) Drive(_ context.Context, def *model.ProcessDefinition, id string, vars map[string]any) (engine.InstanceState, error) {
 	s.calls = append(s.calls, startCall{def: def, id: id, vars: vars})
 	return s.state, s.err
 }

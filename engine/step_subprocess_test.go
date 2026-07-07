@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -508,7 +509,7 @@ func timerEventSubProcessDef() *model.ProcessDefinition {
 	evtsubInner := &model.ProcessDefinition{
 		ID: "evtsub-timer-inner", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("evtsub-start", event.WithStartTimer(`"1h"`)),
+			event.NewStart("evtsub-start", event.WithStartTimer(schedule.AfterExpr(`"1h"`))),
 			activity.NewServiceTask("evtsub-svc", activity.WithActionName("timeout-action")),
 			event.NewEnd("evtsub-end"),
 		},
@@ -653,7 +654,7 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(`"2h"`)),
+			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"2h"`))),
 			event.NewCatch("signal-catch", event.WithCatchSignal("done")),
 			event.NewEnd("normal-end"),
 			event.NewEventSubProcess("evtsub", evtsubInner),
@@ -1028,7 +1029,7 @@ func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("p-start"),
 			gateway.NewParallel("p-fork"),
-			activity.NewUserTask("p-user", nil, activity.WithDeadline(`"1h"`, "", "")),
+			activity.NewUserTask("p-user", nil, activity.WithDeadline(schedule.AfterExpr(`"1h"`), "", "")),
 			activity.NewCallActivity("p-call", model.Latest("child")),
 			gateway.NewParallel("p-join"),
 			event.NewEnd("p-end"),
@@ -1204,7 +1205,7 @@ func boundaryTimerInsideSubProcessDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
-			event.NewBoundary("bnd-timer", "inner-svc", event.WithBoundaryTimer(`"2h"`)),
+			event.NewBoundary("bnd-timer", "inner-svc", event.WithBoundaryTimer(schedule.AfterExpr(`"2h"`))),
 			activity.NewServiceTask("bnd-target", activity.WithActionName("escalate-action")),
 			event.NewEnd("inner-end"),
 			event.NewEnd("bnd-end"),
@@ -1344,7 +1345,7 @@ func eventBasedGatewayInsideSubProcessDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewCatch("signal-catch", event.WithCatchSignal("approved")),
 			activity.NewServiceTask("svc-timer", activity.WithActionName("timer-action")),
 			activity.NewServiceTask("svc-signal", activity.WithActionName("signal-action")),
@@ -1616,7 +1617,7 @@ func deadlineUserTaskInsideSubProcessDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewUserTask("inner-user", []string{"reviewer"},
-				activity.WithDeadline(`"30m"`, "inner-escalate", "notify-action")),
+				activity.WithDeadline(schedule.AfterExpr(`"30m"`), "inner-escalate", "notify-action")),
 			event.NewEnd("inner-end"),
 			event.NewEnd("escalate-node"),
 		},

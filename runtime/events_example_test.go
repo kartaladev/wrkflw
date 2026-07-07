@@ -14,10 +14,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
 
@@ -50,7 +51,7 @@ func eventGatewayDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("gw"),
-			event.NewCatch("timer-arm", event.WithCatchTimer(`"1h"`)),
+			event.NewCatch("timer-arm", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewCatch("signal-arm", event.WithCatchSignal("approved")),
 			event.NewEnd("timer-end"),
 			event.NewEnd("signal-end"),
@@ -80,20 +81,20 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	// Use a forward-reference (pointer-forward) pattern so the same runner (with
 	// its signal bus) handles deliveries. This ensures subscriptions/msgWaiters
 	// are always in sync — not a separate ephemeral runner.
-	var r *runtime.ProcessDriver
+	var driver *runtime.ProcessDriver
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := r.Deliver(bCtx, def, instanceID, trg)
+		_, err := driver.Deliver(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
 
-	r = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
+	driver = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
-	parked1, err := r.Run(ctx, def, "inst-1", nil)
+	parked1, err := driver.Drive(ctx, def, "inst-1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked1.Status, "inst-1 must park")
 
-	parked2, err := r.Run(ctx, def, "inst-2", nil)
+	parked2, err := driver.Drive(ctx, def, "inst-2", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked2.Status, "inst-2 must park")
 
@@ -135,10 +136,10 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t), runtime.WithClock(clockwork.NewFakeClock()))
+	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t), runtime.WithClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
-	_, err := r.Run(t.Context(), def, "i1", nil)
+	_, err := driver.Drive(t.Context(), def, "i1", nil)
 	require.Error(t, err, "Run must fail with a descriptive error when no SignalBus is configured")
 	assert.Contains(t, err.Error(), "SignalBus", "error must mention the missing SignalBus")
 }
@@ -152,25 +153,25 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtimetest.MustMemStore(t)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
-	// bus is wired with a deliver that uses r.Deliver; we break the circular
+	// bus is wired with a deliver that uses driver.Deliver; we break the circular
 	// dependency with a forward reference via a pointer.
-	var r *runtime.ProcessDriver
+	var driver *runtime.ProcessDriver
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := r.Deliver(bCtx, def, instanceID, trg)
+		_, err := driver.Deliver(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
 
-	r = runtimetest.MustRunner(t, nil, store,
+	driver = runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
 
 	const instanceID = "gw-timer-1"
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 
@@ -198,23 +199,23 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtimetest.MustMemStore(t)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
-	var r *runtime.ProcessDriver
+	var driver *runtime.ProcessDriver
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := r.Deliver(bCtx, def, instanceID, trg)
+		_, err := driver.Deliver(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
 
-	r = runtimetest.MustRunner(t, nil, store,
+	driver = runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
 	)
 
 	const instanceID = "gw-signal-1"
-	parked, err := r.Run(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 
@@ -249,17 +250,17 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	def := messageCatchDef("order-shipped")
 
-	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
+	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
 
 	// Start two instances with different orderId values.
-	_, err := r.Run(ctx, def, "order-100", map[string]any{"orderId": "100"})
+	_, err := driver.Drive(ctx, def, "order-100", map[string]any{"orderId": "100"})
 	require.NoError(t, err)
 
-	_, err = r.Run(ctx, def, "order-200", map[string]any{"orderId": "200"})
+	_, err = driver.Drive(ctx, def, "order-200", map[string]any{"orderId": "200"})
 	require.NoError(t, err)
 
 	// Deliver message targeting orderId=100.
-	err = r.DeliverMessage(ctx, def, "order-shipped", "100", map[string]any{"shipped": true})
+	err = driver.DeliverMessage(ctx, def, "order-shipped", "100", map[string]any{"shipped": true})
 	require.NoError(t, err)
 
 	// order-100 must complete; order-200 must still be running.

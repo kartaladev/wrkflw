@@ -218,8 +218,9 @@ func TestMySQLUpsertClauses(t *testing.T) {
 			name: "UpsertTimer matches real MySQL store",
 			assert: func(t *testing.T) {
 				t.Helper()
-				want := "\n\t\t\tON DUPLICATE KEY UPDATE fire_at=VALUES(fire_at), kind=VALUES(kind)," +
-					"\n\t\t\t                        def_id=VALUES(def_id), def_version=VALUES(def_version)"
+				want := "\n\t\t\tON DUPLICATE KEY UPDATE next_run=VALUES(next_run), kind=VALUES(kind)," +
+					"\n\t\t\t                        def_id=VALUES(def_id), def_version=VALUES(def_version)," +
+					"\n\t\t\t                        trigger_kind=VALUES(trigger_kind), trigger_payload=VALUES(trigger_payload)"
 				assert.Equal(t, want, d.UpsertTimer())
 			},
 		},

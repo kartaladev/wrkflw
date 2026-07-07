@@ -159,7 +159,7 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -168,7 +168,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	svc, err := service.NewEngine(
-		service.WithProcessDriver(runner),
+		service.WithProcessDriver(driver),
 		service.WithInstanceStore(store),
 		service.WithDefinitions(reg),
 		service.WithLister(lister),

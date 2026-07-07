@@ -253,7 +253,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 				DefID:      "def-a",
 				DefVersion: 1,
 				TimerID:    "t1",
-				FireAt:     fireAt,
+				NextRun:    fireAt,
 			},
 		}, nil)
 

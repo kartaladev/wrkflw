@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -109,7 +110,7 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 	cases := []testCase{
 		{
 			name:     "timer boundary",
-			boundary: event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(`"60s"`)),
+			boundary: event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(schedule.AfterExpr(`"60s"`))),
 			fire: func(r1 engine.StepResult) engine.Trigger {
 				for _, c := range r1.Commands {
 					if st, ok := c.(engine.ScheduleTimer); ok {
@@ -153,7 +154,7 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 // boundary is disarmed (CancelTimer emitted, no leftover arm).
 func TestReceiveTaskMessageResumeDisarmsBoundary(t *testing.T) {
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
-	def := receiveTaskBoundaryDef(event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(`"60s"`)))
+	def := receiveTaskBoundaryDef(event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(schedule.AfterExpr(`"60s"`))))
 
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})

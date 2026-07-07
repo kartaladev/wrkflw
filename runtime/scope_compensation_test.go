@@ -102,7 +102,7 @@ func TestCompensationThrowRunsSubProcessCompensationE2E(t *testing.T) {
 
 	// Run drives: start → sub (book) → sub exits (archived) → compThrow fires
 	// (cancel-book) → resumes → end. All synchronous via deliverLoop.
-	st, err := r.Run(t.Context(), def, instanceID, nil)
+	st, err := r.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 
 	// Instance must have reached a terminal COMPLETED state.

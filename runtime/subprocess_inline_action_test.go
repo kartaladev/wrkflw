@@ -74,7 +74,7 @@ func TestInlineActionInsideSubProcessRunsE2E(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc))
 
-	st, err := r.Run(t.Context(), def, "inline-sub-i1", nil)
+	st, err := r.Drive(t.Context(), def, "inline-sub-i1", nil)
 	require.NoError(t, err)
 
 	assert.True(t, ran.Load(),

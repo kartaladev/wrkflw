@@ -86,12 +86,12 @@ flows:
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
 
-	state, err := r.Run(ctx, simpleDef, "order-001", map[string]any{"amount": 99.0})
+	state, err := driver.Drive(ctx, simpleDef, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {
 		log.Fatal(err)
 	}

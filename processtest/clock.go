@@ -9,7 +9,7 @@ import (
 
 // FakeClock is a manually-advanced [clock.Clock] for deterministic tests. It
 // holds a single instant that only changes when the test calls [FakeClock.Advance]
-// or [FakeClock.Set], so timers driven by a [kernel.MemScheduler] fire exactly
+// or [FakeClock.Set], so timers driven by a [MemScheduler] fire exactly
 // when the test decides.
 //
 // A [Harness] shares one FakeClock between its driver and scheduler; construct a

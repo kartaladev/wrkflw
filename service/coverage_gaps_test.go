@@ -99,8 +99,8 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 				def := linearDef()
 				h := newHarness(t, def)
 
-				// Start the instance via the runner directly so it lands in the store.
-				st, err := h.runner.Run(t.Context(), def, "gwid-nodef-1", map[string]any{"name": "x"})
+				// Start the instance via the driver directly so it lands in the store.
+				st, err := h.driver.Drive(t.Context(), def, "gwid-nodef-1", map[string]any{"name": "x"})
 				require.NoError(t, err)
 				require.Equal(t, engine.StatusCompleted, st.Status)
 
@@ -108,7 +108,7 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 				// be resolved. GetInstance must NOT error — it returns a nil def.
 				emptyReg := kernel.NewMapDefinitionRegistry()
 				svc, err := service.NewEngine(
-					service.WithProcessDriver(h.runner),
+					service.WithProcessDriver(h.driver),
 					service.WithInstanceStore(h.store),
 					service.WithDefinitions(emptyReg),
 					service.WithLister(h.lister),
@@ -140,12 +140,12 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 
 // ---- Error-branch coverage for StartInstance ----
 
-// TestStartInstanceRunnerError covers the runner.Run error branch (line 163 in
+// TestStartInstanceRunnerError covers the driver.Drive error branch (line 163 in
 // service.go) which remains at 0% because the existing happy-path and
 // unknown-defref tests never reach it.
 //
-// To make runner.Run fail we provide a definition whose only node is a service
-// task wired to an action that returns a terminal error. The runner exhausts
+// To make driver.Drive fail we provide a definition whose only node is a service
+// task wired to an action that returns a terminal error. The driver exhausts
 // retries (MaxAttempts=1) and the instance parks with an incident, but Run
 // itself succeeds. Instead, we provoke a genuine Run error by passing a
 // definition with a malformed graph: a node whose outgoing flow points to a
@@ -166,7 +166,7 @@ func TestStartInstanceRunnerError(t *testing.T) {
 		{
 			// A definition with no nodes causes the engine to fail with an error
 			// (no start event → cannot bootstrap token). This exercises the
-			// runner.Run error branch in StartInstance.
+			// driver.Drive error branch in StartInstance.
 			name: "runner error propagates from StartInstance",
 			def: func() *model.ProcessDefinition {
 				return &model.ProcessDefinition{
@@ -279,7 +279,7 @@ func TestListInstancesListerError(t *testing.T) {
 
 			// Override the lister with one that always fails.
 			svc, err := service.NewEngine(
-				service.WithProcessDriver(h.runner),
+				service.WithProcessDriver(h.driver),
 				service.WithInstanceStore(h.store),
 				service.WithDefinitions(h.reg),
 				service.WithLister(&errLister{err: sentinel}),
@@ -334,7 +334,7 @@ func TestClaimTaskAuthorizationFailure(t *testing.T) {
 			h := newHarness(t, def)
 
 			// Start the instance — parks at the user task.
-			parked, err := h.runner.Run(t.Context(), def, "claim-auth-fail-1", nil)
+			parked, err := h.driver.Drive(t.Context(), def, "claim-auth-fail-1", nil)
 			require.NoError(t, err)
 			require.Equal(t, engine.StatusRunning, parked.Status)
 			require.Len(t, parked.Tokens, 1)

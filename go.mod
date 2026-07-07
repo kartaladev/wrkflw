@@ -32,6 +32,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.21.0
+	golang.org/x/tools v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.53.0
 )
@@ -137,6 +138,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect

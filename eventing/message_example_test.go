@@ -10,13 +10,13 @@ import (
 
 // ExampleNewMessageHandler shows wiring a message.* subscription to intra-engine delivery.
 func ExampleNewMessageHandler() {
-	// Given a runner and the receiver definition (the process that has a ReceiveTask):
-	var runner *runtime.ProcessDriver
+	// Given a driver and the receiver definition (the process that has a ReceiveTask):
+	var driver *runtime.ProcessDriver
 	var receiverDef *model.ProcessDefinition
 
 	handler := eventing.NewMessageHandler(func(ctx context.Context, name, key string, payload map[string]any) error {
 		// Route intra-engine: wake the instance parked on (name, key) in receiverDef.
-		return runner.DeliverMessage(ctx, receiverDef, name, key, payload)
+		return driver.DeliverMessage(ctx, receiverDef, name, key, payload)
 	})
 
 	// Mount handler on your message.Router for the "message.<Name>" topics you consume,

@@ -14,7 +14,7 @@
 // # Harness
 //
 // [New] wires the whole in-memory stack ([kernel.MemInstanceStore], a [FakeClock], a
-// [kernel.MemScheduler], a [SpyCatalog], a [SpyAuthorizer], an in-memory
+// [MemScheduler], a [SpyCatalog], a [SpyAuthorizer], an in-memory
 // human-task store and [task.TaskService], and optionally a [signal.SignalBus]).
 // [Harness.Start] runs an instance; [Harness.DriveToCompletion] drives it using a
 // [ParkHandler]. Accessors ([Harness.Catalog], [Harness.Authorizer],

@@ -10,6 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -18,7 +19,7 @@ import (
 func TestMemTimerStore(t *testing.T) {
 	base := time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC)
 	mk := func(id string, at time.Time) kernel.ArmedTimer {
-		return kernel.ArmedTimer{InstanceID: "i1", DefID: "d", DefVersion: 1, TimerID: id, FireAt: at, Kind: engine.TimerIntermediate}
+		return kernel.ArmedTimer{InstanceID: "i1", DefID: "d", DefVersion: 1, TimerID: id, NextRun: at, Kind: engine.TimerIntermediate}
 	}
 	cases := []struct {
 		name   string
@@ -33,11 +34,11 @@ func TestMemTimerStore(t *testing.T) {
 				require.NoError(t, err)
 				require.Len(t, got, 1)
 				assert.Equal(t, "t1", got[0].TimerID)
-				assert.Equal(t, base, got[0].FireAt)
+				assert.Equal(t, base, got[0].NextRun)
 			},
 		},
 		{
-			name: "re-arm same id upserts FireAt (no duplicate)",
+			name: "re-arm same id upserts NextRun (no duplicate)",
 			assert: func(t *testing.T) {
 				s := kernel.NewMemTimerStore()
 				s.Arm(mk("t1", base))
@@ -45,7 +46,7 @@ func TestMemTimerStore(t *testing.T) {
 				got, err := s.ListArmed(t.Context())
 				require.NoError(t, err)
 				require.Len(t, got, 1)
-				assert.Equal(t, base.Add(time.Hour), got[0].FireAt)
+				assert.Equal(t, base.Add(time.Hour), got[0].NextRun)
 			},
 		},
 		{
@@ -86,7 +87,7 @@ func TestMemStoreRecordsTimerOps(t *testing.T) {
 		State:   st,
 		Trigger: engine.NewStartInstance(at, nil),
 		TimerArms: []kernel.ArmedTimer{{
-			InstanceID: "i1", DefID: "d", DefVersion: 1, TimerID: "t1", FireAt: at.Add(time.Hour), Kind: engine.TimerIntermediate,
+			InstanceID: "i1", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: at.Add(time.Hour), Kind: engine.TimerIntermediate,
 		}},
 	})
 	require.NoError(t, err)
@@ -111,13 +112,13 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := kernel.NewMemTimerStore()
 	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 
 	def := runtimetest.TimerIntermediateDef() // reuse the helper in runtime/timer_example_test.go (1h intermediate timer)
-	_, err := r.Run(t.Context(), def, "tr-1", nil)
+	_, err := r.Drive(t.Context(), def, "tr-1", nil)
 	require.NoError(t, err)
 
 	// Armed after Run parks on the timer.

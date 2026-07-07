@@ -192,7 +192,7 @@ func TestPruner(t *testing.T) {
 			ctx := t.Context()
 
 			prunerExec(t, ctx, b, s,
-				`INSERT INTO wrkflw_timers (instance_id, timer_id, fire_at, kind, def_id, def_version)
+				`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version)
 				 VALUES
 				   ('inst-tmr-old',    'tmr-old',    ?, 1, 'def-tmr', 1),
 				   ('inst-tmr-recent', 'tmr-recent', ?, 1, 'def-tmr', 1)`,

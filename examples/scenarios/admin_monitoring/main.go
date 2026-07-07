@@ -137,14 +137,14 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.InstanceSto
 		}),
 	})
 
-	runner, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}
 
 	ids := []string{"greet-001", "greet-002", "greet-003"}
 	for _, id := range ids {
-		st, err := runner.Run(ctx, def, id, nil)
+		st, err := driver.Drive(ctx, def, id, nil)
 		if err != nil {
 			return fmt.Errorf("run %s: %w", id, err)
 		}
@@ -222,7 +222,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 
 	// MaxAttempts=1: the first failure exhausts the retry budget immediately and
 	// raises an incident (no backoff retry loop).
-	runner, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -236,7 +236,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 	}
 
 	instanceID := "incident-inst-001"
-	parked, err := runner.Run(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
@@ -254,7 +254,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 	// ResolveIncident delivers a ResolveIncident trigger → the engine clears the
 	// incident record, resets the retry budget by addAttempts, and re-invokes the
 	// action. The second call to "risky" succeeds → instance reaches end → Completed.
-	resolved, err := runner.ResolveIncident(ctx, def, instanceID, incidentID, 1)
+	resolved, err := driver.ResolveIncident(ctx, def, instanceID, incidentID, 1)
 	if err != nil {
 		return fmt.Errorf("resolve incident: %w", err)
 	}
@@ -309,12 +309,12 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Instanc
 		}),
 	})
 
-	runner, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}
 
-	st, err := runner.Run(ctx, def, "dl-inst-001", nil)
+	st, err := driver.Drive(ctx, def, "dl-inst-001", nil)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}

@@ -125,7 +125,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	// and "defID:version" (pinned), so pass defs directly as variadic args.
 	reg := kernel.NewMapDefinitionRegistry(gcDef, cDef, pDef)
 
-	runner := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -133,14 +133,14 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	)
 
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err := runner.Deliver(ctx2, def, instanceID, trg)
+		_, err := driver.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
 	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; parks because grandchild parks at human task ─────
 	const parentID = "e2e-nested-parent-i1"
-	st, err := runner.Run(ctx, pDef, parentID, nil)
+	st, err := driver.Drive(ctx, pDef, parentID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 
@@ -176,7 +176,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"gcResult": "done"})
 	require.NoError(t, err)
 
-	gcFinalSt, err := runner.Deliver(ctx, gcDef, grandchildID, completeTrg)
+	gcFinalSt, err := driver.Deliver(ctx, gcDef, grandchildID, completeTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, gcFinalSt.Status, "grandchild must be StatusCompleted after human task completion")
 
@@ -235,21 +235,21 @@ func TestFailurePathCallActivity(t *testing.T) {
 	// NewMapDefinitionRegistry auto-indexes by both "defID" (latest) and "defID:N" (pinned).
 	reg := kernel.NewMapDefinitionRegistry(child, parent)
 
-	runner := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 	)
 
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err := runner.Deliver(ctx2, def, instanceID, trg)
+		_, err := driver.Deliver(ctx2, def, instanceID, trg)
 		return err
 	})
 	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
 
 	// ── step 1: run parent; child fails immediately during its first burst ────
 	const parentID = "e2e-fail-parent-i1"
-	st, err := runner.Run(ctx, parent, parentID, nil)
+	st, err := driver.Drive(ctx, parent, parentID, nil)
 	require.NoError(t, err, "runner.Run must not return a hard error")
 	// The parent parks at the call node because the async path returns nil,nil.
 	// The child's first burst causes it to fail, flipping its link to terminal.
@@ -311,7 +311,7 @@ func selfCallDef() *model.ProcessDefinition {
 // rather than calling runChild, so the chain terminates at a finite depth.
 //
 // Assertions:
-//   - After runner.Run, the root is StatusRunning and the total number of call
+//   - After driver.Drive, the root is StatusRunning and the total number of call
 //     links is exactly maxCallDepth (one per child; the (maxCallDepth+1)th child
 //     is never created because the guard returns SubInstanceFailed synchronously).
 //   - After draining the notifier maxCallDepth times, the root reaches StatusFailed
@@ -328,14 +328,14 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	// NewMapDefinitionRegistry auto-indexes by both "defID" (latest) and "defID:N" (pinned).
 	reg := kernel.NewMapDefinitionRegistry(def)
 
-	runner := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 	)
 
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def2 *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err := runner.Deliver(ctx2, def2, instanceID, trg)
+		_, err := driver.Deliver(ctx2, def2, instanceID, trg)
 		return err
 	})
 	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
@@ -347,7 +347,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	// without calling runChild. The deepest real child gets SubInstanceFailed and
 	// reaches StatusFailed during its first burst.
 	const rootID = "e2e-self-root-i1"
-	st, err := runner.Run(ctx, def, rootID, nil)
+	st, err := driver.Drive(ctx, def, rootID, nil)
 	require.NoError(t, err, "runner.Run must not return a hard error even for self-calling definition")
 
 	// Root is StatusRunning (parked at its call activity).
@@ -468,7 +468,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 
 	// Runner built WITHOUT WithCallLinkStore → synchronous call-activity path.
-	runner := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -477,8 +477,8 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	const parentID = "e2e-optout-parent-i1"
 	// The child parks at the human task → synchronous runner translates that to
 	// SubInstanceFailed → parent receives SubInstanceFailed → StatusFailed.
-	// runner.Run does NOT return a hard error; it returns the terminal state.
-	finalSt, err := runner.Run(ctx, parent, parentID, nil)
+	// driver.Drive does NOT return a hard error; it returns the terminal state.
+	finalSt, err := driver.Drive(ctx, parent, parentID, nil)
 	require.NoError(t, err, "runner.Run must not return a hard Go error; the failure is reflected in the terminal status")
 
 	// Parent must be StatusFailed (SubInstanceFailed set it to failed).

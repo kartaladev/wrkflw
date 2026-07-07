@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
@@ -234,12 +235,13 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 				t.OccurredAt().Sub(tok.RetryStartedAt) > eff.MaxElapsed)
 		if !terminal {
 			delay := time.Duration(t.JitterFraction * float64(eff.Backoff(attempt)))
-			fireAt := t.OccurredAt().Add(delay)
 			timerID := s.nextTimerID()
+			// Retry backoff is a concrete one-shot delay: carry it as an
+			// AfterDuration trigger so the scheduler fires once after `delay`.
 			retryCmds := []Command{ScheduleTimer{
 				TimerID: timerID,
 				Token:   tok.ID,
-				FireAt:  fireAt,
+				Trigger: schedule.AfterDuration(delay),
 				Kind:    TimerRetry,
 			}}
 			s.Timers = append(s.Timers, timerRecord{
@@ -392,7 +394,7 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 		case TimerDeadline:
 			return handleDeadlineFired(def, s, *rec, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 		case TimerInWait:
-			return handleReminderFired(def, s, *rec, t.OccurredAt(), resolveEvaluator(opt))
+			return handleReminderFired(def, s, *rec)
 		case TimerRetry:
 			return handleRetryFired(def, s, *rec, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 		}

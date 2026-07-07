@@ -11,6 +11,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -32,16 +33,16 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 	// Original process: arm the timer, then it "crashes" — discard runner + scheduler.
 	{
-		sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
-		r := runtimetest.MustRunner(t, cat, store,
+		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
+		driver := runtimetest.MustRunner(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
-		_, err := r.Run(t.Context(), def, "rh-1", nil)
+		_, err := driver.Drive(t.Context(), def, "rh-1", nil)
 		require.NoError(t, err)
 	}
 
 	// New process: fresh runner + fresh scheduler, same store + timer store.
-	sched2 := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched2 := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	r2 := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched2), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
@@ -59,7 +60,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 func TestRehydrateTimersRequiresWiring(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
-	err := r.RehydrateTimers(t.Context())
+	driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
+	err := driver.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")
 }

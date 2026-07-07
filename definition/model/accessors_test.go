@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 func TestRetryPolicyOf(t *testing.T) {
@@ -57,69 +58,69 @@ func TestRetryPolicyOf(t *testing.T) {
 }
 
 func TestDeadlineOf(t *testing.T) {
-	cases := []struct {
-		name                       string
-		node                       model.Node
-		wantDur, wantFlow, wantAct string
-	}{
-		{
-			name:     "service task with deadline",
-			node:     activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithDeadline("P1D", "sla-flow", "sla-act")),
-			wantDur:  "P1D",
-			wantFlow: "sla-flow",
-			wantAct:  "sla-act",
-		},
-		{
-			name:     "user task with deadline",
-			node:     activity.NewUserTask("ut", nil, activity.WithDeadline("PT2H", "ut-flow", "ut-act")),
-			wantDur:  "PT2H",
-			wantFlow: "ut-flow",
-			wantAct:  "ut-act",
-		},
-		{
-			name:     "intermediate catch event with deadline",
-			node:     event.NewCatch("ice", event.WithCatchDeadline("P2D", "ice-flow", "ice-act")),
-			wantDur:  "P2D",
-			wantFlow: "ice-flow",
-			wantAct:  "ice-act",
-		},
-		{
-			name:     "start event returns empty",
-			node:     event.NewStart("s"),
-			wantDur:  "",
-			wantFlow: "",
-			wantAct:  "",
-		},
+	assert := func(t *testing.T, spec schedule.TriggerSpec, flow, action string, wantFlow, wantAct string, wantDur time.Duration) {
+		t.Helper()
+		d, ok := spec.Duration()
+		if !ok || d != wantDur {
+			t.Errorf("DeadlineOf: duration = %v (ok=%v), want %v", d, ok, wantDur)
+		}
+		if flow != wantFlow {
+			t.Errorf("DeadlineOf: flow = %q, want %q", flow, wantFlow)
+		}
+		if action != wantAct {
+			t.Errorf("DeadlineOf: action = %q, want %q", action, wantAct)
+		}
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dur, flow, act := model.DeadlineOf(tc.node)
-			assert.Equal(t, tc.wantDur, dur)
-			assert.Equal(t, tc.wantFlow, flow)
-			assert.Equal(t, tc.wantAct, act)
-		})
-	}
+
+	t.Run("service task with deadline", func(t *testing.T) {
+		n := activity.NewServiceTask("st", activity.WithActionName("act"),
+			activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"))
+		spec, fl, act := model.DeadlineOf(n)
+		assert(t, spec, fl, act, "sla-flow", "sla-act", 24*time.Hour)
+	})
+	t.Run("user task with deadline", func(t *testing.T) {
+		n := activity.NewUserTask("ut", nil,
+			activity.WithDeadline(schedule.AfterDuration(2*time.Hour), "ut-flow", "ut-act"))
+		spec, fl, act := model.DeadlineOf(n)
+		assert(t, spec, fl, act, "ut-flow", "ut-act", 2*time.Hour)
+	})
+	t.Run("intermediate catch event with deadline", func(t *testing.T) {
+		n := event.NewCatch("ice",
+			event.WithCatchDeadline(schedule.AfterDuration(48*time.Hour), "ice-flow", "ice-act"))
+		spec, fl, act := model.DeadlineOf(n)
+		assert(t, spec, fl, act, "ice-flow", "ice-act", 48*time.Hour)
+	})
+	t.Run("start event returns zero", func(t *testing.T) {
+		spec, fl, act := model.DeadlineOf(event.NewStart("s"))
+		if !spec.IsZero() || fl != "" || act != "" {
+			t.Errorf("DeadlineOf(start) = %v %q %q, want zero", spec, fl, act)
+		}
+	})
 }
 
 func TestReminderOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
 	n := activity.NewUserTask("ut", nil,
 		activity.WithRetryPolicy(p),
-		activity.WithReminder("PT4H", "send-reminder"),
+		activity.WithReminder(schedule.Every(4*time.Hour), "send-reminder"),
 	)
 	every, act := model.ReminderOf(n)
-	assert.Equal(t, "PT4H", every)
+	d, ok := every.Duration()
+	require.True(t, ok)
+	assert.Equal(t, 4*time.Hour, d)
 	assert.Equal(t, "send-reminder", act)
 
-	// Non-activity returns empty
+	// Non-activity returns zero TriggerSpec + empty action
 	every, act = model.ReminderOf(event.NewStart("s"))
-	assert.Equal(t, "", every)
+	assert.True(t, every.IsZero())
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
-	ice := event.NewCatch("ice", event.WithCatchReminder("PT2H", "ice-remind"))
+	ice := event.NewCatch("ice", event.WithCatchReminder(schedule.Every(2*time.Hour), "ice-remind"))
 	every, act = model.ReminderOf(ice)
-	assert.Equal(t, "PT2H", every)
+	d, ok = every.Duration()
+	require.True(t, ok)
+	assert.Equal(t, 2*time.Hour, d)
 	assert.Equal(t, "ice-remind", act)
 }
 
@@ -144,8 +145,8 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithCompensation("refund-card"),
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),
-				activity.WithDeadline("P1D", "sla-flow", "sla-act"),
-				activity.WithReminder("PT4H", "remind-act"),
+				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
+				activity.WithReminder(schedule.Every(4*time.Hour), "remind-act"),
 				activity.WithCancelHandler("cancel-charge"),
 			),
 			activity.NewUserTask("approve", []string{"manager", "admin"},
@@ -153,7 +154,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithName("Approve"),
 			),
 			event.NewCatch("wait",
-				event.WithCatchTimer("PT30M"),
+				event.WithCatchTimer(schedule.AfterExpr("PT30M")),
 				event.WithName("Wait"),
 			),
 			event.NewThrow("signal-done", event.WithThrowSignal("order.done")),
@@ -207,8 +208,13 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "refund-card", charge.CompensationAction)
 	assert.Equal(t, "f-error", charge.RecoveryFlow)
 	assert.Equal(t, "cancel-charge", charge.CancelHandler)
-	assert.Equal(t, "P1D", charge.DeadlineDuration)
-	assert.Equal(t, "PT4H", charge.ReminderEvery)
+	// DeadlineTimer and ReminderEvery are now schedule.TriggerSpec; verify via Duration()
+	deadlineDur, deadlineOk := charge.DeadlineTimer.Duration()
+	require.True(t, deadlineOk, "DeadlineTimer should be set")
+	assert.Equal(t, 24*time.Hour, deadlineDur)
+	reminderDur, reminderOk := charge.ReminderEvery.Duration()
+	require.True(t, reminderOk, "ReminderEvery should be set")
+	assert.Equal(t, 4*time.Hour, reminderDur)
 	require.NotNil(t, charge.RetryPolicy)
 	assert.Equal(t, 3, charge.RetryPolicy.MaxAttempts)
 
@@ -274,7 +280,10 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 
 	ice, ok := def.Nodes[3].(event.IntermediateCatchEvent)
 	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")
-	assert.Equal(t, "PT1H", ice.TimerDuration)
+	assert.False(t, ice.Timer.IsZero(), "Timer should be set")
+	iceExpr, _, iceExprOk := ice.Timer.Expr()
+	require.True(t, iceExprOk, "legacy timerDuration should decode as expr form")
+	assert.Equal(t, "PT1H", iceExpr, "legacy timerDuration PT1H should be preserved as expr value")
 
 	ite, ok := def.Nodes[4].(event.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[4] should be IntermediateThrowEvent")
@@ -336,4 +345,21 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	compThrow, ok := def.Nodes[19].(event.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[19] should be IntermediateThrowEvent")
 	assert.Equal(t, "charge", compThrow.CompensateRef)
+}
+
+// TestDeadlineReminderTyped verifies that DeadlineOf and ReminderOf return
+// schedule.TriggerSpec values (Task 3: typed deadline/reminder migration).
+func TestDeadlineReminderTyped(t *testing.T) {
+	n := activity.NewUserTask("ut", nil,
+		activity.WithDeadline(schedule.AfterDuration(2*time.Hour), "sla", "notify"),
+		activity.WithReminder(schedule.Every(time.Hour), "remind"),
+	)
+	spec, flow, action := model.DeadlineOf(n)
+	if d, ok := spec.Duration(); !ok || d != 2*time.Hour || flow != "sla" || action != "notify" {
+		t.Fatalf("DeadlineOf = %v %q %q", d, flow, action)
+	}
+	every, ra := model.ReminderOf(n)
+	if d, ok := every.Duration(); !ok || d != time.Hour || ra != "remind" {
+		t.Fatalf("ReminderOf = %v %q", d, ra)
+	}
 }

@@ -95,7 +95,10 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 				}),
 			})
 
-			sched := &runtimetest.RecordingScheduler{}
+			// The engine emits an AfterDuration(backoff) trigger; the scheduler
+			// resolves it to now+backoff via its clock, so wire the fake clock in
+			// to get a deterministic fire-at (T+1s).
+			sched := &runtimetest.RecordingScheduler{Clock: clk}
 
 			var opts []runtime.Option
 			opts = append(opts, runtime.WithScheduler(sched))
@@ -109,10 +112,10 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 				}))
 			}
 
-			runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), append([]runtime.Option{runtime.WithClock(clk)}, opts...)...)
+			driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), append([]runtime.Option{runtime.WithClock(clk)}, opts...)...)
 			def := noRetryServiceTaskDef()
 
-			st, err := runner.Run(t.Context(), def, "p", nil)
+			st, err := driver.Drive(t.Context(), def, "p", nil)
 			require.NoError(t, err)
 
 			tc.assert(t, st, sched, T)
@@ -167,7 +170,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	})
 
 	store := runtimetest.MustMemStore(t)
-	runner := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(clk),
 		// MaxAttempts=1: first failure parks as incident, no retry timer scheduled.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
@@ -180,7 +183,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	def := incidentTaskDef()
 
 	// Run: first attempt fails → incident, instance parks (StatusRunning).
-	st, err := runner.Run(t.Context(), def, "p", nil)
+	st, err := driver.Drive(t.Context(), def, "p", nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park as running with an incident")
 	require.Len(t, st.Incidents, 1, "want exactly one incident after first failure")
@@ -194,7 +197,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	assert.Equal(t, 1, page.Items[0].IncidentCount, "MemInstanceStore lister: want IncidentCount==1 before resolve")
 
 	// ResolveIncident: grant 2 additional attempts; action now succeeds.
-	st2, err := runner.ResolveIncident(t.Context(), def, "p", incID, 2)
+	st2, err := driver.ResolveIncident(t.Context(), def, "p", incID, 2)
 	require.NoError(t, err, "ResolveIncident must not return an error")
 	assert.Empty(t, st2.Incidents, "incident must be cleared after ResolveIncident")
 	assert.Equal(t, engine.StatusCompleted, st2.Status, "instance must complete after resolve+reinvoke")
