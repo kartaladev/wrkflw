@@ -179,6 +179,7 @@ func TestDriverDefaultUsesDefaultDefinitionRegistry(t *testing.T) {
 
 	d, err := runtime.NewProcessDriver()
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 	instanceID := fmt.Sprintf("test-default-driver-inst-%d", uniqueDefSeq.Add(1))
 	st, runErr := d.Run(t.Context(), parent, instanceID, nil)
@@ -199,6 +200,7 @@ func TestWithDefinitionsNilIgnored(t *testing.T) {
 
 	d, err := runtime.NewProcessDriver(runtime.WithDefinitions(nil))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 	instanceID := fmt.Sprintf("test-withdef-nil-inst-%d", uniqueDefSeq.Add(1))
 	st, runErr := d.Run(t.Context(), parent, instanceID, nil)
@@ -261,6 +263,7 @@ func TestWithDefinitionsCustomOverridesDefault(t *testing.T) {
 
 	d, err := runtime.NewProcessDriver(runtime.WithDefinitions(custom))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 	instanceID := fmt.Sprintf("test-custom-def-inst-%d", uniqueDefSeq.Add(1))
 	st, runErr := d.Run(t.Context(), parent, instanceID, nil)
@@ -311,8 +314,9 @@ func TestConstructionSummaryDefinitionsField(t *testing.T) {
 			logger := slog.New(handler)
 
 			allOpts := append([]runtime.Option{runtime.WithLogger(logger)}, tc.opts...)
-			_, err := runtime.NewProcessDriver(allOpts...)
+			d, err := runtime.NewProcessDriver(allOpts...)
 			require.NoError(t, err)
+			t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 			lines := splitNonEmpty(buf.Bytes())
 			require.Len(t, lines, 1, "expected exactly one log record from construction summary")

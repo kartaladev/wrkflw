@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -34,6 +35,7 @@ func TestRunGeneratesWhenInstanceIDEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
+	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
 	st, err := r.Run(t.Context(), def, "", map[string]any{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -53,6 +55,7 @@ func TestRunUsesExplicitInstanceID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
+	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
 	st, err := r.Run(t.Context(), def, "explicit-1", map[string]any{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -73,6 +76,7 @@ func TestRunPropagatesGeneratorError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
+	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
 	_, err = r.Run(t.Context(), def, "", map[string]any{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected generator error to propagate, got %v", err)

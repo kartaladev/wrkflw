@@ -68,6 +68,7 @@ func TestPerformInvokeActionFireAndForget(t *testing.T) {
 			require.NoError(t, err)
 			r, err := NewProcessDriver(WithActionCatalog(cat), WithInstanceStore(st), WithClock(fc))
 			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
 
 			cmd := engine.InvokeAction{
 				CommandID:     "cmd-1",

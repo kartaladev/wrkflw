@@ -22,6 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
 // ProcessDriver is the reference single-process driver loop.
@@ -79,6 +80,20 @@ type ProcessDriver struct {
 	// that is waiting on it. Message catch events are 1:1 (each correlation key
 	// routes to exactly one instance), so a simple map suffices.
 	msgWaiters map[msgKey]string
+
+	// shutdown aggregates the teardown of resources the driver itself created and
+	// owns (currently the default in-process scheduler's gocron goroutine). A
+	// consumer-injected component (e.g. a WithScheduler-provided scheduler) is
+	// consumer-owned and is deliberately NOT registered here. [ProcessDriver.Shutdown]
+	// delegates to this group. The zero value is ready to use.
+	shutdown ShutdownGroup
+
+	// ownedScheduler is the in-process default scheduler the driver created when
+	// no [WithScheduler] was supplied. It is non-nil only for the owned default;
+	// [ProcessDriver.Start] starts it and [ProcessDriver.Shutdown] closes it. A
+	// consumer-injected scheduler is consumer-owned, so this stays nil and the
+	// consumer manages its lifecycle.
+	ownedScheduler *scheduling.Scheduler
 }
 
 // NewProcessDriver constructs a ProcessDriver with sensible in-memory defaults
@@ -123,9 +138,59 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	for _, o := range opts {
 		o(r)
 	}
+
+	// Default scheduler: when the consumer did not wire one via [WithScheduler],
+	// create an in-process gocron-backed scheduler (real clock, single-node) so
+	// timer nodes work zero-config. The driver OWNS this default and registers it
+	// for teardown via [ProcessDriver.Shutdown]. A consumer-injected scheduler is
+	// consumer-owned — left untouched and never closed by the driver.
+	customScheduler := r.sched != nil
+	if r.sched == nil {
+		sched, serr := scheduling.NewScheduler()
+		if serr != nil {
+			return nil, fmt.Errorf("workflow-runtime: default scheduler: %w", serr)
+		}
+		r.sched = sched
+		r.ownedScheduler = sched
+		r.shutdown.AddCloser(sched)
+	}
+
 	r.obs = newDriverObs(r.logOpt, r.tpOpt, r.mpOpt)
-	r.logConstructionSummary(defaultStore)
+	r.logConstructionSummary(defaultStore, customScheduler)
 	return r, nil
+}
+
+// Start starts the driver-owned in-process default scheduler (created by
+// [NewProcessDriver] when no [WithScheduler] was supplied), binding its lifetime
+// to ctx: cancelling ctx stops the scheduler. Start is idempotent.
+//
+// It is optional — the owned scheduler also auto-starts on the first timer it is
+// asked to arm — but calling Start lets a consumer tie the scheduler's goroutine
+// to their application context and fail fast if it cannot start. When the driver
+// uses a consumer-injected scheduler (via [WithScheduler]), that scheduler is
+// consumer-owned and Start is a no-op; the consumer starts it themselves.
+func (r *ProcessDriver) Start(ctx context.Context) error {
+	if r.ownedScheduler == nil {
+		return nil
+	}
+	if err := r.ownedScheduler.Start(ctx); err != nil {
+		return fmt.Errorf("workflow-runtime: start scheduler: %w", err)
+	}
+	return nil
+}
+
+// Shutdown releases the resources the ProcessDriver itself created and owns —
+// currently the default in-process scheduler's gocron goroutine (see
+// [NewProcessDriver]). Consumer-injected collaborators (a [WithScheduler]-provided
+// scheduler, a [WithInstanceStore]-provided store, …) are consumer-owned and are
+// NOT torn down here.
+//
+// Shutdown honours ctx for a bounded drain, aggregates every closer's error with
+// [errors.Join], and is idempotent (a second call returns nil). Its signature
+// matches samber/do's ShutdownerWithContextAndError, so a do.Provide(driver) is
+// released by inj.ShutdownWithContext(ctx).
+func (r *ProcessDriver) Shutdown(ctx context.Context) error {
+	return r.shutdown.Shutdown(ctx)
 }
 
 // onOff returns "on" when v is true and "off" otherwise.
@@ -151,7 +216,7 @@ func defOrigin(defsReg kernel.DefinitionRegistry) string {
 	return "custom"
 }
 
-func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore) {
+func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore, customScheduler bool) {
 	storeLabel := "in-memory(non-durable)"
 	if r.store != defaultStore {
 		storeLabel = "custom"
@@ -162,13 +227,20 @@ func (r *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore
 		catalogLabel = "default-global"
 	}
 
+	// The driver always has a scheduler after construction: a consumer-injected
+	// one (custom) or the driver-owned in-process default.
+	schedulerLabel := "default-inprocess"
+	if customScheduler {
+		schedulerLabel = "custom"
+	}
+
 	r.obs.tel.Logger.LogAttrs(
 		context.Background(),
 		slog.LevelDebug,
 		"ProcessDriver constructed",
 		slog.String("store", storeLabel),
 		slog.String("catalog", catalogLabel),
-		slog.String("scheduler", onOff(r.sched != nil)),
+		slog.String("scheduler", schedulerLabel),
 		slog.String("signalBus", onOff(r.sigbus != nil)),
 		slog.String("humanTasks", onOff(r.tasks != nil)),
 		slog.String("definitions", defOrigin(r.defsReg)),

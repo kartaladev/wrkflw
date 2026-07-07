@@ -162,65 +162,20 @@ func timerOnlyDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerScheduleTimerWithoutSchedulerErrors mirrors the ScheduleTimer nil-guard:
-// if no Scheduler is configured, attempting to perform a ScheduleTimer returns a
-// descriptive error rather than panicking.
-func TestRunnerScheduleTimerWithoutSchedulerErrors(t *testing.T) {
+// TestRunnerZeroConfigUsesDefaultScheduler verifies that a driver built without an
+// explicit WithScheduler still arms timers: NewProcessDriver supplies an in-process
+// default scheduler, so a process reaching a timer-catch node schedules the timer
+// and parks (StatusRunning) rather than failing with "no Scheduler configured".
+// (The perform nil-guard remains as defensive code but is unreachable through the
+// constructor, which always resolves a scheduler.) MustRunner tears the driver
+// down via t.Cleanup, releasing the default scheduler goroutine.
+func TestRunnerZeroConfigUsesDefaultScheduler(t *testing.T) {
 	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
-	// WithScheduler intentionally omitted.
+	// WithScheduler intentionally omitted — the default scheduler must handle it.
 
-	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
-	require.Error(t, err, "Run must fail with a descriptive error when no Scheduler is configured")
-	assert.Contains(t, err.Error(), "Scheduler", "error must mention the missing Scheduler")
-}
-
-// TestRunnerCancelTimerWithoutSchedulerErrors verifies that performing a CancelTimer
-// command without a Scheduler configured returns a descriptive error (mirrors
-// the ScheduleTimer nil-guard). We exercise this by starting a process that
-// parks at a timer node (ScheduleTimer issued) and then manually delivering a
-// HumanCompleted-like trigger that causes a CancelTimer — but the simpler path
-// is: build a state with outstanding timer records and deliver a TimerFired
-// that triggers a deadline breach (which emits CancelTimer for the reminder timer).
-//
-// Since wiring up the full deadline scenario here is heavy, we confirm that calling
-// runner.Deliver with a trigger that causes the engine to emit a CancelTimer
-// when r.sched==nil returns "no Scheduler configured".
-//
-// The test drives the runner's perform directly via a single-step wrapper: we
-// use Run on a process that first reaches ScheduleTimer — expecting that error.
-// That proves the nil guard is present for ScheduleTimer. For CancelTimer we
-// verify the runner's error message contains "CancelTimer" when sched is nil
-// by calling Deliver with a pre-built state that causes engine.Step to emit
-// a CancelTimer (stale deadline timer scenario is hard without a working scheduler,
-// so we verify the error message format directly via the runner perform path).
-//
-// Simplest approach: use the runner's perform method indirectly by confirming
-// that the "no Scheduler configured" error is returned for ScheduleTimer, and
-// that the same guard exists for CancelTimer (same error-message pattern in runner.go).
-func TestRunnerCancelTimerWithoutSchedulerErrors(t *testing.T) {
-	// Build a definition that has a user task with a deadline; when the deadline fires
-	// the engine emits CancelTimer for the reminder. We need no scheduler so it
-	// fails on the ScheduleTimer — but we can verify the CancelTimer error path
-	// by injecting a pre-built state directly via Deliver.
-	//
-	// Approach: construct the InstanceState manually with a deadline timer record,
-	// then deliver the deadline TimerFired to engine via Deliver — the engine emits
-	// a CancelTimer (for the reminder timer) which the runner tries to perform
-	// with r.sched == nil → error.
-	//
-	// For simplicity, we test the runner's direct behavior: calling Run with a
-	// timer-intermediate def and no scheduler errors on ScheduleTimer (already
-	// confirmed in TestRunnerScheduleTimerWithoutSchedulerErrors). We verify the
-	// CancelTimer nil-guard separately by reading the runner.go source
-	// (same guard pattern), but we also add an integration assertion here:
-	// the error messages for both cases must contain "no Scheduler configured".
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
-	// WithScheduler intentionally omitted.
-	_, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
-	require.Error(t, err)
-	// Both ScheduleTimer and CancelTimer use the same "no Scheduler configured" pattern.
-	assert.Contains(t, err.Error(), "no Scheduler configured",
-		"ScheduleTimer/CancelTimer nil-guard must mention 'no Scheduler configured'")
+	st, err := r.Run(t.Context(), timerOnlyDef(), "i1", nil)
+	require.NoError(t, err, "zero-config driver must arm the timer via the default scheduler")
+	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park at the timer catch")
 }
 
 // onceConflictStore wraps *kernel.MemInstanceStore and injects a single ErrConcurrentUpdate
@@ -416,6 +371,9 @@ func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r, err := runtime.NewProcessDriver(tc.opts...)
+			if r != nil {
+				t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
+			}
 			tc.assert(t, r, err)
 		})
 	}

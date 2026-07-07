@@ -66,6 +66,7 @@ func TestResolveInvokeAction(t *testing.T) {
 	require.NoError(t, err)
 	r, err := NewProcessDriver(WithActionCatalog(global), WithInstanceStore(st))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
 	def := resolveActionScopedDef(t)
 
 	// cmdScoped is the scope-effective scoped catalog carried by the engine; it
@@ -151,6 +152,7 @@ func TestResolveActionName(t *testing.T) {
 	require.NoError(t, err)
 	r, err := NewProcessDriver(WithActionCatalog(global), WithInstanceStore(st2))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
 	def := resolveActionScopedDef(t)
 
 	type testCase struct {

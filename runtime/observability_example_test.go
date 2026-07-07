@@ -76,6 +76,8 @@ func ExampleProcessDriver_observability() {
 		panic(err)
 	}
 
+	defer func() { _ = r.Shutdown(context.Background()) }()
+
 	_, _ = r.Run(context.Background(), def, "demo-1", map[string]any{})
 	// Output:
 }

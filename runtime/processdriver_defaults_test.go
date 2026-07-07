@@ -106,6 +106,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		d, err := runtime.NewProcessDriver()
 		require.NoError(t, err)
 		require.NotNil(t, d)
+		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-zeroarg-v1"), "inst-zero-arg", nil)
 		require.NoError(t, runErr)
@@ -127,6 +128,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		d, err := runtime.NewProcessDriver(runtime.WithActionCatalog(custom))
 		require.NoError(t, err)
 		require.NotNil(t, d)
+		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 		st, runErr := d.Run(t.Context(), oneNodeDef("custom-action-v1"), "inst-custom-cat", nil)
 		require.NoError(t, runErr)
@@ -145,6 +147,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		d, err := runtime.NewProcessDriver(runtime.WithInstanceStore(customStore))
 		require.NoError(t, err)
 		require.NotNil(t, d)
+		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 		// Run a process so the instance is persisted in the custom store.
 		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-instancestore-v1"), "inst-custom-store", nil)
@@ -166,6 +169,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		d, err := runtime.NewProcessDriver(runtime.WithActionCatalog(nil))
 		require.NoError(t, err)
 		require.NotNil(t, d)
+		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-nilcat-v1"), "inst-nil-cat", nil)
 		require.NoError(t, runErr)
@@ -181,6 +185,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 		d, err := runtime.NewProcessDriver(runtime.WithInstanceStore(nil))
 		require.NoError(t, err)
 		require.NotNil(t, d)
+		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 		st, runErr := d.Run(t.Context(), oneNodeDef("test-defaults-nilstore-v1"), "inst-nil-store", nil)
 		require.NoError(t, runErr)
@@ -212,8 +217,9 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
 		logger := slog.New(handler)
 
-		_, err := runtime.NewProcessDriver(runtime.WithLogger(logger))
+		d, err := runtime.NewProcessDriver(runtime.WithLogger(logger))
 		require.NoError(t, err)
+		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
 
 		// Expect exactly one JSON line from the construction summary.
 		lines := splitNonEmpty(buf.Bytes())
@@ -225,7 +231,7 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		assert.Equal(t, "ProcessDriver constructed", entry.Msg)
 		assert.Equal(t, "in-memory(non-durable)", entry.Store, "zero-config must report in-memory store")
 		assert.Equal(t, "default-global", entry.Catalog, "zero-config must report default-global catalog")
-		assert.Equal(t, "off", entry.Sched, "zero-config must report scheduler=off")
+		assert.Equal(t, "default-inprocess", entry.Sched, "zero-config must report the in-process default scheduler")
 
 		// Also confirm the hint attribute is present by scanning the raw JSON.
 		assert.Contains(t, string(lines[0]), "in-memory store is not durable", "hint attribute must mention durability")
@@ -258,7 +264,7 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		assert.Equal(t, "DEBUG", entry.Level)
 		assert.Equal(t, "ProcessDriver constructed", entry.Msg)
 		assert.Equal(t, "custom", entry.Store, "custom store must be reported as custom")
-		assert.Equal(t, "on", entry.Sched, "scheduler must be reported as on when wired")
+		assert.Equal(t, "custom", entry.Sched, "an injected scheduler must be reported as custom")
 	})
 }
 
