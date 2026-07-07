@@ -1,0 +1,155 @@
+// Package main demonstrates a TIMER boundary event: an interrupting timer
+// attached to a waiting activity that fires if the activity does not complete in
+// time — a per-activity SLA/timeout.
+//
+// NOTE: this is distinct from the sibling boundary_timer example, which
+// demonstrates activity.WithDeadline (a different feature). This one uses the
+// true boundary-event API, event.NewBoundary + event.WithBoundaryTimer.
+//
+// An order-settlement process parks at a ReceiveTask awaiting a
+// "payment.confirmed" message. A 30-minute interrupting timer boundary is armed
+// on that task. If the confirmation arrives first, the task resumes normally and
+// the timer is disarmed; if the timer fires first, it interrupts the wait and
+// routes to an escalation path.
+//
+// Flow:
+//
+//	start → await-payment[ReceiveTask] ──(payment.confirmed)──────→ end-settled
+//	              └─◄ timer "30m" (interrupting) → escalate[Service] → end-escalated
+//
+// The example runs TWO instances to contrast both outcomes:
+//
+//   - "order-ontime": the confirmation message is delivered before the deadline
+//     → settles normally; the timer boundary is disarmed (never fires).
+//   - "order-late": no message arrives; advancing the fake clock past 30m and
+//     ticking the scheduler fires the timer boundary → escalation path.
+//
+// A *clockwork.FakeClock drives both the engine and the in-memory scheduler
+// (ADR-0003) so the example is deterministic and runs instantly.
+//
+// This is a reference wiring example — not a shipped binary.
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/jonboulle/clockwork"
+
+	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Build the process. The timer boundary is attached to the ReceiveTask; its
+	// single outgoing flow (Connect) is the escalation path taken on timeout.
+	// The duration is an expr-lang expression parsed by time.ParseDuration, so it
+	// is a quoted Go-duration string — the outer backticks keep the inner quotes
+	// literal ("30m"). The ReceiveTask correlates by the instance's orderID
+	// variable so each parked instance is addressable by its own id.
+	def, err := definition.NewBuilder("order-settlement", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewReceiveTask("await-payment", "payment.confirmed",
+			activity.WithCorrelationKey("orderID"))).
+		Add(event.NewBoundary("bnd-timeout", "await-payment",
+			event.WithBoundaryTimer(`"30m"`))).
+		Add(activity.NewServiceTask("escalate", activity.WithActionName("escalate-payment"))).
+		Add(event.NewEnd("end-settled")).
+		Add(event.NewEnd("end-escalated")).
+		Connect("start", "await-payment").
+		Connect("await-payment", "end-settled"). // message-arrived path
+		Connect("bnd-timeout", "escalate").      // timer boundary flow
+		Connect("escalate", "end-escalated").
+		Build()
+	if err != nil {
+		log.Fatal("build def:", err)
+	}
+
+	escalated := map[string]bool{}
+	cat := action.NewMapCatalog(map[string]action.Action{
+		// Runs on the timer-boundary escalation path.
+		"escalate-payment": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+			id, _ := in["orderID"].(string)
+			escalated[id] = true
+			fmt.Printf("  [escalate-payment] %s: payment not confirmed in time — escalating\n", id)
+			return map[string]any{"escalated": true}, nil
+		}),
+	})
+
+	// Fake clock shared by the engine and the scheduler (ADR-0003).
+	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	clk := clockwork.NewFakeClockAt(startAt)
+	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	store, err := kernel.NewMemInstanceStore()
+	if err != nil {
+		log.Fatal("memstore:", err)
+	}
+
+	r, err := runtime.NewProcessDriver(
+		runtime.WithActionCatalog(cat),
+		runtime.WithInstanceStore(store),
+		runtime.WithClock(clk),
+		runtime.WithScheduler(sched),
+	)
+	if err != nil {
+		log.Fatal("driver:", err)
+	}
+
+	fmt.Println("--- Order Settlement: Timer Boundary Event ---")
+
+	// Start both orders; each parks at the ReceiveTask with a 30m timer armed.
+	for _, id := range []string{"order-ontime", "order-late"} {
+		st, rerr := r.Run(ctx, def, id, map[string]any{"orderID": id})
+		if rerr != nil {
+			log.Fatal("run:", rerr)
+		}
+		fmt.Printf("%s parked at %q (status=%s, boundaries armed=%d)\n",
+			id, st.Tokens[0].NodeID, st.Status.String(), len(st.Boundaries))
+	}
+
+	// order-ontime: deliver the confirmation before the deadline. The ReceiveTask
+	// resumes and the timer boundary is disarmed (it will never fire).
+	fmt.Println("delivering payment.confirmed for order-ontime (before the deadline)...")
+	if derr := r.DeliverMessage(ctx, def, "payment.confirmed", "order-ontime", nil); derr != nil {
+		log.Fatal("deliver:", derr)
+	}
+
+	// order-late: no message. Advance the clock past 30m and tick the scheduler —
+	// this fires order-late's timer boundary (order-ontime's timer was cancelled
+	// when its message arrived, so only order-late's timer is due).
+	fmt.Println("advancing the clock past 30m and ticking the scheduler...")
+	clk.Advance(31 * time.Minute)
+	if terr := sched.Tick(ctx); terr != nil {
+		log.Fatal("tick:", terr)
+	}
+
+	ontime, _, err := store.Load(ctx, "order-ontime")
+	if err != nil {
+		log.Fatal("load order-ontime:", err)
+	}
+	late, _, err := store.Load(ctx, "order-late")
+	if err != nil {
+		log.Fatal("load order-late:", err)
+	}
+
+	fmt.Printf("order-ontime: status=%s (settled via the message path), escalated=%v\n",
+		ontime.Status.String(), escalated["order-ontime"])
+	fmt.Printf("order-late:   status=%s (escalated via the timer boundary), escalated=%v\n",
+		late.Status.String(), escalated["order-late"])
+
+	if ontime.Status == engine.StatusCompleted && !escalated["order-ontime"] &&
+		late.Status == engine.StatusCompleted && escalated["order-late"] {
+		fmt.Println("both outcomes correct: on-time settled normally, late escalated via the timer boundary")
+	} else {
+		fmt.Println("unexpected outcome")
+	}
+}

@@ -145,3 +145,26 @@ A comment block shows, without requiring them at runtime:
 - [ ] `golangci-lint run ./...` clean for the two new files.
 - [ ] Package-level godoc on each `main` explains the scenario and that it is
       reference wiring, not a shipped binary (matches sibling examples).
+
+## Follow-up: error + timer boundary scenarios (2026-07-07)
+
+Two more boundary-event scenarios were added to round out the trigger types
+(same event.NewBoundary API, same reference-wiring rules — no library changes):
+
+- `examples/scenarios/error_boundary/main.go` — a ServiceTask throws a coded
+  business error (`errors.New("INSUFFICIENT_FUNDS")`; the error's `Error()`
+  string is the code matched against `event.WithBoundaryErrorCode`). A specific-
+  code error boundary catches it and routes to a decline path. Plain errors are
+  non-retryable, so the boundary fires SYNCHRONOUSLY during `driver.Run` — no
+  clock/scheduler. Documents the catch-all (`""`) alternative.
+- `examples/scenarios/timer_boundary/main.go` — an interrupting timer boundary
+  (`event.WithBoundaryTimer(\`"30m"\`)`) on a ReceiveTask that awaits
+  `payment.confirmed`. Runs TWO instances to contrast outcomes: "order-ontime"
+  gets its message before the deadline (settles normally; timer disarmed), while
+  "order-late" times out (`clk.Advance` + `sched.Tick` fires the boundary →
+  escalation). Deterministic via a shared `*clockwork.FakeClock` +
+  `kernel.NewMemScheduler`. Distinct from the sibling `boundary_timer` example,
+  which demonstrates `activity.WithDeadline`.
+
+Both verified: `go build ./...`, `go vet`, and `golangci-lint` clean; each runs
+to the expected terminal states.
