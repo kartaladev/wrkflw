@@ -3,12 +3,14 @@ package model_test
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 func TestServiceTaskConstructorAndAccessors(t *testing.T) {
@@ -83,8 +85,8 @@ func TestErrorEndEventConstructor(t *testing.T) {
 func TestUserTaskConstructor(t *testing.T) {
 	n := activity.NewUserTask("task-1", []string{"manager", "admin"},
 		activity.WithEligibilityExpr("amount > 1000"),
-		activity.WithDeadline("P1D", "sla-breach", "notify-manager"),
-		activity.WithReminder("PT4H", "send-reminder"),
+		activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach", "notify-manager"),
+		activity.WithReminder(schedule.Every(4*time.Hour), "send-reminder"),
 	)
 	if n.Kind() != model.KindUserTask {
 		t.Fatalf("Kind() = %v, want KindUserTask", n.Kind())
@@ -99,11 +101,11 @@ func TestUserTaskConstructor(t *testing.T) {
 	if len(ut.CandidateRoles) != 2 || ut.CandidateRoles[0] != "manager" {
 		t.Fatalf("CandidateRoles = %v", ut.CandidateRoles)
 	}
-	if ut.DeadlineDuration != "P1D" || ut.DeadlineFlow != "sla-breach" || ut.DeadlineAction != "notify-manager" {
-		t.Fatalf("deadline fields = %q/%q/%q", ut.DeadlineDuration, ut.DeadlineFlow, ut.DeadlineAction)
+	if dd, ok := ut.DeadlineTimer.Duration(); !ok || dd != 24*time.Hour || ut.DeadlineFlow != "sla-breach" || ut.DeadlineAction != "notify-manager" {
+		t.Fatalf("deadline fields = %v/%q/%q", dd, ut.DeadlineFlow, ut.DeadlineAction)
 	}
-	if ut.ReminderEvery != "PT4H" || ut.ReminderAction != "send-reminder" {
-		t.Fatalf("Reminder fields = %q/%q", ut.ReminderEvery, ut.ReminderAction)
+	if rd, ok := ut.ReminderEvery.Duration(); !ok || rd != 4*time.Hour || ut.ReminderAction != "send-reminder" {
+		t.Fatalf("reminder fields = %v/%q", rd, ut.ReminderAction)
 	}
 }
 
@@ -216,8 +218,8 @@ func TestEventSubProcessConstructor(t *testing.T) {
 func TestIntermediateCatchEventConstructor(t *testing.T) {
 	n := event.NewCatch("ice",
 		event.WithCatchTimer("PT1H"),
-		event.WithCatchDeadline("P1D", "sla-flow", "sla-act"),
-		event.WithCatchReminder("PT2H", "remind-act"),
+		event.WithCatchDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
+		event.WithCatchReminder(schedule.Every(2*time.Hour), "remind-act"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
 		t.Fatalf("Kind() = %v, want KindIntermediateCatchEvent", n.Kind())
@@ -229,8 +231,8 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 	if ice.TimerDuration != "PT1H" {
 		t.Fatalf("TimerDuration = %q", ice.TimerDuration)
 	}
-	if ice.DeadlineDuration != "P1D" {
-		t.Fatalf("DeadlineDuration = %q", ice.DeadlineDuration)
+	if dd, ok := ice.DeadlineTimer.Duration(); !ok || dd != 24*time.Hour {
+		t.Fatalf("DeadlineTimer = %v (ok=%v)", dd, ok)
 	}
 }
 

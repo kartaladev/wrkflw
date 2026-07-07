@@ -1,5 +1,7 @@
 package event
 
+import "github.com/zakyalvan/krtlwrkflw/definition/schedule"
+
 // --- option interfaces ---
 
 // StartOption configures a StartEvent.
@@ -82,16 +84,20 @@ func WithCatchMessage(msg, key string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
-// WithCatchDeadline sets DeadlineDuration/DeadlineFlow/DeadlineAction (was WithICEDeadline).
-func WithCatchDeadline(duration, flowID, action string) CatchOption {
+// WithCatchDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow,
+// and DeadlineAction on an IntermediateCatchEvent. Use schedule.AfterDuration,
+// schedule.AfterExpr, or any other TriggerSpec constructor.
+func WithCatchDeadline(t schedule.TriggerSpec, flowID, action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) {
-		n.DeadlineDuration, n.DeadlineFlow, n.DeadlineAction = duration, flowID, action
+		n.DeadlineTimer, n.DeadlineFlow, n.DeadlineAction = t, flowID, action
 	}}
 }
 
-// WithCatchReminder sets ReminderEvery/ReminderAction (was WithICEReminder).
-func WithCatchReminder(every, action string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = every, action }}
+// WithCatchReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// on an IntermediateCatchEvent. Use schedule.Every, schedule.EveryExpr, or any
+// other recurring TriggerSpec constructor.
+func WithCatchReminder(t schedule.TriggerSpec, action string) CatchOption {
+	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = t, action }}
 }
 
 // --- IntermediateThrowEvent options ---

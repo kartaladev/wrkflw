@@ -1,6 +1,9 @@
 package model
 
-import "github.com/zakyalvan/krtlwrkflw/action"
+import (
+	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+)
 
 // Node is a single point in a process: an event, activity, or gateway. The
 // concrete types (one per NodeKind) live in the node-family leaf packages —
@@ -37,24 +40,24 @@ func (b *Base) SetName(name string) { b.name = name }
 // event.IntermediateCatchEvent; the kind-agnostic accessors DeadlineOf/ReminderOf
 // dispatch on its (unexported) carrier methods.
 type WaitFields struct {
-	// DeadlineDuration is an expr-lang duration expression for the deadline (string → time.ParseDuration, e.g. "72h"; number → seconds; not ISO-8601).
-	DeadlineDuration string
+	// DeadlineTimer is the trigger spec that governs when the deadline fires
+	// (e.g. schedule.AfterDuration(72*time.Hour) or schedule.AfterExpr("deadlineExpr")).
+	DeadlineTimer schedule.TriggerSpec
 	// DeadlineFlow is the ID of the sequence flow to take on deadline breach.
 	DeadlineFlow string
 	// DeadlineAction is the name of the action.Action to invoke on deadline breach.
 	DeadlineAction string
-	// ReminderEvery is an expr-lang duration expression for the reminder interval (string → time.ParseDuration, e.g. "24h"; number → seconds; not ISO-8601).
-	ReminderEvery string
+	// ReminderEvery is the trigger spec that governs the reminder interval
+	// (e.g. schedule.Every(24*time.Hour) or schedule.EveryExpr("reminderExpr")).
+	ReminderEvery schedule.TriggerSpec
 	// ReminderAction is the name of the action.Action to invoke for each reminder.
 	ReminderAction string
 }
 
-func (w WaitFields) deadline() (duration, flow, action string) {
-	return w.DeadlineDuration, w.DeadlineFlow, w.DeadlineAction
+func (w WaitFields) deadline() (schedule.TriggerSpec, string, string) {
+	return w.DeadlineTimer, w.DeadlineFlow, w.DeadlineAction
 }
-func (w WaitFields) reminder() (every, action string) {
-	return w.ReminderEvery, w.ReminderAction
-}
+func (w WaitFields) reminder() (schedule.TriggerSpec, string) { return w.ReminderEvery, w.ReminderAction }
 
 // ActivityFields holds the cross-cutting fields every activity kind shares (retry,
 // recovery, compensation, cancel, plus the embedded WaitFields). Embedded into
