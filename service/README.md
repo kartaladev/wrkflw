@@ -43,7 +43,7 @@ are propagated **as-is** so the transport layer can classify them.
 | `GetInstance` | `instanceID string` | `(engine.InstanceState, error)` | Load the current state of an existing instance. |
 | `GetInstanceWithDefinition` | `instanceID string` | `(engine.InstanceState, *model.ProcessDefinition, error)` | Load state **and** resolve its definition (for building a snapshot / actionable view). |
 | `DeliverSignal` | `DeliverSignalRequest` | `(engine.InstanceState, error)` | Deliver a `SignalReceived` trigger to a parked instance. `ErrConflict` if terminal. |
-| `DeliverMessage` | `DeliverMessageRequest` | `error` | Route a message to the waiting instance via the runner's waiter table. |
+| `DeliverMessage` | `DeliverMessageRequest` | `error` | Route a message to the waiting instance via the driver's waiter table. |
 | `ClaimTask` | `ClaimTaskRequest` | `(engine.InstanceState, error)` | Authorize + claim a human task, deliver the trigger, return state. |
 | `CompleteTask` | `CompleteTaskRequest` | `(engine.InstanceState, error)` | Authorize + complete a human task, deliver the trigger, return state. |
 | `ReassignTask` | `ReassignTaskRequest` | `(engine.InstanceState, error)` | Authorize + reassign a human task, deliver the trigger, return state. |
@@ -57,7 +57,7 @@ are propagated **as-is** so the transport layer can classify them.
 
 ```go
 func New(
-    runner    *runtime.ProcessDriver,    // 1. required
+    driver    *runtime.ProcessDriver,    // 1. required
     tasks     *task.TaskService,         // 2. required
     reg       kernel.DefinitionRegistry, // 3. required
     store     kernel.InstanceStore,      // 4. required
@@ -71,7 +71,7 @@ The six required collaborators must be wired by hand (no DI container is imposed
 
 | # | Parameter | Type | Role |
 |---|---|---|---|
-| 1 | `runner` | `*runtime.ProcessDriver` | Drives execution — `Run` / `Deliver` / `DeliverMessage` / `ResolveIncident` / `CancelInstance`. |
+| 1 | `driver` | `*runtime.ProcessDriver` | Drives execution — `Run` / `Deliver` / `DeliverMessage` / `ResolveIncident` / `CancelInstance`. |
 | 2 | `tasks` | `*task.TaskService` (`runtime/task`) | Authorizes human-task ops and returns the resulting engine trigger (`Claim`/`Complete`/`Reassign`). |
 | 3 | `reg` | `kernel.DefinitionRegistry` (`runtime/kernel`) | Resolves `DefRef` strings to `*model.ProcessDefinition`. |
 | 4 | `store` | `kernel.InstanceStore` | Loads instance state for `GetInstance` and definition resolution. |
@@ -97,13 +97,13 @@ az, _, _ := casbinauthz.NewCasbinAuthorizer(
 // 3. Build the process driver:
 reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{...})
 cat := action.NewMapCatalog(map[string]action.Action{...})
-runner, _ := runtime.NewProcessDriver(cat, pgStore, runtime.WithDefinitions(reg))
+driver, _ := runtime.NewProcessDriver(cat, pgStore, runtime.WithDefinitions(reg))
 
 // 4. Build TaskService:
 tasks, _ := task.NewTaskService(taskStore, az)
 
 // 5. Assemble the service:
-svc := service.New(runner, tasks, reg, pgStore, lister, taskStore)
+svc := service.New(driver, tasks, reg, pgStore, lister, taskStore)
 ```
 
 Assembling this once at startup and injecting `svc` into the transport adapters is

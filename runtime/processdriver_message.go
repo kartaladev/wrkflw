@@ -17,12 +17,12 @@ import (
 // requiring an enumeration API on Store.
 //
 // def is required to call Deliver on the matched instance.
-func (r *ProcessDriver) DeliverMessage(ctx context.Context, def *model.ProcessDefinition, name, correlationKey string, payload map[string]any) error {
-	instanceID, found := r.findMessageWaiter(name, correlationKey)
+func (driver *ProcessDriver) DeliverMessage(ctx context.Context, def *model.ProcessDefinition, name, correlationKey string, payload map[string]any) error {
+	instanceID, found := driver.findMessageWaiter(name, correlationKey)
 	if !found {
 		return nil
 	}
-	trg := engine.NewMessageReceived(r.clk.Now(), name, correlationKey, payload)
-	_, err := r.Deliver(ctx, def, instanceID, trg)
+	trg := engine.NewMessageReceived(driver.clk.Now(), name, correlationKey, payload)
+	_, err := driver.Deliver(ctx, def, instanceID, trg)
 	return err
 }

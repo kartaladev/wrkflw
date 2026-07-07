@@ -75,14 +75,14 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
 	require.NoError(t, err)
 
 	def := timerIntermediateE2EDef()
 	const instanceID = "gocron-e2e-1"
 
 	// Run → parks at the intermediate timer node.
-	parked, err := r.Drive(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tokens, 1)

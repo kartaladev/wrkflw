@@ -91,12 +91,12 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 3. Runner (shared by receiver and sender) ────────────────────────────
-	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 	require.NoError(t, err)
 
 	// ── 4. Park the receiver instance ────────────────────────────────────────
 	recvDef := receiverDef()
-	recvState, err := r.Drive(ctx, recvDef, "recv-inst-1", nil)
+	recvState, err := driver.Drive(ctx, recvDef, "recv-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, recvState.Status,
 		"receiver must park at the ReceiveTask")
@@ -106,7 +106,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 
 	// ── 5. Run the sender: commits a message.OrderPlaced row into the outbox ─
 	sendDef := senderDef()
-	sendState, err := r.Drive(ctx, sendDef, "send-inst-1", map[string]any{"orderId": "o-1"})
+	sendState, err := driver.Drive(ctx, sendDef, "send-inst-1", map[string]any{"orderId": "o-1"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, sendState.Status,
 		"sender must complete synchronously (SendTask is fire-and-forget)")
@@ -131,7 +131,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	// NewMessageHandler decodes the message.OrderPlaced payload and calls deliver,
 	// which routes to runner.DeliverMessage to resume the parked receiver.
 	deliver := eventing.NewMessageHandler(func(hCtx context.Context, name, key string, vars map[string]any) error {
-		return r.DeliverMessage(hCtx, recvDef, name, key, vars)
+		return driver.DeliverMessage(hCtx, recvDef, name, key, vars)
 	})
 
 	// Drain the GoChannel until we see and process the message.OrderPlaced message.

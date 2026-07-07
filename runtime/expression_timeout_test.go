@@ -63,7 +63,7 @@ func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 
-	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
+	driver := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
 		runtime.WithClock(fc),
 		runtime.WithExpressionTimeout(50*time.Millisecond))
 
@@ -75,7 +75,7 @@ func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	}
 
 	start := time.Now()
-	_, err := r.Drive(t.Context(), gatewayBlockDef(), "g1", vars)
+	_, err := driver.Drive(t.Context(), gatewayBlockDef(), "g1", vars)
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
@@ -91,9 +91,9 @@ func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 // instance runs to completion. amount=150 takes the "big" branch.
 func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t), runtime.WithClock(fc))
+	driver := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t), runtime.WithClock(fc))
 
-	st, err := r.Drive(t.Context(), exclusiveRuntimeDef(), "d1", map[string]any{"amount": 150})
+	st, err := driver.Drive(t.Context(), exclusiveRuntimeDef(), "d1", map[string]any{"amount": 150})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
 }
@@ -125,11 +125,11 @@ func exclusiveRuntimeDef() *model.ProcessDefinition {
 func TestRunnerWithConditionEvaluatorInjectsCustom(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	ev := expreval.New(expreval.WithTimeout(0)) // pure, explicit
-	r := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
+	driver := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
 		runtime.WithClock(fc),
 		runtime.WithConditionEvaluator(ev))
 
-	st, err := r.Drive(t.Context(), exclusiveRuntimeDef(), "c1", map[string]any{"amount": 5})
+	st, err := driver.Drive(t.Context(), exclusiveRuntimeDef(), "c1", map[string]any{"amount": 5})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, st.Status)
 }

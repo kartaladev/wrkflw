@@ -123,7 +123,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
@@ -139,7 +139,7 @@ func main() {
 	fmt.Println("--- Review Escalation: Activity Deadline (WithDeadline) ---")
 
 	// Run parks at the user task; the deadline timer is armed.
-	parked, err := r.Drive(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}

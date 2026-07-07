@@ -4,12 +4,12 @@
 //
 //	start → approve[UserTask, roles: manager] → end
 //
-// A UserTask parks the instance: r.Run drives until the task is reached, then
+// A UserTask parks the instance: driver.Run drives until the task is reached, then
 // returns with the instance still StatusRunning. A human then:
 //
 //  1. discovers claimable tasks via TaskStore.ClaimableBy,
-//  2. claims the task   — TaskService.Claim → r.Deliver(claimTrigger),
-//  3. completes the task — TaskService.Complete → r.Deliver(completeTrigger),
+//  2. claims the task   — TaskService.Claim → driver.Deliver(claimTrigger),
+//  3. completes the task — TaskService.Complete → driver.Deliver(completeTrigger),
 //
 // which drives the instance to completion. The completion output is merged into
 // the instance variables.
@@ -66,7 +66,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 	// No service-action catalog needed; the default catalog covers it.
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithInstanceStore(memSt),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
@@ -79,7 +79,7 @@ func main() {
 	fmt.Println("--- Expense Approval: Human Task ---")
 
 	// 1. Run → parks at the user task.
-	parked, err := r.Drive(ctx, def, instanceID, map[string]any{"amount": 4200})
+	parked, err := driver.Drive(ctx, def, instanceID, map[string]any{"amount": 4200})
 	if err != nil {
 		log.Fatal("run:", err)
 	}
@@ -107,7 +107,7 @@ func main() {
 	if err != nil {
 		log.Fatal("claim:", err)
 	}
-	if _, err := r.Deliver(ctx, def, instanceID, claimTrg); err != nil {
+	if _, err := driver.Deliver(ctx, def, instanceID, claimTrg); err != nil {
 		log.Fatal("deliver claim:", err)
 	}
 	fmt.Println("task claimed")
@@ -118,7 +118,7 @@ func main() {
 	if err != nil {
 		log.Fatal("complete:", err)
 	}
-	final, err := r.Deliver(ctx, def, instanceID, completeTrg)
+	final, err := driver.Deliver(ctx, def, instanceID, completeTrg)
 	if err != nil {
 		log.Fatal("deliver complete:", err)
 	}

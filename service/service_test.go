@@ -25,7 +25,7 @@ import (
 
 // harness wires a real in-memory engine for the service tests.
 type harness struct {
-	runner *runtime.ProcessDriver
+	driver *runtime.ProcessDriver
 	reg    *kernel.MapDefinitionRegistry
 	store  *kernel.MemInstanceStore
 	lister kernel.InstanceLister
@@ -40,7 +40,7 @@ type harness struct {
 func (h *harness) newEngine(t *testing.T) *service.Engine {
 	t.Helper()
 	e, err := service.NewEngine(
-		service.WithProcessDriver(h.runner),
+		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(h.reg),
 		service.WithLister(h.lister),
@@ -143,7 +143,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 		"greet": greetAction{},
 	})
 
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(fc),
@@ -155,7 +155,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	reg := kernel.NewMapDefinitionRegistry(defs...)
 
 	return &harness{
-		runner:    r,
+		driver:    driver,
 		reg:       reg,
 		store:     store,
 		lister:    store,
@@ -235,7 +235,7 @@ func TestDeliverSignal(t *testing.T) {
 	h := newHarness(t, def)
 
 	// Start the instance — parks at signal-catch node.
-	parked, err := h.runner.Drive(t.Context(), def, "sig-inst-1", nil)
+	parked, err := h.driver.Drive(t.Context(), def, "sig-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at signal catch")
 
@@ -276,7 +276,7 @@ func TestHumanTaskLifecycle(t *testing.T) {
 	ctx := t.Context()
 
 	// Start the instance — parks at the user task.
-	parked, err := h.runner.Drive(ctx, def, "approval-inst-1", nil)
+	parked, err := h.driver.Drive(ctx, def, "approval-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 	require.Len(t, parked.Tokens, 1)
@@ -330,13 +330,13 @@ func TestHumanTaskLifecycle(t *testing.T) {
 	})
 }
 
-// TestDeliverMessage verifies DeliverMessage delegates to the runner's message routing.
+// TestDeliverMessage verifies DeliverMessage delegates to the driver's message routing.
 func TestDeliverMessage(t *testing.T) {
 	def := messageCatchDef("order-shipped")
 	h := newHarness(t, def)
 
 	// Start instance and park at message-catch.
-	_, err := h.runner.Drive(t.Context(), def, "order-100", map[string]any{"orderId": "100"})
+	_, err := h.driver.Drive(t.Context(), def, "order-100", map[string]any{"orderId": "100"})
 	require.NoError(t, err)
 
 	svc := h.newEngine(t)
@@ -406,7 +406,7 @@ func TestReassignTaskUnauthorized(t *testing.T) {
 	ctx := t.Context()
 
 	// Start and park.
-	parked, err := h.runner.Drive(ctx, def, "reassign-unauth-1", nil)
+	parked, err := h.driver.Drive(ctx, def, "reassign-unauth-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 	taskToken := parked.Tokens[0].AwaitCommand
@@ -443,15 +443,15 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 
 	ctx := t.Context()
 
-	// Start and park via the runner directly (not via the service facade).
-	parked, err := h.runner.Drive(ctx, def, "sig-def-missing", nil)
+	// Start and park via the driver directly (not via the service facade).
+	parked, err := h.driver.Drive(ctx, def, "sig-def-missing", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 
 	// Build a registry WITHOUT the definition so resolveDefinition fails.
 	emptyReg := kernel.NewMapDefinitionRegistry()
 	svc, err := service.NewEngine(
-		service.WithProcessDriver(h.runner),
+		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(emptyReg),
 		service.WithLister(h.lister),
@@ -473,7 +473,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 func TestNewEngineDefaultClockNoPanic(t *testing.T) {
 	h := newHarness(t)
 	e, err := service.NewEngine(
-		service.WithProcessDriver(h.runner),
+		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(h.reg),
 		service.WithLister(h.lister),
@@ -488,7 +488,7 @@ func TestNewEngineWithClockOption(t *testing.T) {
 	h := newHarness(t)
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
 	e, err := service.NewEngine(
-		service.WithProcessDriver(h.runner),
+		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(h.reg),
 		service.WithLister(h.lister),

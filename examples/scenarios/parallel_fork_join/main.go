@@ -69,13 +69,13 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(memSt))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
 
 	fmt.Println("--- Order Fulfillment: Parallel Fork/Join ---")
-	state, err := r.Drive(ctx, def, "order-001", map[string]any{"order_id": "ORD-001"})
+	state, err := driver.Drive(ctx, def, "order-001", map[string]any{"order_id": "ORD-001"})
 	if err != nil {
 		log.Fatal("run:", err)
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 // callDepthKey is the private context key used to thread the call-activity
-// recursion depth counter through perform → r.Run → deliverLoop → perform chains.
+// recursion depth counter through perform → driver.Run → deliverLoop → perform chains.
 // It is unexported so that no caller outside this package can set or read it
 // accidentally; the helpers callDepth / withCallDepth are the only access points.
 type callDepthKey struct{}
@@ -45,14 +45,14 @@ func withCallDepth(ctx context.Context, d int) context.Context {
 // child's eventual terminal state (a notifier resumes the parent later). Do NOT
 // wrap this in a goroutine — it shares the Store, and concurrent child starts would
 // break the store's write ordering. It is called by the async StartSubInstance path
-// when r.callLinks != nil.
+// when driver.callLinks != nil.
 //
 // It drives the child's first burst (StartInstance trigger) through deliverLoop
 // with create=true, passing link so the child's first AppliedStep.NewCallLink
 // is set atomically. The parent stays parked; the child may park too (e.g. at a
 // human task) — that is the expected outcome for the async path.
-func (r *ProcessDriver) runChild(ctx context.Context, def *model.ProcessDefinition, childInstanceID string, vars map[string]any, link *kernel.CallLink) error {
+func (driver *ProcessDriver) runChild(ctx context.Context, def *model.ProcessDefinition, childInstanceID string, vars map[string]any, link *kernel.CallLink) error {
 	st := engine.InstanceState{InstanceID: childInstanceID}
-	_, err := r.deliverLoop(ctx, def, st, 0, true, link, engine.NewStartInstance(r.clk.Now(), vars))
+	_, err := driver.deliverLoop(ctx, def, st, 0, true, link, engine.NewStartInstance(driver.clk.Now(), vars))
 	return err
 }

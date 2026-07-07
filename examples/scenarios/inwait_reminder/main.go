@@ -102,7 +102,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
@@ -118,7 +118,7 @@ func main() {
 	fmt.Println("--- Periodic Review: In-Wait Reminders ---")
 
 	// Run parks at the user task; the first reminder timer is armed.
-	parked, err := r.Drive(ctx, def, instanceID, nil)
+	parked, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}
@@ -160,14 +160,14 @@ func main() {
 	if err != nil {
 		log.Fatal("claim:", err)
 	}
-	if _, err := r.Deliver(ctx, def, instanceID, claimTrg); err != nil {
+	if _, err := driver.Deliver(ctx, def, instanceID, claimTrg); err != nil {
 		log.Fatal("deliver claim:", err)
 	}
 	completeTrg, err := svc.Complete(ctx, taskToken, reviewer, map[string]any{"approved": true})
 	if err != nil {
 		log.Fatal("complete:", err)
 	}
-	final, err := r.Deliver(ctx, def, instanceID, completeTrg)
+	final, err := driver.Deliver(ctx, def, instanceID, completeTrg)
 	if err != nil {
 		log.Fatal("deliver complete:", err)
 	}

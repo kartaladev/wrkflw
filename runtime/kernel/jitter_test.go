@@ -76,14 +76,14 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 	})
 
 	sched := &runtimetest.RecordingScheduler{Clock: clk}
-	runner := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithClock(clk),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(runtimetest.FixedJitter{F: 0.5}),
 	)
 
 	def := retryOnceTaskDef()
-	_, err := runner.Drive(t.Context(), def, "p1", nil)
+	_, err := driver.Drive(t.Context(), def, "p1", nil)
 	// Run may return an error or a parked state; either is acceptable as long as
 	// the scheduler captured the fireAt. We only care that the scheduler was called.
 	_ = err

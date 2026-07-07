@@ -28,9 +28,9 @@ type Option func(*ProcessDriver)
 // WithActionCatalog sets the service-action catalog. A nil cat is ignored, so
 // the process-global action.DefaultCatalog() registry remains in effect.
 func WithActionCatalog(cat action.Catalog) Option {
-	return func(r *ProcessDriver) {
+	return func(driver *ProcessDriver) {
 		if cat != nil {
-			r.cat = cat
+			driver.cat = cat
 		}
 	}
 }
@@ -38,9 +38,9 @@ func WithActionCatalog(cat action.Catalog) Option {
 // WithInstanceStore sets the transactional instance store. A nil store is
 // ignored, so the default in-memory MemInstanceStore remains in effect.
 func WithInstanceStore(store kernel.InstanceStore) Option {
-	return func(r *ProcessDriver) {
+	return func(driver *ProcessDriver) {
 		if store != nil {
-			r.store = store
+			driver.store = store
 		}
 	}
 }
@@ -55,7 +55,9 @@ const defaultActionTimeout = 30 * time.Second
 // disables the bound (no deadline is applied). The action's Do must honour ctx
 // cancellation for the timeout to take effect; a timed-out action surfaces as a
 // retryable failure.
-func WithActionTimeout(d time.Duration) Option { return func(r *ProcessDriver) { r.actionTimeout = d } }
+func WithActionTimeout(d time.Duration) Option {
+	return func(driver *ProcessDriver) { driver.actionTimeout = d }
+}
 
 // WithHumanTasks wires the human-task capability into the ProcessDriver. Without this
 // option, any process that reaches a user-task node will return a descriptive
@@ -66,10 +68,10 @@ func WithActionTimeout(d time.Duration) Option { return func(r *ProcessDriver) {
 //   - az authorizes actors against task eligibility specs (used by TaskService,
 //     not by the engine core).
 func WithHumanTasks(resolver humantask.ActorResolver, tasks humantask.TaskStore, az authz.Authorizer) Option {
-	return func(r *ProcessDriver) {
-		r.resolver = resolver
-		r.tasks = tasks
-		r.authz = az
+	return func(driver *ProcessDriver) {
+		driver.resolver = resolver
+		driver.tasks = tasks
+		driver.authz = az
 	}
 }
 
@@ -77,7 +79,7 @@ func WithHumanTasks(resolver humantask.ActorResolver, tasks humantask.TaskStore,
 // (ScheduleTimer / CancelTimer). Without this option any process that reaches a
 // timer node will return a descriptive error.
 func WithScheduler(sched kernel.Scheduler) Option {
-	return func(r *ProcessDriver) { r.sched = sched }
+	return func(driver *ProcessDriver) { driver.sched = sched }
 }
 
 // WithSignalBus wires a [SignalBus] into the ProcessDriver, enabling signal throw
@@ -88,7 +90,7 @@ func WithScheduler(sched kernel.Scheduler) Option {
 // AwaitSignal tokens with the bus (via [SignalBus.Sync]) so that a later
 // [SignalBus.Publish] reaches all parked instances.
 func WithSignalBus(bus *signal.SignalBus) Option {
-	return func(r *ProcessDriver) { r.sigbus = bus }
+	return func(driver *ProcessDriver) { driver.sigbus = bus }
 }
 
 // WithDefinitions overrides the DefinitionRegistry used by the ProcessDriver for
@@ -106,9 +108,9 @@ func WithSignalBus(bus *signal.SignalBus) Option {
 // registry. Use [RegisterDefinition] to populate the global default at init time,
 // or pass an isolated registry here for test isolation.
 func WithDefinitions(reg kernel.DefinitionRegistry) Option {
-	return func(r *ProcessDriver) {
+	return func(driver *ProcessDriver) {
 		if reg != nil {
-			r.defsReg = reg
+			driver.defsReg = reg
 		}
 	}
 }
@@ -121,7 +123,7 @@ func WithDefinitions(reg kernel.DefinitionRegistry) Option {
 // this option is NOT set, the synchronous behavior (run child to completion
 // in-process) is preserved verbatim.
 func WithCallLinkStore(store kernel.CallLinkStore) Option {
-	return func(r *ProcessDriver) { r.callLinks = store }
+	return func(driver *ProcessDriver) { driver.callLinks = store }
 }
 
 // WithTimerStore wires a [TimerStore] into the ProcessDriver. When set, the runtime
@@ -129,13 +131,13 @@ func WithCallLinkStore(store kernel.CallLinkStore) Option {
 // them atomically with state, and [ProcessDriver.RehydrateTimers] can re-arm them on
 // restart. Absent this option, timers are in-memory only and lost on restart.
 func WithTimerStore(store kernel.TimerStore) Option {
-	return func(r *ProcessDriver) { r.timerStore = store }
+	return func(driver *ProcessDriver) { driver.timerStore = store }
 }
 
 // WithJitterSource overrides the retry-backoff jitter source (default: [NewJitterSource]).
 // Inject a deterministic source in tests to produce predictable fire-at times.
 func WithJitterSource(src kernel.JitterSource) Option {
-	return func(r *ProcessDriver) { r.jitter = src }
+	return func(driver *ProcessDriver) { driver.jitter = src }
 }
 
 // WithDefaultRetryPolicy sets the fallback retry policy applied to any action-bearing
@@ -145,7 +147,7 @@ func WithJitterSource(src kernel.JitterSource) Option {
 // The policy value is copied on each call, so subsequent mutations by the caller do
 // not affect the ProcessDriver.
 func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
-	return func(r *ProcessDriver) { r.defaultRetryPolicy = &p }
+	return func(driver *ProcessDriver) { driver.defaultRetryPolicy = &p }
 }
 
 // WithExpressionTimeout builds a long-lived, timeout-capable expression evaluator
@@ -167,8 +169,8 @@ func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
 // WithExpressionTimeout and [WithConditionEvaluator] set the same field; the last
 // option wins.
 func WithExpressionTimeout(d time.Duration) Option {
-	return func(r *ProcessDriver) {
-		r.conditionEval = expreval.New(expreval.WithTimeout(d))
+	return func(driver *ProcessDriver) {
+		driver.conditionEval = expreval.New(expreval.WithTimeout(d))
 	}
 }
 
@@ -186,9 +188,9 @@ func WithExpressionTimeout(d time.Duration) Option {
 // WithConditionEvaluator and [WithExpressionTimeout] set the same field; the last
 // option wins.
 func WithConditionEvaluator(eval engine.ConditionEvaluator) Option {
-	return func(r *ProcessDriver) {
+	return func(driver *ProcessDriver) {
 		if eval != nil {
-			r.conditionEval = eval
+			driver.conditionEval = eval
 		}
 	}
 }
@@ -197,9 +199,9 @@ func WithConditionEvaluator(eval engine.ConditionEvaluator) Option {
 // step-duration metrics, and armed-timer times. Default: clock.System().
 // A nil clock is ignored. Inject a fake clock in tests for determinism (ADR-0003).
 func WithClock(clk clock.Clock) Option {
-	return func(r *ProcessDriver) {
+	return func(driver *ProcessDriver) {
 		if clk != nil {
-			r.clk = clk
+			driver.clk = clk
 		}
 	}
 }
@@ -208,9 +210,9 @@ func WithClock(clk clock.Clock) Option {
 // ProcessDriver.Drive is called with an empty instanceID. Default: idgen.XID().
 // A nil generator is ignored. Inject idgen.Func in tests for determinism.
 func WithIDGenerator(gen idgen.Generator) Option {
-	return func(r *ProcessDriver) {
+	return func(driver *ProcessDriver) {
 		if gen != nil {
-			r.idgen = gen
+			driver.idgen = gen
 		}
 	}
 }
@@ -218,17 +220,17 @@ func WithIDGenerator(gen idgen.Generator) Option {
 // WithLogger sets the structured logger used by the ProcessDriver (default: [slog.Default]).
 // A nil value is ignored.
 func WithLogger(l *slog.Logger) Option {
-	return func(r *ProcessDriver) { r.logOpt = observability.WithLogger(l) }
+	return func(driver *ProcessDriver) { driver.logOpt = observability.WithLogger(l) }
 }
 
 // WithTracerProvider sets the OTel tracer provider used by the ProcessDriver
 // (default: the OTel global provider). A nil value is ignored.
 func WithTracerProvider(tp trace.TracerProvider) Option {
-	return func(r *ProcessDriver) { r.tpOpt = observability.WithTracerProvider(tp) }
+	return func(driver *ProcessDriver) { driver.tpOpt = observability.WithTracerProvider(tp) }
 }
 
 // WithMeterProvider sets the OTel meter provider used by the ProcessDriver
 // (default: the OTel global provider). A nil value is ignored.
 func WithMeterProvider(mp metric.MeterProvider) Option {
-	return func(r *ProcessDriver) { r.mpOpt = observability.WithMeterProvider(mp) }
+	return func(driver *ProcessDriver) { driver.mpOpt = observability.WithMeterProvider(mp) }
 }

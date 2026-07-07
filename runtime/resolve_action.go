@@ -11,7 +11,7 @@ import (
 // scoped catalog carried on the command (falling back to the top-level def's
 // scoped catalog when the command carries none, e.g. secondary actions) → the
 // global catalog.
-func (r *ProcessDriver) resolveInvokeAction(def *model.ProcessDefinition, cmd engine.InvokeAction) (action.Action, bool) {
+func (driver *ProcessDriver) resolveInvokeAction(def *model.ProcessDefinition, cmd engine.InvokeAction) (action.Action, bool) {
 	if cmd.Inline != nil {
 		return cmd.Inline, true
 	}
@@ -19,15 +19,15 @@ func (r *ProcessDriver) resolveInvokeAction(def *model.ProcessDefinition, cmd en
 	if scoped == nil && def != nil {
 		scoped = def.ScopedCatalog()
 	}
-	return action.Resolve(scoped, r.cat, cmd.Name)
+	return action.Resolve(scoped, driver.cat, cmd.Name)
 }
 
 // resolveActionName resolves a name-only (secondary / cancel) action against the
 // top-level definition's scoped catalog, then the global catalog.
-func (r *ProcessDriver) resolveActionName(def *model.ProcessDefinition, name string) (action.Action, bool) {
+func (driver *ProcessDriver) resolveActionName(def *model.ProcessDefinition, name string) (action.Action, bool) {
 	var scoped action.Catalog
 	if def != nil {
 		scoped = def.ScopedCatalog()
 	}
-	return action.Resolve(scoped, r.cat, name)
+	return action.Resolve(scoped, driver.cat, name)
 }

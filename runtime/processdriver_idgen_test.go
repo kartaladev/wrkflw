@@ -29,14 +29,14 @@ func TestRunGeneratesWhenInstanceIDEmpty(t *testing.T) {
 	t.Parallel()
 
 	def := buildStartEndDefinition(t)
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithIDGenerator(idgen.Func(func() (string, error) { return "gen-123", nil })),
 	)
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
-	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
-	st, err := r.Drive(t.Context(), def, "", map[string]any{})
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+	st, err := driver.Drive(t.Context(), def, "", map[string]any{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -49,14 +49,14 @@ func TestRunUsesExplicitInstanceID(t *testing.T) {
 	t.Parallel()
 
 	def := buildStartEndDefinition(t)
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithIDGenerator(idgen.Func(func() (string, error) { return "SHOULD-NOT-BE-USED", nil })),
 	)
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
-	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
-	st, err := r.Drive(t.Context(), def, "explicit-1", map[string]any{})
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+	st, err := driver.Drive(t.Context(), def, "explicit-1", map[string]any{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -70,14 +70,14 @@ func TestRunPropagatesGeneratorError(t *testing.T) {
 
 	def := buildStartEndDefinition(t)
 	boom := errors.New("no entropy")
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithIDGenerator(idgen.Func(func() (string, error) { return "", boom })),
 	)
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
-	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
-	_, err = r.Drive(t.Context(), def, "", map[string]any{})
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+	_, err = driver.Drive(t.Context(), def, "", map[string]any{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected generator error to propagate, got %v", err)
 	}

@@ -98,7 +98,7 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(clk))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(clk))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -108,7 +108,7 @@ func main() {
 	fmt.Println("--- Booking Saga: Compensation Rollback ---")
 	fmt.Println("Forward run:")
 
-	st, err := r.Drive(ctx, def, instanceID, nil)
+	st, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}
@@ -117,7 +117,7 @@ func main() {
 
 	fmt.Println("Operator triggers full rollback:")
 	trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
-	final, err := r.Deliver(ctx, def, instanceID, trg)
+	final, err := driver.Deliver(ctx, def, instanceID, trg)
 	if err != nil {
 		log.Fatal("deliver compensate:", err)
 	}

@@ -126,16 +126,16 @@ func run(logger *slog.Logger) error {
 
 	// --- Call-link notifier: resumes parked parent instances ---
 	// deliver is the function the notifier calls when a sub-instance completes or
-	// fails; wire it to runner.Deliver once the runner is constructed below.
-	// The closure captures runner by pointer so the forward-reference is safe:
-	// runner is assigned after the notifier is wired up, but the closure only
+	// fails; wire it to driver.Deliver once the driver is constructed below.
+	// The closure captures driver by pointer so the forward-reference is safe:
+	// driver is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
-	var runner *runtime.ProcessDriver
+	var driver *runtime.ProcessDriver
 	deliver := calllink.CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		if runner == nil {
+		if driver == nil {
 			return nil // not yet wired; should not occur in practice
 		}
-		_, err := runner.Deliver(ctx, def, instanceID, trg)
+		_, err := driver.Deliver(ctx, def, instanceID, trg)
 		return err
 	})
 	// The definition store resolves parent-process definitions during notification.
@@ -169,8 +169,8 @@ func run(logger *slog.Logger) error {
 	}
 
 	// --- Scheduler with MySQL leader elector (single-leader timer firing) ---
-	// We capture runner in a closure; it is assigned after scheduler construction.
-	// The closure reads runner at call time (after assignment below), so this
+	// We capture driver in a closure; it is assigned after scheduler construction.
+	// The closure reads driver at call time (after assignment below), so this
 	// forward-reference pattern is safe (mirrors the doc example for Option A).
 	//
 	// The MySQL-backed leader elector is built from the DB-specific backend package
@@ -178,9 +178,9 @@ func run(logger *slog.Logger) error {
 	// façade closes it (io.Closer) on scheduler.Close, so no separate closer needed.
 	elector, eerr := mysqlbackend.NewElector(workerCtx, db,
 		mysqlbackend.WithOnLeadershipAcquired(func(ctx context.Context) {
-			// runner is assigned below; the closure reads it at invocation time.
-			if runner != nil {
-				_ = runner.RehydrateTimers(ctx)
+			// driver is assigned below; the closure reads it at invocation time.
+			if driver != nil {
+				_ = driver.RehydrateTimers(ctx)
 			}
 		}),
 	)
@@ -229,7 +229,7 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	runner, err = runtime.NewProcessDriver(
+	driver, err = runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(cachingStore),
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -244,7 +244,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("new mysql lister: %w", err)
 	}
 	svc, err := service.NewEngine(
-		service.WithProcessDriver(runner),
+		service.WithProcessDriver(driver),
 		service.WithInstanceStore(cachingStore),
 		service.WithDefinitions(reg),
 		service.WithLister(lister),

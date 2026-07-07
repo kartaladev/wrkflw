@@ -46,12 +46,12 @@ func newCancelTestService(t *testing.T) *service.Engine {
 	ctx := t.Context()
 
 	// Seed "ci-run": start a cancelDef instance — parks at the human task.
-	parked, err := h.runner.Drive(ctx, def, "ci-run", nil)
+	parked, err := h.driver.Drive(ctx, def, "ci-run", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "ci-run must park at user task")
 
 	// Seed "ci-done": start a linearDef instance — completes immediately.
-	done2, err := h.runner.Drive(ctx, done, "ci-done", map[string]any{"name": "test"})
+	done2, err := h.driver.Drive(ctx, done, "ci-done", map[string]any{"name": "test"})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, done2.Status, "ci-done must be terminal")
 

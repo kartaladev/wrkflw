@@ -69,7 +69,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 	// No message-specific option is required — waiter tracking is built in.
-	r, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))
 	if err != nil {
 		log.Fatal("runner:", err)
 	}
@@ -78,7 +78,7 @@ func main() {
 
 	// Start two orders; each parks at the ReceiveTask keyed by its own orderID.
 	for _, id := range []string{"order-1", "order-2"} {
-		st, err := r.Drive(ctx, def, id, map[string]any{"orderID": id})
+		st, err := driver.Drive(ctx, def, id, map[string]any{"orderID": id})
 		if err != nil {
 			log.Fatal("run:", err)
 		}
@@ -89,7 +89,7 @@ func main() {
 	// Deliver the payment message for order-1 only. Name + correlation key must
 	// match the parked token's resolved key.
 	fmt.Println("delivering PaymentReceived for order-1...")
-	if err := r.DeliverMessage(ctx, def, "PaymentReceived", "order-1",
+	if err := driver.DeliverMessage(ctx, def, "PaymentReceived", "order-1",
 		map[string]any{"amount": 4200}); err != nil {
 		log.Fatal("deliver message:", err)
 	}
@@ -108,7 +108,7 @@ func main() {
 
 	// Now deliver order-2's message; it too completes.
 	fmt.Println("delivering PaymentReceived for order-2...")
-	if err := r.DeliverMessage(ctx, def, "PaymentReceived", "order-2",
+	if err := driver.DeliverMessage(ctx, def, "PaymentReceived", "order-2",
 		map[string]any{"amount": 999}); err != nil {
 		log.Fatal("deliver message:", err)
 	}

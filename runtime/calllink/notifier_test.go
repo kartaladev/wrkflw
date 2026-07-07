@@ -92,7 +92,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 
-	runner := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -101,7 +101,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 
 	// ── Step 1: run parent; it parks because the child parks at the human task ──
 	const parentID = "notifier-parent-i1"
-	st, err := runner.Drive(ctx, parent, parentID, nil)
+	st, err := driver.Drive(ctx, parent, parentID, nil)
 	require.NoError(t, err, "runner.Run must not error")
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 
@@ -124,7 +124,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"childResult": "done"})
 	require.NoError(t, err)
 
-	childFinalSt, err := runner.Deliver(ctx, child, childID, completeTrg)
+	childFinalSt, err := driver.Deliver(ctx, child, childID, completeTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, childFinalSt.Status, "child must be StatusCompleted after human task completion")
 
@@ -136,7 +136,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 
 	// ── Step 3: build CallNotifier and DrainOnce → parent resumes ─────────
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err2 := runner.Deliver(ctx2, def, instanceID, trg)
+		_, err2 := driver.Deliver(ctx2, def, instanceID, trg)
 		return err2
 	})
 

@@ -30,7 +30,7 @@ import (
 // Tests that need direct access to kernel internals (e.g. to run a definition
 // and capture the resulting task token) can reach through it.
 type Harness struct {
-	Runner    *runtime.ProcessDriver
+	Driver    *runtime.ProcessDriver
 	Store     *kernel.MemInstanceStore
 	TaskStore *humantask.MemTaskStore
 	Clock     *clockwork.FakeClock
@@ -70,7 +70,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 		"greet": greetAction{},
 	})
 
-	runner, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(fc),
@@ -83,7 +83,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 	reg := kernel.NewMapDefinitionRegistry(defs...)
 
 	svc, err := service.NewEngine(
-		service.WithProcessDriver(runner),
+		service.WithProcessDriver(driver),
 		service.WithInstanceStore(store),
 		service.WithDefinitions(reg),
 		service.WithLister(store),
@@ -93,7 +93,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 	require.NoError(t, err)
 
 	h := &Harness{
-		Runner:    runner,
+		Driver:    driver,
 		Store:     store,
 		TaskStore: taskStore,
 		Clock:     fc,
@@ -181,7 +181,7 @@ func MessageProcess(msgName string) *model.ProcessDefinition {
 func StartedApprovalInstance(t testing.TB, h *Harness, instanceID string) (taskToken string) {
 	t.Helper()
 	def := ApprovalProcess()
-	st, err := h.Runner.Drive(context.Background(), def, instanceID, nil)
+	st, err := h.Driver.Drive(context.Background(), def, instanceID, nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, st.Status, "approval instance must park at user task")
 	require.NotEmpty(t, st.Tokens, "approval instance must have at least one parked token")

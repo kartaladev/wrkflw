@@ -51,10 +51,10 @@ func TestRehydrateTimersDurableSQLite(t *testing.T) {
 	// scheduler). The wrkflw_timers row persists in the SQLite store.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		r := runtimetest.MustRunner(t, cat, sqlStore,
+		driver := runtimetest.MustRunner(t, cat, sqlStore,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(timerStore), runtime.WithDefinitions(reg))
-		_, err := r.Drive(t.Context(), def, "rh-sqlite-1", nil)
+		_, err := driver.Drive(t.Context(), def, "rh-sqlite-1", nil)
 		require.NoError(t, err)
 	}
 

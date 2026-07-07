@@ -51,11 +51,11 @@ func TestEngineShutdownLeavesInjectedDriverUntouched(t *testing.T) {
 
 	// The injected driver must still be usable: Start must not report
 	// scheduling.ErrSchedulerClosed (which it would if it had been shut down).
-	err := h.runner.Start(context.Background())
+	err := h.driver.Start(context.Background())
 	assert.NoError(t, err)
 
 	// Clean up the consumer-owned driver ourselves so it does not leak.
 	t.Cleanup(func() {
-		_ = h.runner.Shutdown(context.Background())
+		_ = h.driver.Shutdown(context.Background())
 	})
 }

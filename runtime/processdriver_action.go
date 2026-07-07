@@ -58,11 +58,11 @@ func copyVarsForOutcome(vars map[string]any) map[string]any {
 // actionContext derives the context an action runs under. When actionTimeout is
 // positive it applies a deadline; otherwise the parent context passes through
 // unchanged. The caller must always invoke the returned cancel func.
-func (r *ProcessDriver) actionContext(parent context.Context) (context.Context, context.CancelFunc) {
-	if r.actionTimeout <= 0 {
+func (driver *ProcessDriver) actionContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if driver.actionTimeout <= 0 {
 		return parent, func() {}
 	}
-	return context.WithTimeout(parent, r.actionTimeout)
+	return context.WithTimeout(parent, driver.actionTimeout)
 }
 
 func safeActionDo(ctx context.Context, a action.Action, in map[string]any) (out map[string]any, err error) {
@@ -81,25 +81,25 @@ func safeActionDo(ctx context.Context, a action.Action, in map[string]any) (out 
 // fire callbacks that need to call Deliver.
 //
 //nolint:cyclop // the command switch is intentionally exhaustive; each case is simple.
-func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
+func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
 	switch cmd := c.(type) {
 	case engine.InvokeAction:
-		actx, aspan := r.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name,
+		actx, aspan := driver.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name,
 			trace.WithAttributes(attribute.String("wrkflw.action", cmd.Name)))
 		outcome := "error"
 		var elapsed float64
 		defer func() {
-			r.obs.actionDuration.Record(actx, elapsed,
+			driver.obs.actionDuration.Record(actx, elapsed,
 				metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", outcome)))
 			aspan.End()
 		}()
 
-		a, ok := r.resolveInvokeAction(def, cmd)
+		a, ok := driver.resolveInvokeAction(def, cmd)
 		if !ok {
 			err := errors.New("unknown action: " + cmd.Name)
 			aspan.RecordError(err)
 			aspan.SetStatus(codes.Error, err.Error())
-			r.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
+			driver.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
 				attribute.String("action", cmd.Name),
 				attribute.Bool("retryable", false),
 			))
@@ -107,21 +107,21 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 				// No token awaits a fire-and-forget action's result, so an
 				// ActionFailed would only surface as ErrTokenNotFound. Log and
 				// drop instead — the action was never actionable anyway.
-				r.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action not found",
+				driver.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action not found",
 					slog.String("action", cmd.Name))
 				return nil, nil
 			}
-			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
+			return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
-		start := r.clk.Now()
-		tctx, cancel := r.actionContext(actx)
+		start := driver.clk.Now()
+		tctx, cancel := driver.actionContext(actx)
 		out, err := safeActionDo(tctx, a, cmd.Input)
 		cancel()
-		elapsed = r.clk.Now().Sub(start).Seconds()
+		elapsed = driver.clk.Now().Sub(start).Seconds()
 		if err != nil {
 			aspan.RecordError(err)
 			aspan.SetStatus(codes.Error, err.Error())
-			r.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
+			driver.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
 				attribute.String("action", cmd.Name),
 				attribute.Bool("retryable", action.IsRetryable(err)),
 			))
@@ -129,11 +129,11 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 				// Deadline-breach and reminder actions run for their side effect
 				// only; no token awaits the result. Log the failure rather than
 				// feeding back an ActionFailed that no token could ever match.
-				r.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action failed",
+				driver.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action failed",
 					slog.String("action", cmd.Name), slog.Any("error", err))
 				return nil, nil
 			}
-			return engine.NewActionFailed(r.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), engine.WithJitter(r.jitter.Fraction())), nil
+			return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), engine.WithJitter(driver.jitter.Fraction())), nil
 		}
 		outcome = "ok"
 		if cmd.FireAndForget {
@@ -141,23 +141,23 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 			// token awaits the result, so return no trigger.
 			return nil, nil
 		}
-		return engine.NewActionCompleted(r.clk.Now(), cmd.CommandID, out), nil
+		return engine.NewActionCompleted(driver.clk.Now(), cmd.CommandID, out), nil
 
 	case engine.InvokeCancelAction:
 		// Best-effort, fire-and-forget: run the action for its side effect, log any
 		// failure, and NEVER feed a result back or return an error — the instance is
 		// already terminal and cancellation must report success regardless (ADR-0028).
-		a, ok := r.resolveActionName(def, cmd.Name)
+		a, ok := driver.resolveActionName(def, cmd.Name)
 		if !ok {
-			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action not found",
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action not found",
 				slog.String("action", cmd.Name))
 			return nil, nil
 		}
-		cctx, cancel := r.actionContext(ctx)
+		cctx, cancel := driver.actionContext(ctx)
 		_, err := safeActionDo(cctx, a, cmd.Input)
 		cancel()
 		if err != nil {
-			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",
 				slog.String("action", cmd.Name), slog.Any("error", err))
 		}
 		return nil, nil
@@ -175,14 +175,14 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		return nil, nil
 
 	case engine.AwaitHuman:
-		if r.resolver == nil {
+		if driver.resolver == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no ActorResolver configured")
 		}
-		if r.tasks == nil {
+		if driver.tasks == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no TaskStore configured")
 		}
 		// Resolve candidates from the eligibility spec and process variables.
-		actors, err := r.resolver.Candidates(ctx, cmd.Eligibility, st.Variables)
+		actors, err := driver.resolver.Candidates(ctx, cmd.Eligibility, st.Variables)
 		if err != nil {
 			return nil, fmt.Errorf("workflow-runtime: resolve candidates: %w", err)
 		}
@@ -200,7 +200,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 			Eligibility: cmd.Eligibility,
 			Candidates:  candidateIDs,
 			State:       humantask.Unclaimed,
-			CreatedAt:   r.clk.Now(),
+			CreatedAt:   driver.clk.Now(),
 			// Snapshot the process variables so attribute-based eligibility predicates
 			// that reference data variables (e.g. vars["region"] == "EU") are
 			// deterministically evaluated against the state at task-creation time.
@@ -215,44 +215,44 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 			task.NodeID = t.NodeID
 			task.CreatedAt = t.CreatedAt // preserve engine-stamped time
 		}
-		if err := r.tasks.Upsert(ctx, task); err != nil {
+		if err := driver.tasks.Upsert(ctx, task); err != nil {
 			return nil, fmt.Errorf("workflow-runtime: upsert task: %w", err)
 		}
-		r.obs.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "created")))
+		driver.obs.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "created")))
 		// No follow-up trigger: the instance parks here.
 		return nil, nil
 
 	case engine.UpdateTask:
-		if r.tasks == nil {
+		if driver.tasks == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform UpdateTask: no TaskStore configured")
 		}
-		if err := r.tasks.Upsert(ctx, cmd.Task); err != nil {
+		if err := driver.tasks.Upsert(ctx, cmd.Task); err != nil {
 			return nil, fmt.Errorf("workflow-runtime: update task: %w", err)
 		}
 		return nil, nil
 
 	case engine.ScheduleTimer:
-		if r.sched == nil {
+		if driver.sched == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
 		}
 		if cmd.Kind == engine.TimerRetry {
-			r.obs.actionRetries.Add(ctx, 1)
+			driver.obs.actionRetries.Add(ctx, 1)
 		}
-		r.armTimer(ctx, def, st.InstanceID, cmd.TimerID, cmd.Trigger)
+		driver.armTimer(ctx, def, st.InstanceID, cmd.TimerID, cmd.Trigger)
 		return nil, nil
 
 	case engine.CancelTimer:
-		if r.sched == nil {
+		if driver.sched == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
 		}
-		r.sched.Cancel(ctx, cmd.TimerID)
+		driver.sched.Cancel(ctx, cmd.TimerID)
 		return nil, nil
 
 	case engine.ThrowSignal:
-		if r.sigbus == nil {
+		if driver.sigbus == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: no SignalBus configured", cmd.Name)
 		}
-		if err := r.sigbus.Publish(ctx, cmd.Name, cmd.Payload); err != nil {
+		if err := driver.sigbus.Publish(ctx, cmd.Name, cmd.Payload); err != nil {
 			return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: %w", cmd.Name, err)
 		}
 		return nil, nil
@@ -266,11 +266,11 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		// Defensive nil-guard: defsReg is always non-nil after NewProcessDriver
 		// (defaultDefinitionRegistry is set before the option loop, and
 		// WithDefinitions ignores nil). This guard exists only as dead-safe code.
-		if r.defsReg == nil {
+		if driver.defsReg == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured"+
 				" (use runtime.RegisterDefinition to populate the default registry, or supply one via WithDefinitions)", cmd.DefRef.String())
 		}
-		childDef, err := r.defsReg.Lookup(ctx, cmd.DefRef)
+		childDef, err := driver.defsReg.Lookup(ctx, cmd.DefRef)
 		if err != nil {
 			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: definition not found"+
 				" (register it via runtime.RegisterDefinition or supply a registry via WithDefinitions): %w", cmd.DefRef.String(), err)
@@ -292,14 +292,14 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		// Async path: when a CallLinkStore is configured, the child is started
 		// non-blocking. The parent parks at the call node; a notifier delivers
 		// the outcome (SubInstanceCompleted / SubInstanceFailed) later.
-		if r.callLinks != nil {
+		if driver.callLinks != nil {
 			// Compute depth: look up THIS instance's own link (is it itself a child?).
 			// Found ⇒ depth = parentLink.Depth + 1; not found ⇒ depth = 1.
 			// A store error must NOT be swallowed as "not found": that would
 			// miscompute depth and start a child that the guard should have
 			// rejected. Propagate it so the caller can retry.
 			depth := 1
-			parentLink, ok, lerr := r.callLinks.LookupChild(ctx, st.InstanceID)
+			parentLink, ok, lerr := driver.callLinks.LookupChild(ctx, st.InstanceID)
 			if lerr != nil {
 				return nil, fmt.Errorf("workflow-runtime: call activity: depth lookup for %q: %w", st.InstanceID, lerr)
 			}
@@ -307,7 +307,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 				depth = parentLink.Depth + 1
 			}
 			if depth > maxCallDepth {
-				return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+				return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
 					fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
 						"async call activity chain is too deep",
 						maxCallDepth, cmd.DefRef.String()),
@@ -325,8 +325,8 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 
 			// Start the child's first burst non-blocking: drive it until it parks or
 			// completes. The link is threaded into the child's first Create atomically.
-			if err := r.runChild(ctx, childDef, childInstanceID, cmd.Input, &link); err != nil {
-				return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID, err.Error()), nil
+			if err := driver.runChild(ctx, childDef, childInstanceID, cmd.Input, &link); err != nil {
+				return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID, err.Error()), nil
 			}
 
 			// Return nil, nil — no synchronous resume trigger. The parent stays parked
@@ -335,14 +335,14 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 			return nil, nil
 		}
 
-		// Synchronous path (opt-out: r.callLinks == nil): run the child to completion
+		// Synchronous path (opt-out: driver.callLinks == nil): run the child to completion
 		// in-process. This is the VERBATIM original behavior.
 
 		// Fix 2: Recursion / cycle depth guard.
 		//
 		// A definition whose call activity references itself (direct: A→A, or via a
 		// cycle: A→B→A) causes unbounded synchronous recursion through perform →
-		// r.Drive → deliverLoop → perform, which ultimately stack-overflows. We thread
+		// driver.Drive → deliverLoop → perform, which ultimately stack-overflows. We thread
 		// the depth counter through ctx so every nested call increments it; when the
 		// limit is reached we return a descriptive SubInstanceFailed instead of
 		// crashing. The synchronous runner only supports children that run to
@@ -350,7 +350,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		// not use this counter.
 		depth := callDepth(ctx)
 		if depth >= maxCallDepth {
-			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
 				fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
 					"the synchronous runner does not support cyclic or deeply nested call activities",
 					maxCallDepth, cmd.DefRef.String()),
@@ -362,11 +362,11 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		// the same ProcessDriver so it shares the store, journal, outbox, catalog, and
 		// scheduler. The child's Drive call drives the child's deliverLoop until the
 		// child parks or completes.
-		childSt, err := r.Drive(childCtx, childDef, childInstanceID, cmd.Input)
+		childSt, err := driver.Drive(childCtx, childDef, childInstanceID, cmd.Input)
 		if err != nil {
 			// Child run returned a hard error (e.g. storage failure). Propagate as
 			// SubInstanceFailed so the parent instance can respond.
-			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID, err.Error()), nil
+			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID, err.Error()), nil
 		}
 
 		// Translate the child's terminal status into a parent trigger.
@@ -374,7 +374,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		case engine.StatusCompleted:
 			// Pass the child's final variables back as the Output so the parent can
 			// merge them. This gives the parent access to everything the child computed.
-			return engine.NewSubInstanceCompleted(r.clk.Now(), cmd.CommandID, childSt.Variables), nil
+			return engine.NewSubInstanceCompleted(driver.clk.Now(), cmd.CommandID, childSt.Variables), nil
 
 		case engine.StatusRunning:
 			// Fix 1: Explicit parked-child error.
@@ -388,7 +388,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 			//
 			// Return a clear, diagnosable error message so the consumer understands
 			// the limitation rather than receiving a generic "did not complete" message.
-			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
 				fmt.Sprintf("workflow-runtime: call activity child %q parked (status running): "+
 					"the synchronous runner does not support children that wait on human tasks, "+
 					"timers, or events; async call activity is a future enhancement",
@@ -398,7 +398,7 @@ func (r *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinitio
 		default:
 			// StatusFailed or any other non-completed, non-running terminal state.
 			// Include the numeric status in the message so failures are diagnosable.
-			return engine.NewSubInstanceFailed(r.clk.Now(), cmd.CommandID,
+			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
 				fmt.Sprintf("workflow-runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
 			), nil
 		}

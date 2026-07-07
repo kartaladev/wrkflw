@@ -36,11 +36,11 @@ func (s *closeSpyScheduler) Close() error                     { s.closed.Store(t
 // driver-owned scheduler goroutine is released by Shutdown (proven implicitly by
 // this package's goleak TestMain).
 func TestProcessDriverDefaultScheduler(t *testing.T) {
-	d, err := runtime.NewProcessDriver()
+	driver, err := runtime.NewProcessDriver()
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, d.Shutdown(context.Background())) })
+	t.Cleanup(func() { require.NoError(t, driver.Shutdown(context.Background())) })
 
-	st, err := d.Drive(t.Context(), timerOnlyDef(), "i-default-sched", nil)
+	st, err := driver.Drive(t.Context(), timerOnlyDef(), "i-default-sched", nil)
 	require.NoError(t, err, "zero-config driver must arm the timer via the default scheduler")
 	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park at the timer catch")
 }
@@ -49,52 +49,52 @@ func TestProcessDriverDefaultScheduler(t *testing.T) {
 // default scheduler and binds its lifetime to the given context.
 func TestProcessDriverStart(t *testing.T) {
 	t.Run("starts the owned scheduler and is idempotent", func(t *testing.T) {
-		d, err := runtime.NewProcessDriver()
+		driver, err := runtime.NewProcessDriver()
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
-		require.NoError(t, d.Start(t.Context()))
-		require.NoError(t, d.Start(t.Context()), "Start must be idempotent")
+		require.NoError(t, driver.Start(t.Context()))
+		require.NoError(t, driver.Start(t.Context()), "Start must be idempotent")
 
-		st, err := d.Drive(t.Context(), timerOnlyDef(), "i-drv-start", nil)
+		st, err := driver.Drive(t.Context(), timerOnlyDef(), "i-drv-start", nil)
 		require.NoError(t, err)
 		assert.Equal(t, engine.StatusRunning, st.Status, "timer must arm under the started scheduler")
 	})
 
 	t.Run("delegates to the owned scheduler (errors after Shutdown)", func(t *testing.T) {
-		d, err := runtime.NewProcessDriver()
+		driver, err := runtime.NewProcessDriver()
 		require.NoError(t, err)
-		require.NoError(t, d.Shutdown(context.Background()))
+		require.NoError(t, driver.Shutdown(context.Background()))
 
 		// The owned scheduler is closed by Shutdown, so a subsequent Start must
 		// surface its terminal error rather than silently succeed — proving Start
 		// genuinely delegates to the owned scheduler.
-		err = d.Start(context.Background())
+		err = driver.Start(context.Background())
 		require.ErrorIs(t, err, scheduling.ErrSchedulerClosed)
 	})
 
 	t.Run("no-op for an injected scheduler", func(t *testing.T) {
-		d, err := runtime.NewProcessDriver(runtime.WithScheduler(processtest.NewMemScheduler()))
+		driver, err := runtime.NewProcessDriver(runtime.WithScheduler(processtest.NewMemScheduler()))
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = d.Shutdown(context.Background()) })
-		require.NoError(t, d.Start(t.Context()), "an injected scheduler is consumer-owned; Start is a no-op")
+		t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+		require.NoError(t, driver.Start(t.Context()), "an injected scheduler is consumer-owned; Start is a no-op")
 	})
 }
 
 // TestProcessDriverShutdown covers the driver-owned ShutdownGroup teardown.
 func TestProcessDriverShutdown(t *testing.T) {
 	t.Run("is idempotent", func(t *testing.T) {
-		d, err := runtime.NewProcessDriver(runtime.WithScheduler(processtest.NewMemScheduler()))
+		driver, err := runtime.NewProcessDriver(runtime.WithScheduler(processtest.NewMemScheduler()))
 		require.NoError(t, err)
-		require.NoError(t, d.Shutdown(context.Background()))
-		require.NoError(t, d.Shutdown(context.Background()), "second Shutdown must be a no-op")
+		require.NoError(t, driver.Shutdown(context.Background()))
+		require.NoError(t, driver.Shutdown(context.Background()), "second Shutdown must be a no-op")
 	})
 
 	t.Run("does not close a consumer-injected scheduler", func(t *testing.T) {
 		spy := &closeSpyScheduler{}
-		d, err := runtime.NewProcessDriver(runtime.WithScheduler(spy))
+		driver, err := runtime.NewProcessDriver(runtime.WithScheduler(spy))
 		require.NoError(t, err)
-		require.NoError(t, d.Shutdown(context.Background()))
+		require.NoError(t, driver.Shutdown(context.Background()))
 		assert.False(t, spy.closed.Load(), "an injected scheduler is consumer-owned and must not be closed by the driver")
 	})
 }

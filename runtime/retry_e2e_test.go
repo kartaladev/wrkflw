@@ -80,7 +80,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	})
 
 	store := runtimetest.MustMemStore(t)
-	runner := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(jitter),
@@ -90,7 +90,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	const instanceID = "p"
 
 	// --- Step 1: Run → attempt 1 fails → parks on retry timer at T+1s ---
-	st, err := runner.Drive(ctx, def, instanceID, nil)
+	st, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err, "Run must not return a hard error")
 	assert.Equal(t, engine.StatusRunning, st.Status,
 		"instance must be parked (StatusRunning) after first failure — retry timer scheduled")

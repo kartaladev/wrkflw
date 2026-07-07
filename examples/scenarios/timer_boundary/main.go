@@ -108,7 +108,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
@@ -122,7 +122,7 @@ func main() {
 
 	// Start both orders; each parks at the ReceiveTask with a 30m timer armed.
 	for _, id := range []string{"order-ontime", "order-late"} {
-		st, rerr := r.Drive(ctx, def, id, map[string]any{"orderID": id})
+		st, rerr := driver.Drive(ctx, def, id, map[string]any{"orderID": id})
 		if rerr != nil {
 			log.Fatal("run:", rerr)
 		}
@@ -133,7 +133,7 @@ func main() {
 	// order-ontime: deliver the confirmation before the deadline. The ReceiveTask
 	// resumes and the timer boundary is disarmed (it will never fire).
 	fmt.Println("delivering payment.confirmed for order-ontime (before the deadline)...")
-	if derr := r.DeliverMessage(ctx, def, "payment.confirmed", "order-ontime", nil); derr != nil {
+	if derr := driver.DeliverMessage(ctx, def, "payment.confirmed", "order-ontime", nil); derr != nil {
 		log.Fatal("deliver:", derr)
 	}
 

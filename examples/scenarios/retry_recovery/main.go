@@ -117,7 +117,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
@@ -133,7 +133,7 @@ func main() {
 	fmt.Println("--- Payment: Retry with Backoff (recovery) ---")
 
 	// Run: attempt 1 fails and the instance parks on the retry timer.
-	st, err := r.Drive(ctx, def, instanceID, nil)
+	st, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}

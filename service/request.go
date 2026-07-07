@@ -30,7 +30,7 @@ type DeliverSignalRequest struct {
 }
 
 // DeliverMessageRequest carries the parameters for delivering a message.
-// The runner's internal message-waiter table routes the message to the
+// The driver's internal message-waiter table routes the message to the
 // correct instance by (Name, CorrelationKey) without needing the caller
 // to know which instance is waiting.
 type DeliverMessageRequest struct {

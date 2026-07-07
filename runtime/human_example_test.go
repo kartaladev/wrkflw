@@ -39,7 +39,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 	store := runtimetest.MustMemStore(t)
 
-	r := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -47,7 +47,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	const instanceID = "inst-1"
 
 	// --- Run: parks at the user task ---
-	parkedState, err := r.Drive(ctx, def, instanceID, nil)
+	parkedState, err := driver.Drive(ctx, def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, parkedState.Status, "instance should be parked (running) at the user task")
 	require.Len(t, parkedState.Tokens, 1, "exactly one parked token")
@@ -69,7 +69,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)
 	require.NoError(t, err)
 
-	claimedState, err := r.Deliver(ctx, def, instanceID, claimTrg)
+	claimedState, err := driver.Deliver(ctx, def, instanceID, claimTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, claimedState.Status, "instance still running after claim")
 
@@ -83,7 +83,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"approved": true})
 	require.NoError(t, err)
 
-	finalState, err := r.Deliver(ctx, def, instanceID, completeTrg)
+	finalState, err := driver.Deliver(ctx, def, instanceID, completeTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, finalState.Status)
 	assert.Empty(t, finalState.Tokens, "no tokens remain after completion")
@@ -127,10 +127,10 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
+	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
-	_, err := r.Deliver(ctx, runtimetest.ApprovalDef(), "non-existent", trg)
+	_, err := driver.Deliver(ctx, runtimetest.ApprovalDef(), "non-existent", trg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow-runtime: deliver: load:")
 }
@@ -150,13 +150,13 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
 	// Start with non-nil process variables so the snapshot is meaningful.
 	instanceVars := map[string]any{"region": "EU", "priority": 1}
-	_, err := r.Drive(ctx, runtimetest.ApprovalDef(), "snap-inst-1", instanceVars)
+	_, err := driver.Drive(ctx, runtimetest.ApprovalDef(), "snap-inst-1", instanceVars)
 	require.NoError(t, err)
 
 	// After Run parks, the task must be in the store with Vars populated.
@@ -244,13 +244,13 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 			az := authz.RoleAuthorizer{}
 			store := runtimetest.MustMemStore(t)
 
-			r := runtimetest.MustRunner(t, nil, store,
+			driver := runtimetest.MustRunner(t, nil, store,
 				runtime.WithHumanTasks(resolver, taskStore, az),
 			)
 
 			// Step 1: Run the process — the runner must create the HumanTask and
 			// snapshot the process variables into task.Vars. No manual Upsert.
-			parkedState, err := r.Drive(ctx, def, tc.instID, map[string]any{"region": tc.region})
+			parkedState, err := driver.Drive(ctx, def, tc.instID, map[string]any{"region": tc.region})
 			require.NoError(t, err)
 			require.Equal(t, engine.StatusRunning, parkedState.Status, "instance must park at the user task")
 			require.Len(t, parkedState.Tokens, 1, "exactly one parked token expected")

@@ -309,7 +309,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// ── Wire ProcessDriver, Chainer, and ChainerRunner ───────────────────────────────
-	runner, err := runtime.NewProcessDriver(runtime.WithInstanceStore(be.store))
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(be.store))
 	if err != nil {
 		return fmt.Errorf("build runner: %w", err)
 	}
@@ -322,7 +322,7 @@ func run(logger *slog.Logger) error {
 		return chain.SuccessorDecision{}, false
 	}
 
-	core, err := chain.NewChainer(runner, policy, chain.WithChainLinks(be.links))
+	core, err := chain.NewChainer(driver, policy, chain.WithChainLinks(be.links))
 	if err != nil {
 		return fmt.Errorf("chainer: %w", err)
 	}
@@ -339,7 +339,7 @@ func run(logger *slog.Logger) error {
 	predID := "demo-pred"
 	startVars := map[string]any{"source": "chaining-wiring-demo", "backend": *dbKind}
 
-	st, err := runner.Drive(ctx, defPA, predID, startVars)
+	st, err := driver.Drive(ctx, defPA, predID, startVars)
 	if err != nil {
 		return fmt.Errorf("run predecessor: %w", err)
 	}

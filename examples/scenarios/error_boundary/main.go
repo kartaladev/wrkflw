@@ -94,7 +94,7 @@ func main() {
 	if err != nil {
 		log.Fatal("memstore:", err)
 	}
-	r, err := runtime.NewProcessDriver(
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 	)
@@ -109,7 +109,7 @@ func main() {
 	// Run drives the process to a terminal state. The charge fails, the error
 	// boundary catches "INSUFFICIENT_FUNDS", and the instance completes via the
 	// decline path — all within this single Run call.
-	final, err := r.Drive(ctx, def, instanceID, nil)
+	final, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {
 		log.Fatal("run:", err)
 	}

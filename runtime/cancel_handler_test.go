@@ -73,19 +73,19 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i1"
 
 	// Run: parks at the user task.
-	runSt, err := r.Drive(t.Context(), def, instanceID, nil)
+	runSt, err := driver.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, runSt.Status, "instance must park at approve (StatusRunning)")
 	assert.EqualValues(t, 0, cleanupRan.Load(), "cleanup must not run before cancel")
 
 	// Cancel: node cancel handler must fire.
-	cancelSt, err := r.CancelInstance(t.Context(), def, instanceID)
+	cancelSt, err := driver.CancelInstance(t.Context(), def, instanceID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status, "instance must be terminated after cancel")
 	assert.Empty(t, cancelSt.Tokens, "no live tokens after cancel")
@@ -106,15 +106,15 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i2"
 
-	_, err := r.Drive(t.Context(), def, instanceID, nil)
+	_, err := driver.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 
-	cancelSt, err := r.CancelInstance(t.Context(), def, instanceID)
+	cancelSt, err := driver.CancelInstance(t.Context(), def, instanceID)
 	require.NoError(t, err, "a failing per-node cancel handler must not fail CancelInstance")
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status)
 }
@@ -129,15 +129,15 @@ func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	// Empty catalog — "cleanup" will not resolve.
-	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i3"
 
-	_, err := r.Drive(t.Context(), def, instanceID, nil)
+	_, err := driver.Drive(t.Context(), def, instanceID, nil)
 	require.NoError(t, err)
 
-	cancelSt, err := r.CancelInstance(t.Context(), def, instanceID)
+	cancelSt, err := driver.CancelInstance(t.Context(), def, instanceID)
 	require.NoError(t, err, "an unresolved per-node cancel handler must not fail CancelInstance")
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status)
 }

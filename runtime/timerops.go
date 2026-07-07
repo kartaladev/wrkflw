@@ -98,14 +98,14 @@ func nextRunFor(trig schedule.TriggerSpec, now time.Time) time.Time {
 // found it returns false — the safe default that consumes a fired timer (today's
 // behaviour before recurrence-aware cancel). It is invoked only for a TimerFired
 // trigger, so the ListArmed read stays off the hot path of non-timer steps.
-func (r *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID, timerID string) bool {
-	if r.timerStore == nil {
+func (driver *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID, timerID string) bool {
+	if driver.timerStore == nil {
 		return false
 	}
-	armed, err := r.timerStore.ListArmed(ctx)
+	armed, err := driver.timerStore.ListArmed(ctx)
 	if err != nil {
-		r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recurrence lookup: list armed failed, treating as non-recurring",
-			append(r.obs.tel.LogAttrs(ctx),
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recurrence lookup: list armed failed, treating as non-recurring",
+			append(driver.obs.tel.LogAttrs(ctx),
 				slog.String("timer_id", timerID),
 				slog.String("instance_id", instanceID),
 				slog.Any("error", err))...)
@@ -127,23 +127,23 @@ func (r *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID, tim
 // An unschedulable trigger (e.g. kernel.ErrUnsupportedTrigger from an in-memory
 // scheduler asked to run a cron trigger, or a gocron mapping error) is logged at
 // WARN and skipped — it must never crash the driver or the in-flight instance.
-func (r *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec) {
-	nextRun, err := r.sched.Schedule(ctx, timerID, trig, func() {
+func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec) {
+	nextRun, err := driver.sched.Schedule(ctx, timerID, trig, func() {
 		// This callback runs from the scheduler's goroutine (or Tick caller).
 		// Use a background context: the originating request context may have
 		// been cancelled by the time the timer fires.
 		fireCtx := context.Background()
-		trg := engine.NewTimerFired(r.clk.Now(), timerID)
-		r.obs.timerFired.Add(fireCtx, 1)
+		trg := engine.NewTimerFired(driver.clk.Now(), timerID)
+		driver.obs.timerFired.Add(fireCtx, 1)
 		const maxAttempts = 5
 		var err error
 		for range maxAttempts {
-			if _, err = r.Deliver(fireCtx, def, instanceID, trg); err == nil {
+			if _, err = driver.Deliver(fireCtx, def, instanceID, trg); err == nil {
 				return
 			}
 			if !errors.Is(err, kernel.ErrConcurrentUpdate) {
-				r.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver failed",
-					append(r.obs.tel.LogAttrs(fireCtx),
+				driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver failed",
+					append(driver.obs.tel.LogAttrs(fireCtx),
 						slog.String("timer_id", timerID),
 						slog.String("instance_id", instanceID),
 						slog.Any("error", err))...)
@@ -153,8 +153,8 @@ func (r *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefiniti
 			// internally reloads fresh state on the next call. Retry
 			// immediately (no sleep needed — store reloads on each Deliver).
 		}
-		r.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver permanently dropped after CAS conflicts",
-			append(r.obs.tel.LogAttrs(fireCtx),
+		driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver permanently dropped after CAS conflicts",
+			append(driver.obs.tel.LogAttrs(fireCtx),
 				slog.String("timer_id", timerID),
 				slog.String("instance_id", instanceID),
 				slog.Int("attempts", maxAttempts),
@@ -164,15 +164,15 @@ func (r *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefiniti
 		// The trigger could not be scheduled (unsupported kind or a mapping
 		// error). Skip it — an unschedulable timer must never crash the driver.
 		// (Durable descriptor persistence + NextRun recording is Plan 3.)
-		r.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armTimer: trigger not schedulable, skipping timer",
-			append(r.obs.tel.LogAttrs(ctx),
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armTimer: trigger not schedulable, skipping timer",
+			append(driver.obs.tel.LogAttrs(ctx),
 				slog.String("timer_id", timerID),
 				slog.String("instance_id", instanceID),
 				slog.Any("error", err))...)
 		return
 	}
-	r.obs.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "runtime: armTimer: scheduled",
-		append(r.obs.tel.LogAttrs(ctx),
+	driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "runtime: armTimer: scheduled",
+		append(driver.obs.tel.LogAttrs(ctx),
 			slog.String("timer_id", timerID),
 			slog.String("instance_id", instanceID),
 			slog.Time("next_run", nextRun))...)
@@ -198,28 +198,28 @@ func (r *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefiniti
 //
 // Timers whose definition the registry cannot resolve are skipped and counted in
 // the returned error.
-func (r *ProcessDriver) RehydrateTimers(ctx context.Context) error {
-	if r.sched == nil || r.timerStore == nil || r.defsReg == nil {
+func (driver *ProcessDriver) RehydrateTimers(ctx context.Context) error {
+	if driver.sched == nil || driver.timerStore == nil || driver.defsReg == nil {
 		return fmt.Errorf("workflow-runtime: RehydrateTimers requires WithScheduler, WithTimerStore, and WithDefinitions")
 	}
-	armed, err := r.timerStore.ListArmed(ctx)
+	armed, err := driver.timerStore.ListArmed(ctx)
 	if err != nil {
 		return fmt.Errorf("workflow-runtime: RehydrateTimers: list armed: %w", err)
 	}
 	var unresolved int
 	for _, a := range armed {
 		defQ := model.Version(a.DefID, a.DefVersion)
-		def, err := r.defsReg.Lookup(ctx, defQ)
+		def, err := driver.defsReg.Lookup(ctx, defQ)
 		if err != nil {
 			unresolved++
-			r.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: rehydrate: definition not found, skipping timer",
-				append(r.obs.tel.LogAttrs(ctx),
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: rehydrate: definition not found, skipping timer",
+				append(driver.obs.tel.LogAttrs(ctx),
 					slog.String("def_ref", defQ.String()),
 					slog.String("timer_id", a.TimerID),
 					slog.String("instance_id", a.InstanceID))...)
 			continue
 		}
-		r.armTimer(ctx, def, a.InstanceID, a.TimerID, rehydrateTrigger(a))
+		driver.armTimer(ctx, def, a.InstanceID, a.TimerID, rehydrateTrigger(a))
 	}
 	if unresolved > 0 {
 		return fmt.Errorf("workflow-runtime: RehydrateTimers: %d timer(s) skipped (definition not found)", unresolved)

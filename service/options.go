@@ -30,10 +30,10 @@ type engineConfig struct {
 
 // WithProcessDriver supplies a pre-built driver (escape hatch for tests /
 // advanced wiring). When set, NewEngine does not build a driver from the leaves.
-func WithProcessDriver(d *runtime.ProcessDriver) Option {
+func WithProcessDriver(driver *runtime.ProcessDriver) Option {
 	return func(c *engineConfig) {
-		if d != nil {
-			c.driver = d
+		if driver != nil {
+			c.driver = driver
 		}
 	}
 }
