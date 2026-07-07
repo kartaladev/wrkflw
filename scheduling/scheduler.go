@@ -15,6 +15,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -33,14 +34,40 @@ import (
 var ErrTimerLockElectorConflict = errors.New(
 	"workflow-scheduling: a Locker and an Elector are mutually exclusive — set only one")
 
+// ErrSchedulerClosed is returned by [Scheduler.Start] and [Scheduler.Schedule]
+// after the scheduler has been closed (via [Scheduler.Close] or cancellation of
+// the context passed to [Scheduler.Start]). A closed scheduler cannot be reused.
+var ErrSchedulerClosed = errors.New("workflow-scheduling: scheduler is closed")
+
 // Scheduler is the production, gocron-backed [kernel.Scheduler]. Construct it
 // with [NewScheduler]; supply the same [clockwork.Clock] instance used to build
 // the runtime via [WithSchedulerClock] so one fake-clock advance drives both
 // engine timestamps and timer firing under test (ADR-0003). When the clock
-// option is omitted, a real clock is used. Call [Close] on shutdown to release
-// the underlying gocron goroutine.
+// option is omitted, a real clock is used.
+//
+// Lifecycle (ADR-0102): [NewScheduler] is goroutine-free — the underlying gocron
+// scheduler (and its background goroutine) is not created until the scheduler is
+// started. Call [Scheduler.Start] with a long-lived context to start it
+// explicitly; cancelling that context stops the scheduler. As a convenience the
+// scheduler also auto-starts (with a background context) on the first
+// [Scheduler.Schedule] call, so timer-only consumers need no explicit Start.
+// Call [Scheduler.Close] on shutdown to release the gocron goroutine.
 type Scheduler struct {
+	// cfg holds the resolved façade options; the underlying gocron scheduler is
+	// built from it lazily on first start.
+	cfg config
+
+	// mu guards impl, closed, and stopCh across concurrent Start/Schedule/Close.
+	mu sync.Mutex
+	// impl is the underlying gocron scheduler. nil before the first start and
+	// again after Close.
 	impl *gocronsched.GocronScheduler
+	// closed is set by Close (or context cancellation); a closed scheduler is
+	// terminal and cannot be restarted.
+	closed bool
+	// stopCh, when non-nil, terminates the context-cancellation watcher started
+	// by an explicit Start(ctx). Close closes it so the watcher exits.
+	stopCh chan struct{}
 
 	// elector, when single-leader mode is enabled via WithElector, holds the
 	// neutral leader elector. If it also implements io.Closer, Close closes it
@@ -137,56 +164,122 @@ func WithTimeSkew(d time.Duration) Option {
 	}
 }
 
-// NewScheduler constructs and starts a gocron-backed [Scheduler]. Pass
-// [WithSchedulerClock] to drive timer scheduling with a specific
-// [clockwork.Clock] (default: [clockwork.NewRealClock]). The returned
-// scheduler must be closed via [Scheduler.Close] when the application shuts down.
+// NewScheduler constructs a gocron-backed [Scheduler]. Pass [WithSchedulerClock]
+// to drive timer scheduling with a specific [clockwork.Clock] (default:
+// [clockwork.NewRealClock]).
+//
+// Construction is goroutine-free: the underlying gocron scheduler is not created
+// until the scheduler is started (ADR-0102). Start it explicitly with
+// [Scheduler.Start] to bind its lifetime to a context, or simply call
+// [Scheduler.Schedule] — the first Schedule auto-starts it with a background
+// context. Either way, call [Scheduler.Close] on shutdown to release the gocron
+// goroutine.
 //
 // With no [WithLocker] / [WithElector] option the scheduler runs in single-node
 // mode: every armed timer fires locally. [WithLocker] and [WithElector] are
 // mutually exclusive; requesting both returns [ErrTimerLockElectorConflict].
 func NewScheduler(opts ...Option) (*Scheduler, error) {
-	cfg := &config{}
+	cfg := config{}
 	for _, o := range opts {
-		o(cfg)
+		o(&cfg)
 	}
 
-	// Resolve the effective clock once: option-provided or real-clock default.
-	clk := cfg.clk
-	if clk == nil {
-		clk = clockwork.NewRealClock()
-	}
-
-	// Mutual-exclusion: at most one multi-replica mode may be active.
+	// Mutual-exclusion: at most one multi-replica mode may be active. Validated
+	// eagerly at construction so misconfiguration fails fast, before any start.
 	if cfg.locker != nil && cfg.elector != nil {
 		return nil, ErrTimerLockElectorConflict
 	}
 
-	internalOpts := []gocronsched.Option{gocronsched.WithClock(clk)}
-	if cfg.logger != nil {
-		internalOpts = append(internalOpts, gocronsched.WithLogger(cfg.logger))
-	}
-	if cfg.tp != nil {
-		internalOpts = append(internalOpts, gocronsched.WithTracerProvider(cfg.tp))
-	}
-	if cfg.mp != nil {
-		internalOpts = append(internalOpts, gocronsched.WithMeterProvider(cfg.mp))
-	}
-	if cfg.timeSkew != nil {
-		internalOpts = append(internalOpts, gocronsched.WithTimeSkew(*cfg.timeSkew))
-	}
-	if cfg.locker != nil {
-		internalOpts = append(internalOpts, gocronsched.WithLocker(gocronsched.AdaptLocker(neutralLockerBridge{cfg.locker})))
-	}
-	if cfg.elector != nil {
-		internalOpts = append(internalOpts, gocronsched.WithElector(gocronsched.AdaptElector(cfg.elector)))
+	return &Scheduler{cfg: cfg, elector: cfg.elector}, nil
+}
+
+// internalOpts builds the internal gocron options from the resolved façade
+// config. The effective clock is resolved here (option-provided or real-clock
+// default) so a fake clock supplied via WithSchedulerClock drives gocron.
+func (s *Scheduler) internalOpts() []gocronsched.Option {
+	clk := s.cfg.clk
+	if clk == nil {
+		clk = clockwork.NewRealClock()
 	}
 
-	impl, err := gocronsched.NewGocronScheduler(internalOpts...)
+	opts := []gocronsched.Option{gocronsched.WithClock(clk)}
+	if s.cfg.logger != nil {
+		opts = append(opts, gocronsched.WithLogger(s.cfg.logger))
+	}
+	if s.cfg.tp != nil {
+		opts = append(opts, gocronsched.WithTracerProvider(s.cfg.tp))
+	}
+	if s.cfg.mp != nil {
+		opts = append(opts, gocronsched.WithMeterProvider(s.cfg.mp))
+	}
+	if s.cfg.timeSkew != nil {
+		opts = append(opts, gocronsched.WithTimeSkew(*s.cfg.timeSkew))
+	}
+	if s.cfg.locker != nil {
+		opts = append(opts, gocronsched.WithLocker(gocronsched.AdaptLocker(neutralLockerBridge{s.cfg.locker})))
+	}
+	if s.cfg.elector != nil {
+		opts = append(opts, gocronsched.WithElector(gocronsched.AdaptElector(s.cfg.elector)))
+	}
+	return opts
+}
+
+// Start starts the underlying gocron scheduler if it is not already running,
+// creating its background goroutine. Cancelling ctx stops the scheduler (it is
+// closed as if [Scheduler.Close] were called), tying the scheduler's lifetime to
+// ctx. Start is idempotent: calling it on an already-started scheduler is a
+// no-op returning nil. It returns [ErrSchedulerClosed] if the scheduler has
+// already been closed.
+//
+// Passing a non-cancellable context (e.g. [context.Background]) starts the
+// scheduler without a cancellation watcher; use [Scheduler.Close] to stop it.
+func (s *Scheduler) Start(ctx context.Context) error {
+	_, err := s.ensureStarted(ctx)
+	return err
+}
+
+// ensureStarted lazily creates and starts the underlying gocron scheduler,
+// returning it. It is called by Start (with the caller's context) and by
+// Schedule (with a background context) so a timer-only consumer needs no explicit
+// Start. Subsequent calls return the already-running scheduler without touching
+// the existing cancellation watcher.
+func (s *Scheduler) ensureStarted(ctx context.Context) (*gocronsched.GocronScheduler, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil, ErrSchedulerClosed
+	}
+	if s.impl != nil {
+		return s.impl, nil
+	}
+
+	impl, err := gocronsched.NewGocronScheduler(s.internalOpts()...)
 	if err != nil {
 		return nil, err
 	}
-	return &Scheduler{impl: impl, elector: cfg.elector}, nil
+	s.impl = impl
+
+	// Wire ctx cancellation to Close only when ctx can actually be cancelled, so
+	// a background-context auto-start spawns no watcher goroutine.
+	if ctx != nil {
+		if done := ctx.Done(); done != nil {
+			stop := make(chan struct{})
+			s.stopCh = stop
+			go s.watchContext(done, stop)
+		}
+	}
+	return impl, nil
+}
+
+// watchContext closes the scheduler when the start context is cancelled, or
+// exits quietly when Close closes stop first.
+func (s *Scheduler) watchContext(done <-chan struct{}, stop <-chan struct{}) {
+	select {
+	case <-done:
+		_ = s.Close()
+	case <-stop:
+	}
 }
 
 // neutralLockerBridge adapts the public scheduling.Locker (whose Lock returns a
@@ -209,29 +302,71 @@ func (b neutralLockerBridge) Lock(ctx context.Context, key string) (gocronsched.
 // computed run time (the first fire for recurring triggers), or an error if the
 // trigger kind cannot be honoured. If a timer with the same timerID already
 // exists it is replaced.
+//
+// Schedule auto-starts the scheduler (with a background context) on first use, so
+// an explicit [Scheduler.Start] is optional. It returns [ErrSchedulerClosed] if
+// the scheduler has been closed.
 func (s *Scheduler) Schedule(ctx context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (time.Time, error) {
-	return s.impl.Schedule(ctx, timerID, trig, fire)
+	impl, err := s.ensureStarted(context.Background())
+	if err != nil {
+		return time.Time{}, err
+	}
+	return impl.Schedule(ctx, timerID, trig, fire)
 }
 
-// Cancel removes a pending timer. No-op if the timer is unknown or has already
-// fired.
+// Cancel removes a pending timer. No-op if the timer is unknown, has already
+// fired, or the scheduler has not been started.
 func (s *Scheduler) Cancel(ctx context.Context, timerID string) {
-	s.impl.Cancel(ctx, timerID)
+	s.mu.Lock()
+	impl := s.impl
+	s.mu.Unlock()
+	if impl == nil {
+		return
+	}
+	impl.Cancel(ctx, timerID)
 }
 
 // NextRun returns the next scheduled run time of the timer identified by timerID
-// and true, or the zero time and false when no such timer is pending.
+// and true, or the zero time and false when no such timer is pending or the
+// scheduler has not been started.
 func (s *Scheduler) NextRun(timerID string) (time.Time, bool) {
-	return s.impl.NextRun(timerID)
+	s.mu.Lock()
+	impl := s.impl
+	s.mu.Unlock()
+	if impl == nil {
+		return time.Time{}, false
+	}
+	return impl.NextRun(timerID)
 }
 
-// Close shuts the underlying gocron scheduler down gracefully. If the configured
+// Close shuts the underlying gocron scheduler down gracefully and stops any
+// context-cancellation watcher started by [Scheduler.Start]. If the configured
 // [Elector] also implements [io.Closer] (e.g. a backend elector holding a
 // dedicated database connection), it is closed as a convenience — its error is
-// joined with the scheduler's. The scheduler cannot be reused after this call.
+// joined with the scheduler's. Close is idempotent and safe to call on a
+// never-started scheduler; the scheduler cannot be reused after this call.
 func (s *Scheduler) Close() error {
-	err := s.impl.Close()
-	if closer, ok := s.elector.(io.Closer); ok {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
+	impl := s.impl
+	s.impl = nil
+	stop := s.stopCh
+	s.stopCh = nil
+	elector := s.elector
+	s.mu.Unlock()
+
+	if stop != nil {
+		close(stop) // wake the Start watcher so it exits
+	}
+	var err error
+	if impl != nil {
+		err = impl.Close()
+	}
+	if closer, ok := elector.(io.Closer); ok {
 		err = errors.Join(err, closer.Close())
 	}
 	return err
