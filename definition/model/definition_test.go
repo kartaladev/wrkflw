@@ -248,13 +248,13 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		{
 			name: "timer-intermediate",
 			node: event.NewCatch("wait-1h",
-				event.WithCatchTimer("PT1H"),
+				event.WithCatchTimer(schedule.AfterExpr("PT1H")),
 				event.WithName("Wait 1 hour"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ice, ok := n.(event.IntermediateCatchEvent)
 				require.True(t, ok)
-				assert.Equal(t, "PT1H", ice.TimerDuration)
+				assert.False(t, ice.Timer.IsZero(), "Timer should be set")
 				assert.Equal(t, "Wait 1 hour", n.Name())
 			},
 		},

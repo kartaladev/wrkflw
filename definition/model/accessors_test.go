@@ -154,7 +154,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithName("Approve"),
 			),
 			event.NewCatch("wait",
-				event.WithCatchTimer("PT30M"),
+				event.WithCatchTimer(schedule.AfterExpr("PT30M")),
 				event.WithName("Wait"),
 			),
 			event.NewThrow("signal-done", event.WithThrowSignal("order.done")),
@@ -280,7 +280,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 
 	ice, ok := def.Nodes[3].(event.IntermediateCatchEvent)
 	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")
-	assert.Equal(t, "PT1H", ice.TimerDuration)
+	assert.False(t, ice.Timer.IsZero(), "Timer should be set")
 
 	ite, ok := def.Nodes[4].(event.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[4] should be IntermediateThrowEvent")

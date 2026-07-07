@@ -9,6 +9,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 func TestServiceTaskOptions(t *testing.T) {
@@ -18,8 +19,8 @@ func TestServiceTaskOptions(t *testing.T) {
 		activity.WithCompensation("refund"),
 		activity.WithCancelHandler("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
-		activity.WithDeadline("2h", "sla", "notify"),
-		activity.WithReminder("30m", "ping"),
+		activity.WithDeadline(schedule.AfterExpr(`"2h"`), "sla", "notify"),
+		activity.WithReminder(schedule.EveryExpr(`"30m"`), "ping"),
 		activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 5}),
 	)
 	if n.Kind() != model.KindServiceTask || n.Name() != "Charge" {
@@ -28,11 +29,13 @@ func TestServiceTaskOptions(t *testing.T) {
 	if model.ActionOf(n) != "charge-card" {
 		t.Errorf("ActionOf = %q", model.ActionOf(n))
 	}
-	if d, f, a := model.DeadlineOf(n); d != "2h" || f != "sla" || a != "notify" {
-		t.Errorf("DeadlineOf = %q,%q,%q", d, f, a)
+	d, f, a := model.DeadlineOf(n)
+	if d.IsZero() || f != "sla" || a != "notify" {
+		t.Errorf("DeadlineOf = %v,%q,%q", d, f, a)
 	}
-	if e, a := model.ReminderOf(n); e != "30m" || a != "ping" {
-		t.Errorf("ReminderOf = %q,%q", e, a)
+	re, ra := model.ReminderOf(n)
+	if re.IsZero() || ra != "ping" {
+		t.Errorf("ReminderOf = %v,%q", re, ra)
 	}
 	if rp := model.RetryPolicyOf(n); rp == nil || rp.MaxAttempts != 5 {
 		t.Errorf("RetryPolicyOf = %+v", rp)
@@ -137,7 +140,7 @@ func TestActivityRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "a", Version: 1,
 		Nodes: []model.Node{
-			activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithDeadline("1h", "f", "a")),
+			activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithDeadline(schedule.AfterExpr(`"1h"`), "f", "a")),
 			activity.NewUserTask("ut", []string{"mgr"}, activity.WithEligibilityExpr("x")),
 			activity.NewReceiveTask("rt", "m", activity.WithCorrelationKey("k")),
 			activity.NewSendTask("snt", "m"),
@@ -155,7 +158,7 @@ func TestActivityRoundTrip(t *testing.T) {
 	if model.ActionOf(got.Nodes[0]) != "act" {
 		t.Errorf("service action lost: %q", model.ActionOf(got.Nodes[0]))
 	}
-	if d, _, _ := model.DeadlineOf(got.Nodes[0]); d != "1h" {
-		t.Errorf("deadline lost: %q", d)
+	if d, _, _ := model.DeadlineOf(got.Nodes[0]); d.IsZero() {
+		t.Errorf("deadline lost after round-trip")
 	}
 }

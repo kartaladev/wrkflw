@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 func TestValidate(t *testing.T) {
@@ -409,7 +410,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("t")),
-					event.NewBoundary("bnd", "task", event.WithBoundaryTimer("PT1M")),
+					event.NewBoundary("bnd", "task", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
 					activity.NewServiceTask("handler", activity.WithActionName("h")),
 					event.NewEnd("hend"),
 					event.NewEnd("end"),
@@ -433,7 +434,7 @@ func TestValidate(t *testing.T) {
 					activity.NewServiceTask("task", activity.WithActionName("t")),
 					event.NewEnd("end"),
 					activity.NewServiceTask("ghost", activity.WithActionName("g")), // unreachable host
-					event.NewBoundary("bnd", "ghost", event.WithBoundaryTimer("PT1M")),
+					event.NewBoundary("bnd", "ghost", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
 					activity.NewServiceTask("handler", activity.WithActionName("h")),
 					event.NewEnd("hend"),
 				},

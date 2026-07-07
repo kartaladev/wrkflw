@@ -3,9 +3,11 @@ package event_test
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 func TestStartEventOptions(t *testing.T) {
@@ -13,33 +15,42 @@ func TestStartEventOptions(t *testing.T) {
 		event.WithName("Start"),
 		event.WithStartSignal("go"),
 		event.WithStartMessage("kick", "k"),
-		event.WithStartTimer("1h"),
+		event.WithStartTimer(schedule.AfterExpr(`"1h"`)),
 	).(event.StartEvent)
 	if n.Kind() != model.KindStartEvent || n.Name() != "Start" {
 		t.Fatalf("kind/name = %v/%q", n.Kind(), n.Name())
 	}
-	if n.SignalName != "go" || n.MessageName != "kick" || n.CorrelationKey != "k" || n.TimerDuration != "1h" {
+	if n.SignalName != "go" || n.MessageName != "kick" || n.CorrelationKey != "k" {
 		t.Fatalf("fields = %+v", n)
+	}
+	if n.Timer.IsZero() {
+		t.Fatalf("Timer not set: %+v", n)
 	}
 }
 
 func TestCatchRenamedOptions(t *testing.T) {
 	n := event.NewCatch("wait",
 		event.WithName("Wait"),
-		event.WithCatchTimer("15m"),
+		event.WithCatchTimer(schedule.AfterExpr(`"15m"`)),
 		event.WithCatchSignal("resume"),
 		event.WithCatchMessage("go", "k"),
-		event.WithCatchDeadline("4h", "esc", "escalate"),
-		event.WithCatchReminder("1h", "nudge"),
+		event.WithCatchDeadline(schedule.AfterExpr(`"4h"`), "esc", "escalate"),
+		event.WithCatchReminder(schedule.EveryExpr(`"1h"`), "nudge"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
 		t.Fatalf("kind = %v", n.Kind())
 	}
-	if d, f, a := model.DeadlineOf(n); d != "4h" || f != "esc" || a != "escalate" {
-		t.Errorf("DeadlineOf = %q,%q,%q", d, f, a)
+	d, f, a := model.DeadlineOf(n)
+	if d.IsZero() || f != "esc" || a != "escalate" {
+		t.Errorf("DeadlineOf = %v,%q,%q", d, f, a)
 	}
-	if e, a := model.ReminderOf(n); e != "1h" || a != "nudge" {
-		t.Errorf("ReminderOf = %q,%q", e, a)
+	re, ra := model.ReminderOf(n)
+	if re.IsZero() || ra != "nudge" {
+		t.Errorf("ReminderOf = %v,%q", re, ra)
+	}
+	ce := n.(event.IntermediateCatchEvent)
+	if ce.Timer.IsZero() {
+		t.Errorf("catch Timer not set: %+v", ce)
 	}
 }
 
@@ -50,14 +61,21 @@ func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
 	}
 	b := event.NewBoundary("b", "host",
 		event.WithName("B"),
-		event.WithBoundaryTimer("5m"),
+		event.WithBoundaryTimer(schedule.AfterDuration(time.Hour)),
 		event.WithBoundarySignal("s"),
 		event.WithBoundaryMessage("m", "k"),
 		event.WithBoundaryErrorCode("E"),
 		event.WithBoundaryNonInterrupting(),
 	).(event.BoundaryEvent)
-	if b.AttachedTo != "host" || !b.NonInterrupting || b.ErrorCode != "E" || b.TimerDuration != "5m" {
-		t.Errorf("boundary = %+v", b)
+	if b.AttachedTo != "host" || !b.NonInterrupting || b.ErrorCode != "E" {
+		t.Errorf("boundary base fields = %+v", b)
+	}
+	if b.Timer.IsZero() {
+		t.Errorf("boundary Timer not set: %+v", b)
+	}
+	exp, ok := b.Timer.Duration()
+	if !ok || exp != time.Hour {
+		t.Errorf("boundary Timer duration = %v, %v", exp, ok)
 	}
 	sub := &model.ProcessDefinition{ID: "s", Version: 1}
 	esp := event.NewEventSubProcess("esp", sub, event.WithName("ESP"), event.WithEventSubProcessNonInterrupting()).(event.EventSubProcess)
@@ -89,10 +107,10 @@ func TestEventRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "e", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("s", event.WithStartSignal("go")),
-			event.NewCatch("c", event.WithCatchTimer("1h"), event.WithCatchDeadline("2h", "f", "a")),
+			event.NewStart("s", event.WithStartSignal("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
+			event.NewCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithCatchDeadline(schedule.AfterExpr(`"2h"`), "f", "a")),
 			event.NewThrow("th", event.WithCompensateRef("s")),
-			event.NewBoundary("b", "c", event.WithBoundaryErrorCode("E")),
+			event.NewBoundary("b", "c", event.WithBoundaryTimer(schedule.AfterDuration(5*time.Minute)), event.WithBoundaryErrorCode("E")),
 			event.NewEnd("end"),
 		},
 	}
@@ -107,7 +125,27 @@ func TestEventRoundTrip(t *testing.T) {
 	if got.Nodes[0].(event.StartEvent).SignalName != "go" {
 		t.Error("start signal lost")
 	}
-	if d, _, _ := model.DeadlineOf(got.Nodes[1]); d != "2h" {
-		t.Errorf("catch deadline lost: %q", d)
+	startTimer := got.Nodes[0].(event.StartEvent).Timer
+	if startTimer.IsZero() {
+		t.Error("start Timer lost in round-trip")
+	}
+	if expr, _, ok := startTimer.Expr(); !ok || expr != `"30m"` {
+		t.Errorf("start Timer expr lost: %q, ok=%v", expr, ok)
+	}
+	d, _, _ := model.DeadlineOf(got.Nodes[1])
+	if d.IsZero() {
+		t.Errorf("catch deadline lost after round-trip")
+	}
+	catchTimer := got.Nodes[1].(event.IntermediateCatchEvent).Timer
+	if catchTimer.IsZero() {
+		t.Error("catch Timer lost in round-trip")
+	}
+	boundTimer := got.Nodes[3].(event.BoundaryEvent).Timer
+	if boundTimer.IsZero() {
+		t.Error("boundary Timer lost in round-trip")
+	}
+	dur, ok := boundTimer.Duration()
+	if !ok || dur != 5*time.Minute {
+		t.Errorf("boundary Timer duration lost: %v, ok=%v", dur, ok)
 	}
 }

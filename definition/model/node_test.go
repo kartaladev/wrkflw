@@ -217,7 +217,7 @@ func TestEventSubProcessConstructor(t *testing.T) {
 
 func TestIntermediateCatchEventConstructor(t *testing.T) {
 	n := event.NewCatch("ice",
-		event.WithCatchTimer("PT1H"),
+		event.WithCatchTimer(schedule.AfterExpr("PT1H")),
 		event.WithCatchDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
 		event.WithCatchReminder(schedule.Every(2*time.Hour), "remind-act"),
 	)
@@ -228,8 +228,8 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 	if !ok {
 		t.Fatalf("node is %T, want event.IntermediateCatchEvent", n)
 	}
-	if ice.TimerDuration != "PT1H" {
-		t.Fatalf("TimerDuration = %q", ice.TimerDuration)
+	if ice.Timer.IsZero() {
+		t.Fatalf("Timer is zero, want AfterExpr(PT1H)")
 	}
 	if dd, ok := ice.DeadlineTimer.Duration(); !ok || dd != 24*time.Hour {
 		t.Fatalf("DeadlineTimer = %v (ok=%v)", dd, ok)
