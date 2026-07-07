@@ -12,7 +12,7 @@ import (
 
 	"github.com/jonboulle/clockwork"
 
-	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	"github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/myelector"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -21,7 +21,7 @@ type Option func(*settings)
 
 type settings struct {
 	clk  clockwork.Clock
-	opts []gocronsched.MySQLElectorOption
+	opts []myelector.MySQLElectorOption
 }
 
 // WithElectorKey overrides the leader-lock key (default: a fixed well-known
@@ -31,7 +31,7 @@ type settings struct {
 func WithElectorKey(key string) Option {
 	return func(s *settings) {
 		if key != "" {
-			s.opts = append(s.opts, gocronsched.WithMySQLElectorKey(key))
+			s.opts = append(s.opts, myelector.WithMySQLElectorKey(key))
 		}
 	}
 }
@@ -55,7 +55,7 @@ func WithClock(clk clockwork.Clock) Option {
 func WithHeartbeatInterval(d time.Duration) Option {
 	return func(s *settings) {
 		if d > 0 {
-			s.opts = append(s.opts, gocronsched.WithMySQLHeartbeatInterval(d))
+			s.opts = append(s.opts, myelector.WithMySQLHeartbeatInterval(d))
 		}
 	}
 }
@@ -68,7 +68,7 @@ func WithHeartbeatInterval(d time.Duration) Option {
 func WithOnLeadershipAcquired(fn func(context.Context)) Option {
 	return func(s *settings) {
 		if fn != nil {
-			s.opts = append(s.opts, gocronsched.WithMySQLOnLeadershipAcquired(fn))
+			s.opts = append(s.opts, myelector.WithMySQLOnLeadershipAcquired(fn))
 		}
 	}
 }
@@ -96,9 +96,9 @@ func NewElector(ctx context.Context, db *sql.DB, opts ...Option) (Elector, error
 	}
 	if s.clk != nil {
 		// Prepend so a caller-supplied clock option (if any) still wins.
-		s.opts = append([]gocronsched.MySQLElectorOption{gocronsched.WithMySQLElectorClock(s.clk)}, s.opts...)
+		s.opts = append([]myelector.MySQLElectorOption{myelector.WithMySQLElectorClock(s.clk)}, s.opts...)
 	}
-	e, err := gocronsched.NewMySQLElector(ctx, db, s.opts...)
+	e, err := myelector.NewMySQLElector(ctx, db, s.opts...)
 	if err != nil {
 		return nil, err
 	}

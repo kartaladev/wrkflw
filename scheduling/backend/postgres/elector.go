@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jonboulle/clockwork"
 
-	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	"github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/pgelector"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -21,7 +21,7 @@ type Option func(*settings)
 
 type settings struct {
 	clk  clockwork.Clock
-	opts []gocronsched.ElectorOption
+	opts []pgelector.ElectorOption
 }
 
 // WithElectorKey overrides the leader-lock key (default: a fixed well-known
@@ -30,7 +30,7 @@ type settings struct {
 func WithElectorKey(key string) Option {
 	return func(s *settings) {
 		if key != "" {
-			s.opts = append(s.opts, gocronsched.WithElectorKey(key))
+			s.opts = append(s.opts, pgelector.WithElectorKey(key))
 		}
 	}
 }
@@ -54,7 +54,7 @@ func WithClock(clk clockwork.Clock) Option {
 func WithHeartbeatInterval(d time.Duration) Option {
 	return func(s *settings) {
 		if d > 0 {
-			s.opts = append(s.opts, gocronsched.WithHeartbeatInterval(d))
+			s.opts = append(s.opts, pgelector.WithHeartbeatInterval(d))
 		}
 	}
 }
@@ -67,7 +67,7 @@ func WithHeartbeatInterval(d time.Duration) Option {
 func WithOnLeadershipAcquired(fn func(context.Context)) Option {
 	return func(s *settings) {
 		if fn != nil {
-			s.opts = append(s.opts, gocronsched.WithOnLeadershipAcquired(fn))
+			s.opts = append(s.opts, pgelector.WithOnLeadershipAcquired(fn))
 		}
 	}
 }
@@ -99,9 +99,9 @@ func NewElector(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Electo
 	}
 	if s.clk != nil {
 		// Prepend so a caller-supplied clock option (if any) still wins.
-		s.opts = append([]gocronsched.ElectorOption{gocronsched.WithElectorClock(s.clk)}, s.opts...)
+		s.opts = append([]pgelector.ElectorOption{pgelector.WithElectorClock(s.clk)}, s.opts...)
 	}
-	e, err := gocronsched.NewPostgresElector(ctx, pool, s.opts...)
+	e, err := pgelector.NewPostgresElector(ctx, pool, s.opts...)
 	if err != nil {
 		return nil, err
 	}

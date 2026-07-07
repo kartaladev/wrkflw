@@ -1,16 +1,18 @@
-package gocron_test
+package pgelector_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	extgocron "github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	"github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/pgelector"
 )
 
 // TestGocronSchedulerElectorGatesFire proves the end-to-end wiring: when a
@@ -54,12 +56,12 @@ func TestGocronSchedulerElectorGatesFire(t *testing.T) {
 				})
 			}
 
-			elector, err := sched.NewPostgresElector(ctx, pool, sched.WithElectorKey(leaderKey))
+			elector, err := pgelector.NewPostgresElector(ctx, pool, pgelector.WithElectorKey(leaderKey))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = elector.Close() })
 
 			clk := clockwork.NewFakeClock()
-			s, err := sched.NewGocronScheduler(sched.WithClock(clk), sched.WithElector(elector))
+			s, err := gocronsched.NewGocronScheduler(gocronsched.WithClock(clk), gocronsched.WithElector(elector))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
 
@@ -86,6 +88,14 @@ func TestGocronSchedulerElectorGatesFire(t *testing.T) {
 	}
 }
 
+// stubLocker is a no-op [gocron.Locker] used only to exercise the
+// locker+elector mutual-exclusion guard at construction time. The concrete
+// Postgres-backed locker was removed as dead code; the conflict check operates
+// on the neutral gocron.Locker interface, so any implementation triggers it.
+type stubLocker struct{}
+
+func (stubLocker) Lock(context.Context, string) (extgocron.Lock, error) { return nil, nil }
+
 // TestGocronSchedulerLockerElectorMutuallyExclusive proves the two distributed
 // modes cannot be combined: configuring both a Locker and an Elector is a
 // construction error (ErrLockerElectorConflict), not silent precedence.
@@ -93,16 +103,16 @@ func TestGocronSchedulerLockerElectorMutuallyExclusive(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()
 
-	elector, err := sched.NewPostgresElector(ctx, pool, sched.WithElectorKey("conflict"))
+	elector, err := pgelector.NewPostgresElector(ctx, pool, pgelector.WithElectorKey("conflict"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = elector.Close() })
 
 	clk := clockwork.NewFakeClock()
-	_, err = sched.NewGocronScheduler(
-		sched.WithClock(clk),
-		sched.WithLocker(sched.NewPostgresLocker(pool)),
-		sched.WithElector(elector),
+	_, err = gocronsched.NewGocronScheduler(
+		gocronsched.WithClock(clk),
+		gocronsched.WithLocker(stubLocker{}),
+		gocronsched.WithElector(elector),
 	)
-	require.ErrorIs(t, err, sched.ErrLockerElectorConflict,
+	require.ErrorIs(t, err, gocronsched.ErrLockerElectorConflict,
 		"setting both a locker and an elector must be rejected")
 }

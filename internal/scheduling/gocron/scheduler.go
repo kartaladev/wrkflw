@@ -100,8 +100,8 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 
 // WithLocker configures a distributed locker so that, across replicas, only one
 // instance runs each timer's fire callback. The lock key is the timerID. A nil
-// value is ignored. Pair with a Postgres-backed locker (NewPostgresLocker) for
-// multi-replica deployments.
+// value is ignored. Pair with the persistence advisory-lock bridge (see
+// persistence.NewSchedulerLocker) for multi-replica deployments.
 func WithLocker(l gocron.Locker) Option {
 	return func(s *GocronScheduler) {
 		if l != nil {
@@ -113,8 +113,9 @@ func WithLocker(l gocron.Locker) Option {
 // WithElector configures a distributed elector so that, across replicas, only the
 // elected leader runs timer fires (single-leader mode). It is the mutually-
 // exclusive alternative to WithLocker (setting both errors at construction — see
-// ErrLockerElectorConflict). A nil value is ignored. Pair with a Postgres-backed
-// elector (NewPostgresElector) for multi-replica deployments.
+// ErrLockerElectorConflict). A nil value is ignored. Pair with a database-backed
+// leader elector (see scheduling/backend/{postgres,mysql}) for multi-replica
+// deployments.
 func WithElector(e gocron.Elector) Option {
 	return func(s *GocronScheduler) {
 		if e != nil {
