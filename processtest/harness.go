@@ -21,7 +21,7 @@ import (
 var defaultClockStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // Harness is an in-memory test fixture that wires a [runtime.ProcessDriver]
-// together with a [kernel.MemInstanceStore], a [FakeClock], a [kernel.MemScheduler], and the
+// together with a [kernel.MemInstanceStore], a [FakeClock], a [MemScheduler], and the
 // spy fakes ([SpyCatalog], [SpyAuthorizer]) plus an in-memory human-task stack.
 // It drives a definition to completion without any external infrastructure.
 //
@@ -31,7 +31,7 @@ var defaultClockStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 type Harness struct {
 	store    *kernel.MemInstanceStore
 	clk      *FakeClock
-	sched    *kernel.MemScheduler
+	sched    *MemScheduler
 	catalog  *SpyCatalog
 	authz    *SpyAuthorizer
 	tasks    *humantask.MemTaskStore
@@ -146,7 +146,7 @@ func New(opts ...Option) (*Harness, error) {
 	}
 
 	clk := NewFakeClock(cfg.clockStart)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(clk))
+	sched := NewMemScheduler(WithMemSchedulerClock(clk))
 	catalog := NewSpyCatalog(action.NewMapCatalog(cfg.actions))
 	az := NewSpyAuthorizer()
 	if cfg.decide != nil {
@@ -322,7 +322,7 @@ func (h *Harness) Store() *kernel.MemInstanceStore { return h.store }
 func (h *Harness) Clock() *FakeClock { return h.clk }
 
 // Scheduler returns the in-memory scheduler.
-func (h *Harness) Scheduler() *kernel.MemScheduler { return h.sched }
+func (h *Harness) Scheduler() *MemScheduler { return h.sched }
 
 // Catalog returns the spy action catalog.
 func (h *Harness) Catalog() *SpyCatalog { return h.catalog }

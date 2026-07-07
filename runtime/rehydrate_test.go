@@ -13,6 +13,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -32,7 +33,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 	// Original process: arm the timer, then it "crashes" — discard runner + scheduler.
 	{
-		sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 		r := runtimetest.MustRunner(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
@@ -41,7 +42,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	}
 
 	// New process: fresh runner + fresh scheduler, same store + timer store.
-	sched2 := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched2 := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	r2 := runtimetest.MustRunner(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched2), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))

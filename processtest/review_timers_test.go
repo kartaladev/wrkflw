@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/processtest"
 )
 
@@ -25,7 +26,9 @@ func TestReview_AdvanceTimersNoBackwardClock(t *testing.T) {
 	require.NoError(t, err)
 
 	// A past-due timer (fireAt = base-1h) scheduled directly on the shared scheduler.
-	h.Scheduler().Schedule("past", base.Add(-time.Hour), func() {})
+	if _, err := h.Scheduler().Schedule(t.Context(), "past", schedule.At(base.Add(-time.Hour)), func() {}); err != nil {
+		t.Fatalf("Schedule past timer: %v", err)
+	}
 
 	steps := 0
 	_, err = h.DriveToCompletion(t.Context(), def, "i", func(context.Context, processtest.Park) (processtest.Decision, error) {

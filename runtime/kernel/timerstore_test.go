@@ -10,6 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -111,7 +112,7 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := kernel.NewMemTimerStore()
 	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))

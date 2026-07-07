@@ -21,7 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 )
 
 // TestRunnerTimerIntermediateFiresUnderFakeClock verifies the full fake-clock
@@ -44,7 +44,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 		}),
 	})
 
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
@@ -122,7 +122,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store,

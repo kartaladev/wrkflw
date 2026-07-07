@@ -22,7 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 )
 
 // counterValueEmit is like counterValue (defined in observability_test.go) but
@@ -175,7 +175,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	cat := action.NewMapCatalog(nil)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
 	r := runtimetest.MustRunner(t, cat, store,

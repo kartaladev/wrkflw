@@ -18,7 +18,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
 
@@ -153,7 +153,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtimetest.MustMemStore(t)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	// bus is wired with a deliver that uses r.Deliver; we break the circular
@@ -199,7 +199,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	store := runtimetest.MustMemStore(t)
-	sched := kernel.NewMemScheduler(kernel.WithMemSchedulerClock(fc))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
 	var r *runtime.ProcessDriver

@@ -20,6 +20,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
@@ -240,7 +241,7 @@ func TestNewProcessDriverConstructionSummary(t *testing.T) {
 		customStore, err := kernel.NewMemInstanceStore()
 		require.NoError(t, err)
 
-		sched := kernel.NewMemScheduler()
+		sched := processtest.NewMemScheduler()
 
 		_, buildErr := runtime.NewProcessDriver(
 			runtime.WithLogger(logger),
