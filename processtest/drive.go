@@ -58,7 +58,7 @@ type Decision struct {
 	err     error
 }
 
-// Deliver feeds trigger to the driver's Deliver for the current instance.
+// Deliver feeds trigger to the driver's ApplyTrigger for the current instance.
 func Deliver(trigger engine.Trigger) Decision {
 	return Decision{kind: kindDeliver, trigger: trigger}
 }

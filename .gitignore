@@ -54,3 +54,4 @@ go.work.sum
 /retry_recovery
 /signal_broadcast
 /subprocess_embedded
+/app.db

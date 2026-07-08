@@ -199,7 +199,7 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 			trg = engine.NewSubInstanceFailed(n.clk.Now(), p.Link.ParentCommandID, p.Outcome.Err)
 		}
 
-		// ApplyTrigger the trigger to the parent instance.
+		// Apply the trigger to the parent instance.
 		derr := n.deliver(ctx, parentDef, p.Link.ParentInstanceID, trg)
 		if derr != nil && !errors.Is(derr, engine.ErrTokenNotFound) {
 			// Transient or structural failure — leave the link claimable for retry.
