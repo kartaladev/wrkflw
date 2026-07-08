@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -84,13 +82,6 @@ type ProcessDriver struct {
 	// routes to exactly one instance), so a simple map suffices.
 	msgWaiters map[msgKey]string
 
-	// lintMu guards lintedDefs.
-	lintMu sync.Mutex
-	// lintedDefs records the (id, version) of definitions already passed through
-	// definition.Lint so each definition's advisory warnings are logged at most
-	// once, not on every Drive/ApplyTrigger.
-	lintedDefs map[string]struct{}
-
 	// shutdown aggregates the teardown of resources the driver itself created and
 	// owns (currently the default in-process scheduler's gocron goroutine). A
 	// consumer-injected component (e.g. a WithScheduler-provided scheduler) is
@@ -144,7 +135,6 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		jitter:        kernel.NewJitterSource(),
 		actionTimeout: defaultActionTimeout,
 		msgWaiters:    make(map[msgKey]string),
-		lintedDefs:    make(map[string]struct{}),
 	}
 	for _, o := range opts {
 		o(driver)
@@ -295,7 +285,6 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 		attribute.Int("wrkflw.def_version", def.Version),
 	))
 	defer span.End()
-	driver.lintDefinition(ctx, def)
 	if instanceID == "" {
 		id, gerr := driver.idgen.NewID()
 		if gerr != nil {
@@ -313,34 +302,6 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 		span.SetAttributes(attribute.String("wrkflw.status", statusName(out.Status)))
 	}
 	return out, err
-}
-
-// lintDefinition runs definition.Lint on def the first time this driver sees it
-// (keyed by id+version) and logs each advisory Warning at WARN. It is non-fatal —
-// linting never blocks execution — and deduped so a definition driven many times
-// logs its warnings at most once. Safe for concurrent callers.
-func (driver *ProcessDriver) lintDefinition(ctx context.Context, def *model.ProcessDefinition) {
-	if def == nil {
-		return
-	}
-	key := def.ID + "\x00" + strconv.Itoa(def.Version)
-	driver.lintMu.Lock()
-	if _, seen := driver.lintedDefs[key]; seen {
-		driver.lintMu.Unlock()
-		return
-	}
-	driver.lintedDefs[key] = struct{}{}
-	driver.lintMu.Unlock()
-
-	for _, w := range definition.Lint(def) {
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "definition lint warning",
-			slog.String("def_id", def.ID),
-			slog.Int("def_version", def.Version),
-			slog.String("node_id", w.NodeID),
-			slog.String("rule", w.Rule),
-			slog.String("detail", w.Detail),
-		)
-	}
 }
 
 // ApplyTrigger loads the current instance state, applies one trigger via engine.Step,
@@ -363,7 +324,6 @@ func (driver *ProcessDriver) ApplyTrigger(ctx context.Context, def *model.Proces
 		attribute.String("wrkflw.trigger", triggerName(trg)),
 	))
 	defer span.End()
-	driver.lintDefinition(ctx, def)
 	st, token, err := driver.store.Load(ctx, instanceID)
 	if err != nil {
 		span.RecordError(err)

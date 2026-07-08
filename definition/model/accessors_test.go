@@ -146,12 +146,12 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),
 				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
-				activity.WithWaitReminder(schedule.Every(4*time.Hour), "remind-act"),
 				activity.WithCancelHandler("cancel-charge"),
 			),
 			activity.NewUserTask("approve", []string{"manager", "admin"},
 				activity.WithEligibilityExpr("amount > 1000"),
 				activity.WithName("Approve"),
+				activity.WithWaitReminder(schedule.Every(4*time.Hour), "remind-act"),
 			),
 			event.NewIntermediateCatch("wait",
 				event.WithCatchTimer(schedule.AfterExpr("PT30M")),
@@ -208,13 +208,10 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "refund-card", charge.CompensationAction)
 	assert.Equal(t, "f-error", charge.RecoveryFlow)
 	assert.Equal(t, "cancel-charge", charge.CancelHandler)
-	// DeadlineTimer and ReminderEvery are now schedule.TriggerSpec; verify via Duration()
+	// DeadlineTimer is now schedule.TriggerSpec; verify via Duration()
 	deadlineDur, deadlineOk := charge.DeadlineTimer.Duration()
 	require.True(t, deadlineOk, "DeadlineTimer should be set")
 	assert.Equal(t, 24*time.Hour, deadlineDur)
-	reminderDur, reminderOk := charge.ReminderEvery.Duration()
-	require.True(t, reminderOk, "ReminderEvery should be set")
-	assert.Equal(t, 4*time.Hour, reminderDur)
 	require.NotNil(t, charge.RetryPolicy)
 	assert.Equal(t, 3, charge.RetryPolicy.MaxAttempts)
 
@@ -223,6 +220,10 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, approve.CandidateRoles)
 	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
+	// ReminderEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
+	reminderDur, reminderOk := approve.ReminderEvery.Duration()
+	require.True(t, reminderOk, "ReminderEvery should be set on UserTask")
+	assert.Equal(t, 4*time.Hour, reminderDur)
 }
 
 // TestProcessDefinitionJSONBackwardCompat verifies that legacy flat-shaped JSON
