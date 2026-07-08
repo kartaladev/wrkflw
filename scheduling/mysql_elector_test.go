@@ -61,7 +61,7 @@ func TestSchedulerWithMySQLTimerElector(t *testing.T) {
 				mysqlbackend.WithElectorKey(leaderKey), mysqlbackend.WithClock(clk))
 			require.NoError(t, err)
 			s, err := scheduling.NewScheduler(
-				scheduling.WithSchedulerClock(clk),
+				scheduling.WithClock(clk),
 				scheduling.WithElector(elector))
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = s.Close() })
@@ -104,7 +104,7 @@ func TestSchedulerMySQLElectorOnLeadershipAcquired(t *testing.T) {
 		mysqlbackend.WithOnLeadershipAcquired(func(context.Context) { acquired <- struct{}{} }))
 	require.NoError(t, err)
 	s, err := scheduling.NewScheduler(
-		scheduling.WithSchedulerClock(clk),
+		scheduling.WithClock(clk),
 		scheduling.WithElector(elector))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
@@ -139,7 +139,7 @@ func TestSchedulerMySQLElectorLockConflict(t *testing.T) {
 
 		clk := clockwork.NewFakeClock()
 		_, err = scheduling.NewScheduler(
-			scheduling.WithSchedulerClock(clk),
+			scheduling.WithClock(clk),
 			scheduling.WithLocker(locker),
 			scheduling.WithElector(elector),
 		)
@@ -160,7 +160,7 @@ func TestSchedulerMySQLElectorLockConflict(t *testing.T) {
 
 		clk := clockwork.NewFakeClock()
 		s, err := scheduling.NewScheduler(
-			scheduling.WithSchedulerClock(clk),
+			scheduling.WithClock(clk),
 			scheduling.WithElector(pgElector),
 			scheduling.WithElector(myElector),
 		)

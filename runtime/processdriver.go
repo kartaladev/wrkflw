@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"sync"
 	"time"
 
@@ -139,13 +140,18 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		o(driver)
 	}
 
-	// Default scheduler: when the consumer did not wire one via [WithScheduler],
-	// create an in-process gocron-backed scheduler (real clock, single-node) so
-	// timer nodes work zero-config. The driver OWNS this default and registers it
-	// for teardown via [ProcessDriver.Shutdown]. A consumer-injected scheduler is
-	// consumer-owned — left untouched and never closed by the driver.
-	customScheduler := driver.sched != nil
-	if driver.sched == nil {
+	// Default scheduler: when the consumer did not wire a usable one via
+	// [WithScheduler], create an in-process gocron-backed scheduler (real clock,
+	// single-node) so timer nodes work zero-config. The driver OWNS this default
+	// and registers it for teardown via [ProcessDriver.Shutdown]. A consumer-injected
+	// scheduler is consumer-owned — left untouched and never closed by the driver.
+	//
+	// A nil scheduler — including a TYPED nil (a nil concrete pointer boxed in a
+	// non-nil interface) — is treated as "not provided" and falls back to the
+	// default, consistent with WithInstanceStore(nil)/WithActionCatalog(nil) being
+	// ignored, so a stray typed nil cannot slip past and panic on the first timer.
+	customScheduler := !isNilScheduler(driver.sched)
+	if !customScheduler {
 		sched, serr := scheduling.NewScheduler()
 		if serr != nil {
 			return nil, fmt.Errorf("workflow-runtime: default scheduler: %w", serr)
@@ -191,6 +197,23 @@ func (driver *ProcessDriver) Start(ctx context.Context) error {
 // released by inj.ShutdownWithContext(ctx).
 func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
 	return driver.shutdown.Shutdown(ctx)
+}
+
+// isNilScheduler reports whether s is unusable as a scheduler: either an untyped
+// nil interface, or a typed nil (a nil concrete pointer/map/chan/func boxed in a
+// non-nil interface). The latter would otherwise pass a plain `s != nil` check and
+// panic on first use, so NewProcessDriver treats both as "no scheduler supplied".
+func isNilScheduler(s kernel.Scheduler) bool {
+	if s == nil {
+		return true
+	}
+	rv := reflect.ValueOf(s)
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Chan, reflect.Func, reflect.Slice, reflect.UnsafePointer:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }
 
 // onOff returns "on" when v is true and "off" otherwise.

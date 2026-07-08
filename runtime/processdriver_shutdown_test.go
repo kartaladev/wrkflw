@@ -45,6 +45,24 @@ func TestProcessDriverDefaultScheduler(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, st.Status, "instance must park at the timer catch")
 }
 
+// TestProcessDriverNilSchedulerFallsBackToDefault verifies that a nil scheduler
+// supplied via WithScheduler — including a TYPED nil (e.g. a (*scheduling.Scheduler)(nil)
+// variable, whose interface value is non-nil) — is treated as "not provided" and
+// falls back to the owned in-process default, consistent with how WithInstanceStore(nil)
+// and WithActionCatalog(nil) are ignored. Without the guard a typed nil would slip
+// past the driver.sched != nil check and panic on the first timer.
+func TestProcessDriverNilSchedulerFallsBackToDefault(t *testing.T) {
+	var typedNil *scheduling.Scheduler // typed nil: non-nil kernel.Scheduler interface, nil concrete pointer
+
+	driver, err := runtime.NewProcessDriver(runtime.WithScheduler(typedNil))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+
+	st, err := driver.Drive(t.Context(), timerOnlyDef(), "i-nil-sched", nil)
+	require.NoError(t, err, "a typed-nil scheduler must fall back to the default, not panic")
+	assert.Equal(t, engine.StatusRunning, st.Status, "timer must arm via the fallback default scheduler")
+}
+
 // TestProcessDriverStart covers ProcessDriver.Start, which starts the driver-owned
 // default scheduler and binds its lifetime to the given context.
 func TestProcessDriverStart(t *testing.T) {

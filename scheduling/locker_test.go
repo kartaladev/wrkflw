@@ -36,7 +36,7 @@ func TestSchedulerWithDistributedTimerLock(t *testing.T) {
 	locker := persistence.NewPostgresSchedulerLocker(pool)
 
 	clk := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithLocker(locker))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(clk), scheduling.WithLocker(locker))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -83,7 +83,7 @@ func TestSchedulerWithMySQLDistributedTimerLock(t *testing.T) {
 	locker := persistence.NewMySQLSchedulerLocker(db)
 
 	clk := clockwork.NewFakeClock()
-	s, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(clk), scheduling.WithLocker(locker))
+	s, err := scheduling.NewScheduler(scheduling.WithClock(clk), scheduling.WithLocker(locker))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 

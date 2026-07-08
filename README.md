@@ -190,10 +190,10 @@ func main() {
 	action.MustRegister("charge-card", action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 		return map[string]any{"charged": true}, nil
 	}))
-	r, err := runtime.NewProcessDriver()
+	driver, err := runtime.NewProcessDriver()
 	if err != nil { log.Fatal(err) }
 
-	state, err := r.Run(ctx, def, "order-001", map[string]any{"amount": 99.0})
+	state, err := driver.Drive(ctx, def, "order-001", map[string]any{"amount": 99.0})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func main() {
 }
 ```
 
-For signal/message delivery use `r.Deliver(ctx, def, instanceID, trigger)`. See
+For signal/message delivery use `driver.Deliver(ctx, def, instanceID, trigger)`. See
 `runtime/kernel/caching_store_example_test.go` for a park-then-resume pattern.
 
 ---
@@ -480,7 +480,7 @@ The `runtime.ProcessDriver` emits OpenTelemetry spans, metrics, and `slog`-struc
 around every engine step and service-action invocation:
 
 ```go
-r, err := runtime.NewProcessDriver(
+driver, err := runtime.NewProcessDriver(
     runtime.WithActionCatalog(cat),
     runtime.WithInstanceStore(store),
     runtime.WithTracerProvider(tp),
@@ -912,7 +912,7 @@ def, _ := definition.NewBuilder("order-fulfillment", 1).
     Build()
 ```
 
-**At runtime:** `r.Run` drives `pick-items` and `charge-card`, then the join releases a
+**At runtime:** `driver.Drive` drives `pick-items` and `charge-card`, then the join releases a
 single token to `ship` only after both arrive. Both branches' output variables are
 merged into the instance.
 → [`examples/scenarios/parallel_fork_join`](examples/scenarios/parallel_fork_join)
@@ -972,7 +972,7 @@ fire-once `notify-overdue` breach action, cancels the host user task, routes to
 parks) and `WithScheduler` (so the timer arms).
 (For edge-attached `BoundaryEvent` timers/signals/errors/messages, see the
 `WithBoundary*` options in the node reference above.)
-→ [`examples/scenarios/boundary_timer`](examples/scenarios/boundary_timer)
+→ [`examples/scenarios/usertask_deadline`](examples/scenarios/usertask_deadline)
 
 ### 4. Compensation / saga rollback
 
@@ -995,7 +995,7 @@ Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
 Add(event.NewBoundary("ship-err", "ship", event.WithBoundaryErrorCode(""))).
 // ... after the forward run completes via the boundary path:
 trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
-final, _ := r.Deliver(ctx, def, instanceID, trg)
+final, _ := driver.Deliver(ctx, def, instanceID, trg)
 ```
 
 **At runtime:** `book` and `pay` succeed, `ship` fails. A catch-all boundary error
@@ -1018,31 +1018,31 @@ start → approve[UserTask, roles: manager] → end
 
 ```go
 // This process has no service tasks; zero-arg driver uses the default in-memory catalog and store.
-r, err := runtime.NewProcessDriver(
+driver, err := runtime.NewProcessDriver(
     runtime.WithClock(clk),
     runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
 if err != nil {
     log.Fatal(err)
 }
 
-parked, _ := r.Run(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
+parked, _ := driver.Drive(ctx, def, instanceID, map[string]any{"amount": 4200}) // parks at "approve"
 
 claimable, _ := taskStore.ClaimableBy(ctx, manager)        // discover tasks
 svc, _ := task.NewTaskService(taskStore, az, runtime.WithClock(clk))
 
 claimTrg, _ := svc.Claim(ctx, claimable[0].TaskToken, manager)
-r.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed
+driver.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed
 
 completeTrg, _ := svc.Complete(ctx, claimable[0].TaskToken, manager, map[string]any{"approved": true})
-final, _ := r.Deliver(ctx, def, instanceID, completeTrg)   // → Completed
+final, _ := driver.Deliver(ctx, def, instanceID, completeTrg)   // → Completed
 ```
 
 **At runtime:** `Run` returns with `StatusRunning` (parked). `ClaimableBy` lists the
-task for the manager actor; `Claim` then `Complete` (each followed by `r.Deliver`) drive
+task for the manager actor; `Claim` then `Complete` (each followed by `driver.Deliver`) drive
 the instance to `StatusCompleted`, merging the completion output (`approved`) into the
 variables. See `runtime/human_example_test.go` for the authoritative end-to-end test
 (including attribute-based eligibility and deadline escalation).
-→ [`examples/scenarios/human_task_approval`](examples/scenarios/human_task_approval)
+→ [`examples/scenarios/usertask_approval`](examples/scenarios/usertask_approval)
 
 ### 6. Sub-process and call activity
 
@@ -1069,14 +1069,14 @@ def, _  := definition.NewBuilder("travel-booking", 1).
 //
 // Option A — process-global default registry (zero-config, no WithDefinitions needed):
 runtime.MustRegisterDefinition(child) // registers under "credit-check" and "credit-check:1"
-r, _ := runtime.NewProcessDriver(
+driver, _ := runtime.NewProcessDriver(
     runtime.WithActionCatalog(cat),
     // driver uses runtime.DefaultDefinitionRegistry() automatically
 )
 
 // Option B — explicit per-driver registry (test isolation or multiple driver instances):
 reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{"credit-check": child})
-r, _ = runtime.NewProcessDriver(
+driver, _ = runtime.NewProcessDriver(
     runtime.WithActionCatalog(cat),
     runtime.WithDefinitions(reg), // nil is ignored; pass a non-nil registry to override
 )
@@ -1136,8 +1136,8 @@ def, _ := definition.NewBuilder("order-fulfilment", 1).
     CancelActions("release-inventory", "notify-customer").
     Build()
 
-parked, _ := r.Run(ctx, def, "order-9001", nil)      // parks at "fulfil" (StatusRunning)
-final, _ := r.CancelInstance(ctx, def, "order-9001") // → StatusTerminated
+parked, _ := driver.Drive(ctx, def, "order-9001", nil)      // parks at "fulfil" (StatusRunning)
+final, _ := driver.CancelInstance(ctx, def, "order-9001") // → StatusTerminated
 ```
 
 **At runtime:** `CancelInstance` runs `release-inventory` then `notify-customer` (the
@@ -1166,8 +1166,8 @@ def, _ := definition.NewBuilder("order-shipping", 1).
     Connect("await-payment", "ship").Connect("ship", "end").
     Build()
 
-r.Run(ctx, def, "order-1", map[string]any{"orderID": "order-1"}) // parks on "PaymentReceived"
-r.DeliverMessage(ctx, def, "PaymentReceived", "order-1", nil)    // resumes order-1 only
+driver.Drive(ctx, def, "order-1", map[string]any{"orderID": "order-1"}) // parks on "PaymentReceived"
+driver.DeliverMessage(ctx, def, "PaymentReceived", "order-1", nil)    // resumes order-1 only
 ```
 
 **At runtime:** two orders park on the same message name; delivering key `"order-1"`
@@ -1186,15 +1186,15 @@ start → await["market-open" catch] → trade[Service] → end        (× N ins
 ```
 
 ```go
-var r *runtime.ProcessDriver
+var driver *runtime.ProcessDriver
 bus, _ := signal.NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
-    _, err := r.Deliver(ctx, def, id, trg)
+    _, err := driver.Deliver(ctx, def, id, trg)
     return err
 })
-r, _ = runtime.NewProcessDriver(cat, store, runtime.WithSignalBus(bus))
+driver, _ = runtime.NewProcessDriver(cat, store, runtime.WithSignalBus(bus))
 
-r.Run(ctx, def, "desk-A", nil)       // parks awaiting "market-open"
-r.Run(ctx, def, "desk-B", nil)
+driver.Drive(ctx, def, "desk-A", nil)       // parks awaiting "market-open"
+driver.Drive(ctx, def, "desk-B", nil)
 bus.Publish(ctx, "market-open", nil) // resumes BOTH desks
 ```
 
@@ -1217,8 +1217,8 @@ Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
     activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: time.Second, BackoffCoef: 2.0,
     })))
-// r wired with WithClock(fc), WithScheduler(sched), WithJitterSource(...)
-r.Run(ctx, def, "pay-1", nil)             // attempt 1 fails → parks on retry timer
+// driver wired with WithClock(fc), WithScheduler(sched), WithJitterSource(...)
+driver.Drive(ctx, def, "pay-1", nil)             // attempt 1 fails → parks on retry timer
 for attempts < 3 {                        // advance + tick until it recovers
     fc.Advance(time.Minute)
     sched.Tick(ctx)
@@ -1244,8 +1244,8 @@ start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
 ```go
 Add(activity.NewUserTask("review", []string{"reviewer"},
     activity.WithReminder(`"30m"`, "nudge-reviewer")))
-// r wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
-r.Run(ctx, def, "review-77", nil)                            // parks; first reminder armed
+// driver wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
+driver.Drive(ctx, def, "review-77", nil)                            // parks; first reminder armed
 for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire
 // reviewer then claims + completes → further ticks fire nothing
 ```
@@ -1254,6 +1254,32 @@ for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire
 on the task; once the task completes the recurring timer goes stale and no further
 reminders run.
 → [`examples/scenarios/inwait_reminder`](examples/scenarios/inwait_reminder)
+
+### 13. Event-based gateway (race)
+
+`gateway.NewEventBased` fans out to several following catch events and takes the branch of
+whichever fires **first** — the losing arms are cancelled. It models "wait for A **or** B",
+e.g. await a payment confirmation (signal) or a payment-window timeout (timer).
+
+```
+start → gw[event-based] ─┬─ await-payment[catch signal "payment-confirmed"] → ship   → shipped-end
+                         └─ payment-window[catch timer "24h"]                → cancel → cancelled-end
+```
+
+```go
+Add(gateway.NewEventBased("gw")).
+Add(event.NewCatch("await-payment", event.WithCatchSignal("payment-confirmed"))).
+Add(event.NewCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
+// ... gw → both arms; each arm → its own service task + end
+driver.Drive(ctx, def, "order-fast", nil) // parks at gw with both arms live
+bus.Publish(ctx, "payment-confirmed", nil) // signal wins → ship branch; timer arm cancelled
+```
+
+**At runtime:** one instance receives the signal first (ships; the 24h timer is cancelled);
+another gets no payment and, once the fake clock advances past the window, the timer fires
+(cancels the order; the signal arm is cancelled). Same definition, opposite outcome —
+decided by whichever event happened first.
+→ [`examples/scenarios/event_based_gateway`](examples/scenarios/event_based_gateway)
 
 > The tour above is a curated subset. Other runnable scenarios under
 > [`examples/scenarios/`](examples/scenarios) include `attribute_authz` (ABAC + Casbin

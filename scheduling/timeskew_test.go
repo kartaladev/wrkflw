@@ -90,7 +90,7 @@ func TestScheduler_WithTimeSkew(t *testing.T) {
 			logger := slog.New(h)
 
 			s, err := scheduling.NewScheduler(
-				scheduling.WithSchedulerClock(clk),
+				scheduling.WithClock(clk),
 				scheduling.WithLogger(logger),
 				scheduling.WithTimeSkew(tc.skew),
 			)

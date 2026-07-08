@@ -69,7 +69,7 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 		}),
 	})
 
-	sched, err := scheduling.NewScheduler(scheduling.WithSchedulerClock(fc)) // same fc, as clockwork.Clock
+	sched, err := scheduling.NewScheduler(scheduling.WithClock(fc)) // same fc, as clockwork.Clock
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched.Close() })
 
