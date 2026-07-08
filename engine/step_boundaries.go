@@ -133,6 +133,11 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 		for _, timerID := range s.cancelTimersByTaskToken(hostTaskToken, "") {
 			cmds = append(cmds, CancelTimer{TimerID: timerID})
 		}
+		// Cancel any token-keyed in-wait reminder on the host (ReceiveTask / catch):
+		// the host is being consumed, so the recurring reminder must go.
+		for _, timerID := range s.cancelTimersForToken(hostTok.ID, "") {
+			cmds = append(cmds, CancelTimer{TimerID: timerID})
+		}
 
 		// Consume the host token (close its visit, remove from slice).
 		s.consumeToken(hostTok, at)

@@ -2,7 +2,7 @@
 // runs *during* a wait, not only when it expires.
 //
 // A human task that sits unclaimed should nudge the assignee periodically. The
-// WithReminder(every, action) activity option schedules a recurring in-wait timer
+// WithWaitReminder(every, action) activity option schedules a recurring in-wait timer
 // (TimerInWait): while the task is open, the engine fires the reminder action
 // once per interval and re-schedules the next one. The token never moves; the
 // reminders simply run as a side effect until the task is completed, cancelled,
@@ -57,7 +57,7 @@ func main() {
 	def, err := definition.NewBuilder("periodic-review", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("review", []string{"reviewer"},
-			activity.WithReminder(schedule.Every(30*time.Minute), "nudge-reviewer"),
+			activity.WithWaitReminder(schedule.Every(30*time.Minute), "nudge-reviewer"),
 		)).
 		Add(event.NewEnd("end")).
 		Connect("start", "review").

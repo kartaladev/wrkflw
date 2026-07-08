@@ -20,7 +20,7 @@ func TestServiceTaskOptions(t *testing.T) {
 		activity.WithCancelHandler("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
 		activity.WithDeadline(schedule.AfterExpr(`"2h"`), "sla", "notify"),
-		activity.WithReminder(schedule.EveryExpr(`"30m"`), "ping"),
+		activity.WithWaitReminder(schedule.EveryExpr(`"30m"`), "ping"),
 		activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 5}),
 	)
 	if n.Kind() != model.KindServiceTask || n.Name() != "Charge" {

@@ -574,6 +574,26 @@ func (s *InstanceState) cancelTimersByTaskToken(taskToken, excludeTimerID string
 	return toCancel
 }
 
+// cancelTimersForToken removes all timer records whose Token matches the given
+// parked-token id (excluding excludeTimerID), returning their TimerIDs so the
+// caller can emit CancelTimer commands. It is the token-keyed counterpart of
+// cancelTimersByTaskToken, used to cancel a parked token's in-wait reminder when
+// its wait resolves or its scope is interrupted (ReceiveTask / IntermediateCatchEvent
+// have no human-task correlation token).
+func (s *InstanceState) cancelTimersForToken(tokenID, excludeTimerID string) []string {
+	var toCancel []string
+	out := make([]timerRecord, 0, len(s.Timers))
+	for _, tr := range s.Timers {
+		if tr.Token == tokenID && tr.TimerID != excludeTimerID {
+			toCancel = append(toCancel, tr.TimerID)
+			continue
+		}
+		out = append(out, tr)
+	}
+	s.Timers = out
+	return toCancel
+}
+
 // cancelAllTimers returns a CancelTimer command for every outstanding timer
 // record in s.Timers (in deterministic slice order) and empties s.Timers.
 // Call this on any terminal-failure path to avoid orphaned timers in the

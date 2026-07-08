@@ -133,7 +133,7 @@ kind-specific data generically).
 Work on all activity constructors: `WithName`, `WithRetryPolicy(*RetryPolicy)`,
 `WithRecoveryFlow(flowID)`, `WithCompensation(actionName)`,
 `WithCancelHandler(actionName)`, `WithDeadline(dur, flowID, actionName)`,
-`WithReminder(every, actionName)`.
+`WithWaitReminder(every, actionName)`.
 
 Kind-specific: `WithActionName` / `WithAction` / `WithActionFunc` (service &
 business-rule tasks), `WithEligibilityExpr` / `WithEligibilityPrivileges` (user
@@ -156,7 +156,7 @@ task := activity.NewServiceTask("charge",
 `WithName` (start/catch/boundary/event-sub-process); start triggers
 `WithStartSignal` / `WithStartMessage` / `WithStartTimer`; catch
 `WithCatchTimer` / `WithCatchSignal` / `WithCatchMessage` / `WithCatchDeadline` /
-`WithCatchReminder`; throw `WithThrowSignal` / `WithCompensateRef` /
+`WithCatchWaitReminder`; throw `WithThrowSignal` / `WithCompensateRef` /
 `WithThrowName`; boundary `WithBoundaryTimer` / `WithBoundarySignal` /
 `WithBoundaryMessage` / `WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
 event-sub-process `WithEventSubProcessNonInterrupting`.

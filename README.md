@@ -437,7 +437,7 @@ Configure timers on nodes:
 // backtick-wrapped quoted duration literals ("72h", "24h" — not ISO-8601).
 activity.NewUserTask("approve", []string{"manager"},
     activity.WithDeadline(`"72h"`, "escalate-flow", "notify-manager"),
-    activity.WithReminder(`"24h"`, "send-reminder"),
+    activity.WithWaitReminder(`"24h"`, "send-reminder"),
 )
 ```
 
@@ -647,7 +647,7 @@ same set of functional options:
 | `activity.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
 | `activity.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
 | `activity.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
-| `activity.WithReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
+| `activity.WithWaitReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
 Two options are **compile-enforced** to a single constructor:
 
@@ -660,7 +660,7 @@ Two options are **compile-enforced** to a single constructor:
 > **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
 > them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
 > not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithDeadline`,
-> `WithReminder`, `WithStartTimer`, and `WithCatchDeadline`/`WithCatchReminder`.
+> `WithWaitReminder`, `WithStartTimer`, and `WithCatchDeadline`/`WithCatchWaitReminder`.
 
 `RetryPolicy` fields:
 
@@ -762,7 +762,7 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 
 `NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
 `WithCatchMessage(msg, key)`, `WithCatchDeadline(dur, flow, action)`,
-`WithCatchReminder(every, action)`, `WithName(string)`.
+`WithCatchWaitReminder(every, action)`, `WithName(string)`.
 `NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
 `NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithBoundarySignal(name)`,
@@ -1232,7 +1232,7 @@ reaches `StatusCompleted` with no incident raised.
 
 ### 12. In-wait reminders
 
-`WithReminder(every, action)` schedules a recurring in-wait action that fires once per
+`WithWaitReminder(every, action)` schedules a recurring in-wait action that fires once per
 interval **while** a task is open, re-arming itself each time. It stops automatically once
 the task is completed, cancelled, or breached — distinct from the one-shot `WithDeadline`
 escalation in scenario 3.
@@ -1243,7 +1243,7 @@ start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
 
 ```go
 Add(activity.NewUserTask("review", []string{"reviewer"},
-    activity.WithReminder(`"30m"`, "nudge-reviewer")))
+    activity.WithWaitReminder(`"30m"`, "nudge-reviewer")))
 // driver wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
 driver.Drive(ctx, def, "review-77", nil)                            // parks; first reminder armed
 for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire
@@ -1280,6 +1280,34 @@ another gets no payment and, once the fake clock advances past the window, the t
 (cancels the order; the signal arm is cancelled). Same definition, opposite outcome —
 decided by whichever event happened first.
 → [`examples/scenarios/event_based_gateway`](examples/scenarios/event_based_gateway)
+
+### 14. Catch-event in-wait reminder
+
+`WithCatchWaitReminder(every, action)` attaches a recurring in-wait reminder to an
+**intermediate catch event** — the same reminder mechanism as scenario 12, now generalized
+beyond `UserTask`. The reminder fires once per interval **while** the instance is parked
+awaiting the catch, re-arming itself each time, and is cancelled automatically the moment the
+catch resolves.
+
+```
+start → await[catch signal "approved", reminder every "30m" → "nudge"] → end
+```
+
+```go
+Add(event.NewCatch("await",
+    event.WithCatchSignal("approved"),
+    event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"))).
+// driver wired with WithClock(fc), WithScheduler(sched), WithSignalBus(bus)
+driver.Drive(ctx, def, "approval-001", nil)                  // parks; reminder armed
+for range 3 { fc.Advance(30 * time.Minute) }                 // 3 nudges fire
+bus.Publish(ctx, "approved", nil)                            // resumes → reminder cancelled
+fc.Advance(30 * time.Minute)                                 // no further nudge
+```
+
+**At runtime:** three intervals fire three `nudge` reminders while the instance sits at the
+catch; publishing `"approved"` resumes it to completion and cancels the recurring timer, so a
+final clock advance fires nothing — proof the catch-event reminder arms, fires, and cancels.
+→ [`examples/scenarios/catch_event_reminder`](examples/scenarios/catch_event_reminder)
 
 > The tour above is a curated subset. Other runnable scenarios under
 > [`examples/scenarios/`](examples/scenarios) include `attribute_authz` (ABAC + Casbin

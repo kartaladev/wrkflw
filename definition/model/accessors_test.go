@@ -102,7 +102,7 @@ func TestReminderOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
 	n := activity.NewUserTask("ut", nil,
 		activity.WithRetryPolicy(p),
-		activity.WithReminder(schedule.Every(4*time.Hour), "send-reminder"),
+		activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
 	)
 	every, act := model.ReminderOf(n)
 	d, ok := every.Duration()
@@ -116,7 +116,7 @@ func TestReminderOf(t *testing.T) {
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
-	ice := event.NewCatch("ice", event.WithCatchReminder(schedule.Every(2*time.Hour), "ice-remind"))
+	ice := event.NewCatch("ice", event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "ice-remind"))
 	every, act = model.ReminderOf(ice)
 	d, ok = every.Duration()
 	require.True(t, ok)
@@ -146,7 +146,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),
 				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
-				activity.WithReminder(schedule.Every(4*time.Hour), "remind-act"),
+				activity.WithWaitReminder(schedule.Every(4*time.Hour), "remind-act"),
 				activity.WithCancelHandler("cancel-charge"),
 			),
 			activity.NewUserTask("approve", []string{"manager", "admin"},
@@ -352,7 +352,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 func TestDeadlineReminderTyped(t *testing.T) {
 	n := activity.NewUserTask("ut", nil,
 		activity.WithDeadline(schedule.AfterDuration(2*time.Hour), "sla", "notify"),
-		activity.WithReminder(schedule.Every(time.Hour), "remind"),
+		activity.WithWaitReminder(schedule.Every(time.Hour), "remind"),
 	)
 	spec, flow, action := model.DeadlineOf(n)
 	if d, ok := spec.Duration(); !ok || d != 2*time.Hour || flow != "sla" || action != "notify" {

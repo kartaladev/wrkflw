@@ -330,7 +330,7 @@ constructing the runner.
 
 Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
 `WithCatchTimer`), deadlines (`WithDeadline` on any activity), and reminders
-(`WithReminder`). Use `NewMemScheduler` for tests:
+(`WithWaitReminder`). Use `NewMemScheduler` for tests:
 
 ```go
 fc    := clockwork.NewFakeClockAt(startAt)

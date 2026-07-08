@@ -87,6 +87,13 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 		for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
 			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 		}
+		// Cancel any token-keyed in-wait reminder (ReceiveTask / catch): its parked
+		// token is being consumed, so the recurring reminder must go. (cancelAllTimers
+		// below also sweeps it, but emitting the CancelTimer here keeps the per-token
+		// cleanup explicit and order-consistent with the other interrupt sites.)
+		for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
+			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
+		}
 		// Cancel boundary arms.
 		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 			preCmds = append(preCmds, CancelTimer{TimerID: timerID})

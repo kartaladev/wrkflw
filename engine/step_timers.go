@@ -127,19 +127,27 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 //     its recurring trigger and the scheduler re-delivers TimerFired natively;
 //     the reminder record stays in place and the token does NOT move.
 func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord) (StepResult, error) {
-	// If the parked token is gone (task completed/cancelled and advanced), the
-	// reminder fired late → clean no-op, remove the stale record.
+	// Locate the parked token this reminder guards. For a UserTask the reminder
+	// keys on the human-task token (rec.TaskToken == the token's AwaitCommand);
+	// for a ReceiveTask / IntermediateCatchEvent it keys on the parked token id
+	// (rec.Token), which awaits a message/signal/timer rather than a command.
+	// Resolve via AwaitCommand first (UserTask), then by token id (the others).
 	tok := s.tokenAwaiting(rec.TaskToken)
 	if tok == nil {
+		tok = s.tokenByID(rec.Token)
+	}
+	if tok == nil {
+		// The token is gone (wait resolved and advanced): reminder fired late →
+		// clean no-op, remove the stale record.
 		s.removeTimer(rec.TimerID)
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
-	// If the task is nil (already resolved/advanced) or no longer open
-	// (Completed or Cancelled), the reminder is stale — clean no-op, remove
-	// the stale record. A nil task means no open task: treat as not-open.
-	task := s.TaskByToken(rec.TaskToken)
-	if task == nil || !task.IsOpen() {
+	// If a HumanTask exists for this token (UserTask path), honour its open
+	// state: a Completed/Cancelled task makes the reminder stale. For a token
+	// with no HumanTask (ReceiveTask / catch), the parked token still being
+	// present is itself sufficient — it is live.
+	if task := s.TaskByToken(rec.TaskToken); task != nil && !task.IsOpen() {
 		s.removeTimer(rec.TimerID)
 		return StepResult{State: *s, Commands: nil}, nil
 	}

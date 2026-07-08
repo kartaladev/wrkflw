@@ -43,7 +43,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 				activity.WithName("Review Order"),
 				activity.WithEligibilityExpr("vars.amount > 100"),
 				activity.WithDeadline(schedule.AfterExpr("PT24H"), "sla-breach", "notify-manager"),
-				activity.WithReminder(schedule.EveryExpr("PT6H"), "send-reminder"),
+				activity.WithWaitReminder(schedule.EveryExpr("PT6H"), "send-reminder"),
 				activity.WithCompensation("cancel-review"),
 			),
 			gateway.NewExclusive("approve", "Approved?"),
