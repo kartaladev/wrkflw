@@ -218,3 +218,156 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		})
 	}
 }
+
+// TestBoundaryActionFireOnErrorBoundary verifies Fix 1: when an error boundary
+// carries WithBoundaryAction("notify"), the fire-once InvokeAction is emitted
+// (FireAndForget:true) when the error is caught — for BOTH direct-attachment
+// (ActionFailed on root-level svc) and enclosing-scope (error escapes from
+// sub-process). Commands must contain InvokeAction{Name:"notify", FireAndForget:true}
+// and no FailInstance.
+func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
+	t0 := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+
+	t.Run("direct-attachment-error-boundary-emits-action", func(t *testing.T) {
+		t.Parallel()
+		// Root: start → svc → end
+		//       svc has an error boundary "E1" + WithBoundaryAction("notify") → end-recover
+		def := &model.ProcessDefinition{
+			ID: "p-bnd-act-err-direct", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
+				event.NewBoundary("bnd-err", "svc",
+					event.WithBoundaryErrorCode("E1"),
+					event.WithBoundaryAction("notify"),
+				),
+				event.NewEnd("end"),
+				event.NewEnd("end-recover"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "svc"},
+				{ID: "f2", Source: "svc", Target: "end"},
+				{ID: "f3", Source: "bnd-err", Target: "end-recover"},
+			},
+		}
+
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			engine.NewStartInstance(t0, nil), engine.StepOptions{})
+		require.NoError(t, err)
+
+		var ia *engine.InvokeAction
+		for _, c := range r1.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				ia = &vv
+				break
+			}
+		}
+		require.NotNil(t, ia)
+
+		r2, err := engine.Step(def, r1.State,
+			engine.NewActionFailed(t0.Add(time.Second), ia.CommandID, "E1", false),
+			engine.StepOptions{})
+		require.NoError(t, err)
+
+		// Must NOT fail the instance (error boundary routes to end-recover → StatusCompleted).
+		assert.NotEqual(t, engine.StatusFailed, r2.State.Status,
+			"instance must NOT be failed when error boundary catches")
+		for _, c := range r2.Commands {
+			_, isFailInstance := c.(engine.FailInstance)
+			require.False(t, isFailInstance, "FailInstance must NOT be emitted when error boundary catches")
+		}
+
+		// InvokeAction{Name:"notify", FireAndForget:true} must appear.
+		var notifyIA *engine.InvokeAction
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.InvokeAction); ok && v.Name == "notify" {
+				vv := v
+				notifyIA = &vv
+				break
+			}
+		}
+		require.NotNil(t, notifyIA,
+			"InvokeAction{Name:\"notify\", FireAndForget:true} must be emitted when error boundary catches")
+		assert.True(t, notifyIA.FireAndForget,
+			"error boundary action InvokeAction must be FireAndForget")
+	})
+
+	t.Run("enclosing-scope-error-boundary-emits-action", func(t *testing.T) {
+		t.Parallel()
+		// Root: start → sub(sp) → end-ok
+		//       sp has boundary error "E1" + WithBoundaryAction("notify") → end-recover
+		// Nested (sp): start → svc → errorEnd("E1")
+		nestedDef := &model.ProcessDefinition{
+			ID: "sp-bnd-act-err", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("inner-start"),
+				activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+				event.NewErrorEnd("inner-err-end", "E1"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "fi1", Source: "inner-start", Target: "inner-svc"},
+				{ID: "fi2", Source: "inner-svc", Target: "inner-err-end"},
+			},
+		}
+		def := &model.ProcessDefinition{
+			ID: "p-bnd-act-err-enclosing", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				activity.NewSubProcess("sp", nestedDef),
+				event.NewBoundary("bnd-err", "sp",
+					event.WithBoundaryErrorCode("E1"),
+					event.WithBoundaryAction("notify"),
+				),
+				event.NewEnd("end-ok"),
+				event.NewEnd("end-recover"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "sp"},
+				{ID: "f2", Source: "sp", Target: "end-ok"},
+				{ID: "f3", Source: "bnd-err", Target: "end-recover"},
+			},
+		}
+
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			engine.NewStartInstance(t0, nil), engine.StepOptions{})
+		require.NoError(t, err)
+
+		var ia *engine.InvokeAction
+		for _, c := range r1.Commands {
+			if v, ok := c.(engine.InvokeAction); ok {
+				vv := v
+				ia = &vv
+				break
+			}
+		}
+		require.NotNil(t, ia)
+
+		// complete inner-svc → inner-err-end fires → error E1 propagates → bnd-err catches
+		r2, err := engine.Step(def, r1.State,
+			engine.NewActionCompleted(t0.Add(time.Second), ia.CommandID, nil), engine.StepOptions{})
+		require.NoError(t, err)
+
+		// Must NOT fail the instance (error boundary routes to end-recover → StatusCompleted).
+		assert.NotEqual(t, engine.StatusFailed, r2.State.Status,
+			"instance must NOT be failed when enclosing-scope error boundary catches")
+		for _, c := range r2.Commands {
+			_, isFailInstance := c.(engine.FailInstance)
+			require.False(t, isFailInstance, "FailInstance must NOT be emitted when error boundary catches")
+		}
+
+		// InvokeAction{Name:"notify", FireAndForget:true} must appear.
+		var notifyIA *engine.InvokeAction
+		for _, c := range r2.Commands {
+			if v, ok := c.(engine.InvokeAction); ok && v.Name == "notify" {
+				vv := v
+				notifyIA = &vv
+				break
+			}
+		}
+		require.NotNil(t, notifyIA,
+			"InvokeAction{Name:\"notify\", FireAndForget:true} must be emitted by enclosing-scope error boundary")
+		assert.True(t, notifyIA.FireAndForget,
+			"enclosing-scope error boundary action must be FireAndForget")
+	})
+}

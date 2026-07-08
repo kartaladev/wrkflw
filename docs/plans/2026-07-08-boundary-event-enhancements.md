@@ -196,6 +196,14 @@ func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause erro
 
 ## Task 5: Split `WithDeadline` → `WithDeadlineFlow` + `WithDeadlineAction`
 
+> **REVERTED (2026-07-08, per user decision):** The `WithDeadline` → `WithDeadlineFlow` +
+> `WithDeadlineAction` split described below was planned in ADR-0103 but subsequently
+> reverted before merge. Reason: the split was inconsistent with the bundled
+> `WithWaitReminder` / `WithCatchDeadline` siblings, which remain 3-arg (trigger +
+> flow/action in one call). `WithDeadline` stays as a 3-arg option.
+> ADR-0103 covers **boundary action only**; the deadline split is not shipped.
+> The history is preserved here for reference.
+
 **Files:** `definition/activity/options.go`; the 19 call sites listed below; parity test.
 
 **Interfaces — Produces:** `WithDeadlineFlow(t schedule.TriggerSpec, flowID string) activityOnlyOption`, `WithDeadlineAction(action string) activityOnlyOption`. `WithDeadline` (3-arg) REMOVED.

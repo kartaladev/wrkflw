@@ -56,9 +56,17 @@ Set via `event.WithBoundaryErrorCode`. Exact string match of `err.Error()` again
 the code. Empty string is the catch-all (matches any error). This is the original
 behavior, unchanged and preserved as the default.
 
-The helper `boundaryErrorMatches(bnd BoundaryEvent, vars map[string]any, err error)
-bool` encapsulates the three-level check; `propagateError` calls it once per
+The helper `boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause error, errorCode string, eval ConditionEvaluator) (bool, error)`
+encapsulates the three-level check; `propagateError` calls it once per
 error-type boundary at failure time.
+
+A runtime eval error from `ErrorExpr` (e.g. a type mismatch such as
+`_error + 42`) is **non-fatal for matching**: `propagateError` treats the
+boundary as non-matching, continues evaluating subsequent boundaries in
+the same scope, and does not abort the Step. Rationale: this is the
+error-recovery path — one malformed predicate must not brick routing for
+all boundaries; an unmatched error still falls through to the next
+handler or raises an incident.
 
 **`ActionFailed.Cause error`** is threaded from the failing action through the
 runtime deliver loop to `propagateError` so that `ErrorCheck` receives the live

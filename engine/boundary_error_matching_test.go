@@ -557,3 +557,130 @@ func TestBoundaryErrorCheckVsExprPrecedenceWithTypedError(t *testing.T) {
 		assertPropagated(t, r)
 	})
 }
+
+// TestBoundaryErrorCheckVarsMutationTrap verifies Fix 2: the ErrorCheck closure
+// receives a SHALLOW CLONE of instance variables, not the live map. A closure
+// that mutates its vars argument must not corrupt committed instance variables
+// after error propagation.
+func TestBoundaryErrorCheckVarsMutationTrap(t *testing.T) {
+	t.Parallel()
+
+	// A malicious (or buggy) closure that writes into the vars map it receives.
+	mutateFn := func(vars map[string]any, _ error) bool {
+		vars["__injected_by_closure__"] = "should-not-leak"
+		return true // still catches
+	}
+	def := boundaryCheckDef(mutateFn)
+
+	at := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	// Seed a known variable so we can verify the map content.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Inject a known variable into the parked state.
+	st := r1.State
+	if st.Variables == nil {
+		st.Variables = map[string]any{}
+	}
+	st.Variables["original"] = "value"
+
+	var ia engine.InvokeAction
+	for _, c := range r1.Commands {
+		if v, ok := c.(engine.InvokeAction); ok {
+			ia = v
+			break
+		}
+	}
+	require.NotEmpty(t, ia.CommandID)
+
+	r2, err := engine.Step(def, st,
+		engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "ERR", false),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	// Boundary caught the error (closure returns true).
+	assertCaught(t, r2)
+
+	// The mutation must NOT have leaked into the resulting instance state.
+	_, leaked := r2.State.Variables["__injected_by_closure__"]
+	assert.False(t, leaked,
+		"closure mutation of vars argument must NOT propagate to instance variables")
+
+	// The original variable must still be present.
+	assert.Equal(t, "value", r2.State.Variables["original"],
+		"original instance variable must be preserved after boundary catch")
+}
+
+// twoErrorBoundaryDef builds a root-level service task with TWO boundaries:
+// the first has a runtime-failing ErrorExpr (type error at eval: _error + 42),
+// the second has a matching ErrorCode. Used to verify Fix 3.
+//
+//	Root: start → svc → end
+//	      svc has boundary-1 (failing ErrorExpr) → end-bad (should never route here)
+//	      svc has boundary-2 (ErrorCode "REAL_CODE") → end-recover
+func twoErrorBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-two-err-bnd", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
+			// boundary-1: ErrorExpr that will type-error at runtime (_error + 42 adds string+int)
+			event.NewBoundary("bnd-bad-expr", "svc",
+				event.WithBoundaryErrorExpr(`_error + 42`),
+			),
+			// boundary-2: specific matching ErrorCode
+			event.NewBoundary("bnd-real", "svc",
+				event.WithBoundaryErrorCode("REAL_CODE"),
+			),
+			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-bad"),
+			event.NewEnd("end-recover"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "svc"},
+			{ID: "f2", Source: "svc", Target: "end"},
+			{ID: "f3", Source: "bnd-bad-expr", Target: "end-bad"},
+			{ID: "f4", Source: "bnd-real", Target: "recover"},
+			{ID: "f5", Source: "recover", Target: "end-recover"},
+		},
+	}
+}
+
+// TestMalformedErrorExprNonFatal verifies Fix 3: a boundary ErrorExpr that
+// compiles but type-errors at runtime (e.g. _error + 42) must be treated as a
+// non-match (the boundary is skipped), allowing subsequent boundaries in the
+// same scope to still be evaluated. The Step must NOT return an error.
+func TestMalformedErrorExprNonFatal(t *testing.T) {
+	t.Parallel()
+
+	def := twoErrorBoundaryDef()
+
+	at := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var ia engine.InvokeAction
+	for _, c := range r1.Commands {
+		if v, ok := c.(engine.InvokeAction); ok {
+			ia = v
+			break
+		}
+	}
+	require.NotEmpty(t, ia.CommandID)
+
+	// Fire with "REAL_CODE": bnd-bad-expr's ErrorExpr type-errors at runtime
+	// (string + int), so bnd-bad-expr is skipped. bnd-real has matching ErrorCode
+	// → it catches → recovery path.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "REAL_CODE", false),
+		engine.StepOptions{})
+
+	// Fix 3: Step must NOT return an error — a malformed ErrorExpr is non-fatal.
+	require.NoError(t, err, "Step must not error when an ErrorExpr type-errors at runtime; it should skip to next boundary")
+
+	// The second boundary (bnd-real) must have caught the error.
+	assertCaught(t, r2)
+}
