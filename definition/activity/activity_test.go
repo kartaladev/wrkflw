@@ -20,7 +20,6 @@ func TestServiceTaskOptions(t *testing.T) {
 		activity.WithCancelHandler("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
 		activity.WithDeadline(schedule.AfterExpr(`"2h"`), "sla", "notify"),
-		activity.WithWaitReminder(schedule.EveryExpr(`"30m"`), "ping"),
 		activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 5}),
 	)
 	if n.Kind() != model.KindServiceTask || n.Name() != "Charge" {
@@ -35,10 +34,6 @@ func TestServiceTaskOptions(t *testing.T) {
 	}
 	if dExpr, _, dOk := d.Expr(); !dOk || dExpr != `"2h"` {
 		t.Errorf("deadline Timer expr = %q, ok=%v", dExpr, dOk)
-	}
-	re, ra := model.ReminderOf(n)
-	if re.IsZero() || ra != "ping" {
-		t.Errorf("ReminderOf = %v,%q", re, ra)
 	}
 	if rp := model.RetryPolicyOf(n); rp == nil || rp.MaxAttempts != 5 {
 		t.Errorf("RetryPolicyOf = %+v", rp)

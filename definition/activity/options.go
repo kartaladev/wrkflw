@@ -141,11 +141,35 @@ func WithDeadline(t schedule.TriggerSpec, flowID, action string) activityOnlyOpt
 	return withActivity(func(a *model.ActivityFields) { a.DeadlineTimer, a.DeadlineFlow, a.DeadlineAction = t, flowID, action })
 }
 
+// reminderOpt narrows WithWaitReminder to only the activity kinds whose engine
+// strategy actually arms an in-wait reminder: UserTask and ReceiveTask.
+// IntermediateCatchEvent uses the event-side event.WithCatchWaitReminder.
+// Applying a reminder to any other activity kind (ServiceTask, SendTask,
+// BusinessRuleTask, SubProcess, CallActivity) is a compile-time error.
+type reminderOpt struct {
+	every  schedule.TriggerSpec
+	action string
+}
+
+func (o reminderOpt) applyUserTask(u *UserTask) {
+	u.ReminderEvery, u.ReminderAction = o.every, o.action
+}
+
+func (o reminderOpt) applyReceiveTask(r *ReceiveTask) {
+	r.ReminderEvery, r.ReminderAction = o.every, o.action
+}
+
 // WithWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
-// on an activity node. Use schedule.Every, schedule.EveryExpr, or any other
-// recurring TriggerSpec constructor.
-func WithWaitReminder(t schedule.TriggerSpec, action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) { a.ReminderEvery, a.ReminderAction = t, action })
+// on a UserTask or ReceiveTask — the only activity kinds whose engine strategy arms
+// an in-wait reminder. Passing it to any other activity constructor is a compile
+// error (see reminderOpt). Use schedule.Every, schedule.EveryExpr, or any other
+// recurring TriggerSpec constructor. For IntermediateCatchEvent, use
+// event.WithCatchWaitReminder instead.
+func WithWaitReminder(t schedule.TriggerSpec, action string) interface {
+	UserTaskOption
+	ReceiveTaskOption
+} {
+	return reminderOpt{t, action}
 }
 
 // --- UserTask-only options ---
