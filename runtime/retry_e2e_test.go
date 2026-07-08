@@ -69,7 +69,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	// attempts counts how many times action "a" has been invoked.
 	// We use a plain int because the closure is captured by reference (pointer via &attempts).
 	attempts := 0
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			attempts++
 			if attempts < 3 {

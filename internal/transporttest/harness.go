@@ -66,7 +66,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 	})
 	az := authz.RoleAuthorizer{}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": greetAction{},
 	})
 

@@ -69,7 +69,7 @@ func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect)
 	// rely on the persisted next_run for the absolute fire instant.
 	def := runtimetest.TimerIntermediateDef()
 	reg := kernel.NewMapDefinitionRegistry(def)
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),

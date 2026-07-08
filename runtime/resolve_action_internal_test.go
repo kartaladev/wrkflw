@@ -58,7 +58,7 @@ func resolveActionScopedDef(t *testing.T) *model.ProcessDefinition {
 func TestResolveInvokeAction(t *testing.T) {
 	t.Parallel()
 
-	global := action.NewMapCatalog(map[string]action.Action{
+	global := action.NewCatalog(map[string]action.Action{
 		"x":     tag("global"),
 		"gonly": tag("global-only"),
 	})
@@ -71,7 +71,7 @@ func TestResolveInvokeAction(t *testing.T) {
 
 	// cmdScoped is the scope-effective scoped catalog carried by the engine; it
 	// registers "x" so we can prove the carried catalog (not the def's) is used.
-	cmdScoped := action.NewMapCatalog(map[string]action.Action{
+	cmdScoped := action.NewCatalog(map[string]action.Action{
 		"x": tag("cmd-scoped"),
 	})
 
@@ -144,7 +144,7 @@ func TestResolveInvokeAction(t *testing.T) {
 func TestResolveActionName(t *testing.T) {
 	t.Parallel()
 
-	global := action.NewMapCatalog(map[string]action.Action{
+	global := action.NewCatalog(map[string]action.Action{
 		"x":     tag("global-x"),
 		"gonly": tag("global-only"),
 	})

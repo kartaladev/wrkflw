@@ -73,7 +73,7 @@ func main() {
 	// (or unresolved) CancelAction is logged and skipped — it never fails the
 	// cancel. Order is preserved: release-inventory runs before notify-customer.
 	var ran []string
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"release-inventory": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "release-inventory")
 			fmt.Println("  [release-inventory] returning the reserved stock to the pool")

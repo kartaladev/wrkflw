@@ -82,7 +82,7 @@ func main() {
 	// Buffered so the actions never block; each branch's action signals which arm won.
 	shippedCh := make(chan struct{}, 1)
 	cancelledCh := make(chan struct{}, 1)
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"ship-order": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			fmt.Printf("  [ship-order] payment confirmed for %v — shipping\n", in["order"])
 			shippedCh <- struct{}{}

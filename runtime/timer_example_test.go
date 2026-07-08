@@ -37,7 +37,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	serviceRan := false
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			serviceRan = true
 			return map[string]any{"greeted": true}, nil
@@ -109,7 +109,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	escalationRan := false
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"notify-escalation": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			escalationRan = true
 			return map[string]any{"escalated": true}, nil

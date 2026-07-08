@@ -25,7 +25,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	def := runtimetest.TimerIntermediateDef()
 	reg := kernel.NewMapDefinitionRegistry(def) // auto-indexed by both "DefID" and "DefID:1"
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
@@ -60,7 +60,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 func TestRehydrateTimersRequiresWiring(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
+	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
 	err := driver.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")
 }

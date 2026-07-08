@@ -131,7 +131,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.InstanceSto
 		return fmt.Errorf("build def: %w", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"say-hello": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
@@ -210,7 +210,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 	// attempts counts how many times the action is called.
 	// Call 1 → fails (raises incident); call 2+ → succeeds.
 	var attempts atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"risky": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			n := attempts.Add(1)
 			if n == 1 {
@@ -303,7 +303,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Instanc
 		return fmt.Errorf("build def: %w", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"work": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"done": true}, nil
 		}),

@@ -40,13 +40,13 @@ func MustMemStore(t *testing.T, opts ...kernel.MemInstanceStoreOption) *kernel.M
 
 // MustRunner builds a ProcessDriver with the given catalog and store, failing the
 // test on any error. A nil catalog is given a FRESH, EMPTY isolated catalog
-// (action.NewMapCatalog(nil)) — deliberately NOT the process-global
+// (action.NewCatalog(nil)) — deliberately NOT the process-global
 // action.DefaultCatalog() — so tests never share mutable global catalog state via
 // this helper. A nil store defaults to a fresh in-memory MemInstanceStore.
 func MustRunner(t *testing.T, cat action.Catalog, store kernel.InstanceStore, opts ...runtime.Option) *runtime.ProcessDriver {
 	t.Helper()
 	if cat == nil {
-		cat = action.NewMapCatalog(nil)
+		cat = action.NewCatalog(nil)
 	}
 	allOpts := make([]runtime.Option, 0, 2+len(opts))
 	allOpts = append(allOpts, runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store))

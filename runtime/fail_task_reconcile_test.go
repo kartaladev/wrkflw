@@ -34,7 +34,7 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	store := runtimetest.MustMemStore(t)
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"boom": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			// Non-retryable → the instance fails immediately (no retry scheduled).
 			return nil, action.NonRetryable(errors.New("boom"))

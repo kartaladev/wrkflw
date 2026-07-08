@@ -37,7 +37,7 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 	const reminderEvery = 15 * time.Minute
 	var reminderRuns atomic.Int64
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"ping": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			reminderRuns.Add(1)
 			return nil, nil

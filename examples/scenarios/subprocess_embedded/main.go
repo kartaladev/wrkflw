@@ -63,7 +63,7 @@ func main() {
 		log.Fatal("build parent def:", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"book-room": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Printf("  [book-room] reserving a room in %v\n", vars["city"])
 			return map[string]any{"confirmation": "HOTEL-7788"}, nil

@@ -120,7 +120,7 @@ func run() error {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"reviewer": {reviewer},
 	})
-	cat := action.NewMapCatalog(map[string]action.Action{})
+	cat := action.NewCatalog(map[string]action.Action{})
 
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),

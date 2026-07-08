@@ -225,7 +225,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"fail-action": &failAction{msg: "e2e child service error"},
 	})
 

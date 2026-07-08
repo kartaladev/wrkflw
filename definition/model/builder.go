@@ -104,7 +104,7 @@ func (c *definitionCore) build() (*ProcessDefinition, error) {
 		CancelActions: c.cancelActions,
 	}
 	if c.actions != nil {
-		def.scoped = action.NewMapCatalog(c.actions)
+		def.scoped = action.NewCatalog(c.actions)
 		names := make([]string, 0, len(c.actions))
 		for name := range c.actions {
 			names = append(names, name)

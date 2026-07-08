@@ -81,7 +81,7 @@ func main() {
 			return nil, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"book": record("book"),
 		"pay":  record("pay"),
 		"ship": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {

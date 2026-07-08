@@ -85,7 +85,7 @@ func main() {
 	// each async retry fire deterministically.
 	attempts := 0
 	attemptCh := make(chan struct{}, 8)
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"charge-card": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			attempts++
 			if attempts < 3 {

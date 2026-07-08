@@ -83,7 +83,7 @@ func TestCompensationThrowRunsSubProcessCompensationE2E(t *testing.T) {
 	// Recording catalog: tracks invocation order via appended slice.
 	var invoked []string
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"book": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			invoked = append(invoked, "book")
 			return nil, nil

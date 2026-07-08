@@ -27,7 +27,7 @@ func TestSpyCatalog(t *testing.T) {
 	cases := []testCase{
 		{
 			name: "resolve hit records a successful invocation",
-			inner: action.NewMapCatalog(map[string]action.Action{
+			inner: action.NewCatalog(map[string]action.Action{
 				"double": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 					return map[string]any{"out": in["n"].(int) * 2}, nil
 				}),
@@ -53,7 +53,7 @@ func TestSpyCatalog(t *testing.T) {
 		},
 		{
 			name: "resolve hit records a failing invocation",
-			inner: action.NewMapCatalog(map[string]action.Action{
+			inner: action.NewCatalog(map[string]action.Action{
 				"fail": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					return nil, errBoom
 				}),
@@ -82,7 +82,7 @@ func TestSpyCatalog(t *testing.T) {
 		},
 		{
 			name:   "resolve miss returns false and records nothing",
-			inner:  action.NewMapCatalog(nil),
+			inner:  action.NewCatalog(nil),
 			lookup: "absent",
 			assert: func(t *testing.T, spy *processtest.SpyCatalog, act action.Action, ok bool) {
 				assert.False(t, ok)

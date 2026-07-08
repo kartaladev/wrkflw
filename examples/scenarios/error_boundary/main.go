@@ -75,7 +75,7 @@ func main() {
 	}
 
 	declined := false
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		// Throws the coded business error. Returning a plain error makes it
 		// non-retryable, so the boundary catches it immediately.
 		"charge-card": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {

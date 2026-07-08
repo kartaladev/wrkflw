@@ -63,7 +63,7 @@ func TestDeliverMessageFiresEventGatewayArm(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	store := runtimetest.MustMemStore(t)
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"ship-order": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"shipped": true}, nil
 		}),

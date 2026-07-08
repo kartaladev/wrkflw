@@ -137,7 +137,7 @@ func TestActionFailuresCounter(t *testing.T) {
 			reader := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-			cat := action.NewMapCatalog(map[string]action.Action{
+			cat := action.NewCatalog(map[string]action.Action{
 				"fail": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 					return nil, tc.actionErr
 				}),
@@ -174,7 +174,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	cat := action.NewMapCatalog(nil)
+	cat := action.NewCatalog(nil)
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 

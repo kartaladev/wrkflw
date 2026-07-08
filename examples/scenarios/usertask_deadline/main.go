@@ -87,7 +87,7 @@ func main() {
 	// Signalled from the escalation-path action so the main goroutine can wait for
 	// the async timer fire deterministically.
 	escalatedCh := make(chan struct{})
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		// Fire-once breach action: run by the engine the moment the deadline
 		// elapses, for its side effect only (its result is not fed back).
 		"notify-overdue": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {

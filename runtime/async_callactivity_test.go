@@ -234,7 +234,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
 		childOutput := map[string]any{"result": "ok", "score": 42}
-		cat := action.NewMapCatalog(map[string]action.Action{
+		cat := action.NewCatalog(map[string]action.Action{
 			"complete-action": &successAction{out: childOutput},
 		})
 
@@ -273,7 +273,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		cl := kernel.NewMemCallLinkStore()
 		store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
-		cat := action.NewMapCatalog(map[string]action.Action{
+		cat := action.NewCatalog(map[string]action.Action{
 			"fail-action": &failAction{msg: "child service error"},
 		})
 
