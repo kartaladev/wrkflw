@@ -21,7 +21,7 @@ func timerDef(t *testing.T, id string, waits int) *model.ProcessDefinition {
 	prev := "start"
 	for i := range waits {
 		name := "wait" + string(rune('1'+i))
-		b = b.Add(event.NewCatch(name, event.WithCatchTimer(schedule.AfterExpr(`"1h"`)))).Connect(prev, name)
+		b = b.Add(event.NewIntermediateCatch(name, event.WithCatchTimer(schedule.AfterExpr(`"1h"`)))).Connect(prev, name)
 		prev = name
 	}
 	b = b.Add(event.NewEnd("end")).Connect(prev, "end")

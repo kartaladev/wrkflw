@@ -57,7 +57,7 @@ func parallelThrowDef(n int) *model.ProcessDefinition {
 	for i := 1; i <= n; i++ {
 		throwID := throwName(i)
 		ref := refName(i)
-		nodes = append(nodes, event.NewThrow(throwID, event.WithCompensateRef(ref)))
+		nodes = append(nodes, event.NewIntermediateThrow(throwID, event.WithCompensateRef(ref)))
 		flows = append(flows,
 			flow.SequenceFlow{ID: "f-fork-" + throwID, Source: "forkGW", Target: throwID},
 			flow.SequenceFlow{ID: "f-" + throwID + "-join", Source: throwID, Target: "joinGW"},

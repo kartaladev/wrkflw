@@ -54,7 +54,7 @@ func main() {
 	// "nudge" action every 30 minutes while the instance sits at the catch.
 	def, err := definition.NewBuilder("approval-await", 1).
 		Add(event.NewStart("start")).
-		Add(event.NewCatch("await",
+		Add(event.NewIntermediateCatch("await",
 			event.WithCatchSignal("approved"),
 			event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"),
 		)).

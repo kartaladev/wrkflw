@@ -23,7 +23,7 @@ func TestHandleReminderFiredStaleness(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
-			event.NewCatch("await",
+			event.NewIntermediateCatch("await",
 				event.WithCatchSignal("approved"),
 				event.WithCatchWaitReminder(schedule.Every(1), "nudge")),
 		},

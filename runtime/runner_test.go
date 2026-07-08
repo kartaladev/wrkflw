@@ -152,7 +152,7 @@ func timerOnlyDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("wait", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -213,7 +213,7 @@ func conflictTimerDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait10s", event.WithCatchTimer(schedule.AfterExpr(`"10s"`))),
+			event.NewIntermediateCatch("wait10s", event.WithCatchTimer(schedule.AfterExpr(`"10s"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

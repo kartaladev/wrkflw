@@ -208,8 +208,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
-					event.NewCatch("sig-catch", event.WithCatchSignal("sig.a")),
-					event.NewCatch("msg-catch", event.WithCatchMessage("msg.b", "")),
+					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
+					event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("msg.b", "")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -230,7 +230,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
-					event.NewCatch("sig-catch", event.WithCatchSignal("sig.a")),
+					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
 					activity.NewServiceTask("task", activity.WithActionName("do-work")), // non-catch
 					event.NewEnd("end"),
 				},
@@ -684,7 +684,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("do-work")),
-					event.NewThrow("comp-throw", event.WithCompensateRef("missing-node")),
+					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("missing-node")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -704,7 +704,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithActionName("do-work"), activity.WithCompensation("undo-work")),
-					event.NewThrow("comp-throw", event.WithCompensateRef("task")),
+					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("task")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -724,7 +724,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					event.NewThrow("throw", event.WithThrowSignal("sig.done")),
+					event.NewIntermediateThrow("throw", event.WithThrowSignal("sig.done")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -747,7 +747,7 @@ func TestValidate(t *testing.T) {
 						ID: "inner", Version: 1,
 						Nodes: []model.Node{
 							event.NewStart("ns"),
-							event.NewThrow("nthrow", event.WithCompensateRef("no-such")),
+							event.NewIntermediateThrow("nthrow", event.WithCompensateRef("no-such")),
 							event.NewEnd("ne"),
 						},
 						Flows: []flow.SequenceFlow{

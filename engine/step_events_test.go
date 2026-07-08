@@ -25,7 +25,7 @@ func signalCatchDef() *model.ProcessDefinition {
 		ID: "p-signal", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("catch-approved", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("catch-approved", event.WithCatchSignal("approved")),
 			activity.NewServiceTask("complete", activity.WithActionName("complete-action")),
 			event.NewEnd("end"),
 		},
@@ -45,7 +45,7 @@ func messageCatchDef() *model.ProcessDefinition {
 		ID: "p-message", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("catch-order", event.WithCatchMessage("order", `orderId`)),
+			event.NewIntermediateCatch("catch-order", event.WithCatchMessage("order", `orderId`)),
 			activity.NewServiceTask("process", activity.WithActionName("process-order")),
 			event.NewEnd("end"),
 		},
@@ -66,7 +66,7 @@ func signalThrowDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("setup", activity.WithActionName("setup-action")),
-			event.NewThrow("throw-done", event.WithThrowSignal("done")),
+			event.NewIntermediateThrow("throw-done", event.WithThrowSignal("done")),
 			activity.NewServiceTask("after", activity.WithActionName("after-action")),
 			event.NewEnd("end"),
 		},
@@ -89,8 +89,8 @@ func twoSignalTokensDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			event.NewCatch("catch1", event.WithCatchSignal("wake")),
-			event.NewCatch("catch2", event.WithCatchSignal("wake")),
+			event.NewIntermediateCatch("catch1", event.WithCatchSignal("wake")),
+			event.NewIntermediateCatch("catch2", event.WithCatchSignal("wake")),
 			event.NewEnd("end1"),
 			event.NewEnd("end2"),
 		},
@@ -199,7 +199,7 @@ func TestMessageCatchNoCorrelationKeyMatchesOnNameOnly(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			// No CorrelationKey: match on name only
-			event.NewCatch("catch-msg", event.WithCatchMessage("ping", "")),
+			event.NewIntermediateCatch("catch-msg", event.WithCatchMessage("ping", "")),
 			activity.NewServiceTask("svc", activity.WithActionName("pong")),
 			event.NewEnd("end"),
 		},
@@ -348,8 +348,8 @@ func eventGatewayDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewCatch("signal-catch", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("signal-catch", event.WithCatchSignal("approved")),
 			activity.NewServiceTask("timer-branch", activity.WithActionName("timer-action")),
 			activity.NewServiceTask("signal-branch", activity.WithActionName("signal-action")),
 			event.NewEnd("end1"),
@@ -520,8 +520,8 @@ func eventGatewayMessageDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewCatch("msg-catch", event.WithCatchMessage("order", "")),
+			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("order", "")),
 			activity.NewServiceTask("timer-branch", activity.WithActionName("timer-action")),
 			activity.NewServiceTask("msg-branch", activity.WithActionName("msg-action")),
 			event.NewEnd("end1"),
@@ -1030,7 +1030,7 @@ func nonInterruptingBoundarySignalSelfCascadeDef() *model.ProcessDefinition {
 			activity.NewUserTask("work", nil),
 			event.NewBoundary("bnd-pulse", "work", event.WithBoundarySignal("pulse"), event.WithBoundaryNonInterrupting()),
 			// The boundary's outgoing path leads to a signal catch for the same signal.
-			event.NewCatch("inner-catch", event.WithCatchSignal("pulse")),
+			event.NewIntermediateCatch("inner-catch", event.WithCatchSignal("pulse")),
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},

@@ -87,7 +87,7 @@ func timerMetricsDef() *model.ProcessDefinition {
 		ID: "timer-metrics", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

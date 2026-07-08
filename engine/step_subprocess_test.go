@@ -654,8 +654,8 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"2h"`))),
-			event.NewCatch("signal-catch", event.WithCatchSignal("done")),
+			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"2h"`))),
+			event.NewIntermediateCatch("signal-catch", event.WithCatchSignal("done")),
 			event.NewEnd("normal-end"),
 			event.NewEventSubProcess("evtsub", evtsubInner),
 		},
@@ -1345,8 +1345,8 @@ func eventBasedGatewayInsideSubProcessDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			gateway.NewEventBased("evtgw"),
-			event.NewCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewCatch("signal-catch", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("signal-catch", event.WithCatchSignal("approved")),
 			activity.NewServiceTask("svc-timer", activity.WithActionName("timer-action")),
 			activity.NewServiceTask("svc-signal", activity.WithActionName("signal-action")),
 			event.NewEnd("inner-end"),

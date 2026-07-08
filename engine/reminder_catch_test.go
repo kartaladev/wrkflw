@@ -23,7 +23,7 @@ func catchReminderDef(catchOpt event.CatchOption) *model.ProcessDefinition {
 		ID: "p-catch-reminder", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("await", catchOpt,
+			event.NewIntermediateCatch("await", catchOpt,
 				event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge")),
 			event.NewEnd("end"),
 		},

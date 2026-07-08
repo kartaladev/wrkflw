@@ -147,7 +147,7 @@ func SignalProcess(signalName string) *model.ProcessDefinition {
 		ID: "signal-catch-" + signalName, Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait", event.WithCatchSignal(signalName)),
+			event.NewIntermediateCatch("wait", event.WithCatchSignal(signalName)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -165,7 +165,7 @@ func MessageProcess(msgName string) *model.ProcessDefinition {
 		ID: "message-catch-" + msgName, Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewIntermediateCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

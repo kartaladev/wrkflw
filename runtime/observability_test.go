@@ -517,7 +517,7 @@ func TestDeliverSpan(t *testing.T) {
 		ID: "msg-deliver-obs", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("catch", event.WithCatchMessage("pay.confirmed", `"ord-42"`)),
+			event.NewIntermediateCatch("catch", event.WithCatchMessage("pay.confirmed", `"ord-42"`)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

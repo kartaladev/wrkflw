@@ -27,7 +27,7 @@ func TestReview_BusRoutesPerDefinition(t *testing.T) {
 
 	defA, err := definition.NewBuilder("defA", 1).
 		Add(event.NewStart("start")).
-		Add(event.NewCatch("await", event.WithCatchSignal("go"))).
+		Add(event.NewIntermediateCatch("await", event.WithCatchSignal("go"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").Connect("await", "end").
 		Build()
@@ -35,7 +35,7 @@ func TestReview_BusRoutesPerDefinition(t *testing.T) {
 
 	defB, err := definition.NewBuilder("defB", 1).
 		Add(event.NewStart("start")).
-		Add(event.NewCatch("await", event.WithCatchSignal("go"))).
+		Add(event.NewIntermediateCatch("await", event.WithCatchSignal("go"))).
 		Add(activity.NewServiceTask("run", activity.WithActionName("noop"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").Connect("await", "run").Connect("run", "end").
@@ -72,8 +72,8 @@ func TestReview_BusSignalUsesFakeClock(t *testing.T) {
 
 	def, err := definition.NewBuilder("sigtimer", 1).
 		Add(event.NewStart("start")).
-		Add(event.NewCatch("await", event.WithCatchSignal("go"))).
-		Add(event.NewCatch("wait", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)))).
+		Add(event.NewIntermediateCatch("await", event.WithCatchSignal("go"))).
+		Add(event.NewIntermediateCatch("wait", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").Connect("await", "wait").Connect("wait", "end").
 		Build()
