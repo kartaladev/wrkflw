@@ -233,3 +233,22 @@ func TestConsolidateArchiveIntoRootNoopOnEmptyArchive(t *testing.T) {
 	require.Len(t, s.RootCompensations, 1, "RootCompensations must be unchanged")
 	assert.Equal(t, "a", s.RootCompensations[0].NodeID)
 }
+
+// TestCancelTimersForToken verifies the token-keyed cancel helper removes exactly
+// the timer records whose Token matches (honouring excludeTimerID) and returns
+// their TimerIDs, leaving other tokens' timers intact.
+func TestCancelTimersForToken(t *testing.T) {
+	s := &InstanceState{
+		Timers: []timerRecord{
+			{TimerID: "t1", Kind: TimerInWait, Token: "tokA"},
+			{TimerID: "t2", Kind: TimerIntermediate, Token: "tokA"},
+			{TimerID: "t3", Kind: TimerInWait, Token: "tokB"},
+		},
+	}
+
+	got := s.cancelTimersForToken("tokA", "t2") // exclude t2 (the firing timer)
+	assert.Equal(t, []string{"t1"}, got, "returns tokA timers except the excluded one")
+	// t2 (excluded) and t3 (other token) remain.
+	remaining := []string{s.Timers[0].TimerID, s.Timers[1].TimerID}
+	assert.ElementsMatch(t, []string{"t2", "t3"}, remaining)
+}
