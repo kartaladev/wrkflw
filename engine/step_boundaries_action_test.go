@@ -49,11 +49,11 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 	t0 := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
 
 	type testCase struct {
-		name          string
-		boundaryOpts  []event.BoundaryOption
-		fire          func(r1 engine.StepResult) engine.Trigger
-		wantAction    bool // whether InvokeAction{Name:"notify"} is expected
-		interrupting  bool // for doc; does not gate assertions
+		name         string
+		boundaryOpts []event.BoundaryOption
+		fire         func(r1 engine.StepResult) engine.Trigger
+		wantAction   bool // whether InvokeAction{Name:"notify"} is expected
+		interrupting bool // for doc; does not gate assertions
 	}
 
 	cases := []testCase{
@@ -186,8 +186,8 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 			if tc.wantAction {
 				// Find the InvokeAction for "notify" and verify it comes FIRST
 				// (before any routing/drive command).
-				var actionIdx int = -1
-				var firstNonActionIdx int = len(cmds) // sentinel: no non-action found
+				actionIdx := -1
+				firstNonActionIdx := len(cmds) // sentinel: no non-action found
 				for i, c := range cmds {
 					if ia, ok := c.(engine.InvokeAction); ok && ia.Name == "notify" {
 						if actionIdx == -1 {

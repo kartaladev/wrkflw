@@ -283,8 +283,7 @@ func TestBoundaryErrorCheck(t *testing.T) {
 		{
 			name: "check-reads-instance-variables",
 			checkFn: func(vars map[string]any, _ error) bool {
-				v, _ := vars["level"]
-				return v == "critical"
+				return vars["level"] == "critical"
 			},
 			errCode: "ERR",
 			cause:   nil,
@@ -447,9 +446,7 @@ func TestBoundaryErrorMatchingPrecedence(t *testing.T) {
 	t.Run("only-code-uses-code-matching", func(t *testing.T) {
 		t.Parallel()
 		// No Check, no Expr; only Code "SPECIFIC" — matches.
-		def := boundaryCheckDef(nil) // nil check: falls through to Expr/Code
-		// Override: just Code, no Check/Expr.
-		def = &model.ProcessDefinition{
+		def := &model.ProcessDefinition{
 			ID: "p-only-code", Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("start"),
