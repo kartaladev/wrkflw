@@ -48,8 +48,8 @@ func TestRetryPolicyOf(t *testing.T) {
 		gateway.NewInclusive("inc"),
 		gateway.NewEventBased("ebg"),
 		event.NewBoundary("be", "host"),
-		event.NewCatch("ice"),
-		event.NewThrow("ite"),
+		event.NewIntermediateCatch("ice"),
+		event.NewIntermediateThrow("ite"),
 		event.NewEventSubProcess("esp", nil),
 	}
 	for _, c := range nonActivities {
@@ -85,7 +85,7 @@ func TestDeadlineOf(t *testing.T) {
 		assert(t, spec, fl, act, "ut-flow", "ut-act", 2*time.Hour)
 	})
 	t.Run("intermediate catch event with deadline", func(t *testing.T) {
-		n := event.NewCatch("ice",
+		n := event.NewIntermediateCatch("ice",
 			event.WithCatchDeadline(schedule.AfterDuration(48*time.Hour), "ice-flow", "ice-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "ice-flow", "ice-act", 48*time.Hour)
@@ -116,7 +116,7 @@ func TestReminderOf(t *testing.T) {
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
-	ice := event.NewCatch("ice", event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "ice-remind"))
+	ice := event.NewIntermediateCatch("ice", event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "ice-remind"))
 	every, act = model.ReminderOf(ice)
 	d, ok = every.Duration()
 	require.True(t, ok)
@@ -153,11 +153,11 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithEligibilityExpr("amount > 1000"),
 				activity.WithName("Approve"),
 			),
-			event.NewCatch("wait",
+			event.NewIntermediateCatch("wait",
 				event.WithCatchTimer(schedule.AfterExpr("PT30M")),
 				event.WithName("Wait"),
 			),
-			event.NewThrow("signal-done", event.WithThrowSignal("order.done")),
+			event.NewIntermediateThrow("signal-done", event.WithThrowSignal("order.done")),
 			event.NewBoundary("error-bnd", "charge",
 				event.WithBoundaryErrorCode("ERR_PAYMENT"),
 			),

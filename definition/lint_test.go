@@ -48,7 +48,7 @@ func TestLintReminderIgnored(t *testing.T) {
 		},
 		{
 			name: "reminder on IntermediateCatchEvent is honoured (no warning)",
-			node: event.NewCatch("catch", event.WithCatchSignal("approved"), event.WithCatchWaitReminder(every, "nudge")),
+			node: event.NewIntermediateCatch("catch", event.WithCatchSignal("approved"), event.WithCatchWaitReminder(every, "nudge")),
 			assert: func(t *testing.T, warns []definition.Warning) {
 				assert.Empty(t, warns)
 			},

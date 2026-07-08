@@ -64,7 +64,7 @@ flows), `IsDefault`.
 | root (entry) | `.../definition` | **Only** `NewBuilder` (fluent Go entry) and `NewLoader` (YAML entry) — the one place that can import `build` without a cycle. No re-exports; every other symbol is used from its source package below. |
 | model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), the `ErrX` sentinels. The de-facto types package. Imports only `flow`. |
 | flow | `.../definition/flow` | `SequenceFlow`, `Option`, `WithFlowID`, `WithCondition`, `AsDefault`. |
-| events | `.../definition/event` | `NewStart`, `NewEnd`, `NewTerminateEnd`, `NewErrorEnd`, `NewCatch`, `NewThrow`, `NewBoundary`, `NewEventSubProcess` + their options |
+| events | `.../definition/event` | `NewStart`, `NewEnd`, `NewTerminateEnd`, `NewErrorEnd`, `NewIntermediateCatch`, `NewIntermediateThrow`, `NewBoundary`, `NewEventSubProcess` + their options |
 | gateways | `.../definition/gateway` | `NewExclusive`, `NewParallel`, `NewInclusive`, `NewEventBased` |
 | activities | `.../definition/activity` | `NewServiceTask`, `NewUserTask`, `NewReceiveTask`, `NewSendTask`, `NewBusinessRuleTask`, `NewSubProcess`, `NewCallActivity` + their options |
 | fluent builder | `.../definition/build` | `Builder` with per-kind `AddX` methods (`AddStartEvent`, …); entered via `definition.NewBuilder`. |
@@ -98,8 +98,8 @@ kind-specific data generically).
 | `KindEndEvent` | `event.NewEnd(id, name...)` |
 | `KindTerminateEndEvent` | `event.NewTerminateEnd(id, name...)` |
 | `KindErrorEndEvent` | `event.NewErrorEnd(id, errorCode, name...)` |
-| `KindIntermediateCatchEvent` | `event.NewCatch(id, opts...)` |
-| `KindIntermediateThrowEvent` | `event.NewThrow(id, opts...)` |
+| `KindIntermediateCatchEvent` | `event.NewIntermediateCatch(id, opts...)` |
+| `KindIntermediateThrowEvent` | `event.NewIntermediateThrow(id, opts...)` |
 | `KindBoundaryEvent` | `event.NewBoundary(id, attachedTo, opts...)` |
 | `KindEventSubProcess` | `event.NewEventSubProcess(id, *ProcessDefinition, opts...)` |
 

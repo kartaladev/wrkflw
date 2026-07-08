@@ -29,7 +29,7 @@ func messageCatchDef(msgName string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewIntermediateCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -51,8 +51,8 @@ func eventGatewayDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewEventBased("gw"),
-			event.NewCatch("timer-arm", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewCatch("signal-arm", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("timer-arm", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("signal-arm", event.WithCatchSignal("approved")),
 			event.NewEnd("timer-end"),
 			event.NewEnd("signal-end"),
 		},
@@ -127,7 +127,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewThrow("throw", event.WithThrowSignal("approved")),
+			event.NewIntermediateThrow("throw", event.WithThrowSignal("approved")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

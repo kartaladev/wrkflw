@@ -56,7 +56,7 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			// Compensation throw: when reached, runs ArchivedCompensations["sub"].
-			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
 			// After the throw resumes, we park here (UserTask) so the test can observe
 			// that the token arrived at afterThrow and then drove to end.
 			activity.NewUserTask("afterThrow", nil),
@@ -214,8 +214,8 @@ func secondThrowDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			event.NewThrow("compThrow1", event.WithCompensateRef("sub")),
-			event.NewThrow("compThrow2", event.WithCompensateRef("sub")),
+			event.NewIntermediateThrow("compThrow1", event.WithCompensateRef("sub")),
+			event.NewIntermediateThrow("compThrow2", event.WithCompensateRef("sub")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -312,7 +312,7 @@ func throwThenCancelDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},
@@ -509,7 +509,7 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewServiceTask("rootSvc", activity.WithActionName("book-root"), activity.WithCompensation("cancel-root")),
 			activity.NewSubProcess("sub", nested),
-			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
 			activity.NewUserTask("afterThrow", nil),
 			event.NewEnd("end"),
 		},
@@ -696,7 +696,7 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},

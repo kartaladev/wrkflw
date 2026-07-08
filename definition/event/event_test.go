@@ -29,7 +29,7 @@ func TestStartEventOptions(t *testing.T) {
 }
 
 func TestCatchRenamedOptions(t *testing.T) {
-	n := event.NewCatch("wait",
+	n := event.NewIntermediateCatch("wait",
 		event.WithName("Wait"),
 		event.WithCatchTimer(schedule.AfterExpr(`"15m"`)),
 		event.WithCatchSignal("resume"),
@@ -55,7 +55,7 @@ func TestCatchRenamedOptions(t *testing.T) {
 }
 
 func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
-	th := event.NewThrow("t", event.WithThrowName("Emit"), event.WithThrowSignal("done"), event.WithCompensateRef("charge")).(event.IntermediateThrowEvent)
+	th := event.NewIntermediateThrow("t", event.WithThrowName("Emit"), event.WithThrowSignal("done"), event.WithCompensateRef("charge")).(event.IntermediateThrowEvent)
 	if th.Name() != "Emit" || th.SignalName != "done" || th.CompensateRef != "charge" {
 		t.Errorf("throw = %+v", th)
 	}
@@ -108,8 +108,8 @@ func TestEventRoundTrip(t *testing.T) {
 		ID: "e", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("s", event.WithStartSignal("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
-			event.NewCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithCatchDeadline(schedule.AfterExpr(`"2h"`), "f", "a")),
-			event.NewThrow("th", event.WithCompensateRef("s")),
+			event.NewIntermediateCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithCatchDeadline(schedule.AfterExpr(`"2h"`), "f", "a")),
+			event.NewIntermediateThrow("th", event.WithCompensateRef("s")),
 			event.NewBoundary("b", "c", event.WithBoundaryTimer(schedule.AfterDuration(5*time.Minute)), event.WithBoundaryErrorCode("E")),
 			event.NewEnd("end"),
 		},

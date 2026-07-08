@@ -66,10 +66,10 @@ func (b *Builder) AddErrorEndEvent(id, errorCode string, name ...string) *Builde
 	return b.Add(event.NewErrorEnd(id, errorCode, name...))
 }
 func (b *Builder) AddIntermediateCatchEvent(id string, opts ...event.CatchOption) *Builder {
-	return b.Add(event.NewCatch(id, opts...))
+	return b.Add(event.NewIntermediateCatch(id, opts...))
 }
 func (b *Builder) AddIntermediateThrowEvent(id string, opts ...event.ThrowOption) *Builder {
-	return b.Add(event.NewThrow(id, opts...))
+	return b.Add(event.NewIntermediateThrow(id, opts...))
 }
 func (b *Builder) AddBoundaryEvent(id, attachedTo string, opts ...event.BoundaryOption) *Builder {
 	return b.Add(event.NewBoundary(id, attachedTo, opts...))

@@ -756,8 +756,8 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **IntermediateCatchEvent** | Pauses until a timer, signal, or message arrives. | `event.NewCatch(id string, opts ...) Node` |
-| **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `event.NewThrow(id string, opts ...) Node` |
+| **IntermediateCatchEvent** | Pauses until a timer, signal, or message arrives. | `event.NewIntermediateCatch(id string, opts ...) Node` |
+| **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `event.NewIntermediateThrow(id string, opts ...) Node` |
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
 `NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
@@ -773,8 +773,8 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 > fired by the engine (message boundaries since ADR-0053).
 
 ```go
-event.NewCatch("wait-1h", event.WithCatchTimer(`"1h"`))
-event.NewThrow("compensate", event.WithCompensateRef("reserve-hotel"))
+event.NewIntermediateCatch("wait-1h", event.WithCatchTimer(`"1h"`))
+event.NewIntermediateThrow("compensate", event.WithCompensateRef("reserve-hotel"))
 event.NewBoundary("review-timeout", "review", event.WithBoundaryTimer(`"1h"`))
 ```
 
@@ -1268,8 +1268,8 @@ start → gw[event-based] ─┬─ await-payment[catch signal "payment-confirme
 
 ```go
 Add(gateway.NewEventBased("gw")).
-Add(event.NewCatch("await-payment", event.WithCatchSignal("payment-confirmed"))).
-Add(event.NewCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
+Add(event.NewIntermediateCatch("await-payment", event.WithCatchSignal("payment-confirmed"))).
+Add(event.NewIntermediateCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
 // ... gw → both arms; each arm → its own service task + end
 driver.Drive(ctx, def, "order-fast", nil) // parks at gw with both arms live
 bus.Publish(ctx, "payment-confirmed", nil) // signal wins → ship branch; timer arm cancelled
@@ -1294,7 +1294,7 @@ start → await[catch signal "approved", reminder every "30m" → "nudge"] → e
 ```
 
 ```go
-Add(event.NewCatch("await",
+Add(event.NewIntermediateCatch("await",
     event.WithCatchSignal("approved"),
     event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"))).
 // driver wired with WithClock(fc), WithScheduler(sched), WithSignalBus(bus)

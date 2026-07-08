@@ -18,7 +18,7 @@ func SignalCatchDef(signalName string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait-signal", event.WithCatchSignal(signalName)),
+			event.NewIntermediateCatch("wait-signal", event.WithCatchSignal(signalName)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -36,7 +36,7 @@ func TimerIntermediateDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			activity.NewServiceTask("greet", activity.WithActionName("greet")),
 			event.NewEnd("end"),
 		},

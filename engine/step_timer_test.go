@@ -26,7 +26,7 @@ func timerDef() *model.ProcessDefinition {
 		ID: "p-timer", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
 			activity.NewServiceTask("notify", activity.WithActionName("send-notification")),
 			event.NewEnd("end"),
 		},

@@ -58,7 +58,7 @@ func scopeCompensationDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			// Compensation throw: runs ArchivedCompensations["sub"] then resumes.
-			event.NewThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

@@ -85,15 +85,15 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 	}{
 		{
 			name: "signal-catch",
-			node: event.NewCatch("sig-catch", event.WithCatchSignal("order.placed")),
+			node: event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("order.placed")),
 		},
 		{
 			name: "message-catch",
-			node: event.NewCatch("msg-catch", event.WithCatchMessage("payment.received", "order.id")),
+			node: event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("payment.received", "order.id")),
 		},
 		{
 			name: "signal-throw",
-			node: event.NewThrow("sig-throw", event.WithThrowSignal("order.shipped")),
+			node: event.NewIntermediateThrow("sig-throw", event.WithThrowSignal("order.shipped")),
 		},
 		{
 			// Zero-value NonInterrupting (false) = interrupting — the default.
@@ -247,7 +247,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 	}{
 		{
 			name: "timer-intermediate",
-			node: event.NewCatch("wait-1h",
+			node: event.NewIntermediateCatch("wait-1h",
 				event.WithCatchTimer(schedule.AfterExpr("PT1H")),
 				event.WithName("Wait 1 hour"),
 			),

@@ -216,7 +216,7 @@ func TestEventSubProcessConstructor(t *testing.T) {
 }
 
 func TestIntermediateCatchEventConstructor(t *testing.T) {
-	n := event.NewCatch("ice",
+	n := event.NewIntermediateCatch("ice",
 		event.WithCatchTimer(schedule.AfterExpr("PT1H")),
 		event.WithCatchDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
 		event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "remind-act"),
@@ -237,7 +237,7 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 }
 
 func TestIntermediateCatchEventSignal(t *testing.T) {
-	n := event.NewCatch("ice-sig", event.WithCatchSignal("my.signal"))
+	n := event.NewIntermediateCatch("ice-sig", event.WithCatchSignal("my.signal"))
 	ice, ok := n.(event.IntermediateCatchEvent)
 	if !ok {
 		t.Fatalf("node is %T, want event.IntermediateCatchEvent", n)
@@ -248,7 +248,7 @@ func TestIntermediateCatchEventSignal(t *testing.T) {
 }
 
 func TestIntermediateCatchEventMessage(t *testing.T) {
-	n := event.NewCatch("ice-msg",
+	n := event.NewIntermediateCatch("ice-msg",
 		event.WithCatchMessage("payment.received", "order.id"),
 	)
 	ice, ok := n.(event.IntermediateCatchEvent)
@@ -264,7 +264,7 @@ func TestIntermediateCatchEventMessage(t *testing.T) {
 }
 
 func TestIntermediateThrowEventConstructor(t *testing.T) {
-	n := event.NewThrow("ite",
+	n := event.NewIntermediateThrow("ite",
 		event.WithThrowSignal("order.shipped"),
 	)
 	if n.Kind() != model.KindIntermediateThrowEvent {
@@ -280,7 +280,7 @@ func TestIntermediateThrowEventConstructor(t *testing.T) {
 }
 
 func TestIntermediateThrowEventCompensateRef(t *testing.T) {
-	n := event.NewThrow("comp-throw",
+	n := event.NewIntermediateThrow("comp-throw",
 		event.WithCompensateRef("my-task"),
 	)
 	ite, ok := n.(event.IntermediateThrowEvent)
@@ -349,7 +349,7 @@ func TestWithNameOnActivities(t *testing.T) {
 		t.Fatalf("Name() = %q, want 'Timer Boundary'", n3.Name())
 	}
 
-	n4 := event.NewCatch("ice", event.WithName("Wait"))
+	n4 := event.NewIntermediateCatch("ice", event.WithName("Wait"))
 	if n4.Name() != "Wait" {
 		t.Fatalf("Name() = %q, want 'Wait'", n4.Name())
 	}
