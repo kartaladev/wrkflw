@@ -59,11 +59,23 @@ and pick up the next work. Read it top to bottom before starting.
 >    (BlockUntilContext flaky-fix + "signal"→"message" comment), `retry_recovery`/`attribute_authz`/
 >    `usertask_approval` (doc/comment fixes). Group-B audit agent stalled once but all findings were
 >    collected + applied.
-> **3. Input validation** — spec DONE `docs/specs/2026-07-08-input-validation-design.md`. Neutral
->    `validation.Validator` port + `ValidationStrategy` interface + registry;
+> **3. Input validation — ▶ NEXT (spec DONE, plan PENDING)** `docs/specs/2026-07-08-input-validation-design.md`.
+>    Neutral `validation.Validator` port + `ValidationStrategy`/`DescribableStrategy` + `Registry`;
 >    `validation/{expr,callback,jsonschema,avro}` adapters (expr/callback dep-free; json-schema/avro
->    ADR-gated deps); node-level at start/completion/message, reject before state mutation. Born
->    type-safe. **ADR-0110** + **0111** (json-schema dep) + **0112** (avro dep).
+>    ADR-gated deps); node-level slots (`StartEvent.InputValidation`, `UserTask.CompletionValidation`,
+>    `ReceiveTask`/`IntermediateCatchEvent.PayloadValidation`) validated at the 3 external-input
+>    boundaries (Drive / TaskService.Complete / DeliverMessage) BEFORE any state mutation; wire/YAML
+>    round-trip via `Descriptor()`; `MarshalJSON` FAIL-CLOSED on a non-serializable callback strategy.
+>    **ADR-0110** (architecture) + **0111** (json-schema dep) + **0112** (avro dep).
+>    **▶ RESUME RECIPE (established pattern this run — see [[sequential-roadmap-execution-2026-07-08]]):**
+>    (1) run an **opus architecture-assessment FIRST** — the spec cites line numbers (processdriver.go:291,
+>    task/service.go:147, processdriver_message.go:20) that likely shifted after the merges; verify the
+>    3 injection points + the message-waking-node resolution + how `mergeVars` is ordered. (2) Options
+>    **born type-safe** (Item-0 convention): `WithInputValidation`→StartOption, `WithCompletionValidation`
+>    →UserTaskOption, `WithPayloadValidation`→ReceiveTaskOption (activity) + CatchOption (event).
+>    (3) **DECISION POINT — needs user input:** which JSON-Schema lib (ADR-0111) + which Avro lib (ADR-0112)?
+>    Ask before adding deps. (4) then writing-plans → subagent-driven-development → /code-review → merge.
+>    Independent of Item 5 (ReverseInstance) — parallelizable.
 > **4. Completion-action + `*Action` naming** — designed in the program spec §Phase 3.
 >    `ActivityFields.CompletionAction` + `WithCompletionAction`; async via the existing
 >    `InvokeAction`/`ActionCompleted` round-trip (mirrors compensation, ~150 lines, no new token state);
