@@ -1152,7 +1152,7 @@ func TestNonInterruptingBoundarySignalNoSelfCascade(t *testing.T) {
 	assert.Equal(t, "work", r1.State.Tokens[0].NodeID)
 	require.Len(t, r1.State.Boundaries, 1, "signal boundary arm must be recorded")
 
-	// Step 2: Deliver SignalReceived{"pulse"}.
+	// Step 2: ApplyTrigger SignalReceived{"pulse"}.
 	//   - The boundary arm fires (non-interrupting): spawns a token at "inner-catch"
 	//     which parks awaiting "pulse".
 	//   - The standalone broadcast loop (step 3 in SignalReceived dispatch) must NOT

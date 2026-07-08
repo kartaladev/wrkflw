@@ -45,7 +45,7 @@ func timerIntermediateE2EDef() *model.ProcessDefinition {
 // drives a real Runner identically to MemScheduler: ONE shared fake clock is the
 // runner's clock.Clock AND the scheduler's clockwork.Clock. Advancing the shared
 // clock past FireAt fires the timer on gocron's executor goroutine, which calls
-// runner.Deliver(TimerFired); the instance must reach StatusCompleted.
+// runner.ApplyTrigger(TimerFired); the instance must reach StatusCompleted.
 //
 // Synchronization approach:
 //  1. BlockUntilContext(1) ensures gocron has armed exactly one waiter on the fake
@@ -54,7 +54,7 @@ func timerIntermediateE2EDef() *model.ProcessDefinition {
 //  2. serviceRan channel provides a deterministic signal that the gocron executor
 //     goroutine has delivered TimerFired and the service action ran.
 //  3. require.Eventually polls the store for StatusCompleted as the final safety
-//     net for the async Deliver path completing its last engine step.
+//     net for the async ApplyTrigger path completing its last engine step.
 func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 	ctx := t.Context()
 
@@ -104,7 +104,7 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 		t.Fatalf("service action did not run after timer fired: %v", ctx.Err())
 	}
 
-	// The instance must reach Completed (assert eventually — Deliver runs async
+	// The instance must reach Completed (assert eventually — ApplyTrigger runs async
 	// on gocron's executor goroutine, so the final store write may be in-flight
 	// even after the service action has run, because the engine still needs to
 	// process the greet→end flow and commit the terminal step).

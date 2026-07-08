@@ -110,7 +110,7 @@ type freeEnv struct {
 }
 
 func (e freeEnv) deliver(ctx context.Context, trg engine.Trigger) (engine.InstanceState, error) {
-	return e.driver.Deliver(ctx, e.def, e.id, trg)
+	return e.driver.ApplyTrigger(ctx, e.def, e.id, trg)
 }
 
 func (e freeEnv) advanceTimers(context.Context) (engine.InstanceState, error) {

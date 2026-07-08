@@ -83,7 +83,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	// are always in sync — not a separate ephemeral runner.
 	var driver *runtime.ProcessDriver
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := driver.Deliver(bCtx, def, instanceID, trg)
+		_, err := driver.ApplyTrigger(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
 
@@ -156,11 +156,11 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	def := eventGatewayDef()
 
-	// bus is wired with a deliver that uses driver.Deliver; we break the circular
+	// bus is wired with a deliver that uses driver.ApplyTrigger; we break the circular
 	// dependency with a forward reference via a pointer.
 	var driver *runtime.ProcessDriver
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := driver.Deliver(bCtx, def, instanceID, trg)
+		_, err := driver.ApplyTrigger(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
 
@@ -204,7 +204,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 
 	var driver *runtime.ProcessDriver
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := driver.Deliver(bCtx, def, instanceID, trg)
+		_, err := driver.ApplyTrigger(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
 
@@ -259,7 +259,7 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	_, err = driver.Drive(ctx, def, "order-200", map[string]any{"orderId": "200"})
 	require.NoError(t, err)
 
-	// Deliver message targeting orderId=100.
+	// ApplyTrigger message targeting orderId=100.
 	err = driver.DeliverMessage(ctx, def, "order-shipped", "100", map[string]any{"shipped": true})
 	require.NoError(t, err)
 

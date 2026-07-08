@@ -66,7 +66,7 @@ func notifierParentDef() *model.ProcessDefinition {
 //
 // Sequence:
 //  1. Parent calls a child that parks on a human task → parent is StatusRunning.
-//  2. Deliver HumanCompleted to the child → child completes, link flips to terminal.
+//  2. ApplyTrigger HumanCompleted to the child → child completes, link flips to terminal.
 //  3. Build a CallNotifier and call DrainOnce → parent resumes, reaches StatusCompleted.
 //  4. Assert parent is StatusCompleted.
 //  5. Second DrainOnce is a no-op (link is marked notified).
@@ -124,7 +124,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"childResult": "done"})
 	require.NoError(t, err)
 
-	childFinalSt, err := driver.Deliver(ctx, child, childID, completeTrg)
+	childFinalSt, err := driver.ApplyTrigger(ctx, child, childID, completeTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, childFinalSt.Status, "child must be StatusCompleted after human task completion")
 
@@ -136,7 +136,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 
 	// ── Step 3: build CallNotifier and DrainOnce → parent resumes ─────────
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err2 := driver.Deliver(ctx2, def, instanceID, trg)
+		_, err2 := driver.ApplyTrigger(ctx2, def, instanceID, trg)
 		return err2
 	})
 

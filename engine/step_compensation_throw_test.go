@@ -134,7 +134,7 @@ func TestCompensationThrowRunsCompensationAndResumes(t *testing.T) {
 	require.NotNil(t, cancelInnerCmd,
 		"compensation throw must emit InvokeAction for cancel-inner")
 
-	// Deliver ActionCompleted for the compensation action → walk finishes → RESUME.
+	// ApplyTrigger ActionCompleted for the compensation action → walk finishes → RESUME.
 	resumeAt := at.Add(3 * time.Second)
 	r3, err := engine.Step(def, r2.State,
 		engine.NewActionCompleted(resumeAt, cancelInnerCmd.CommandID, nil),

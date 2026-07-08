@@ -30,11 +30,11 @@ func TestBroadcastSignalResumesParkedInstances(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	def := runtimetest.SignalCatchDef("approved")
 
-	// Forward-reference wiring: the bus delivers via driver.Deliver, and the driver
+	// Forward-reference wiring: the bus delivers via driver.ApplyTrigger, and the driver
 	// owns the bus. This is the same graph a consumer builds once at startup.
 	var driver *runtime.ProcessDriver
 	bus := runtimetest.MustSignalBus(t, func(bCtx context.Context, instanceID string, trg engine.Trigger) error {
-		_, err := driver.Deliver(bCtx, def, instanceID, trg)
+		_, err := driver.ApplyTrigger(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
 	driver = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,

@@ -452,7 +452,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 //  1. parent→B: propagateCancel(B, {parent,B}) calls CancelInstance(D).
 //  2. CancelInstance(D) allocates visited={D}, succeeds, then calls propagateCancel(D, {D}).
 //  3. Back in the parent's branch: propagateCancel(C, {parent,B,C}) calls CancelInstance(D)
-//     again — D is already Terminated, so Deliver returns ErrWrongState which is
+//     again — D is already Terminated, so ApplyTrigger returns ErrWrongState which is
 //     logged and swallowed (best-effort), but D is attempted twice.
 //
 // With the fix (propagateCancel recurses into propagateCancel with the SAME visited

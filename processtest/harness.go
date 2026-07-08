@@ -191,7 +191,7 @@ func New(opts ...Option) (*Harness, error) {
 			if def == nil {
 				return fmt.Errorf("processtest: no definition recorded for instance %q (start it before publishing)", instanceID)
 			}
-			_, derr := h.driver.Deliver(ctx, def, instanceID, trg)
+			_, derr := h.driver.ApplyTrigger(ctx, def, instanceID, trg)
 			return derr
 		}, signal.WithClock(clk))
 		if berr != nil {
@@ -258,7 +258,7 @@ type harnessEnv struct {
 }
 
 func (e harnessEnv) deliver(ctx context.Context, trg engine.Trigger) (engine.InstanceState, error) {
-	return e.h.driver.Deliver(ctx, e.def, e.id, trg)
+	return e.h.driver.ApplyTrigger(ctx, e.def, e.id, trg)
 }
 
 func (e harnessEnv) advanceTimers(ctx context.Context) (engine.InstanceState, error) {

@@ -133,7 +133,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	)
 
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err := driver.Deliver(ctx2, def, instanceID, trg)
+		_, err := driver.ApplyTrigger(ctx2, def, instanceID, trg)
 		return err
 	})
 	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
@@ -176,7 +176,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"gcResult": "done"})
 	require.NoError(t, err)
 
-	gcFinalSt, err := driver.Deliver(ctx, gcDef, grandchildID, completeTrg)
+	gcFinalSt, err := driver.ApplyTrigger(ctx, gcDef, grandchildID, completeTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, gcFinalSt.Status, "grandchild must be StatusCompleted after human task completion")
 
@@ -242,7 +242,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 	)
 
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err := driver.Deliver(ctx2, def, instanceID, trg)
+		_, err := driver.ApplyTrigger(ctx2, def, instanceID, trg)
 		return err
 	})
 	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
@@ -335,7 +335,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	)
 
 	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def2 *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
-		_, err := driver.Deliver(ctx2, def2, instanceID, trg)
+		_, err := driver.ApplyTrigger(ctx2, def2, instanceID, trg)
 		return err
 	})
 	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)

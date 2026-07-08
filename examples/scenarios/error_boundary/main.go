@@ -23,7 +23,7 @@
 //     error. A coded error with no matching boundary propagates as an unhandled
 //     workflow error (StatusFailed / incident), not shown here.
 //   - Plain errors are non-retryable, so the boundary fires SYNCHRONOUSLY during
-//     driver.Drive — no clock, scheduler, or follow-up Deliver is needed. (A
+//     driver.Drive — no clock, scheduler, or follow-up ApplyTrigger is needed. (A
 //     retryable action error would be retried first; see the retry_recovery
 //     scenario.)
 //

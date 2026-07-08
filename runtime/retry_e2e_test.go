@@ -111,7 +111,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	fc.Advance(2 * time.Second) // clock is now T+3s
 	require.NoError(t, sched.Tick(ctx), "Tick must not error")
 
-	// Load final state from the store (Tick's internal Deliver doesn't surface the state).
+	// Load final state from the store (Tick's internal ApplyTrigger doesn't surface the state).
 	final, _, err := store.Load(ctx, instanceID)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status,

@@ -145,7 +145,7 @@ func run(logger *slog.Logger) error {
 
 	// --- Call-link notifier: resumes parked parent instances ---
 	// deliver is the function the notifier calls when a sub-instance completes or
-	// fails; wire it to driver.Deliver once the driver is constructed below.
+	// fails; wire it to driver.ApplyTrigger once the driver is constructed below.
 	// The closure captures driver by pointer so the forward-reference is safe:
 	// driver is assigned after the notifier is wired up, but the closure only
 	// reads it at invocation time (after assignment).
@@ -154,7 +154,7 @@ func run(logger *slog.Logger) error {
 		if driver == nil {
 			return nil // not yet wired; should not occur in practice
 		}
-		_, err := driver.Deliver(ctx, def, instanceID, trg)
+		_, err := driver.ApplyTrigger(ctx, def, instanceID, trg)
 		return err
 	})
 	// The definition store resolves parent-process definitions during notification.

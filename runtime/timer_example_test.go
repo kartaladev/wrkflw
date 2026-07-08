@@ -61,7 +61,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	assert.False(t, serviceRan, "service must not run while timer is pending")
 
 	// Advance clock past FireAt (1h from start). The scheduler fires the timer
-	// which calls Deliver internally; instance should complete synchronously.
+	// which calls ApplyTrigger internally; instance should complete synchronously.
 	fc.Advance(1*time.Hour + 1*time.Second)
 	require.NoError(t, sched.Tick(ctx))
 

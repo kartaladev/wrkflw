@@ -13,7 +13,7 @@ import (
 )
 
 // DeliverFunc is the function the SignalBus uses to deliver a trigger to a
-// specific process instance. The caller wires this to ProcessDriver.Deliver (with the
+// specific process instance. The caller wires this to ProcessDriver.ApplyTrigger (with the
 // definition already captured in a closure). Message correlation is handled
 // separately by ProcessDriver.DeliverMessage and does not go through a DeliverFunc.
 type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger) error
@@ -30,10 +30,10 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 //     in sorted (deterministic) instance-ID order.
 //
 //   - The deliver function is injected at construction time as a [DeliverFunc]:
-//     the caller typically wraps runner.Deliver with the definition pre-captured:
+//     the caller typically wraps runner.ApplyTrigger with the definition pre-captured:
 //
 //     bus := NewSignalBus(func(ctx context.Context, id string, trg engine.Trigger) error {
-//     _, err := runner.Deliver(ctx, def, id, trg)
+//     _, err := runner.ApplyTrigger(ctx, def, id, trg)
 //     return err
 //     }, WithClock(clk))
 //

@@ -16,7 +16,7 @@ import (
 )
 
 // TaskService authorizes human-task interactions and returns the engine triggers
-// that the caller (typically via ProcessDriver.Deliver) feeds back into the process.
+// that the caller (typically via ProcessDriver.ApplyTrigger) feeds back into the process.
 //
 // Authorization happens here, in the runtime layer, so that the engine core
 // remains pure and free of I/O. TaskService never calls engine.Step itself.
@@ -104,7 +104,7 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...Task
 }
 
 // Claim authorizes actor against the task's eligibility and, on success, returns
-// a HumanClaimed trigger for the caller to deliver to the engine via ProcessDriver.Deliver.
+// a HumanClaimed trigger for the caller to deliver to the engine via ProcessDriver.ApplyTrigger.
 //
 // task.Vars (snapshotted at task-creation by the runner's AwaitHuman perform) are
 // forwarded to the Authorizer so that attribute predicates referencing process

@@ -160,14 +160,14 @@ func main() {
 	if err != nil {
 		log.Fatal("claim:", err)
 	}
-	if _, err := driver.Deliver(ctx, def, instanceID, claimTrg); err != nil {
+	if _, err := driver.ApplyTrigger(ctx, def, instanceID, claimTrg); err != nil {
 		log.Fatal("deliver claim:", err)
 	}
 	completeTrg, err := svc.Complete(ctx, taskToken, reviewer, map[string]any{"approved": true})
 	if err != nil {
 		log.Fatal("complete:", err)
 	}
-	final, err := driver.Deliver(ctx, def, instanceID, completeTrg)
+	final, err := driver.ApplyTrigger(ctx, def, instanceID, completeTrg)
 	if err != nil {
 		log.Fatal("deliver complete:", err)
 	}

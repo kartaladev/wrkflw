@@ -2,7 +2,7 @@
 // putting a read-through cache in front of the persistence stores, at the
 // runtime (ProcessDriver) level, using the neutral persistence/cache substrate.
 //
-// The engine's hot read paths (instance state on every Deliver, human-task
+// The engine's hot read paths (instance state on every ApplyTrigger, human-task
 // snapshots on every claim/complete) should be cached so they do not overload
 // the backing store (ADR-0073, ADR-0099). Caching is a thin, opt-in wrapper:
 // two constructors — persistence.NewCachingInstanceStore and

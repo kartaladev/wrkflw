@@ -67,7 +67,7 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 	require.Equal(t, engine.StatusRunning, st.Status, "instance must park at the UserTask")
 	require.Len(t, st.Boundaries, 1, "message boundary must be armed on the parked host")
 
-	// Deliver the BOUNDARY message. This must be routed to the parked instance
+	// ApplyTrigger the BOUNDARY message. This must be routed to the parked instance
 	// even though no token has AwaitMessage == "cancel" (the boundary arm holds it).
 	err = r.DeliverMessage(ctx, def, "cancel", "", nil)
 	require.NoError(t, err)

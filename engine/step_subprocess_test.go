@@ -256,7 +256,7 @@ func eventSubProcessDef(nonInterrupting bool) *model.ProcessDefinition {
 // sub-process scenario:
 //
 //  1. Start → enters sub → inner scope opens, user-task "inner-user" parks.
-//  2. Deliver SignalReceived{"cancel"} → the interrupting event sub-process fires:
+//  2. ApplyTrigger SignalReceived{"cancel"} → the interrupting event sub-process fires:
 //     - The user-task token in the inner scope is cancelled.
 //     - A new scope opens for the event sub-process; evtsub-svc fires (InvokeAction "cancel-action").
 //  3. Complete "cancel-action" → evtsub scope drains → since interrupting, this
