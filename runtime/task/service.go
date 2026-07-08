@@ -207,9 +207,13 @@ func (s *TaskService) Complete(ctx context.Context, taskToken string, actor auth
 		return nil, fmt.Errorf("workflow-runtime: taskservice: complete: %w", err)
 	}
 	if s.resolver != nil {
-		def, err := s.resolver.Lookup(ctx, model.Qualifier{ID: task.DefID, Version: task.DefVersion})
+		qualifier := model.Qualifier{ID: task.DefID, Version: task.DefVersion}
+		def, err := s.resolver.Lookup(ctx, qualifier)
 		if err != nil {
 			return nil, fmt.Errorf("workflow-runtime: taskservice: complete: resolve definition for validation: %w", err)
+		}
+		if def == nil {
+			return nil, fmt.Errorf("workflow-runtime: taskservice: complete: resolver returned nil definition for %s", qualifier)
 		}
 		if node, ok := def.Node(task.NodeID); ok {
 			if ut, ok := node.(activity.UserTask); ok && ut.CompletionValidation != nil {

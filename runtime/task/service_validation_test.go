@@ -1,6 +1,7 @@
 package task_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -128,4 +129,41 @@ func TestComplete_ValidatesCompletionOutput(t *testing.T) {
 			tc.assert(t, trg, err)
 		})
 	}
+}
+
+// nilDefinitionResolver is a misbehaving DefinitionResolver stub: it returns a
+// nil *model.ProcessDefinition alongside a nil error, simulating a
+// consumer-supplied resolver that violates the (def, nil) == found contract.
+// DefinitionResolver is an open, consumer-satisfiable interface, so
+// TaskService.Complete must guard against this shape rather than trust it.
+type nilDefinitionResolver struct{}
+
+func (nilDefinitionResolver) Lookup(ctx context.Context, q model.Qualifier) (*model.ProcessDefinition, error) {
+	return nil, nil
+}
+
+// TestComplete_NilDefinitionFromResolver verifies TaskService.Complete guards
+// against a DefinitionResolver that returns (nil, nil): rather than panicking
+// on the subsequent def.Node lookup, Complete must return a non-nil error and
+// a nil trigger.
+func TestComplete_NilDefinitionFromResolver(t *testing.T) {
+	t.Parallel()
+
+	const taskToken = "tok-nil-def"
+	store := humantask.NewMemTaskStore()
+	require.NoError(t, store.Upsert(t.Context(), humantask.HumanTask{
+		TaskToken:  taskToken,
+		NodeID:     "approve",
+		DefID:      "approval-validated",
+		DefVersion: 1,
+		State:      humantask.Claimed,
+		ClaimedBy:  "alice",
+	}))
+
+	svc, err := task.NewTaskService(store, authz.AllowAll{}, task.WithDefinitionResolver(nilDefinitionResolver{}))
+	require.NoError(t, err)
+
+	trg, err := svc.Complete(t.Context(), taskToken, authz.Actor{ID: "alice"}, map[string]any{"decision": "approve"})
+	require.Error(t, err, "Complete must error, not panic, when the resolver returns a nil definition")
+	assert.Nil(t, trg, "no trigger must be returned when the resolver returns a nil definition")
 }
