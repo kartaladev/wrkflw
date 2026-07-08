@@ -3,11 +3,11 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: Plan 3 (scheduler JobStore durability) → boundary-event plans
+## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: write the boundary-event impl plan (ADR-0103/0104) → Plan 3 scheduler JobStore
 
-> **State:** `origin/main == main == ada9436` (+ a small follow-up cleanup branch merging after it),
-> working tree clean, all gates green (`go build ./...`, `go test -race ./...` 58 pkgs / 0 fail / 0 races
-> with PG+MySQL+SQLite testcontainers, `golangci-lint run ./...` 0 issues). **Next free ADR: 0102.**
+> **State:** `origin/main == main == f9d5225`, working tree clean, all gates green
+> (`go build ./...`, `go test -race ./...` 58 pkgs / 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
+> `golangci-lint run ./...` 0 issues). **Next free ADR: 0102.**
 >
 > **Recently shipped since 2026-07-04 (all MERGED + PUSHED to origin/main):**
 > - **ADR-0094/0095** HTTP-only transport — removed gRPC; `transport/http/{httpcore,stdlib,gin,fiber}` mountable route-group adapters.
@@ -25,18 +25,33 @@ and pick up the next work. Read it top to bottom before starting.
 >   (`next_run`/`trigger_kind`/`trigger_payload`, 3-dialect migration) with faithful rehydration proven
 >   end-to-end on **Postgres, MySQL, and SQLite**; API polish `ProcessDriver.Run`→`Drive` and `*ProcessDriver`
 >   values named `driver`; `scheduling.WithSchedulerClock`→`WithClock` (unified with the rest of the codebase).
+> - **Cleanup follow-ups** (merge `c749dd8`): nil/typed-nil `WithScheduler` falls back to the default (was a
+>   panic); example renames `boundary_timer`→`usertask_deadline`, `human_task_approval`→`usertask_approval`;
+>   new `event_based_gateway` example; README `r.Run`→`driver.Drive` snippet fix.
+> - **In-wait reminders generalized** (merge `c707569`): reminders (`WithWaitReminder`/`WithCatchWaitReminder`)
+>   now arm/fire/cancel for `ReceiveTask` and `IntermediateCatchEvent`, not just `UserTask` (was
+>   UserTask-only; `WithCatchReminder` had been a dead option). `armWaitReminder` + `cancelTimersForToken`
+>   (no scheduler-job leak — cancel-leak review clean); generalized staleness; renamed
+>   `WithReminder`→`WithWaitReminder`, `WithCatchReminder`→`WithCatchWaitReminder`; new pure
+>   `definition.Lint(def) []Warning` surfaced by the driver at WARN; `catch_event_reminder` example.
+> - **Intermediate-event constructor renames** (merge `f9d5225`): `event.NewCatch`→`NewIntermediateCatch`,
+>   `event.NewThrow`→`NewIntermediateThrow` (match their types).
 >
-> **▶ NEXT WORK — Plan 3: scheduler JobStore-owned lifecycle & durability (ADR-0102, NOT STARTED):** full
-> workflow-provided `kernel.JobStore` the scheduler CALLS; `JobStore.Save/Update/Delete` on the AMBIENT
-> state-commit tx (timer+state atomic — supersedes the timer-write portion of ADR-0027); scheduler
-> **self-rehydrates on start** (no explicit `RehydrateTimers`); gocron in-mem = reconciled projection. Plan is
-> written and self-contained: [`docs/plans/2026-07-07-scheduler-jobstore-durability.md`](2026-07-07-scheduler-jobstore-durability.md)
-> (Tasks 3–5; Tasks 1–2 subset — the durable descriptor + faithful rehydration — already shipped in `ada9436`).
-> **Then boundary-event enhancements (ADR-0103/0104):** spec written
-> ([`docs/specs/2026-07-07-boundary-event-enhancements.md`](../specs/2026-07-07-boundary-event-enhancements.md))
-> — `WithBoundaryAction`, flexible error matching (Check→Expr→Code), `WithDeadlineFlow`/`WithDeadlineAction`
-> split, `WithWaitReminder` — but the **implementation plan is NOT yet written** (write it after Plan 3, since
-> boundary timer/deadline options adopt `schedule.TriggerSpec`).
+> **▶ NEXT WORK — write the boundary-event enhancements implementation plan (ADR-0103/0104):** the spec is
+> written ([`docs/specs/2026-07-07-boundary-event-enhancements.md`](../specs/2026-07-07-boundary-event-enhancements.md))
+> but the **implementation plan is NOT** — run `superpowers:writing-plans` over it, then execute strict-TDD.
+> Features: `WithBoundaryAction` (fire-once side-effect, all trigger types); flexible error matching
+> (Check→Expr→Code precedence); `WithDeadline(dur,flow,action)` SPLIT → `WithDeadlineFlow` + `WithDeadlineAction`;
+> new `boundary_action` example + godoc Examples; fix the known message-boundary-never-armed bug. NOTE two spec
+> bullets are ALREADY DONE (skip, don't redo): `WithReminder`→`WithWaitReminder` (reminders feature) and the
+> `boundary_timer`→`usertask_deadline` example rename.
+> **Then Plan 3 — scheduler JobStore lifecycle & durability (ADR-0102):** plan already written + self-contained
+> ([`docs/plans/2026-07-07-scheduler-jobstore-durability.md`](2026-07-07-scheduler-jobstore-durability.md),
+> Tasks 3–5; Tasks 1–2 subset already shipped): workflow-provided `kernel.JobStore` the scheduler CALLS;
+> Save/Update/Delete on the AMBIENT state-commit tx (supersedes the timer-write portion of ADR-0027);
+> scheduler self-rehydrates on start.
+> **Deferred (own future project):** type-safe per-activity-kind options (compile-time rejection of invalid
+> options; supersedes the runtime `definition.Lint`).
 >
 > **Backlog:** [`docs/plans/2026-06-30-production-readiness-backlog.md`](2026-06-30-production-readiness-backlog.md)
 > — all P0 + P1-A…P1-E done; **P1-F moot** (gRPC removed); **P1-G recursive instance lineage** still QUEUED;
