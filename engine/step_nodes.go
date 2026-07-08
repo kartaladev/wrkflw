@@ -154,11 +154,19 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	tok.State = TokenWaitingCommand
 	tok.AwaitMessage = rt.MessageName
 	tok.AwaitMessageKey = resolvedKey
+	// Arm the node's in-wait reminder, if configured. For a ReceiveTask the
+	// reminder is cancelled by the parked token (cancelKey = tok.ID) when the
+	// awaited message resolves it.
+	cmds, err := armWaitReminder(c, tok, node, tok.ID, nil)
+	if err != nil {
+		return cmds, false, err
+	}
 	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
 	if err != nil {
-		return nil, false, err
+		return cmds, false, err
 	}
-	return bndCmds, false, nil
+	cmds = append(cmds, bndCmds...)
+	return cmds, false, nil
 }
 
 // sendTaskStrategy handles KindSendTask node entry: emit a fire-and-forget
