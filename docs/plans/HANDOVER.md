@@ -3,12 +3,29 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: write the boundary-event impl plan (ADR-0103/0104) → Plan 3 scheduler JobStore
+## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: two APPROVED specs ready to execute IN PARALLEL (fresh sessions)
 
-> **State:** `origin/main == main == 40131e9`, working tree clean, all gates green
+> **State:** `origin/main == main == <this commit>`, working tree clean, all gates green
 > (`go build ./...`, `go test -race ./...` 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
-> `golangci-lint run ./...` 0 issues). **Next free ADR: 0109** (0102–0104 remain RESERVED for the
-> pending scheduler-JobStore + boundary-event plans below; 0105/0106/0107/0108 shipped).
+> `golangci-lint run ./...` 0 issues — last CODE change was `40131e9`; commits since are docs/specs only).
+>
+> **▶▶ NEXT WORK — two independent, APPROVED specs, meant to run in PARALLEL fresh sessions** (each:
+> `superpowers:writing-plans` over the spec → `superpowers:subagent-driven-development`, on its own
+> branch, then merge). They touch different code and do not conflict.
+> 1. **`ProcessDriver.ReverseInstance`** — spec `docs/specs/2026-07-08-reverse-instance-design.md`.
+>    Functional-options reverse/rollback facade (`WithFullReverse`/`WithTargetNode`); reverse NEVER
+>    terminates (Cancel does). Needs a compensate-all-then-resume-at-start engine enhancement +
+>    `InstanceState.StartVariables` snapshot. Cycle regression test + `reverse_rollback` example.
+>    **Pre-allocated ADR-0109.**
+> 2. **Optional external-input validation** — spec `docs/specs/2026-07-08-input-validation-design.md`.
+>    Neutral `validation.Validator` port + `ValidationStrategy` provider interface + registry;
+>    adapters `validation/{expr,callback,jsonschema,avro}` (expr/callback dep-free; json-schema/avro
+>    ADR-gated deps); node-level at start(StartEvent)/completion(UserTask)/message(ReceiveTask) — reject
+>    before state mutation. **Pre-allocated ADR-0110** (+ **0111** json-schema dep, **0112** avro dep).
+>
+> **Next free ADR: 0109** — but 0109/0110/0111/0112 are PRE-ALLOCATED to the two specs above; a
+> third unrelated task should take 0113. (0102–0104 remain RESERVED for the pending scheduler-JobStore
+> + boundary-event plans below; 0105/0106/0107/0108 shipped.)
 >
 > **DONE (was queued):** `action.NewMapCatalog` → `action.NewCatalog` (merge `40131e9`, **ADR-0108**):
 > map-backed catalog (the default `Catalog` impl; `Registry` already owns `NewRegistry`) takes the
