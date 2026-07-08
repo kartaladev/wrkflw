@@ -122,7 +122,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	rec := &orderRecorder{}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"book":           &recordingAction{name: "book", rec: rec},
 		"pay":            &recordingAction{name: "pay", rec: rec},
 		"ship":           &recordingAction{name: "ship", rec: rec, errMsg: "ship-failed"},
@@ -215,7 +215,7 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 
 	rec := &orderRecorder{}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"risky-action":   &recordingAction{name: "risky-action", rec: rec, errMsg: "risky-failed"},
 		"recover-action": &recordingAction{name: "recover-action", rec: rec},
 	})

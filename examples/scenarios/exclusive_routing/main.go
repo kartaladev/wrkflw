@@ -53,7 +53,7 @@ func main() {
 		log.Fatal("build def:", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"check-credit": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Printf("  [check-credit] amount=%.0f\n", vars["amount"])
 			return map[string]any{"credit_ok": true}, nil

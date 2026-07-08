@@ -87,7 +87,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 		return err
 	}, signal.WithClock(fc))
 
-	driver = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
+	driver = runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := driver.Drive(ctx, def, "inst-1", nil)

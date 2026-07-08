@@ -15,7 +15,7 @@ import (
 // ── MapCatalog (moved from action_test.go) ─────────────────────────────────
 
 func TestMapCatalogResolveAndRun(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
 		}),

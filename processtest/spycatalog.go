@@ -41,7 +41,7 @@ var _ action.Catalog = (*SpyCatalog)(nil)
 // Resolve misses).
 func NewSpyCatalog(inner action.Catalog) *SpyCatalog {
 	if inner == nil {
-		inner = action.NewMapCatalog(nil)
+		inner = action.NewCatalog(nil)
 	}
 	return &SpyCatalog{inner: inner}
 }

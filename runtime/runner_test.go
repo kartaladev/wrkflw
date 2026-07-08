@@ -49,7 +49,7 @@ func (s *commitErrStore) Commit(_ context.Context, _ kernel.Version, _ kernel.Ap
 // TestRunnerUnknownActionFailsInstance verifies that a catalog with no actions
 // causes the runner to produce FailInstance (recorded in the store's outbox).
 func TestRunnerUnknownActionFailsInstance(t *testing.T) {
-	cat := action.NewMapCatalog(nil)
+	cat := action.NewCatalog(nil)
 	store := runtimetest.MustMemStore(t)
 	driver := runtimetest.MustRunner(t, cat, store)
 
@@ -63,7 +63,7 @@ func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 }
 
 func TestRunnerActionErrorFailsInstance(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, errors.New("greet exploded")
 		}),
@@ -83,7 +83,7 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 // TestRunnerStoreCreateErrorPropagates verifies that a Create failure from the
 // store is surfaced as a hard error from Run (wrapping ErrConcurrentUpdate).
 func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
 		}),
@@ -98,7 +98,7 @@ func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
 // TestRunnerStoreCommitErrorPropagates verifies that a Commit failure is surfaced
 // as a hard error from Run for subsequent steps (after Create succeeds).
 func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
 		}),
@@ -136,7 +136,7 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 // error — rather than panicking — when it reaches an AwaitHuman command.
 func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
 	// Build a Runner with no human-task option (nil resolver and nil tasks).
-	driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t))
+	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t))
 	// WithHumanTasks intentionally omitted to test error path.
 
 	_, err := driver.Drive(t.Context(), userTaskOnlyDef(), "i1", nil)
@@ -272,7 +272,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 // returns ErrConcurrentUpdate, deliverLoop surfaces it wrapped so errors.Is matches.
 func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 	// Use a simple linear def (start → greet → end) with a succeeding action.
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
@@ -287,7 +287,7 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 // TestNewRunnerDefaultUsesSystemClock verifies that a Runner constructed without a
 // clock option stamps instance StartedAt from the system clock (within a real-time bracket).
 func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"ok": true}, nil
 		}),
@@ -307,7 +307,7 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 // whose time flows into the engine's StartedAt stamp (behavioral assertion).
 func TestNewRunnerWithClockOption(t *testing.T) {
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"ok": true}, nil
 		}),
@@ -358,7 +358,7 @@ func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 		{
 			name: "explicit catalog and store",
 			opts: []runtime.Option{
-				runtime.WithActionCatalog(action.NewMapCatalog(nil)),
+				runtime.WithActionCatalog(action.NewCatalog(nil)),
 				runtime.WithInstanceStore(runtimetest.MustMemStore(t)),
 			},
 			assert: func(t *testing.T, driver *runtime.ProcessDriver, err error) {

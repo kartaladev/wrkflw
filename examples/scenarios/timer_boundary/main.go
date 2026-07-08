@@ -84,7 +84,7 @@ func main() {
 	// the async timer fire deterministically. Only order-late escalates, so a
 	// single close is correct.
 	escalatedCh := make(chan struct{})
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		// Runs on the timer-boundary escalation path.
 		"escalate-payment": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			id, _ := in["orderID"].(string)

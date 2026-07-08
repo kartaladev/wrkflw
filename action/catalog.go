@@ -17,9 +17,9 @@ type Catalog interface {
 // responsibility.
 type MapCatalog map[string]Action
 
-// NewMapCatalog wraps m in a MapCatalog. The caller must not modify m after
-// calling NewMapCatalog.
-func NewMapCatalog(m map[string]Action) MapCatalog { return MapCatalog(m) }
+// NewCatalog wraps m in a MapCatalog. The caller must not modify m after
+// calling NewCatalog.
+func NewCatalog(m map[string]Action) MapCatalog { return MapCatalog(m) }
 
 func (c MapCatalog) Resolve(name string) (Action, bool) {
 	a, ok := c[name]

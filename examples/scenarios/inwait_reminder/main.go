@@ -71,7 +71,7 @@ func main() {
 	// Signalled once per reminder fire so the main goroutine can wait for each
 	// async reminder deterministically (the scheduler fires on its own goroutine).
 	nudgeCh := make(chan struct{}, 8)
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"nudge-reviewer": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			nudges++
 			fmt.Printf("  [nudge-reviewer] reminder #%d — please review the pending item\n", nudges)

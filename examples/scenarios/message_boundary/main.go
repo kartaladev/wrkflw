@@ -82,7 +82,7 @@ func main() {
 	}
 
 	reminded := false
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		// Runs on the non-interrupting reminder side-path.
 		"notify-approver": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			reminded = true

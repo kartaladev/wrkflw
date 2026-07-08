@@ -62,7 +62,7 @@ func TestActionFailedHonoursRetryContract(t *testing.T) {
 			})
 
 			store := runtimetest.MustMemStore(t)
-			cat := action.NewMapCatalog(map[string]action.Action{"a": act})
+			cat := action.NewCatalog(map[string]action.Action{"a": act})
 			// No retry policy: ActionFailed is terminal → instance reaches StatusFailed.
 			driver := runtimetest.MustRunner(t, cat, store)
 

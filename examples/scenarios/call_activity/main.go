@@ -60,7 +60,7 @@ func main() {
 		log.Fatal("build parent def:", err)
 	}
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"score": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Printf("  [score] scoring applicant %v\n", vars["applicant"])
 			return map[string]any{"credit_score": 742}, nil

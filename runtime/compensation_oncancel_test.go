@@ -66,7 +66,7 @@ func TestRunnerCompensationOnCancel(t *testing.T) {
 	var chargeRan atomic.Int32
 	var refundRan atomic.Int32
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"charge": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			chargeRan.Add(1)
 			return nil, nil

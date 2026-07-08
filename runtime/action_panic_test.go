@@ -41,7 +41,7 @@ func panicTaskDef() *model.ProcessDefinition {
 // down the whole replica with every in-flight instance.
 func TestRunnerRecoversActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"p": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			panic("action blew up")
 		}),
@@ -60,7 +60,7 @@ func TestRunnerRecoversActionPanic(t *testing.T) {
 // StatusTerminated (ADR-0028: cancellation reports success regardless).
 func TestRunnerRecoversCancelActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"boom": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			panic("cancel action blew up")
 		}),

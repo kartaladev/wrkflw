@@ -234,7 +234,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITH the "approver" role → casbin policy grants finance-task claim.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		driver := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
+		driver := mustRunner(action.NewCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := driver.Drive(ctx, def, "finance-allow-001", nil)
@@ -257,7 +257,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	// --- Actor WITHOUT the "approver" role → casbin denies.
 	{
 		taskStore := humantask.NewMemTaskStore()
-		driver := mustRunner(action.NewMapCatalog(nil), mustMemStore(),
+		driver := mustRunner(action.NewCatalog(nil), mustMemStore(),
 			runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 		)
 		parked, runErr := driver.Drive(ctx, def, "finance-deny-001", nil)

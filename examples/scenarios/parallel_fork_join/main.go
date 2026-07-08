@@ -79,7 +79,7 @@ func main() {
 	// branch actions (pick-items, charge-card) both run within this Drive call — the
 	// engine invokes each as its branch token advances; "ship" runs only after the
 	// join has merged both branches.
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"pick-items": action.ActionFunc(func(_ context.Context, vars map[string]any) (map[string]any, error) {
 			fmt.Println("  [pick-items] picking items from warehouse")
 			return map[string]any{"items_picked": true}, nil

@@ -46,7 +46,7 @@ func gatewayBlockDef() *model.ProcessDefinition {
 }
 
 func noopCatalog() action.Catalog {
-	return action.NewMapCatalog(map[string]action.Action{
+	return action.NewCatalog(map[string]action.Action{
 		"noop": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return in, nil
 		}),

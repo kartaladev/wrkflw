@@ -21,7 +21,7 @@ import (
 
 // lintNoopCatalog resolves a single no-op action.
 func lintNoopCatalog() action.Catalog {
-	return action.NewMapCatalog(map[string]action.Action{
+	return action.NewCatalog(map[string]action.Action{
 		"noop": action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }),
 	})
 }

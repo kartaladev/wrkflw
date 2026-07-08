@@ -14,8 +14,8 @@ func act(tag string) action.Action {
 }
 
 func TestResolve(t *testing.T) {
-	scoped := action.NewMapCatalog(map[string]action.Action{"a": act("scoped")})
-	global := action.NewMapCatalog(map[string]action.Action{"a": act("global"), "b": act("global-b")})
+	scoped := action.NewCatalog(map[string]action.Action{"a": act("scoped")})
+	global := action.NewCatalog(map[string]action.Action{"a": act("global"), "b": act("global-b")})
 
 	tests := map[string]struct {
 		scoped, global action.Catalog

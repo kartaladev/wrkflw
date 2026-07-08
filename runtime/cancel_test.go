@@ -54,7 +54,7 @@ func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime
 func TestRunnerCancelInstanceRunsCancelActions(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	var ran []string
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"notify": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			ran = append(ran, "notify")
 			return nil, nil
@@ -87,7 +87,7 @@ func TestRunnerCancelInstanceCancelsParkedTask(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"r": {actor}})
 	tasks := humantask.NewMemTaskStore()
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
+	r := runtimetest.MustRunner(t, action.NewCatalog(nil), store,
 		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
 	def := cancelDef(nil)
 
@@ -120,7 +120,7 @@ func TestRunnerCancelInstanceCancelsParkedTask(t *testing.T) {
 func TestRunnerCancelInstanceMissingActionIsBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	// No catalog entry for "ghost".
-	r := cancelRunner(t, action.NewMapCatalog(nil), fc)
+	r := cancelRunner(t, action.NewCatalog(nil), fc)
 	def := cancelDef([]string{"ghost"})
 
 	_, err := r.Drive(t.Context(), def, "c2", nil)

@@ -69,7 +69,7 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 	T := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(T)
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, errors.New("boom")
 		}),

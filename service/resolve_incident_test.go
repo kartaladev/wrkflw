@@ -61,7 +61,7 @@ func TestEngineResolveIncident(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"failing": failingAction,
 	})
 
@@ -131,7 +131,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"failing": failingAction,
 	})
 

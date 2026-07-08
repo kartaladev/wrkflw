@@ -55,7 +55,7 @@ func main() {
 	}
 
 	shipped := map[string]bool{}
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"ship-order": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			id, _ := in["orderID"].(string)
 			shipped[id] = true

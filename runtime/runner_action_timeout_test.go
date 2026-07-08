@@ -110,7 +110,7 @@ func TestRunner_ActionTimeout(t *testing.T) {
 			t.Parallel()
 
 			o := &obs{}
-			cat := action.NewMapCatalog(map[string]action.Action{"t": tc.newAction(o)})
+			cat := action.NewCatalog(map[string]action.Action{"t": tc.newAction(o)})
 			opts := append([]runtime.Option{runtime.WithClock(clockwork.NewFakeClock())}, tc.opts...)
 			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), opts...)
 

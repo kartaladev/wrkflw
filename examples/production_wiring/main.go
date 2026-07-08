@@ -148,7 +148,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"charge-card": action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) {
 			return map[string]any{"charged": true}, nil
 		}),

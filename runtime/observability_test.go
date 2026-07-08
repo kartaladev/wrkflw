@@ -147,7 +147,7 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), runtimetest.MustMemStore(t),
+			driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t),
 				tc.opt,
 			)
 			tc.assert(t, driver)
@@ -167,7 +167,7 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"greeted": true}, nil
 		}),
@@ -296,7 +296,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			reader := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
-			cat := action.NewMapCatalog(map[string]action.Action{
+			cat := action.NewCatalog(map[string]action.Action{
 				"charge": action.ActionFunc(tc.actionFunc),
 			})
 			driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
@@ -323,7 +323,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 	clk := clockwork.NewFakeClockAt(T)
 
 	var calls atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			if calls.Add(1) == 1 {
 				return nil, errors.New("first call fails")

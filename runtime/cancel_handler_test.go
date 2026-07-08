@@ -63,7 +63,7 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
 	var cleanupRan atomic.Int32
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"cleanup": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			cleanupRan.Add(1)
 			return nil, nil
@@ -97,7 +97,7 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"cleanup": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, assert.AnError // always fails
 		}),
@@ -129,7 +129,7 @@ func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	// Empty catalog — "cleanup" will not resolve.
-	driver := runtimetest.MustRunner(t, action.NewMapCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelHandlerDef()
 	const instanceID = "ch-i3"

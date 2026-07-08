@@ -147,7 +147,7 @@ func New(opts ...Option) (*Harness, error) {
 
 	clk := NewFakeClock(cfg.clockStart)
 	sched := NewMemScheduler(WithMemSchedulerClock(clk))
-	catalog := NewSpyCatalog(action.NewMapCatalog(cfg.actions))
+	catalog := NewSpyCatalog(action.NewCatalog(cfg.actions))
 	az := NewSpyAuthorizer()
 	if cfg.decide != nil {
 		az.SetDecision(cfg.decide)

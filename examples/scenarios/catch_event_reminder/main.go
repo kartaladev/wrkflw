@@ -74,7 +74,7 @@ func main() {
 	// observable from the main goroutine without blocking the executor.
 	nudges := 0
 	nudgeCh := make(chan struct{}, 8)
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"nudge": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			nudges++
 			fmt.Printf("  [nudge] still awaiting approval — reminder #%d\n", nudges)

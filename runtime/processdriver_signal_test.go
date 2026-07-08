@@ -37,7 +37,7 @@ func TestBroadcastSignalResumesParkedInstances(t *testing.T) {
 		_, err := driver.ApplyTrigger(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
-	driver = runtimetest.MustRunner(t, action.NewMapCatalog(nil), store,
+	driver = runtimetest.MustRunner(t, action.NewCatalog(nil), store,
 		runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 	for _, id := range []string{"inst-1", "inst-2"} {

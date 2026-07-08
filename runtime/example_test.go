@@ -52,7 +52,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			{ID: "f6", Source: "join", Target: "end"},
 		},
 	}
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"a": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"a": true}, nil
 		}),
@@ -104,7 +104,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 			return map[string]any{key: true}, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.Action{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
+	cat := action.NewCatalog(map[string]action.Action{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
 	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
 
 	final, err := r.Drive(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
@@ -124,7 +124,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 }
 
 func TestRunnerExecutesLinearProcess(t *testing.T) {
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
 		}),

@@ -69,7 +69,7 @@ func main() {
 			return map[string]any{key: true}, nil
 		})
 	}
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"assess":        mk("assess", "assessed"),
 		"notify-risk":   mk("notify-risk", "risk_notified"),
 		"senior-review": mk("senior-review", "senior_reviewed"),

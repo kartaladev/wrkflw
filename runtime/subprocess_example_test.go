@@ -89,7 +89,7 @@ func (e *actionError) Error() string { return e.msg }
 func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	ctx := t.Context()
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"set-output": setOutputAction{},
 	})
 
@@ -139,7 +139,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 func TestCallActivityChildFailureFailsParent(t *testing.T) {
 	ctx := t.Context()
 
-	cat := action.NewMapCatalog(map[string]action.Action{
+	cat := action.NewCatalog(map[string]action.Action{
 		"failing-action": failingAction{},
 	})
 

@@ -119,7 +119,7 @@ func TestNewProcessDriverDefaults(t *testing.T) {
 
 		// Self-contained: own local flag + local MapCatalog; does not touch the global catalog.
 		var customCalled atomic.Bool
-		custom := action.NewMapCatalog(map[string]action.Action{
+		custom := action.NewCatalog(map[string]action.Action{
 			"custom-action-v1": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 				customCalled.Store(true)
 				return nil, nil
