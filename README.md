@@ -1255,6 +1255,32 @@ on the task; once the task completes the recurring timer goes stale and no furth
 reminders run.
 → [`examples/scenarios/inwait_reminder`](examples/scenarios/inwait_reminder)
 
+### 13. Event-based gateway (race)
+
+`gateway.NewEventBased` fans out to several following catch events and takes the branch of
+whichever fires **first** — the losing arms are cancelled. It models "wait for A **or** B",
+e.g. await a payment confirmation (signal) or a payment-window timeout (timer).
+
+```
+start → gw[event-based] ─┬─ await-payment[catch signal "payment-confirmed"] → ship   → shipped-end
+                         └─ payment-window[catch timer "24h"]                → cancel → cancelled-end
+```
+
+```go
+Add(gateway.NewEventBased("gw")).
+Add(event.NewCatch("await-payment", event.WithCatchSignal("payment-confirmed"))).
+Add(event.NewCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
+// ... gw → both arms; each arm → its own service task + end
+driver.Drive(ctx, def, "order-fast", nil) // parks at gw with both arms live
+bus.Publish(ctx, "payment-confirmed", nil) // signal wins → ship branch; timer arm cancelled
+```
+
+**At runtime:** one instance receives the signal first (ships; the 24h timer is cancelled);
+another gets no payment and, once the fake clock advances past the window, the timer fires
+(cancels the order; the signal arm is cancelled). Same definition, opposite outcome —
+decided by whichever event happened first.
+→ [`examples/scenarios/event_based_gateway`](examples/scenarios/event_based_gateway)
+
 > The tour above is a curated subset. Other runnable scenarios under
 > [`examples/scenarios/`](examples/scenarios) include `attribute_authz` (ABAC + Casbin
 > eligibility) and `admin_monitoring` (instance listing, incident resolve, dead-letter
