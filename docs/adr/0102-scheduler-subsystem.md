@@ -39,6 +39,9 @@ self-contained.
 
 ## Decision
 
+We will structure the scheduler subsystem around a gocron-neutral trigger type, a durable timer
+descriptor, and scheduler-owned self-rehydration, as detailed in the numbered points below.
+
 **1. Typed, gocron-neutral `schedule.TriggerSpec`.**
 We introduce a `schedule.TriggerSpec` value type (and its wire format, `TriggerWire`) in the
 public `scheduling` package. `TriggerSpec` carries `Kind` (one-of `KindOnce`, `KindCron`,

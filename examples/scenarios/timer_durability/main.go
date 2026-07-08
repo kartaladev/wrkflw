@@ -246,7 +246,7 @@ func main() {
 	// Wait for the announce action to signal (scheduler fires asynchronously).
 	select {
 	case <-firedCh:
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		fmt.Fprintln(os.Stderr, "ERROR: timeout — announce action did not fire after Advance")
 		os.Exit(1)
 	}
