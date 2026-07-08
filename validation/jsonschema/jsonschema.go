@@ -34,13 +34,22 @@ func NewFromValue(schema map[string]any) (validation.DescribableStrategy, error)
 	return strategy{schema: string(b)}, nil
 }
 
-// NewFromStruct derives a JSON Schema from v's type (invopop reflection) and returns a strategy.
-func NewFromStruct(v any) (validation.DescribableStrategy, error) {
+// NewFromStruct derives a JSON Schema from v's type (invopop reflection) and returns a
+// strategy. It returns an error (rather than panicking) if v's type contains a field
+// invopop's reflector cannot represent as JSON Schema (e.g. a chan or func field) — invopop
+// panics internally on such types, and this constructor recovers that panic and converts it
+// into an error to honor its (validation.DescribableStrategy, error) contract.
+func NewFromStruct(v any) (_ validation.DescribableStrategy, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("workflow-validation/jsonschema: reflect schema from %T: %v", v, r)
+		}
+	}()
 	r := &invopop.Reflector{DoNotReference: true}
 	sch := r.Reflect(v)
-	b, err := json.Marshal(sch)
-	if err != nil {
-		return nil, fmt.Errorf("workflow-validation/jsonschema: marshal reflected schema: %w", err)
+	b, mErr := json.Marshal(sch)
+	if mErr != nil {
+		return nil, fmt.Errorf("workflow-validation/jsonschema: marshal reflected schema: %w", mErr)
 	}
 	return strategy{schema: string(b)}, nil
 }
@@ -74,7 +83,7 @@ func (s strategy) NewValidator() (validation.Validator, error) {
 type validator struct{ schema *jsonschema.Schema }
 
 func (v *validator) Validate(_ context.Context, input map[string]any) error {
-	if err := v.schema.Validate(any(input)); err != nil {
+	if err := v.schema.Validate(input); err != nil {
 		return fmt.Errorf("workflow-validation/jsonschema: %w", err)
 	}
 	return nil

@@ -20,37 +20,57 @@ func TestJSONSchema_Validate(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
 		strategy func(t *testing.T) validation.DescribableStrategy
+		assert   func(t *testing.T, v validation.Validator, err error)
 	}{
-		"from text": {strategy: func(t *testing.T) validation.DescribableStrategy { return vjs.New(schemaJSON) }},
-		"from value": {strategy: func(t *testing.T) validation.DescribableStrategy {
-			s, err := vjs.NewFromValue(map[string]any{
-				"type":     "object",
-				"required": []any{"amount"},
-				"properties": map[string]any{
-					"amount": map[string]any{"type": "number", "minimum": 0},
-				},
-			})
-			require.NoError(t, err)
-			return s
-		}},
+		"from text": {
+			strategy: func(t *testing.T) validation.DescribableStrategy { return vjs.New(schemaJSON) },
+			assert: func(t *testing.T, v validation.Validator, err error) {
+				require.NoError(t, err, "build")
+				assert.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 10.0}), "valid rejected")
+				assert.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1.0}), "expected rejection for negative amount")
+				assert.Error(t, v.Validate(t.Context(), map[string]any{}), "expected rejection for missing amount")
+
+				// round-trip through Factory
+				rebuilt, ferr := vjs.Factory(schemaJSON)
+				require.NoError(t, ferr, "factory")
+				rv, rerr := rebuilt.NewValidator()
+				require.NoError(t, rerr)
+				assert.NoError(t, rv.Validate(t.Context(), map[string]any{"amount": 3.0}), "rebuilt rejected valid")
+			},
+		},
+		"from value": {
+			strategy: func(t *testing.T) validation.DescribableStrategy {
+				s, err := vjs.NewFromValue(map[string]any{
+					"type":     "object",
+					"required": []any{"amount"},
+					"properties": map[string]any{
+						"amount": map[string]any{"type": "number", "minimum": 0},
+					},
+				})
+				require.NoError(t, err)
+				return s
+			},
+			assert: func(t *testing.T, v validation.Validator, err error) {
+				require.NoError(t, err, "build")
+				assert.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 10.0}), "valid rejected")
+				assert.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1.0}), "expected rejection for negative amount")
+				assert.Error(t, v.Validate(t.Context(), map[string]any{}), "expected rejection for missing amount")
+
+				// round-trip through Factory
+				rebuilt, ferr := vjs.Factory(schemaJSON)
+				require.NoError(t, ferr, "factory")
+				rv, rerr := rebuilt.NewValidator()
+				require.NoError(t, rerr)
+				assert.NoError(t, rv.Validate(t.Context(), map[string]any{"amount": 3.0}), "rebuilt rejected valid")
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			s := tc.strategy(t)
 			v, err := s.NewValidator()
-			require.NoError(t, err, "build")
-
-			assert.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 10.0}), "valid rejected")
-			assert.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1.0}), "expected rejection for negative amount")
-			assert.Error(t, v.Validate(t.Context(), map[string]any{}), "expected rejection for missing amount")
-
-			// round-trip through Factory
-			rebuilt, err := vjs.Factory(s.Descriptor().Schema)
-			require.NoError(t, err, "factory")
-			rv, err := rebuilt.NewValidator()
-			require.NoError(t, err)
-			assert.NoError(t, rv.Validate(t.Context(), map[string]any{"amount": 3.0}), "rebuilt rejected valid")
+			tc.assert(t, v, err)
 		})
 	}
 }
@@ -82,6 +102,16 @@ func TestJSONSchema_BuildErrors(t *testing.T) {
 		"NewFromValue: unmarshalable schema value": {
 			assert: func(t *testing.T) {
 				s, err := vjs.NewFromValue(map[string]any{"bad": make(chan int)})
+				assert.Nil(t, s)
+				assert.ErrorContains(t, err, "workflow-validation/jsonschema:")
+			},
+		},
+		"NewFromStruct: recovers invopop panic on unreflectable field type": {
+			assert: func(t *testing.T) {
+				type unreflectable struct {
+					Callback func() `json:"callback"`
+				}
+				s, err := vjs.NewFromStruct(unreflectable{})
 				assert.Nil(t, s)
 				assert.ErrorContains(t, err, "workflow-validation/jsonschema:")
 			},

@@ -75,9 +75,12 @@ constructor produced it originally.
   consumer's schema needs them, at the cost of not supporting the oldest Draft-4-only
   ecosystems without an explicit `DefaultDraft` override.
 - Struct-derived schemas (`NewFromStruct`) let a consumer avoid hand-duplicating validation
-  rules already expressed in a decode-target Go struct's `jsonschema:"..."` tags, but the
-  reflector can panic on unsupported types (e.g. channels, functions) — a defensive concern
-  for callers passing arbitrary `any` rather than a well-formed DTO struct.
+  rules already expressed in a decode-target Go struct's `jsonschema:"..."` tags. invopop's
+  reflector panics internally on unsupported field types (e.g. channels, functions);
+  `NewFromStruct` recovers that panic via a deferred `recover()` and converts it into a
+  wrapped `workflow-validation/jsonschema: ...` error, so the panic never escapes to the
+  caller and the function's `(validation.DescribableStrategy, error)` contract holds even for
+  callers passing arbitrary `any` rather than a well-formed DTO struct.
 - Every strategy's `Descriptor()` returns canonical JSON, so a compiled definition round-trips
   through storage/wire (YAML or DB) without re-deriving from the original Go struct; the
   reflection step only ever runs once, at authoring time.
