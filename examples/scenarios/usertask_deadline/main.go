@@ -1,13 +1,20 @@
-// Package main demonstrates an activity deadline via the WithDeadline option
-// that escalates a human task not completed in time.
+// Package main demonstrates an activity deadline via the activity.WithDeadline
+// option — a UserTask that escalates when not completed in time.
 //
-// A deadline is attached directly to an activity via WithDeadline(duration,
-// flowID, action). When a token sits in the activity past the duration, the
-// engine arms a TimerDeadline that, on breach, does two things:
+// WithDeadline bundles a timer, an escape flow, and a fire-once breach action
+// into a single activity option. It is the ergonomic shorthand for the common
+// "wait up to N, then do something else" pattern. For the boundary-native
+// equivalent — an explicit event.NewBoundary node with event.WithBoundaryAction
+// — see the sibling boundary_action example, which shows the same fire-once
+// action semantics through the true boundary-event API.
 //
-//  1. runs the breach action (a fire-once action.Action — the third argument —
-//     run for its side effect; its result is not fed back), and
-//  2. routes the token down the named deadline flow to an alternative path,
+// WithDeadline(triggerSpec, flowID, action) attaches a TimerDeadline to the
+// activity. When a token sits past the duration the engine, on breach, does two
+// things:
+//
+//  1. Runs the breach action (a fire-once action.Action — the third argument —
+//     invoked for its side effect; its result is not fed back), and
+//  2. Routes the token down the named deadline flow to an alternative path,
 //     cancelling the in-progress human task.
 //
 // Flow:
