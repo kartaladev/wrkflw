@@ -22,7 +22,7 @@ type strategy struct{ predicates []string }
 
 // New returns a strategy requiring all predicates to hold against the input.
 func New(predicates ...string) validation.DescribableStrategy {
-	return strategy{predicates: predicates}
+	return strategy{predicates: append([]string(nil), predicates...)}
 }
 
 // Factory rebuilds a strategy from newline-separated predicate text.
@@ -61,11 +61,11 @@ func (v *validator) Validate(_ context.Context, input map[string]any) error {
 	for i, prog := range v.programs {
 		out, err := exprlang.Run(prog, input)
 		if err != nil {
-			return fmt.Errorf("predicate %q: %w", v.source[i], err)
+			return fmt.Errorf("workflow-validation/expr: predicate %q: %w", v.source[i], err)
 		}
 		ok, _ := out.(bool)
 		if !ok {
-			return fmt.Errorf("predicate %q not satisfied", v.source[i])
+			return fmt.Errorf("workflow-validation/expr: predicate %q not satisfied", v.source[i])
 		}
 	}
 	return nil

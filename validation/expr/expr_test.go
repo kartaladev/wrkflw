@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
 	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
 )
 
@@ -27,7 +26,7 @@ func TestExpr_ValidateAndRoundTrip(t *testing.T) {
 		t.Fatal("expected failure for missing amount")
 	}
 
-	d := s.(validation.DescribableStrategy).Descriptor() //nolint:staticcheck // S1040: intentional contract check that New's return value satisfies DescribableStrategy at the call site, per brief's verbatim test
+	d := s.Descriptor()
 	if d.Kind != vexpr.Kind {
 		t.Fatalf("kind = %q", d.Kind)
 	}
