@@ -5,10 +5,11 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: SEQUENTIAL ROADMAP of approved work (next session runs these as ordered phases)
 
-> **State:** `origin/main == main == 3970d88` (2026-07-08). Items 0 (ADR-0113) + 1 (ADR-0102) DONE +
-> merged + pushed; example semantic fixes merged (`3970d88`). **Item 2 (boundary events, ADR-0103/0104)
-> is IN PROGRESS on branch `feat/boundary-event-enhancements` — Tasks 1-3 committed (`8585d61`,
-> `d073e91`, `1b23e36`), Tasks 4-6 remaining (see item 2 below).** main gates green
+> **State:** `origin/main == main == 7fed018` (2026-07-08). Items 0 (ADR-0113), 1 (ADR-0102), 2
+> (ADR-0103/0104) DONE + merged + pushed; example semantic fixes merged (`3970d88`). **NEXT: Item 3
+> (input validation, ADR-0110/0111/0112)** — spec DONE `docs/specs/2026-07-08-input-validation-design.md`,
+> plan PENDING (see item 3 below). Then Item 4 (completion-action + WithCompensation→WithCompensateAction,
+> ADR-0114) and Item 5 (ProcessDriver.ReverseInstance, ADR-0109). main gates green
 > (`go build`/`go test -race`/`golangci-lint` clean). Next free ADR: 0115 [0102+0113 consumed; 0103/0104
 > in flight on the Item-2 branch; 0109/0110/0111/0112/0114 pre-allocated for Items 3-5].
 >
@@ -38,21 +39,18 @@ and pick up the next work. Read it top to bottom before starting.
 >    `RehydrateTimers` kept for injected schedulers. Persistent-SQLite + fake-clock `timer_durability`
 >    example. Reviews: opus concurrency review PASS; `/code-review` 1 Important (resilient rehydration,
 >    fixed) + Minors.
-> **2. Boundary-event enhancements — 🚧 IN PROGRESS on branch `feat/boundary-event-enhancements`**
->    (NOT merged). Plan DONE: `docs/plans/2026-07-08-boundary-event-enhancements.md` (6 tasks, corrected
->    against current code by an opus assessment). **Committed on the branch:** Task 1 `8585d61`
->    (`BoundaryEvent.Action/ErrorExpr/ErrorCheck` + options + wire; ErrorCheck non-serializable), Task 2
->    `d073e91` (engine fire-once boundary action = `InvokeAction{FireAndForget}` before routing, all
->    trigger types), Task 3 `1b23e36` (`ActionFailed.Cause error json:"-"` + `WithCause`, journal-safe).
->    **REMAINING:** Task 4 (`propagateError` 3-tier Check→Expr→Code matching + `boundaryErrorMatches`
->    helper at step_errors.go:86,189; thread `t.Cause`), Task 5 (split `WithDeadline`→`WithDeadlineFlow`
->    (`schedule.TriggerSpec`,flow) + `WithDeadlineAction`; 19 call sites, 1 empty-arg
->    step_subprocess_test.go:1032; keep `activityOnlyOption`; DON'T touch `event.WithCatchDeadline`),
->    Task 6 (`boundary_action` example + godoc Examples + ADR-0103/0104). Resume: SDD Tasks 4-6 → /code-review
->    → merge. **KEY CORRECTIONS:** message-boundary-never-armed bug is ALREADY FIXED (drop it);
->    `ErrorCheck`/`ErrorExpr` live on the NODE (read in propagateError), only `Action` on `boundaryArm`;
->    `_error` injected fresh in the ErrorExpr env; determinism SAFE (snapshot-based). `WithReminder`→
->    `WithWaitReminder` already done. **ADR-0103/0104.**
+> **2. Boundary-event enhancements — ✅ DONE (merge `7fed018`, ADR-0103/0104).** `event.WithBoundaryAction`
+>    (fire-once `InvokeAction{FireAndForget}` before routing, ALL trigger types incl. error — timer/signal/
+>    message via `fireBoundaryArm`, error via `propagateError` both match sites). Flexible boundary error
+>    matching: Check→Expr→Code precedence (`boundaryErrorMatches`) — `WithBoundaryErrorCheck` (Go closure,
+>    live error via non-persisted `ActionFailed.Cause`+`WithCause`; gets a CLONE of vars), `WithBoundaryErrorExpr`
+>    (expr-lang over vars + injected `_error`; a malformed expr is non-fatal — skip+continue). `boundary_action`
+>    example + godoc Examples. **DROPPED (user decision):** the `WithDeadline` split (spec Feature 6) — it was
+>    inconsistent with the bundled `WithWaitReminder`/`WithCatchWaitReminder`/`WithCatchDeadline` siblings, so
+>    `WithDeadline(t,flow,action)` stays 3-arg. Message-boundary-never-armed bug confirmed ALREADY FIXED (no
+>    work). `/code-review` found 3 Important (error-boundary action no-op, ErrorCheck mutation trap,
+>    malformed-ErrorExpr abort) — all fixed (`43eeb0d`) with regression tests. Follow-up: Fix-3 skip is
+>    silent (engine has no logger) — could surface via runtime later.
 >
 > **▶ Example semantic fixes — ✅ MERGED to main `3970d88`** (standalone, user-requested; audited ALL
 >    scenarios). Fixed: `message_boundary` (empty correlation key `""` → correlate on `orderID`; empty key
