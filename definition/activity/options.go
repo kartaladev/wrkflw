@@ -10,8 +10,8 @@ import (
 
 // Option-scoping convention: an option valid on only a subset of activity kinds
 // MUST return a narrow anonymous interface embedding just those kinds' option
-// interfaces (e.g. WithActionName returns interface{ServiceTaskOption;
-// BusinessRuleOption}), so mis-applying it is a compile-time error. The broad
+// interfaces (e.g. WithActionName returns interface { ServiceTaskOption;
+// BusinessRuleOption }), so mis-applying it is a compile-time error. The broad
 // activityOnlyOption type means "valid on EVERY activity kind" and is reserved
 // for genuinely-universal options (WithRetryPolicy, WithCompensation,
 // WithDeadline, WithRecoveryFlow, WithCancelHandler). There is no runtime lint

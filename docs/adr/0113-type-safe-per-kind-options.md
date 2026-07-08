@@ -1,6 +1,7 @@
 # 0113. Type-safe per-kind activity options; remove definition.Lint
 
-Status: **Accepted — 2026-07-08.**
+- Status: Accepted
+- Date: 2026-07-08
 
 ## Context
 
