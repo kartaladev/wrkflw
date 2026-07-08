@@ -164,6 +164,11 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 			for _, timerID := range s.cancelTimersByTaskToken(taskTok, "") {
 				cmds = append(cmds, CancelTimer{TimerID: timerID})
 			}
+			// Cancel any token-keyed in-wait reminder (ReceiveTask / catch): its
+			// parked token is being consumed, so the recurring reminder must go.
+			for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
+				cmds = append(cmds, CancelTimer{TimerID: timerID})
+			}
 			// Cancel boundary arms for this host token.
 			for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 				cmds = append(cmds, CancelTimer{TimerID: timerID})
