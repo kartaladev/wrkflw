@@ -5,10 +5,12 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: SEQUENTIAL ROADMAP of approved work (next session runs these as ordered phases)
 
-> **State:** `origin/main == main == 3f4d55d` (2026-07-08), working tree clean, all gates green
-> (`go build ./...`, `go test -race ./...` 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
-> `golangci-lint run ./...` 0 issues — Items 0 AND 1 below are DONE + merged + pushed. Next free ADR: 0115
-> [0102/0103/0104/0109/0110/0111/0112/0113/0114 allocated; 0102+0113 now consumed]).
+> **State:** `origin/main == main == 3970d88` (2026-07-08). Items 0 (ADR-0113) + 1 (ADR-0102) DONE +
+> merged + pushed; example semantic fixes merged (`3970d88`). **Item 2 (boundary events, ADR-0103/0104)
+> is IN PROGRESS on branch `feat/boundary-event-enhancements` — Tasks 1-3 committed (`8585d61`,
+> `d073e91`, `1b23e36`), Tasks 4-6 remaining (see item 2 below).** main gates green
+> (`go build`/`go test -race`/`golangci-lint` clean). Next free ADR: 0115 [0102+0113 consumed; 0103/0104
+> in flight on the Item-2 branch; 0109/0110/0111/0112/0114 pre-allocated for Items 3-5].
 >
 > **▶▶ SEQUENTIAL ROADMAP — the user intends to run ALL of these as ordered phases.**
 > Each item: `superpowers:writing-plans` over its spec → `superpowers:subagent-driven-development`,
@@ -36,12 +38,29 @@ and pick up the next work. Read it top to bottom before starting.
 >    `RehydrateTimers` kept for injected schedulers. Persistent-SQLite + fake-clock `timer_durability`
 >    example. Reviews: opus concurrency review PASS; `/code-review` 1 Important (resilient rehydration,
 >    fixed) + Minors.
-> **2. Boundary-event enhancements** — spec DONE `docs/specs/2026-07-07-boundary-event-enhancements.md`,
->    **plan PENDING**. `WithBoundaryAction` (fire-once, all trigger types); flexible error matching
->    (Check→Expr→Code); `WithDeadline(dur,flow,action)` SPLIT → `WithDeadlineFlow` + `WithDeadlineAction`;
->    `boundary_action` example; FIX the known message-boundary-never-armed bug. SKIP already-done:
->    `WithReminder`→`WithWaitReminder`, `boundary_timer`→`usertask_deadline`. Adds/changes OPTIONS →
->    do AFTER item 0. **ADR-0103/0104.**
+> **2. Boundary-event enhancements — 🚧 IN PROGRESS on branch `feat/boundary-event-enhancements`**
+>    (NOT merged). Plan DONE: `docs/plans/2026-07-08-boundary-event-enhancements.md` (6 tasks, corrected
+>    against current code by an opus assessment). **Committed on the branch:** Task 1 `8585d61`
+>    (`BoundaryEvent.Action/ErrorExpr/ErrorCheck` + options + wire; ErrorCheck non-serializable), Task 2
+>    `d073e91` (engine fire-once boundary action = `InvokeAction{FireAndForget}` before routing, all
+>    trigger types), Task 3 `1b23e36` (`ActionFailed.Cause error json:"-"` + `WithCause`, journal-safe).
+>    **REMAINING:** Task 4 (`propagateError` 3-tier Check→Expr→Code matching + `boundaryErrorMatches`
+>    helper at step_errors.go:86,189; thread `t.Cause`), Task 5 (split `WithDeadline`→`WithDeadlineFlow`
+>    (`schedule.TriggerSpec`,flow) + `WithDeadlineAction`; 19 call sites, 1 empty-arg
+>    step_subprocess_test.go:1032; keep `activityOnlyOption`; DON'T touch `event.WithCatchDeadline`),
+>    Task 6 (`boundary_action` example + godoc Examples + ADR-0103/0104). Resume: SDD Tasks 4-6 → /code-review
+>    → merge. **KEY CORRECTIONS:** message-boundary-never-armed bug is ALREADY FIXED (drop it);
+>    `ErrorCheck`/`ErrorExpr` live on the NODE (read in propagateError), only `Action` on `boundaryArm`;
+>    `_error` injected fresh in the ErrorExpr env; determinism SAFE (snapshot-based). `WithReminder`→
+>    `WithWaitReminder` already done. **ADR-0103/0104.**
+>
+> **▶ Example semantic fixes — ✅ MERGED to main `3970d88`** (standalone, user-requested; audited ALL
+>    scenarios). Fixed: `message_boundary` (empty correlation key `""` → correlate on `orderID`; empty key
+>    broadcasts to EVERY instance on the message name), `exclusive_routing` (dead `AsDefault` branch —
+>    conditions were exhaustive; now non-exhaustive + 3rd demonstrating case), `event_based_gateway`
+>    (BlockUntilContext flaky-fix + "signal"→"message" comment), `retry_recovery`/`attribute_authz`/
+>    `usertask_approval` (doc/comment fixes). Group-B audit agent stalled once but all findings were
+>    collected + applied.
 > **3. Input validation** — spec DONE `docs/specs/2026-07-08-input-validation-design.md`. Neutral
 >    `validation.Validator` port + `ValidationStrategy` interface + registry;
 >    `validation/{expr,callback,jsonschema,avro}` adapters (expr/callback dep-free; json-schema/avro
