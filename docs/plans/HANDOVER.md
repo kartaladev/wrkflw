@@ -14,10 +14,13 @@ and pick up the next work. Read it top to bottom before starting.
 > own branch, merge, review gate between items. Recommended order below (see COORDINATION note — the
 > type-safe options refactor is placed EARLY so all later option work is born type-safe).
 >
-> **0. Type-safe per-kind options refactor** (recommended FIRST — foundation) — behavior-preserving;
->    each `WithX` valid only on kinds that honor it; supersedes `definition.Lint`. **DESIGN PENDING** —
->    brainstorm at the start (starting points in the program spec `docs/specs/2026-07-08-activity-options-program.md`
->    §Phase 1). **ADR-0113.**
+> **0. Type-safe per-kind options refactor** (recommended FIRST — foundation) — **DESIGNED** (program
+>    spec `docs/specs/2026-07-08-activity-options-program.md` §Phase 1). SMALL/surgical: the system is
+>    already mostly type-safe (marker-interface + `applyXxx` pattern); the ONLY genuine mis-scoping is
+>    `WithWaitReminder` → narrow to `interface { UserTaskOption; ReceiveTaskOption }`; **remove
+>    `definition.Lint` entirely** (its one rule is now a compile error) + driver hook; fix
+>    `lint_test.go`. `lestrrat-go/option` evaluated and NOT adopted (its good part == the existing
+>    pattern). Behavior-preserving. **ADR-0113.**
 > **1. Scheduler JobStore durability** ("JobLoader") — plan DONE:
 >    `docs/plans/2026-07-07-scheduler-jobstore-durability.md` (Tasks 3–5; Tasks 1–2 already shipped).
 >    Workflow-provided `kernel.JobStore` the scheduler CALLS; Save/Update/Delete on the AMBIENT

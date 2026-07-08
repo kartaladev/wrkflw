@@ -22,28 +22,66 @@ program.
 
 ---
 
-## Phase 1 — type-safe per-kind activity options (DESIGN PENDING)
+## Phase 1 — type-safe per-kind activity options (DESIGNED)
 
 **Goal:** each `WithX(...)` option satisfies only the option interfaces of the node kinds that
 actually honor it, so mis-applying an option (e.g. `WithWaitReminder` on a node that never arms
-reminders) is a **compile-time** error. This supersedes the runtime `definition.Lint` advisories
-(`definition/lint.go`) that today only warn about ignored options.
+reminders) is a **compile-time** error. This supersedes the runtime `definition.Lint` advisory
+(`definition/lint.go`).
 
-**Starting points for the design session** (brainstorm this at the start of execution):
-- Current pattern: shared options like `activityOnlyOption` implement `applyServiceTask`,
-  `applyUserTask`, `applyReceiveTask`, … for *every* activity kind, so any option applies to any
-  kind (loose). See `definition/activity/options.go`.
-- `definition/lint.go` enumerates the "option ignored by this kind" advisories that this refactor
-  removes — that list is the precise inventory of which options are valid on which kinds.
-- The refactor likely narrows each option's return type to only the relevant `*Option` interfaces,
-  and drops the no-op `apply*` methods that make an option a silent no-op today.
+### Key finding (from investigation) — the system is ALREADY mostly type-safe
 
-**Deliverable:** behavior-preserving — existing tests stay green; the `Lint` advisories it replaces
-are removed; new compile-time rejection covered by `// want`-style compile-fail tests or documented
-examples. **ADR-0113.**
+The codebase already uses the correct type-safe pattern: options valid on a subset of kinds return an
+**anonymous interface embedding only those kinds' option interfaces** — e.g.
+`WithActionName` returns `interface { ServiceTaskOption; BusinessRuleOption }`, `WithCorrelationKey`
+returns `interface { ReceiveTaskOption; SendTaskOption }`, and all `event.*` options are already
+single-kind-scoped. The marker-interface-per-kind mechanism (`ServiceTaskOption interface {
+applyServiceTask(*ServiceTask) }`) IS the compile-time guardrail.
 
-**This phase must be designed (its own brainstorm) before implementation.** Phases 2 and 3 depend on
-its final option-type shapes.
+**The only genuinely mis-scoped option is `WithWaitReminder`.** It returns the loose
+`activityOnlyOption` (applies to all 7 activity kinds) but is honored only by **UserTask** and
+**ReceiveTask** (the activity-side reminder-arming kinds; `IntermediateCatchEvent` uses the already-
+correct event-side `WithCatchWaitReminder`). `definition.Lint` has exactly **one** rule,
+`reminder-ignored`, flagging precisely this at runtime.
+
+The other `activityOnlyOption` options (`WithRetryPolicy`, `WithCompensation`/`WithCompensateAction`,
+`WithDeadline`, `WithRecoveryFlow`, `WithCancelHandler`) are **broad-but-correct** — they genuinely
+apply to every activity kind, so `activityOnlyOption` is the right, DRY representation for them.
+
+### `lestrrat-go/option` evaluation (do NOT adopt)
+
+Considered per request. Its compile-time-restriction technique (marker interfaces) is **identical** to
+what this codebase already does. Its distinguishing mechanism — a uniform `Option = (Ident(), Value())`
+tuple applied via a runtime `switch opt.Ident()` with `Value().(T)` assertions — would be a
+**downgrade** here: it reintroduces `interface{}` boxing + runtime assertions where `applyUserTask(u
+*UserTask)` is strongly typed, moves application into a central per-consumer switch, and adds **no**
+extra compile-time safety. **Decision: keep the existing marker-interface + `applyXxx` pattern; do not
+copy the Ident/Value dispatch; no new dependency.**
+
+### The change (minimal, surgical — behavior-preserving)
+
+1. **Narrow `WithWaitReminder`** → `interface { UserTaskOption; ReceiveTaskOption }` via a small
+   `reminderOpt` struct implementing only `applyUserTask`/`applyReceiveTask`. This makes
+   `WithWaitReminder` on a ServiceTask (etc.) a **compile error**.
+2. **Keep `activityOnlyOption`** for the broad-but-correct all-activity options (no churn).
+3. **Remove `definition.Lint` entirely** — `definition/lint.go`, the `Warning` type, and the driver's
+   `lintDefinition` WARN hook (`runtime/processdriver.go`). Its sole rule is now compile-enforced.
+   (A future non-type-enforceable advisory can introduce a fresh, purpose-built mechanism.)
+4. **Fix the surfaced latent misapplication:** `definition/lint_test.go:27` intentionally applies
+   `WithWaitReminder` to a `ServiceTask` — now a compile error and obsolete; remove/restructure it and
+   the rest of the lint test file.
+5. **Document the convention** on the `*Option` interfaces: subset-applicable options MUST return a
+   narrow anonymous interface; `activityOnlyOption` means "every activity kind."
+
+**Deliverable:** behavior-preserving — all existing tests stay green (except the deleted lint tests);
+the type system is the test for the narrowing (document the non-compiling case in godoc; a Go
+compile-fail test is not required). **ADR-0113.**
+
+**Phases 2–4 depend on this:** they add options born-narrow — `WithCompletionAction` →
+`interface { UserTaskOption; ReceiveTaskOption }`; validation options per boundary
+(`WithInputValidation`→`StartOption`, `WithCompletionValidation`→`UserTaskOption`,
+`WithPayloadValidation`→`interface { ReceiveTaskOption; CatchOption }`); `WithCompensateAction` →
+`activityOnlyOption` (all activities).
 
 ---
 
