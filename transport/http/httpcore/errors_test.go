@@ -9,6 +9,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 func TestClassifyError(t *testing.T) {
@@ -37,6 +38,14 @@ func TestClassifyError(t *testing.T) {
 			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
 				if status != http.StatusBadRequest || body.Message == "" {
 					t.Fatalf("4xx must keep message; got %d/%q", status, body.Message)
+				}
+			},
+		},
+		"validation invalid input -> 400": {
+			err: fmt.Errorf("wrap: %w", validation.ErrInvalidInput),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				if status != http.StatusBadRequest || body.Error != "bad_request" {
+					t.Fatalf("got %d/%q", status, body.Error)
 				}
 			},
 		},

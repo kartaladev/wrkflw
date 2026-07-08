@@ -9,6 +9,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // ErrBadInput is the sentinel for 400-class decode/validation errors.
@@ -32,7 +33,7 @@ func ClassifyError(err error) (int, ErrorBody) {
 		return http.StatusForbidden, ErrorBody{Error: "forbidden", Message: err.Error()}
 	case errors.Is(err, kernel.ErrConcurrentUpdate):
 		return http.StatusConflict, ErrorBody{Error: "conflict", Message: err.Error()}
-	case errors.Is(err, kernel.ErrBadCursor), errors.Is(err, ErrBadInput):
+	case errors.Is(err, kernel.ErrBadCursor), errors.Is(err, ErrBadInput), errors.Is(err, validation.ErrInvalidInput):
 		return http.StatusBadRequest, ErrorBody{Error: "bad_request", Message: err.Error()}
 	case errors.Is(err, service.ErrConflict), errors.Is(err, engine.ErrInvalidTransition):
 		return http.StatusUnprocessableEntity, ErrorBody{Error: "conflict_state", Message: err.Error()}
