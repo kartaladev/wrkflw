@@ -5,10 +5,14 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: write the boundary-event impl plan (ADR-0103/0104) → Plan 3 scheduler JobStore
 
-> **State:** `origin/main == main == af128e5`, working tree clean, all gates green
-> (`go build ./...`, `go test -race ./...` 58 pkgs / 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
-> `golangci-lint run ./...` 0 issues). **Next free ADR: 0107** (0102–0104 remain RESERVED for the
-> pending scheduler-JobStore + boundary-event plans below; 0105/0106 shipped in this merge).
+> **State:** `origin/main == main == fb3237d`, working tree clean, all gates green
+> (`go build ./...`, `go test -race ./...` 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
+> `golangci-lint run ./...` 0 issues). **Next free ADR: 0108** (0102–0104 remain RESERVED for the
+> pending scheduler-JobStore + boundary-event plans below; 0105/0106/0107 shipped).
+>
+> **QUEUED follow-up (harness task #1, not yet done):** rename `action.NewMapCatalog` → `action.NewCatalog`
+> (~111 call sites; `MapCatalog`+`Registry` are the only two `Catalog` impls, `Registry` already has
+> `NewRegistry`). Same SDD/hard-rename pattern as ADR-0107.
 >
 > **Recently shipped since 2026-07-04 (all MERGED + PUSHED to origin/main):**
 > - **ADR-0094/0095** HTTP-only transport — removed gRPC; `transport/http/{httpcore,stdlib,gin,fiber}` mountable route-group adapters.
@@ -48,8 +52,11 @@ and pick up the next work. Read it top to bottom before starting.
 >   symmetric to `DeliverMessage`, so consumers broadcast through the driver instead of reaching into
 >   the bus (deferred: eliminating the forward-reference bus *construction* — see ADR-0106 Consequences).
 >   Plus docs-only upgrades to `parallel_fork_join`, `readme_quickstart`, `migrate`, `broker_wiring`.
->   OPEN follow-up: `driver.Deliver` rename under discussion (low-level per-instance trigger apply;
->   name reads as a message-y verb — candidate: `ApplyTrigger`).
+> - **`ProcessDriver.Deliver` → `ApplyTrigger`** (merge `fb3237d`, **ADR-0107**): behavior-preserving hard
+>   rename of the low-level per-instance trigger-apply primitive (was a message-y name; `DeliverMessage`/
+>   `BroadcastSignal` are the facades over it). Span `wrkflw.runner.Deliver`→`wrkflw.runner.ApplyTrigger`.
+>   The unrelated `processtest.Deliver` Decision constructor was deliberately left intact. Executed via
+>   full SDD (spec+plan under `docs/{specs,plans}/2026-07-08-rename-deliver-to-apply-trigger*`).
 >
 > **▶ NEXT WORK — write the boundary-event enhancements implementation plan (ADR-0103/0104):** the spec is
 > written ([`docs/specs/2026-07-07-boundary-event-enhancements.md`](../specs/2026-07-07-boundary-event-enhancements.md))
