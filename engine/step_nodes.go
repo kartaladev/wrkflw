@@ -482,6 +482,40 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	return cmds, false, nil
 }
 
+// armWaitReminder arms a node's in-wait reminder if one is configured, appending
+// the ScheduleTimer command and its timer record to cmds and returning the result.
+// Recurrence is native to the scheduler: it re-fires on the interval on its own,
+// so the engine arms once here and handleReminderFired only runs the reminder
+// action per fire. cancelKey is the token whose resume/interrupt cancels the
+// reminder — the human-task token for a UserTask, the parked token id for a
+// ReceiveTask or IntermediateCatchEvent.
+func armWaitReminder(c *stepCtx, tok *Token, node model.Node, cancelKey string, cmds []Command) ([]Command, error) {
+	rawSpec, _ := model.ReminderOf(node)
+	reminderSpec, err := ResolveTrigger(c.eval, rawSpec, c.s.Variables)
+	if err != nil {
+		return cmds, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
+	}
+	if reminderSpec.IsZero() {
+		return cmds, nil
+	}
+	reminderTimerID := c.s.nextTimerID()
+	cmds = append(cmds, ScheduleTimer{
+		TimerID: reminderTimerID,
+		Token:   tok.ID,
+		Trigger: reminderSpec,
+		Kind:    TimerInWait,
+	})
+	c.s.Timers = append(c.s.Timers, timerRecord{
+		TimerID:   reminderTimerID,
+		Kind:      TimerInWait,
+		Token:     tok.ID,
+		TaskToken: cancelKey,
+		NodeID:    node.ID(),
+		ScopeID:   tok.ScopeID,
+	})
+	return cmds, nil
+}
+
 // userTaskStrategy handles KindUserTask node entry.
 type userTaskStrategy struct{}
 
@@ -540,30 +574,12 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			ht.DueAt = &due
 		}
 	}
-	// If the node carries a reminder interval, arm a single recurring in-wait
-	// timer carrying the raw trigger (e.g. Every/EveryExpr). Recurrence is native
-	// to the scheduler: it re-fires on the interval on its own, so the engine arms
-	// once here and handleReminderFired only runs the reminder action per fire.
-	reminderSpec, err := ResolveTrigger(c.eval, ut.ReminderEvery, c.s.Variables)
+	// Arm the node's in-wait reminder, if configured. For a UserTask the reminder
+	// is cancelled by the human-task token (cancelKey = taskToken), preserving the
+	// original behaviour.
+	cmds, err = armWaitReminder(c, tok, node, taskToken, cmds)
 	if err != nil {
-		return cmds, false, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
-	}
-	if !reminderSpec.IsZero() {
-		reminderTimerID := c.s.nextTimerID()
-		cmds = append(cmds, ScheduleTimer{
-			TimerID: reminderTimerID,
-			Token:   tok.ID,
-			Trigger: reminderSpec,
-			Kind:    TimerInWait,
-		})
-		c.s.Timers = append(c.s.Timers, timerRecord{
-			TimerID:   reminderTimerID,
-			Kind:      TimerInWait,
-			Token:     tok.ID,
-			TaskToken: taskToken,
-			NodeID:    node.ID(),
-			ScopeID:   tok.ScopeID,
-		})
+		return cmds, false, err
 	}
 	c.s.Tasks = append(c.s.Tasks, ht)
 	cmds = append(cmds, AwaitHuman{TaskToken: taskToken, Eligibility: spec})
