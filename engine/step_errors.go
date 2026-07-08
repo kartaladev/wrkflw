@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -8,6 +9,49 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
+
+// boundaryErrorMatches decides whether error boundary n catches a thrown error.
+//
+// Precedence (highest to lowest):
+//
+//  1. ErrorCheck — Go closure (vars, cause) → bool. Highest; non-serializable.
+//     When set, its return value is final: true = catch, false = no-catch
+//     (does NOT fall through to Expr or Code on false).
+//     vars is a SHALLOW CLONE so a misbehaving closure cannot mutate the live
+//     instance variable map (Fix 2).
+//  2. ErrorExpr — expr-lang predicate evaluated over vars + injected "_error"
+//     (the thrown error code string). Truthy = catch. Serializable.
+//     _error is injected into a CLONE of vars so it never leaks into instance state.
+//     A runtime eval error (e.g. type mismatch) is returned to the caller so it
+//     can decide whether to skip or abort (see propagateError for Fix 3 policy).
+//  3. ErrorCode — exact match or catch-all: n.ErrorCode == "" || n.ErrorCode == errorCode.
+//
+// cause is the live thrown error: the original action error when available, or
+// a synthesized errors.New(errorCode) for bare-code sources (ErrorEndEvent,
+// sub-instance failure). Callers guarantee cause is non-nil by the time
+// boundaryErrorMatches is called.
+func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause error, errorCode string, eval ConditionEvaluator) (bool, error) {
+	if n.ErrorCheck != nil {
+		// Pass a shallow clone so a misbehaving closure cannot mutate the live
+		// instance variable map (Fix 2: mutation trap prevention).
+		cloned := make(map[string]any, len(vars))
+		for k, v := range vars {
+			cloned[k] = v
+		}
+		return n.ErrorCheck(cloned, cause), nil
+	}
+	if n.ErrorExpr != "" {
+		// Clone vars + inject _error so the evaluator sees the code without
+		// mutating the live instance variable map.
+		env := make(map[string]any, len(vars)+1)
+		for k, v := range vars {
+			env[k] = v
+		}
+		env["_error"] = errorCode
+		return eval.EvalBool(n.ErrorExpr, env)
+	}
+	return n.ErrorCode == "" || n.ErrorCode == errorCode, nil
+}
 
 // propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).
 //
@@ -57,7 +101,19 @@ import (
 // raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
 // unhandled error parks the failing token as a [TokenIncident] and keeps the
 // instance running (admin-resumable) instead of setting StatusFailed.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
+//
+// cause is the original Go error from the live action invocation; pass nil for
+// bare-code sources (ErrorEndEvent, sub-instance failures). When nil, a
+// synthesized errors.New(errorCode) is created so ErrorCheck closures always
+// receive a non-nil error.
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
+	// Guarantee that ErrorCheck closures always receive a non-nil error.
+	// For bare-code sources (ErrorEndEvent, sub-instance) the caller passes
+	// nil; synthesize errors.New(errorCode) so the closure can inspect the
+	// code via err.Error() without requiring a nil-check.
+	if cause == nil {
+		cause = errors.New(errorCode)
+	}
 	// ── Step 1: Direct-attachment check ──────────────────────────────────────
 	// Only when the caller provides an originating node (ActionFailed path).
 	// Inspect the failing token's OWN scope definition for a boundary error event
@@ -82,8 +138,17 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			if !n.Timer.IsZero() || n.SignalName != "" || n.MessageName != "" {
 				continue
 			}
-			// Match: catch-all or specific code.
-			if n.ErrorCode == "" || n.ErrorCode == errorCode {
+			// Three-tier match: Check → Expr → Code.
+			// Fix 3: an ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
+			// for matching — this is the error-recovery path and one malformed predicate
+			// must not brick routing for all boundaries. Treat the boundary as non-matching
+			// and continue to the next boundary rather than aborting the Step.
+			matched, matchErr := boundaryErrorMatches(n, s.Variables, cause, errorCode, eval)
+			if matchErr != nil {
+				// Treat as non-match; continue scanning remaining boundaries.
+				continue
+			}
+			if matched {
 				bnd := n
 				directHandler = &bnd
 				break
@@ -95,6 +160,18 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// up by the ActionFailed handler (preCmds cancelled its arms; the token
 			// itself is still present but parked — we need to consume it now).
 			var cmds []Command
+
+			// Fix 1: Emit the fire-once boundary action before routing, mirroring
+			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
+			// action failure does not block routing.
+			if directHandler.Action != "" {
+				cmds = append(cmds, InvokeAction{
+					CommandID:     s.nextCommandID(),
+					Name:          directHandler.Action,
+					Input:         copyVars(s.Variables),
+					FireAndForget: true,
+				})
+			}
 
 			// Consume the failing activity's token by its specific ID (failingTokenID).
 			// Using the ID rather than NodeID+ScopeID ensures correctness when two
@@ -185,8 +262,17 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			if !n.Timer.IsZero() || n.SignalName != "" || n.MessageName != "" {
 				continue // not an error boundary
 			}
-			// Match: catch-all (n.ErrorCode=="") or specific code match.
-			if n.ErrorCode == "" || n.ErrorCode == errorCode {
+			// Three-tier match: Check → Expr → Code.
+			// Fix 3: an ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
+			// for matching — this is the error-recovery path and one malformed predicate
+			// must not brick routing for all boundaries. Treat the boundary as non-matching
+			// and continue to the next boundary rather than aborting the Step.
+			matched, matchErr := boundaryErrorMatches(n, s.Variables, cause, errorCode, eval)
+			if matchErr != nil {
+				// Treat as non-match; continue scanning remaining boundaries.
+				continue
+			}
+			if matched {
 				bnd := n
 				handler = &bnd
 				break
@@ -200,6 +286,19 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 
 			// 1. Cancel all tokens in the erroring scope.
 			var cmds []Command
+
+			// Fix 1: Emit the fire-once boundary action before routing, mirroring
+			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
+			// action failure does not block routing.
+			if handler.Action != "" {
+				cmds = append(cmds, InvokeAction{
+					CommandID:     s.nextCommandID(),
+					Name:          handler.Action,
+					Input:         copyVars(s.Variables),
+					FireAndForget: true,
+				})
+			}
+
 			tokensToCancel := make([]Token, 0, len(s.Tokens))
 			for _, tok := range s.Tokens {
 				if tok.ScopeID == currentScopeID {

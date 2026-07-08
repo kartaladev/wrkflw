@@ -133,7 +133,7 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 					slog.String("action", cmd.Name), slog.Any("error", err))
 				return nil, nil
 			}
-			return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), engine.WithJitter(driver.jitter.Fraction())), nil
+			return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), engine.WithJitter(driver.jitter.Fraction()), engine.WithCause(err)), nil
 		}
 		outcome = "ok"
 		if cmd.FireAndForget {

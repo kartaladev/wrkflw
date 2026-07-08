@@ -154,6 +154,40 @@ func WithBoundaryNonInterrupting() BoundaryOption {
 	return boundaryFuncOpt{func(n *BoundaryEvent) { n.NonInterrupting = true }}
 }
 
+// WithBoundaryAction attaches a fire-once catalog action run when the boundary
+// fires (any trigger type). Result discarded; failure logs + continues routing.
+func WithBoundaryAction(name string) BoundaryOption {
+	return boundaryFuncOpt{func(n *BoundaryEvent) { n.Action = name }}
+}
+
+// WithBoundaryErrorExpr sets an expr-lang predicate deciding whether an error
+// boundary catches, evaluated over the instance variables plus _error (the
+// thrown error code string). Truthy = catch. Serializable.
+//
+// Precedence: if ErrorCheck is set, it is the SOLE decider and WithBoundaryErrorExpr
+// is NOT consulted (even if ErrorCheck returns false — no fallthrough). If
+// ErrorCheck is absent, WithBoundaryErrorExpr is the SOLE decider; WithBoundaryErrorCode
+// is NOT consulted regardless of the Expr result.
+//
+// Summary: Check → Expr → Code; the FIRST configured tier decides; there is no
+// fallthrough between tiers.
+func WithBoundaryErrorExpr(expr string) BoundaryOption {
+	return boundaryFuncOpt{func(n *BoundaryEvent) { n.ErrorExpr = expr }}
+}
+
+// WithBoundaryErrorCheck sets a Go predicate (instance vars, thrown error)
+// deciding whether an error boundary catches. Highest precedence; non-serializable
+// (Go-authoring only). For action-thrown failures err is the ORIGINAL error
+// (use errors.Is/As); for bare-code sources err.Error() == the code.
+//
+// Precedence: when ErrorCheck is set, it is the SOLE decider — returning false
+// is a definitive no-catch; WithBoundaryErrorExpr and WithBoundaryErrorCode are
+// NOT consulted. There is no fallthrough: the first configured tier (Check, then
+// Expr, then Code) decides exclusively.
+func WithBoundaryErrorCheck(fn func(map[string]any, error) bool) BoundaryOption {
+	return boundaryFuncOpt{func(n *BoundaryEvent) { n.ErrorCheck = fn }}
+}
+
 // --- EventSubProcess options ---
 
 type espFuncOpt struct{ fn func(*EventSubProcess) }

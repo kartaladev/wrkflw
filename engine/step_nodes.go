@@ -678,7 +678,7 @@ func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]C
 	// as failingTokenID (the error-end token is already consumed above).
 	currentScopeID := tok.ScopeID
 	c.s.consumeToken(tok, c.at)
-	errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", eee.ErrorCode, c.at, c.mode, c.eval, false)
+	errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", eee.ErrorCode, nil, c.at, c.mode, c.eval, false)
 	if propErr != nil {
 		// Real error from propagateError: surface it; drive() returns it as-is.
 		return cmds, false, propErr

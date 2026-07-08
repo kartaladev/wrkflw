@@ -298,7 +298,7 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 		// (2)+(3): no catch-flow → let propagateError catch the error via a
 		// boundary handler; if none is found, raise an incident (the
 		// raiseIncidentOnUnhandled=true flag) instead of failing the instance.
-		errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), true)
+		errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), true)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -312,7 +312,8 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 	// behavior for root-level service tasks with no handler.
 	// Pass tok.ID so the direct-attachment branch consumes THIS specific
 	// token, not the first token found at the same NodeID+ScopeID.
-	errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), false)
+	// Pass t.Cause so ErrorCheck closures receive the original typed error.
+	errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), false)
 	if err != nil {
 		return StepResult{}, err
 	}

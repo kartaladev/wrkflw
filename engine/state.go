@@ -104,6 +104,9 @@ type boundaryArm struct {
 	// MessageKey is the resolved correlation key for message boundary events
 	// (empty if no CorrelationKey was configured — match on message name alone).
 	MessageKey string
+	// Action is the catalog action name to invoke (FireAndForget) when the
+	// boundary fires, before routing. Empty means no action is emitted.
+	Action string
 }
 
 // eventSubprocessArm is the engine's bookkeeping entry for a single armed event
