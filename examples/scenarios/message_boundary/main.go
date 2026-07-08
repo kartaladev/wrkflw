@@ -24,11 +24,11 @@
 // so no clock or scheduler is needed):
 //
 //  1. Run parks the instance at "approve"; both message boundary waiters arm.
-//  2. Deliver "order.remind": the non-interrupting boundary fires ONCE — the
+//  2. ApplyTrigger "order.remind": the non-interrupting boundary fires ONCE — the
 //     "notify" reminder action runs, but the instance is STILL running and
 //     still parked at "approve". (A non-interrupting boundary fires once then
 //     de-arms; a second reminder delivery would be a clean no-op.)
-//  3. Deliver "order.cancel": the interrupting boundary fires — the human task
+//  3. ApplyTrigger "order.cancel": the interrupting boundary fires — the human task
 //     is Cancelled and the instance completes via the end-cancelled path.
 //
 // This is a reference wiring example — not a shipped binary.
@@ -123,7 +123,7 @@ func main() {
 	fmt.Printf("instance parked at %q (status=%s, boundaries armed=%d)\n",
 		parked.Tokens[0].NodeID, parked.Status.String(), len(parked.Boundaries))
 
-	// 2) Deliver the reminder message: the NON-INTERRUPTING boundary fires once.
+	// 2) ApplyTrigger the reminder message: the NON-INTERRUPTING boundary fires once.
 	//    The reminder runs, but the approval task stays parked and running.
 	fmt.Println("delivering order.remind (non-interrupting)...")
 	if err := driver.DeliverMessage(ctx, def, "order.remind", "", nil); err != nil {
@@ -136,7 +136,7 @@ func main() {
 	fmt.Printf("after reminder: status=%s (still parked at %q), reminded=%v\n",
 		afterRemind.Status.String(), afterRemind.Tokens[0].NodeID, reminded)
 
-	// 3) Deliver the cancel message: the INTERRUPTING boundary fires — the human
+	// 3) ApplyTrigger the cancel message: the INTERRUPTING boundary fires — the human
 	//    task is Cancelled and the instance completes via the cancelled path.
 	fmt.Println("delivering order.cancel (interrupting)...")
 	if err := driver.DeliverMessage(ctx, def, "order.cancel", "", nil); err != nil {

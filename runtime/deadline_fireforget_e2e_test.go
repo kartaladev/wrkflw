@@ -62,7 +62,7 @@ func (h *recordingHandler) errorMessages() []string {
 // the fire-and-forget fix. Before the fix, the deadline-breach InvokeAction was
 // fed back into the engine, where no token awaited its CommandID, producing
 // ErrTokenNotFound ("no token awaiting command") that the timer-fire path logged
-// as a LevelError "Deliver failed". The instance still completed, so asserting on
+// as a LevelError "ApplyTrigger failed". The instance still completed, so asserting on
 // sched.Tick's return is insufficient (Tick swallows the error) — we must assert
 // on the captured log records.
 func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
@@ -132,9 +132,9 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 
 	// REGRESSION ASSERTION: no spurious error must be logged for the fire-once
 	// breach action. Before the fix, the fed-back ActionCompleted produced
-	// "Deliver failed" / "no token awaiting command" at LevelError.
+	// "ApplyTrigger failed" / "no token awaiting command" at LevelError.
 	for _, msg := range rec.errorMessages() {
-		if strings.Contains(msg, "Deliver failed") || strings.Contains(msg, "no token awaiting command") {
+		if strings.Contains(msg, "ApplyTrigger failed") || strings.Contains(msg, "no token awaiting command") {
 			t.Errorf("unexpected LevelError log for fire-once breach action: %q", msg)
 		}
 	}

@@ -58,7 +58,7 @@ type Decision struct {
 	err     error
 }
 
-// Deliver feeds trigger to the driver's Deliver for the current instance.
+// Deliver feeds trigger to the driver's ApplyTrigger for the current instance.
 func Deliver(trigger engine.Trigger) Decision {
 	return Decision{kind: kindDeliver, trigger: trigger}
 }
@@ -110,7 +110,7 @@ type freeEnv struct {
 }
 
 func (e freeEnv) deliver(ctx context.Context, trg engine.Trigger) (engine.InstanceState, error) {
-	return e.driver.Deliver(ctx, e.def, e.id, trg)
+	return e.driver.ApplyTrigger(ctx, e.def, e.id, trg)
 }
 
 func (e freeEnv) advanceTimers(context.Context) (engine.InstanceState, error) {

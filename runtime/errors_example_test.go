@@ -109,7 +109,7 @@ func sagaDef() *model.ProcessDefinition {
 //  1. book and pay run to completion, recording their compensation actions.
 //  2. ship fails; a boundary error event catches it → instance routes to end-fail
 //     → StatusCompleted (boundary path; RootCompensations preserved for admin rollback).
-//  3. Admin delivers CompensateRequested{ToNode:""} via Runner.Deliver.
+//  3. Admin delivers CompensateRequested{ToNode:""} via Runner.ApplyTrigger.
 //  4. The driver drives the compensation InvokeAction stream to completion:
 //     refund (for pay) runs BEFORE cancel-booking (for book) — reverse order.
 //  5. Final status is StatusTerminated (full rollback, ToNode=="").
@@ -162,8 +162,8 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	// --- Step 2: admin triggers full compensation rollback.
 	trg := engine.NewCompensateRequested(fakeClock.Now(), "") // ToNode="" → full rollback
-	finalSt, err := driver.Deliver(ctx, def, "saga-i1", trg)
-	require.NoError(t, err, "Deliver(CompensateRequested) must not error")
+	finalSt, err := driver.ApplyTrigger(ctx, def, "saga-i1", trg)
+	require.NoError(t, err, "ApplyTrigger(CompensateRequested) must not error")
 
 	// --- Step 3: assert reverse-order compensation.
 	// Full-slice equality catches both order AND count regressions.

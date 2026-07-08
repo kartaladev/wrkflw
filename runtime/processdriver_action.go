@@ -78,7 +78,7 @@ func safeActionDo(ctx context.Context, a action.Action, in map[string]any) (out 
 // perform executes one command and returns the resulting trigger, if any.
 // st is the current instance state, used for variable access when resolving
 // human-task candidates. def is the process definition, captured by timer
-// fire callbacks that need to call Deliver.
+// fire callbacks that need to call ApplyTrigger.
 //
 //nolint:cyclop // the command switch is intentionally exhaustive; each case is simple.
 func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {

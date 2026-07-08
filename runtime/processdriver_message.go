@@ -16,13 +16,13 @@ import (
 // called after each deliverLoop iteration. This keeps the state in sync without
 // requiring an enumeration API on Store.
 //
-// def is required to call Deliver on the matched instance.
+// def is required to call ApplyTrigger on the matched instance.
 func (driver *ProcessDriver) DeliverMessage(ctx context.Context, def *model.ProcessDefinition, name, correlationKey string, payload map[string]any) error {
 	instanceID, found := driver.findMessageWaiter(name, correlationKey)
 	if !found {
 		return nil
 	}
 	trg := engine.NewMessageReceived(driver.clk.Now(), name, correlationKey, payload)
-	_, err := driver.Deliver(ctx, def, instanceID, trg)
+	_, err := driver.ApplyTrigger(ctx, def, instanceID, trg)
 	return err
 }

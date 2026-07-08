@@ -80,7 +80,7 @@ func TestDeliverMessageFiresEventGatewayArm(t *testing.T) {
 	require.Equal(t, engine.StatusRunning, st.Status, "instance must park at the event gateway")
 	require.Len(t, st.ArmedEvents, 2, "both gateway arms must be armed")
 
-	// Deliver the correlated message. It must route to the parked instance even
+	// ApplyTrigger the correlated message. It must route to the parked instance even
 	// though no token carries AwaitMessage == "payment-confirmed" (the event-gateway
 	// arm holds it), and the correlation key must match the resolved value.
 	err = r.DeliverMessage(ctx, def, "payment-confirmed", "order-fast", map[string]any{"amount": 4200})

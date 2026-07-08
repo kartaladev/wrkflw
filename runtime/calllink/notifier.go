@@ -20,12 +20,12 @@ import (
 // CallDeliverFunc delivers a trigger to a parent process instance. The
 // definition is resolved by the CallNotifier via the DefinitionRegistry and
 // passed to the delivery function so the caller can route to the correct
-// ProcessDriver.Deliver call. The instanceID is the parent's instance ID.
+// ProcessDriver.ApplyTrigger call. The instanceID is the parent's instance ID.
 //
 // A typical wiring:
 //
 //	fn := CallDeliverFunc(func(ctx context.Context, def *model.ProcessDefinition, id string, trg engine.Trigger) error {
-//	    _, err := runner.Deliver(ctx, def, id, trg)
+//	    _, err := runner.ApplyTrigger(ctx, def, id, trg)
 //	    return err
 //	})
 type CallDeliverFunc func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error
@@ -108,7 +108,7 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 // SubInstanceCompleted / SubInstanceFailed trigger via deliver.
 //
 //   - cl: the CallLinkStore to claim pending notifications from.
-//   - deliver: wraps ProcessDriver.Deliver (the parent def is pre-resolved by DrainOnce via reg).
+//   - deliver: wraps ProcessDriver.ApplyTrigger (the parent def is pre-resolved by DrainOnce via reg).
 //   - reg: resolves parent definition references (format "defID:version").
 //   - opts: optional configuration overrides (use [WithClock] to set the
 //     time source; default is clock.System() per ADR-0003).
@@ -199,7 +199,7 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 			trg = engine.NewSubInstanceFailed(n.clk.Now(), p.Link.ParentCommandID, p.Outcome.Err)
 		}
 
-		// Deliver the trigger to the parent instance.
+		// Apply the trigger to the parent instance.
 		derr := n.deliver(ctx, parentDef, p.Link.ParentInstanceID, trg)
 		if derr != nil && !errors.Is(derr, engine.ErrTokenNotFound) {
 			// Transient or structural failure — leave the link claimable for retry.

@@ -22,7 +22,7 @@
 // an in-memory driver backed by [action.DefaultCatalog] and
 // [kernel.NewMemInstanceStore]; supply [runtime.WithActionCatalog] and
 // [runtime.WithInstanceStore] for durable production wiring;
-// (3) call [runtime.ProcessDriver.Drive] to start an instance and [runtime.ProcessDriver.Deliver]
+// (3) call [runtime.ProcessDriver.Drive] to start an instance and [runtime.ProcessDriver.ApplyTrigger]
 // to resume it after a human-task claim, timer fire, or signal.
 //
 //   - definition   Define a process: nodes, gateways, sequence flows, the

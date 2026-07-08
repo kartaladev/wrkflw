@@ -22,8 +22,8 @@ import (
 //
 //  1. Run parks at the user task.
 //  2. TaskStore.ClaimableBy returns the task for a manager actor.
-//  3. TaskService.Claim → Runner.Deliver(HumanClaimed) transitions the task to Claimed.
-//  4. TaskService.Complete → Runner.Deliver(HumanCompleted) completes the instance.
+//  3. TaskService.Claim → Runner.ApplyTrigger(HumanClaimed) transitions the task to Claimed.
+//  4. TaskService.Complete → Runner.ApplyTrigger(HumanCompleted) completes the instance.
 //  5. Journal shows StartInstance + HumanClaimed + HumanCompleted.
 //  6. Final task State==Completed and ClaimedBy==manager actor ID.
 func TestHumanTaskEndToEnd(t *testing.T) {
@@ -63,13 +63,13 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 
 	taskToken := task.TaskToken
 
-	// --- TaskService.Claim → Deliver ---
+	// --- TaskService.Claim → ApplyTrigger ---
 	svc := runtimetest.MustTaskService(t, taskStore, az)
 
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)
 	require.NoError(t, err)
 
-	claimedState, err := driver.Deliver(ctx, def, instanceID, claimTrg)
+	claimedState, err := driver.ApplyTrigger(ctx, def, instanceID, claimTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, claimedState.Status, "instance still running after claim")
 
@@ -79,11 +79,11 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	assert.Equal(t, humantask.Claimed, storedTask.State)
 	assert.Equal(t, manager.ID, storedTask.ClaimedBy)
 
-	// --- TaskService.Complete → Deliver ---
+	// --- TaskService.Complete → ApplyTrigger ---
 	completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"approved": true})
 	require.NoError(t, err)
 
-	finalState, err := driver.Deliver(ctx, def, instanceID, completeTrg)
+	finalState, err := driver.ApplyTrigger(ctx, def, instanceID, completeTrg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, finalState.Status)
 	assert.Empty(t, finalState.Tokens, "no tokens remain after completion")
@@ -95,7 +95,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	assert.Equal(t, manager.ID, finalTask.ClaimedBy)
 
 	// Journal: StartInstance + HumanClaimed + HumanCompleted (Run's StartInstance
-	// plus two Deliver calls).
+	// plus two ApplyTrigger calls).
 	entries, err := store.Entries(ctx, instanceID)
 	require.NoError(t, err)
 	require.Len(t, entries, 3, "journal must record StartInstance + HumanClaimed + HumanCompleted")
@@ -123,14 +123,14 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	assert.Equal(t, manager.ID, *userVisit.ActorID)
 }
 
-// TestDeliverLoadError verifies that Deliver returns an error when the state
+// TestDeliverLoadError verifies that ApplyTrigger returns an error when the state
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
 	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
-	_, err := driver.Deliver(ctx, runtimetest.ApprovalDef(), "non-existent", trg)
+	_, err := driver.ApplyTrigger(ctx, runtimetest.ApprovalDef(), "non-existent", trg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow-runtime: deliver: load:")
 }

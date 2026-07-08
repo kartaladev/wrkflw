@@ -81,7 +81,7 @@ func TestBeginCompensationNonZeroOutcomeFailed(t *testing.T) {
 	require.True(t, ok, "command must be InvokeAction")
 	assert.Equal(t, "refund", ia.Name)
 
-	// Deliver ActionCompleted for the compensation action — this triggers stepCompensationFinish.
+	// ApplyTrigger ActionCompleted for the compensation action — this triggers stepCompensationFinish.
 	r2, err := engine.Step(def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia.CommandID, nil),
 		engine.StepOptions{})

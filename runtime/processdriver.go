@@ -88,7 +88,7 @@ type ProcessDriver struct {
 	lintMu sync.Mutex
 	// lintedDefs records the (id, version) of definitions already passed through
 	// definition.Lint so each definition's advisory warnings are logged at most
-	// once, not on every Drive/Deliver.
+	// once, not on every Drive/ApplyTrigger.
 	lintedDefs map[string]struct{}
 
 	// shutdown aggregates the teardown of resources the driver itself created and
@@ -343,7 +343,7 @@ func (driver *ProcessDriver) lintDefinition(ctx context.Context, def *model.Proc
 	}
 }
 
-// Deliver loads the current instance state, applies one trigger via engine.Step,
+// ApplyTrigger loads the current instance state, applies one trigger via engine.Step,
 // saves the new state, records the trigger in the journal, and performs the
 // resulting commands (feeding follow-up triggers back through the loop).
 //
@@ -357,8 +357,8 @@ func (driver *ProcessDriver) lintDefinition(ctx context.Context, def *model.Proc
 // bypasses authorization entirely — the engine core is authorization-unaware by
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
-func (driver *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
-	ctx, span := driver.obs.tracer().Start(ctx, "wrkflw.runner.Deliver", trace.WithAttributes(
+func (driver *ProcessDriver) ApplyTrigger(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	ctx, span := driver.obs.tracer().Start(ctx, "wrkflw.runner.ApplyTrigger", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.trigger", triggerName(trg)),
 	))
@@ -381,14 +381,14 @@ func (driver *ProcessDriver) Deliver(ctx context.Context, def *model.ProcessDefi
 // deliverLoop applies triggers from queue and then any follow-up triggers emitted
 // by perform (action results, etc.) until all commands are resolved or the engine
 // parks. It encapsulates the Step→terminalOutboxEvent→Create/Commit→perform cycle
-// shared by Drive and Deliver.
+// shared by Drive and ApplyTrigger.
 //
 // token is the current optimistic-concurrency token; create=true on the very
 // first step (Drive path, no row yet) and false on all subsequent steps.
 //
 // firstCallLink, when non-nil, is attached to the FIRST applied step's
 // AppliedStep.NewCallLink (the create step) and then cleared. All existing
-// callers (Drive, Deliver) pass nil — no behavior change for them. The internal
+// callers (Drive, ApplyTrigger) pass nil — no behavior change for them. The internal
 // runChild helper passes the link so the child's Create records it atomically.
 //
 // After each committed save, if a SignalBus or message waiters are configured,

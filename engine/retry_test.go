@@ -90,7 +90,7 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 	require.NoError(t, err)
 	cmdID := findInvokeActionCmdID(t, r1.Commands)
 
-	// Deliver ActionFailed: retryable, jitter=0.5, at t=10s.
+	// ApplyTrigger ActionFailed: retryable, jitter=0.5, at t=10s.
 	failAt := time.Unix(10, 0)
 	fail := engine.NewActionFailed(failAt, cmdID, "boom", true, engine.WithJitter(0.5))
 	r2, err := engine.Step(def, r1.State, fail, engine.StepOptions{})
@@ -135,7 +135,7 @@ func TestStepRetryTimerReinvokesAction(t *testing.T) {
 	require.NoError(t, err)
 	cmdID := findInvokeActionCmdID(t, r1.Commands)
 
-	// Deliver ActionFailed: retryable, jitter=0.5, at t=10s.
+	// ApplyTrigger ActionFailed: retryable, jitter=0.5, at t=10s.
 	r2, err := engine.Step(def, r1.State,
 		engine.NewActionFailed(time.Unix(10, 0), cmdID, "boom", true, engine.WithJitter(0.5)),
 		engine.StepOptions{})
@@ -283,7 +283,7 @@ func TestStepResolveIncidentReinvokes(t *testing.T) {
 	require.NoError(t, err)
 	cmdID := findInvokeActionCmdID(t, r1.Commands)
 
-	// Deliver terminal ActionFailed (MaxAttempts:1 → first failure is terminal) → incident.
+	// ApplyTrigger terminal ActionFailed (MaxAttempts:1 → first failure is terminal) → incident.
 	r2, err := engine.Step(def, r1.State,
 		engine.NewActionFailed(time.Unix(1, 0), cmdID, "boom", true), engine.StepOptions{})
 	require.NoError(t, err)
@@ -365,7 +365,7 @@ func TestInvokeActionCarriesStableIdempotencyKey(t *testing.T) {
 	require.Equal(t, "p:task", inv1.Input["_idempotencyKey"],
 		"first invocation must carry stable idempotency key")
 
-	// Deliver retryable failure → retry timer scheduled.
+	// ApplyTrigger retryable failure → retry timer scheduled.
 	r2, err := engine.Step(def, r1.State,
 		engine.NewActionFailed(time.Unix(10, 0), inv1.CommandID, "boom", true, engine.WithJitter(0.5)),
 		engine.StepOptions{})

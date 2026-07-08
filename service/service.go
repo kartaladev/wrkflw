@@ -341,7 +341,7 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 		return nil, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, req.InstanceID)
 	}
 	trg := engine.NewSignalReceived(e.clk.Now(), req.Signal, req.Payload)
-	newSt, err := e.driver.Deliver(ctx, def, st.InstanceID, trg)
+	newSt, err := e.driver.ApplyTrigger(ctx, def, st.InstanceID, trg)
 	if err != nil {
 		// No ErrInvalidTransition classification here: SignalReceived uses
 		// broadcast semantics in the engine — a signal matching no awaiting
@@ -477,7 +477,7 @@ func (e *Engine) deliverTaskTrigger(ctx context.Context, taskToken string, trg e
 	if isTerminal(st.Status) {
 		return nil, fmt.Errorf("%w: instance %q is in a terminal state", ErrConflict, task.InstanceID)
 	}
-	newSt, err := e.driver.Deliver(ctx, def, task.InstanceID, trg)
+	newSt, err := e.driver.ApplyTrigger(ctx, def, task.InstanceID, trg)
 	if err != nil {
 		if errors.Is(err, engine.ErrInvalidTransition) {
 			return nil, fmt.Errorf("%w: %w", ErrConflict, err)

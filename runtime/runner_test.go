@@ -26,7 +26,7 @@ import (
 )
 
 // errStore is an InstanceStore whose Create and Commit always fail with a concurrency error.
-// It embeds *kernel.MemInstanceStore so that Load still works for Deliver-based tests
+// It embeds *kernel.MemInstanceStore so that Load still works for ApplyTrigger-based tests
 // that need an initial state.
 type errStore struct{ *kernel.MemInstanceStore }
 
@@ -223,7 +223,7 @@ func conflictTimerDef() *model.ProcessDefinition {
 	}
 }
 
-// TestTimerFireRetriesOnCASConflict verifies that the runner retries Deliver on
+// TestTimerFireRetriesOnCASConflict verifies that the runner retries ApplyTrigger on
 // ErrConcurrentUpdate during the timer-fire callback, so a single CAS conflict
 // never silently drops the TimerFired trigger.
 //
@@ -252,7 +252,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 		"instance must park at the timer node")
 
 	// Advance clock past the 10-second FireAt and Tick → fires the timer callback.
-	// The callback calls Deliver → Commit, which returns ErrConcurrentUpdate on the
+	// The callback calls ApplyTrigger → Commit, which returns ErrConcurrentUpdate on the
 	// first attempt (injected by onceConflictStore). The retry loop must succeed on
 	// the second attempt.
 	fc.Advance(11 * time.Second)

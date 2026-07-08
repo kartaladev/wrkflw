@@ -138,22 +138,22 @@ func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDef
 		const maxAttempts = 5
 		var err error
 		for range maxAttempts {
-			if _, err = driver.Deliver(fireCtx, def, instanceID, trg); err == nil {
+			if _, err = driver.ApplyTrigger(fireCtx, def, instanceID, trg); err == nil {
 				return
 			}
 			if !errors.Is(err, kernel.ErrConcurrentUpdate) {
-				driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver failed",
+				driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: ApplyTrigger failed",
 					append(driver.obs.tel.LogAttrs(fireCtx),
 						slog.String("timer_id", timerID),
 						slog.String("instance_id", instanceID),
 						slog.Any("error", err))...)
 				return
 			}
-			// ErrConcurrentUpdate: another Deliver won the CAS; Deliver
+			// ErrConcurrentUpdate: another ApplyTrigger won the CAS; ApplyTrigger
 			// internally reloads fresh state on the next call. Retry
-			// immediately (no sleep needed — store reloads on each Deliver).
+			// immediately (no sleep needed — store reloads on each ApplyTrigger).
 		}
-		driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: Deliver permanently dropped after CAS conflicts",
+		driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: ApplyTrigger permanently dropped after CAS conflicts",
 			append(driver.obs.tel.LogAttrs(fireCtx),
 				slog.String("timer_id", timerID),
 				slog.String("instance_id", instanceID),

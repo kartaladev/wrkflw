@@ -134,7 +134,7 @@ func main() {
 	}
 	fmt.Printf("%s parked at the event gateway (status=%s) — both arms live\n", fast, parked.Status.String())
 
-	// Deliver the payment for THIS order only. The correlation key ("order-fast",
+	// ApplyTrigger the payment for THIS order only. The correlation key ("order-fast",
 	// the resolved value of the `order` variable) targets exactly this instance;
 	// order-slow, parked on the same node, is untouched.
 	fmt.Printf("payment confirmation arrives for %s\n", fast)

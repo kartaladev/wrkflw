@@ -144,7 +144,7 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 		require.Len(t, res1.Commands, 1)
 		ia1 := res1.Commands[0].(engine.InvokeAction)
 
-		// Deliver ActionCompleted for svc-a. The Step handler moves svc-a's token
+		// ApplyTrigger ActionCompleted for svc-a. The Step handler moves svc-a's token
 		// forward (no outgoing flow in microForkDef, so it parks defensively), then
 		// drive(Micro) picks up the still-active svc-b token and parks it, emitting
 		// InvokeAction(do-b).

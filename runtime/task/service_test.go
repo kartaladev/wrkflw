@@ -87,7 +87,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	// Claim it first so ClaimedBy == manager.ID, then reassign from manager to admin.
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)
 	require.NoError(t, err)
-	_, err = r.Deliver(ctx, def, "inst-3", claimTrg)
+	_, err = r.ApplyTrigger(ctx, def, "inst-3", claimTrg)
 	require.NoError(t, err)
 
 	trg, err := svc.Reassign(ctx, taskToken, manager.ID, admin.ID, admin)
@@ -145,7 +145,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	// but stranger lacks the required role).
 	claimTrg, err := svc.Claim(ctx, taskToken, manager)
 	require.NoError(t, err)
-	_, err = r.Deliver(ctx, runtimetest.ApprovalDef(), "inst-reassign-reject", claimTrg)
+	_, err = r.ApplyTrigger(ctx, runtimetest.ApprovalDef(), "inst-reassign-reject", claimTrg)
 	require.NoError(t, err)
 
 	trg, err := svc.Reassign(ctx, taskToken, manager.ID, stranger.ID, stranger)

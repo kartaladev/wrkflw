@@ -142,10 +142,10 @@ func demoAttributeAuthz(ctx context.Context) {
 			if cerr != nil {
 				log.Fatal("complete EU:", cerr)
 			}
-			if _, cerr = driver.Deliver(ctx, def, "region-eu-001", claimTrg); cerr != nil {
+			if _, cerr = driver.ApplyTrigger(ctx, def, "region-eu-001", claimTrg); cerr != nil {
 				log.Fatal("deliver claim EU:", cerr)
 			}
-			final, cerr := driver.Deliver(ctx, def, "region-eu-001", completeTrg)
+			final, cerr := driver.ApplyTrigger(ctx, def, "region-eu-001", completeTrg)
 			if cerr != nil {
 				log.Fatal("deliver complete EU:", cerr)
 			}

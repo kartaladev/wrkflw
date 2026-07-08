@@ -86,7 +86,7 @@ func main() {
 			id, st.Tokens[0].NodeID, view.StatusString(st.Status))
 	}
 
-	// Deliver the payment message for order-1 only. Name + correlation key must
+	// ApplyTrigger the payment message for order-1 only. Name + correlation key must
 	// match the parked token's resolved key.
 	fmt.Println("delivering PaymentReceived for order-1...")
 	if err := driver.DeliverMessage(ctx, def, "PaymentReceived", "order-1",

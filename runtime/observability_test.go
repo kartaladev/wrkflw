@@ -471,7 +471,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				// Claim → emits {event=claimed}.
 				claimTrg, err := svc.Claim(t.Context(), taskToken, manager)
 				require.NoError(t, err)
-				_, err = driver.Deliver(t.Context(), def, instID, claimTrg)
+				_, err = driver.ApplyTrigger(t.Context(), def, instID, claimTrg)
 				require.NoError(t, err)
 			}
 
@@ -479,7 +479,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				// Reassign → emits {event=reassigned}.
 				reassignTrg, err := svc.Reassign(t.Context(), taskToken, manager.ID, admin.ID, admin)
 				require.NoError(t, err)
-				_, err = driver.Deliver(t.Context(), def, instID, reassignTrg)
+				_, err = driver.ApplyTrigger(t.Context(), def, instID, reassignTrg)
 				require.NoError(t, err)
 			}
 
@@ -487,7 +487,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				// Complete → emits {event=completed}.
 				completeTrg, err := svc.Complete(t.Context(), taskToken, admin, map[string]any{"approved": true})
 				require.NoError(t, err)
-				_, err = driver.Deliver(t.Context(), def, instID, completeTrg)
+				_, err = driver.ApplyTrigger(t.Context(), def, instID, completeTrg)
 				require.NoError(t, err)
 			}
 
@@ -497,8 +497,8 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 	}
 }
 
-// TestDeliverSpan verifies that Runner.Deliver produces a "wrkflw.runner.Deliver" span.
-// This is M3: covers the Deliver entry-point span that was previously untested.
+// TestDeliverSpan verifies that Runner.ApplyTrigger produces a "wrkflw.runner.ApplyTrigger" span.
+// This is M3: covers the ApplyTrigger entry-point span that was previously untested.
 func TestDeliverSpan(t *testing.T) {
 	t.Parallel()
 
@@ -511,8 +511,8 @@ func TestDeliverSpan(t *testing.T) {
 	// Use a message-catch process: start → catch-message → end.
 	// The CorrelationKey is a literal expression `"ord-42"` (quoted so the engine
 	// evaluates it to the string "ord-42" without referencing a process variable).
-	// After Run parks at the catch-message node, we Deliver a MessageReceived
-	// trigger — that single Deliver call must produce a "wrkflw.runner.Deliver" span.
+	// After Run parks at the catch-message node, we ApplyTrigger a MessageReceived
+	// trigger — that single ApplyTrigger call must produce a "wrkflw.runner.ApplyTrigger" span.
 	msgDef := &model.ProcessDefinition{
 		ID: "msg-deliver-obs", Version: 1,
 		Nodes: []model.Node{
@@ -534,18 +534,18 @@ func TestDeliverSpan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "instance must park at the catch-message node")
 
-	// Deliver a MessageReceived trigger — this is the Deliver call we want to trace.
+	// ApplyTrigger a MessageReceived trigger — this is the ApplyTrigger call we want to trace.
 	trg := engine.NewMessageReceived(clk.Now(), "pay.confirmed", "ord-42", map[string]any{"ref": "pay-1"})
-	final, err := driver.Deliver(t.Context(), msgDef, "del-obs-1", trg)
+	final, err := driver.ApplyTrigger(t.Context(), msgDef, "del-obs-1", trg)
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status, "instance must complete after message delivery")
 
-	// Assert the "wrkflw.runner.Deliver" span was recorded.
+	// Assert the "wrkflw.runner.ApplyTrigger" span was recorded.
 	var deliverSpanFound bool
 	for _, s := range sr.Ended() {
-		if s.Name() == "wrkflw.runner.Deliver" {
+		if s.Name() == "wrkflw.runner.ApplyTrigger" {
 			deliverSpanFound = true
 		}
 	}
-	assert.True(t, deliverSpanFound, "wrkflw.runner.Deliver span must be recorded by Runner.Deliver")
+	assert.True(t, deliverSpanFound, "wrkflw.runner.ApplyTrigger span must be recorded by Runner.ApplyTrigger")
 }

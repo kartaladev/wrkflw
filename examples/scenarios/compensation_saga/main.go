@@ -117,7 +117,7 @@ func main() {
 
 	fmt.Println("Operator triggers full rollback:")
 	trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
-	final, err := driver.Deliver(ctx, def, instanceID, trg)
+	final, err := driver.ApplyTrigger(ctx, def, instanceID, trg)
 	if err != nil {
 		log.Fatal("deliver compensate:", err)
 	}

@@ -72,11 +72,11 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	// Forward-reference wiring: the bus delivers resume triggers via driver.Deliver,
+	// Forward-reference wiring: the bus delivers resume triggers via driver.ApplyTrigger,
 	// and driver is constructed with the bus. Declare driver first, close over it, assign later.
 	var driver *runtime.ProcessDriver
 	bus, err := signal.NewSignalBus(func(ctx context.Context, instanceID string, trg engine.Trigger) error {
-		_, derr := driver.Deliver(ctx, def, instanceID, trg)
+		_, derr := driver.ApplyTrigger(ctx, def, instanceID, trg)
 		return derr
 	})
 	if err != nil {
