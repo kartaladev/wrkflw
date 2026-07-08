@@ -1,10 +1,18 @@
 # Optional external-input validation — design
 
 Date: 2026-07-08
-Status: Approved (design) — pending implementation plan
+Status: Approved (design) — **REVISED 2026-07-08 post-architecture-assessment** (see the Revision
+section at the end); pending implementation plan
 Scope: a new validation subsystem (neutral port + strategy + registry + 4 adapters) wired at three
-external-input boundaries, plus definition/wire/YAML changes. Two new (ADR-gated, adapter-isolated)
+external-input boundaries, plus definition/wire/YAML changes. New (ADR-gated, adapter-isolated)
 dependencies.
+
+> **⚠️ READ THE REVISION SECTION AT THE END FIRST.** An architecture assessment against `main`
+> (`db12a21`) disproved several premises of the original body below (merge lives in the engine not
+> the runtime hooks; `TaskService` has no definition; message node-resolution needs an engine query;
+> `validation/expr` cannot import `internal/expreval`; `MarshalJSON` needs new fail-closed logic).
+> The Revision section records the corrected design + the user's dependency/placement decisions. Where
+> the original body and the Revision disagree, **the Revision wins.**
 
 ## Context
 
@@ -218,3 +226,141 @@ the start event it enters and validates against that node's strategy.
 Independent of the `ReverseInstance` feature (`docs/specs/2026-07-08-reverse-instance-design.md`) —
 different code paths, no shared files of consequence. The two can be built as parallel
 spec → plan → implementation cycles in separate sessions.
+
+---
+
+## Revision 2026-07-08 (post-architecture-assessment) — AUTHORITATIVE
+
+An architecture assessment against `main` (`db12a21`) corrected the original body. This section is
+authoritative where it conflicts.
+
+### Deliberated placement principle — "the input-owner validates" (+ one shared Gate)
+
+Validation placement follows one rule: **each external input is validated by the component that is
+its external entry point.**
+
+| Input | Enters through | Validated in | Rationale |
+|---|---|---|---|
+| Start `vars` | `ProcessDriver` | `Drive` | driver owns `def` + vars |
+| Message `payload` | `ProcessDriver` | `DeliverMessage` | driver owns `def` + payload |
+| Completion `output` | `TaskService` | `Complete` | **beside authz** — both are admission control on the human's submission |
+
+Completion validation lives in `TaskService.Complete` (NOT the generic `ProcessDriver.ApplyTrigger`)
+because `Complete` is already the human-task policy boundary: it runs authz there, and "is this actor
+allowed?" + "is this output valid?" are the same kind of gate on the same submission — cohesive, and
+fail-fast (rejects at `Complete` before a trigger exists, rather than succeeding then failing later
+at apply).
+
+**Shared mechanism (DRY, uniform, idiomatic):** all three sites delegate to ONE memoizing
+`validation.Gate` that builds+caches the compiled `Validator` per node and wraps failures in
+`validation.ErrInvalidInput`. Definitions stay immutable value types — the *executor* owns the
+compiled-artifact cache (mirrors `internal/expreval` caching compiled programs, not the definition).
+
+```go
+// package validation — the executor-side memoizer shared by driver + task service.
+type Gate struct{ /* mu; built map[string]Validator */ }
+func NewGate() *Gate
+// key uniquely identifies the node's strategy (e.g. "defID:version:nodeID"); s built once per key.
+func (g *Gate) Validate(ctx context.Context, key string, s ValidationStrategy, input map[string]any) error
+```
+
+**Flexibility knobs:** (1) a narrow consumer-defined `DefinitionResolver` interface
+(`Lookup(ctx, Qualifier)`), structurally satisfied by `kernel.DefinitionRegistry`, injected via
+`WithDefinitionResolver` (accept-interfaces); (2) any custom `ValidationStrategy`/`Validator` plugs in
+— the four adapters are batteries-included, not the only path; (3) every slot optional, but
+**fail-closed when a slot is declared** so validation is never silently skipped.
+
+### Where the merge/validation actually happens
+
+All three `mergeVars` calls are in the **engine** (`engine/step_triggers.go`: start `:20`, completion
+`:450`, message `:674/686/696/711`), reached only after the runtime calls `engine.Step`. So each
+injection is a **pre-`engine.Step` gate in the runtime that resolves the target node itself** — the
+engine performs no per-hook validation.
+
+### Corrected injection points
+
+1. **Start — `runtime/processdriver.go` `Drive`** (current `:293`; gate between the `InstanceState`
+   build `:308` and `deliverLoop`/`NewStartInstance` `:309`). `handleStartInstance` enforces exactly
+   one start, so resolve the node as `def.StartNodes()[0]` and type-assert to `event.StartEvent` to
+   read `InputValidation`. Clean; matches the original design.
+2. **Completion — validate inside `TaskService.Complete`** (`runtime/task/service.go:149`), via an
+   **injected `DefinitionResolver`** (user decision). Reuse the existing
+   `kernel.DefinitionRegistry` interface (`Lookup(ctx, model.Qualifier) (*model.ProcessDefinition,
+   error)`) — do NOT invent a new interface. Wiring:
+   - Add the definition **Qualifier** to the `humantask.HumanTask` record: `DefID string` +
+     `DefVersion int` (resolve via `model.Version(DefID, DefVersion)` / `model.Latest(DefID)` when
+     version 0). Populate it in the runtime when the `AwaitHuman` command creates the task (the
+     runtime is driving `def` at that point). **Persist it** — the durable SQL `humantask.TaskStore`
+     (3-dialect, ADR-0098) needs two new columns → a new migration for Postgres/MySQL/SQLite; the
+     schema-parity guardrail must still pass.
+   - Add `WithDefinitionResolver(kernel.DefinitionRegistry) TaskServiceOption` (optional). In
+     `Complete`, after authz, resolve `def := resolver.Lookup(ctx, q)`, `node := def.Node(task.NodeID)`,
+     type-assert `activity.UserTask`, and `Validate(ctx, output)` **before** returning the trigger.
+   - Backward-compat: if no resolver is wired, completion validation is not enforced (opt-in). But if
+     a node HAS a `CompletionValidation` and the resolver is present, a resolve/assert failure is an
+     error (fail-closed), not a silent skip.
+3. **Message — `runtime/processdriver_message.go` `DeliverMessage`** (`:20`; gate between
+   `NewMessageReceived` `:25` and `ApplyTrigger` `:26`). The runtime `msgWaiters` map is
+   `(name,key)→instanceID` with **no node identity**, and the winning node is chosen by the engine's
+   private 4-tier dispatch priority in `handleMessageReceived`. Only **tier 4** (standalone
+   `ReceiveTask` / message `IntermediateCatchEvent`) carries a `PayloadValidation` slot. Resolution:
+   add an **exported engine query** `func (s *engine.InstanceState) MessageTargetNode(name, key
+   string) (nodeID string, ok bool)` mirroring the tier priority; `DeliverMessage` loads the instance
+   state (one read; delivery is not ultra-hot), resolves the node, and if it is a
+   ReceiveTask/IntermediateCatchEvent with `PayloadValidation`, validates the payload. Messages that
+   wake tiers 1–3 (event-gateway arm / boundary / event-subprocess) have no validation slot →
+   **skip** (in-scope non-goal). A delivery wakes at most one node in one instance (no broadcast).
+
+### `validation/expr` adapter
+
+Cannot import `internal/expreval` (internal-package rule; `validation/` is a public root package). It
+**imports `github.com/expr-lang/expr` directly** (allowed adapter boundary, as `action/httpcall`
+does) and follows expreval's *pattern* (compile-cache, `AllowUndefinedVariables`). NOTE: unlike
+`expreval.EvalBool` (which maps missing-vars → `false`, gateway semantics), the validation adapter
+must treat a predicate that errors/references a missing field as a **validation failure**, not
+silently `false`.
+
+### `MarshalJSON` fail-closed
+
+`ProcessDefinition.MarshalJSON` (`definition/model/node_wire.go:115`) loops nodes calling `toWire`
+(no error return today). Implement the callback fail-closed **inside that loop**: inspect each node's
+strategy; if a node carries a non-`DescribableStrategy` (the callback strategy), return a descriptive
+`MarshalJSON` error. Do NOT thread an error through every kind's `ToWire`. (The existing
+`BoundaryEvent.ErrorCheck` closure is *silently omitted* on marshal — that precedent is the WRONG
+behaviour here; validation must hard-fail.)
+
+### Dependency decisions (user)
+
+- **JSON Schema (ADR-0111)** — validator: **`github.com/santhosh-tekuri/jsonschema/v6`**. Authoring:
+  the adapter exposes `New(jsonText string)`, `NewFromValue(map[string]any)` (assemble the schema as a
+  Go map programmatically), **and** a struct-reflection path using
+  **`github.com/invopop/jsonschema`** to derive a schema from a Go type
+  (`NewFromStruct`/reflector). Both deps are recorded in ADR-0111 (json-schema adapter stack) and are
+  isolated inside `validation/jsonschema`. The descriptor serializes to canonical JSON text for
+  wire/YAML round-trip regardless of how the schema was authored.
+- **Avro (ADR-0112)** — **`github.com/linkedin/goavro/v2`**. Validate by parsing the `.avsc` record
+  schema and attempting a native→binary encode of the input map; a non-nil error means the input does
+  not conform. Isolated inside `validation/avro`.
+- **Scope:** all four adapters (`expr`, `callback`, `jsonschema`, `avro`) in this item.
+
+### ADR allocation for this item
+
+- **ADR-0110** — validation architecture (port + strategy + registry + adapter model + 3 injection
+  points + fail-closed marshal). Also records the `HumanTask` Qualifier + `MessageTargetNode` engine
+  additions as consequences.
+- **ADR-0111** — JSON Schema adapter stack: `santhosh-tekuri/jsonschema/v6` (validator) +
+  `invopop/jsonschema` (struct-reflection schema generation).
+- **ADR-0112** — Avro adapter: `linkedin/goavro/v2`.
+
+(No extra ADR number consumed for `invopop` — it is part of the ADR-0111 json-schema decision. Next
+free ADR after this item remains 0115, per the roadmap.)
+
+### Files added/changed vs. the original list (deltas)
+
+- `humantask/humantask.go` — `HumanTask.DefID`/`DefVersion` (+ the durable SQL TaskStore columns &
+  3-dialect migration & parity guardrail).
+- `runtime/task/service.go` — `WithDefinitionResolver`; resolver-based completion validation.
+- `engine/state.go` — exported `MessageTargetNode(name, key)` query.
+- `runtime/processdriver_message.go` — load state + resolve node + validate.
+- `runtime` `AwaitHuman` task-creation site — populate the Qualifier on the created `HumanTask`.
+- `validation/jsonschema` — depends on BOTH `santhosh-tekuri/jsonschema/v6` and `invopop/jsonschema`.
