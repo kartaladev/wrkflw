@@ -5,9 +5,10 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: SEQUENTIAL ROADMAP of approved work (next session runs these as ordered phases)
 
-> **State:** `origin/main == main == 1899700` (2026-07-08), working tree clean, all gates green
+> **State:** `origin/main == main == 3f4d55d` (2026-07-08), working tree clean, all gates green
 > (`go build ./...`, `go test -race ./...` 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
-> `golangci-lint run ./...` 0 issues — Item 0 below is DONE + merged + pushed).
+> `golangci-lint run ./...` 0 issues — Items 0 AND 1 below are DONE + merged + pushed. Next free ADR: 0115
+> [0102/0103/0104/0109/0110/0111/0112/0113/0114 allocated; 0102+0113 now consumed]).
 >
 > **▶▶ SEQUENTIAL ROADMAP — the user intends to run ALL of these as ordered phases.**
 > Each item: `superpowers:writing-plans` over its spec → `superpowers:subagent-driven-development`,
@@ -22,11 +23,19 @@ and pick up the next work. Read it top to bottom before starting.
 >    `docs/plans/2026-07-08-type-safe-per-kind-options.md`. Execution note: narrowing also broke a
 >    JSON round-trip fixture (`accessors_test.go` reminder on a ServiceTask) — reminder moved to a
 >    UserTask. Task review Approved; `/code-review` 0 Critical/0 Important/2 Minor (both fixed).
-> **1. Scheduler JobStore durability** ("JobLoader") — plan DONE:
->    `docs/plans/2026-07-07-scheduler-jobstore-durability.md` (Tasks 3–5; Tasks 1–2 already shipped).
->    Workflow-provided `kernel.JobStore` the scheduler CALLS; Save/Update/Delete on the AMBIENT
->    state-commit tx (supersedes the timer-write part of ADR-0027); self-rehydrate on start.
->    Independent (no option overlap) — may run any time. **ADR-0102.**
+> **1. Scheduler JobStore durability — ✅ DONE (merge `3f4d55d`, ADR-0102).** NOTE: the original
+>    2026-07-07 plan's Task-4 premise was DISPROVEN by an opus architecture assessment — timer/state
+>    atomicity ALREADY exists via the fused `AppliedStep.TimerArms/TimerCancels` writes inside
+>    `Store.Commit`'s tx, so routing writes through `JobStore.Save` would REGRESS it. Per user
+>    decision, shipped the REVISED design (`docs/plans/2026-07-08-scheduler-jobstore-self-rehydration.md`):
+>    scheduler **self-rehydrates on Start** via a `LoadScheduled`-only `kernel.JobStore`
+>    (`scheduling.WithJobStore(func() kernel.JobStore)` provider thunk — breaks the
+>    driver↔jobstore↔scheduler cycle; owned-scheduler auto-wired). Fused-write atomicity RETAINED
+>    unchanged (ADR-0027 preserved, not superseded). `timerFireFunc` extracted (shared arm+rehydrate);
+>    resilient rehydration (`kernel.ErrUnresolvedTimerDefinitions` non-fatal on Start, DB errors fatal);
+>    `RehydrateTimers` kept for injected schedulers. Persistent-SQLite + fake-clock `timer_durability`
+>    example. Reviews: opus concurrency review PASS; `/code-review` 1 Important (resilient rehydration,
+>    fixed) + Minors.
 > **2. Boundary-event enhancements** — spec DONE `docs/specs/2026-07-07-boundary-event-enhancements.md`,
 >    **plan PENDING**. `WithBoundaryAction` (fire-once, all trigger types); flexible error matching
 >    (Check→Expr→Code); `WithDeadline(dur,flow,action)` SPLIT → `WithDeadlineFlow` + `WithDeadlineAction`;
