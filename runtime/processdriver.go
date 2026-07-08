@@ -152,7 +152,19 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	// ignored, so a stray typed nil cannot slip past and panic on the first timer.
 	customScheduler := !isNilScheduler(driver.sched)
 	if !customScheduler {
-		sched, serr := scheduling.NewScheduler()
+		var schedOpts []scheduling.Option
+		// Auto-wire self-rehydration when a durable timer store is configured.
+		// defsReg is always non-nil (defaults to the process-global
+		// defaultDefinitionRegistry), so the check is omitted. Rehydration is
+		// best-effort: timers whose definitions are not yet registered are skipped
+		// with a WARN (see kernel.ErrUnresolvedTimerDefinitions). The provider is
+		// a thunk that captures the driver pointer (already allocated); it is
+		// resolved lazily at first Start/Schedule, by which time the driver is
+		// fully constructed — breaking the driver↔jobstore↔scheduler cycle.
+		if driver.timerStore != nil {
+			schedOpts = append(schedOpts, scheduling.WithJobStore(func() kernel.JobStore { return NewJobStore(driver) }))
+		}
+		sched, serr := scheduling.NewScheduler(schedOpts...)
 		if serr != nil {
 			return nil, fmt.Errorf("workflow-runtime: default scheduler: %w", serr)
 		}

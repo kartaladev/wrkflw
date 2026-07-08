@@ -88,3 +88,34 @@ func (s *MemTimerStore) ListArmed(_ context.Context) ([]ArmedTimer, error) {
 }
 
 var _ TimerStore = (*MemTimerStore)(nil)
+
+// JobSpec is the descriptor of one durable scheduled timer job.
+type JobSpec struct {
+	TimerID    string
+	InstanceID string
+	DefID      string
+	DefVersion int
+	// Trigger is the TriggerSpec to (re)register the job with. For a non-recurring
+	// timer with a persisted NextRun it is schedule.At(NextRun) (faithful original
+	// fire instant); otherwise it is the stored recurring Trigger.
+	Trigger schedule.TriggerSpec
+	NextRun time.Time
+}
+
+// ScheduledJob is an executable durable timer: its descriptor plus a rebuilt Fire
+// callback that delivers the timer's TimerFired trigger when invoked.
+type ScheduledJob struct {
+	Spec JobSpec
+	Fire func()
+}
+
+// JobStore is the read-side port a Scheduler uses to self-rehydrate armed timers
+// on start. It rebuilds executable ScheduledJobs from the durable TimerStore; the
+// write side remains the fused AppliedStep.TimerArms/TimerCancels on the state
+// commit (ADR-0027) — JobStore never writes.
+type JobStore interface {
+	// LoadScheduled enumerates every armed timer and returns an executable
+	// ScheduledJob (descriptor + rebuilt Fire) for each. Timers whose definition
+	// cannot be resolved are skipped and counted in the returned error.
+	LoadScheduled(ctx context.Context) ([]ScheduledJob, error)
+}

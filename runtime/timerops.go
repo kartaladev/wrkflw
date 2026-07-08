@@ -128,10 +128,34 @@ func (driver *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID
 // scheduler asked to run a cron trigger, or a gocron mapping error) is logged at
 // WARN and skipped — it must never crash the driver or the in-flight instance.
 func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec) {
-	nextRun, err := driver.sched.Schedule(ctx, timerID, trig, func() {
-		// This callback runs from the scheduler's goroutine (or Tick caller).
-		// Use a background context: the originating request context may have
-		// been cancelled by the time the timer fires.
+	nextRun, err := driver.sched.Schedule(ctx, timerID, trig, driver.timerFireFunc(def, instanceID, timerID))
+	if err != nil {
+		// The trigger could not be scheduled (unsupported kind or a mapping
+		// error). Skip it — an unschedulable timer must never crash the driver.
+		// (Durable descriptor persistence + NextRun recording is Plan 3.)
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armTimer: trigger not schedulable, skipping timer",
+			append(driver.obs.tel.LogAttrs(ctx),
+				slog.String("timer_id", timerID),
+				slog.String("instance_id", instanceID),
+				slog.Any("error", err))...)
+		return
+	}
+	driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "runtime: armTimer: scheduled",
+		append(driver.obs.tel.LogAttrs(ctx),
+			slog.String("timer_id", timerID),
+			slog.String("instance_id", instanceID),
+			slog.Time("next_run", nextRun))...)
+}
+
+// timerFireFunc builds the fire callback for a timer. The callback runs from the
+// scheduler's goroutine when the timer becomes due, so it uses a background
+// context (the arming request's context may be cancelled by fire time). It
+// delivers a TimerFired trigger to the instance via ApplyTrigger, retrying up to
+// maxAttempts times on an optimistic-CAS conflict (ErrConcurrentUpdate); any
+// other error is logged and dropped. It is shared by armTimer and the JobStore's
+// rehydration path so both build byte-identical fire behaviour.
+func (driver *ProcessDriver) timerFireFunc(def *model.ProcessDefinition, instanceID, timerID string) func() {
+	return func() {
 		fireCtx := context.Background()
 		trg := engine.NewTimerFired(driver.clk.Now(), timerID)
 		driver.obs.timerFired.Add(fireCtx, 1)
@@ -149,9 +173,6 @@ func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDef
 						slog.Any("error", err))...)
 				return
 			}
-			// ErrConcurrentUpdate: another ApplyTrigger won the CAS; ApplyTrigger
-			// internally reloads fresh state on the next call. Retry
-			// immediately (no sleep needed — store reloads on each ApplyTrigger).
 		}
 		driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: ApplyTrigger permanently dropped after CAS conflicts",
 			append(driver.obs.tel.LogAttrs(fireCtx),
@@ -159,23 +180,7 @@ func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDef
 				slog.String("instance_id", instanceID),
 				slog.Int("attempts", maxAttempts),
 				slog.Any("error", err))...)
-	})
-	if err != nil {
-		// The trigger could not be scheduled (unsupported kind or a mapping
-		// error). Skip it — an unschedulable timer must never crash the driver.
-		// (Durable descriptor persistence + NextRun recording is Plan 3.)
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armTimer: trigger not schedulable, skipping timer",
-			append(driver.obs.tel.LogAttrs(ctx),
-				slog.String("timer_id", timerID),
-				slog.String("instance_id", instanceID),
-				slog.Any("error", err))...)
-		return
 	}
-	driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "runtime: armTimer: scheduled",
-		append(driver.obs.tel.LogAttrs(ctx),
-			slog.String("timer_id", timerID),
-			slog.String("instance_id", instanceID),
-			slog.Time("next_run", nextRun))...)
 }
 
 // RehydrateTimers re-arms every persisted armed timer on the scheduler. Call it
