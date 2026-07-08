@@ -1281,6 +1281,34 @@ another gets no payment and, once the fake clock advances past the window, the t
 decided by whichever event happened first.
 → [`examples/scenarios/event_based_gateway`](examples/scenarios/event_based_gateway)
 
+### 14. Catch-event in-wait reminder
+
+`WithCatchWaitReminder(every, action)` attaches a recurring in-wait reminder to an
+**intermediate catch event** — the same reminder mechanism as scenario 12, now generalized
+beyond `UserTask`. The reminder fires once per interval **while** the instance is parked
+awaiting the catch, re-arming itself each time, and is cancelled automatically the moment the
+catch resolves.
+
+```
+start → await[catch signal "approved", reminder every "30m" → "nudge"] → end
+```
+
+```go
+Add(event.NewCatch("await",
+    event.WithCatchSignal("approved"),
+    event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"))).
+// driver wired with WithClock(fc), WithScheduler(sched), WithSignalBus(bus)
+driver.Drive(ctx, def, "approval-001", nil)                  // parks; reminder armed
+for range 3 { fc.Advance(30 * time.Minute) }                 // 3 nudges fire
+bus.Publish(ctx, "approved", nil)                            // resumes → reminder cancelled
+fc.Advance(30 * time.Minute)                                 // no further nudge
+```
+
+**At runtime:** three intervals fire three `nudge` reminders while the instance sits at the
+catch; publishing `"approved"` resumes it to completion and cancels the recurring timer, so a
+final clock advance fires nothing — proof the catch-event reminder arms, fires, and cancels.
+→ [`examples/scenarios/catch_event_reminder`](examples/scenarios/catch_event_reminder)
+
 > The tour above is a curated subset. Other runnable scenarios under
 > [`examples/scenarios/`](examples/scenarios) include `attribute_authz` (ABAC + Casbin
 > eligibility) and `admin_monitoring` (instance listing, incident resolve, dead-letter
