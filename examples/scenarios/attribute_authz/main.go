@@ -89,6 +89,9 @@ func demoAttributeAuthz(ctx context.Context) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", []string{"approver"},
+				// EligibilityExpr evaluates in the authz env {"actor": Actor, "vars": processVars},
+				// so process variables are reached via vars["key"] — unlike gateway conditions,
+				// which evaluate directly against the process-variable map (bare `key`).
 				activity.WithEligibilityExpr(`vars["region"] == "EU"`),
 			),
 			event.NewEnd("end"),

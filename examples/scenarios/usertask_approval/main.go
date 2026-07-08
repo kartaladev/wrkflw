@@ -4,7 +4,7 @@
 //
 //	start → approve[UserTask, roles: manager] → end
 //
-// A UserTask parks the instance: driver.Run drives until the task is reached, then
+// A UserTask parks the instance: driver.Drive drives until the task is reached, then
 // returns with the instance still StatusRunning. A human then:
 //
 //  1. discovers claimable tasks via TaskStore.ClaimableBy,

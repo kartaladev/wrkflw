@@ -3,11 +3,14 @@
 // Flow:
 //
 //	start → check-credit[Service] → route[ExclusiveGateway]
-//	          amount > 50000   → manual-review[Service] → end
-//	          amount <= 50000  → auto-approve[Service]  → end
-//	          (default)        → reject[Service]        → end
+//	          amount > 100000            → manual-review[Service] → end
+//	          1000 <= amount <= 100000   → auto-approve[Service]  → end
+//	          (default: amount < 1000)   → reject[Service]        → end
 //
-// The example runs the definition twice with different loan amounts.
+// The conditions are deliberately NON-exhaustive so the AsDefault() branch is
+// actually reachable: an amount below the 1000 minimum matches neither explicit
+// condition and falls through to the default reject path. The example runs the
+// definition three times, once per branch.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -42,8 +45,8 @@ func main() {
 		Add(event.NewEnd("end")).
 		Connect("start", "check-credit").
 		Connect("check-credit", "route").
-		Connect("route", "manual-review", flow.WithCondition("amount > 50000")).
-		Connect("route", "auto-approve", flow.WithCondition("amount <= 50000")).
+		Connect("route", "manual-review", flow.WithCondition("amount > 100000")).
+		Connect("route", "auto-approve", flow.WithCondition("amount >= 1000 && amount <= 100000")).
 		Connect("route", "reject", flow.AsDefault()).
 		Connect("manual-review", "end").
 		Connect("auto-approve", "end").
@@ -85,8 +88,9 @@ func main() {
 		id     string
 		amount float64
 	}{
-		{"loan-high-001", 75000},
-		{"loan-low-002", 20000},
+		{"loan-high-001", 150000}, // > 100000        → manual-review
+		{"loan-mid-002", 20000},   // 1000..100000    → auto-approve
+		{"loan-tiny-003", 500},    // < 1000 minimum  → default reject
 	}
 
 	fmt.Println("--- Loan Approval: Exclusive Routing ---")

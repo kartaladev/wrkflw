@@ -16,7 +16,7 @@
 // InitialInterval=1s, BackoffCoef=2.0 and a fixed jitter of 1.0:
 //
 //	attempt 1 fails at T      → retry armed at T+1s   (1s × 2^0)
-//	attempt 2 fails at T+1s   → retry armed at T+3s   (2s × 2^1, added)
+//	attempt 2 fails at T+1s   → retry armed at T+3s   (1s × 2^1 = 2s delay)
 //	attempt 3 succeeds at T+3s → StatusCompleted
 //
 // To keep the delays deterministic the example supplies a fixed jitter source

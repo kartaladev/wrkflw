@@ -56,8 +56,8 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process. gateway.NewEventBased fans out to two competing catch
-	// events; the engine arms both (a signal subscription and a timer) and, when
-	// one fires, routes down its flow and cancels the other.
+	// events; the engine arms both (a correlated message waiter and a timer) and,
+	// when one fires, routes down its flow and cancels the other.
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(gateway.NewEventBased("gw")).
@@ -126,7 +126,7 @@ func main() {
 
 	fmt.Println("--- Order Fulfillment: Event-Based Gateway (payment message vs. timeout) ---")
 
-	// ── Instance 1: the payment signal wins ───────────────────────────────────
+	// ── Instance 1: the payment message wins ──────────────────────────────────
 	const fast = "order-fast"
 	parked, err := driver.Drive(ctx, def, fast, map[string]any{"order": fast})
 	if err != nil {
@@ -159,6 +159,12 @@ func main() {
 	// No payment arrives (order-slow is never subscribed nor published to). Advance
 	// past the 24h window; the gocron executor fires the timer arm, which wins.
 	fmt.Printf("no payment for %s — advancing the clock past the 24h window\n", slow)
+	// Wait until gocron has armed its timer waiter on the fake clock before
+	// advancing, so the advance deterministically fires the timer (never races
+	// ahead of the waiter registration).
+	if err := clk.BlockUntilContext(ctx, 1); err != nil {
+		log.Fatal("block until timer armed:", err)
+	}
 	clk.Advance(24*time.Hour + time.Minute)
 	select {
 	case <-cancelledCh:

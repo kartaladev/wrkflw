@@ -14,6 +14,12 @@
 //     reminder side-path (notify → end-reminded) WITHOUT disturbing the
 //     still-parked approval task.
 //
+// Both boundaries correlate on the order's business key ("orderID"), so a
+// delivered cancel/remind targets exactly THIS order's instance. Delivering a
+// message with an empty correlation key would instead broadcast by message name
+// to every instance parked on that message — almost never the intent for a
+// per-order cancel or reminder.
+//
 // Flow:
 //
 //	start → approve[UserTask] ──(approver approves)──────────→ end-approved
@@ -55,17 +61,25 @@ func main() {
 
 	// Build the process. A boundary event is a separate node attached to a host
 	// activity via its second argument; its single outgoing sequence flow (added
-	// with Connect) is the path taken when the boundary fires. The empty
-	// correlation key ("") means the message correlates by name alone.
+	// with Connect) is the path taken when the boundary fires.
+	//
+	// Both message boundaries correlate on the "orderID" variable (resolved from
+	// the instance's variables when the boundary arms). Correlation targets the
+	// delivered message to THIS order: DeliverMessage(name, key, …) fires only the
+	// boundary whose resolved key matches. An empty correlation key would instead
+	// broadcast by message name to EVERY instance parked on that message — almost
+	// never the intent, so a per-order cancel/remind must be correlated.
 	def, err := definition.NewBuilder("order-approval", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("approve", []string{"approver"})).
-		// Interrupting message boundary: cancels the approval on "order.cancel".
+		// Interrupting message boundary: cancels the approval on "order.cancel"
+		// correlated to this order.
 		Add(event.NewBoundary("bnd-cancel", "approve",
-			event.WithBoundaryMessage("order.cancel", ""))).
-		// Non-interrupting message boundary: reminds without interrupting.
+			event.WithBoundaryMessage("order.cancel", "orderID"))).
+		// Non-interrupting message boundary: reminds without interrupting,
+		// correlated to this order.
 		Add(event.NewBoundary("bnd-remind", "approve",
-			event.WithBoundaryMessage("order.remind", ""),
+			event.WithBoundaryMessage("order.remind", "orderID"),
 			event.WithBoundaryNonInterrupting())).
 		Add(activity.NewServiceTask("notify", activity.WithActionName("notify-approver"))).
 		Add(event.NewEnd("end-approved")).
@@ -112,11 +126,16 @@ func main() {
 	}
 
 	const instanceID = "order-42"
+	// orderID is the order's business correlation key (here it equals the order
+	// number). The boundaries correlate on it, so a delivered cancel/remind
+	// targets exactly this order rather than broadcasting to all instances.
+	vars := map[string]any{"orderID": instanceID}
 
 	fmt.Println("--- Order Approval: Message Boundary Events ---")
 
-	// 1) Run parks at the user task; both message boundaries arm.
-	parked, err := driver.Drive(ctx, def, instanceID, nil)
+	// 1) Run parks at the user task; both message boundaries arm, each resolving
+	//    its correlation key from vars["orderID"].
+	parked, err := driver.Drive(ctx, def, instanceID, vars)
 	if err != nil {
 		log.Fatal("run:", err)
 	}
@@ -125,8 +144,8 @@ func main() {
 
 	// 2) ApplyTrigger the reminder message: the NON-INTERRUPTING boundary fires once.
 	//    The reminder runs, but the approval task stays parked and running.
-	fmt.Println("delivering order.remind (non-interrupting)...")
-	if err := driver.DeliverMessage(ctx, def, "order.remind", "", nil); err != nil {
+	fmt.Println("delivering order.remind (non-interrupting), correlated to this order...")
+	if err := driver.DeliverMessage(ctx, def, "order.remind", instanceID, nil); err != nil {
 		log.Fatal("deliver remind:", err)
 	}
 	afterRemind, _, err := store.Load(ctx, instanceID)
@@ -138,8 +157,8 @@ func main() {
 
 	// 3) ApplyTrigger the cancel message: the INTERRUPTING boundary fires — the human
 	//    task is Cancelled and the instance completes via the cancelled path.
-	fmt.Println("delivering order.cancel (interrupting)...")
-	if err := driver.DeliverMessage(ctx, def, "order.cancel", "", nil); err != nil {
+	fmt.Println("delivering order.cancel (interrupting), correlated to this order...")
+	if err := driver.DeliverMessage(ctx, def, "order.cancel", instanceID, nil); err != nil {
 		log.Fatal("deliver cancel:", err)
 	}
 	final, _, err := store.Load(ctx, instanceID)
