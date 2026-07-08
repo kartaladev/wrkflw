@@ -234,11 +234,22 @@ the terminated `InstanceState`.
 err := r.RehydrateTimers(ctx)
 ```
 
-Re-arms every persisted armed timer on the scheduler. Call once at startup,
-after constructing the runner, to recover timers that were lost when the process
-restarted. Requires `WithScheduler`, `WithTimerStore`, and `WithDefinitions`.
-A timer whose `FireAt` is already in the past fires immediately; a re-fire of an
-already-consumed timer is an idempotent engine no-op.
+Re-arms every persisted armed timer on the scheduler. Requires `WithScheduler`,
+`WithTimerStore`, and `WithDefinitions`. A timer whose `FireAt` is already in
+the past fires immediately; a re-fire of an already-consumed timer is an
+idempotent engine no-op.
+
+> **Self-rehydration (ADR-0102).** When you use the driver's own default
+> scheduler (i.e. you did not pass `WithScheduler`), the scheduler
+> **self-rehydrates all armed timers automatically on `ProcessDriver.Start(ctx)`**
+> via `kernel.JobStore.LoadScheduled`. This is wired internally through a
+> provider thunk (`scheduling.WithJobStore`) and requires no explicit call from
+> your code. An explicit `RehydrateTimers` call is only needed when you inject
+> a consumer-owned scheduler via `WithScheduler` and want to manage rehydration
+> yourself. See [`examples/scenarios/timer_durability`](../examples/scenarios/timer_durability)
+> for an end-to-end demonstration of a timer surviving a driver+scheduler
+> teardown and firing correctly after a fresh `Start` — with no explicit
+> `RehydrateTimers` call.
 
 ## Human tasks
 

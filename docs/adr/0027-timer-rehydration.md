@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-06-22
 
+> **Extended by ADR-0102 (2026-07-08):** the atomic timer-write mechanism (AppliedStep.TimerArms/TimerCancels on the commit tx) is RETAINED. ADR-0102 adds scheduler self-rehydration (kernel.JobStore.LoadScheduled) so an explicit RehydrateTimers call is no longer required for the driver's owned scheduler; RehydrateTimers remains for injected schedulers.
+
 ## Context
 
 Timers are armed in-process: when the engine emits a `ScheduleTimer{TimerID, FireAt, Kind}`
