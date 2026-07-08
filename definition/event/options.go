@@ -154,6 +154,28 @@ func WithBoundaryNonInterrupting() BoundaryOption {
 	return boundaryFuncOpt{func(n *BoundaryEvent) { n.NonInterrupting = true }}
 }
 
+// WithBoundaryAction attaches a fire-once catalog action run when the boundary
+// fires (any trigger type). Result discarded; failure logs + continues routing.
+func WithBoundaryAction(name string) BoundaryOption {
+	return boundaryFuncOpt{func(n *BoundaryEvent) { n.Action = name }}
+}
+
+// WithBoundaryErrorExpr sets an expr-lang predicate deciding whether an error
+// boundary catches, evaluated over the instance variables plus _error (the
+// thrown error code string). Truthy = catch. Serializable. Precedence: applied
+// after WithBoundaryErrorCheck, before WithBoundaryErrorCode.
+func WithBoundaryErrorExpr(expr string) BoundaryOption {
+	return boundaryFuncOpt{func(n *BoundaryEvent) { n.ErrorExpr = expr }}
+}
+
+// WithBoundaryErrorCheck sets a Go predicate (instance vars, thrown error)
+// deciding whether an error boundary catches. Highest precedence; non-serializable
+// (Go-authoring only). For action-thrown failures err is the ORIGINAL error
+// (use errors.Is/As); for bare-code sources err.Error() == the code.
+func WithBoundaryErrorCheck(fn func(map[string]any, error) bool) BoundaryOption {
+	return boundaryFuncOpt{func(n *BoundaryEvent) { n.ErrorCheck = fn }}
+}
+
 // --- EventSubProcess options ---
 
 type espFuncOpt struct{ fn func(*EventSubProcess) }

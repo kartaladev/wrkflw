@@ -92,6 +92,17 @@ type BoundaryEvent struct {
 	CorrelationKey  string
 	// Timer is the trigger spec for a timer boundary event (e.g. schedule.AfterDuration(72*time.Hour)).
 	Timer schedule.TriggerSpec
+	// Action is the optional catalog action name run fire-once (FireAndForget)
+	// when this boundary fires, for any trigger type. Empty = no action.
+	Action string
+	// ErrorExpr is an optional expr-lang predicate (over instance vars + the
+	// injected _error code string) deciding whether an ERROR boundary catches.
+	// Serialized. See the Check→Expr→Code precedence in propagateError.
+	ErrorExpr string
+	// ErrorCheck is an optional Go predicate (vars, thrown error) deciding
+	// whether an ERROR boundary catches. Highest precedence. Non-serializable
+	// (Go-authoring-only escape hatch, like inline actions) — absent from wire.
+	ErrorCheck func(map[string]any, error) bool
 }
 
 // Kind returns model.KindBoundaryEvent.
@@ -242,13 +253,19 @@ func init() {
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return BoundaryEvent{Base: b, AttachedTo: w.AttachedTo, NonInterrupting: w.NonInterrupting, ErrorCode: w.ErrorCode,
 				SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
-				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
+				Timer:     model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false),
+				Action:    w.BoundaryAction,
+				ErrorExpr: w.BoundaryErrorExpr,
+				// ErrorCheck is a Go closure — non-serializable, intentionally absent from wire.
+			}
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(BoundaryEvent)
 			w.AttachedTo, w.NonInterrupting, w.ErrorCode = v.AttachedTo, v.NonInterrupting, v.ErrorCode
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.TimerTrigger = model.PutTrigger(v.Timer)
+			w.BoundaryAction, w.BoundaryErrorExpr = v.Action, v.ErrorExpr
+			// ErrorCheck intentionally not written to wire — non-serializable Go closure.
 		},
 	})
 	model.RegisterKind(model.KindEventSubProcess, model.NodeSpec{

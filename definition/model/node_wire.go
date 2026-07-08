@@ -40,6 +40,8 @@ type NodeWire struct {
 	ErrorCode          string             `json:"errorCode,omitempty"`
 	AttachedTo         string             `json:"attachedTo,omitempty"`
 	NonInterrupting    bool               `json:"nonInterrupting,omitempty"`
+	BoundaryAction     string             `json:"boundaryAction,omitempty"`
+	BoundaryErrorExpr  string             `json:"boundaryErrorExpr,omitempty"`
 	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
 	DefRef             string             `json:"defRef,omitempty"`
 }
