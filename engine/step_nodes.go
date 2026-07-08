@@ -648,6 +648,14 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		// Further event variants arrive in later plans.
 		tok.State = TokenWaitingCommand
 	}
+	// Arm the node's in-wait reminder, if configured. It is cancelled by the
+	// parked token (cancelKey = tok.ID) when the awaited signal/message/timer
+	// resolves it. For the timer variant the reminder is a DIFFERENT TimerInWait
+	// than the intermediate timer the token awaits via AwaitCommand.
+	cmds, err = armWaitReminder(c, tok, node, tok.ID, cmds)
+	if err != nil {
+		return cmds, false, err
+	}
 	// token parked: stopped=true (tok.State == TokenWaitingCommand != TokenActive).
 	return cmds, false, nil
 }

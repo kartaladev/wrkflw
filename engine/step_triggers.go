@@ -412,6 +412,13 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	s.removeTimer(t.TimerID)
 	tok.State = TokenActive
 	tok.AwaitCommand = ""
+	// Cancel any in-wait reminder armed on this parked token (timer catch): the
+	// reminder is a DIFFERENT TimerInWait than the intermediate that just fired;
+	// exclude t.TimerID defensively.
+	var timerPreCmds []Command
+	for _, timerID := range s.cancelTimersForToken(tok.ID, t.TimerID) {
+		timerPreCmds = append(timerPreCmds, CancelTimer{TimerID: timerID})
+	}
 	timerTdef, timerTdefErr := defForScope(def, s, tok.ScopeID)
 	if timerTdefErr != nil {
 		return StepResult{}, timerTdefErr
@@ -421,7 +428,7 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: driveCmds}, nil
+	return StepResult{State: *s, Commands: append(timerPreCmds, driveCmds...)}, nil
 }
 
 // handleHumanCompleted processes a HumanCompleted trigger: merges output,
@@ -564,6 +571,11 @@ func handleSignalReceived(def *model.ProcessDefinition, s *InstanceState, t Sign
 		}
 		tok.AwaitSignal = ""
 		tok.State = TokenActive
+		// Cancel any in-wait reminder armed on this parked token (signal catch):
+		// the wait has resolved, so the recurring reminder job must be removed.
+		for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
+			signalCmds = append(signalCmds, CancelTimer{TimerID: timerID})
+		}
 		signalTdef, signalTdefErr := defForScope(def, s, tok.ScopeID)
 		if signalTdefErr != nil {
 			return StepResult{}, signalTdefErr
