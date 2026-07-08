@@ -26,6 +26,12 @@
 - Modify: `definition/activity/options.go:144-149` (replace the `WithWaitReminder` definition)
 - Modify: `definition/activity/activity_test.go:15-45` (`TestServiceTaskOptions` — remove the reminder line + reminder assertion, now a compile error)
 
+> **Discovered during execution:** the narrowing also breaks `definition/model/accessors_test.go`
+> (`TestProcessDefinitionJSONRoundTrip` sets `WithWaitReminder` on a `NewServiceTask`, then asserts
+> `charge.ReminderEvery` round-trips). Fix folded into Task 2+3: move the reminder to the UserTask
+> "approve" in the same fixture and assert `approve.ReminderEvery`. (`definition_test.go:284,300` use
+> UserTask and are unaffected.)
+
 **Interfaces:**
 - Consumes: `UserTaskOption`, `ReceiveTaskOption` (existing marker interfaces in `options.go`); `schedule.TriggerSpec`; `model.ActivityFields.ReminderEvery`/`ReminderAction` (embedded in `UserTask` and `ReceiveTask`).
 - Produces: `WithWaitReminder(t schedule.TriggerSpec, action string) interface { UserTaskOption; ReceiveTaskOption }` — narrowed public signature; unchanged runtime effect on UserTask/ReceiveTask.
