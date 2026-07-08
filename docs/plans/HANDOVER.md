@@ -5,9 +5,10 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: write the boundary-event impl plan (ADR-0103/0104) → Plan 3 scheduler JobStore
 
-> **State:** `origin/main == main == f9d5225`, working tree clean, all gates green
+> **State:** `origin/main == main == af128e5`, working tree clean, all gates green
 > (`go build ./...`, `go test -race ./...` 58 pkgs / 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
-> `golangci-lint run ./...` 0 issues). **Next free ADR: 0102.**
+> `golangci-lint run ./...` 0 issues). **Next free ADR: 0107** (0102–0104 remain RESERVED for the
+> pending scheduler-JobStore + boundary-event plans below; 0105/0106 shipped in this merge).
 >
 > **Recently shipped since 2026-07-04 (all MERGED + PUSHED to origin/main):**
 > - **ADR-0094/0095** HTTP-only transport — removed gRPC; `transport/http/{httpcore,stdlib,gin,fiber}` mountable route-group adapters.
@@ -36,6 +37,19 @@ and pick up the next work. Read it top to bottom before starting.
 >   `definition.Lint(def) []Warning` surfaced by the driver at WARN; `catch_event_reminder` example.
 > - **Intermediate-event constructor renames** (merge `f9d5225`): `event.NewCatch`→`NewIntermediateCatch`,
 >   `event.NewThrow`→`NewIntermediateThrow` (match their types).
+> - **Event-gateway message delivery + BroadcastSignal facade + example docs** (merge `af128e5`):
+>   **ADR-0105** — `DeliverMessage` now reaches event-based-gateway MESSAGE arms
+>   (`InstanceState.MessageArmedEventWaiters()` + `syncMsgWaiters` registration, mirroring message
+>   boundaries); the engine core already supported the arm, only the runtime delivery wire was missing.
+>   Two examples corrected from a broadcast SIGNAL to a correlated MESSAGE for their per-entity waits:
+>   `event_based_gateway` (per-order payment) and `catch_event_reminder` (per-request approval) — a
+>   signal broadcasts by name and would wrongly resume every sibling instance. **ADR-0106** —
+>   `ProcessDriver.BroadcastSignal(ctx, name, payload)` facade over the driver-owned `SignalBus`,
+>   symmetric to `DeliverMessage`, so consumers broadcast through the driver instead of reaching into
+>   the bus (deferred: eliminating the forward-reference bus *construction* — see ADR-0106 Consequences).
+>   Plus docs-only upgrades to `parallel_fork_join`, `readme_quickstart`, `migrate`, `broker_wiring`.
+>   OPEN follow-up: `driver.Deliver` rename under discussion (low-level per-instance trigger apply;
+>   name reads as a message-y verb — candidate: `ApplyTrigger`).
 >
 > **▶ NEXT WORK — write the boundary-event enhancements implementation plan (ADR-0103/0104):** the spec is
 > written ([`docs/specs/2026-07-07-boundary-event-enhancements.md`](../specs/2026-07-07-boundary-event-enhancements.md))
