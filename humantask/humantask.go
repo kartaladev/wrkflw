@@ -78,6 +78,11 @@ type HumanTask struct {
 	// task, so the task service can resolve the UserTask node's
 	// CompletionValidation via a DefinitionResolver (resolve via
 	// model.Version(DefID, DefVersion); DefVersion == 0 means "latest").
+	//
+	// Write-once: set at task creation and immutable for the task's lifetime.
+	// The SQL store's re-upsert path (claim/complete/etc.) deliberately
+	// excludes these columns from its conflict-update SET clause so later
+	// upserts — which do not carry these values — cannot clobber them.
 	DefID      string
 	DefVersion int
 	// Vars is a snapshot of the process Variables at task-creation time, used for

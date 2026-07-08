@@ -168,6 +168,45 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 			assert.True(t, found, "%s: eve must see tok-role as claimable (by role)", b.name)
 		})
 
+		t.Run("reupsert_preserves_def_qualifier", func(t *testing.T) {
+			// def_id/def_version are write-once: set at task creation, and
+			// deliberately excluded from every dialect's conflict-update SET
+			// clause (see HumanTaskStore.Upsert doc comment). This locks that
+			// behavior in: a later re-upsert carrying a zeroed DefID/DefVersion
+			// (mirroring the engine's task-update skeleton, engine/step_nodes.go)
+			// must NOT clobber the original values, while other mutable fields
+			// (e.g. State/ClaimedBy) must still take effect.
+			seed := humantask.HumanTask{
+				TaskToken:  "tok-defqual-" + b.name,
+				InstanceID: "inst-dq",
+				NodeID:     "approve",
+				State:      humantask.Unclaimed,
+				CreatedAt:  time.Date(2026, 7, 6, 10, 0, 0, 0, time.UTC),
+				DefID:      "approvals",
+				DefVersion: 2,
+			}
+			require.NoError(t, ts.Upsert(t.Context(), seed), "%s: seed Upsert", b.name)
+
+			reupsert := humantask.HumanTask{
+				TaskToken:  "tok-defqual-" + b.name,
+				InstanceID: "inst-dq",
+				NodeID:     "approve",
+				State:      humantask.Claimed,
+				ClaimedBy:  "alice",
+				CreatedAt:  seed.CreatedAt,
+				DefID:      "",
+				DefVersion: 0,
+			}
+			require.NoError(t, ts.Upsert(t.Context(), reupsert), "%s: re-upsert with zeroed def qualifier", b.name)
+
+			got, err := ts.Get(t.Context(), "tok-defqual-"+b.name)
+			require.NoError(t, err, "%s: Get after re-upsert", b.name)
+			assert.Equal(t, humantask.Claimed, got.State, "%s: State must reflect re-upsert", b.name)
+			assert.Equal(t, "alice", got.ClaimedBy, "%s: ClaimedBy must reflect re-upsert", b.name)
+			assert.Equal(t, "approvals", got.DefID, "%s: DefID must be preserved (write-once)", b.name)
+			assert.Equal(t, 2, got.DefVersion, "%s: DefVersion must be preserved (write-once)", b.name)
+		})
+
 		t.Run("claimable_by_excludes_non_unclaimed", func(t *testing.T) {
 			// Seed a claimed task that eve would otherwise be eligible for.
 			seed := humantask.HumanTask{

@@ -70,6 +70,14 @@ const humanTaskColumns = `task_token, instance_id, node_id, state, claimed_by,
 
 // Upsert inserts or replaces the task identified by t.TaskToken.
 // The upsert conflict clause is dialect-specific (via [dialect.Dialect.UpsertTask]).
+//
+// def_id/def_version are intentionally EXCLUDED from every dialect's
+// conflict-update SET clause: they are write-once, set at task creation
+// (see [humantask.HumanTask.DefID]) and never repopulated by the engine's
+// later task-update calls (claim/complete/etc. pass a zeroed skeleton for
+// these fields). Excluding them from SET means a re-upsert preserves the
+// original value instead of clobbering it with zeros; do not add them to
+// the dialect SET clauses.
 func (s *HumanTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) error {
 	eligibility, err := json.Marshal(t.Eligibility)
 	if err != nil {
