@@ -3,42 +3,59 @@
 This document lets a **fresh session with zero prior context** understand the state of `wrkflw`
 and pick up the next work. Read it top to bottom before starting.
 
-## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: two APPROVED work items for fresh sessions (1 standalone facade + 1 phased program)
+## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: SEQUENTIAL ROADMAP of approved work (next session runs these as ordered phases)
 
 > **State:** `origin/main == main == <this commit>`, working tree clean, all gates green
 > (`go build ./...`, `go test -race ./...` 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
 > `golangci-lint run ./...` 0 issues — last CODE change was `40131e9`; commits since are docs/specs only).
 >
-> **▶▶ NEXT WORK — two independent APPROVED items, each for its own fresh session** (each:
-> `superpowers:writing-plans` over the spec → `superpowers:subagent-driven-development`, own branch,
-> merge). They touch different code and do not conflict.
+> **▶▶ SEQUENTIAL ROADMAP — the user intends to run ALL of these as ordered phases next session.**
+> Each item: `superpowers:writing-plans` over its spec → `superpowers:subagent-driven-development`,
+> own branch, merge, review gate between items. Recommended order below (see COORDINATION note — the
+> type-safe options refactor is placed EARLY so all later option work is born type-safe).
 >
-> **(A) `ProcessDriver.ReverseInstance`** (standalone facade) — spec
-> `docs/specs/2026-07-08-reverse-instance-design.md`. Functional-options reverse/rollback facade
-> (`WithFullReverse`/`WithTargetNode`); reverse NEVER terminates (Cancel does). Needs a
-> compensate-all-then-resume-at-start engine enhancement + `InstanceState.StartVariables` snapshot.
-> Cycle regression test + `reverse_rollback` example. **ADR-0109.**
+> **0. Type-safe per-kind options refactor** (recommended FIRST — foundation) — behavior-preserving;
+>    each `WithX` valid only on kinds that honor it; supersedes `definition.Lint`. **DESIGN PENDING** —
+>    brainstorm at the start (starting points in the program spec `docs/specs/2026-07-08-activity-options-program.md`
+>    §Phase 1). **ADR-0113.**
+> **1. Scheduler JobStore durability** ("JobLoader") — plan DONE:
+>    `docs/plans/2026-07-07-scheduler-jobstore-durability.md` (Tasks 3–5; Tasks 1–2 already shipped).
+>    Workflow-provided `kernel.JobStore` the scheduler CALLS; Save/Update/Delete on the AMBIENT
+>    state-commit tx (supersedes the timer-write part of ADR-0027); self-rehydrate on start.
+>    Independent (no option overlap) — may run any time. **ADR-0102.**
+> **2. Boundary-event enhancements** — spec DONE `docs/specs/2026-07-07-boundary-event-enhancements.md`,
+>    **plan PENDING**. `WithBoundaryAction` (fire-once, all trigger types); flexible error matching
+>    (Check→Expr→Code); `WithDeadline(dur,flow,action)` SPLIT → `WithDeadlineFlow` + `WithDeadlineAction`;
+>    `boundary_action` example; FIX the known message-boundary-never-armed bug. SKIP already-done:
+>    `WithReminder`→`WithWaitReminder`, `boundary_timer`→`usertask_deadline`. Adds/changes OPTIONS →
+>    do AFTER item 0. **ADR-0103/0104.**
+> **3. Input validation** — spec DONE `docs/specs/2026-07-08-input-validation-design.md`. Neutral
+>    `validation.Validator` port + `ValidationStrategy` interface + registry;
+>    `validation/{expr,callback,jsonschema,avro}` adapters (expr/callback dep-free; json-schema/avro
+>    ADR-gated deps); node-level at start/completion/message, reject before state mutation. Born
+>    type-safe. **ADR-0110** + **0111** (json-schema dep) + **0112** (avro dep).
+> **4. Completion-action + `*Action` naming** — designed in the program spec §Phase 3.
+>    `ActivityFields.CompletionAction` + `WithCompletionAction`; async via the existing
+>    `InvokeAction`/`ActionCompleted` round-trip (mirrors compensation, ~150 lines, no new token state);
+>    failure reuses retry/incident/boundary. RENAME `WithCompensation`→`WithCompensateAction`;
+>    PRINCIPLE: every action-bearing node kind exposes an optional `WithCompensateAction`. **ADR-0114.**
+> **5. `ProcessDriver.ReverseInstance`** — spec DONE `docs/specs/2026-07-08-reverse-instance-design.md`.
+>    Functional-options reverse/rollback facade (`WithFullReverse`/`WithTargetNode`); reverse NEVER
+>    terminates (Cancel does); compensate-all-then-resume-at-start engine change + `StartVariables`
+>    snapshot; cycle regression test + `reverse_rollback` example. Independent of options work — may run
+>    any time. **ADR-0109.**
+> **6. Backlog** — **P1-G recursive instance lineage** (QUEUED); **P2 DX** items
+>    (`docs/plans/2026-06-30-production-readiness-backlog.md`).
 >
-> **(B) Activity-node options PROGRAM** (one coordinated effort, 3 ordered phases) — program spec
-> `docs/specs/2026-07-08-activity-options-program.md`. Execute Phase 1 → 2 → 3 on one branch, review
-> gate between phases:
-> - **Phase 1 — type-safe per-kind options refactor** (behavior-preserving; supersedes
->   `definition.Lint`). **DESIGN PENDING** — brainstorm it at the START of the session (starting
->   points in the program spec). **ADR-0113.**
-> - **Phase 2 — input validation** (born type-safe) — full design in
->   `docs/specs/2026-07-08-input-validation-design.md` (neutral `validation.Validator` port +
->   `ValidationStrategy` interface + registry; `validation/{expr,callback,jsonschema,avro}` adapters;
->   node-level at start/completion/message, reject before state mutation). **ADR-0110** + **0111**
->   (json-schema dep) + **0112** (avro dep).
-> - **Phase 3 — completion-action** (born type-safe) — `ActivityFields.CompletionAction` +
->   `WithCompletionAction`; async via the existing `InvokeAction`/`ActionCompleted` round-trip
->   (mirrors compensation, ~150 lines, no new token state); failure reuses retry/incident/boundary.
->   **ADR-0114.**
+> **COORDINATION:** items 0/2/3/4 all touch the activity-node OPTION system. Running the type-safe
+> refactor (0) FIRST lets 2/3/4 be born type-safe (no `Lint` churn, no double-touch of options). Items
+> 1 (JobStore) and 5 (ReverseInstance) don't touch options and can slot anywhere. The activity-options
+> PROGRAM spec (`docs/specs/2026-07-08-activity-options-program.md`) bundles 0+3+4 as one coordinated
+> branch; boundary-events (2) is a separate but option-overlapping item — sequence 0 before 2.
 >
-> **Next free ADR: 0109** — 0109–0114 are PRE-ALLOCATED (0109 ReverseInstance; 0110/0111/0112
-> validation; 0113 type-safe options; 0114 completion-action). A further unrelated task takes 0115.
-> (0102–0104 remain RESERVED for the pending scheduler-JobStore + boundary-event plans below;
-> 0105/0106/0107/0108 shipped.)
+> **ADR allocation (PRE-ALLOCATED so parallel/sequential work doesn't collide):** 0102 JobStore ·
+> 0103/0104 boundary-events · 0109 ReverseInstance · 0110/0111/0112 validation · 0113 type-safe options ·
+> 0114 completion-action + `*Action` naming. **Next free after these: 0115.** (0105/0106/0107/0108 shipped.)
 >
 > **DONE (was queued):** `action.NewMapCatalog` → `action.NewCatalog` (merge `40131e9`, **ADR-0108**):
 > map-backed catalog (the default `Catalog` impl; `Registry` already owns `NewRegistry`) takes the
@@ -89,21 +106,10 @@ and pick up the next work. Read it top to bottom before starting.
 >   The unrelated `processtest.Deliver` Decision constructor was deliberately left intact. Executed via
 >   full SDD (spec+plan under `docs/{specs,plans}/2026-07-08-rename-deliver-to-apply-trigger*`).
 >
-> **▶ NEXT WORK — write the boundary-event enhancements implementation plan (ADR-0103/0104):** the spec is
-> written ([`docs/specs/2026-07-07-boundary-event-enhancements.md`](../specs/2026-07-07-boundary-event-enhancements.md))
-> but the **implementation plan is NOT** — run `superpowers:writing-plans` over it, then execute strict-TDD.
-> Features: `WithBoundaryAction` (fire-once side-effect, all trigger types); flexible error matching
-> (Check→Expr→Code precedence); `WithDeadline(dur,flow,action)` SPLIT → `WithDeadlineFlow` + `WithDeadlineAction`;
-> new `boundary_action` example + godoc Examples; fix the known message-boundary-never-armed bug. NOTE two spec
-> bullets are ALREADY DONE (skip, don't redo): `WithReminder`→`WithWaitReminder` (reminders feature) and the
-> `boundary_timer`→`usertask_deadline` example rename.
-> **Then Plan 3 — scheduler JobStore lifecycle & durability (ADR-0102):** plan already written + self-contained
-> ([`docs/plans/2026-07-07-scheduler-jobstore-durability.md`](2026-07-07-scheduler-jobstore-durability.md),
-> Tasks 3–5; Tasks 1–2 subset already shipped): workflow-provided `kernel.JobStore` the scheduler CALLS;
-> Save/Update/Delete on the AMBIENT state-commit tx (supersedes the timer-write portion of ADR-0027);
-> scheduler self-rehydrates on start.
-> **Deferred (own future project):** type-safe per-activity-kind options (compile-time rejection of invalid
-> options; supersedes the runtime `definition.Lint`).
+> **▶ Boundary-event enhancements (ADR-0103/0104), scheduler JobStore (ADR-0102), and the
+> type-safe per-kind options refactor (formerly "Deferred") are now folded into the SEQUENTIAL ROADMAP
+> at the top of this resume point** (items 2, 1, and 0 respectively). Their specs/plans are linked
+> there; nothing is dropped — the roadmap is the single ordered source now.
 >
 > **Backlog:** [`docs/plans/2026-06-30-production-readiness-backlog.md`](2026-06-30-production-readiness-backlog.md)
 > — all P0 + P1-A…P1-E done; **P1-F moot** (gRPC removed); **P1-G recursive instance lineage** still QUEUED;

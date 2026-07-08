@@ -65,13 +65,34 @@ completion action (Phase 3) runs only after a validated, accepted completion.
 
 ---
 
-## Phase 3 — completion-action (DESIGNED)
+## Phase 3 — completion-action + `*Action` naming consistency (DESIGNED)
 
 ### Goal
 
 An optional node-attached action that runs when a node's **completion** is triggered — regardless of
 the trigger source (human completion, message receive, …) — receiving the completion input, to
-update external business/domain data (and optionally contribute computed variables).
+update external business/domain data (and optionally contribute computed variables). Plus a naming
+pass that establishes the `WithXxxAction` option family (see "Naming consistency" below).
+
+### Naming consistency & compensation availability
+
+- **Rename `WithCompensation` → `WithCompensateAction`** (`definition/activity/options.go`) to match
+  the new `WithCompletionAction`. Hard rename (pre-1.0, matches prior rename convention). The
+  underlying `ActivityFields.CompensationAction` field and wire key `compensationAction` may keep
+  their names (internal) or be renamed too — decide in the plan; the **public option** is what
+  changes. This establishes the `WithXxxAction` option family: `WithCompensateAction`,
+  `WithCompletionAction`.
+- **Principle — every action-bearing node kind exposes an optional `WithCompensateAction`.** Any
+  node that carries a forward Action callback (ServiceTask, BusinessRuleTask main action; SendTask's
+  send; and UserTask/ReceiveTask once they carry a completion action) must be able to declare a
+  compensating action to undo it — the saga rule "if you can DO it, you can UNDO it." Compensation
+  already lives on the shared `model.ActivityFields`, so it is broadly available today; the concrete
+  requirement here is that **Phase 1's type-safe refactor must keep `WithCompensateAction` valid on
+  every action-bearing kind** (do not narrow it away from any kind that has a forward action).
+  Verify with a test/compile-example per action-bearing kind.
+- **Consider (design note, not mandated):** the other action-carrying options `WithDeadline` and
+  `WithWaitReminder` embed an action name too; the plan may align them to the `*Action` family for
+  consistency, or leave them (they are compound options with flow/schedule args, not pure actions).
 
 ### Mechanics (verified against the engine)
 
@@ -144,7 +165,8 @@ record" (recorded via a fake action) from the completion input. **ADR-0114.**
 - ADR-0111 — json-schema dependency (Phase 2).
 - ADR-0112 — avro dependency (Phase 2).
 - ADR-0113 — type-safe per-kind options refactor (Phase 1).
-- ADR-0114 — completion-action (Phase 3).
+- ADR-0114 — completion-action + `*Action` option naming (`WithCompensation`→`WithCompensateAction`)
+  + the "every action-bearing kind exposes `WithCompensateAction`" principle (Phase 3).
 
 (ReverseInstance holds 0109, separately.)
 
