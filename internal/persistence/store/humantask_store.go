@@ -66,7 +66,7 @@ func (s *HumanTaskStore) querier() database.Querier {
 // humanTaskColumns is the canonical column list used in SELECT and INSERT
 // statements. Order must match the scan order in [scanTask].
 const humanTaskColumns = `task_token, instance_id, node_id, state, claimed_by,
-	eligibility, candidates, vars, created_at, due_at`
+	eligibility, candidates, vars, created_at, due_at, def_id, def_version`
 
 // Upsert inserts or replaces the task identified by t.TaskToken.
 // The upsert conflict clause is dialect-specific (via [dialect.Dialect.UpsertTask]).
@@ -87,10 +87,11 @@ func (s *HumanTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) erro
 	q := s.querier()
 	_, err = q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_human_task (`+humanTaskColumns+`)
-		 VALUES (?,?,?,?,?,?,?,?,?,?)`+s.dialect.UpsertTask()),
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`+s.dialect.UpsertTask()),
 		t.TaskToken, t.InstanceID, t.NodeID, t.State.String(), t.ClaimedBy,
 		eligibility, candidates, vars,
 		timeArg(s.dialect, t.CreatedAt), s.dueArg(t.DueAt),
+		t.DefID, t.DefVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert task %s: %w", t.TaskToken, err)
@@ -189,6 +190,7 @@ func (s *HumanTaskStore) scanTask(scan func(dest ...any) error) (humantask.Human
 		if err := scan(
 			&t.TaskToken, &t.InstanceID, &t.NodeID, &stateStr, &t.ClaimedBy,
 			&eligibility, &candidates, &vars, &createdStr, &dueStr,
+			&t.DefID, &t.DefVersion,
 		); err != nil {
 			return humantask.HumanTask{}, err
 		}
@@ -211,6 +213,7 @@ func (s *HumanTaskStore) scanTask(scan func(dest ...any) error) (humantask.Human
 		if err := scan(
 			&t.TaskToken, &t.InstanceID, &t.NodeID, &stateStr, &t.ClaimedBy,
 			&eligibility, &candidates, &vars, &createdAt, &dueAt,
+			&t.DefID, &t.DefVersion,
 		); err != nil {
 			return humantask.HumanTask{}, err
 		}

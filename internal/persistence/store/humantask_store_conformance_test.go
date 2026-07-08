@@ -32,6 +32,8 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 				Vars:        map[string]any{"amount": float64(100)},
 				CreatedAt:   time.Date(2026, 7, 6, 10, 0, 0, 0, time.UTC),
 				DueAt:       &due,
+				DefID:       "approvals",
+				DefVersion:  2,
 			}
 			require.NoError(t, ts.Upsert(t.Context(), seed), "%s: Upsert", b.name)
 
@@ -45,6 +47,8 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 			assert.True(t, got.DueAt.Equal(due), "%s: DueAt value", b.name)
 			assert.True(t, got.CreatedAt.Equal(seed.CreatedAt), "%s: CreatedAt", b.name)
 			assert.Equal(t, map[string]any{"amount": float64(100)}, got.Vars, "%s: Vars", b.name)
+			assert.Equal(t, "approvals", got.DefID, "%s: DefID", b.name)
+			assert.Equal(t, 2, got.DefVersion, "%s: DefVersion", b.name)
 		})
 
 		t.Run("get_miss_returns_err_task_not_found", func(t *testing.T) {

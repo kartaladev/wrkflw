@@ -74,6 +74,12 @@ type HumanTask struct {
 	CreatedAt time.Time
 	// DueAt is the optional deadline (Plan 5; nil in this implementation).
 	DueAt *time.Time
+	// DefID / DefVersion reference the process definition that generated this
+	// task, so the task service can resolve the UserTask node's
+	// CompletionValidation via a DefinitionResolver (resolve via
+	// model.Version(DefID, DefVersion); DefVersion == 0 means "latest").
+	DefID      string
+	DefVersion int
 	// Vars is a snapshot of the process Variables at task-creation time, used for
 	// attribute-based eligibility predicates that reference data variables
 	// (e.g. vars["region"] == "EU"). It is set by the runtime when an AwaitHuman
