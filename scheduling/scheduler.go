@@ -68,6 +68,14 @@ type Scheduler struct {
 	// stopCh, when non-nil, terminates the context-cancellation watcher started
 	// by an explicit Start(ctx). Close closes it so the watcher exits.
 	stopCh chan struct{}
+
+	// rehydrateOnce ensures self-rehydration (LoadScheduled + re-register) runs
+	// exactly once across the Start-and-auto-start paths, guarding the DB I/O
+	// outside s.mu. sync.Once must be a stable field — never copied.
+	rehydrateOnce sync.Once
+	// rehydrateErr is the error (if any) stored by rehydrateOnce.Do and surfaced
+	// to an explicit Start call; an auto-start path logs it at WARN.
+	rehydrateErr error
 }
 
 // Compile-time contract assertions.
@@ -79,13 +87,14 @@ var (
 // config holds façade-level options. It carries no database-driver state — only
 // the neutral locker/elector seams and observability wiring.
 type config struct {
-	clk      clockwork.Clock
-	logger   *slog.Logger
-	tp       trace.TracerProvider
-	mp       metric.MeterProvider
-	locker   Locker
-	elector  Elector
-	timeSkew *time.Duration // nil = use internal default (5 minutes)
+	clk              clockwork.Clock
+	logger           *slog.Logger
+	tp               trace.TracerProvider
+	mp               metric.MeterProvider
+	locker           Locker
+	elector          Elector
+	timeSkew         *time.Duration // nil = use internal default (5 minutes)
+	jobStoreProvider func() kernel.JobStore
 }
 
 // Option configures a [Scheduler].
@@ -151,6 +160,37 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 func WithTimeSkew(d time.Duration) Option {
 	return func(c *config) {
 		c.timeSkew = &d
+	}
+}
+
+// WithJobStore supplies a provider of the [kernel.JobStore] the scheduler uses
+// to self-rehydrate armed timers on its first start. The provider is a thunk
+// (func() kernel.JobStore) so it can capture a [ProcessDriver] (or any struct
+// that implements [kernel.JobStore]) that is fully constructed only after the
+// scheduler, breaking the driver↔jobstore↔scheduler construction cycle and
+// mirroring the SignalBus forward-reference pattern.
+//
+// A nil provider — or a provider that returns nil on first call — is silently
+// ignored and self-rehydration is skipped.
+//
+// On first [Scheduler.Start] (or the first auto-start triggered by
+// [Scheduler.Schedule]) the scheduler calls provider().LoadScheduled(ctx) once
+// and registers every returned [kernel.ScheduledJob] via the underlying gocron
+// scheduler. A per-job registration error is logged at WARN and skipped so a
+// single unschedulable timer never aborts the batch. The batch error (e.g.
+// unresolved definitions) is surfaced to an explicit [Scheduler.Start] caller
+// and logged at WARN for auto-start.
+//
+// This replaces the need for an explicit [ProcessDriver.RehydrateTimers] call
+// for the driver's owned default scheduler (which auto-wires WithJobStore when
+// both a TimerStore and a DefinitionRegistry are present). Consumers that
+// inject their own scheduler via [runtime.WithScheduler] can opt in by passing
+// this option when constructing the scheduler.
+func WithJobStore(provider func() kernel.JobStore) Option {
+	return func(c *config) {
+		if provider != nil {
+			c.jobStoreProvider = provider
+		}
 	}
 }
 
@@ -223,9 +263,17 @@ func (s *Scheduler) internalOpts() []gocronsched.Option {
 //
 // Passing a non-cancellable context (e.g. [context.Background]) starts the
 // scheduler without a cancellation watcher; use [Scheduler.Close] to stop it.
+//
+// When [WithJobStore] was supplied, Start also triggers self-rehydration of
+// armed timers (exactly once across all Start/Schedule calls). A partial
+// rehydration error (e.g. unresolved process definitions) is returned here so
+// the caller can decide whether to abort or proceed with a reduced set.
 func (s *Scheduler) Start(ctx context.Context) error {
-	_, err := s.ensureStarted(ctx)
-	return err
+	impl, err := s.ensureStarted(ctx)
+	if err != nil {
+		return err
+	}
+	return s.rehydrate(ctx, impl)
 }
 
 // ensureStarted lazily creates and starts the underlying gocron scheduler,
@@ -275,6 +323,45 @@ func (s *Scheduler) ensureStarted(ctx context.Context) (*gocronsched.GocronSched
 	return impl, nil
 }
 
+// rehydrate loads armed timers from the configured JobStore provider and
+// registers each with impl exactly once. It is called from Start (after
+// ensureStarted) and from Schedule (after ensureStarted auto-start).
+//
+// The LoadScheduled + registration I/O runs OUTSIDE s.mu so it never blocks
+// concurrent Start/Schedule/Close calls. sync.Once provides its own
+// synchronization for the single-execution guarantee.
+//
+// A per-job registration error is logged at WARN and skipped so one
+// unschedulable timer never aborts the batch. A partial error from
+// LoadScheduled (e.g. unresolved definition) is stored in s.rehydrateErr and
+// returned to an explicit Start caller; auto-start logs it at WARN instead.
+func (s *Scheduler) rehydrate(ctx context.Context, impl *gocronsched.GocronScheduler) error {
+	if s.cfg.jobStoreProvider == nil {
+		return nil
+	}
+	s.rehydrateOnce.Do(func() {
+		js := s.cfg.jobStoreProvider()
+		if js == nil {
+			return
+		}
+		jobs, err := js.LoadScheduled(ctx)
+		for _, job := range jobs {
+			if _, serr := impl.Schedule(ctx, job.Spec.TimerID, job.Spec.Trigger, job.Fire); serr != nil {
+				logger := s.cfg.logger
+				if logger == nil {
+					logger = slog.Default()
+				}
+				logger.WarnContext(ctx, "scheduling: rehydrate: failed to re-register timer, skipping",
+					slog.String("timer_id", job.Spec.TimerID),
+					slog.String("instance_id", job.Spec.InstanceID),
+					slog.Any("error", serr))
+			}
+		}
+		s.rehydrateErr = err
+	})
+	return s.rehydrateErr
+}
+
 // watchContext closes the scheduler when the start context is cancelled, or
 // exits quietly when Close closes stop first.
 func (s *Scheduler) watchContext(done <-chan struct{}, stop <-chan struct{}) {
@@ -309,10 +396,23 @@ func (b neutralLockerBridge) Lock(ctx context.Context, key string) (gocronsched.
 // Schedule auto-starts the scheduler (with a background context) on first use, so
 // an explicit [Scheduler.Start] is optional. It returns [ErrSchedulerClosed] if
 // the scheduler has been closed.
+//
+// When [WithJobStore] was supplied, the first Schedule call also triggers
+// self-rehydration (exactly once). A rehydration error is logged at WARN and
+// does not fail this call — an individual timer arm must not be blocked by a
+// partial rehydration error.
 func (s *Scheduler) Schedule(ctx context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (time.Time, error) {
 	impl, err := s.ensureStarted(context.Background())
 	if err != nil {
 		return time.Time{}, err
+	}
+	if rerr := s.rehydrate(context.Background(), impl); rerr != nil {
+		logger := s.cfg.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.WarnContext(ctx, "scheduling: Schedule: rehydration had errors (proceeding)",
+			slog.Any("error", rerr))
 	}
 	return impl.Schedule(ctx, timerID, trig, fire)
 }
