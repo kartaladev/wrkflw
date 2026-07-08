@@ -72,6 +72,35 @@ func TestMemTaskStore_Upsert_UpdatesExisting(t *testing.T) {
 	assert.Equal(t, "actor-x", got.ClaimedBy)
 }
 
+// TestMemTaskStore_Upsert_PreservesDefQualifier mirrors
+// internal/persistence/store's "reupsert_preserves_def_qualifier"
+// conformance case: DefID/DefVersion are write-once (see HumanTask.DefID doc
+// comment), set at task creation. The engine's lifecycle re-upsert path
+// (claim/complete/etc., engine/step_nodes.go) passes a task-update skeleton
+// that does not carry them (zero values), so a re-upsert must preserve the
+// original qualifier while still applying other mutable-field changes.
+func TestMemTaskStore_Upsert_PreservesDefQualifier(t *testing.T) {
+	ctx := t.Context()
+	store := humantask.NewMemTaskStore()
+
+	seed := makeTask("tok-defqual", "inst-dq", "approve", humantask.Unclaimed, "", nil, nil)
+	seed.DefID = "approvals"
+	seed.DefVersion = 2
+	require.NoError(t, store.Upsert(ctx, seed))
+
+	reupsert := makeTask("tok-defqual", "inst-dq", "approve", humantask.Claimed, "alice", nil, nil)
+	// DefID/DefVersion intentionally left zero, mirroring the engine's
+	// zeroed task-update skeleton.
+	require.NoError(t, store.Upsert(ctx, reupsert))
+
+	got, err := store.Get(ctx, "tok-defqual")
+	require.NoError(t, err)
+	assert.Equal(t, humantask.Claimed, got.State, "State must reflect the re-upsert")
+	assert.Equal(t, "alice", got.ClaimedBy, "ClaimedBy must reflect the re-upsert")
+	assert.Equal(t, "approvals", got.DefID, "DefID must be preserved (write-once)")
+	assert.Equal(t, 2, got.DefVersion, "DefVersion must be preserved (write-once)")
+}
+
 func TestMemTaskStore_AssignedTo_FiltersClaimedBy(t *testing.T) {
 	ctx := t.Context()
 	store := humantask.NewMemTaskStore()

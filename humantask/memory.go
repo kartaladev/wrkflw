@@ -30,6 +30,13 @@ func NewMemTaskStore() *MemTaskStore {
 }
 
 // Upsert inserts or replaces the task identified by t.TaskToken.
+//
+// DefID/DefVersion are write-once (see [HumanTask.DefID]): set at task
+// creation, they are preserved across every subsequent re-upsert regardless
+// of what t carries, mirroring the SQL-backed HumanTaskStore's dialect
+// conflict-update SET clause, which deliberately omits those two columns so
+// the engine's zeroed lifecycle task-update skeleton (claim/complete/etc.,
+// see engine/step_nodes.go) cannot clobber the original qualifier.
 func (s *MemTaskStore) Upsert(_ context.Context, t HumanTask) error {
 	// Defensive copy of mutable slice fields before storing.
 	t.Candidates = copyStrings(t.Candidates)
@@ -37,8 +44,12 @@ func (s *MemTaskStore) Upsert(_ context.Context, t HumanTask) error {
 	t.Eligibility.Privileges = copyStrings(t.Eligibility.Privileges)
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.m[t.TaskToken]; ok {
+		t.DefID = existing.DefID
+		t.DefVersion = existing.DefVersion
+	}
 	s.m[t.TaskToken] = t
-	s.mu.Unlock()
 	return nil
 }
 
