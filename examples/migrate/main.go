@@ -2,6 +2,28 @@
 // demonstrates driving wrkflw schema migrations from a consumer's own CLI using
 // the persistence.Migrator facade.
 //
+// Why a CLI at all? A consumer embedding the engine usually applies migrations
+// in-process at startup (e.g. persistence.Migrate(ctx, pool) — see the
+// production_wiring example), which is enough for single-binary deployments. But
+// operations teams often want migrations DECOUPLED from application boot: run them
+// as a separate step in a deploy pipeline or a Kubernetes init container, gate a
+// release on a clean `status`, or perform a controlled `downto` rollback during an
+// incident WITHOUT restarting the app. This wrapper shows how to expose exactly
+// those operations from a standalone command the consumer owns — the engine ships
+// the Migrator facade, not the CLI, so the consumer chooses the surface.
+//
+// The subcommands walk the full migration lifecycle the persistence.Migrator
+// exposes:
+//
+//   - version — print the highest applied migration version (the current schema level).
+//   - status  — list every known migration and whether it is applied or pending
+//     (the pre-flight check a deploy gate reads).
+//   - up      — apply all pending migrations (roll the schema forward to latest).
+//   - upto N  — apply pending migrations up to and including version N (partial roll-forward).
+//   - down    — revert the most recent migration by one step.
+//   - downto N — revert down to version N (a controlled rollback; DATA-LOSS risk — see
+//     the persistence.Migrator godoc).
+//
 // Usage:
 //
 //	migrate -dialect=postgres -dsn=postgres://... up
@@ -69,6 +91,12 @@ func writef(out io.Writer, format string, args ...any) {
 
 var errUsage = fmt.Errorf("usage error")
 
+// openMigrator opens the dialect-appropriate connection and wraps it in a
+// persistence.Migrator. Each branch constructs the matching Migrator over the
+// consumer's OWN connection handle (a pgxpool for Postgres, a *sql.DB for
+// MySQL/SQLite) and returns a close func so the caller owns the connection
+// lifecycle — the engine never opens or owns the database. The returned Migrator
+// is dialect-agnostic; execCmd drives it identically regardless of backend.
 func openMigrator(ctx context.Context, dialect, dsn string) (persistence.Migrator, func(), error) {
 	switch dialect {
 	case "postgres":
@@ -98,7 +126,7 @@ func openMigrator(ctx context.Context, dialect, dsn string) (persistence.Migrato
 		if err != nil {
 			return nil, func() {}, err
 		}
-		db.SetMaxOpenConns(1)
+		db.SetMaxOpenConns(1) // SQLite is single-writer (ADR-0082)
 		m, err := persistence.NewSQLiteMigrator(db)
 		if err != nil {
 			_ = db.Close()

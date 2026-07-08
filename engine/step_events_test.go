@@ -600,6 +600,97 @@ func TestEventGatewayFirstMessageWins(t *testing.T) {
 	assert.Equal(t, "msg-branch", r3.State.Tokens[0].NodeID)
 }
 
+// eventGatewayCorrelatedMsgDef is eventGatewayMessageDef with a message arm that
+// carries a non-empty correlation-key expression ("order"), so the resolved key
+// depends on the instance variables at arm time.
+//
+//	Start → EventGateway → TimerCatch("1h")                         → ServiceTask(timer-branch) → End1
+//	                     → MessageCatch("payment-confirmed", key=order) → ServiceTask(msg-branch)  → End2
+func eventGatewayCorrelatedMsgDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-evtgw-corr", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			gateway.NewEventBased("evtgw"),
+			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("payment-confirmed", "order")),
+			activity.NewServiceTask("timer-branch", activity.WithActionName("timer-action")),
+			activity.NewServiceTask("msg-branch", activity.WithActionName("msg-action")),
+			event.NewEnd("end1"),
+			event.NewEnd("end2"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "evtgw"},
+			{ID: "f-gw-timer", Source: "evtgw", Target: "timer-catch"},
+			{ID: "f-gw-msg", Source: "evtgw", Target: "msg-catch"},
+			{ID: "f-timer-branch", Source: "timer-catch", Target: "timer-branch"},
+			{ID: "f-msg-branch", Source: "msg-catch", Target: "msg-branch"},
+			{ID: "f-timer-end", Source: "timer-branch", Target: "end1"},
+			{ID: "f-msg-end", Source: "msg-branch", Target: "end2"},
+		},
+	}
+}
+
+// TestMessageArmedEventWaitersExposesGatewayMessageArms verifies the exported
+// accessor that lets a runtime register event-gateway MESSAGE arms as message
+// waiters — so a delivered message can be correlated to the parked instance even
+// though the event-gateway arm is tracked as an armedEvent, not a token carrying
+// AwaitMessage. Timer and signal arms contribute no waiter.
+func TestMessageArmedEventWaitersExposesGatewayMessageArms(t *testing.T) {
+	t.Parallel()
+
+	t0 := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name      string
+		def       *model.ProcessDefinition
+		startVars map[string]any
+		assert    func(t *testing.T, waiters []engine.MessageWaiter)
+	}
+
+	cases := []testCase{
+		{
+			name:      "correlated message arm exposes resolved key",
+			def:       eventGatewayCorrelatedMsgDef(),
+			startVars: map[string]any{"order": "order-fast"},
+			assert: func(t *testing.T, waiters []engine.MessageWaiter) {
+				require.Len(t, waiters, 1, "the armed message arm must be exposed as a waiter")
+				assert.Equal(t, "payment-confirmed", waiters[0].Name)
+				assert.Equal(t, "order-fast", waiters[0].CorrelationKey,
+					"correlation key must be the resolved value, not the raw expression")
+			},
+		},
+		{
+			name: "name-only message arm exposes empty key",
+			def:  eventGatewayMessageDef(),
+			assert: func(t *testing.T, waiters []engine.MessageWaiter) {
+				require.Len(t, waiters, 1)
+				assert.Equal(t, "order", waiters[0].Name)
+				assert.Empty(t, waiters[0].CorrelationKey)
+			},
+		},
+		{
+			name: "timer and signal arms contribute no waiter",
+			def:  eventGatewayDef(),
+			assert: func(t *testing.T, waiters []engine.MessageWaiter) {
+				assert.Empty(t, waiters, "only message arms contribute message waiters")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := engine.Step(tc.def, engine.InstanceState{InstanceID: "i1"},
+				engine.NewStartInstance(t0, tc.startVars), engine.StepOptions{})
+			require.NoError(t, err)
+
+			tc.assert(t, r.State.MessageArmedEventWaiters())
+		})
+	}
+}
+
 // ---- Boundary event tests ----
 
 // interruptingBoundaryTimerDef returns a definition:

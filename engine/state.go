@@ -766,6 +766,26 @@ func (s *InstanceState) MessageBoundaryWaiters() []MessageWaiter {
 	return out
 }
 
+// MessageArmedEventWaiters returns the (message name, correlation key) pairs for
+// every armed MESSAGE arm of an in-flight event-based gateway. A runtime registers
+// these alongside message-catch tokens (Token.AwaitMessage) and message-boundary
+// waiters so a delivered message can be correlated to the parked instance even
+// though an event-gateway arm is tracked as an armedEvent rather than a token
+// carrying AwaitMessage.
+//
+// Timer and signal arms contribute no entries. The result preserves s.ArmedEvents
+// slice order (deterministic) and is nil when no message arm is armed.
+func (s *InstanceState) MessageArmedEventWaiters() []MessageWaiter {
+	var out []MessageWaiter
+	for i := range s.ArmedEvents {
+		ae := &s.ArmedEvents[i]
+		if ae.Message != "" {
+			out = append(out, MessageWaiter{Name: ae.Message, CorrelationKey: ae.MessageKey})
+		}
+	}
+	return out
+}
+
 // removeBoundaryArmsForHost removes all boundaryArm entries for the given
 // hostToken, returning the TimerIDs of any timer-boundary arms so the caller
 // can emit CancelTimer commands for them.

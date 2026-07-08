@@ -11,13 +11,17 @@
 //	start → await["market-open" catch] → trade[Service] → end
 //
 // Three instances park on the "market-open" catch event. A single
-// bus.Publish("market-open", …) resumes all three; each then runs its service
-// task to completion.
+// driver.BroadcastSignal("market-open", …) resumes all three; each then runs its
+// service task to completion.
 //
-// The bus needs a DeliverFunc to push the resume trigger back into an instance,
-// and the runner needs the bus — a forward-reference (declare driver, build bus with a
-// closure over driver, then assign driver) wires the cycle. After each run the runner
-// auto-subscribes parked catchers to the bus, so no manual Subscribe is needed.
+// The broadcast goes through the driver facade [runtime.ProcessDriver.BroadcastSignal]
+// — the signal counterpart to DeliverMessage — so the consumer publishes through the
+// same object it already holds instead of reaching into the bus. The bus is still
+// constructed once at startup: it needs a DeliverFunc to push the resume trigger back
+// into an instance, and the driver needs the bus, so a forward-reference (declare
+// driver, build bus with a closure over driver, then assign driver) wires the cycle.
+// After each run the driver auto-subscribes parked catchers to the bus, so no manual
+// Subscribe is needed.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -96,10 +100,13 @@ func main() {
 			d, st.Tokens[0].NodeID, st.Tokens[0].AwaitSignal)
 	}
 
-	// One publish resumes every waiting desk.
-	fmt.Println("publishing signal \"market-open\" (broadcast)...")
-	if err := bus.Publish(ctx, "market-open", map[string]any{"at": "09:30"}); err != nil {
-		log.Fatal("publish:", err)
+	// One broadcast resumes every waiting desk. We call the driver facade
+	// (BroadcastSignal) rather than bus.Publish directly — the driver owns the bus,
+	// so the consumer never has to retain or reach into it at the call site. This
+	// mirrors driver.DeliverMessage for the correlated-message case.
+	fmt.Println("broadcasting signal \"market-open\"...")
+	if err := driver.BroadcastSignal(ctx, "market-open", map[string]any{"at": "09:30"}); err != nil {
+		log.Fatal("broadcast:", err)
 	}
 
 	// All three instances have advanced to completion.

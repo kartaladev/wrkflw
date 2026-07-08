@@ -1,4 +1,24 @@
-// Package main demonstrates the README quickstart: define a process, run it.
+// Package main mirrors the README quickstart end to end. It walks the two
+// authoring forms the engine supports and then executes an instance, so a reader
+// arriving from the README sees the exact code those snippets came from, running.
+//
+// It is deliberately three self-contained blocks, each teaching one thing:
+//
+//  1. Define a process with the Go BUILDER — the fluent, compile-checked authoring
+//     form. Shows richer nodes (a service task with a compensation action, a user
+//     task) to hint at what a real definition looks like.
+//  2. Author the SAME shape in YAML and load it — the declarative authoring form
+//     (definition.NewLoader over an io.Reader). Note there is NO BPMN2 XML loader;
+//     YAML and Go code are the only authoring forms (see the project README).
+//     Blocks 1 and 2 produce equivalent definitions; they differ only in how the
+//     definition is *authored*, not in what it means.
+//  3. RUN an instance — build a minimal definition, register the action it names,
+//     and Drive it to completion against an in-memory store.
+//
+// Blocks 1 and 2 only build definitions (nothing executes); block 3 is the one that
+// actually runs a process. They are separated so a reader can copy just the block
+// they need.
+//
 // This is a reference wiring example — not a shipped binary.
 package main
 
@@ -21,7 +41,11 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// --- Define a process (Go builder) ---
+	// ── Block 1: define a process with the Go builder ─────────────────────────
+	// The fluent builder is the compile-checked authoring form. Nothing runs here —
+	// Build() just validates and returns the definition template. WithCompensation
+	// attaches a rollback action to the charge step; the user task parks for a
+	// "manager" actor. Neither is exercised in this quickstart; they show the shape.
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
@@ -38,7 +62,11 @@ func main() {
 	}
 	fmt.Printf("defined %q v%d with %d nodes\n", def.ID, def.Version, len(def.Nodes))
 
-	// --- Author in YAML ---
+	// ── Block 2: author the same process in YAML ──────────────────────────────
+	// The declarative authoring form. definition.NewLoader parses any io.Reader of
+	// this YAML schema into an equivalent definition. This is the second (and last)
+	// authoring form — there is no BPMN2 XML loader. Like block 1, it only builds a
+	// template; nothing executes.
 	const yamlSrc = `
 id: order
 version: 1
@@ -67,7 +95,11 @@ flows:
 	}
 	fmt.Printf("yaml def %q v%d with %d nodes\n", yamlDef.ID, yamlDef.Version, len(yamlDef.Nodes))
 
-	// --- Run it ---
+	// ── Block 3: run an instance ──────────────────────────────────────────────
+	// This is the block that actually executes a process. Build a minimal linear
+	// definition, register the "charge-card" action it references by name in a
+	// catalog, wire an in-memory store into a ProcessDriver, and Drive one instance
+	// to completion. Drive returns the terminal InstanceState with its variables.
 	simpleDef, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
 		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).

@@ -62,6 +62,15 @@ func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 		k := msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}
 		driver.msgWaiters[k] = st.InstanceID
 	}
+
+	// Re-register from armed message arms of in-flight event-based gateways. The
+	// gateway's parked token carries no AwaitMessage (the arm is tracked as an
+	// armedEvent), so — like message boundaries — DeliverMessage must correlate a
+	// delivered message to this instance to win the gateway race.
+	for _, w := range st.MessageArmedEventWaiters() {
+		k := msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}
+		driver.msgWaiters[k] = st.InstanceID
+	}
 }
 
 // findMessageWaiter returns the instance ID that is currently waiting for a
