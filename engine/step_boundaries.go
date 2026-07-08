@@ -40,6 +40,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 			BoundaryNode:    n.ID(),
 			Flow:            flowID,
 			NonInterrupting: n.NonInterrupting,
+			Action:          n.Action,
 		}
 
 		timerSpec, err := ResolveTrigger(eval, n.Timer, s.Variables)
@@ -122,6 +123,18 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 
 	hostScopeID := hostTok.ScopeID
 	var cmds []Command
+
+	// Emit the fire-once boundary action before routing (mirrors the
+	// deadline-breach action path in handleDeadlineFired). FireAndForget
+	// means a catalog action failure does not block routing.
+	if ba.Action != "" {
+		cmds = append(cmds, InvokeAction{
+			CommandID:     s.nextCommandID(),
+			Name:          ba.Action,
+			Input:         copyVars(s.Variables),
+			FireAndForget: true,
+		})
+	}
 
 	if !ba.NonInterrupting {
 		// Interrupting: consume the host, cancel its task timers and boundary siblings.
