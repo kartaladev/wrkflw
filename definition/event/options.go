@@ -96,10 +96,10 @@ func WithCatchDeadline(t schedule.TriggerSpec, flowID, action string) CatchOptio
 	}}
 }
 
-// WithCatchReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// WithCatchWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
 // on an IntermediateCatchEvent. Use schedule.Every, schedule.EveryExpr, or any
 // other recurring TriggerSpec constructor.
-func WithCatchReminder(t schedule.TriggerSpec, action string) CatchOption {
+func WithCatchWaitReminder(t schedule.TriggerSpec, action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = t, action }}
 }
 

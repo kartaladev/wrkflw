@@ -35,7 +35,7 @@ func TestCatchRenamedOptions(t *testing.T) {
 		event.WithCatchSignal("resume"),
 		event.WithCatchMessage("go", "k"),
 		event.WithCatchDeadline(schedule.AfterExpr(`"4h"`), "esc", "escalate"),
-		event.WithCatchReminder(schedule.EveryExpr(`"1h"`), "nudge"),
+		event.WithCatchWaitReminder(schedule.EveryExpr(`"1h"`), "nudge"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
 		t.Fatalf("kind = %v", n.Kind())

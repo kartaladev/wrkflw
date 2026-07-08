@@ -141,10 +141,10 @@ func WithDeadline(t schedule.TriggerSpec, flowID, action string) activityOnlyOpt
 	return withActivity(func(a *model.ActivityFields) { a.DeadlineTimer, a.DeadlineFlow, a.DeadlineAction = t, flowID, action })
 }
 
-// WithReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// WithWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
 // on an activity node. Use schedule.Every, schedule.EveryExpr, or any other
 // recurring TriggerSpec constructor.
-func WithReminder(t schedule.TriggerSpec, action string) activityOnlyOption {
+func WithWaitReminder(t schedule.TriggerSpec, action string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.ReminderEvery, a.ReminderAction = t, action })
 }
 

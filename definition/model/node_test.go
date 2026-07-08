@@ -86,7 +86,7 @@ func TestUserTaskConstructor(t *testing.T) {
 	n := activity.NewUserTask("task-1", []string{"manager", "admin"},
 		activity.WithEligibilityExpr("amount > 1000"),
 		activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach", "notify-manager"),
-		activity.WithReminder(schedule.Every(4*time.Hour), "send-reminder"),
+		activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
 	)
 	if n.Kind() != model.KindUserTask {
 		t.Fatalf("Kind() = %v, want KindUserTask", n.Kind())
@@ -219,7 +219,7 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 	n := event.NewCatch("ice",
 		event.WithCatchTimer(schedule.AfterExpr("PT1H")),
 		event.WithCatchDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
-		event.WithCatchReminder(schedule.Every(2*time.Hour), "remind-act"),
+		event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "remind-act"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
 		t.Fatalf("Kind() = %v, want KindIntermediateCatchEvent", n.Kind())
