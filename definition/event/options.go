@@ -1,6 +1,9 @@
 package event
 
-import "github.com/zakyalvan/krtlwrkflw/definition/schedule"
+import (
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/zakyalvan/krtlwrkflw/validation"
+)
 
 // --- option interfaces ---
 
@@ -64,6 +67,16 @@ func WithStartTimer(t schedule.TriggerSpec) StartOption {
 	return startFuncOpt{func(n *StartEvent) { n.Timer = t }}
 }
 
+type inputValidationOpt struct{ s validation.ValidationStrategy }
+
+func (o inputValidationOpt) applyStart(n *StartEvent) { n.InputValidation = o.s }
+
+// WithInputValidation validates the manually-provided start vars (Drive)
+// against the start event's contract before the instance is created.
+func WithInputValidation(s validation.ValidationStrategy) StartOption {
+	return inputValidationOpt{s: s}
+}
+
 // --- IntermediateCatchEvent options (renamed from the WithICE*/WithTimerDuration family) ---
 
 type catchFuncOpt struct{ fn func(*IntermediateCatchEvent) }
@@ -101,6 +114,16 @@ func WithCatchDeadline(t schedule.TriggerSpec, flowID, action string) CatchOptio
 // other recurring TriggerSpec constructor.
 func WithCatchWaitReminder(t schedule.TriggerSpec, action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = t, action }}
+}
+
+type catchPayloadValidationOpt struct{ s validation.ValidationStrategy }
+
+func (o catchPayloadValidationOpt) applyCatch(n *IntermediateCatchEvent) { n.PayloadValidation = o.s }
+
+// WithPayloadValidation validates a message IntermediateCatchEvent's payload
+// before it is applied.
+func WithPayloadValidation(s validation.ValidationStrategy) CatchOption {
+	return catchPayloadValidationOpt{s: s}
 }
 
 // --- IntermediateThrowEvent options ---

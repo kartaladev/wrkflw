@@ -8,6 +8,7 @@ package event
 import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // --- concrete node types ---
@@ -21,6 +22,10 @@ type StartEvent struct {
 	CorrelationKey string
 	// Timer is the trigger spec for a timer-start event (e.g. schedule.AfterExpr("...")).
 	Timer schedule.TriggerSpec
+	// InputValidation, when set, validates the manually-provided start vars
+	// (Drive) against this start event's contract before the instance is
+	// created. Nil = no validation. Set via WithInputValidation.
+	InputValidation validation.ValidationStrategy
 }
 
 // Kind returns model.KindStartEvent.
@@ -58,6 +63,10 @@ type IntermediateCatchEvent struct {
 	SignalName     string
 	MessageName    string
 	CorrelationKey string
+	// PayloadValidation, when set, validates a message catch's payload before
+	// it is applied to the process instance's variables. Nil = no validation.
+	// Set via WithPayloadValidation.
+	PayloadValidation validation.ValidationStrategy
 }
 
 // Kind returns model.KindIntermediateCatchEvent.

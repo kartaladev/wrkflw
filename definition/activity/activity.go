@@ -10,6 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // --- concrete node types ---
@@ -35,6 +36,10 @@ type UserTask struct {
 	EligibilityPrivileges []string
 	// EligibilityExpr is an optional attribute predicate (expr) for fine-grained eligibility.
 	EligibilityExpr string
+	// CompletionValidation, when set, validates the task's completion output
+	// before it is applied to the process instance's variables. Nil = no
+	// validation. Set via WithCompletionValidation.
+	CompletionValidation validation.ValidationStrategy
 }
 
 // Kind returns model.KindUserTask.
@@ -48,6 +53,10 @@ type ReceiveTask struct {
 	MessageName string
 	// CorrelationKey is an expr expression evaluated at runtime to derive the correlation key.
 	CorrelationKey string
+	// PayloadValidation, when set, validates the inbound message payload before
+	// it is applied to the process instance's variables. Nil = no validation.
+	// Set via WithPayloadValidation.
+	PayloadValidation validation.ValidationStrategy
 }
 
 // Kind returns model.KindReceiveTask.
