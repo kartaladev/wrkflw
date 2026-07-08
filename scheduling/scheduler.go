@@ -265,9 +265,10 @@ func (s *Scheduler) internalOpts() []gocronsched.Option {
 // scheduler without a cancellation watcher; use [Scheduler.Close] to stop it.
 //
 // When [WithJobStore] was supplied, Start also triggers self-rehydration of
-// armed timers (exactly once across all Start/Schedule calls). A partial
-// rehydration error (e.g. unresolved process definitions) is returned here so
-// the caller can decide whether to abort or proceed with a reduced set.
+// armed timers (exactly once across all Start/Schedule calls). Timers whose
+// process definitions are not in the registry are skipped (non-fatal: a WARN
+// is logged and Start returns nil). A genuine infrastructure error from the
+// durable store (e.g. DB failure) is returned so the caller can retry.
 func (s *Scheduler) Start(ctx context.Context) error {
 	impl, err := s.ensureStarted(ctx)
 	if err != nil {
@@ -332,9 +333,17 @@ func (s *Scheduler) ensureStarted(ctx context.Context) (*gocronsched.GocronSched
 // synchronization for the single-execution guarantee.
 //
 // A per-job registration error is logged at WARN and skipped so one
-// unschedulable timer never aborts the batch. A partial error from
-// LoadScheduled (e.g. unresolved definition) is stored in s.rehydrateErr and
-// returned to an explicit Start caller; auto-start logs it at WARN instead.
+// unschedulable timer never aborts the batch.
+//
+// Error handling for LoadScheduled:
+//   - [kernel.ErrUnresolvedTimerDefinitions]: non-fatal. The returned partial
+//     jobs are still registered; a WARN is logged; s.rehydrateErr is left nil
+//     so Start returns nil and startup continues with the resolved subset.
+//     This tolerates consumers that register definitions after Start, or durable
+//     stores with leftover timers from a prior schema version.
+//   - Any other error (e.g. a DB failure from ListArmed): fatal — stored in
+//     s.rehydrateErr and returned to the explicit Start caller so the orchestrator
+//     can retry.
 func (s *Scheduler) rehydrate(ctx context.Context, impl *gocronsched.GocronScheduler) error {
 	if s.cfg.jobStoreProvider == nil {
 		return nil
@@ -356,6 +365,21 @@ func (s *Scheduler) rehydrate(ctx context.Context, impl *gocronsched.GocronSched
 					slog.String("instance_id", job.Spec.InstanceID),
 					slog.Any("error", serr))
 			}
+		}
+		// Unresolved-definitions is a non-fatal condition for automatic
+		// self-rehydration: the partial result (already registered above) is
+		// accepted and startup continues. Log at WARN so the operator is aware.
+		// Any other error (e.g. infrastructure failure from ListArmed) is stored
+		// as fatal and surfaces to the Start caller.
+		if err != nil && errors.Is(err, kernel.ErrUnresolvedTimerDefinitions) {
+			logger := s.cfg.logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.WarnContext(ctx, "scheduling: rehydrate: some armed timers reference unregistered definitions; skipped (non-fatal)",
+				slog.Any("error", err))
+			// Do NOT set s.rehydrateErr — leave it nil so Start returns nil.
+			return
 		}
 		s.rehydrateErr = err
 	})

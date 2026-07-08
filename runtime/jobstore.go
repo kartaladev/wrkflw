@@ -21,12 +21,22 @@ type jobStore struct {
 // self-rehydrate armed timers on start, re-registering each with a faithful
 // fire time via rehydrateTrigger.
 //
-// LoadScheduled returns (nil, nil) when no TimerStore or definition registry
-// is configured on the driver — there are no durable timers to rehydrate.
+// LoadScheduled returns (nil, nil) only when no TimerStore is configured on
+// the driver. When some armed timers reference process definitions not present
+// in the registry, LoadScheduled returns the resolvable jobs plus an error
+// wrapping [kernel.ErrUnresolvedTimerDefinitions]. Callers performing automatic
+// self-rehydration (e.g. the scheduler's WithJobStore path) treat this error
+// as non-fatal and log it at WARN; callers requiring strict resolution (e.g.
+// [ProcessDriver.RehydrateTimers]) may propagate it.
+//
+// A genuine infrastructure failure (e.g. ListArmed DB error) is returned as a
+// plain non-sentinel error and is always fatal.
 func NewJobStore(driver *ProcessDriver) kernel.JobStore { return &jobStore{driver: driver} }
 
 func (j *jobStore) LoadScheduled(ctx context.Context) ([]kernel.ScheduledJob, error) {
-	if j.driver.timerStore == nil || j.driver.defsReg == nil {
+	// defsReg is always non-nil (defaults to the process-global defaultDefinitionRegistry),
+	// so only timerStore needs to be checked.
+	if j.driver.timerStore == nil {
 		return nil, nil
 	}
 	armed, err := j.driver.timerStore.ListArmed(ctx)
@@ -40,7 +50,7 @@ func (j *jobStore) LoadScheduled(ctx context.Context) ([]kernel.ScheduledJob, er
 		def, err := j.driver.defsReg.Lookup(ctx, defQ)
 		if err != nil {
 			unresolved++
-			j.driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: LoadScheduled: definition not found, skipping timer",
+			j.driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: LoadScheduled: definition not found, skipping timer",
 				append(j.driver.obs.tel.LogAttrs(ctx),
 					slog.String("def_ref", defQ.String()),
 					slog.String("timer_id", a.TimerID),
@@ -60,7 +70,8 @@ func (j *jobStore) LoadScheduled(ctx context.Context) ([]kernel.ScheduledJob, er
 		})
 	}
 	if unresolved > 0 {
-		return jobs, fmt.Errorf("workflow-runtime: LoadScheduled: %d timer(s) skipped (definition not found)", unresolved)
+		return jobs, fmt.Errorf("workflow-runtime: LoadScheduled: %d timer(s) skipped (definition not found): %w",
+			unresolved, kernel.ErrUnresolvedTimerDefinitions)
 	}
 	return jobs, nil
 }
