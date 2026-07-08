@@ -5,14 +5,15 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: write the boundary-event impl plan (ADR-0103/0104) → Plan 3 scheduler JobStore
 
-> **State:** `origin/main == main == fb3237d`, working tree clean, all gates green
+> **State:** `origin/main == main == 40131e9`, working tree clean, all gates green
 > (`go build ./...`, `go test -race ./...` 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
-> `golangci-lint run ./...` 0 issues). **Next free ADR: 0108** (0102–0104 remain RESERVED for the
-> pending scheduler-JobStore + boundary-event plans below; 0105/0106/0107 shipped).
+> `golangci-lint run ./...` 0 issues). **Next free ADR: 0109** (0102–0104 remain RESERVED for the
+> pending scheduler-JobStore + boundary-event plans below; 0105/0106/0107/0108 shipped).
 >
-> **QUEUED follow-up (harness task #1, not yet done):** rename `action.NewMapCatalog` → `action.NewCatalog`
-> (~111 call sites; `MapCatalog`+`Registry` are the only two `Catalog` impls, `Registry` already has
-> `NewRegistry`). Same SDD/hard-rename pattern as ADR-0107.
+> **DONE (was queued):** `action.NewMapCatalog` → `action.NewCatalog` (merge `40131e9`, **ADR-0108**):
+> map-backed catalog (the default `Catalog` impl; `Registry` already owns `NewRegistry`) takes the
+> unqualified `NewCatalog`. Constructor-only rename (~111 sites); `MapCatalog` type + concrete return kept.
+> Unique-token global replace, no collision. Spec/plan under `docs/{specs,plans}/2026-07-08-rename-newmapcatalog*`.
 >
 > **Recently shipped since 2026-07-04 (all MERGED + PUSHED to origin/main):**
 > - **ADR-0094/0095** HTTP-only transport — removed gRPC; `transport/http/{httpcore,stdlib,gin,fiber}` mountable route-group adapters.
