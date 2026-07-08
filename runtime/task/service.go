@@ -3,17 +3,32 @@ package task
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/internal/observability"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
+
+// DefinitionResolver resolves a [model.Qualifier] to the *model.ProcessDefinition
+// that generated a human task, so [TaskService.Complete] can look up the
+// completing node's completion-validation strategy.
+//
+// This is a narrow, TaskService-local interface (accept-interfaces idiom):
+// [kernel.DefinitionRegistry] satisfies it structurally, but TaskService does
+// not import kernel for its own sake — any resolver with this shape works.
+type DefinitionResolver interface {
+	Lookup(ctx context.Context, q model.Qualifier) (*model.ProcessDefinition, error)
+}
 
 // TaskService authorizes human-task interactions and returns the engine triggers
 // that the caller (typically via ProcessDriver.ApplyTrigger) feeds back into the process.
@@ -31,12 +46,22 @@ type TaskService struct {
 	authz      authz.Authorizer
 	clk        clock.Clock
 	humanTasks metric.Int64Counter
+	// resolver, when non-nil, opts Complete into completion-output validation:
+	// the completing node's CompletionValidation strategy (if any) is resolved
+	// and enforced. Nil means validation is not performed at all (opt-in).
+	resolver DefinitionResolver
+	// gate memoizes compiled Validators across calls (compile-once, cached by
+	// definition/node key). Always non-nil after NewTaskService (defaults to
+	// validation.NewGate()); share one Gate with the ProcessDriver via
+	// WithValidationGate to avoid double-compiling the same strategy.
+	gate *validation.Gate
 }
 
 // taskServiceConfig holds the optional configuration for [TaskService].
 type taskServiceConfig struct {
-	clk clock.Clock
-	mp  metric.MeterProvider
+	clk      clock.Clock
+	mp       metric.MeterProvider
+	resolver DefinitionResolver
 }
 
 // TaskServiceOption configures a [TaskService].
@@ -73,6 +98,25 @@ func WithClock(clk clock.Clock) TaskServiceOption {
 	}
 }
 
+// WithDefinitionResolver opts [TaskService.Complete] into completion-output
+// validation: after authorization succeeds, Complete resolves the completing
+// task's process definition via r and, if the node is a UserTask carrying a
+// CompletionValidation strategy, validates the actor's output before returning
+// a trigger — rejecting with an error wrapping [validation.ErrInvalidInput].
+//
+// This is opt-in: without WithDefinitionResolver, Complete never validates
+// completion output, even if the node's definition has a CompletionValidation
+// slot set. [kernel.DefinitionRegistry] satisfies DefinitionResolver
+// structurally, so it can be passed directly. A nil r is ignored (validation
+// stays disabled).
+func WithDefinitionResolver(r DefinitionResolver) TaskServiceOption {
+	return func(c *taskServiceConfig) {
+		if r != nil {
+			c.resolver = r
+		}
+	}
+}
+
 // NewTaskService constructs a TaskService with the given task store, authorizer,
 // and optional [TaskServiceOption] values. The clock defaults to [clock.System];
 // inject a fake clock via [WithClock] in tests.
@@ -100,6 +144,8 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...Task
 		authz:      az,
 		clk:        cfg.clk,
 		humanTasks: tel.Int64Counter("wrkflw_human_tasks_total", "Human-task lifecycle transitions."),
+		resolver:   cfg.resolver,
+		gate:       validation.NewGate(),
 	}, nil
 }
 
@@ -146,6 +192,12 @@ func (s *TaskService) Reassign(ctx context.Context, taskToken string, from, to s
 
 // Complete authorizes actor and returns a HumanCompleted trigger carrying the
 // actor's output variables.
+//
+// When a [DefinitionResolver] is wired via [WithDefinitionResolver], Complete
+// additionally validates output against the completing UserTask node's
+// CompletionValidation strategy (if any) before returning the trigger,
+// rejecting with an error wrapping [validation.ErrInvalidInput]. Without a
+// resolver, this validation step is skipped entirely (opt-in).
 func (s *TaskService) Complete(ctx context.Context, taskToken string, actor authz.Actor, output map[string]any) (engine.Trigger, error) {
 	task, err := s.store.Get(ctx, taskToken)
 	if err != nil {
@@ -153,6 +205,20 @@ func (s *TaskService) Complete(ctx context.Context, taskToken string, actor auth
 	}
 	if err := s.authz.Authorize(ctx, task.Eligibility, actor, task.Vars); err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: complete: %w", err)
+	}
+	if s.resolver != nil {
+		def, err := s.resolver.Lookup(ctx, model.Qualifier{ID: task.DefID, Version: task.DefVersion})
+		if err != nil {
+			return nil, fmt.Errorf("workflow-runtime: taskservice: complete: resolve definition for validation: %w", err)
+		}
+		if node, ok := def.Node(task.NodeID); ok {
+			if ut, ok := node.(activity.UserTask); ok && ut.CompletionValidation != nil {
+				key := task.DefID + ":" + strconv.Itoa(task.DefVersion) + ":" + task.NodeID
+				if err := s.gate.Validate(ctx, key, ut.CompletionValidation, output); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "completed")))
 	return engine.NewHumanCompleted(s.clk.Now(), taskToken, output, actor), nil
