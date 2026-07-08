@@ -8,12 +8,16 @@
 //
 // Flow:
 //
-//	start → await[catch signal "approved", reminder every "30m" → "nudge"] → end
+//	start → await[catch message "approved" key=request, reminder every "30m" → "nudge"] → end
 //
-// The instance parks at the catch awaiting the "approved" signal. A recurring
+// The instance parks at the catch awaiting the "approved" message for ITS OWN
+// request, correlated on the `request` variable. Approval is a per-request fact:
+// "request approval-001 was approved" must resume only that instance. A broadcast
+// signal would wake every pending approval parked on the name; a correlated message
+// targets exactly this instance (use a signal only for genuine fan-out). A recurring
 // in-wait reminder ("nudge") is armed on the scheduler. Advancing the fake clock
 // across three 30-minute intervals fires three nudges, one per interval, each
-// re-arming the next. Publishing "approved" resumes the instance to completion —
+// re-arming the next. Delivering "approved" resumes the instance to completion —
 // which CANCELS the reminder. A final clock advance fires nothing: the nudge
 // counter stays at three, proving the reminder was cancelled on resume.
 //
@@ -42,7 +46,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -50,12 +53,13 @@ func main() {
 	ctx := context.Background()
 
 	// Build the process: a single intermediate catch event awaiting the
-	// "approved" signal, carrying a recurring in-wait reminder that fires the
-	// "nudge" action every 30 minutes while the instance sits at the catch.
+	// "approved" message correlated on the `request` variable, carrying a recurring
+	// in-wait reminder that fires the "nudge" action every 30 minutes while the
+	// instance sits at the catch.
 	def, err := definition.NewBuilder("approval-await", 1).
 		Add(event.NewStart("start")).
 		Add(event.NewIntermediateCatch("await",
-			event.WithCatchSignal("approved"),
+			event.WithCatchMessage("approved", "request"),
 			event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"),
 		)).
 		Add(event.NewEnd("end")).
@@ -94,23 +98,15 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
-	// Forward-reference wiring: the bus delivers resume triggers via driver.Deliver,
-	// and the driver is built with the bus. Declare the driver, close over it, assign.
-	var driver *runtime.ProcessDriver
-	bus, err := signal.NewSignalBus(func(bctx context.Context, instanceID string, trg engine.Trigger) error {
-		_, derr := driver.Deliver(bctx, def, instanceID, trg)
-		return derr
-	}, signal.WithClock(clk))
-	if err != nil {
-		log.Fatal("signal bus:", err)
-	}
-
-	driver, err = runtime.NewProcessDriver(
+	// The correlated message arm is delivered via driver.DeliverMessage — no
+	// SignalBus is needed (that is for broadcast signals). A standalone message catch
+	// parks a token carrying AwaitMessage, which the runtime registers as a message
+	// waiter, so a delivered message with the matching name+key resumes this instance.
+	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
 		runtime.WithScheduler(sched),
-		runtime.WithSignalBus(bus),
 	)
 	if err != nil {
 		log.Fatal("driver:", err)
@@ -120,15 +116,15 @@ func main() {
 
 	fmt.Println("--- Approval Await: Catch-Event In-Wait Reminder ---")
 
-	// Drive parks at the catch; the recurring in-wait reminder is armed. The
-	// runner auto-subscribes the parked signal catch to the bus, so the later
-	// Publish resumes it without an explicit Subscribe.
-	parked, err := driver.Drive(ctx, def, instanceID, nil)
+	// Drive parks at the catch; the recurring in-wait reminder is armed. The catch
+	// awaits the "approved" message correlated on `request`, so the instance is
+	// started with request == its own id.
+	parked, err := driver.Drive(ctx, def, instanceID, map[string]any{"request": instanceID})
 	if err != nil {
 		log.Fatal("drive:", err)
 	}
-	fmt.Printf("instance parked at %q awaiting signal %q (status=%s)\n",
-		parked.Tokens[0].NodeID, parked.Tokens[0].AwaitSignal, parked.Status.String())
+	fmt.Printf("instance parked at %q awaiting message %q (status=%s)\n",
+		parked.Tokens[0].NodeID, parked.Tokens[0].AwaitMessage, parked.Status.String())
 
 	// Advance across three 30-minute intervals. Each interval fires one nudge,
 	// re-arming the next. BlockUntilContext waits for the reminder to be armed on
@@ -146,11 +142,12 @@ func main() {
 	}
 	fmt.Printf("%d reminders fired while parked\n", nudges)
 
-	// The approval arrives. Publishing "approved" resumes the instance to
-	// completion, which cancels the recurring reminder.
-	fmt.Println("publishing signal \"approved\" — resuming the instance")
-	if err := bus.Publish(ctx, "approved", map[string]any{"by": "manager"}); err != nil {
-		log.Fatal("publish:", err)
+	// The approval arrives for THIS request. Delivering the correlated "approved"
+	// message resumes the instance to completion, which cancels the recurring
+	// reminder. The correlation key targets exactly this instance.
+	fmt.Println("delivering message \"approved\" — resuming the instance")
+	if err := driver.DeliverMessage(ctx, def, "approved", instanceID, map[string]any{"by": "manager"}); err != nil {
+		log.Fatal("deliver approved:", err)
 	}
 
 	// Poll briefly for completion (the terminal commit can lag the resume).
