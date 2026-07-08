@@ -8,6 +8,15 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
+// Option-scoping convention: an option valid on only a subset of activity kinds
+// MUST return a narrow anonymous interface embedding just those kinds' option
+// interfaces (e.g. WithActionName returns interface{ServiceTaskOption;
+// BusinessRuleOption}), so mis-applying it is a compile-time error. The broad
+// activityOnlyOption type means "valid on EVERY activity kind" and is reserved
+// for genuinely-universal options (WithRetryPolicy, WithCompensation,
+// WithDeadline, WithRecoveryFlow, WithCancelHandler). There is no runtime lint
+// pass; the type system is the guardrail.
+
 // --- option interfaces ---
 
 // ActivityOption is the functional-options type accepted by NewSubProcess and
