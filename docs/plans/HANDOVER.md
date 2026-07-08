@@ -5,22 +5,23 @@ and pick up the next work. Read it top to bottom before starting.
 
 ## 🧭 CURRENT RESUME POINT (read FIRST — updated 2026-07-08) — NEXT: SEQUENTIAL ROADMAP of approved work (next session runs these as ordered phases)
 
-> **State:** `origin/main == main == <this commit>`, working tree clean, all gates green
+> **State:** `origin/main == main == 1899700` (2026-07-08), working tree clean, all gates green
 > (`go build ./...`, `go test -race ./...` 0 fail / 0 races with PG+MySQL+SQLite testcontainers,
-> `golangci-lint run ./...` 0 issues — last CODE change was `40131e9`; commits since are docs/specs only).
+> `golangci-lint run ./...` 0 issues — Item 0 below is DONE + merged + pushed).
 >
-> **▶▶ SEQUENTIAL ROADMAP — the user intends to run ALL of these as ordered phases next session.**
+> **▶▶ SEQUENTIAL ROADMAP — the user intends to run ALL of these as ordered phases.**
 > Each item: `superpowers:writing-plans` over its spec → `superpowers:subagent-driven-development`,
 > own branch, merge, review gate between items. Recommended order below (see COORDINATION note — the
 > type-safe options refactor is placed EARLY so all later option work is born type-safe).
 >
-> **0. Type-safe per-kind options refactor** (recommended FIRST — foundation) — **DESIGNED** (program
->    spec `docs/specs/2026-07-08-activity-options-program.md` §Phase 1). SMALL/surgical: the system is
->    already mostly type-safe (marker-interface + `applyXxx` pattern); the ONLY genuine mis-scoping is
->    `WithWaitReminder` → narrow to `interface { UserTaskOption; ReceiveTaskOption }`; **remove
->    `definition.Lint` entirely** (its one rule is now a compile error) + driver hook; fix
->    `lint_test.go`. `lestrrat-go/option` evaluated and NOT adopted (its good part == the existing
->    pattern). Behavior-preserving. **ADR-0113.**
+> **0. Type-safe per-kind options refactor — ✅ DONE (merge `1899700`, ADR-0113).** Narrowed
+>    `WithWaitReminder` → `interface { UserTaskOption; ReceiveTaskOption }` via `reminderOpt`;
+>    removed `definition.Lint` + `definition.Warning` + the driver `lintDefinition` hook (its one
+>    `reminder-ignored` rule is now a compile error); documented the subset-narrowing convention on
+>    the option interfaces. Behavior-preserving; `lestrrat-go/option` evaluated + NOT adopted. Plan
+>    `docs/plans/2026-07-08-type-safe-per-kind-options.md`. Execution note: narrowing also broke a
+>    JSON round-trip fixture (`accessors_test.go` reminder on a ServiceTask) — reminder moved to a
+>    UserTask. Task review Approved; `/code-review` 0 Critical/0 Important/2 Minor (both fixed).
 > **1. Scheduler JobStore durability** ("JobLoader") — plan DONE:
 >    `docs/plans/2026-07-07-scheduler-jobstore-durability.md` (Tasks 3–5; Tasks 1–2 already shipped).
 >    Workflow-provided `kernel.JobStore` the scheduler CALLS; Save/Update/Delete on the AMBIENT
