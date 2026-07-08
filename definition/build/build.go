@@ -22,6 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // This package is the single home for both authoring entry points, which the
@@ -40,12 +41,25 @@ func NewBuilder(id string, version int) *Builder {
 	return &Builder{inner: model.NewBuilder(id, version)}
 }
 
+// LoaderOption configures a DefinitionLoader before Build; see
+// WithValidatorRegistry. The root definition package re-exports it as
+// definition.LoaderOption.
+type LoaderOption = model.LoaderOption
+
+// WithValidatorRegistry configures the *validation.Registry NewLoader uses to
+// reconstruct validation-strategy descriptors decoded from the wire/YAML
+// `validation` block (see validation.Registry, validation.DescribableStrategy).
+// Required whenever the loaded definition carries one.
+func WithValidatorRegistry(reg *validation.Registry) LoaderOption {
+	return model.WithValidatorRegistry(reg)
+}
+
 // NewLoader reads a YAML process-definition from r and returns a
 // model.DefinitionLoader whose structure is already declared. It is the YAML
 // counterpart to NewBuilder; register definition-scoped actions via
-// RegisterAction/RegisterActionFunc, then call Build.
-func NewLoader(r io.Reader) (model.DefinitionLoader, error) {
-	return model.ParseYAML(r)
+// RegisterAction/RegisterActionFunc, apply any LoaderOption, then call Build.
+func NewLoader(r io.Reader, opts ...LoaderOption) (model.DefinitionLoader, error) {
+	return model.ParseYAML(r, opts...)
 }
 
 // Add appends a pre-built node (programmatic / dynamic construction).

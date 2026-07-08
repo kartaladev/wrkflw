@@ -1,6 +1,10 @@
 package model
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/zakyalvan/krtlwrkflw/validation"
+)
 
 // ErrKindNotRegistered is returned by the deserializer when a node's kind has no
 // registered spec — almost always because the leaf package that owns the kind was
@@ -19,6 +23,16 @@ type NodeSpec struct {
 	FromWire func(Base, NodeWire) Node
 	// ToWire projects the concrete node into the shared wire union.
 	ToWire func(Node, *NodeWire)
+	// ValidationGet, for kinds with a single validation-strategy field (e.g.
+	// StartEvent.InputValidation, UserTask.CompletionValidation), returns the
+	// node's current strategy (nil if unset). Left nil for kinds without such a
+	// slot. Used by the central fail-closed MarshalJSON check
+	// (nodeValidationStrategy) and by Build's pending-descriptor reconciliation
+	// (reconcileNodeValidation) — both in validation_wire.go.
+	ValidationGet func(Node) validation.ValidationStrategy
+	// ValidationSet, paired with ValidationGet, returns a copy of n with the slot
+	// replaced by s.
+	ValidationSet func(n Node, s validation.ValidationStrategy) Node
 }
 
 // nodeRegistry maps each registered kind to its spec. Populated at init time by

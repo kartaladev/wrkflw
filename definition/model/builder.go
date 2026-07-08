@@ -8,6 +8,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // ErrActionInlineAndNameConflict is returned by Build when a node carries both
@@ -71,6 +72,21 @@ type definitionCore struct {
 	cancelActions []string
 	actions       map[string]action.Action // scoped catalog accumulator; nil until first register
 	dupAction     string                   // first duplicate-registered name, "" if none
+	validators    *validation.Registry     // resolves pending validation descriptors at build(); nil = none configured
+}
+
+// LoaderOption configures a DefinitionLoader before Build. Currently the only
+// option is WithValidatorRegistry; the root definition and definition/build
+// packages re-export both the type and the constructor.
+type LoaderOption func(*definitionCore)
+
+// WithValidatorRegistry configures the *validation.Registry Build uses to
+// reconstruct any pending validation-strategy descriptors decoded from wire/YAML
+// (see PendingValidation, ValidationDescriptor). Required whenever a loaded
+// definition carries a `validation` block on a node — Build otherwise fails with
+// ErrValidatorRegistryRequired.
+func WithValidatorRegistry(reg *validation.Registry) LoaderOption {
+	return func(c *definitionCore) { c.validators = reg }
 }
 
 func (c *definitionCore) register(name string, a action.Action) {
@@ -90,6 +106,13 @@ func (c *definitionCore) connect(fromID, toID string, opts ...flow.Option) {
 func (c *definitionCore) build() (*ProcessDefinition, error) {
 	if c.dupAction != "" {
 		return nil, fmt.Errorf("%w: %q", ErrDuplicateScopedAction, c.dupAction)
+	}
+	for i, n := range c.nodes {
+		reconciled, err := reconcileNodeValidation(n, c.validators)
+		if err != nil {
+			return nil, err
+		}
+		c.nodes[i] = reconciled
 	}
 	for _, n := range c.nodes {
 		if ActionOf(n) != "" && InlineActionOf(n) != nil {

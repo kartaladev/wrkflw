@@ -36,6 +36,6 @@ type DescribableStrategy interface {
 
 // ValidationDescriptor is the serialized form stored on a node's wire representation.
 type ValidationDescriptor struct {
-	Kind   string // "expr" | "json-schema" | "avro" (registry key)
-	Schema string // schema text / predicate list (adapter-interpreted)
+	Kind   string `json:"kind" yaml:"kind"`                         // "expr" | "json-schema" | "avro" (registry key)
+	Schema string `json:"schema,omitempty" yaml:"schema,omitempty"` // schema text / predicate list (adapter-interpreted)
 }

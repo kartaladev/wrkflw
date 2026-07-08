@@ -28,6 +28,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/definition/build"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // Qualifier references a process definition by id and version (0 == latest).
@@ -47,7 +48,24 @@ func ParseQualifier(s string) (Qualifier, error) { return model.ParseQualifier(s
 // *model.ProcessDefinition.
 func NewBuilder(id string, version int) *build.Builder { return build.NewBuilder(id, version) }
 
+// LoaderOption configures a DefinitionLoader before Build; see
+// WithValidatorRegistry.
+type LoaderOption = build.LoaderOption
+
+// WithValidatorRegistry configures the *validation.Registry NewLoader uses to
+// reconstruct validation-strategy descriptors decoded from a definition's
+// wire/YAML `validation` block (see validation.Registry,
+// validation.DescribableStrategy, validation.ValidationDescriptor). Required
+// whenever the loaded definition carries one — Build otherwise fails with
+// model.ErrValidatorRegistryRequired.
+func WithValidatorRegistry(reg *validation.Registry) LoaderOption {
+	return build.WithValidatorRegistry(reg)
+}
+
 // NewLoader reads a YAML process-definition from r and returns a
 // model.DefinitionLoader whose structure is already declared. Register
-// definition-scoped actions via RegisterAction/RegisterActionFunc, then call Build.
-func NewLoader(r io.Reader) (model.DefinitionLoader, error) { return build.NewLoader(r) }
+// definition-scoped actions via RegisterAction/RegisterActionFunc, apply any
+// LoaderOption (e.g. WithValidatorRegistry), then call Build.
+func NewLoader(r io.Reader, opts ...LoaderOption) (model.DefinitionLoader, error) {
+	return build.NewLoader(r, opts...)
+}

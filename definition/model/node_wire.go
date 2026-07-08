@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // NodeWire is the flat JSON/JSONB representation of any node. It is the single
@@ -44,6 +45,12 @@ type NodeWire struct {
 	BoundaryErrorExpr  string             `json:"boundaryErrorExpr,omitempty"`
 	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
 	DefRef             string             `json:"defRef,omitempty"`
+	// Validation is the descriptor for the node's validation-strategy slot, when
+	// it has one and the strategy is describable (validation.DescribableStrategy)
+	// or a pending reconstruction placeholder (PendingValidation). nil means
+	// unset. A non-describable (callback) strategy never reaches here —
+	// ProcessDefinition.MarshalJSON fails closed first (ErrUnserializableValidation).
+	Validation *validation.ValidationDescriptor `json:"validation,omitempty"`
 }
 
 // toWire flattens a Node into its wire form via the kind's registered spec.
@@ -121,6 +128,11 @@ func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 	}
 	dw.Nodes = make([]NodeWire, len(d.Nodes))
 	for i, n := range d.Nodes {
+		if strat := nodeValidationStrategy(n); strat != nil {
+			if _, ok := strat.(validation.DescribableStrategy); !ok {
+				return nil, fmt.Errorf("%w: node %q", ErrUnserializableValidation, n.ID())
+			}
+		}
 		dw.Nodes[i] = toWire(n)
 	}
 	return json.Marshal(dw)

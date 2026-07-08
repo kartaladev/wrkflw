@@ -210,13 +210,27 @@ func init() {
 	model.RegisterKind(model.KindStartEvent, model.NodeSpec{
 		Name: "startEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
+			n := StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
 				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
+			if w.Validation != nil {
+				n.InputValidation = model.PendingValidation(*w.Validation)
+			}
+			return n
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(StartEvent)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.TimerTrigger = model.PutTrigger(v.Timer)
+			if ds, ok := v.InputValidation.(validation.DescribableStrategy); ok {
+				d := ds.Descriptor()
+				w.Validation = &d
+			}
+		},
+		ValidationGet: func(n model.Node) validation.ValidationStrategy { return n.(StartEvent).InputValidation },
+		ValidationSet: func(n model.Node, s validation.ValidationStrategy) model.Node {
+			v := n.(StartEvent)
+			v.InputValidation = s
+			return v
 		},
 	})
 	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
@@ -237,14 +251,28 @@ func init() {
 	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return IntermediateCatchEvent{Base: b, WaitFields: w.Wait(),
+			n := IntermediateCatchEvent{Base: b, WaitFields: w.Wait(),
 				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false), SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
+			if w.Validation != nil {
+				n.PayloadValidation = model.PendingValidation(*w.Validation)
+			}
+			return n
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(IntermediateCatchEvent)
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.PutWait(v.WaitFields)
+			if ds, ok := v.PayloadValidation.(validation.DescribableStrategy); ok {
+				d := ds.Descriptor()
+				w.Validation = &d
+			}
+		},
+		ValidationGet: func(n model.Node) validation.ValidationStrategy { return n.(IntermediateCatchEvent).PayloadValidation },
+		ValidationSet: func(n model.Node, s validation.ValidationStrategy) model.Node {
+			v := n.(IntermediateCatchEvent)
+			v.PayloadValidation = s
+			return v
 		},
 	})
 	model.RegisterKind(model.KindIntermediateThrowEvent, model.NodeSpec{
