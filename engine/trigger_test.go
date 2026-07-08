@@ -1,10 +1,13 @@
 package engine_test
 
 import (
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -53,6 +56,39 @@ func TestHumanCompletedFields(t *testing.T) {
 	assert.Equal(t, "tok1", hc.TaskToken)
 	assert.Equal(t, output, hc.Output)
 	assert.Equal(t, actor, hc.Actor)
+}
+
+// TestActionFailedCause verifies that WithCause sets the non-persisted Cause field
+// and that JSON marshalling omits it (journal-safety round-trip).
+func TestActionFailedCause(t *testing.T) {
+	at := time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC)
+	sentinel := errors.New("action-error: something went wrong")
+
+	af := engine.NewActionFailed(at, "c1", sentinel.Error(), true, engine.WithCause(sentinel))
+
+	// Cause field must be set and match the original error via errors.Is.
+	assert.True(t, errors.Is(af.Cause, sentinel), "Cause must wrap the original error")
+
+	// JSON round-trip: marshal → unmarshal → Cause must be nil (not persisted).
+	data, err := json.Marshal(af)
+	require.NoError(t, err)
+
+	var decoded engine.ActionFailed
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Nil(t, decoded.Cause, "Cause must not survive a JSON round-trip (journal-safety)")
+
+	// Other fields must survive the round-trip.
+	assert.Equal(t, "c1", decoded.CommandID)
+	assert.Equal(t, sentinel.Error(), decoded.Err)
+	assert.True(t, decoded.Retryable)
+}
+
+// TestActionFailedWithoutCause asserts that NewActionFailed without WithCause
+// leaves Cause nil (no regression on the default path).
+func TestActionFailedWithoutCause(t *testing.T) {
+	at := time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC)
+	af := engine.NewActionFailed(at, "c2", "some error", false)
+	assert.Nil(t, af.Cause, "Cause must be nil when WithCause is not used")
 }
 
 // TestHumanClaimedFields asserts that NewHumanClaimed stores all fields.

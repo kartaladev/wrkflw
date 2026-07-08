@@ -44,6 +44,14 @@ type ActionFailed struct {
 	// the backoff duration in Step to spread retry storms across multiple workers.
 	// Zero means no jitter (the default when constructed via NewActionFailed).
 	JitterFraction float64
+	// Cause is the original Go error from the live action invocation. It is
+	// intentionally NOT persisted (json:"-") so that serialised/replayed
+	// ActionFailed triggers remain JSON-serialisable. The engine is
+	// snapshot-based: propagateError runs once per trigger and the resulting
+	// InstanceState is committed; a replayed trigger never re-runs propagateError,
+	// making a non-persisted live error deterministically safe. Consumed by
+	// boundary-event error matching (errors.Is / errors.As).
+	Cause error `json:"-"`
 }
 
 // NewStartInstance builds a StartInstance trigger stamped with the given time.
@@ -63,6 +71,14 @@ type ActionFailedOption func(*ActionFailed)
 // it to spread concurrent retries across workers). Values <= 0 mean no jitter.
 func WithJitter(fraction float64) ActionFailedOption {
 	return func(a *ActionFailed) { a.JitterFraction = fraction }
+}
+
+// WithCause stores the original Go error on the non-persisted ActionFailed.Cause
+// field so that boundary-event error-matching closures (WithBoundaryErrorCheck) can
+// use errors.Is / errors.As against the live error. The field is tagged json:"-" and
+// is never written to or read from the journal.
+func WithCause(err error) ActionFailedOption {
+	return func(a *ActionFailed) { a.Cause = err }
 }
 
 // NewActionFailed builds an ActionFailed trigger reporting a service-action error
