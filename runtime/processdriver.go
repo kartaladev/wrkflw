@@ -98,8 +98,9 @@ type ProcessDriver struct {
 	ownedScheduler *scheduling.Scheduler
 
 	// gate is the executor-side validation memoizer (runtime/validation.Gate)
-	// used by validateInput to compile-once-and-cache each node's
-	// validate.ValidationStrategy. Always non-nil after NewProcessDriver.
+	// used by validateInput to compile-once-and-cache each
+	// validate.ValidationStrategy by its descriptor (kind + schema). Always
+	// non-nil after NewProcessDriver.
 	gate *validation.Gate
 }
 
@@ -511,16 +512,10 @@ func (driver *ProcessDriver) validateInput(ctx context.Context, def *model.Proce
 	if strat == nil {
 		return nil
 	}
-	if err := driver.gate.Validate(ctx, keyFor(def, node), strat, inputOf(trg)); err != nil {
+	if err := driver.gate.Validate(ctx, strat, inputOf(trg)); err != nil {
 		return err // already wraps validation.ErrInvalidInput; errors.Is survives the caller's %w
 	}
 	return nil
-}
-
-// keyFor builds a collision-free Gate cache key from the definition qualifier + node id. Uses %q so a
-// colon inside any id cannot forge a different (def,version,node) triple's key.
-func keyFor(def *model.ProcessDefinition, n model.Node) string {
-	return fmt.Sprintf("%q:%d:%q", def.ID, def.Version, n.ID())
 }
 
 // inputOf extracts the external-input payload carried by trg, or nil for any trigger kind that does

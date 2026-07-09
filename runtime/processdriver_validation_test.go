@@ -192,3 +192,75 @@ func TestValidateInputNestedMessage(t *testing.T) {
 		})
 	}
 }
+
+// sameIDDifferentSchemaDef returns a definition with a ReceiveTask "x" at the top
+// level (payload schema: a == true) AND a ReceiveTask ALSO named "x" nested in a
+// sub-process (payload schema: b == true). Node ids are unique per scope but
+// collide across scopes — exactly the shape that the old node-location keying
+// (topDef:version:"x", identical for both) confused: the second node reused the
+// first node's compiled validator, validating against the WRONG schema.
+//
+//	start → x(top, msg "top-msg", a == true) → sub → end
+//	sub:   inner-start → x(msg "inner-msg", b == true) → inner-end
+func sameIDDifferentSchemaDef() *model.ProcessDefinition {
+	nested := &model.ProcessDefinition{
+		ID: "collide-nested", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("inner-start"),
+			activity.NewReceiveTask("x", "inner-msg", activity.WithPayloadValidation(vexpr.New("b == true"))),
+			event.NewEnd("inner-end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "x"},
+			{ID: "if2", Source: "x", Target: "inner-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "collide-scopes", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewReceiveTask("x", "top-msg", activity.WithPayloadValidation(vexpr.New("a == true"))),
+			activity.NewSubProcess("sub", nested),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "x"},
+			{ID: "f2", Source: "x", Target: "sub"},
+			{ID: "f3", Source: "sub", Target: "end"},
+		},
+	}
+}
+
+// TestValidateInput_NoDescriptorCollisionAcrossScopes proves the Gate keys its
+// compiled-validator cache by strategy DESCRIPTOR (kind + schema), not by node
+// location. The top "x" (schema a == true) is exercised first, building its
+// validator; the nested "x" (schema b == true) must then be validated against
+// ITS OWN schema. We deliver {b: true} (no "a") to the nested node: under the old
+// node-location keying it would have reused the top node's a == true validator
+// and rejected on the missing "a"; under descriptor keying it validates b == true
+// and the instance runs to completion.
+func TestValidateInput_NoDescriptorCollisionAcrossScopes(t *testing.T) {
+	t.Parallel()
+
+	fc := clockwork.NewFakeClock()
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
+	def := sameIDDifferentSchemaDef()
+
+	const instanceID = "collide-1"
+	parked, err := r.Drive(t.Context(), def, instanceID, nil)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, parked.Status, "must park at top-level x")
+
+	// Satisfy the top-level schema (a == true) to advance into the sub-process.
+	require.NoError(t, r.DeliverMessage(t.Context(), def, "top-msg", "", map[string]any{"a": true}))
+
+	// Deliver a payload valid ONLY under the nested schema (b == true). A collision
+	// would validate this against a == true and reject on the missing key.
+	derr := r.DeliverMessage(t.Context(), def, "inner-msg", "", map[string]any{"b": true})
+	require.NoError(t, derr, "nested node must validate against its own schema, not the top node's")
+
+	after, _, loadErr := store.Load(t.Context(), instanceID)
+	require.NoError(t, loadErr)
+	assert.Equal(t, engine.StatusCompleted, after.Status)
+}

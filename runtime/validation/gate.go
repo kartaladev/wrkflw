@@ -18,9 +18,13 @@ import (
 // layer maps it to HTTP 400. Always wrapped with a detail (which field/predicate/schema).
 var ErrInvalidInput = errors.New("workflow-validation: invalid input")
 
-// Gate is the executor-side memoizer shared by the driver and task service. It builds
-// a strategy's Validator once per key (compile-once) and wraps any failure in
-// ErrInvalidInput. Definitions stay immutable; the executor owns the compiled cache.
+// Gate is the ProcessDriver's executor-side memoizer. It builds a strategy's
+// Validator once per strategy DESCRIPTOR (kind + schema — what actually
+// determines the compiled validator) and wraps any failure in ErrInvalidInput.
+// Keying by descriptor rather than node location is correct (same schema ⇒ same
+// validator), bounded (finitely many distinct schemas — no leak), and immune to
+// node-id collisions across nested scopes. Definitions stay immutable; the
+// driver owns the compiled cache.
 type Gate struct {
 	mu    sync.RWMutex
 	built map[string]validate.Validator
@@ -29,10 +33,11 @@ type Gate struct {
 // NewGate returns an empty Gate.
 func NewGate() *Gate { return &Gate{built: make(map[string]validate.Validator)} }
 
-// Validate builds (once, cached under key) the Validator for s and runs it against input.
-// A build error is returned as-is; a validation failure is wrapped in ErrInvalidInput.
-func (g *Gate) Validate(ctx context.Context, key string, s validate.ValidationStrategy, input map[string]any) error {
-	v, err := g.validator(key, s)
+// Validate builds (once, cached per descriptor) the Validator for s and runs it
+// against input. A build error is returned as-is; a validation failure is wrapped
+// in ErrInvalidInput.
+func (g *Gate) Validate(ctx context.Context, s validate.ValidationStrategy, input map[string]any) error {
+	v, err := g.validator(s)
 	if err != nil {
 		return err
 	}
@@ -42,16 +47,27 @@ func (g *Gate) Validate(ctx context.Context, key string, s validate.ValidationSt
 	return nil
 }
 
-func (g *Gate) validator(key string, s validate.ValidationStrategy) (validate.Validator, error) {
+// validator resolves s's Validator. Describable strategies are cached under their
+// descriptor (kind + schema); non-describable strategies (e.g. callback) have no
+// stable key, so their Validator is built fresh each call — their NewValidator is
+// a trivial identity wrap, so caching would buy nothing.
+func (g *Gate) validator(s validate.ValidationStrategy) (validate.Validator, error) {
+	ds, ok := s.(validate.DescribableStrategy)
+	if !ok {
+		return s.NewValidator()
+	}
+	d := ds.Descriptor()
+	key := d.Kind + "\x00" + d.Schema
+
 	g.mu.RLock()
-	v, ok := g.built[key]
+	v, cached := g.built[key]
 	g.mu.RUnlock()
-	if ok {
+	if cached {
 		return v, nil
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if v, ok = g.built[key]; ok { // re-check under write lock
+	if v, cached = g.built[key]; cached { // re-check under write lock
 		return v, nil
 	}
 	v, err := s.NewValidator()
