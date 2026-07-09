@@ -66,6 +66,8 @@ type triggerEnvelope struct {
 	Name           string         `json:"name,omitempty"`
 	CorrelationKey string         `json:"correlation_key,omitempty"`
 	ToNode         string         `json:"to_node,omitempty"`
+	ReverseNode    string         `json:"reverse_node,omitempty"`
+	ResetVars      bool           `json:"reset_vars,omitempty"`
 	Jitter         float64        `json:"jitter,omitempty"`
 	IncidentID     string         `json:"incident_id,omitempty"`
 	AddAttempts    int            `json:"add_attempts,omitempty"`
@@ -105,7 +107,7 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 	case engine.SubInstanceFailed:
 		kind, env.CommandID, env.Err = kindSubInstanceFailed, v.CommandID, v.Err
 	case engine.CompensateRequested:
-		kind, env.ToNode = kindCompensateRequested, v.ToNode
+		kind, env.ToNode, env.ReverseNode, env.ResetVars = kindCompensateRequested, v.ToNode, v.ReverseNode, v.ResetVars
 	case engine.CancelRequested:
 		kind = kindCancelRequested
 	case engine.ResolveIncident:
@@ -152,7 +154,14 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 	case kindSubInstanceFailed:
 		return engine.NewSubInstanceFailed(env.At, env.CommandID, env.Err), nil
 	case kindCompensateRequested:
-		return engine.NewCompensateRequested(env.At, env.ToNode), nil
+		// Reconstruct all three fields explicitly (rather than routing through
+		// NewReverseToStart) so every ToNode/ReverseNode/ResetVars combination
+		// written by MarshalTrigger — not just the ReverseToStart happy path —
+		// round-trips faithfully.
+		cr := engine.NewCompensateRequested(env.At, env.ToNode)
+		cr.ReverseNode = env.ReverseNode
+		cr.ResetVars = env.ResetVars
+		return cr, nil
 	case kindCancelRequested:
 		return engine.NewCancelRequested(env.At), nil
 	case kindResolveIncident:
