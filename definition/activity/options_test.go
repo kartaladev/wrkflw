@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
@@ -43,4 +44,13 @@ func TestWithPayloadValidation_Receive_SetsSlot(t *testing.T) {
 	if rt.PayloadValidation == nil {
 		t.Fatal("PayloadValidation not set")
 	}
+}
+
+func TestWithCompletionAction_SetsFieldOnUserAndReceive(t *testing.T) {
+	t.Parallel()
+	u := activity.NewUserTask("u1", []string{"r"}, activity.WithCompletionAction("recordApproval")).(activity.UserTask)
+	assert.Equal(t, "recordApproval", u.CompletionAction)
+
+	r := activity.NewReceiveTask("r1", "m", activity.WithCompletionAction("ackOrder")).(activity.ReceiveTask)
+	assert.Equal(t, "ackOrder", r.CompletionAction)
 }

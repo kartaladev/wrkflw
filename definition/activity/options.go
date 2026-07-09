@@ -182,6 +182,27 @@ func WithWaitReminder(t schedule.TriggerSpec, action string) interface {
 	return reminderOpt{t, action}
 }
 
+// completionActionOpt narrows WithCompletionAction to only the activity kinds
+// whose engine strategy runs a completion action: UserTask and ReceiveTask.
+// Applying a completion action to any other activity kind is a compile-time error.
+type completionActionOpt struct{ action string }
+
+func (o completionActionOpt) applyUserTask(u *UserTask)       { u.CompletionAction = o.action }
+func (o completionActionOpt) applyReceiveTask(r *ReceiveTask) { r.CompletionAction = o.action }
+
+// WithCompletionAction attaches a catalog action run when a UserTask or
+// ReceiveTask completion is triggered (human completion / message receive),
+// after the completion input is merged. Its returned vars merge into the
+// instance variables. Failure is governed by the node's WithRetryPolicy /
+// error boundary (same machinery as a ServiceTask action). Distinct from
+// WithCompletionValidation, which gates the completion input; this runs after it.
+func WithCompletionAction(name string) interface {
+	UserTaskOption
+	ReceiveTaskOption
+} {
+	return completionActionOpt{name}
+}
+
 // --- UserTask-only options ---
 
 type eligibilityExprOpt struct{ expr string }
