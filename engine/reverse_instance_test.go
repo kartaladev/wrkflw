@@ -660,6 +660,8 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
 	assert.Equal(t, "", r1.State.EventSubprocesses[0].EnclosingScopeID, "root ESP arm must have empty EnclosingScopeID")
+	originalTimerID := r1.State.EventSubprocesses[0].TimerID
+	require.NotEmpty(t, originalTimerID, "original (Start-time) root ESP arm must carry a TimerID")
 
 	// ---- Step 2: complete "do" → svc's compensation recorded, token parks on "park" ----
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
@@ -692,4 +694,16 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	assert.True(t, foundTimer, "resume must re-schedule the root ESP's timer (ScheduleTimer command)")
 	assert.NotEmpty(t, schedTimer.TimerID, "re-scheduled timer must carry a TimerID")
 	assert.Equal(t, r4.State.EventSubprocesses[0].TimerID, schedTimer.TimerID, "re-armed arm's TimerID must match the emitted ScheduleTimer")
+
+	// The ORIGINAL (Start-time) root-ESP arm is never swept by the compensation
+	// walk itself (cancelAllArmsAndBoundaries does not touch EventSubprocesses),
+	// so it survives until applyFinish's sweep-before-rearm. That stale timer
+	// must be explicitly cancelled — otherwise it leaks and can fire against the
+	// reversed instance. Assert the sweep actually emits CancelTimer for it (not
+	// just that a fresh timer appears), and that the re-armed arm carries a NEW,
+	// different TimerID rather than reusing the stale one.
+	assert.Contains(t, r4.Commands, engine.CancelTimer{TimerID: originalTimerID},
+		"full-reverse re-arm must cancel the stale original root-ESP timer")
+	assert.NotEqual(t, originalTimerID, r4.State.EventSubprocesses[0].TimerID,
+		"re-armed root-ESP arm must carry a freshly minted TimerID, not the stale original")
 }
