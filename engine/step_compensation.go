@@ -427,14 +427,16 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		// does), optionally reset Variables, resume at ReverseNode. Re-arm root
 		// event sub-processes when the walk was rooted at scope "" (today the
 		// only case: NewReverseToStart always targets the root scope) — see
-		// finishPlan.rearmRootESP.
+		// finishPlan.rearmRootESP. A cancel arriving mid-walk preempts the resume
+		// and terminates (consumePendingCancel), mirroring the throw walk — Fork B.
 		plan = finishPlan{
-			resume:         true,
-			resumeAt:       reverseNode,
-			doClearRecords: true,
-			clearScope:     scopeID,
-			resetVars:      reverseResetVars,
-			rearmRootESP:   scopeID == "",
+			resume:               true,
+			resumeAt:             reverseNode,
+			doClearRecords:       true,
+			clearScope:           scopeID,
+			resetVars:            reverseResetVars,
+			rearmRootESP:         scopeID == "",
+			consumePendingCancel: true,
 		}
 	default:
 		// Full rollback / terminate. Zero FinalStatus (== StatusRunning, the iota-0
@@ -469,6 +471,18 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 	// full cancel over the REMAINING records cannot double-run it. Terminate.
 	if plan.resume && plan.consumePendingCancel && s.PendingCancel {
 		s.PendingCancel = false
+		// Clear THIS walk's own already-compensated records BEFORE the cancel walk
+		// so it cannot re-run them (double-compensation). The throw walk deleted
+		// its archive above (deleteArchive) and RETAINS RootCompensations — those
+		// are genuinely-uncompensated outer records the cancel walk must still
+		// compensate (doClearRecords == false, skipped here). A full-reverse walk
+		// compensated ALL of RootCompensations, so it clears them here
+		// (doClearRecords == true): the re-issued beginCompensation then finds zero
+		// eligible records and drops straight into the terminate branch
+		// (FailInstance{"cancelled"}, StatusTerminated) — the correct outcome.
+		if plan.doClearRecords {
+			clearRecords(s, plan.clearScope)
+		}
 		s.Status = StatusCompensating
 		return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval, "", false)
 	}

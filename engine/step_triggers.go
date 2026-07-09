@@ -120,13 +120,16 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 	// second beginCompensation re-walks records that are still mid-consumption and
 	// re-emits the in-flight compensation, double-running money-moving actions.
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
-		if s.Compensating.ResumeNode != "" {
-			// ADR-0039 (B1): a compensation THROW walk is in flight; it would
-			// otherwise RESUME past the throw, so the instance would keep running.
-			// Defer this cancel — record the intent and let the throw walk finish;
-			// stepCompensationFinish then runs a full cancel over the REMAINING
-			// records (the throw's target is deleted by then) and terminates instead
-			// of resuming.
+		if s.Compensating.ResumeNode != "" || s.Compensating.ReverseNode != "" {
+			// A RESUMING walk is in flight — either a compensation THROW walk
+			// (ResumeNode != "", ADR-0039 B1) or a full-REVERSE walk (ReverseNode
+			// != "", ADR-0109 Fork B). Both would otherwise RESUME (Running) at
+			// finish, so the instance would keep running and the caller who
+			// cancelled would be left with a live instance. Defer this cancel —
+			// record the intent and let the in-flight walk finish; applyFinish then
+			// consumes PendingCancel and runs a full cancel over the REMAINING
+			// records (the throw's archive / the reverse's records are cleared by
+			// then) and terminates instead of resuming.
 			s.PendingCancel = true
 			cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
 			return StepResult{State: *s, Commands: cmds}, nil

@@ -598,6 +598,76 @@ func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
 	}
 }
 
+// TestReverseToStart_CancelMidWalk_TerminatesNotResumes is the Fork B (ADR-0109
+// hardening, #2) regression: a CancelRequested delivered while a full REVERSE
+// walk is mid-flight must PREEMPT the reverse — the instance terminates
+// (StatusTerminated + FailInstance{"cancelled"}) instead of resuming Running at
+// start.
+//
+// Today the cancel is silently swallowed: handleCancelRequested only defers
+// (sets PendingCancel) when the in-flight walk is a THROW walk (ResumeNode !=
+// ""); a reverse walk has ReverseNode set but ResumeNode == "", so the cancel
+// hits the documented no-op and the reverse walk finishes into StatusRunning —
+// the caller who cancelled is left with a live running instance.
+//
+// Cancel WINS over reverse (documented semantic call). The fix mirrors the
+// existing throw-walk PendingCancel protocol EXACTLY: widen the defer condition
+// to also cover reverse walks, and consume PendingCancel on the reverse resume
+// path (clearing the already-compensated records so the cancel walk finds zero
+// eligible records and terminates directly — no double-compensation).
+func TestReverseToStart_CancelMidWalk_TerminatesNotResumes(t *testing.T) {
+	def := reverseSvcDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	// Drive to an in-flight REVERSE walk: start -> complete "do" (records svc's
+	// compensation, parks on "park") -> NewReverseToStart emits the "undo"
+	// InvokeAction WITHOUT completing it, so the cursor's ReverseNode is set and
+	// ActiveCmdID != "" (mid-reverse-walk).
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdDo := findInvokeActionID(t, r1.Commands, "do")
+
+	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
+
+	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	require.NoError(t, err)
+	undoID := findInvokeActionID(t, r3.Commands, "undo")
+	require.Equal(t, engine.StatusCompensating, r3.State.Status, "precondition: reverse walk in flight")
+	require.NotEmpty(t, r3.State.Compensating.ReverseNode, "precondition: in-flight walk is a REVERSE walk (ReverseNode set)")
+	require.Empty(t, r3.State.Compensating.ResumeNode, "precondition: a reverse walk has NO ResumeNode (distinguishes it from a throw walk)")
+	require.NotEmpty(t, r3.State.Compensating.ActiveCmdID, "precondition: undo not yet completed (mid-walk)")
+
+	// Deliver CancelRequested mid-reverse-walk: it must be DEFERRED (PendingCancel
+	// set), not silently swallowed. The walk stays in flight (cancel does not
+	// re-enter beginCompensation while the undo is outstanding).
+	r4, err := engine.Step(def, r3.State, engine.NewCancelRequested(t0), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.True(t, r4.State.PendingCancel, "cancel mid-reverse-walk must be DEFERRED (PendingCancel), not silently dropped")
+	assert.Equal(t, engine.StatusCompensating, r4.State.Status, "the reverse walk is still in flight; cancel does not pre-empt it yet")
+
+	// Complete the in-flight undo: the deferred cancel now PREEMPTS the reverse.
+	// The instance must TERMINATE (StatusTerminated + FailInstance{"cancelled"})
+	// instead of resuming Running at start.
+	r5, err := engine.Step(def, r4.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusTerminated, r5.State.Status, "cancel preempts reverse: instance TERMINATES, NOT resumes Running")
+	assert.NotNil(t, r5.State.EndedAt, "terminated instance must stamp EndedAt")
+	assert.Empty(t, r5.State.RootCompensations, "records cleared on terminate")
+	assert.False(t, r5.State.PendingCancel, "PendingCancel consumed by the preemption")
+	assert.Empty(t, r5.State.Tokens, "terminated instance has no live tokens (no resume-at-start token was placed)")
+
+	var failCancelled bool
+	for _, c := range r5.Commands {
+		if fi, ok := c.(engine.FailInstance); ok && fi.Err == "cancelled" {
+			failCancelled = true
+		}
+	}
+	assert.True(t, failCancelled, "cancel-preempted reverse must emit FailInstance{\"cancelled\"}")
+}
+
 // reverseWithRootESPDef is modeled on rootLevelESPDef (step_subprocess_test.go)
 // but adds a compensable node + trailing park node (the reverse-fixture shape
 // used throughout this file), so an instance can be driven into StatusRunning
