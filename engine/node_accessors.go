@@ -40,23 +40,23 @@ func completionActionOf(n model.Node) string {
 	}
 }
 
-// cancelHandlerOf returns the CancelHandler of an activity node, or "".
-func cancelHandlerOf(n model.Node) string {
+// cancelActionOf returns the CancelAction of an activity node, or "".
+func cancelActionOf(n model.Node) string {
 	switch v := n.(type) {
 	case activity.ServiceTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.UserTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.ReceiveTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.SendTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.BusinessRuleTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.SubProcess:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.CallActivity:
-		return v.CancelHandler
+		return v.CancelAction
 	default:
 		return ""
 	}

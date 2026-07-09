@@ -34,7 +34,7 @@ type NodeWire struct {
 	RecoveryFlow      string             `json:"recoveryFlow,omitempty"`
 	CompensateAction  string             `json:"compensateAction,omitempty"`
 	CompensateRef     string             `json:"compensateRef,omitempty"`
-	CancelHandler     string             `json:"cancelHandler,omitempty"`
+	CancelAction      string             `json:"cancelAction,omitempty"`
 	CompletionAction  string             `json:"completionAction,omitempty"`
 	SignalName        string             `json:"signalName,omitempty"`
 	MessageName       string             `json:"messageName,omitempty"`
@@ -67,14 +67,14 @@ func toWire(n Node) NodeWire {
 // packages call it from their ToWire specs.
 func (w *NodeWire) PutActivity(a ActivityFields) {
 	w.RetryPolicy, w.RecoveryFlow = a.RetryPolicy, a.RecoveryFlow
-	w.CompensateAction, w.CancelHandler, w.CompletionAction = a.CompensateAction, a.CancelHandler, a.CompletionAction
+	w.CompensateAction, w.CancelAction, w.CompletionAction = a.CompensateAction, a.CancelAction, a.CompletionAction
 	w.PutWait(a.WaitFields)
 }
 
 // Activity reconstructs the shared activity fields from the wire form. Leaf
 // packages call it from their FromWire specs.
 func (w NodeWire) Activity() ActivityFields {
-	return ActivityFields{WaitFields: w.Wait(), RetryPolicy: w.RetryPolicy, RecoveryFlow: w.RecoveryFlow, CompensateAction: w.CompensateAction, CancelHandler: w.CancelHandler, CompletionAction: w.CompletionAction}
+	return ActivityFields{WaitFields: w.Wait(), RetryPolicy: w.RetryPolicy, RecoveryFlow: w.RecoveryFlow, CompensateAction: w.CompensateAction, CancelAction: w.CancelAction, CompletionAction: w.CompletionAction}
 }
 
 // Wait reconstructs the shared deadline+reminder fields from the wire form,

@@ -73,8 +73,8 @@ type ActivityFields struct {
 	RecoveryFlow string
 	// CompensateAction is the name of the action.Action to invoke during rollback.
 	CompensateAction string
-	// CancelHandler is the optional action.Action to run when this node is interrupted.
-	CancelHandler string
+	// CancelAction is the optional action.Action to run when this node is interrupted.
+	CancelAction string
 	// CompletionAction is the optional action.Action invoked when the node's
 	// completion is triggered (human completion / message receive), before the
 	// token advances. Its returned vars merge into the instance variables.

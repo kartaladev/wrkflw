@@ -15,7 +15,7 @@ import (
 // BusinessRuleOption }), so mis-applying it is a compile-time error. The broad
 // activityOnlyOption type means "valid on EVERY activity kind" and is reserved
 // for genuinely-universal options (WithRetryPolicy, WithCompensateAction,
-// WithDeadline, WithRecoveryFlow, WithCancelHandler). There is no runtime lint
+// WithDeadline, WithRecoveryFlow, WithCancelAction). There is no runtime lint
 // pass; the type system is the guardrail.
 
 // --- option interfaces ---
@@ -139,9 +139,9 @@ func WithCompensateAction(action string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.CompensateAction = action })
 }
 
-// WithCancelHandler sets the action.Action run when the node is interrupted.
-func WithCancelHandler(action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) { a.CancelHandler = action })
+// WithCancelAction sets the action.Action run when the node is interrupted.
+func WithCancelAction(action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.CancelAction = action })
 }
 
 // WithDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow, and

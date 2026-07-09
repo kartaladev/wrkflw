@@ -112,7 +112,7 @@ func TestUserTaskConstructor(t *testing.T) {
 func TestReceiveTaskConstructor(t *testing.T) {
 	n := activity.NewReceiveTask("recv", "payment.received",
 		activity.WithCorrelationKey("order.id"),
-		activity.WithCancelHandler("cancel-payment"),
+		activity.WithCancelAction("cancel-payment"),
 	)
 	if n.Kind() != model.KindReceiveTask {
 		t.Fatalf("Kind() = %v, want KindReceiveTask", n.Kind())
@@ -127,8 +127,8 @@ func TestReceiveTaskConstructor(t *testing.T) {
 	if rt.CorrelationKey != "order.id" {
 		t.Fatalf("CorrelationKey = %q", rt.CorrelationKey)
 	}
-	if rt.CancelHandler != "cancel-payment" {
-		t.Fatalf("CancelHandler = %q", rt.CancelHandler)
+	if rt.CancelAction != "cancel-payment" {
+		t.Fatalf("CancelAction = %q", rt.CancelAction)
 	}
 }
 

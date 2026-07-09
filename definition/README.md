@@ -132,7 +132,7 @@ kind-specific data generically).
 
 Work on all activity constructors: `WithName`, `WithRetryPolicy(*RetryPolicy)`,
 `WithRecoveryFlow(flowID)`, `WithCompensateAction(actionName)`,
-`WithCancelHandler(actionName)`, `WithDeadline(dur, flowID, actionName)`,
+`WithCancelAction(actionName)`, `WithDeadline(dur, flowID, actionName)`,
 `WithWaitReminder(every, actionName)`.
 
 Kind-specific: `WithActionName` / `WithAction` / `WithActionFunc` (service &

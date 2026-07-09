@@ -432,5 +432,5 @@ scope, then resumes execution past the throw event.
 `NewCancelRequested` terminates the instance immediately: all live tokens are
 consumed, all timers and boundary/gateway arms are cancelled (`CancelTimer`
 commands emitted), and `Status` is set to `StatusTerminated`. Any
-`CancelHandler` actions registered on nodes are emitted as `InvokeCancelAction`
+`CancelAction` actions registered on nodes are emitted as `InvokeCancelAction`
 commands (best-effort; their results are never fed back into the engine).

@@ -6,7 +6,7 @@ package runtime_test
 // ADR: 0035.
 //
 // Verifies that when a running instance is cancelled, the engine emits an
-// InvokeCancelAction for each active node whose Node.CancelHandler is non-empty,
+// InvokeCancelAction for each active node whose Node.CancelAction is non-empty,
 // and the runner executes it best-effort before marking the instance Terminated.
 
 import (
@@ -30,18 +30,18 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 )
 
-// cancelHandlerDef returns:
+// cancelActionDef returns:
 //
-//	start → approve (KindUserTask, CancelHandler:"cleanup") → end
+//	start → approve (KindUserTask, CancelAction:"cleanup") → end
 //
 // The user task parks the instance (StatusRunning). On cancel the engine emits
 // InvokeCancelAction{Name:"cleanup"} for the active "approve" node.
-func cancelHandlerDef() *model.ProcessDefinition {
+func cancelActionDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "cancel-handler-def", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"reviewer"}, activity.WithCancelHandler("cleanup")),
+			activity.NewUserTask("approve", []string{"reviewer"}, activity.WithCancelAction("cleanup")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -75,7 +75,7 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
-	def := cancelHandlerDef()
+	def := cancelActionDef()
 	const instanceID = "ch-i1"
 
 	// Run: parks at the user task.
@@ -108,7 +108,7 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
-	def := cancelHandlerDef()
+	def := cancelActionDef()
 	const instanceID = "ch-i2"
 
 	_, err := driver.Drive(t.Context(), def, instanceID, nil)
@@ -131,7 +131,7 @@ func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	// Empty catalog — "cleanup" will not resolve.
 	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
-	def := cancelHandlerDef()
+	def := cancelActionDef()
 	const instanceID = "ch-i3"
 
 	_, err := driver.Drive(t.Context(), def, instanceID, nil)

@@ -645,7 +645,7 @@ same set of functional options:
 | `activity.WithRetryPolicy(*model.RetryPolicy)` | Per-node retry policy (see below). |
 | `activity.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
 | `activity.WithCompensateAction(actionName string)` | Service action invoked on rollback (reverse order). |
-| `activity.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
+| `activity.WithCancelAction(actionName string)` | Service action run when the node is interrupted. |
 | `activity.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
 | `activity.WithWaitReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
@@ -729,7 +729,7 @@ activity.NewReceiveTask("await-payment", "payment-received",
 )
 activity.NewSubProcess("reserve-hotel", hotelDef)
 activity.NewCallActivity("credit-check", "credit-check")        // resolved via a DefinitionRegistry
-event.NewEventSubProcess("on-cancel", cancelHandlerDef, event.WithEventSubProcessNonInterrupting())
+event.NewEventSubProcess("on-cancel", cancelActionDef, event.WithEventSubProcessNonInterrupting())
 ```
 
 ### SendTask delivery (transactional outbox)

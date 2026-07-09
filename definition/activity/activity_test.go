@@ -17,7 +17,7 @@ func TestServiceTaskOptions(t *testing.T) {
 		activity.WithName("Charge"),
 		activity.WithActionName("charge-card"),
 		activity.WithCompensateAction("refund"),
-		activity.WithCancelHandler("abort"),
+		activity.WithCancelAction("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
 		activity.WithDeadline(schedule.AfterExpr(`"2h"`), "sla", "notify"),
 		activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 5}),

@@ -146,7 +146,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),
 				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
-				activity.WithCancelHandler("cancel-charge"),
+				activity.WithCancelAction("cancel-charge"),
 			),
 			activity.NewUserTask("approve", []string{"manager", "admin"},
 				activity.WithEligibilityExpr("amount > 1000"),
@@ -207,7 +207,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "charge-card", charge.Action)
 	assert.Equal(t, "refund-card", charge.CompensateAction)
 	assert.Equal(t, "f-error", charge.RecoveryFlow)
-	assert.Equal(t, "cancel-charge", charge.CancelHandler)
+	assert.Equal(t, "cancel-charge", charge.CancelAction)
 	// DeadlineTimer is now schedule.TriggerSpec; verify via Duration()
 	deadlineDur, deadlineOk := charge.DeadlineTimer.Duration()
 	require.True(t, deadlineOk, "DeadlineTimer should be set")
@@ -235,7 +235,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 		"version": 1,
 		"nodes": [
 			{"id": "start", "kind": "startEvent", "name": "Start"},
-			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensateAction": "refund-card", "cancelHandler": "cancel-charge"},
+			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensateAction": "refund-card", "cancelAction": "cancel-charge"},
 			{"id": "approve", "kind": "userTask", "candidateRoles": ["manager"], "eligibilityExpr": "amount > 1000"},
 			{"id": "wait", "kind": "intermediateCatchEvent", "timerDuration": "PT1H"},
 			{"id": "throw", "kind": "intermediateThrowEvent", "signalName": "done"},
@@ -272,7 +272,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	require.True(t, ok, "nodes[1] should be ServiceTask")
 	assert.Equal(t, "charge-card", st.Action)
 	assert.Equal(t, "refund-card", st.CompensateAction)
-	assert.Equal(t, "cancel-charge", st.CancelHandler)
+	assert.Equal(t, "cancel-charge", st.CancelAction)
 
 	ut, ok := def.Nodes[2].(activity.UserTask)
 	require.True(t, ok, "nodes[2] should be UserTask")

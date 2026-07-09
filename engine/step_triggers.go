@@ -96,7 +96,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 	}
 
 	// Per-node cancel handlers (ADR-0035): collect InvokeCancelAction for each
-	// active token whose node carries a non-empty CancelHandler.
+	// active token whose node carries a non-empty CancelAction.
 	// This MUST happen before the compensation/immediate branch because
 	// beginCompensation (and the immediate path) clear s.Tokens.
 	// Tokens are iterated in slice order for determinism.
@@ -109,7 +109,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 			continue
 		}
 		if node, ok := tdef.Node(tok.NodeID); ok {
-			if ch := cancelHandlerOf(node); ch != "" {
+			if ch := cancelActionOf(node); ch != "" {
 				nodeCancelCmds = append(nodeCancelCmds, InvokeCancelAction{Name: ch, Input: copyVars(s.Variables)})
 			}
 		}
@@ -156,7 +156,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		if err != nil {
 			return StepResult{}, err
 		}
-		// Ordering: [def.CancelActions…, per-node CancelHandlers…, task cancels…, compensation walk…]
+		// Ordering: [def.CancelActions…, per-node CancelActions…, task cancels…, compensation walk…]
 		// Reconcile the human-task projection before the compensation walk so a
 		// cancel-with-compensation instance also closes its parked tasks (ADR-0088).
 		taskCancelCmds := s.cancelOpenTasks()
@@ -173,7 +173,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
 	}
 	s.Tokens = nil
-	// Ordering: [def.CancelActions…, per-node CancelHandlers…, FailInstance, timers, arms].
+	// Ordering: [def.CancelActions…, per-node CancelActions…, FailInstance, timers, arms].
 	// Start from a fresh slice so we never alias cancelActionCmds' backing array
 	// (matches the compensation branch's append(append(...)) idiom).
 	cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)

@@ -31,7 +31,7 @@ type nodeYAML struct {
 	RecoveryFlow          string          `yaml:"recoveryFlow,omitempty"`
 	CompensateAction      string          `yaml:"compensateAction,omitempty"`
 	CompensateRef         string          `yaml:"compensateRef,omitempty"`
-	CancelHandler         string          `yaml:"cancelHandler,omitempty"`
+	CancelAction          string          `yaml:"cancelAction,omitempty"`
 	CompletionAction      string          `yaml:"completionAction,omitempty"`
 	SignalName            string          `yaml:"signalName,omitempty"`
 	MessageName           string          `yaml:"messageName,omitempty"`
@@ -106,7 +106,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		RecoveryFlow:          ny.RecoveryFlow,
 		CompensateAction:      ny.CompensateAction,
 		CompensateRef:         ny.CompensateRef,
-		CancelHandler:         ny.CancelHandler,
+		CancelAction:          ny.CancelAction,
 		CompletionAction:      ny.CompletionAction,
 		SignalName:            ny.SignalName,
 		MessageName:           ny.MessageName,
