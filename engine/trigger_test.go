@@ -157,6 +157,23 @@ func TestCompensateRequestedFields(t *testing.T) {
 	}
 }
 
+// TestNewReverseToStart_SetsReverseFields asserts that NewReverseToStart stamps
+// ReverseNode/ResetVars for the full-reverse walk (ToNode left empty), and that
+// the pre-existing NewCompensateRequested constructor stays back-compat by
+// leaving the new reverse fields at their zero values.
+func TestNewReverseToStart_SetsReverseFields(t *testing.T) {
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+	trg := engine.NewReverseToStart(t0, "start")
+	assert.Equal(t, "start", trg.ReverseNode)
+	assert.True(t, trg.ResetVars)
+	assert.Equal(t, "", trg.ToNode, "reverse-to-start is a full walk: ToNode empty")
+
+	// Back-compat: NewCompensateRequested leaves the reverse fields zero.
+	c := engine.NewCompensateRequested(t0, "X")
+	assert.Equal(t, "", c.ReverseNode)
+	assert.False(t, c.ResetVars)
+}
+
 // TestCancelRequestedFields asserts that NewCancelRequested stamps OccurredAt
 // faithfully and satisfies the Trigger interface.
 func TestCancelRequestedFields(t *testing.T) {

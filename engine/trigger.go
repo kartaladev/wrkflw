@@ -242,12 +242,27 @@ type CompensateRequested struct {
 	// ToNode is the rollback target node ID. Compensation runs from the most-recently
 	// completed record back to (but not including) this node. Empty means full rollback.
 	ToNode string
+	// ReverseNode, when non-empty on a full walk (ToNode == ""), makes the walk resume
+	// at this node with StatusRunning instead of terminating (ReverseInstance full
+	// reverse). Empty for cancel/error/admin walks, which terminate on a full walk.
+	ReverseNode string
+	// ResetVars, when true, resets Variables to StartVariables on a ReverseNode resume.
+	ResetVars bool
 }
 
 // NewCompensateRequested builds a CompensateRequested trigger stamped with the
-// given time. toNode is the rollback target (empty = full rollback).
+// given time. toNode is the rollback target (empty = full rollback). The reverse
+// fields (ReverseNode, ResetVars) are left at their zero values; use
+// NewReverseToStart to build a full-reverse-and-resume trigger instead.
 func NewCompensateRequested(at time.Time, toNode string) CompensateRequested {
 	return CompensateRequested{baseTrigger: baseTrigger{at: at}, ToNode: toNode}
+}
+
+// NewReverseToStart builds a CompensateRequested that compensates ALL records and,
+// on finish, resumes at startNode (StatusRunning) with variables reset to
+// StartVariables — the full-reverse form of ReverseInstance (does NOT terminate).
+func NewReverseToStart(at time.Time, startNode string) CompensateRequested {
+	return CompensateRequested{baseTrigger: baseTrigger{at: at}, ReverseNode: startNode, ResetVars: true}
 }
 
 // CancelRequested is an admin trigger that immediately terminates a running
