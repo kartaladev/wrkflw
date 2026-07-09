@@ -40,7 +40,7 @@ func fireForgetReminderDef() *model.ProcessDefinition {
 		ID: "p-ff-reminder", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "escalate"), activity.WithDeadlineAction("notify"), activity.WithWaitReminder(schedule.EveryExpr(`"1h"`), "remind")),
+			activity.NewUserTask("userTask", []string{"manager"}, activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "escalate"), activity.WithDeadlineAction("notify"), activity.WithWaitAction(schedule.EveryExpr(`"1h"`), "remind")),
 			event.NewEnd("normalEnd"),
 			event.NewEnd("escalateNode"),
 		},

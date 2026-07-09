@@ -438,7 +438,7 @@ Configure timers on nodes:
 activity.NewUserTask("approve", []string{"manager"},
     activity.WithWaitDeadline(`"72h"`, "escalate-flow"),
     activity.WithDeadlineAction("notify-manager"),
-    activity.WithWaitReminder(`"24h"`, "send-reminder"),
+    activity.WithWaitAction(`"24h"`, "send-reminder"),
 )
 ```
 
@@ -649,7 +649,7 @@ same set of functional options:
 | `activity.WithCancelAction(actionName string)` | Service action run when the node is interrupted. |
 | `activity.WithWaitDeadline(duration, flowID string)` | On deadline breach: take `flowID`. |
 | `activity.WithDeadlineAction(actionName string)` | Run `actionName` on deadline breach (optional; pairs with `WithWaitDeadline`). |
-| `activity.WithWaitReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
+| `activity.WithWaitAction(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
 Two options are **compile-enforced** to a single constructor:
 
@@ -662,7 +662,7 @@ Two options are **compile-enforced** to a single constructor:
 > **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
 > them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
 > not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithWaitDeadline`
-> (activity and event), `WithWaitReminder`, `WithStartTimer`, and `WithCatchWaitReminder`.
+> (activity and event), `WithWaitAction` (activity and event), and `WithStartTimer`.
 
 `RetryPolicy` fields:
 
@@ -765,7 +765,7 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 
 `NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
 `WithCatchMessage(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
-`WithCatchWaitReminder(every, action)`, `WithName(string)`.
+`WithWaitAction(every, action)`, `WithName(string)`.
 `NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
 `NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithBoundarySignal(name)`,
@@ -1236,7 +1236,7 @@ reaches `StatusCompleted` with no incident raised.
 
 ### 12. In-wait reminders
 
-`WithWaitReminder(every, action)` schedules a recurring in-wait action that fires once per
+`WithWaitAction(every, action)` schedules a recurring in-wait action that fires once per
 interval **while** a task is open, re-arming itself each time. It stops automatically once
 the task is completed, cancelled, or breached — distinct from the one-shot `WithDeadline`
 escalation in scenario 3.
@@ -1247,7 +1247,7 @@ start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
 
 ```go
 Add(activity.NewUserTask("review", []string{"reviewer"},
-    activity.WithWaitReminder(`"30m"`, "nudge-reviewer")))
+    activity.WithWaitAction(`"30m"`, "nudge-reviewer")))
 // driver wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
 driver.Drive(ctx, def, "review-77", nil)                            // parks; first reminder armed
 for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire
@@ -1287,7 +1287,7 @@ decided by whichever event happened first.
 
 ### 14. Catch-event in-wait reminder
 
-`WithCatchWaitReminder(every, action)` attaches a recurring in-wait reminder to an
+`WithWaitAction(every, action)` attaches a recurring in-wait reminder to an
 **intermediate catch event** — the same reminder mechanism as scenario 12, now generalized
 beyond `UserTask`. The reminder fires once per interval **while** the instance is parked
 awaiting the catch, re-arming itself each time, and is cancelled automatically the moment the
@@ -1300,7 +1300,7 @@ start → await[catch signal "approved", reminder every "30m" → "nudge"] → e
 ```go
 Add(event.NewIntermediateCatch("await",
     event.WithCatchSignal("approved"),
-    event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"))).
+    event.WithWaitAction(schedule.Every(30*time.Minute), "nudge"))).
 // driver wired with WithClock(fc), WithScheduler(sched), WithSignalBus(bus)
 driver.Drive(ctx, def, "approval-001", nil)                  // parks; reminder armed
 for range 3 { fc.Advance(30 * time.Minute) }                 // 3 nudges fire

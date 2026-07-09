@@ -117,10 +117,11 @@ func WithDeadlineAction(action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.DeadlineAction = action }}
 }
 
-// WithCatchWaitReminder sets the WaitEvery (schedule.TriggerSpec) and WaitAction
-// on an IntermediateCatchEvent. Use schedule.Every, schedule.EveryExpr, or any
-// other recurring TriggerSpec constructor.
-func WithCatchWaitReminder(t schedule.TriggerSpec, action string) CatchOption {
+// WithWaitAction sets the WaitEvery (schedule.TriggerSpec) and WaitAction
+// on an IntermediateCatchEvent — the in-wait action run periodically while the
+// event is pending. Use schedule.Every, schedule.EveryExpr, or any other
+// recurring TriggerSpec constructor.
+func WithWaitAction(t schedule.TriggerSpec, action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.WaitEvery, n.WaitAction = t, action }}
 }
 

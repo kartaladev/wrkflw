@@ -281,7 +281,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "reminder-every-with-action",
 			node: activity.NewUserTask("approve", nil,
 				activity.WithName("Approve"),
-				activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
+				activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
@@ -297,7 +297,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			node: activity.NewUserTask("task-full", nil,
 				activity.WithName("Full Task"),
 				activity.WithWaitDeadline(schedule.AfterDuration(48*time.Hour), "escalate"), activity.WithDeadlineAction("escalate-action"),
-				activity.WithWaitReminder(schedule.Every(6*time.Hour), "remind-action"),
+				activity.WithWaitAction(schedule.Every(6*time.Hour), "remind-action"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)

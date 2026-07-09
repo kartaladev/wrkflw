@@ -25,7 +25,7 @@ func TestHandleReminderFiredStaleness(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewIntermediateCatch("await",
 				event.WithCatchSignal("approved"),
-				event.WithCatchWaitReminder(schedule.Every(1), "nudge")),
+				event.WithWaitAction(schedule.Every(1), "nudge")),
 		},
 	}
 	rec := timerRecord{TimerID: "tm1", Kind: TimerInWait, Token: "tok1", NodeID: "await"}

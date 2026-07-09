@@ -60,7 +60,7 @@ func ApprovalWithReminderDef(waitEvery time.Duration, waitAction string) *model.
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", []string{"manager"},
-				activity.WithWaitReminder(schedule.Every(waitEvery), waitAction)),
+				activity.WithWaitAction(schedule.Every(waitEvery), waitAction)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

@@ -102,7 +102,7 @@ func TestWaitActionOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
 	n := activity.NewUserTask("ut", nil,
 		activity.WithRetryPolicy(p),
-		activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
+		activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 	)
 	every, act := model.WaitActionOf(n)
 	d, ok := every.Duration()
@@ -116,7 +116,7 @@ func TestWaitActionOf(t *testing.T) {
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
-	ice := event.NewIntermediateCatch("ice", event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "ice-remind"))
+	ice := event.NewIntermediateCatch("ice", event.WithWaitAction(schedule.Every(2*time.Hour), "ice-remind"))
 	every, act = model.WaitActionOf(ice)
 	d, ok = every.Duration()
 	require.True(t, ok)
@@ -151,7 +151,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 			activity.NewUserTask("approve", []string{"manager", "admin"},
 				activity.WithEligibilityExpr("amount > 1000"),
 				activity.WithName("Approve"),
-				activity.WithWaitReminder(schedule.Every(4*time.Hour), "remind-act"),
+				activity.WithWaitAction(schedule.Every(4*time.Hour), "remind-act"),
 			),
 			event.NewIntermediateCatch("wait",
 				event.WithCatchTimer(schedule.AfterExpr("PT30M")),
@@ -353,7 +353,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 func TestDeadlineReminderTyped(t *testing.T) {
 	n := activity.NewUserTask("ut", nil,
 		activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "sla"), activity.WithDeadlineAction("notify"),
-		activity.WithWaitReminder(schedule.Every(time.Hour), "remind"),
+		activity.WithWaitAction(schedule.Every(time.Hour), "remind"),
 	)
 	spec, flow, action := model.DeadlineOf(n)
 	if d, ok := spec.Duration(); !ok || d != 2*time.Hour || flow != "sla" || action != "notify" {
