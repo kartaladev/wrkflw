@@ -67,10 +67,25 @@ func DescriptorOf(s validate.ValidationStrategy) (validate.ValidationDescriptor,
 	return d.Descriptor(), true
 }
 
-// nodeValidationStrategy returns the validation strategy carried by n's
+// PutValidation encodes s as a wire descriptor, or returns nil when s is unset
+// or non-describable (a callback strategy has no serializable form). Mirror of
+// PutTrigger; leaf packages call it from their ToWire specs instead of
+// hand-rolling the validate.DescribableStrategy type-assert.
+func PutValidation(s validate.ValidationStrategy) *validate.ValidationDescriptor {
+	d, ok := DescriptorOf(s)
+	if !ok {
+		return nil
+	}
+	return &d
+}
+
+// ValidationStrategyFor returns the validation strategy carried by n's
 // kind-specific slot (via the registered NodeSpec.ValidationGet), or nil for
-// kinds without one or with the slot unset.
-func nodeValidationStrategy(n Node) validate.ValidationStrategy {
+// kinds without one or with the slot unset. It delegates to the kind's
+// registered spec rather than type-switching on concrete node types, since
+// model must not import the leaf node packages (definition/event,
+// definition/activity) that define them.
+func ValidationStrategyFor(n Node) validate.ValidationStrategy {
 	s, ok := specFor(n.Kind())
 	if !ok || s.ValidationGet == nil {
 		return nil

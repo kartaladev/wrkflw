@@ -128,7 +128,7 @@ func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 	}
 	dw.Nodes = make([]NodeWire, len(d.Nodes))
 	for i, n := range d.Nodes {
-		if strat := nodeValidationStrategy(n); strat != nil {
+		if strat := ValidationStrategyFor(n); strat != nil {
 			if _, ok := strat.(validate.DescribableStrategy); !ok {
 				return nil, fmt.Errorf("%w: node %q", ErrUnserializableValidation, n.ID())
 			}

@@ -218,10 +218,7 @@ func init() {
 			v := n.(UserTask)
 			w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
 			w.PutActivity(v.ActivityFields)
-			if ds, ok := v.CompletionValidation.(validate.DescribableStrategy); ok {
-				d := ds.Descriptor()
-				w.Validation = &d
-			}
+			w.Validation = model.PutValidation(v.CompletionValidation)
 		},
 		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(UserTask).CompletionValidation },
 		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
@@ -243,10 +240,7 @@ func init() {
 			v := n.(ReceiveTask)
 			w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
 			w.PutActivity(v.ActivityFields)
-			if ds, ok := v.PayloadValidation.(validate.DescribableStrategy); ok {
-				d := ds.Descriptor()
-				w.Validation = &d
-			}
+			w.Validation = model.PutValidation(v.PayloadValidation)
 		},
 		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(ReceiveTask).PayloadValidation },
 		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {

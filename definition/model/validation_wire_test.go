@@ -134,6 +134,99 @@ flows:
 	}
 }
 
+// TestValidationStrategyFor asserts model.ValidationStrategyFor resolves the
+// validation strategy carried by each of the 4 slot-bearing kinds without a
+// type switch (via the registered NodeSpec.ValidationGet), and returns nil for
+// a kind without a validation slot.
+func TestValidationStrategyFor(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		node   model.Node
+		assert func(t *testing.T, s validate.ValidationStrategy)
+	}{
+		"start event input validation": {
+			node: event.NewStart("s", event.WithInputValidation(vexpr.New("a > 0"))),
+			assert: func(t *testing.T, s validate.ValidationStrategy) {
+				require.NotNil(t, s)
+			},
+		},
+		"intermediate catch event payload validation": {
+			node: event.NewIntermediateCatch("wait", event.WithPayloadValidation(vexpr.New("a > 0"))),
+			assert: func(t *testing.T, s validate.ValidationStrategy) {
+				require.NotNil(t, s)
+			},
+		},
+		"user task completion validation": {
+			node: activity.NewUserTask("approve", nil, activity.WithCompletionValidation(vexpr.New("a > 0"))),
+			assert: func(t *testing.T, s validate.ValidationStrategy) {
+				require.NotNil(t, s)
+			},
+		},
+		"receive task payload validation": {
+			node: activity.NewReceiveTask("await", "OrderPlaced", activity.WithPayloadValidation(vexpr.New("a > 0"))),
+			assert: func(t *testing.T, s validate.ValidationStrategy) {
+				require.NotNil(t, s)
+			},
+		},
+		"plain node without a validation slot": {
+			node: event.NewEnd("end"),
+			assert: func(t *testing.T, s validate.ValidationStrategy) {
+				require.Nil(t, s)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tc.assert(t, model.ValidationStrategyFor(tc.node))
+		})
+	}
+}
+
+// TestPutValidation asserts model.PutValidation (the mirror of PutTrigger) encodes
+// a describable strategy as a non-nil *validate.ValidationDescriptor carrying the
+// right Kind, and returns nil for a non-describable (callback) strategy and for a
+// nil (unset) strategy.
+func TestPutValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		strategy validate.ValidationStrategy
+		assert   func(t *testing.T, w *validate.ValidationDescriptor)
+	}{
+		"describable strategy encodes": {
+			strategy: vexpr.New("amount > 0"),
+			assert: func(t *testing.T, w *validate.ValidationDescriptor) {
+				require.NotNil(t, w)
+				require.Equal(t, vexpr.Kind, w.Kind)
+			},
+		},
+		"callback strategy is nil": {
+			strategy: callback.New(func(_ context.Context, _ map[string]any) error { return nil }),
+			assert: func(t *testing.T, w *validate.ValidationDescriptor) {
+				require.Nil(t, w)
+			},
+		},
+		"nil strategy is nil": {
+			strategy: nil,
+			assert: func(t *testing.T, w *validate.ValidationDescriptor) {
+				require.Nil(t, w)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tc.assert(t, model.PutValidation(tc.strategy))
+		})
+	}
+}
+
 // TestMarshalJSON_ValidationStrategyFailClosed asserts the central fail-closed
 // check in ProcessDefinition.MarshalJSON: a describable (declarative) strategy
 // marshals fine, but a callback strategy (validation/callback — Go-authoring-only,

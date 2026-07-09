@@ -221,10 +221,7 @@ func init() {
 			v := n.(StartEvent)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.TimerTrigger = model.PutTrigger(v.Timer)
-			if ds, ok := v.InputValidation.(validate.DescribableStrategy); ok {
-				d := ds.Descriptor()
-				w.Validation = &d
-			}
+			w.Validation = model.PutValidation(v.InputValidation)
 		},
 		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(StartEvent).InputValidation },
 		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
@@ -263,10 +260,7 @@ func init() {
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.PutWait(v.WaitFields)
-			if ds, ok := v.PayloadValidation.(validate.DescribableStrategy); ok {
-				d := ds.Descriptor()
-				w.Validation = &d
-			}
+			w.Validation = model.PutValidation(v.PayloadValidation)
 		},
 		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(IntermediateCatchEvent).PayloadValidation },
 		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {

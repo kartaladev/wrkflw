@@ -27,7 +27,7 @@ type NodeSpec struct {
 	// StartEvent.InputValidation, UserTask.CompletionValidation), returns the
 	// node's current strategy (nil if unset). Left nil for kinds without such a
 	// slot. Used by the central fail-closed MarshalJSON check
-	// (nodeValidationStrategy) and by Build's pending-descriptor reconciliation
+	// (ValidationStrategyFor) and by Build's pending-descriptor reconciliation
 	// (reconcileNodeValidation) — both in validation_wire.go.
 	ValidationGet func(Node) validate.ValidationStrategy
 	// ValidationSet, paired with ValidationGet, returns a copy of n with the slot
