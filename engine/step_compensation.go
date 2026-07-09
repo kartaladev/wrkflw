@@ -325,6 +325,16 @@ type finishPlan struct {
 	// and terminate instead. Today only the throw walk sets it (preserving the
 	// prior throw-walk protocol); other resume paths keep resuming.
 	consumePendingCancel bool
+	// rearmRootESP re-arms ROOT-scope event sub-processes (ADR-0109 hardening,
+	// finding #1) via armEventSubprocesses(def, s, "", at, eval), mirroring
+	// handleStartInstance's own arm-then-drive sequence. Only the full-reverse
+	// resume AT ROOT SCOPE sets this: beginCompensation does not sweep
+	// s.EventSubprocesses when a walk starts, so without a full reverse a
+	// root-level event sub-process (armed at StartInstance, or left un-armed
+	// after an earlier interrupting fire) is either stale or silently lost by
+	// the time the instance resumes. Partial and throw resumes stay at their
+	// own (possibly non-root) scope and must NOT re-arm.
+	rearmRootESP bool
 	// finalStatus / finalErr are the terminal outcome (terminate only).
 	finalStatus Status
 	finalErr    string
@@ -414,13 +424,17 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		}
 	case reverseNode != "":
 		// Full reverse (ADR-0109): clear the scope's records (as full rollback
-		// does), optionally reset Variables, resume at ReverseNode.
+		// does), optionally reset Variables, resume at ReverseNode. Re-arm root
+		// event sub-processes when the walk was rooted at scope "" (today the
+		// only case: NewReverseToStart always targets the root scope) — see
+		// finishPlan.rearmRootESP.
 		plan = finishPlan{
 			resume:         true,
 			resumeAt:       reverseNode,
 			doClearRecords: true,
 			clearScope:     scopeID,
 			resetVars:      reverseResetVars,
+			rearmRootESP:   scopeID == "",
 		}
 	default:
 		// Full rollback / terminate. Zero FinalStatus (== StatusRunning, the iota-0
@@ -480,11 +494,29 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 	if plan.popDeferred {
 		popOneDeferredThrow(s)
 	}
+	var preDriveCmds []Command
+	if plan.rearmRootESP {
+		// beginCompensation never sweeps s.EventSubprocesses when a walk
+		// starts, so a root-scope arm from before the walk (or a leftover
+		// one-shot removal from an earlier interrupting fire) may still be
+		// present. Drop any stale root-scope arms first (emitting CancelTimer
+		// for timer-triggered ones) so the re-arm below is idempotent instead
+		// of appending a duplicate entry, then re-arm exactly as
+		// handleStartInstance does for a fresh StartInstance.
+		for _, timerID := range s.removeEventSubprocessArmsForScope("") {
+			preDriveCmds = append(preDriveCmds, CancelTimer{TimerID: timerID})
+		}
+		espCmds, espErr := armEventSubprocesses(def, s, "", at, eval)
+		if espErr != nil {
+			return StepResult{}, espErr
+		}
+		preDriveCmds = append(preDriveCmds, espCmds...)
+	}
 	driveCmds, err := drive(def, s, at, mode, eval)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: driveCmds}, nil
+	return StepResult{State: *s, Commands: append(preDriveCmds, driveCmds...)}, nil
 }
 
 // applyTerminate reproduces the terminal-outcome finish: map an unset FinalStatus

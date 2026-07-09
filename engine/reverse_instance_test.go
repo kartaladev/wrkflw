@@ -21,6 +21,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
@@ -595,4 +596,100 @@ func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
 			tc.assert(t, midWalk, r.State, err)
 		})
 	}
+}
+
+// reverseWithRootESPDef is modeled on rootLevelESPDef (step_subprocess_test.go)
+// but adds a compensable node + trailing park node (the reverse-fixture shape
+// used throughout this file), so an instance can be driven into StatusRunning
+// (parked, compensation recorded) with a root-level, TIMER-triggered event
+// sub-process armed:
+//
+//	start → svc(compensable) → park → end
+//	[KindEventSubProcess "root-esp"] triggered by timer "1h" (root scope, EnclosingScopeID=="")
+//	  esp-start(timer "1h") → esp-svc("esp-action") → esp-end
+//
+// A timer trigger (rather than signal) lets the T4 regression assert a
+// ScheduleTimer command is re-emitted on the reverse-resume Step, in addition
+// to the EventSubprocesses arm entry itself.
+func reverseWithRootESPDef() *model.ProcessDefinition {
+	espInner := &model.ProcessDefinition{
+		ID: "resp-inner", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("esp-start", event.WithStartTimer(schedule.AfterExpr(`"1h"`))),
+			activity.NewServiceTask("esp-svc", activity.WithTaskAction("esp-action")),
+			event.NewEnd("esp-end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "re1", Source: "esp-start", Target: "esp-svc"},
+			{ID: "re2", Source: "esp-svc", Target: "esp-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "p-rev-esp", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithTaskAction("do"), activity.WithCompensateAction("undo")),
+			activity.NewServiceTask("park", activity.WithTaskAction("park")),
+			event.NewEnd("end"),
+			event.NewEventSubProcess("root-esp", espInner),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "svc"},
+			{ID: "f2", Source: "svc", Target: "park"},
+			{ID: "f3", Source: "park", Target: "end"},
+		},
+	}
+}
+
+// TestReverseToStart_RearmsRootEventSubprocess is the Fork D (ADR-0109
+// hardening, finding #1) regression: a full reverse (WithFullReverse) resets
+// the instance to start and re-runs it, but the resume path never re-arms
+// ROOT-scope event sub-processes the way a genuine handleStartInstance does
+// (armEventSubprocesses(def, s, "", at, eval)) — so a root-level ESP's timer
+// is never re-scheduled relative to the resume. This must be fixed on the
+// FULL-REVERSE resume path ONLY (root scope): applyFinish must call
+// armEventSubprocesses(def, s, "", at, eval) and prepend its ScheduleTimer
+// commands to the drive commands.
+func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
+	def := reverseWithRootESPDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	// ---- Step 1: StartInstance → root ESP arms (EnclosingScopeID == "") ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
+	assert.Equal(t, "", r1.State.EventSubprocesses[0].EnclosingScopeID, "root ESP arm must have empty EnclosingScopeID")
+
+	// ---- Step 2: complete "do" → svc's compensation recorded, token parks on "park" ----
+	cmdDo := findInvokeActionID(t, r1.Commands, "do")
+	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status, "instance must be running (parked) before reverse")
+	require.Len(t, r2.State.RootCompensations, 1, "svc must have recorded a compensation")
+
+	// ---- Step 3: NewReverseToStart → "undo" fires ----
+	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	require.NoError(t, err)
+	undoID := findInvokeActionID(t, r3.Commands, "undo")
+
+	// ---- Step 4: complete "undo" → resume at start (re-arm must happen HERE) ----
+	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r4.State.Status, "reverse resumes Running, NOT terminated")
+
+	require.Len(t, r4.State.EventSubprocesses, 1, "root ESP must be re-armed after full reverse (found %d arms)", len(r4.State.EventSubprocesses))
+	assert.Equal(t, "", r4.State.EventSubprocesses[0].EnclosingScopeID, "re-armed ESP entry must carry EnclosingScopeID == \"\" (root)")
+
+	var schedTimer engine.ScheduleTimer
+	foundTimer := false
+	for _, cmd := range r4.Commands {
+		if st, ok := cmd.(engine.ScheduleTimer); ok {
+			schedTimer = st
+			foundTimer = true
+		}
+	}
+	assert.True(t, foundTimer, "resume must re-schedule the root ESP's timer (ScheduleTimer command)")
+	assert.NotEmpty(t, schedTimer.TimerID, "re-scheduled timer must carry a TimerID")
+	assert.Equal(t, r4.State.EventSubprocesses[0].TimerID, schedTimer.TimerID, "re-armed arm's TimerID must match the emitted ScheduleTimer")
 }
