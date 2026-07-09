@@ -575,5 +575,8 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 	}
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+	for _, timerID := range s.removeAllEventSubprocessArms() {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
 	return StepResult{State: *s, Commands: cmds}
 }

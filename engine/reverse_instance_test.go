@@ -840,3 +840,47 @@ func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
 	assert.Equal(t, wantStatus, before.Status, "caller's state must be unchanged (still Running) after a rejected trigger")
 	assert.Equal(t, wantRecords, before.RootCompensations, "caller's compensation records must be unchanged after a rejected trigger")
 }
+
+// TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer is the FU#2 /
+// Task F2.2 regression: a CancelRequested arriving while compensation records
+// exist runs the compensation walk to a TERMINATE finish (applyTerminate,
+// step_compensation.go), which sweeps s.Timers and s.ArmedEvents/s.Boundaries
+// (cancelAllTimers / cancelAllArmsAndBoundaries) but — before this fix — never
+// drained s.EventSubprocesses, so a root-level, timer-armed event sub-process
+// (armed at StartInstance, never touched by the compensation walk itself)
+// leaked its scheduled timer past instance termination. applyTerminate must
+// also call s.removeAllEventSubprocessArms() and emit a CancelTimer for the
+// surviving arm.
+func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) {
+	def := reverseWithRootESPDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	// ---- Step 1: StartInstance → root ESP arms (EnclosingScopeID == "") ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
+	espTimerID := r1.State.EventSubprocesses[0].TimerID
+	require.NotEmpty(t, espTimerID, "root ESP arm must carry a TimerID")
+
+	// ---- Step 2: complete "do" → svc's compensation recorded, token parks on "park" ----
+	cmdDo := findInvokeActionID(t, r1.Commands, "do")
+	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status, "precondition: instance running (parked) before cancel")
+	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
+
+	// ---- Step 3: CancelRequested → records exist → compensation walk begins ("undo" fires) ----
+	r3, err := engine.Step(def, r2.State, engine.NewCancelRequested(t0), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompensating, r3.State.Status, "precondition: cancel with records enters the compensation walk")
+	undoID := findInvokeActionID(t, r3.Commands, "undo")
+
+	// ---- Step 4: complete "undo" → walk finishes → applyTerminate ----
+	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusTerminated, r4.State.Status, "cancel-with-compensation walk still terminates")
+	assert.Nil(t, r4.State.EventSubprocesses, "applyTerminate must drain ALL event-subprocess arms, not just the walk's own scope")
+	assert.Contains(t, r4.Commands, engine.CancelTimer{TimerID: espTimerID},
+		"applyTerminate must cancel the surviving root-ESP timer, not just the walk's own timers/arms")
+}
