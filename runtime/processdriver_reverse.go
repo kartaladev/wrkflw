@@ -31,12 +31,22 @@ func WithFullReverse() ReverseOption {
 
 // WithTargetNode compensates back to nodeID (exclusive — nodeID's own
 // compensation record is not re-run) and resumes the instance at nodeID
-// (Running), keeping the instance's current variables as-is. It is mutually
-// exclusive with [WithFullReverse].
+// (Running), restoring the instance's Variables to nodeID's own
+// start-of-visit snapshot — the variables as they stood the moment execution
+// first arrived at nodeID, before nodeID ran — discarding any mutation made
+// after that point. It is mutually exclusive with [WithFullReverse].
+//
+// If nodeID's start-of-visit snapshot is empty/nil (only possible when the
+// instance started with no variables at all and nodeID was the first
+// recorded node), the current variables are left untouched rather than being
+// wiped to an empty map.
+//
+// This restore-on-target-reverse behavior is a BREAKING change: previously
+// WithTargetNode kept the instance's current variables as-is.
 //
 // nodeID is matched against [engine.CompensationRecord.NodeID]. When the same
 // node was visited more than once (e.g. a retry loop), the walk resolves to the
-// most-recently completed visit — see [engine.NewCompensateRequested].
+// most-recently completed visit — see [engine.NewReverseToNode].
 func WithTargetNode(nodeID string) ReverseOption {
 	return func(c *reverseConfig) { c.targeted = true; c.target = nodeID }
 }
@@ -46,8 +56,10 @@ func WithTargetNode(nodeID string) ReverseOption {
 // job. With no option (or with [WithFullReverse]) it compensates everything
 // recorded so far and resumes fresh at the definition's start node, with
 // variables reset to their start-of-instance values. With [WithTargetNode] it
-// compensates back to a specific node and resumes there, keeping the instance's
-// current variables.
+// compensates back to a specific node and resumes there, restoring the
+// instance's variables to that node's own start-of-visit snapshot (see
+// [WithTargetNode] for the exact semantics, including the empty-snapshot
+// carve-out).
 //
 // ReverseInstance rejects a terminal instance (Completed, Failed, or
 // Terminated) with a descriptive error before touching any state — reversing a
@@ -86,7 +98,7 @@ func (driver *ProcessDriver) ReverseInstance(ctx context.Context, def *model.Pro
 	}
 
 	if cfg.targeted {
-		return driver.ApplyTrigger(ctx, def, instanceID, engine.NewCompensateRequested(driver.clk.Now(), cfg.target))
+		return driver.ApplyTrigger(ctx, def, instanceID, engine.NewReverseToNode(driver.clk.Now(), cfg.target))
 	}
 
 	starts := def.StartNodes()

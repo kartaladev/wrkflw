@@ -153,6 +153,113 @@ func driveReverseFixtureToApprove2(t *testing.T) reverseFixture {
 	return reverseFixture{driver: driver, def: def, instanceID: instanceID, counts: counts, store: store}
 }
 
+// reverseTargetVarsFixtureDef returns: start -> approve1(UserTask) ->
+// svc(compensable "do"/"undo") -> approve2(UserTask) -> next(compensable
+// "next"/"unnext") -> approve3(UserTask) -> end.
+//
+// Both approve1 and approve2 mutate variables on completion, with approve2's
+// mutation happening strictly AFTER svc's start-of-visit snapshot was
+// captured (that snapshot is taken when the token first arrives at svc,
+// right after approve1 completes). A WithTargetNode("svc") reverse driven
+// from approve3 must restore Variables to svc's start-of-visit snapshot —
+// discarding approve2's later mutation — rather than keeping the current
+// (approve2-mutated) variables. Because resuming at svc re-parks at approve2
+// (a UserTask needing an explicit Complete), the auto-drive following the
+// reverse does NOT re-apply approve2's mutation, so the restored snapshot is
+// directly observable in the state ReverseInstance returns.
+func reverseTargetVarsFixtureDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-reverse-target-vars", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve1", []string{"manager"}),
+			activity.NewServiceTask("svc", activity.WithTaskAction("do"), activity.WithCompensateAction("undo")),
+			activity.NewUserTask("approve2", []string{"manager"}),
+			activity.NewServiceTask("next", activity.WithTaskAction("next"), activity.WithCompensateAction("unnext")),
+			activity.NewUserTask("approve3", []string{"manager"}),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "approve1"},
+			{ID: "f2", Source: "approve1", Target: "svc"},
+			{ID: "f3", Source: "svc", Target: "approve2"},
+			{ID: "f4", Source: "approve2", Target: "next"},
+			{ID: "f5", Source: "next", Target: "approve3"},
+			{ID: "f6", Source: "approve3", Target: "end"},
+		},
+	}
+}
+
+// driveReverseTargetVarsFixtureToApprove3 drives a fresh
+// reverseTargetVarsFixtureDef instance: completes approve1 with
+// {"amount": 999} (mutating vars away from the {"amount": 100}
+// StartVariables), auto-drives through svc to approve2, completes approve2
+// with {"amount": 5000} (a SECOND mutation, occurring after svc's
+// start-of-visit snapshot was already captured at 999), then auto-drives
+// through next to park at approve3.
+func driveReverseTargetVarsFixtureToApprove3(t *testing.T) reverseFixture {
+	t.Helper()
+	ctx := t.Context()
+
+	counts := &reverseActionCounts{}
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
+	taskStore := humantask.NewMemTaskStore()
+	az := authz.RoleAuthorizer{}
+	store := runtimetest.MustMemStore(t)
+
+	driver := runtimetest.MustRunner(t, reverseFixtureCatalog(counts), store, runtime.WithHumanTasks(resolver, taskStore, az))
+	def := reverseTargetVarsFixtureDef()
+	instanceID := "reverse-target-vars-1"
+	svc := runtimetest.MustTaskService(t, taskStore, az)
+
+	parked, err := driver.Drive(ctx, def, instanceID, map[string]any{"amount": 100})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, parked.Status)
+	require.Len(t, parked.Tokens, 1)
+	require.Equal(t, "approve1", parked.Tokens[0].NodeID)
+
+	completeApprove := func(state engine.InstanceState, amount int) engine.InstanceState {
+		t.Helper()
+		// state.Tasks accumulates every human-task record for the instance's
+		// lifetime (completed ones are retained, not removed) so the OPEN
+		// task is not reliably at index 0 once a second UserTask has run;
+		// find it explicitly via HumanTask.IsOpen.
+		var taskToken string
+		for _, ht := range state.Tasks {
+			if ht.IsOpen() {
+				taskToken = ht.TaskToken
+				break
+			}
+		}
+		require.NotEmpty(t, taskToken, "expected exactly one open human task")
+		claimTrg, err := svc.Claim(ctx, taskToken, manager)
+		require.NoError(t, err)
+		_, err = driver.ApplyTrigger(ctx, def, instanceID, claimTrg)
+		require.NoError(t, err)
+		completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"amount": amount})
+		require.NoError(t, err)
+		next, err := driver.ApplyTrigger(ctx, def, instanceID, completeTrg)
+		require.NoError(t, err)
+		return next
+	}
+
+	parked2 := completeApprove(parked, 999)
+	require.Equal(t, engine.StatusRunning, parked2.Status, "instance must park at approve2")
+	require.Len(t, parked2.Tokens, 1)
+	require.Equal(t, "approve2", parked2.Tokens[0].NodeID)
+	require.EqualValues(t, 999, parked2.Variables["amount"])
+
+	parked3 := completeApprove(parked2, 5000)
+	require.Equal(t, engine.StatusRunning, parked3.Status, "instance must park at approve3")
+	require.Len(t, parked3.Tokens, 1)
+	require.Equal(t, "approve3", parked3.Tokens[0].NodeID)
+	require.Len(t, parked3.RootCompensations, 2, "svc + next compensation records")
+	require.EqualValues(t, 5000, parked3.Variables["amount"])
+
+	return reverseFixture{driver: driver, def: def, instanceID: instanceID, counts: counts, store: store}
+}
+
 // driveTerminalFixture builds a driver over a trivial start->end definition,
 // drives it to completion (StatusCompleted), and returns it so a case can attempt
 // to reverse an already-terminal instance.
@@ -261,7 +368,7 @@ func TestReverseInstance(t *testing.T) {
 			},
 		},
 		{
-			name: "WithTargetNode(svc) performs a partial reverse: resumes at svc, keeps current vars",
+			name: "WithTargetNode(svc) performs a partial reverse: resumes at svc, restores svc's start-of-visit vars",
 			setup: func(t *testing.T) (reverseFixture, *model.ProcessDefinition, []runtime.ReverseOption) {
 				fx := driveReverseFixtureToApprove2(t)
 				return fx, fx.def, []runtime.ReverseOption{runtime.WithTargetNode("svc")}
@@ -271,11 +378,28 @@ func TestReverseInstance(t *testing.T) {
 				assert.Equal(t, engine.StatusRunning, got.Status)
 				require.Len(t, got.Tokens, 1)
 				assert.Equal(t, "approve2", got.Tokens[0].NodeID, "resumed at svc and auto-drove back through next to approve2")
-				assert.EqualValues(t, 999, got.Variables["amount"], "current vars are kept, NOT reset")
+				assert.EqualValues(t, 999, got.Variables["amount"], "restored to svc's start-of-visit snapshot; equals the current value here because nothing mutated vars between svc's arrival and this reverse")
 				assert.EqualValues(t, 0, fx.counts.undo.Load(), "svc is the rollback target and its own record is excluded")
 				assert.EqualValues(t, 1, fx.counts.unnext.Load(), "next's record (after svc) must be compensated")
 				assert.EqualValues(t, 2, fx.counts.do.Load(), "svc's forward action re-runs on resume")
 				assert.EqualValues(t, 2, fx.counts.next.Load(), "next's forward action re-runs while driving back to approve2")
+			},
+		},
+		{
+			name: "WithTargetNode(svc) restores start-of-visit vars, discarding a later mutation made after svc's arrival",
+			setup: func(t *testing.T) (reverseFixture, *model.ProcessDefinition, []runtime.ReverseOption) {
+				fx := driveReverseTargetVarsFixtureToApprove3(t)
+				return fx, fx.def, []runtime.ReverseOption{runtime.WithTargetNode("svc")}
+			},
+			assert: func(t *testing.T, fx reverseFixture, got engine.InstanceState, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, engine.StatusRunning, got.Status)
+				require.Len(t, got.Tokens, 1)
+				assert.Equal(t, "approve2", got.Tokens[0].NodeID, "resumed at svc, re-parks at approve2 (UserTask) before approve2's mutation can be re-applied")
+				assert.EqualValues(t, 999, got.Variables["amount"], "restored to svc's start-of-visit snapshot, discarding approve2's later mutation to 5000")
+				assert.EqualValues(t, 0, fx.counts.undo.Load(), "svc is the rollback target and its own record is excluded")
+				assert.EqualValues(t, 1, fx.counts.unnext.Load(), "next's record (after svc) must be compensated")
+				assert.EqualValues(t, 2, fx.counts.do.Load(), "svc's forward action re-runs on resume")
 			},
 		},
 		{

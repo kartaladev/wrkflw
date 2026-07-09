@@ -22,8 +22,11 @@
 //
 //   - Scenario A — [runtime.WithTargetNode]("review"): compensates the two
 //     recorded "escalate" rounds (newest-first) but excludes "review"'s own
-//     record, then resumes Running AT "review" with the instance's CURRENT
-//     variables kept (approved=false survives from the last rejection).
+//     record, then resumes Running AT "review" with variables RESTORED to
+//     "review"'s own start-of-visit snapshot — the variables as they stood
+//     the moment execution first arrived at "review" (just {"applicant": ...},
+//     before "approved" was ever set), discarding every mutation made since,
+//     including both rejection rounds' approved=false.
 //   - Scenario B — [runtime.WithFullReverse]: compensates every recorded
 //     round (review + both escalate rounds, newest-first), resets variables
 //     back to what the instance started with, and resumes Running at the
@@ -143,9 +146,9 @@ func main() {
 	if err != nil {
 		log.Fatal("reverse (target node):", err)
 	}
-	fmt.Printf("  after WithTargetNode(%q): status=%s, resumed at %q, records=%d (retained — a partial reverse keeps them for a later full walk), vars KEPT (approved=%v)\n",
+	fmt.Printf("  after WithTargetNode(%q): status=%s, resumed at %q, records=%d (retained — a partial reverse keeps them for a later full walk), vars RESTORED to review's start-of-visit snapshot (approved=%v, applicant=%v)\n",
 		"review", view.StatusString(reversedA.Status), reversedA.Tokens[0].NodeID,
-		len(reversedA.RootCompensations), reversedA.Variables["approved"])
+		len(reversedA.RootCompensations), reversedA.Variables["approved"], reversedA.Variables["applicant"])
 
 	fmt.Println("\n=== Scenario B: WithFullReverse — full rollback, reset to start ===")
 	parkedB := driveToThirdEscalation(ctx, driver, svc, def, "approval-002", reviewer, approver)
