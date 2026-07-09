@@ -272,6 +272,7 @@ func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
 func cloneState(st InstanceState) InstanceState {
 	s := st
 	s.Variables = copyVars(st.Variables)
+	s.StartVariables = copyVars(st.StartVariables)
 	s.Tokens = append([]Token(nil), st.Tokens...)
 	for i := range s.Tokens {
 		s.Tokens[i].Payload = copyVars(s.Tokens[i].Payload)

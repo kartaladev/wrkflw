@@ -212,6 +212,25 @@ func TestCloneStateDeepCopiesIncidents(t *testing.T) {
 		"Token.RetryAttempts aliased — element copy must carry scalar fields")
 }
 
+// TestCloneStateDeepCopiesStartVariables asserts that cloneState (via Clone)
+// produces an independently allocated StartVariables map: mutating the
+// ORIGINAL's StartVariables after cloning must not leak into the clone.
+func TestCloneStateDeepCopiesStartVariables(t *testing.T) {
+	st := engine.InstanceState{
+		InstanceID:     "sv-1",
+		StartVariables: map[string]any{"name": "Ada"},
+	}
+
+	clone := st.Clone()
+
+	// Mutate the original's StartVariables after cloning; the clone must be
+	// unaffected because it holds an independently-allocated map.
+	st.StartVariables["name"] = "mutated"
+
+	assert.Equal(t, "Ada", clone.StartVariables["name"],
+		"StartVariables map aliased — cloneState must deep-copy it")
+}
+
 // ---------------------------------------------------------------------------
 // Sub-instance command: StartSubInstance
 // ---------------------------------------------------------------------------
