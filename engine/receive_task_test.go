@@ -122,7 +122,7 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 		},
 		{
 			name:     "message boundary",
-			boundary: event.NewBoundary("bnd", "recv", event.WithBoundaryMessage("cancel", "")),
+			boundary: event.NewBoundary("bnd", "recv", event.WithMessageCorrelator("cancel", "")),
 			fire: func(engine.StepResult) engine.Trigger {
 				return engine.NewMessageReceived(t0, "cancel", "", nil)
 			},

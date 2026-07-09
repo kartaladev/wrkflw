@@ -61,7 +61,7 @@ func main() {
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(gateway.NewEventBased("gw")).
-		Add(event.NewIntermediateCatch("await-payment", event.WithCatchMessage("payment-confirmed", "order"))).
+		Add(event.NewIntermediateCatch("await-payment", event.WithMessageCorrelator("payment-confirmed", "order"))).
 		Add(event.NewIntermediateCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
 		Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship-order"))).
 		Add(activity.NewServiceTask("cancel", activity.WithTaskAction("cancel-order"))).

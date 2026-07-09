@@ -45,6 +45,30 @@ func WithName(name string) interface {
 	return nameOpt{name}
 }
 
+// --- WithMessageCorrelator (Start, Catch, Boundary) ---
+
+type messageCorrelatorOpt struct{ msg, key string }
+
+func (o messageCorrelatorOpt) applyStart(n *StartEvent) {
+	n.MessageName, n.CorrelationKey = o.msg, o.key
+}
+func (o messageCorrelatorOpt) applyCatch(n *IntermediateCatchEvent) {
+	n.MessageName, n.CorrelationKey = o.msg, o.key
+}
+func (o messageCorrelatorOpt) applyBoundary(n *BoundaryEvent) {
+	n.MessageName, n.CorrelationKey = o.msg, o.key
+}
+
+// WithMessageCorrelator sets the message name and correlation key on a start,
+// catch, or boundary event.
+func WithMessageCorrelator(msg, key string) interface {
+	StartOption
+	CatchOption
+	BoundaryOption
+} {
+	return messageCorrelatorOpt{msg, key}
+}
+
 // --- StartEvent options (EventSubProcess triggers) ---
 
 type startFuncOpt struct{ fn func(*StartEvent) }
@@ -54,11 +78,6 @@ func (o startFuncOpt) applyStart(n *StartEvent) { o.fn(n) }
 // WithStartSignal sets SignalName on a StartEvent (for EventSubProcess triggers).
 func WithStartSignal(name string) StartOption {
 	return startFuncOpt{func(n *StartEvent) { n.SignalName = name }}
-}
-
-// WithStartMessage sets MessageName and CorrelationKey on a StartEvent.
-func WithStartMessage(msg, key string) StartOption {
-	return startFuncOpt{func(n *StartEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
 // WithStartTimer sets the Timer trigger on a StartEvent. Use schedule.AfterExpr,
@@ -93,11 +112,6 @@ func WithCatchTimer(t schedule.TriggerSpec) CatchOption {
 // WithCatchSignal sets the signal reference (was WithSignalName).
 func WithCatchSignal(name string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.SignalName = name }}
-}
-
-// WithCatchMessage sets MessageName and CorrelationKey (was WithMessageNameAndKey).
-func WithCatchMessage(msg, key string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
 // WithWaitDeadline sets the DeadlineTimer (schedule.TriggerSpec) and DeadlineFlow
@@ -161,11 +175,6 @@ func (o boundaryFuncOpt) applyBoundary(n *BoundaryEvent) { o.fn(n) }
 // WithBoundarySignal sets SignalName on a BoundaryEvent.
 func WithBoundarySignal(name string) BoundaryOption {
 	return boundaryFuncOpt{func(n *BoundaryEvent) { n.SignalName = name }}
-}
-
-// WithBoundaryMessage sets MessageName and CorrelationKey on a BoundaryEvent.
-func WithBoundaryMessage(msg, key string) BoundaryOption {
-	return boundaryFuncOpt{func(n *BoundaryEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
 // WithBoundaryTimer sets the Timer trigger on a BoundaryEvent. Use

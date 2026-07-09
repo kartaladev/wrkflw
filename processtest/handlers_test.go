@@ -47,7 +47,7 @@ func messageDef(t *testing.T) *model.ProcessDefinition {
 	t.Helper()
 	def, err := definition.NewBuilder("msg", 1).
 		Add(event.NewStart("start")).
-		Add(event.NewIntermediateCatch("await", event.WithCatchMessage("PaymentReceived", ""))).
+		Add(event.NewIntermediateCatch("await", event.WithMessageCorrelator("PaymentReceived", ""))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").
 		Connect("await", "end").

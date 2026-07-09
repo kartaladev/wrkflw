@@ -324,7 +324,7 @@ func catchMessageValidationDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewIntermediateCatch("confirm-catch",
-				event.WithCatchMessage("confirm", ""),
+				event.WithMessageCorrelator("confirm", ""),
 				event.WithPayloadValidation(vexpr.New("ok == true"))),
 			event.NewEnd("end"),
 		},

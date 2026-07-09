@@ -14,7 +14,7 @@ func TestStartEventOptions(t *testing.T) {
 	n := event.NewStart("s",
 		event.WithName("Start"),
 		event.WithStartSignal("go"),
-		event.WithStartMessage("kick", "k"),
+		event.WithMessageCorrelator("kick", "k"),
 		event.WithStartTimer(schedule.AfterExpr(`"1h"`)),
 	).(event.StartEvent)
 	if n.Kind() != model.KindStartEvent || n.Name() != "Start" {
@@ -33,7 +33,7 @@ func TestCatchRenamedOptions(t *testing.T) {
 		event.WithName("Wait"),
 		event.WithCatchTimer(schedule.AfterExpr(`"15m"`)),
 		event.WithCatchSignal("resume"),
-		event.WithCatchMessage("go", "k"),
+		event.WithMessageCorrelator("go", "k"),
 		event.WithWaitDeadline(schedule.AfterExpr(`"4h"`), "esc"), event.WithDeadlineAction("escalate"),
 		event.WithWaitAction(schedule.EveryExpr(`"1h"`), "nudge"),
 	)
@@ -63,7 +63,7 @@ func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
 		event.WithName("B"),
 		event.WithBoundaryTimer(schedule.AfterExpr("5m")),
 		event.WithBoundarySignal("s"),
-		event.WithBoundaryMessage("m", "k"),
+		event.WithMessageCorrelator("m", "k"),
 		event.WithBoundaryErrorCode("E"),
 		event.WithBoundaryNonInterrupting(),
 	).(event.BoundaryEvent)

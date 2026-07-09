@@ -129,7 +129,7 @@ func messageCatchDef(msgName string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewIntermediateCatch("wait-msg", event.WithMessageCorrelator(msgName, "orderId")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

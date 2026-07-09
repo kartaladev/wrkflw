@@ -249,7 +249,7 @@ func TestIntermediateCatchEventSignal(t *testing.T) {
 
 func TestIntermediateCatchEventMessage(t *testing.T) {
 	n := event.NewIntermediateCatch("ice-msg",
-		event.WithCatchMessage("payment.received", "order.id"),
+		event.WithMessageCorrelator("payment.received", "order.id"),
 	)
 	ice, ok := n.(event.IntermediateCatchEvent)
 	if !ok {

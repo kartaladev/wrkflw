@@ -210,7 +210,7 @@ func TestValidate(t *testing.T) {
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
 					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
-					event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("msg.b", "")),
+					event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("msg.b", "")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1365,7 +1365,7 @@ func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
 		{
 			name: "message catch + payload validation is allowed",
 			def: catchDef(event.NewIntermediateCatch("catch",
-				event.WithCatchMessage("msg", ""), event.WithPayloadValidation(payload))),
+				event.WithMessageCorrelator("msg", ""), event.WithPayloadValidation(payload))),
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
 			},

@@ -687,7 +687,7 @@ model.RetryPolicy{
 | **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `event.NewErrorEnd(id, errorCode string, name ...string) Node` |
 
 `NewStartEvent` options (only meaningful when the start is an EventSubProcess trigger):
-`WithName(string)`, `WithStartSignal(name)`, `WithStartMessage(msg, key)`,
+`WithName(string)`, `WithStartSignal(name)`, `WithMessageCorrelator(msg, key)`,
 `WithStartTimer(dur)`. An empty `errorCode` on `NewErrorEndEvent` throws an anonymous
 (catch-all) error.
 
@@ -764,12 +764,12 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
 `NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
-`WithCatchMessage(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
+`WithMessageCorrelator(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
 `WithWaitAction(every, action)`, `WithName(string)`.
 `NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
 `NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithBoundarySignal(name)`,
-`WithBoundaryMessage(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
+`WithMessageCorrelator(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
 `WithBoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
 
 > **Boundary events:** timer, signal, error, and message boundaries are all armed and

@@ -89,7 +89,7 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 		},
 		{
 			name: "message-catch",
-			node: event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("payment.received", "order.id")),
+			node: event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("payment.received", "order.id")),
 		},
 		{
 			name: "signal-throw",
@@ -104,7 +104,7 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 			// NonInterrupting: true = non-interrupting boundary event.
 			name: "boundary-non-interrupting",
 			node: event.NewBoundary("boundary-2", "task-2",
-				event.WithBoundaryMessage("reminder.msg", ""),
+				event.WithMessageCorrelator("reminder.msg", ""),
 				event.WithBoundaryNonInterrupting(),
 			),
 		},

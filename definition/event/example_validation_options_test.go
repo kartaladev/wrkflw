@@ -25,7 +25,7 @@ func ExampleWithInputValidation() {
 // the process instance's variables.
 func ExampleWithPayloadValidation() {
 	n := event.NewIntermediateCatch("wait",
-		event.WithCatchMessage("m", "k"),
+		event.WithMessageCorrelator("m", "k"),
 		event.WithPayloadValidation(vexpr.New("ok == true")),
 	)
 	ice := n.(event.IntermediateCatchEvent)

@@ -75,11 +75,11 @@ func main() {
 		// Interrupting message boundary: cancels the approval on "order.cancel"
 		// correlated to this order.
 		Add(event.NewBoundary("bnd-cancel", "approve",
-			event.WithBoundaryMessage("order.cancel", "orderID"))).
+			event.WithMessageCorrelator("order.cancel", "orderID"))).
 		// Non-interrupting message boundary: reminds without interrupting,
 		// correlated to this order.
 		Add(event.NewBoundary("bnd-remind", "approve",
-			event.WithBoundaryMessage("order.remind", "orderID"),
+			event.WithMessageCorrelator("order.remind", "orderID"),
 			event.WithBoundaryNonInterrupting())).
 		Add(activity.NewServiceTask("notify", activity.WithTaskAction("notify-approver"))).
 		Add(event.NewEnd("end-approved")).

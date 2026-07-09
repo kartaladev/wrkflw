@@ -154,12 +154,12 @@ task := activity.NewServiceTask("charge",
 
 ### Event options (`definition/event`)
 
-`WithName` (start/catch/boundary/event-sub-process); start triggers
-`WithStartSignal` / `WithStartMessage` / `WithStartTimer`; catch
-`WithCatchTimer` / `WithCatchSignal` / `WithCatchMessage` / `WithWaitDeadline` /
+`WithName` (start/catch/boundary/event-sub-process); `WithMessageCorrelator`
+(start/catch/boundary); start triggers `WithStartSignal` / `WithStartTimer`; catch
+`WithCatchTimer` / `WithCatchSignal` / `WithWaitDeadline` /
 `WithDeadlineAction` / `WithWaitAction`; throw `WithThrowSignal` / `WithCompensateRef` /
 `WithThrowName`; boundary `WithBoundaryTimer` / `WithBoundarySignal` /
-`WithBoundaryMessage` / `WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
+`WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
 event-sub-process `WithEventSubProcessNonInterrupting`.
 
 > The start / catch / boundary trigger options are symmetric

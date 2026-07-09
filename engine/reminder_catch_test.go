@@ -53,7 +53,7 @@ func TestIntermediateCatchReminderFiresAndCancelsOnResolve(t *testing.T) {
 			},
 		},
 		"message": {
-			catchOpt: event.WithCatchMessage("PaymentReceived", ""),
+			catchOpt: event.WithMessageCorrelator("PaymentReceived", ""),
 			resolve: func(_ *testing.T, _ engine.InstanceState, _ string) engine.Trigger {
 				return engine.NewMessageReceived(startAt.Add(45*time.Minute), "PaymentReceived", "", nil)
 			},

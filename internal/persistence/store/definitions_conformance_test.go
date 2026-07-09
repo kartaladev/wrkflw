@@ -37,7 +37,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 			event.NewStart("start",
 				event.WithName("Order Received"),
 				event.WithStartSignal("sig-order"),
-				event.WithStartMessage("msg-order", "vars.orderID"),
+				event.WithMessageCorrelator("msg-order", "vars.orderID"),
 			),
 			activity.NewUserTask("review", []string{"reviewer", "manager"},
 				activity.WithName("Review Order"),

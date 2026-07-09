@@ -45,7 +45,7 @@ func messageCatchDef() *model.ProcessDefinition {
 		ID: "p-message", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("catch-order", event.WithCatchMessage("order", `orderId`)),
+			event.NewIntermediateCatch("catch-order", event.WithMessageCorrelator("order", `orderId`)),
 			activity.NewServiceTask("process", activity.WithTaskAction("process-order")),
 			event.NewEnd("end"),
 		},
@@ -199,7 +199,7 @@ func TestMessageCatchNoCorrelationKeyMatchesOnNameOnly(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			// No CorrelationKey: match on name only
-			event.NewIntermediateCatch("catch-msg", event.WithCatchMessage("ping", "")),
+			event.NewIntermediateCatch("catch-msg", event.WithMessageCorrelator("ping", "")),
 			activity.NewServiceTask("svc", activity.WithTaskAction("pong")),
 			event.NewEnd("end"),
 		},
@@ -521,7 +521,7 @@ func eventGatewayMessageDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("order", "")),
+			event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("order", "")),
 			activity.NewServiceTask("timer-branch", activity.WithTaskAction("timer-action")),
 			activity.NewServiceTask("msg-branch", activity.WithTaskAction("msg-action")),
 			event.NewEnd("end1"),
@@ -613,7 +613,7 @@ func eventGatewayCorrelatedMsgDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("payment-confirmed", "order")),
+			event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("payment-confirmed", "order")),
 			activity.NewServiceTask("timer-branch", activity.WithTaskAction("timer-action")),
 			activity.NewServiceTask("msg-branch", activity.WithTaskAction("msg-action")),
 			event.NewEnd("end1"),
