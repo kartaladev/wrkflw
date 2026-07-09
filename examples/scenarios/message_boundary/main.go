@@ -71,7 +71,7 @@ func main() {
 	// never the intent, so a per-order cancel/remind must be correlated.
 	def, err := definition.NewBuilder("order-approval", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("approve", []string{"approver"})).
+		Add(activity.NewUserTask("approve", activity.WithCandidateRoles("approver"))).
 		// Interrupting message boundary: cancels the approval on "order.cancel"
 		// correlated to this order.
 		Add(event.NewBoundary("bnd-cancel", "approve",

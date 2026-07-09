@@ -51,7 +51,7 @@ func main() {
 		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"),
 			activity.WithCompensateAction("refund-card"),
 		)).
-		Add(activity.NewUserTask("approve", []string{"manager"})).
+		Add(activity.NewUserTask("approve", activity.WithCandidateRoles("manager"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "charge").
 		Connect("charge", "approve").

@@ -24,7 +24,7 @@ import (
 func boundaryActionDef(boundaryOpts ...event.BoundaryOption) *model.ProcessDefinition {
 	nodes := []model.Node{
 		event.NewStart("start"),
-		activity.NewUserTask("work", nil),
+		activity.NewUserTask("work"),
 		event.NewBoundary("bnd", "work", boundaryOpts...),
 		event.NewEnd("end"),
 		event.NewEnd("end2"),

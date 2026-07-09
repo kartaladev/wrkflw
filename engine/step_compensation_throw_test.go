@@ -59,7 +59,7 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
 			// After the throw resumes, we park here (UserTask) so the test can observe
 			// that the token arrived at afterThrow and then drove to end.
-			activity.NewUserTask("afterThrow", nil),
+			activity.NewUserTask("afterThrow"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -313,7 +313,7 @@ func throwThenCancelDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
-			activity.NewUserTask("userTask", nil),
+			activity.NewUserTask("userTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -510,7 +510,7 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 			activity.NewServiceTask("rootSvc", activity.WithTaskAction("book-root"), activity.WithCompensateAction("cancel-root")),
 			activity.NewSubProcess("sub", nested),
 			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
-			activity.NewUserTask("afterThrow", nil),
+			activity.NewUserTask("afterThrow"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

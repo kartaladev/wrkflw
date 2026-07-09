@@ -32,7 +32,7 @@ func cancelWithCompDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
-			activity.NewUserTask("user", nil),
+			activity.NewUserTask("user"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -73,7 +73,7 @@ func twoCompNodesDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewServiceTask("svc1", activity.WithTaskAction("step1"), activity.WithCompensateAction("undo1")),
 			activity.NewServiceTask("svc2", activity.WithTaskAction("step2"), activity.WithCompensateAction("undo2")),
-			activity.NewUserTask("user", nil),
+			activity.NewUserTask("user"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -236,7 +236,7 @@ func TestEmptyRecordsCancelImmediate(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("charge")),
-			activity.NewUserTask("user", nil),
+			activity.NewUserTask("user"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -476,7 +476,7 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 			Nodes: []model.Node{
 				event.NewStart("start"),
 				activity.NewSubProcess("sub", inner),
-				activity.NewUserTask("rootUserTask", nil),
+				activity.NewUserTask("rootUserTask"),
 				event.NewEnd("end"),
 			},
 			Flows: []flow.SequenceFlow{

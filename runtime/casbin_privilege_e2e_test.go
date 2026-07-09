@@ -39,7 +39,7 @@ func financePrivilegeDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", nil,
+			activity.NewUserTask("review",
 				activity.WithEligibilityPrivileges("finance-task claim"),
 			),
 			event.NewEnd("end"),

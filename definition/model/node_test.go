@@ -83,7 +83,7 @@ func TestErrorEndEventConstructor(t *testing.T) {
 }
 
 func TestUserTaskConstructor(t *testing.T) {
-	n := activity.NewUserTask("task-1", []string{"manager", "admin"},
+	n := activity.NewUserTask("task-1", activity.WithCandidateRoles("manager", "admin"),
 		activity.WithEligibilityExpr("amount > 1000"),
 		activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach"), activity.WithDeadlineAction("notify-manager"),
 		activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
@@ -339,7 +339,7 @@ func TestWithNameOnActivities(t *testing.T) {
 		t.Fatalf("Name() = %q, want 'My Task'", n.Name())
 	}
 
-	n2 := activity.NewUserTask("ut", nil, activity.WithName("User Step"))
+	n2 := activity.NewUserTask("ut", activity.WithName("User Step"))
 	if n2.Name() != "User Step" {
 		t.Fatalf("Name() = %q, want 'User Step'", n2.Name())
 	}
@@ -380,7 +380,7 @@ func TestEventSubProcessNonInterrupting(t *testing.T) {
 // WithRetryPolicy can all be combined on NewUserTask and that each field is set.
 func TestUserTaskCombinedOptions(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 1}
-	n := activity.NewUserTask("u", []string{"reviewer"},
+	n := activity.NewUserTask("u", activity.WithCandidateRoles("reviewer"),
 		activity.WithEligibilityExpr("vars.score > 50"),
 		activity.WithName("Review Task"),
 		activity.WithRetryPolicy(p),
@@ -429,7 +429,7 @@ func TestReceiveTaskCombinedOptions(t *testing.T) {
 // a non-UserTask constructor is a compile-time error (not tested here, by design).
 func TestWithEligibilityPrivileges(t *testing.T) {
 	privs := []string{"finance-task claim", "finance-task read"}
-	n := activity.NewUserTask("approve", []string{"approver"},
+	n := activity.NewUserTask("approve", activity.WithCandidateRoles("approver"),
 		activity.WithEligibilityPrivileges(privs...),
 	)
 	ut, ok := n.(activity.UserTask)
@@ -448,7 +448,7 @@ func TestWithEligibilityPrivileges(t *testing.T) {
 // a JSON marshal/unmarshal round-trip (via NodeWire).
 func TestWithEligibilityPrivilegesRoundTrip(t *testing.T) {
 	privs := []string{"doc read"}
-	n := activity.NewUserTask("u2", nil, activity.WithEligibilityPrivileges(privs...))
+	n := activity.NewUserTask("u2", activity.WithEligibilityPrivileges(privs...))
 	def := &model.ProcessDefinition{
 		ID:      "p",
 		Version: 1,

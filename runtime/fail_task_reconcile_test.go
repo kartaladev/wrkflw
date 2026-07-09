@@ -49,7 +49,7 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewUserTask("user", []string{"r"}),
+			activity.NewUserTask("user", activity.WithCandidateRoles("r")),
 			activity.NewServiceTask("svc", activity.WithTaskAction("boom")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),

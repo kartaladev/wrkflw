@@ -699,7 +699,7 @@ func cancelUserTaskDef() *model.ProcessDefinition {
 		ID: "p-cancel-ut", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", nil),
+			activity.NewUserTask("userTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -890,7 +890,7 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
-			activity.NewUserTask("userTask", nil),
+			activity.NewUserTask("userTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

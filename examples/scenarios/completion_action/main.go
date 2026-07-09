@@ -42,7 +42,7 @@ func main() {
 
 	def, err := definition.NewBuilder("expense-approval", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("approve", []string{"manager"},
+		Add(activity.NewUserTask("approve", activity.WithCandidateRoles("manager"),
 			activity.WithCompletionAction("recordApproval"),
 		)).
 		Add(event.NewEnd("end")).

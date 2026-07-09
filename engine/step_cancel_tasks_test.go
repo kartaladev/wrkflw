@@ -71,7 +71,7 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 					ID: "c-single", Version: 1,
 					Nodes: []model.Node{
 						event.NewStart("start"),
-						activity.NewUserTask("user", []string{"r"}),
+						activity.NewUserTask("user", activity.WithCandidateRoles("r")),
 						event.NewEnd("end"),
 					},
 					Flows: []flow.SequenceFlow{
@@ -103,8 +103,8 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 					Nodes: []model.Node{
 						event.NewStart("start"),
 						gateway.NewParallel("fork"),
-						activity.NewUserTask("ua", []string{"r"}),
-						activity.NewUserTask("ub", []string{"r"}),
+						activity.NewUserTask("ua", activity.WithCandidateRoles("r")),
+						activity.NewUserTask("ub", activity.WithCandidateRoles("r")),
 						gateway.NewParallel("join"),
 						event.NewEnd("end"),
 					},
@@ -186,7 +186,7 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
-			activity.NewUserTask("user", []string{"r"}),
+			activity.NewUserTask("user", activity.WithCandidateRoles("r")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

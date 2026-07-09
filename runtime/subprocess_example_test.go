@@ -197,7 +197,7 @@ func parkingChildDef() *model.ProcessDefinition {
 		ID: "parking-child", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("child-start"),
-			activity.NewUserTask("child-user", nil),
+			activity.NewUserTask("child-user"),
 			event.NewEnd("child-end"),
 		},
 		Flows: []flow.SequenceFlow{

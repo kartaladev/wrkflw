@@ -27,7 +27,7 @@ func TestRetryPolicyOf(t *testing.T) {
 	}
 	// Test all activity kinds
 	cases := []model.Node{
-		activity.NewUserTask("ut", nil, activity.WithRetryPolicy(p)),
+		activity.NewUserTask("ut", activity.WithRetryPolicy(p)),
 		activity.NewReceiveTask("rt", "msg", activity.WithRetryPolicy(p)),
 		activity.NewSendTask("st", "msg", activity.WithRetryPolicy(p)),
 		activity.NewBusinessRuleTask("brt", activity.WithTaskAction("act"), activity.WithRetryPolicy(p)),
@@ -79,7 +79,7 @@ func TestDeadlineOf(t *testing.T) {
 		assert(t, spec, fl, act, "sla-flow", "sla-act", 24*time.Hour)
 	})
 	t.Run("user task with deadline", func(t *testing.T) {
-		n := activity.NewUserTask("ut", nil,
+		n := activity.NewUserTask("ut",
 			activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "ut-flow"), activity.WithDeadlineAction("ut-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "ut-flow", "ut-act", 2*time.Hour)
@@ -100,7 +100,7 @@ func TestDeadlineOf(t *testing.T) {
 
 func TestWaitActionOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
-	n := activity.NewUserTask("ut", nil,
+	n := activity.NewUserTask("ut",
 		activity.WithRetryPolicy(p),
 		activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 	)
@@ -126,17 +126,17 @@ func TestWaitActionOf(t *testing.T) {
 
 func TestCompletionActionOf(t *testing.T) {
 	assert.Equal(t, "recordApproval",
-		model.CompletionActionOf(activity.NewUserTask("ut", nil, activity.WithCompletionAction("recordApproval"))))
+		model.CompletionActionOf(activity.NewUserTask("ut", activity.WithCompletionAction("recordApproval"))))
 	assert.Equal(t, "ackOrder",
 		model.CompletionActionOf(activity.NewReceiveTask("rt", "msg", activity.WithCompletionAction("ackOrder"))))
-	assert.Equal(t, "", model.CompletionActionOf(activity.NewUserTask("ut2", nil)))
+	assert.Equal(t, "", model.CompletionActionOf(activity.NewUserTask("ut2")))
 	assert.Equal(t, "", model.CompletionActionOf(event.NewStart("s")))
 }
 
 func TestActionOf(t *testing.T) {
 	assert.Equal(t, "charge-card", model.ActionOf(activity.NewServiceTask("st", activity.WithTaskAction("charge-card"))))
 	assert.Equal(t, "apply-discount", model.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithTaskAction("apply-discount"))))
-	assert.Equal(t, "", model.ActionOf(activity.NewUserTask("ut", nil)))
+	assert.Equal(t, "", model.ActionOf(activity.NewUserTask("ut")))
 	assert.Equal(t, "", model.ActionOf(event.NewStart("s")))
 }
 
@@ -157,7 +157,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), activity.WithDeadlineAction("sla-act"),
 				activity.WithCancelAction("cancel-charge"),
 			),
-			activity.NewUserTask("approve", []string{"manager", "admin"},
+			activity.NewUserTask("approve", activity.WithCandidateRoles("manager", "admin"),
 				activity.WithEligibilityExpr("amount > 1000"),
 				activity.WithName("Approve"),
 				activity.WithWaitAction(schedule.Every(4*time.Hour), "remind-act"),
@@ -360,7 +360,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 // TestDeadlineReminderTyped verifies that DeadlineOf and WaitActionOf return
 // schedule.TriggerSpec values (Task 3: typed deadline/wait migration).
 func TestDeadlineReminderTyped(t *testing.T) {
-	n := activity.NewUserTask("ut", nil,
+	n := activity.NewUserTask("ut",
 		activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "sla"), activity.WithDeadlineAction("notify"),
 		activity.WithWaitAction(schedule.Every(time.Hour), "remind"),
 	)

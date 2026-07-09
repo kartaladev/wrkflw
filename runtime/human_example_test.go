@@ -186,7 +186,7 @@ func approvalWithEligibilityExprDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"approver"}, activity.WithEligibilityExpr(`vars["region"] == "EU"`)),
+			activity.NewUserTask("approve", activity.WithCandidateRoles("approver"), activity.WithEligibilityExpr(`vars["region"] == "EU"`)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

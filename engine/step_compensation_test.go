@@ -272,7 +272,7 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			activity.NewUserTask("rootUserTask", nil),
+			activity.NewUserTask("rootUserTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -356,7 +356,7 @@ func openSubProcessWithParkDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("book"), activity.WithCompensateAction("x")),
-			activity.NewUserTask("userTask", nil),
+			activity.NewUserTask("userTask"),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -447,7 +447,7 @@ func threeCompensableDef() *model.ProcessDefinition {
 			activity.NewServiceTask("step1", activity.WithTaskAction("a1"), activity.WithCompensateAction("c1")),
 			activity.NewServiceTask("step2", activity.WithTaskAction("a2"), activity.WithCompensateAction("c2")),
 			activity.NewServiceTask("step3", activity.WithTaskAction("a3"), activity.WithCompensateAction("c3")),
-			activity.NewUserTask("userTask", nil),
+			activity.NewUserTask("userTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -649,7 +649,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewServiceTask("rootSvc", activity.WithTaskAction("root-book"), activity.WithCompensateAction("root-comp")),
 			activity.NewSubProcess("sub", nested),
-			activity.NewUserTask("rootUserTask", nil),
+			activity.NewUserTask("rootUserTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -786,7 +786,7 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("outerSub", outerNested),
-			activity.NewUserTask("rootUserTask", nil),
+			activity.NewUserTask("rootUserTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

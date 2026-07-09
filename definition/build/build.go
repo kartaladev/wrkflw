@@ -115,7 +115,8 @@ func (b *Builder) AddServiceTask(id string, opts ...activity.ServiceTaskOption) 
 	return b.Add(activity.NewServiceTask(id, opts...))
 }
 func (b *Builder) AddUserTask(id string, roles []string, opts ...activity.UserTaskOption) *Builder {
-	return b.Add(activity.NewUserTask(id, roles, opts...))
+	all := append([]activity.UserTaskOption{activity.WithCandidateRoles(roles...)}, opts...)
+	return b.Add(activity.NewUserTask(id, all...))
 }
 func (b *Builder) AddReceiveTask(id, messageName string, opts ...activity.ReceiveTaskOption) *Builder {
 	return b.Add(activity.NewReceiveTask(id, messageName, opts...))

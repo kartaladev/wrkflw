@@ -42,7 +42,7 @@ func compensationOnCancelDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("charge", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
-			activity.NewUserTask("approve", []string{"reviewer"}),
+			activity.NewUserTask("approve", activity.WithCandidateRoles("reviewer")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

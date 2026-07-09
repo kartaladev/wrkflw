@@ -28,7 +28,7 @@ func userTaskCompletionDef() *model.ProcessDefinition {
 		ID: "p-uc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("u1", []string{"r"}, activity.WithCompletionAction("recordApproval")),
+			activity.NewUserTask("u1", activity.WithCandidateRoles("r"), activity.WithCompletionAction("recordApproval")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -181,7 +181,7 @@ func subprocessScopedCompletionActionDef(t *testing.T, ran *atomic.Bool) *model.
 			return map[string]any{"innerApproved": true}, nil
 		}).
 		Add(event.NewStart("inner-start")).
-		Add(activity.NewUserTask("inner-u1", []string{"r"}, activity.WithCompletionAction("innerApprove"))).
+		Add(activity.NewUserTask("inner-u1", activity.WithCandidateRoles("r"), activity.WithCompletionAction("innerApprove"))).
 		Add(event.NewEnd("inner-end")).
 		Connect("inner-start", "inner-u1").
 		Connect("inner-u1", "inner-end").

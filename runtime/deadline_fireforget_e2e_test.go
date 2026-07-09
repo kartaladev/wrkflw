@@ -84,7 +84,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", []string{"reviewer"}, activity.WithWaitDeadline(schedule.AfterExpr(`"30m"`), "escalate"), activity.WithDeadlineAction("notify")),
+			activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"), activity.WithWaitDeadline(schedule.AfterExpr(`"30m"`), "escalate"), activity.WithDeadlineAction("notify")),
 			event.NewEnd("end-normal"),
 			event.NewEnd("end-escalated"),
 		},

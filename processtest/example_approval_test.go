@@ -19,7 +19,7 @@ func Example_approvalFlow() {
 
 	def, _ := definition.NewBuilder("approval-demo", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("approve", []string{"manager"})).
+		Add(activity.NewUserTask("approve", activity.WithCandidateRoles("manager"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "approve").
 		Connect("approve", "end").

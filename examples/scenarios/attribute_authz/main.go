@@ -88,7 +88,7 @@ func demoAttributeAuthz(ctx context.Context) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"approver"},
+			activity.NewUserTask("approve", activity.WithCandidateRoles("approver"),
 				// EligibilityExpr evaluates in the authz env {"actor": Actor, "vars": processVars},
 				// so process variables are reached via vars["key"] — unlike gateway conditions,
 				// which evaluate directly against the process-variable map (bare `key`).
@@ -214,7 +214,7 @@ func demoCasbinRBAC(ctx context.Context) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("finance-review", nil,
+			activity.NewUserTask("finance-review",
 				activity.WithEligibilityPrivileges("finance-task claim"),
 			),
 			event.NewEnd("end"),

@@ -120,9 +120,12 @@ func NewServiceTask(id string, opts ...ServiceTaskOption) model.Node {
 	return s
 }
 
-// NewUserTask constructs a UserTask with the given id and candidate roles.
-func NewUserTask(id string, roles []string, opts ...UserTaskOption) model.Node {
-	u := UserTask{Base: model.NewBase(id, ""), CandidateRoles: roles}
+// NewUserTask constructs a UserTask. Eligibility is optional and set via
+// WithCandidateRoles / WithEligibilityPrivileges / WithEligibilityExpr; with
+// none set, the engine gate is open (authorization defers to the transport
+// layer). See ADR-0117.
+func NewUserTask(id string, opts ...UserTaskOption) model.Node {
+	u := UserTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {
 		o.applyUserTask(&u)
 	}

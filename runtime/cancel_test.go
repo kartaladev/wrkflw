@@ -28,7 +28,7 @@ func cancelDef(cancelActions []string) *model.ProcessDefinition {
 		ID: "cancel-def", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("wait", []string{"r"}),
+			activity.NewUserTask("wait", activity.WithCandidateRoles("r")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

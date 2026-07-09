@@ -27,7 +27,7 @@ func nestedUserTaskDef() *model.ProcessDefinition {
 		ID: "inner-approve", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewUserTask("approve", nil),
+			activity.NewUserTask("approve"),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{

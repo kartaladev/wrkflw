@@ -55,10 +55,10 @@ func reverseFixtureDef() *model.ProcessDefinition {
 		ID: "p-reverse-facade", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve1", []string{"manager"}),
+			activity.NewUserTask("approve1", activity.WithCandidateRoles("manager")),
 			activity.NewServiceTask("svc", activity.WithTaskAction("do"), activity.WithCompensateAction("undo")),
 			activity.NewServiceTask("next", activity.WithTaskAction("next"), activity.WithCompensateAction("unnext")),
-			activity.NewUserTask("approve2", []string{"manager"}),
+			activity.NewUserTask("approve2", activity.WithCandidateRoles("manager")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -172,11 +172,11 @@ func reverseTargetVarsFixtureDef() *model.ProcessDefinition {
 		ID: "p-reverse-target-vars", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve1", []string{"manager"}),
+			activity.NewUserTask("approve1", activity.WithCandidateRoles("manager")),
 			activity.NewServiceTask("svc", activity.WithTaskAction("do"), activity.WithCompensateAction("undo")),
-			activity.NewUserTask("approve2", []string{"manager"}),
+			activity.NewUserTask("approve2", activity.WithCandidateRoles("manager")),
 			activity.NewServiceTask("next", activity.WithTaskAction("next"), activity.WithCompensateAction("unnext")),
-			activity.NewUserTask("approve3", []string{"manager"}),
+			activity.NewUserTask("approve3", activity.WithCandidateRoles("manager")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
