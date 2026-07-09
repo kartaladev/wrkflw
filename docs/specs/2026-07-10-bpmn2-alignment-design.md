@@ -2,7 +2,7 @@
 
 - **Status:** Approved (design), 2026-07-10
 - **Branch:** `feat/bpmn2-alignment` (off `main == 67df128`)
-- **ADRs:** 0117–0121 (one per feature)
+- **ADRs:** 0117–0122 (ADR-0117 = authz-API relaxation; 0118–0122 = one per feature)
 - **Author:** brainstorming session 2026-07-10
 
 ## Purpose
@@ -29,9 +29,13 @@ supported; the definition wire version is bumped.
 
 ## Scope
 
-Five features, delivered on one branch, each with its own ADR and `examples/scenarios/*`:
+A prerequisite authz-API relaxation (#0) plus five features, delivered on one branch, each
+with its own ADR and `examples/scenarios/*`:
 
-1. **#5 Manual user-task mode** — `WithManual()` on `UserTask`.
+0. **#0 Optional co-equal UserTask eligibility** — make roles/privileges/attribute all
+   optional, co-equal options; `NewUserTask(id, opts...)` + `WithCandidateRoles`. Prerequisite
+   for the clean manual-task story.
+1. **#5 Manual user-task mode** — `WithManual()` on `UserTask` (a no-eligibility UserTask).
 2. **#2 Unified end event** — fold `TerminateEndEvent` into `EndEvent` via `WithForceTermination`.
 3. **#3 Scope-wide compensation throw** — implement the empty-ref compensate throw.
 4. **#1 Event-based start events** — start an instance from a message/signal/timer; allow
@@ -40,12 +44,14 @@ Five features, delivered on one branch, each with its own ADR and `examples/scen
 
 ### Build order
 
-`#5 → #2 → #3 → #1 → #4`.
+`#0 (eligibility relaxation) → #5 → #2 → #3 → #1 → #4`.
 
-Rationale: #5 and #2 are small and wire-additive (build momentum). #3 is engine-contained.
-#1 is the architecturally deepest (pre-instance subscription ownership) and must land before
-#4. #4 deletes the most code and retires freshly-hardened machinery, so it goes last, behind
-a full test-parity port.
+Rationale: #0 is a prerequisite for #5 (manual = a no-eligibility UserTask, which reads
+cleanly only once roles are an optional option) and both touch the same UserTask file surface,
+so they ship in one plan. #5 and #2 are small and wire-additive (build momentum). #3 is
+engine-contained. #1 is the architecturally deepest (pre-instance subscription ownership) and
+must land before #4. #4 deletes the most code and retires freshly-hardened machinery, so it
+goes last, behind a full test-parity port.
 
 ### Out of scope
 
@@ -94,10 +100,46 @@ rather than the bespoke `armEventSubprocesses` scan it is today.
 
 ---
 
-## ADR-0117 — Manual user-task mode (#5)
+## ADR-0117 — Optional co-equal UserTask eligibility (#0)
 
-**Model.** Add `Manual bool` to `activity.UserTask`; add `WithManual() UserTaskOption`. Wire:
-additive `manual` bool in `NodeWire`, round-tripped in the `UserTask` spec.
+**Context.** Authorization must facilitate role-based (RBAC), resource-privilege-based (a
+privilege held by a role *or* a user), and attribute-based (data/process-variable) evaluation
+— all co-equal. Today the model already carries all three (`CandidateRoles`,
+`EligibilityPrivileges`, `EligibilityExpr`) and the runtime already treats an empty
+`authz.AuthzSpec` as "open" (permits) so a consumer can authorize at the transport layer (e.g.
+HTTP security middleware). But the **authoring API** privileges RBAC: `NewUserTask(id, roles
+[]string, opts...)` takes roles as a *mandatory positional* argument while privileges and
+attribute are optional options (`WithEligibilityPrivileges`, `WithEligibilityExpr`). This
+makes RBAC feel required and the other dimensions second-class.
+
+**Decision.**
+- Change the constructor to `NewUserTask(id string, opts ...UserTaskOption)` — **drop the
+  positional `roles`**. Add `WithCandidateRoles(roles ...string) UserTaskOption`. All three
+  eligibility dimensions are now co-equal, optional options. Breaking signature change; the
+  library is unreleased, so it is a clean break (update all call sites, examples, tests).
+- An empty eligibility spec (no roles, no privileges, no attribute) means **no engine-level
+  gate** — authorization is deferred to the consumer's transport layer. This is already the
+  runtime behavior (`task.Complete`/`Claim` authorize against the task's `Eligibility`; an
+  empty spec is permitted); this ADR only aligns the authoring API with it.
+- Out of scope: the "privilege held by role *or* user" resolution is a casbin-adapter
+  capability, not a definition-model change — noted, not modified here.
+
+**Consequences.** RBAC is no longer privileged in the API. Manual tasks (#5/ADR-0118) become
+naturally expressible as a UserTask with no eligibility. Every existing `NewUserTask(id, roles,
+...)` call site changes. No wire change (fields unchanged; only the constructor moves roles
+from positional to option).
+
+**Example.** Covered by the retrofit of existing user-task scenarios plus the manual-task
+example (ADR-0118).
+
+---
+
+## ADR-0118 — Manual user-task mode (#5)
+
+**Model.** Add `Manual bool` to `activity.UserTask`; add `WithManual() UserTaskOption`. Builds
+on ADR-0117's optional constructor — a manual task is a UserTask with no eligibility and
+`WithManual()`. Wire: additive `manual` bool in `NodeWire`, round-tripped in the `UserTask`
+spec.
 
 **Behavior.** A manual task **parks and waits for a bare completion trigger** — the
 completion carries no payload/form-data, and `CompletionValidation` is skipped (there is no
@@ -109,8 +151,9 @@ is documented in the ADR.
 **Decided micro-decisions.**
 - Option `WithManual()`, not a separate `NewManualTask` kind (matches the repo's
   functional-options convention; no new wire kind).
-- Authz: `WithManual` **with no candidate roles ⇒ no authz gate**; if roles are set, the
-  claim/authz gate is kept.
+- Authz: handled by ADR-0117 — a manual task simply carries no eligibility, so the engine
+  gate is open and authorization defers to the transport layer. If roles/privileges/attribute
+  are set (via the ADR-0117 options), the existing claim/authz gate applies unchanged.
 - Build-time **error** if `WithManual` is combined with `WithCompletionValidation`
   (contradictory — a manual task has no form to validate).
 
@@ -123,7 +166,7 @@ combination, and bypasses authz when roleless.
 
 ---
 
-## ADR-0118 — Unified end event with force-termination (#2)
+## ADR-0119 — Unified end event with force-termination (#2)
 
 **Model.**
 - Delete `TerminateEndEvent`, `KindTerminateEndEvent`, `NewTerminateEnd`, and the
@@ -158,7 +201,7 @@ and cancels the sibling branch's in-flight task; a companion path shows `Outcome
 
 ---
 
-## ADR-0119 — Scope-wide compensation throw (#3)
+## ADR-0120 — Scope-wide compensation throw (#3)
 
 **Model.** Implement the `CompensateRef == ""` (scope-wide) branch on
 `IntermediateThrowEvent` — the field doc already anticipates "empty = scope-wide"
@@ -188,7 +231,7 @@ order, then continues to a "notify customer" task rather than terminating.
 
 ---
 
-## ADR-0120 — Event-based start events (#1)
+## ADR-0121 — Event-based start events (#1)
 
 **Model.** No new fields — the trigger fields already exist on `StartEvent`. Relax validation
 (`definition/model/validate`): a definition has **≥1 start event**; **at most one "none"
@@ -235,7 +278,7 @@ start event carries `WithMessageCorrelator("order.created", "orderId")`; the exa
 
 ---
 
-## ADR-0121 — Event sub-process as event-triggered sub-process (#4)
+## ADR-0122 — Event sub-process as event-triggered sub-process (#4)
 
 **Model.** Delete `EventSubProcess`, `KindEventSubProcess`, `NewEventSubProcess`,
 `WithEventSubProcessNonInterrupting`, and the `eventSubProcess` wire name (clean break —
@@ -287,7 +330,8 @@ start acting as a non-interrupting event sub-process.
 
 ## Verification checklist (umbrella)
 
-- [ ] Each feature has its own ADR (0117–0121, Nygard template) under `docs/adr/`.
+- [ ] Each decision has its own ADR (0117 authz relaxation + 0118–0122 features, Nygard
+  template) under `docs/adr/`.
 - [ ] Each feature has an `examples/scenarios/*`.
 - [ ] `go test -race ./...` green from repo root; touched packages ≥ 85% line coverage.
 - [ ] `golangci-lint run ./...` clean.
