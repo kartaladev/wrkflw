@@ -18,6 +18,7 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	s.DefID = def.ID
 	s.DefVersion = def.Version
 	mergeVars(s, t.Vars)
+	s.StartVariables = copyVars(s.Variables)
 	starts := def.StartNodes()
 	if len(starts) != 1 {
 		return StepResult{}, fmt.Errorf("workflow-engine: expected exactly one start, got %d", len(starts))

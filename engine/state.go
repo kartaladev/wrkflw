@@ -406,10 +406,14 @@ type InstanceState struct {
 	DefVersion int
 	Status     Status
 	Variables  map[string]any
-	Tokens     []Token
-	StartedAt  time.Time
-	EndedAt    *time.Time
-	History    []NodeVisit
+	// StartVariables is an immutable copy of the variables the instance began with,
+	// captured once on StartInstance. Used by a full ReverseInstance to restore a
+	// fresh slate when resuming at the start node.
+	StartVariables map[string]any
+	Tokens         []Token
+	StartedAt      time.Time
+	EndedAt        *time.Time
+	History        []NodeVisit
 
 	// Tasks holds the in-flight human-task records for this instance.
 	Tasks []humantask.HumanTask
