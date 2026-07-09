@@ -18,11 +18,12 @@ import (
 )
 
 // TestStartValidation_WireRoundTrip marshals a StartEvent carrying an expr
-// InputValidation strategy to JSON and decodes it back. The decoded strategy is a
-// pending reconstruction placeholder (no *validate.Registry is available at
-// json.Unmarshal time) but must still be introspectable via model.DescriptorOf —
-// proving the descriptor itself round-tripped byte-for-byte — while refusing to
-// build a live Validator until reconstructed (see the Loader test below).
+// InputValidation strategy to JSON and decodes it back, asserting the descriptor
+// round-trips byte-for-byte (model.DescriptorOf preserves Kind + Schema). Because
+// this test binary imports the expr adapter, "expr" is registered in the process-
+// global DefaultRegistry, so UnmarshalJSON reconstructs the strategy LIVE — a
+// runnable Validator, not the pending placeholder. The fail-closed asymmetry for
+// an unregistered kind is covered by TestDurableReload_ReconstructsViaDefaultRegistry.
 func TestStartValidation_WireRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -47,12 +48,80 @@ func TestStartValidation_WireRoundTrip(t *testing.T) {
 	require.NotNil(t, se.InputValidation)
 
 	desc, ok := model.DescriptorOf(se.InputValidation)
-	require.True(t, ok, "pending strategy must remain describable")
+	require.True(t, ok, "reconstructed strategy must remain describable")
 	require.Equal(t, vexpr.Kind, desc.Kind)
 	require.Equal(t, "amount > 0", desc.Schema)
 
-	_, err = se.InputValidation.NewValidator()
-	require.ErrorIs(t, err, model.ErrValidationNotReconstructed)
+	v, err := se.InputValidation.NewValidator()
+	require.NoError(t, err, "expr registered in DefaultRegistry must reconstruct live on reload")
+	require.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1}))
+	require.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 5}))
+}
+
+// TestDurableReload_ReconstructsViaDefaultRegistry proves the durable-reload path:
+// a validation-bearing definition that was persisted (MarshalJSON) reconstructs its
+// live strategy on json.Unmarshal via the process-global validate.DefaultRegistry,
+// which the expr adapter self-registered through its init(). A registered kind
+// yields a runnable Validator; an unregistered kind stays pending and fails CLOSED
+// at runtime (ErrValidationNotReconstructed) — never an unmarshal error.
+func TestDurableReload_ReconstructsViaDefaultRegistry(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		data   func(t *testing.T) []byte
+		assert func(t *testing.T, def *model.ProcessDefinition, err error)
+	}{
+		"registered kind reconstructs live and validates": {
+			data: func(t *testing.T) []byte {
+				def := &model.ProcessDefinition{
+					ID: "d", Version: 1,
+					Nodes: []model.Node{
+						event.NewStart("s", event.WithInputValidation(vexpr.New("amount > 0"))),
+					},
+				}
+				data, err := json.Marshal(def)
+				require.NoError(t, err)
+				return data
+			},
+			assert: func(t *testing.T, def *model.ProcessDefinition, err error) {
+				require.NoError(t, err)
+				node, ok := def.Node("s")
+				require.True(t, ok)
+				se, ok := node.(event.StartEvent)
+				require.True(t, ok)
+				v, verr := se.InputValidation.NewValidator()
+				require.NoError(t, verr, "durably-reloaded expr strategy must reconstruct live")
+				require.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1}))
+				require.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 5}))
+			},
+		},
+		"unregistered kind stays pending and fails closed": {
+			data: func(t *testing.T) []byte {
+				return []byte(`{"id":"d","version":1,"nodes":[` +
+					`{"id":"s","kind":"startEvent","validation":{"kind":"bogus","schema":"x"}}]}`)
+			},
+			assert: func(t *testing.T, def *model.ProcessDefinition, err error) {
+				require.NoError(t, err, "unregistered kind must not break unmarshal")
+				node, ok := def.Node("s")
+				require.True(t, ok)
+				se, ok := node.(event.StartEvent)
+				require.True(t, ok)
+				require.NotNil(t, se.InputValidation)
+				_, verr := se.InputValidation.NewValidator()
+				require.ErrorIs(t, verr, model.ErrValidationNotReconstructed)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var decoded model.ProcessDefinition
+			err := json.Unmarshal(tc.data(t), &decoded)
+			tc.assert(t, &decoded, err)
+		})
+	}
 }
 
 // TestLoader_WithValidatorRegistry_ReconstructsStrategy is the primary,
@@ -102,10 +171,18 @@ flows:
 				require.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 5}))
 			},
 		},
-		"missing registry errors": {
+		"no explicit registry falls back to DefaultRegistry": {
 			registry: nil,
-			assert: func(t *testing.T, _ *model.ProcessDefinition, err error) {
-				require.ErrorIs(t, err, model.ErrValidatorRegistryRequired)
+			assert: func(t *testing.T, def *model.ProcessDefinition, err error) {
+				require.NoError(t, err, "expr is self-registered in DefaultRegistry, so Build succeeds without an explicit registry")
+				node, ok := def.Node("s")
+				require.True(t, ok)
+				se, ok := node.(event.StartEvent)
+				require.True(t, ok)
+				v, verr := se.InputValidation.NewValidator()
+				require.NoError(t, verr)
+				require.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1}))
+				require.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 5}))
 			},
 		},
 		"unregistered kind surfaces unknown kind": {

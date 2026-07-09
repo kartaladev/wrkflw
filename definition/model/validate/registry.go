@@ -24,6 +24,20 @@ type Registry struct {
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry { return &Registry{factories: make(map[string]StrategyFactory)} }
 
+// defaultRegistry is the process-global registry adapters self-register into.
+var defaultRegistry = NewRegistry()
+
+// DefaultRegistry is the process-global registry consulted on durable reload
+// (ProcessDefinition.UnmarshalJSON) and as build()'s fallback when no explicit
+// loader registry is configured. Adapters register their kind here via init(), so
+// importing a validation adapter (validate/expr, validate/jsonschema,
+// validate/avro) arms durable reload for that kind.
+func DefaultRegistry() *Registry { return defaultRegistry }
+
+// Register maps kind -> factory in the DefaultRegistry. It is the convenience
+// entry point adapters call from their init() to self-register.
+func Register(kind string, f StrategyFactory) { defaultRegistry.Register(kind, f) }
+
 // Register maps kind -> factory. A later registration for the same kind wins.
 func (r *Registry) Register(kind string, f StrategyFactory) {
 	r.mu.Lock()

@@ -49,7 +49,9 @@ type LoaderOption = model.LoaderOption
 // WithValidatorRegistry configures the *validate.Registry NewLoader uses to
 // reconstruct validation-strategy descriptors decoded from the wire/YAML
 // `validation` block (see validate.Registry, validate.DescribableStrategy).
-// Required whenever the loaded definition carries one.
+// When omitted, Build falls back to validate.DefaultRegistry (adapters
+// self-register via init()); an unregistered kind then fails with
+// validate.ErrUnknownKind.
 func WithValidatorRegistry(reg *validate.Registry) LoaderOption {
 	return model.WithValidatorRegistry(reg)
 }

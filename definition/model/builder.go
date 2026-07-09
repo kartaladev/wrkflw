@@ -82,9 +82,9 @@ type LoaderOption func(*definitionCore)
 
 // WithValidatorRegistry configures the *validate.Registry Build uses to
 // reconstruct any pending validation-strategy descriptors decoded from wire/YAML
-// (see PendingValidation, ValidationDescriptor). Required whenever a loaded
-// definition carries a `validation` block on a node — Build otherwise fails with
-// ErrValidatorRegistryRequired.
+// (see PendingValidation, ValidationDescriptor). When omitted, Build falls back
+// to validate.DefaultRegistry (adapters self-register via init()); an
+// unregistered kind then fails with validate.ErrUnknownKind.
 func WithValidatorRegistry(reg *validate.Registry) LoaderOption {
 	return func(c *definitionCore) { c.validators = reg }
 }
@@ -107,8 +107,12 @@ func (c *definitionCore) build() (*ProcessDefinition, error) {
 	if c.dupAction != "" {
 		return nil, fmt.Errorf("%w: %q", ErrDuplicateScopedAction, c.dupAction)
 	}
+	reg := c.validators
+	if reg == nil {
+		reg = validate.DefaultRegistry()
+	}
 	for i, n := range c.nodes {
-		reconciled, err := reconcileNodeValidation(n, c.validators)
+		reconciled, err := reconcileNodeValidation(n, reg)
 		if err != nil {
 			return nil, err
 		}

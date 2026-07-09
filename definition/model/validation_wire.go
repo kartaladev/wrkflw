@@ -16,12 +16,6 @@ import (
 // validation/avro) to persist a definition.
 var ErrUnserializableValidation = errors.New("workflow-model: validation strategy is not serializable")
 
-// ErrValidatorRegistryRequired is returned by Build when a loaded definition
-// carries a pending validation descriptor (decoded from wire/YAML via
-// PendingValidation) but no *validate.Registry was configured to reconstruct
-// it. See WithValidatorRegistry.
-var ErrValidatorRegistryRequired = errors.New("workflow-model: validation descriptor present but no validator registry configured")
-
 // ErrValidationNotReconstructed is returned by a pending validation strategy's
 // NewValidator: it is a wire-reconstruction placeholder, not a runnable
 // validator, until Build (with a registry) replaces it with the live strategy.
@@ -107,12 +101,22 @@ func reconcileNodeValidation(n Node, reg *validate.Registry) (Node, error) {
 	if !isPending {
 		return n, nil
 	}
-	if reg == nil {
-		return nil, fmt.Errorf("%w: node %q kind %q", ErrValidatorRegistryRequired, n.ID(), p.desc.Kind)
-	}
 	live, err := reg.Strategy(p.desc)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-model: node %q: %w", n.ID(), err)
 	}
 	return s.ValidationSet(n, live), nil
+}
+
+// reconcileNodeValidationLenient resolves n's pending validation descriptor against
+// reg, but on ANY failure (unregistered kind, bad schema) leaves the node UNCHANGED
+// so its slot stays pending and fails closed at runtime (ErrValidationNotReconstructed
+// when the Gate builds it). Used by the durable-reload path (UnmarshalJSON), where a
+// missing adapter must not break loading a stored definition.
+func reconcileNodeValidationLenient(n Node, reg *validate.Registry) Node {
+	reconciled, err := reconcileNodeValidation(n, reg)
+	if err != nil {
+		return n // keep pending; runtime fails closed via ErrValidationNotReconstructed
+	}
+	return reconciled
 }

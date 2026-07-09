@@ -155,7 +155,11 @@ func (d *ProcessDefinition) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		d.Nodes[i] = n
+		// Durable-reload reconciliation: resolve a pending validation descriptor
+		// against the process-global DefaultRegistry (adapters self-register via
+		// init()). Lenient by design — an unregistered kind leaves the slot pending
+		// so it fails closed at runtime rather than breaking the load.
+		d.Nodes[i] = reconcileNodeValidationLenient(n, validate.DefaultRegistry())
 	}
 	return nil
 }
