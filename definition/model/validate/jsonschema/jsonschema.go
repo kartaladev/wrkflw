@@ -56,7 +56,7 @@ func NewFromStruct(v any) (_ validate.DescribableStrategy, err error) {
 
 // Factory rebuilds a strategy from serialized JSON schema text.
 func Factory(schema string) (validate.ValidationStrategy, error) {
-	return strategy{schema: schema}, nil
+	return New(schema), nil
 }
 
 func (s strategy) Descriptor() validate.ValidationDescriptor {
