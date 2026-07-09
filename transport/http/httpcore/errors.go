@@ -8,8 +8,8 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
 	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // ErrBadInput is the sentinel for 400-class decode/validation errors.

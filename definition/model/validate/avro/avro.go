@@ -11,7 +11,7 @@ import (
 
 	"github.com/linkedin/goavro/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // Kind is the registry key for Avro strategies.
@@ -20,18 +20,18 @@ const Kind = "avro"
 type strategy struct{ avsc string } // raw .avsc record schema text
 
 // New builds a strategy from an Avro record schema (.avsc text).
-func New(avsc string) validation.DescribableStrategy { return strategy{avsc: avsc} }
+func New(avsc string) validate.DescribableStrategy { return strategy{avsc: avsc} }
 
 // Factory rebuilds a strategy from serialized .avsc text.
-func Factory(schema string) (validation.ValidationStrategy, error) {
+func Factory(schema string) (validate.ValidationStrategy, error) {
 	return strategy{avsc: schema}, nil
 }
 
-func (s strategy) Descriptor() validation.ValidationDescriptor {
-	return validation.ValidationDescriptor{Kind: Kind, Schema: s.avsc}
+func (s strategy) Descriptor() validate.ValidationDescriptor {
+	return validate.ValidationDescriptor{Kind: Kind, Schema: s.avsc}
 }
 
-func (s strategy) NewValidator() (validation.Validator, error) {
+func (s strategy) NewValidator() (validate.Validator, error) {
 	codec, err := goavro.NewCodec(s.avsc)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-validation/avro: parse schema: %w", err)

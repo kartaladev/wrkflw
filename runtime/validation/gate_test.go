@@ -6,8 +6,16 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
 )
+
+// funcValidator adapts a func to the validate.Validator port for tests.
+type funcValidator func(ctx context.Context, input map[string]any) error
+
+func (f funcValidator) Validate(ctx context.Context, input map[string]any) error {
+	return f(ctx, input)
+}
 
 // countingStrategy counts how many times NewValidator is invoked.
 type countingStrategy struct {
@@ -15,7 +23,7 @@ type countingStrategy struct {
 	fail   bool
 }
 
-func (s countingStrategy) NewValidator() (validation.Validator, error) {
+func (s countingStrategy) NewValidator() (validate.Validator, error) {
 	atomic.AddInt32(s.builds, 1)
 	return funcValidator(func(_ context.Context, in map[string]any) error {
 		if s.fail {

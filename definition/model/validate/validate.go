@@ -1,18 +1,16 @@
-// Package validation is the neutral external-input validation port. A Validator
-// is the executable check; a ValidationStrategy (attached to a definition node)
-// provides the runtime Validator. Concrete strategies live in opt-in adapter
-// subpackages (validation/expr, validation/callback, validation/jsonschema,
-// validation/avro) so the definition/engine core imports no schema library.
-package validation
+// Package validate is the neutral external-input validation port — the
+// DECLARATIVE authoring side. A Validator is the executable check; a
+// ValidationStrategy (attached to a definition node) provides the runtime
+// Validator. Concrete strategies live in opt-in adapter subpackages
+// (definition/model/validate/expr, .../callback, .../jsonschema, .../avro) so
+// the definition/engine core imports no schema library. The executor side
+// (Gate, ErrInvalidInput) lives in runtime/validation, which depends on this
+// package.
+package validate
 
 import (
 	"context"
-	"errors"
 )
-
-// ErrInvalidInput is the sentinel wrapping every validation failure. The transport
-// layer maps it to HTTP 400. Always wrapped with a detail (which field/predicate/schema).
-var ErrInvalidInput = errors.New("workflow-validation: invalid input")
 
 // Validator is the runtime port: the executable check. A non-nil error rejects the
 // operation before any state mutation.

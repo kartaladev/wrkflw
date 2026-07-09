@@ -5,8 +5,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // Option-scoping convention: an option valid on only a subset of activity kinds
@@ -205,13 +205,13 @@ func WithEligibilityPrivileges(privs ...string) UserTaskOption {
 	return eligibilityPrivilegesOpt{privs: privs}
 }
 
-type completionValidationOpt struct{ s validation.ValidationStrategy }
+type completionValidationOpt struct{ s validate.ValidationStrategy }
 
 func (o completionValidationOpt) applyUserTask(u *UserTask) { u.CompletionValidation = o.s }
 
 // WithCompletionValidation validates a UserTask's completion output before it
 // is applied. It may only be passed to NewUserTask.
-func WithCompletionValidation(s validation.ValidationStrategy) UserTaskOption {
+func WithCompletionValidation(s validate.ValidationStrategy) UserTaskOption {
 	return completionValidationOpt{s: s}
 }
 
@@ -231,12 +231,12 @@ func WithCorrelationKey(key string) interface {
 	return correlationKeyOpt{key}
 }
 
-type receivePayloadValidationOpt struct{ s validation.ValidationStrategy }
+type receivePayloadValidationOpt struct{ s validate.ValidationStrategy }
 
 func (o receivePayloadValidationOpt) applyReceiveTask(r *ReceiveTask) { r.PayloadValidation = o.s }
 
 // WithPayloadValidation validates a ReceiveTask's message payload before it is
 // applied. It may only be passed to NewReceiveTask.
-func WithPayloadValidation(s validation.ValidationStrategy) ReceiveTaskOption {
+func WithPayloadValidation(s validate.ValidationStrategy) ReceiveTaskOption {
 	return receivePayloadValidationOpt{s: s}
 }

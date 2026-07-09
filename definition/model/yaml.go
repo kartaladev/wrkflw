@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // nodeYAML is the flat YAML representation of any node. It mirrors NodeWire
@@ -41,7 +41,7 @@ type nodeYAML struct {
 	Subprocess            *definitionYAML `yaml:"subprocess,omitempty"`
 	DefRef                string          `yaml:"defRef,omitempty"`
 	// Validation mirrors NodeWire.Validation for the YAML authoring form.
-	Validation *validation.ValidationDescriptor `yaml:"validation,omitempty"`
+	Validation *validate.ValidationDescriptor `yaml:"validation,omitempty"`
 }
 
 // sequenceFlowYAML decodes a flow.SequenceFlow from YAML. Field names match the

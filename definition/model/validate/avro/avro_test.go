@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vavro "github.com/zakyalvan/krtlwrkflw/validation/avro"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	vavro "github.com/zakyalvan/krtlwrkflw/definition/model/validate/avro"
 )
 
 const avsc = `{
@@ -22,12 +22,12 @@ const avsc = `{
 func TestAvro_Validate(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
-		strategy func(t *testing.T) validation.DescribableStrategy
-		assert   func(t *testing.T, v validation.Validator, err error)
+		strategy func(t *testing.T) validate.DescribableStrategy
+		assert   func(t *testing.T, v validate.Validator, err error)
 	}{
 		"from text": {
-			strategy: func(t *testing.T) validation.DescribableStrategy { return vavro.New(avsc) },
-			assert: func(t *testing.T, v validation.Validator, err error) {
+			strategy: func(t *testing.T) validate.DescribableStrategy { return vavro.New(avsc) },
+			assert: func(t *testing.T, v validate.Validator, err error) {
 				require.NoError(t, err, "build")
 				assert.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 10.0, "decision": "approve"}), "valid rejected")
 				assert.Error(t, v.Validate(t.Context(), map[string]any{"amount": 10.0}), "expected rejection for missing field")

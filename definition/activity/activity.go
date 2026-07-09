@@ -10,7 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // --- concrete node types ---
@@ -39,7 +39,7 @@ type UserTask struct {
 	// CompletionValidation, when set, validates the task's completion output
 	// before it is applied to the process instance's variables. Nil = no
 	// validation. Set via WithCompletionValidation.
-	CompletionValidation validation.ValidationStrategy
+	CompletionValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindUserTask.
@@ -56,7 +56,7 @@ type ReceiveTask struct {
 	// PayloadValidation, when set, validates the inbound message payload before
 	// it is applied to the process instance's variables. Nil = no validation.
 	// Set via WithPayloadValidation.
-	PayloadValidation validation.ValidationStrategy
+	PayloadValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindReceiveTask.
@@ -218,13 +218,13 @@ func init() {
 			v := n.(UserTask)
 			w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
 			w.PutActivity(v.ActivityFields)
-			if ds, ok := v.CompletionValidation.(validation.DescribableStrategy); ok {
+			if ds, ok := v.CompletionValidation.(validate.DescribableStrategy); ok {
 				d := ds.Descriptor()
 				w.Validation = &d
 			}
 		},
-		ValidationGet: func(n model.Node) validation.ValidationStrategy { return n.(UserTask).CompletionValidation },
-		ValidationSet: func(n model.Node, s validation.ValidationStrategy) model.Node {
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(UserTask).CompletionValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
 			v := n.(UserTask)
 			v.CompletionValidation = s
 			return v
@@ -243,13 +243,13 @@ func init() {
 			v := n.(ReceiveTask)
 			w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
 			w.PutActivity(v.ActivityFields)
-			if ds, ok := v.PayloadValidation.(validation.DescribableStrategy); ok {
+			if ds, ok := v.PayloadValidation.(validate.DescribableStrategy); ok {
 				d := ds.Descriptor()
 				w.Validation = &d
 			}
 		},
-		ValidationGet: func(n model.Node) validation.ValidationStrategy { return n.(ReceiveTask).PayloadValidation },
-		ValidationSet: func(n model.Node, s validation.ValidationStrategy) model.Node {
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(ReceiveTask).PayloadValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
 			v := n.(ReceiveTask)
 			v.PayloadValidation = s
 			return v

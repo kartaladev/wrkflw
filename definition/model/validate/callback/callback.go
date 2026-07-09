@@ -6,7 +6,7 @@ package callback
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 type strategy struct {
@@ -14,11 +14,11 @@ type strategy struct {
 }
 
 // New wraps fn as a (non-serializable) validation strategy.
-func New(fn func(ctx context.Context, input map[string]any) error) validation.ValidationStrategy {
+func New(fn func(ctx context.Context, input map[string]any) error) validate.ValidationStrategy {
 	return strategy{fn: fn}
 }
 
-func (s strategy) NewValidator() (validation.Validator, error) { return s, nil }
+func (s strategy) NewValidator() (validate.Validator, error) { return s, nil }
 
 func (s strategy) Validate(ctx context.Context, input map[string]any) error {
 	return s.fn(ctx, input)

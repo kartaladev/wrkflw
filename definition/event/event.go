@@ -7,8 +7,8 @@ package event
 
 import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // --- concrete node types ---
@@ -25,7 +25,7 @@ type StartEvent struct {
 	// InputValidation, when set, validates the manually-provided start vars
 	// (Drive) against this start event's contract before the instance is
 	// created. Nil = no validation. Set via WithInputValidation.
-	InputValidation validation.ValidationStrategy
+	InputValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindStartEvent.
@@ -66,7 +66,7 @@ type IntermediateCatchEvent struct {
 	// PayloadValidation, when set, validates a message catch's payload before
 	// it is applied to the process instance's variables. Nil = no validation.
 	// Set via WithPayloadValidation.
-	PayloadValidation validation.ValidationStrategy
+	PayloadValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindIntermediateCatchEvent.
@@ -221,13 +221,13 @@ func init() {
 			v := n.(StartEvent)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.TimerTrigger = model.PutTrigger(v.Timer)
-			if ds, ok := v.InputValidation.(validation.DescribableStrategy); ok {
+			if ds, ok := v.InputValidation.(validate.DescribableStrategy); ok {
 				d := ds.Descriptor()
 				w.Validation = &d
 			}
 		},
-		ValidationGet: func(n model.Node) validation.ValidationStrategy { return n.(StartEvent).InputValidation },
-		ValidationSet: func(n model.Node, s validation.ValidationStrategy) model.Node {
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(StartEvent).InputValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
 			v := n.(StartEvent)
 			v.InputValidation = s
 			return v
@@ -263,13 +263,13 @@ func init() {
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.PutWait(v.WaitFields)
-			if ds, ok := v.PayloadValidation.(validation.DescribableStrategy); ok {
+			if ds, ok := v.PayloadValidation.(validate.DescribableStrategy); ok {
 				d := ds.Descriptor()
 				w.Validation = &d
 			}
 		},
-		ValidationGet: func(n model.Node) validation.ValidationStrategy { return n.(IntermediateCatchEvent).PayloadValidation },
-		ValidationSet: func(n model.Node, s validation.ValidationStrategy) model.Node {
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(IntermediateCatchEvent).PayloadValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
 			v := n.(IntermediateCatchEvent)
 			v.PayloadValidation = s
 			return v

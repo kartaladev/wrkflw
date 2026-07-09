@@ -11,11 +11,12 @@
 //
 //	start[validated: amount > 0] → approve[UserTask, roles: manager] → end
 //
-// The start-vars boundary uses the expr-lang adapter (validation/expr): a
-// [validation.ValidationStrategy] attached to a node via
-// [event.WithInputValidation]. The ProcessDriver validates start vars BEFORE
-// any instance is created — "input-owner validates" placement: whoever
-// accepts the external input validates it, not the engine core.
+// The start-vars boundary uses the expr-lang adapter
+// (definition/model/validate/expr): a [validate.ValidationStrategy] attached
+// to a node via [event.WithInputValidation]. The ProcessDriver validates
+// start vars BEFORE any instance is created — "input-owner validates"
+// placement: whoever accepts the external input validates it, not the engine
+// core.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -33,14 +34,14 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/task"
+	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
 	"github.com/zakyalvan/krtlwrkflw/runtime/view"
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
 )
 
 func main() {

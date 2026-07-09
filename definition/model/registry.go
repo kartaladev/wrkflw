@@ -3,7 +3,7 @@ package model
 import (
 	"errors"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // ErrKindNotRegistered is returned by the deserializer when a node's kind has no
@@ -29,10 +29,10 @@ type NodeSpec struct {
 	// slot. Used by the central fail-closed MarshalJSON check
 	// (nodeValidationStrategy) and by Build's pending-descriptor reconciliation
 	// (reconcileNodeValidation) — both in validation_wire.go.
-	ValidationGet func(Node) validation.ValidationStrategy
+	ValidationGet func(Node) validate.ValidationStrategy
 	// ValidationSet, paired with ValidationGet, returns a copy of n with the slot
 	// replaced by s.
-	ValidationSet func(n Node, s validation.ValidationStrategy) Node
+	ValidationSet func(n Node, s validate.ValidationStrategy) Node
 }
 
 // nodeRegistry maps each registered kind to its spec. Populated at init time by

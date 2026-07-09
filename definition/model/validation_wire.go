@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // ErrUnserializableValidation is returned by ProcessDefinition.MarshalJSON when a
-// node carries a validation.ValidationStrategy that is neither a
-// validation.DescribableStrategy nor a pending reconstruction placeholder
+// node carries a validate.ValidationStrategy that is neither a
+// validate.DescribableStrategy nor a pending reconstruction placeholder
 // (PendingValidation) — i.e. a validation/callback strategy. Callback strategies
 // are a Go-authoring-only escape hatch and cannot round-trip through wire/YAML;
 // use a declarative strategy (validation/expr, validation/jsonschema,
@@ -18,7 +18,7 @@ var ErrUnserializableValidation = errors.New("workflow-model: validation strateg
 
 // ErrValidatorRegistryRequired is returned by Build when a loaded definition
 // carries a pending validation descriptor (decoded from wire/YAML via
-// PendingValidation) but no *validation.Registry was configured to reconstruct
+// PendingValidation) but no *validate.Registry was configured to reconstruct
 // it. See WithValidatorRegistry.
 var ErrValidatorRegistryRequired = errors.New("workflow-model: validation descriptor present but no validator registry configured")
 
@@ -29,40 +29,40 @@ var ErrValidationNotReconstructed = errors.New("workflow-model: validation strat
 
 // pendingStrategy is the wire-reconstruction placeholder FromWire/fromNodeYAML
 // stash on a node's validation-strategy field when the wire form carried a
-// `validation` descriptor. It implements validation.DescribableStrategy — so an
+// `validation` descriptor. It implements validate.DescribableStrategy — so an
 // unresolved definition still round-trips through MarshalJSON/YAML byte-for-byte
 // — but NewValidator refuses to run until definitionCore.build() resolves it into
-// the live strategy via a *validation.Registry (see WithValidatorRegistry).
+// the live strategy via a *validate.Registry (see WithValidatorRegistry).
 type pendingStrategy struct {
-	desc validation.ValidationDescriptor
+	desc validate.ValidationDescriptor
 }
 
 // NewValidator always errors: a pendingStrategy is a placeholder, never a
 // runnable validator. Build (via WithValidatorRegistry) must replace it first.
-func (p pendingStrategy) NewValidator() (validation.Validator, error) {
+func (p pendingStrategy) NewValidator() (validate.Validator, error) {
 	return nil, fmt.Errorf("%w: kind %q", ErrValidationNotReconstructed, p.desc.Kind)
 }
 
 // Descriptor returns the descriptor this placeholder was constructed from, so it
 // remains describable (and therefore serializable) even before reconstruction.
-func (p pendingStrategy) Descriptor() validation.ValidationDescriptor { return p.desc }
+func (p pendingStrategy) Descriptor() validate.ValidationDescriptor { return p.desc }
 
 // PendingValidation returns a placeholder ValidationStrategy carrying desc. Each
 // kind's FromWire assigns it to the node's validation-strategy field when the
 // wire form carries a `validation` descriptor; Build (via WithValidatorRegistry)
 // replaces it with the live strategy reconstructed from the registry.
-func PendingValidation(desc validation.ValidationDescriptor) validation.ValidationStrategy {
+func PendingValidation(desc validate.ValidationDescriptor) validate.ValidationStrategy {
 	return pendingStrategy{desc: desc}
 }
 
 // DescriptorOf reports whether s is describable — either a live
-// validation.DescribableStrategy or a pending reconstruction placeholder
+// validate.DescribableStrategy or a pending reconstruction placeholder
 // (PendingValidation) — returning its descriptor when so. Reports false for nil
 // or a non-describable (callback) strategy.
-func DescriptorOf(s validation.ValidationStrategy) (validation.ValidationDescriptor, bool) {
-	d, ok := s.(validation.DescribableStrategy)
+func DescriptorOf(s validate.ValidationStrategy) (validate.ValidationDescriptor, bool) {
+	d, ok := s.(validate.DescribableStrategy)
 	if !ok {
-		return validation.ValidationDescriptor{}, false
+		return validate.ValidationDescriptor{}, false
 	}
 	return d.Descriptor(), true
 }
@@ -70,7 +70,7 @@ func DescriptorOf(s validation.ValidationStrategy) (validation.ValidationDescrip
 // nodeValidationStrategy returns the validation strategy carried by n's
 // kind-specific slot (via the registered NodeSpec.ValidationGet), or nil for
 // kinds without one or with the slot unset.
-func nodeValidationStrategy(n Node) validation.ValidationStrategy {
+func nodeValidationStrategy(n Node) validate.ValidationStrategy {
 	s, ok := specFor(n.Kind())
 	if !ok || s.ValidationGet == nil {
 		return nil
@@ -83,7 +83,7 @@ func nodeValidationStrategy(n Node) validation.ValidationStrategy {
 // replaced. Nodes without a validation slot, or whose slot already holds
 // something other than a pendingStrategy (live/describable/callback/nil), pass
 // through unchanged.
-func reconcileNodeValidation(n Node, reg *validation.Registry) (Node, error) {
+func reconcileNodeValidation(n Node, reg *validate.Registry) (Node, error) {
 	s, ok := specFor(n.Kind())
 	if !ok || s.ValidationGet == nil {
 		return n, nil

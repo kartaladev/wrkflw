@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	"github.com/zakyalvan/krtlwrkflw/validation/callback"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate/callback"
 )
 
 func TestCallback_ValidatesAndIsNotDescribable(t *testing.T) {
@@ -17,7 +17,7 @@ func TestCallback_ValidatesAndIsNotDescribable(t *testing.T) {
 		}
 		return nil
 	})
-	if _, isDesc := s.(validation.DescribableStrategy); isDesc {
+	if _, isDesc := s.(validate.DescribableStrategy); isDesc {
 		t.Fatal("callback strategy must NOT implement DescribableStrategy")
 	}
 	v, _ := s.NewValidator()

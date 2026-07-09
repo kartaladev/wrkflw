@@ -1,8 +1,8 @@
 package event
 
 import (
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // --- option interfaces ---
@@ -67,13 +67,13 @@ func WithStartTimer(t schedule.TriggerSpec) StartOption {
 	return startFuncOpt{func(n *StartEvent) { n.Timer = t }}
 }
 
-type inputValidationOpt struct{ s validation.ValidationStrategy }
+type inputValidationOpt struct{ s validate.ValidationStrategy }
 
 func (o inputValidationOpt) applyStart(n *StartEvent) { n.InputValidation = o.s }
 
 // WithInputValidation validates the manually-provided start vars (Drive)
 // against the start event's contract before the instance is created.
-func WithInputValidation(s validation.ValidationStrategy) StartOption {
+func WithInputValidation(s validate.ValidationStrategy) StartOption {
 	return inputValidationOpt{s: s}
 }
 
@@ -116,13 +116,13 @@ func WithCatchWaitReminder(t schedule.TriggerSpec, action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = t, action }}
 }
 
-type catchPayloadValidationOpt struct{ s validation.ValidationStrategy }
+type catchPayloadValidationOpt struct{ s validate.ValidationStrategy }
 
 func (o catchPayloadValidationOpt) applyCatch(n *IntermediateCatchEvent) { n.PayloadValidation = o.s }
 
 // WithPayloadValidation validates a message IntermediateCatchEvent's payload
 // before it is applied.
-func WithPayloadValidation(s validation.ValidationStrategy) CatchOption {
+func WithPayloadValidation(s validate.ValidationStrategy) CatchOption {
 	return catchPayloadValidationOpt{s: s}
 }
 

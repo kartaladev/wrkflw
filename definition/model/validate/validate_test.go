@@ -1,11 +1,11 @@
-package validation_test
+package validate_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // funcValidator adapts a func to the Validator port for tests.
@@ -16,9 +16,9 @@ func (f funcValidator) Validate(ctx context.Context, input map[string]any) error
 }
 
 // funcStrategy builds a fixed Validator.
-type funcStrategy struct{ v validation.Validator }
+type funcStrategy struct{ v validate.Validator }
 
-func (s funcStrategy) NewValidator() (validation.Validator, error) { return s.v, nil }
+func (s funcStrategy) NewValidator() (validate.Validator, error) { return s.v, nil }
 
 func TestValidator_ReturnsError(t *testing.T) {
 	t.Parallel()

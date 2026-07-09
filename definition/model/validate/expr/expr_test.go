@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
+	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
 )
 
 func TestExpr_ValidateAndRoundTrip(t *testing.T) {

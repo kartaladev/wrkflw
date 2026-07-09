@@ -22,7 +22,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // This package is the single home for both authoring entry points, which the
@@ -46,11 +46,11 @@ func NewBuilder(id string, version int) *Builder {
 // definition.LoaderOption.
 type LoaderOption = model.LoaderOption
 
-// WithValidatorRegistry configures the *validation.Registry NewLoader uses to
+// WithValidatorRegistry configures the *validate.Registry NewLoader uses to
 // reconstruct validation-strategy descriptors decoded from the wire/YAML
-// `validation` block (see validation.Registry, validation.DescribableStrategy).
+// `validation` block (see validate.Registry, validate.DescribableStrategy).
 // Required whenever the loaded definition carries one.
-func WithValidatorRegistry(reg *validation.Registry) LoaderOption {
+func WithValidatorRegistry(reg *validate.Registry) LoaderOption {
 	return model.WithValidatorRegistry(reg)
 }
 

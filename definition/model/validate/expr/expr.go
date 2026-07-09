@@ -12,7 +12,7 @@ import (
 	exprlang "github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // Kind is the registry key for expr strategies.
@@ -21,12 +21,12 @@ const Kind = "expr"
 type strategy struct{ predicates []string }
 
 // New returns a strategy requiring all predicates to hold against the input.
-func New(predicates ...string) validation.DescribableStrategy {
+func New(predicates ...string) validate.DescribableStrategy {
 	return strategy{predicates: append([]string(nil), predicates...)}
 }
 
 // Factory rebuilds a strategy from newline-separated predicate text.
-func Factory(schema string) (validation.ValidationStrategy, error) {
+func Factory(schema string) (validate.ValidationStrategy, error) {
 	var preds []string
 	for _, line := range strings.Split(schema, "\n") {
 		if s := strings.TrimSpace(line); s != "" {
@@ -36,11 +36,11 @@ func Factory(schema string) (validation.ValidationStrategy, error) {
 	return strategy{predicates: preds}, nil
 }
 
-func (s strategy) Descriptor() validation.ValidationDescriptor {
-	return validation.ValidationDescriptor{Kind: Kind, Schema: strings.Join(s.predicates, "\n")}
+func (s strategy) Descriptor() validate.ValidationDescriptor {
+	return validate.ValidationDescriptor{Kind: Kind, Schema: strings.Join(s.predicates, "\n")}
 }
 
-func (s strategy) NewValidator() (validation.Validator, error) {
+func (s strategy) NewValidator() (validate.Validator, error) {
 	programs := make([]*vm.Program, 0, len(s.predicates))
 	for _, p := range s.predicates {
 		prog, err := exprlang.Compile(p, exprlang.AsBool())

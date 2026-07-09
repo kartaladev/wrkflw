@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vjs "github.com/zakyalvan/krtlwrkflw/validation/jsonschema"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	vjs "github.com/zakyalvan/krtlwrkflw/definition/model/validate/jsonschema"
 )
 
 const schemaJSON = `{
@@ -19,12 +19,12 @@ const schemaJSON = `{
 func TestJSONSchema_Validate(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
-		strategy func(t *testing.T) validation.DescribableStrategy
-		assert   func(t *testing.T, v validation.Validator, err error)
+		strategy func(t *testing.T) validate.DescribableStrategy
+		assert   func(t *testing.T, v validate.Validator, err error)
 	}{
 		"from text": {
-			strategy: func(t *testing.T) validation.DescribableStrategy { return vjs.New(schemaJSON) },
-			assert: func(t *testing.T, v validation.Validator, err error) {
+			strategy: func(t *testing.T) validate.DescribableStrategy { return vjs.New(schemaJSON) },
+			assert: func(t *testing.T, v validate.Validator, err error) {
 				require.NoError(t, err, "build")
 				assert.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 10.0}), "valid rejected")
 				assert.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1.0}), "expected rejection for negative amount")
@@ -39,7 +39,7 @@ func TestJSONSchema_Validate(t *testing.T) {
 			},
 		},
 		"from value": {
-			strategy: func(t *testing.T) validation.DescribableStrategy {
+			strategy: func(t *testing.T) validate.DescribableStrategy {
 				s, err := vjs.NewFromValue(map[string]any{
 					"type":     "object",
 					"required": []any{"amount"},
@@ -50,7 +50,7 @@ func TestJSONSchema_Validate(t *testing.T) {
 				require.NoError(t, err)
 				return s
 			},
-			assert: func(t *testing.T, v validation.Validator, err error) {
+			assert: func(t *testing.T, v validate.Validator, err error) {
 				require.NoError(t, err, "build")
 				assert.NoError(t, v.Validate(t.Context(), map[string]any{"amount": 10.0}), "valid rejected")
 				assert.Error(t, v.Validate(t.Context(), map[string]any{"amount": -1.0}), "expected rejection for negative amount")

@@ -12,14 +12,14 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	"github.com/zakyalvan/krtlwrkflw/validation/callback"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate/callback"
+	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
 )
 
 // TestStartValidation_WireRoundTrip marshals a StartEvent carrying an expr
 // InputValidation strategy to JSON and decodes it back. The decoded strategy is a
-// pending reconstruction placeholder (no *validation.Registry is available at
+// pending reconstruction placeholder (no *validate.Registry is available at
 // json.Unmarshal time) but must still be introspectable via model.DescriptorOf —
 // proving the descriptor itself round-tripped byte-for-byte — while refusing to
 // build a live Validator until reconstructed (see the Loader test below).
@@ -81,12 +81,12 @@ flows:
 `
 
 	tests := map[string]struct {
-		registry func() *validation.Registry // nil = no WithValidatorRegistry option at all
+		registry func() *validate.Registry // nil = no WithValidatorRegistry option at all
 		assert   func(t *testing.T, def *model.ProcessDefinition, err error)
 	}{
 		"registered kind reconstructs and validates identically": {
-			registry: func() *validation.Registry {
-				reg := validation.NewRegistry()
+			registry: func() *validate.Registry {
+				reg := validate.NewRegistry()
 				reg.Register(vexpr.Kind, vexpr.Factory)
 				return reg
 			},
@@ -109,9 +109,9 @@ flows:
 			},
 		},
 		"unregistered kind surfaces unknown kind": {
-			registry: func() *validation.Registry { return validation.NewRegistry() },
+			registry: func() *validate.Registry { return validate.NewRegistry() },
 			assert: func(t *testing.T, _ *model.ProcessDefinition, err error) {
-				require.ErrorIs(t, err, validation.ErrUnknownKind)
+				require.ErrorIs(t, err, validate.ErrUnknownKind)
 			},
 		},
 	}

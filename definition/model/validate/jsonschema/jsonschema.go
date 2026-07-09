@@ -14,7 +14,7 @@ import (
 	invopop "github.com/invopop/jsonschema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // Kind is the registry key for JSON Schema strategies.
@@ -23,10 +23,10 @@ const Kind = "json-schema"
 type strategy struct{ schema string } // canonical JSON text
 
 // New builds a strategy from JSON Schema text.
-func New(schemaJSON string) validation.DescribableStrategy { return strategy{schema: schemaJSON} }
+func New(schemaJSON string) validate.DescribableStrategy { return strategy{schema: schemaJSON} }
 
 // NewFromValue builds a strategy from a schema assembled as a Go map.
-func NewFromValue(schema map[string]any) (validation.DescribableStrategy, error) {
+func NewFromValue(schema map[string]any) (validate.DescribableStrategy, error) {
 	b, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-validation/jsonschema: marshal schema value: %w", err)
@@ -38,8 +38,8 @@ func NewFromValue(schema map[string]any) (validation.DescribableStrategy, error)
 // strategy. It returns an error (rather than panicking) if v's type contains a field
 // invopop's reflector cannot represent as JSON Schema (e.g. a chan or func field) — invopop
 // panics internally on such types, and this constructor recovers that panic and converts it
-// into an error to honor its (validation.DescribableStrategy, error) contract.
-func NewFromStruct(v any) (_ validation.DescribableStrategy, err error) {
+// into an error to honor its (validate.DescribableStrategy, error) contract.
+func NewFromStruct(v any) (_ validate.DescribableStrategy, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("workflow-validation/jsonschema: reflect schema from %T: %v", v, r)
@@ -55,15 +55,15 @@ func NewFromStruct(v any) (_ validation.DescribableStrategy, err error) {
 }
 
 // Factory rebuilds a strategy from serialized JSON schema text.
-func Factory(schema string) (validation.ValidationStrategy, error) {
+func Factory(schema string) (validate.ValidationStrategy, error) {
 	return strategy{schema: schema}, nil
 }
 
-func (s strategy) Descriptor() validation.ValidationDescriptor {
-	return validation.ValidationDescriptor{Kind: Kind, Schema: s.schema}
+func (s strategy) Descriptor() validate.ValidationDescriptor {
+	return validate.ValidationDescriptor{Kind: Kind, Schema: s.schema}
 }
 
-func (s strategy) NewValidator() (validation.Validator, error) {
+func (s strategy) NewValidator() (validate.Validator, error) {
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader([]byte(s.schema)))
 	if err != nil {
 		return nil, fmt.Errorf("workflow-validation/jsonschema: parse schema: %w", err)

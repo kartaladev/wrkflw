@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
-// stubStrategy is a no-op validation.ValidationStrategy used to exercise the
+// stubStrategy is a no-op validate.ValidationStrategy used to exercise the
 // InputValidation/PayloadValidation option wiring without depending on any
 // concrete adapter package.
 type stubStrategy struct{}
 
-func (stubStrategy) NewValidator() (validation.Validator, error) {
+func (stubStrategy) NewValidator() (validate.Validator, error) {
 	return stubValidator{}, nil
 }
 

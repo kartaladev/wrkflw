@@ -8,8 +8,8 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
 	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
-	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 func TestClassifyError(t *testing.T) {

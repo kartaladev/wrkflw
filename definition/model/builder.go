@@ -8,7 +8,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // ErrActionInlineAndNameConflict is returned by Build when a node carries both
@@ -72,7 +72,7 @@ type definitionCore struct {
 	cancelActions []string
 	actions       map[string]action.Action // scoped catalog accumulator; nil until first register
 	dupAction     string                   // first duplicate-registered name, "" if none
-	validators    *validation.Registry     // resolves pending validation descriptors at build(); nil = none configured
+	validators    *validate.Registry       // resolves pending validation descriptors at build(); nil = none configured
 }
 
 // LoaderOption configures a DefinitionLoader before Build. Currently the only
@@ -80,12 +80,12 @@ type definitionCore struct {
 // packages re-export both the type and the constructor.
 type LoaderOption func(*definitionCore)
 
-// WithValidatorRegistry configures the *validation.Registry Build uses to
+// WithValidatorRegistry configures the *validate.Registry Build uses to
 // reconstruct any pending validation-strategy descriptors decoded from wire/YAML
 // (see PendingValidation, ValidationDescriptor). Required whenever a loaded
 // definition carries a `validation` block on a node — Build otherwise fails with
 // ErrValidatorRegistryRequired.
-func WithValidatorRegistry(reg *validation.Registry) LoaderOption {
+func WithValidatorRegistry(reg *validate.Registry) LoaderOption {
 	return func(c *definitionCore) { c.validators = reg }
 }
 

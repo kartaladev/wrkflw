@@ -28,7 +28,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/definition/build"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // Qualifier references a process definition by id and version (0 == latest).
@@ -52,13 +52,13 @@ func NewBuilder(id string, version int) *build.Builder { return build.NewBuilder
 // WithValidatorRegistry.
 type LoaderOption = build.LoaderOption
 
-// WithValidatorRegistry configures the *validation.Registry NewLoader uses to
+// WithValidatorRegistry configures the *validate.Registry NewLoader uses to
 // reconstruct validation-strategy descriptors decoded from a definition's
-// wire/YAML `validation` block (see validation.Registry,
-// validation.DescribableStrategy, validation.ValidationDescriptor). Required
+// wire/YAML `validation` block (see validate.Registry,
+// validate.DescribableStrategy, validate.ValidationDescriptor). Required
 // whenever the loaded definition carries one — Build otherwise fails with
 // model.ErrValidatorRegistryRequired.
-func WithValidatorRegistry(reg *validation.Registry) LoaderOption {
+func WithValidatorRegistry(reg *validate.Registry) LoaderOption {
 	return build.WithValidatorRegistry(reg)
 }
 
