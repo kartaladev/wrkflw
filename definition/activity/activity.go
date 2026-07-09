@@ -28,11 +28,11 @@ type UserTask struct {
 	model.ActivityFields
 	// EligibleRoles are the roles eligible to claim and complete this task.
 	EligibleRoles []string
-	// EligibilityPrivileges is a list of resource-privilege tokens (e.g. "finance-task claim")
-	// evaluated by a casbin-backed Authorizer. Set via WithEligibilityPrivileges.
-	EligibilityPrivileges []string
-	// EligibilityExpr is an optional attribute predicate (expr) for fine-grained eligibility.
-	EligibilityExpr string
+	// EligiblePrivileges is a list of resource-privilege tokens (e.g. "finance-task claim")
+	// evaluated by a casbin-backed Authorizer. Set via WithEligiblePrivileges.
+	EligiblePrivileges []string
+	// EligibleExpr is an optional attribute predicate (expr) for fine-grained eligibility.
+	EligibleExpr string
 	// CompletionValidation, when set, validates the task's completion output
 	// before it is applied to the process instance's variables. Nil = no
 	// validation. Set via WithCompletionValidation.
@@ -128,7 +128,7 @@ func NewServiceTask(id string, opts ...ServiceTaskOption) model.Node {
 }
 
 // NewUserTask constructs a UserTask. Eligibility is optional and set via
-// WithEligibleRoles / WithEligibilityPrivileges / WithEligibilityExpr; with
+// WithEligibleRoles / WithEligiblePrivileges / WithEligibleExpr; with
 // none set, the engine gate is open (authorization defers to the transport
 // layer). See ADR-0117.
 func NewUserTask(id string, opts ...UserTaskOption) model.Node {
@@ -208,7 +208,7 @@ func init() {
 	model.RegisterKind(model.KindUserTask, model.NodeSpec{
 		Name: "userTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			n := UserTask{Base: b, ActivityFields: w.Activity(), EligibleRoles: w.EligibleRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr, Manual: w.Manual}
+			n := UserTask{Base: b, ActivityFields: w.Activity(), EligibleRoles: w.EligibleRoles, EligiblePrivileges: w.EligiblePrivileges, EligibleExpr: w.EligibleExpr, Manual: w.Manual}
 			if w.Validation != nil {
 				n.CompletionValidation = model.PendingValidation(*w.Validation)
 			}
@@ -216,7 +216,7 @@ func init() {
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(UserTask)
-			w.EligibleRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.EligibleRoles, v.EligibilityPrivileges, v.EligibilityExpr
+			w.EligibleRoles, w.EligiblePrivileges, w.EligibleExpr = v.EligibleRoles, v.EligiblePrivileges, v.EligibleExpr
 			w.Manual = v.Manual
 			w.PutActivity(v.ActivityFields)
 			w.Validation = model.PutValidation(v.CompletionValidation)

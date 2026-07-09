@@ -25,7 +25,7 @@ func userTaskDef() *model.ProcessDefinition {
 		ID: "p-ht", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", activity.WithEligibleRoles("manager"), activity.WithEligibilityExpr(`actor.ID != ""`)),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager"), activity.WithEligibleExpr(`actor.ID != ""`)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -89,8 +89,8 @@ func TestUserTaskEmitsAwaitHumanAndParks(t *testing.T) {
 	assert.Equal(t, at, ht.CreatedAt)
 }
 
-// TestUserTaskPrivilegesFlowToAwaitHuman verifies that EligibilityPrivileges set
-// via activity.WithEligibilityPrivileges flow through to the AwaitHuman command's
+// TestUserTaskPrivilegesFlowToAwaitHuman verifies that EligiblePrivileges set
+// via activity.WithEligiblePrivileges flow through to the AwaitHuman command's
 // Eligibility.Privileges field and the HumanTask stored in engine state.
 func TestUserTaskPrivilegesFlowToAwaitHuman(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
@@ -100,7 +100,7 @@ func TestUserTaskPrivilegesFlowToAwaitHuman(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve",
-				activity.WithEligibilityPrivileges(privs...),
+				activity.WithEligiblePrivileges(privs...),
 			),
 			event.NewEnd("end"),
 		},

@@ -158,7 +158,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithCancelAction("cancel-charge"),
 			),
 			activity.NewUserTask("approve", activity.WithEligibleRoles("manager", "admin"),
-				activity.WithEligibilityExpr("amount > 1000"),
+				activity.WithEligibleExpr("amount > 1000"),
 				activity.WithName("Approve"),
 				activity.WithWaitAction(schedule.Every(4*time.Hour), "remind-act"),
 			),
@@ -228,7 +228,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	approve, ok := restored.Nodes[2].(activity.UserTask)
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, approve.EligibleRoles)
-	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
+	assert.Equal(t, "amount > 1000", approve.EligibleExpr)
 	// WaitEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
 	reminderDur, reminderOk := approve.WaitEvery.Duration()
 	require.True(t, reminderOk, "WaitEvery should be set on UserTask")
@@ -245,7 +245,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 		"nodes": [
 			{"id": "start", "kind": "startEvent", "name": "Start"},
 			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensateAction": "refund-card", "cancelAction": "cancel-charge"},
-			{"id": "approve", "kind": "userTask", "eligibleRoles": ["manager"], "eligibilityExpr": "amount > 1000"},
+			{"id": "approve", "kind": "userTask", "eligibleRoles": ["manager"], "eligibleExpr": "amount > 1000"},
 			{"id": "wait", "kind": "intermediateCatchEvent", "timerDuration": "PT1H"},
 			{"id": "throw", "kind": "intermediateThrowEvent", "signalName": "done"},
 			{"id": "bnd", "kind": "boundaryEvent", "attachedTo": "charge", "errorCode": "ERR", "nonInterrupting": false},
@@ -286,7 +286,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	ut, ok := def.Nodes[2].(activity.UserTask)
 	require.True(t, ok, "nodes[2] should be UserTask")
 	assert.Equal(t, []string{"manager"}, ut.EligibleRoles)
-	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
+	assert.Equal(t, "amount > 1000", ut.EligibleExpr)
 
 	ice, ok := def.Nodes[3].(event.IntermediateCatchEvent)
 	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")

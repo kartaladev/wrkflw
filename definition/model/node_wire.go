@@ -12,14 +12,14 @@ import (
 // serialization shape; previously stored definitions decode through it
 // unchanged. Field names/order mirror the pre-interface Node struct.
 type NodeWire struct {
-	ID                    string   `json:"id"`
-	Kind                  NodeKind `json:"kind"`
-	Name                  string   `json:"name,omitempty"`
-	Action                string   `json:"action,omitempty"`
-	EligibleRoles         []string `json:"eligibleRoles,omitempty"`
-	EligibilityPrivileges []string `json:"eligibilityPrivileges,omitempty"`
-	EligibilityExpr       string   `json:"eligibilityExpr,omitempty"`
-	Manual                bool     `json:"manual,omitempty"`
+	ID                 string   `json:"id"`
+	Kind               NodeKind `json:"kind"`
+	Name               string   `json:"name,omitempty"`
+	Action             string   `json:"action,omitempty"`
+	EligibleRoles      []string `json:"eligibleRoles,omitempty"`
+	EligiblePrivileges []string `json:"eligiblePrivileges,omitempty"`
+	EligibleExpr       string   `json:"eligibleExpr,omitempty"`
+	Manual             bool     `json:"manual,omitempty"`
 	// legacy flat forms (decoded via ReadTrigger's flatExpr path; not written by ToWire)
 	TimerDuration    string `json:"timerDuration,omitempty"`
 	DeadlineDuration string `json:"deadlineDuration,omitempty"`

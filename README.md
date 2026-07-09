@@ -656,7 +656,7 @@ same set of functional options:
 
 Two options are **compile-enforced** to a single constructor:
 
-- `activity.WithEligibilityExpr(expr string)` — **`NewUserTask` only**. Attribute-based
+- `activity.WithEligibleExpr(expr string)` — **`NewUserTask` only**. Attribute-based
   eligibility predicate (evaluated by authz over `vars[...]`). Passing it to any other
   constructor is a compile error.
 - `activity.WithCorrelationKey(key string)` — **`NewReceiveTask` only**. Correlation-key
@@ -715,7 +715,7 @@ event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 | **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `event.NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
 
 All activity constructors take the shared activity options above. `NewUserTask` also
-takes `WithEligibilityExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
+takes `WithEligibleExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
 `NewEventSubProcess` takes `WithName(string)` and `WithEventSubProcessNonInterrupting()` (default
 is interrupting) — its nested start event carries the trigger.
 
@@ -728,7 +728,7 @@ activity.NewServiceTask("charge",
 activity.NewUserTask("approve", []string{"manager"},
     activity.WithWaitDeadline(`"3h"`, "escalate-flow"),
     activity.WithDeadlineAction("notify-manager"),
-    activity.WithEligibilityExpr(`vars["region"] == "EU"`),
+    activity.WithEligibleExpr(`vars["region"] == "EU"`),
 )
 activity.NewReceiveTask("await-payment", "payment-received",
     activity.WithCorrelationKey("orderId"),
@@ -840,7 +840,7 @@ Flow options for `.Connect`: `flow.WithFlowID(id)`, `flow.WithCondition(expr)`,
 
 > **Flow conditions use bare variable keys.** A condition is evaluated by expr-lang
 > directly against the process-variable map, so write `flow.WithCondition("amount > 100")`
-> — **not** `vars.amount`. (Only `WithEligibilityExpr` on a UserTask uses the
+> — **not** `vars.amount`. (Only `WithEligibleExpr` on a UserTask uses the
 > `vars[...]` form, because it is evaluated by authz.)
 
 ### YAML authoring

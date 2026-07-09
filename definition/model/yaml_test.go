@@ -172,8 +172,8 @@ func TestParseYAMLBadYAML(t *testing.T) {
 	_ = strings.Contains(err.Error(), "yaml")
 }
 
-func TestParseYAMLEligibilityPrivilegesRoundTrip(t *testing.T) {
-	// Hand-written YAML with eligibilityPrivileges on a UserTask.
+func TestParseYAMLEligiblePrivilegesRoundTrip(t *testing.T) {
+	// Hand-written YAML with eligiblePrivileges on a UserTask.
 	yamlInput := `
 id: approval-process
 version: 1
@@ -183,7 +183,7 @@ nodes:
   - id: approve
     kind: userTask
     eligibleRoles: ["manager"]
-    eligibilityPrivileges: ["finance-task claim"]
+    eligiblePrivileges: ["finance-task claim"]
   - id: end
     kind: endEvent
 flows:
@@ -201,14 +201,14 @@ flows:
 		t.Fatalf("Build: %v", err)
 	}
 
-	// Verify the parsed UserTask has the correct eligibilityPrivileges.
+	// Verify the parsed UserTask has the correct eligiblePrivileges.
 	approveNode := parsed.Nodes[1]
 	ut, ok := approveNode.(activity.UserTask)
 	if !ok {
 		t.Fatalf("node[1] is %T, want activity.UserTask", approveNode)
 	}
-	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "finance-task claim" {
-		t.Fatalf("EligibilityPrivileges = %v, want [finance-task claim]", ut.EligibilityPrivileges)
+	if len(ut.EligiblePrivileges) != 1 || ut.EligiblePrivileges[0] != "finance-task claim" {
+		t.Fatalf("EligiblePrivileges = %v, want [finance-task claim]", ut.EligiblePrivileges)
 	}
 	if len(ut.EligibleRoles) != 1 || ut.EligibleRoles[0] != "manager" {
 		t.Fatalf("EligibleRoles = %v, want [manager]", ut.EligibleRoles)

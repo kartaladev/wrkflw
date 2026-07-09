@@ -1,7 +1,7 @@
 // Package main demonstrates human-task authorization with two mechanisms:
 //
 //  1. Attribute-based authorization over process variables (ABAC): a UserTask
-//     whose EligibilityExpr predicate is evaluated against snapshotted process
+//     whose EligibleExpr predicate is evaluated against snapshotted process
 //     variables at Claim time. Only an actor with the matching region variable
 //     value may claim the task. This proves the headline feature —
 //     vars["region"] == "EU" — end-to-end through the full runner→snapshot→claim
@@ -11,7 +11,7 @@
 //     via casbinauthz.NewCasbinAuthorizer(casbinauthz.FromStrings(...)). A small inline policy CSV
 //     grants the "approver" role the "finance-task claim" privilege. An actor
 //     with that role is allowed; an actor without it is denied. The UserTask is
-//     defined using activity.WithEligibilityPrivileges so the privilege authz flows
+//     defined using activity.WithEligiblePrivileges so the privilege authz flows
 //     through the normal definition→engine→TaskService.Claim path.
 //
 // This is a reference wiring example — not a shipped binary.
@@ -77,22 +77,22 @@ func main() {
 }
 
 // demoAttributeAuthz proves the full runner→snapshot→claim chain with an
-// EligibilityExpr predicate (vars["region"] == "EU") evaluated over snapshotted
+// EligibleExpr predicate (vars["region"] == "EU") evaluated over snapshotted
 // process variables. Two instances are run: one with region=EU (ALLOW) and one
 // with region=US (DENY).
 func demoAttributeAuthz(ctx context.Context) {
 	// Process definition: start → approve[UserTask, role "approver",
-	// EligibilityExpr vars["region"] == "EU"] → end.
+	// EligibleExpr vars["region"] == "EU"] → end.
 	def := &model.ProcessDefinition{
 		ID:      "region-approval",
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", activity.WithEligibleRoles("approver"),
-				// EligibilityExpr evaluates in the authz env {"actor": Actor, "vars": processVars},
+				// EligibleExpr evaluates in the authz env {"actor": Actor, "vars": processVars},
 				// so process variables are reached via vars["key"] — unlike gateway conditions,
 				// which evaluate directly against the process-variable map (bare `key`).
-				activity.WithEligibilityExpr(`vars["region"] == "EU"`),
+				activity.WithEligibleExpr(`vars["region"] == "EU"`),
 			),
 			event.NewEnd("end"),
 		},
@@ -111,7 +111,7 @@ func demoAttributeAuthz(ctx context.Context) {
 	})
 
 	// RoleAuthorizer evaluates both spec.Roles and spec.Attribute (the
-	// EligibilityExpr is mapped to AuthzSpec.Attribute by the engine).
+	// EligibleExpr is mapped to AuthzSpec.Attribute by the engine).
 	az := authz.RoleAuthorizer{}
 
 	// --- EU instance: should be ALLOWED ---
@@ -195,7 +195,7 @@ func demoAttributeAuthz(ctx context.Context) {
 // actors are tested through TaskService.Claim: one with the "approver" role
 // (ALLOW) and one without (DENY).
 //
-// The UserTask is now defined via activity.WithEligibilityPrivileges so the privilege
+// The UserTask is now defined via activity.WithEligiblePrivileges so the privilege
 // flows through the normal definition→engine→runner→TaskService.Claim path.
 func demoCasbinRBAC(ctx context.Context) {
 	// Build a casbin-backed authorizer from the inline policy CSV.
@@ -207,7 +207,7 @@ func demoCasbinRBAC(ctx context.Context) {
 	}
 
 	// Process definition: start → finance-review[UserTask, privilege "finance-task claim"] → end.
-	// WithEligibilityPrivileges wires the privilege into AuthzSpec.Privileges so
+	// WithEligiblePrivileges wires the privilege into AuthzSpec.Privileges so
 	// the casbin Authorizer evaluates it at Claim time.
 	def := &model.ProcessDefinition{
 		ID:      "finance-approval",
@@ -215,7 +215,7 @@ func demoCasbinRBAC(ctx context.Context) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("finance-review",
-				activity.WithEligibilityPrivileges("finance-task claim"),
+				activity.WithEligiblePrivileges("finance-task claim"),
 			),
 			event.NewEnd("end"),
 		},

@@ -176,17 +176,17 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 		"mutating the original vars map must not change the snapshotted task.Vars")
 }
 
-// approvalWithEligibilityExprDef returns a process: start → userTask("approve",
-// role "approver", EligibilityExpr vars["region"] == "EU") → end.
-// The EligibilityExpr is mapped to AuthzSpec.Attribute by the engine so that
+// approvalWithEligibleExprDef returns a process: start → userTask("approve",
+// role "approver", EligibleExpr vars["region"] == "EU") → end.
+// The EligibleExpr is mapped to AuthzSpec.Attribute by the engine so that
 // attribute-based authorization is enforced at Claim time over snapshotted vars.
-func approvalWithEligibilityExprDef() *model.ProcessDefinition {
+func approvalWithEligibleExprDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID:      "approval-with-attr",
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", activity.WithEligibleRoles("approver"), activity.WithEligibilityExpr(`vars["region"] == "EU"`)),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("approver"), activity.WithEligibleExpr(`vars["region"] == "EU"`)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -199,7 +199,7 @@ func approvalWithEligibilityExprDef() *model.ProcessDefinition {
 // TestRunnerAttributeOverVarsThroughRunner verifies the FULL runner→snapshot→claim
 // chain: the runner snapshots process variables into HumanTask.Vars when it
 // performs an AwaitHuman command, and TaskService.Claim enforces the
-// EligibilityExpr predicate against those snapshotted vars. The task is NOT
+// EligibleExpr predicate against those snapshotted vars. The task is NOT
 // pre-populated — it is created exclusively by runner.Drive so the test exercises
 // the real end-to-end path.
 //
@@ -211,7 +211,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"approver": {approver},
 	})
-	def := approvalWithEligibilityExprDef()
+	def := approvalWithEligibleExprDef()
 
 	cases := []struct {
 		name      string
@@ -266,7 +266,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 			assert.Equal(t, tc.region, storedTask.Vars["region"],
 				"runner must snapshot process vars into task.Vars at task-creation time")
 
-			// Step 3: Claim — the TaskService evaluates the EligibilityExpr against
+			// Step 3: Claim — the TaskService evaluates the EligibleExpr against
 			// the snapshotted vars. Result depends on whether region matches the predicate.
 			svc := runtimetest.MustTaskService(t, taskStore, az)
 			_, err = svc.Claim(ctx, taskToken, approver)

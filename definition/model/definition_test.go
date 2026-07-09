@@ -60,7 +60,7 @@ func TestNodeUserTaskFields(t *testing.T) {
 		Nodes: []model.Node{
 			activity.NewUserTask("approve", activity.WithEligibleRoles("manager", "admin"),
 				activity.WithName("Approve Request"),
-				activity.WithEligibilityExpr("amount > 1000"),
+				activity.WithEligibleExpr("amount > 1000"),
 			),
 		},
 		Flows: []flow.SequenceFlow{},
@@ -73,7 +73,7 @@ func TestNodeUserTaskFields(t *testing.T) {
 	ut, ok := n.(activity.UserTask)
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, ut.EligibleRoles)
-	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
+	assert.Equal(t, "amount > 1000", ut.EligibleExpr)
 }
 
 // TestNodeEventBoundaryFields asserts that the five new event/boundary fields

@@ -14,34 +14,34 @@ import (
 // but uses a plain string for Kind so that yaml.v3 decodes the lowerCamelCase
 // discriminator without invoking NodeKind's JSON un/marshalers.
 type nodeYAML struct {
-	ID                    string          `yaml:"id"`
-	Kind                  string          `yaml:"kind"`
-	Name                  string          `yaml:"name,omitempty"`
-	Action                string          `yaml:"action,omitempty"`
-	EligibleRoles         []string        `yaml:"eligibleRoles,omitempty"`
-	EligibilityPrivileges []string        `yaml:"eligibilityPrivileges,omitempty"`
-	EligibilityExpr       string          `yaml:"eligibilityExpr,omitempty"`
-	Manual                bool            `yaml:"manual,omitempty"`
-	TimerDuration         string          `yaml:"timerDuration,omitempty"`
-	DeadlineDuration      string          `yaml:"deadlineDuration,omitempty"`
-	DeadlineFlow          string          `yaml:"deadlineFlow,omitempty"`
-	DeadlineAction        string          `yaml:"deadlineAction,omitempty"`
-	WaitEvery             string          `yaml:"waitEvery,omitempty"`
-	WaitAction            string          `yaml:"waitAction,omitempty"`
-	RetryPolicy           *RetryPolicy    `yaml:"retryPolicy,omitempty"`
-	RecoveryFlow          string          `yaml:"recoveryFlow,omitempty"`
-	CompensateAction      string          `yaml:"compensateAction,omitempty"`
-	CompensateRef         string          `yaml:"compensateRef,omitempty"`
-	CancelAction          string          `yaml:"cancelAction,omitempty"`
-	CompletionAction      string          `yaml:"completionAction,omitempty"`
-	SignalName            string          `yaml:"signalName,omitempty"`
-	MessageName           string          `yaml:"messageName,omitempty"`
-	CorrelationKey        string          `yaml:"correlationKey,omitempty"`
-	ErrorCode             string          `yaml:"errorCode,omitempty"`
-	AttachedTo            string          `yaml:"attachedTo,omitempty"`
-	NonInterrupting       bool            `yaml:"nonInterrupting,omitempty"`
-	Subprocess            *definitionYAML `yaml:"subprocess,omitempty"`
-	DefRef                string          `yaml:"defRef,omitempty"`
+	ID                 string          `yaml:"id"`
+	Kind               string          `yaml:"kind"`
+	Name               string          `yaml:"name,omitempty"`
+	Action             string          `yaml:"action,omitempty"`
+	EligibleRoles      []string        `yaml:"eligibleRoles,omitempty"`
+	EligiblePrivileges []string        `yaml:"eligiblePrivileges,omitempty"`
+	EligibleExpr       string          `yaml:"eligibleExpr,omitempty"`
+	Manual             bool            `yaml:"manual,omitempty"`
+	TimerDuration      string          `yaml:"timerDuration,omitempty"`
+	DeadlineDuration   string          `yaml:"deadlineDuration,omitempty"`
+	DeadlineFlow       string          `yaml:"deadlineFlow,omitempty"`
+	DeadlineAction     string          `yaml:"deadlineAction,omitempty"`
+	WaitEvery          string          `yaml:"waitEvery,omitempty"`
+	WaitAction         string          `yaml:"waitAction,omitempty"`
+	RetryPolicy        *RetryPolicy    `yaml:"retryPolicy,omitempty"`
+	RecoveryFlow       string          `yaml:"recoveryFlow,omitempty"`
+	CompensateAction   string          `yaml:"compensateAction,omitempty"`
+	CompensateRef      string          `yaml:"compensateRef,omitempty"`
+	CancelAction       string          `yaml:"cancelAction,omitempty"`
+	CompletionAction   string          `yaml:"completionAction,omitempty"`
+	SignalName         string          `yaml:"signalName,omitempty"`
+	MessageName        string          `yaml:"messageName,omitempty"`
+	CorrelationKey     string          `yaml:"correlationKey,omitempty"`
+	ErrorCode          string          `yaml:"errorCode,omitempty"`
+	AttachedTo         string          `yaml:"attachedTo,omitempty"`
+	NonInterrupting    bool            `yaml:"nonInterrupting,omitempty"`
+	Subprocess         *definitionYAML `yaml:"subprocess,omitempty"`
+	DefRef             string          `yaml:"defRef,omitempty"`
 	// Validation mirrors NodeWire.Validation for the YAML authoring form.
 	Validation *validate.ValidationDescriptor `yaml:"validation,omitempty"`
 }
@@ -90,35 +90,35 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 	}
 
 	w := NodeWire{
-		ID:                    ny.ID,
-		Kind:                  kind,
-		Name:                  ny.Name,
-		Action:                ny.Action,
-		EligibleRoles:         ny.EligibleRoles,
-		EligibilityPrivileges: ny.EligibilityPrivileges,
-		EligibilityExpr:       ny.EligibilityExpr,
-		Manual:                ny.Manual,
-		TimerDuration:         ny.TimerDuration,
-		DeadlineDuration:      ny.DeadlineDuration,
-		DeadlineFlow:          ny.DeadlineFlow,
-		DeadlineAction:        ny.DeadlineAction,
-		WaitEvery:             ny.WaitEvery,
-		WaitAction:            ny.WaitAction,
-		RetryPolicy:           ny.RetryPolicy,
-		RecoveryFlow:          ny.RecoveryFlow,
-		CompensateAction:      ny.CompensateAction,
-		CompensateRef:         ny.CompensateRef,
-		CancelAction:          ny.CancelAction,
-		CompletionAction:      ny.CompletionAction,
-		SignalName:            ny.SignalName,
-		MessageName:           ny.MessageName,
-		CorrelationKey:        ny.CorrelationKey,
-		ErrorCode:             ny.ErrorCode,
-		AttachedTo:            ny.AttachedTo,
-		NonInterrupting:       ny.NonInterrupting,
-		Subprocess:            subDef,
-		DefRef:                ny.DefRef,
-		Validation:            ny.Validation,
+		ID:                 ny.ID,
+		Kind:               kind,
+		Name:               ny.Name,
+		Action:             ny.Action,
+		EligibleRoles:      ny.EligibleRoles,
+		EligiblePrivileges: ny.EligiblePrivileges,
+		EligibleExpr:       ny.EligibleExpr,
+		Manual:             ny.Manual,
+		TimerDuration:      ny.TimerDuration,
+		DeadlineDuration:   ny.DeadlineDuration,
+		DeadlineFlow:       ny.DeadlineFlow,
+		DeadlineAction:     ny.DeadlineAction,
+		WaitEvery:          ny.WaitEvery,
+		WaitAction:         ny.WaitAction,
+		RetryPolicy:        ny.RetryPolicy,
+		RecoveryFlow:       ny.RecoveryFlow,
+		CompensateAction:   ny.CompensateAction,
+		CompensateRef:      ny.CompensateRef,
+		CancelAction:       ny.CancelAction,
+		CompletionAction:   ny.CompletionAction,
+		SignalName:         ny.SignalName,
+		MessageName:        ny.MessageName,
+		CorrelationKey:     ny.CorrelationKey,
+		ErrorCode:          ny.ErrorCode,
+		AttachedTo:         ny.AttachedTo,
+		NonInterrupting:    ny.NonInterrupting,
+		Subprocess:         subDef,
+		DefRef:             ny.DefRef,
+		Validation:         ny.Validation,
 	}
 	return fromWire(w)
 }
