@@ -412,5 +412,8 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	cmds = append(cmds, FailInstance{Err: errorCode})
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+	for _, timerID := range s.removeAllEventSubprocessArms() {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
 	return cmds, nil
 }

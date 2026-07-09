@@ -187,6 +187,9 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 	cmds = append(cmds, FailInstance{Err: "cancelled"})
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+	for _, timerID := range s.removeAllEventSubprocessArms() {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 

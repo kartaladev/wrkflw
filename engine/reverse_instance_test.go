@@ -884,3 +884,71 @@ func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) 
 	assert.Contains(t, r4.Commands, engine.CancelTimer{TimerID: espTimerID},
 		"applyTerminate must cancel the surviving root-ESP timer, not just the walk's own timers/arms")
 }
+
+// TestImmediateTerminatePaths_CancelRootEventSubprocessTimer is the FU#2 /
+// Task F2.3 regression: the two "immediate" (no compensation records)
+// terminal paths — handleCancelRequested's no-records branch (step_triggers.go)
+// and propagateError's no-records unhandled-error branch (step_errors.go) —
+// both sweep s.Timers and s.ArmedEvents/s.Boundaries but, before this fix,
+// never drained s.EventSubprocesses, leaking a root-level timer-armed event
+// sub-process's scheduled timer past instance termination/failure.
+func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name   string
+		drive  func(t *testing.T, def *model.ProcessDefinition, r1 engine.StepResult) (engine.StepResult, error)
+		assert func(t *testing.T, r engine.StepResult, espTimerID string)
+	}
+
+	cases := []testCase{
+		{
+			name: "immediate cancel with no compensation records",
+			drive: func(t *testing.T, def *model.ProcessDefinition, r1 engine.StepResult) (engine.StepResult, error) {
+				t.Helper()
+				return engine.Step(def, r1.State, engine.NewCancelRequested(t0), engine.StepOptions{})
+			},
+			assert: func(t *testing.T, r engine.StepResult, espTimerID string) {
+				assert.Equal(t, engine.StatusTerminated, r.State.Status, "immediate cancel (no records) still terminates")
+				assert.Nil(t, r.State.EventSubprocesses, "immediate-cancel path must drain ALL event-subprocess arms")
+				assert.Contains(t, r.Commands, engine.CancelTimer{TimerID: espTimerID},
+					"immediate-cancel path must cancel the surviving root-ESP timer")
+			},
+		},
+		{
+			name: "immediate unhandled action failure with no compensation records",
+			drive: func(t *testing.T, def *model.ProcessDefinition, r1 engine.StepResult) (engine.StepResult, error) {
+				t.Helper()
+				cmdDo := findInvokeActionID(t, r1.Commands, "do")
+				return engine.Step(def, r1.State, engine.NewActionFailed(t0, cmdDo, "boom", false), engine.StepOptions{})
+			},
+			assert: func(t *testing.T, r engine.StepResult, espTimerID string) {
+				assert.Equal(t, engine.StatusFailed, r.State.Status, "unhandled root-level failure (no records) still fails the instance")
+				assert.Nil(t, r.State.EventSubprocesses, "immediate-fail path must drain ALL event-subprocess arms")
+				assert.Contains(t, r.Commands, engine.CancelTimer{TimerID: espTimerID},
+					"immediate-fail path must cancel the surviving root-ESP timer")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			def := reverseWithRootESPDef()
+
+			// ---- StartInstance → root ESP arms; "do" left uncompleted so NO
+			// compensation record exists yet — the precondition for both
+			// "immediate" (no-records) branches under test. ----
+			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+				engine.NewStartInstance(t0, nil), engine.StepOptions{})
+			require.NoError(t, err)
+			require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
+			espTimerID := r1.State.EventSubprocesses[0].TimerID
+			require.NotEmpty(t, espTimerID, "root ESP arm must carry a TimerID")
+			require.Empty(t, r1.State.RootCompensations, "precondition: no compensation records yet")
+
+			r2, err := tc.drive(t, def, r1)
+			require.NoError(t, err)
+			tc.assert(t, r2, espTimerID)
+		})
+	}
+}
