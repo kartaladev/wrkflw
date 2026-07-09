@@ -76,7 +76,7 @@ func main() {
 			activity.WithTaskAction("charge-card"),
 			activity.WithCompensateAction("refund-card"),
 		).
-		AddUserTask("approve", []string{"manager"}).
+		AddUserTask("approve", activity.WithEligibleRoles("manager")).
 		AddEndEvent("end").
 		Connect("start", "charge").
 		Connect("charge", "approve").
@@ -438,7 +438,7 @@ Configure timers on nodes:
 // UserTask with a 3-day deadline and daily reminders. Durations are expr
 // expressions evaluated to a Go duration via time.ParseDuration, so they are
 // backtick-wrapped quoted duration literals ("72h", "24h" — not ISO-8601).
-activity.NewUserTask("approve", []string{"manager"},
+activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
     activity.WithWaitDeadline(`"72h"`, "escalate-flow"),
     activity.WithDeadlineAction("notify-manager"),
     activity.WithWaitAction(`"24h"`, "send-reminder"),
@@ -706,7 +706,7 @@ event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 | Node | What it does | Constructor |
 |---|---|---|
 | **ServiceTask** | Runs a named service action. | `activity.NewServiceTask(id string, opts ...) Node` |
-| **UserTask** | Waits for a human to complete a work item. | `activity.NewUserTask(id string, roles []string, opts ...) Node` |
+| **UserTask** | Waits for a human to complete a work item. | `activity.NewUserTask(id string, opts ...UserTaskOption) Node` |
 | **ReceiveTask** | Waits for an inbound correlated message. | `activity.NewReceiveTask(id, messageName string, opts ...) Node` |
 | **SendTask** | Sends an outbound message. | `activity.NewSendTask(id, messageName string, opts ...) Node` |
 | **BusinessRuleTask** | Runs a named business-rule action. | `activity.NewBusinessRuleTask(id string, opts ...) Node` |
@@ -725,7 +725,7 @@ activity.NewServiceTask("charge",
     activity.WithCompensateAction("refund-card"),
     activity.WithRetryPolicy(&retry),
 )
-activity.NewUserTask("approve", []string{"manager"},
+activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
     activity.WithWaitDeadline(`"3h"`, "escalate-flow"),
     activity.WithDeadlineAction("notify-manager"),
     activity.WithEligibleExpr(`vars["region"] == "EU"`),
@@ -961,7 +961,7 @@ start → review[UserTask, deadline "1h" → flow "review-overdue", action "noti
 ```
 
 ```go
-Add(activity.NewUserTask("review", []string{"reviewer"},
+Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
     activity.WithWaitDeadline(`"1h"`, "review-overdue"),
     activity.WithDeadlineAction("notify-overdue"))). // fire-once breach action
 Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
@@ -1137,7 +1137,7 @@ start → fulfil[UserTask] → end   ── cancel ──▶ [release-inventory,
 ```go
 def, _ := definition.NewBuilder("order-fulfilment", 1).
     Add(event.NewStart("start")).
-    Add(activity.NewUserTask("fulfil", []string{"fulfiller"})).
+    Add(activity.NewUserTask("fulfil", activity.WithEligibleRoles("fulfiller"))).
     Add(event.NewEnd("end")).
     Connect("start", "fulfil").Connect("fulfil", "end").
     CancelActions("release-inventory", "notify-customer").
@@ -1249,7 +1249,7 @@ start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
 ```
 
 ```go
-Add(activity.NewUserTask("review", []string{"reviewer"},
+Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
     activity.WithWaitAction(`"30m"`, "nudge-reviewer")))
 // driver wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
 driver.Drive(ctx, def, "review-77", nil)                            // parks; first reminder armed
