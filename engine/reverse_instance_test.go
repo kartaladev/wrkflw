@@ -55,6 +55,12 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdID, map[string]any{"amount": 500}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.RootCompensations, 1, "svc must have recorded a compensation")
+	// Sanity precondition for the EndedAt regression below: the flow auto-drives
+	// svc -> end within the same Step call, so the instance is already COMPLETED
+	// (with EndedAt stamped) before reverse is ever requested. This is the primary
+	// use case the reverse-to-start branch must handle correctly.
+	require.Equal(t, engine.StatusCompleted, r2.State.Status, "instance must have reached completion before reverse")
+	require.NotNil(t, r2.State.EndedAt, "completed instance must have EndedAt stamped")
 
 	// Reverse to start: expect the "undo" compensation to fire, then resume at start with reset vars.
 	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
@@ -69,6 +75,7 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r4.State.Status, "reverse resumes Running, NOT terminated")
+	assert.Nil(t, r4.State.EndedAt, "Running instance must have EndedAt cleared (was stamped at prior completion)")
 	assert.Equal(t, 100, r4.State.Variables["amount"], "vars reset to StartVariables")
 	assert.Empty(t, r4.State.RootCompensations, "records cleared after full reverse")
 	// The finish places a token at the start node and drives forward, so execution

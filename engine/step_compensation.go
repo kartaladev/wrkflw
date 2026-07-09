@@ -362,6 +362,13 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			sc.Compensations = nil
 		}
 		s.Status = StatusRunning
+		// The primary use case reverses a COMPLETED instance, which stamped
+		// EndedAt when it reached its end event. A Running instance must have
+		// EndedAt == nil, so clear it here to restore that invariant.
+		s.EndedAt = nil
+		// History is intentionally RETAINED (not reset) across the reverse:
+		// re-execution from ReverseNode appends fresh visits on top of it, so
+		// the full run history (including the reversed segment) stays intact.
 		if reverseResetVars {
 			s.Variables = copyVars(s.StartVariables)
 		}
