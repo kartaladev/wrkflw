@@ -1108,6 +1108,94 @@ func TestValidateCyclicSubprocessDoesNotPanic(t *testing.T) {
 	}, "Validate must not panic on cyclic subprocess graph")
 }
 
+// TestValidate_RejectsVersionBelow1 checks that Validate rejects a ROOT
+// definition whose Version is below 1 (0 is reserved as the Qualifier "latest"
+// resolution sentinel, so an authored definition must use a concrete version),
+// while leaving a nested sub-process definition's Version unchecked — a nested
+// SubProcess is not independently resolved by qualifier and may legitimately
+// carry Version 0.
+func TestValidate_RejectsVersionBelow1(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "root version 0 is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 0,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrInvalidVersion)
+			},
+		},
+		{
+			name: "root version negative is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: -3,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrInvalidVersion)
+			},
+		},
+		{
+			name: "root version 1 has no version error",
+			def:  linearDef(),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrInvalidVersion)
+			},
+		},
+		{
+			// CRITICAL guard case: the root definition is Version 1 (valid), but it
+			// embeds a SubProcess whose nested *ProcessDefinition has Version 0. The
+			// guard must apply to the root only — a nested subprocess definition is
+			// not independently resolved by qualifier and may legitimately be
+			// Version 0 — so Validate must return NO ErrInvalidVersion here.
+			name: "nested subprocess with Version 0 does not trigger the root-only guard",
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
+						ID: "sub", Version: 0,
+						Nodes: []model.Node{
+							event.NewStart("ns-start"),
+							event.NewEnd("ns-end"),
+						},
+						Flows: []flow.SequenceFlow{
+							{ID: "nf1", Source: "ns-start", Target: "ns-end"},
+						},
+					}),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrInvalidVersion)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
 func TestValidateCancelActions(t *testing.T) {
 	base := func(cancel []string) *model.ProcessDefinition {
 		return &model.ProcessDefinition{

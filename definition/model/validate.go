@@ -102,12 +102,26 @@ var (
 	// enclosing process definition. The referenced node must exist so the engine
 	// can resolve the compensation target at execution time.
 	ErrCompensateRefNotFound = errors.New("workflow-definition: compensation throw references unknown node")
+	// ErrInvalidVersion is returned by Validate when a (root) definition's
+	// Version is below 1. Version 0 is reserved as the "latest" resolution
+	// sentinel (see Qualifier), so an authored definition must use a concrete
+	// Version >= 1.
+	ErrInvalidVersion = errors.New("workflow-model: definition version must be >= 1 (0 reserved as latest sentinel)")
 )
 
 // Validate checks structural well-formedness of a process definition. It
-// returns a joined error covering every violation found.
+// returns a joined error covering every violation found. The Version >= 1
+// check applies only to the root definition — a nested subprocess definition
+// is not independently resolved by qualifier and may legitimately be Version 0.
 func Validate(d *ProcessDefinition) error {
-	return validateStructure(d, make(map[*ProcessDefinition]bool))
+	var errs []error
+	if d.Version < 1 {
+		errs = append(errs, fmt.Errorf("%w: got %d", ErrInvalidVersion, d.Version))
+	}
+	if err := validateStructure(d, make(map[*ProcessDefinition]bool)); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // validateStructure is the recursive implementation of Validate with a
