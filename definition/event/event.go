@@ -165,7 +165,8 @@ func NewErrorEnd(id, errorCode string, name ...string) model.Node {
 }
 
 // NewIntermediateCatch constructs an IntermediateCatchEvent. Options can be WithCatchTimer,
-// WithSignalName, WithMessageCorrelator, WithCatchDeadline, WithWaitAction, or WithName.
+// WithSignalName, WithMessageCorrelator, WithWaitDeadline, WithDeadlineAction, WithWaitAction,
+// or WithName.
 func NewIntermediateCatch(id string, opts ...CatchOption) model.Node {
 	n := IntermediateCatchEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {

@@ -3,7 +3,7 @@
 // time — a per-activity SLA/timeout.
 //
 // NOTE: this is distinct from the sibling usertask_deadline example, which
-// demonstrates activity.WithDeadline (a different feature). This one uses the
+// demonstrates activity.WithWaitDeadline (a different feature). This one uses the
 // true boundary-event API, event.NewBoundary + event.WithBoundaryTimer.
 //
 // An order-settlement process parks at a ReceiveTask awaiting a

@@ -1241,7 +1241,7 @@ reaches `StatusCompleted` with no incident raised.
 
 `WithWaitAction(every, action)` schedules a recurring in-wait action that fires once per
 interval **while** a task is open, re-arming itself each time. It stops automatically once
-the task is completed, cancelled, or breached — distinct from the one-shot `WithDeadline`
+the task is completed, cancelled, or breached — distinct from the one-shot `WithWaitDeadline`
 escalation in scenario 3.
 
 ```

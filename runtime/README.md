@@ -340,7 +340,7 @@ constructing the runner.
 ### Timers and deadlines
 
 Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
-`WithCatchTimer`), deadlines (`WithDeadline` on any activity), and reminders
+`WithCatchTimer`), deadlines (`WithWaitDeadline` on any activity), and reminders
 (`WithWaitAction`). Use `NewMemScheduler` for tests:
 
 ```go
