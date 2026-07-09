@@ -44,7 +44,7 @@ func TestFluentChain(t *testing.T) {
 		AddStartEvent("s").
 		AddExclusiveGateway("gw", "Approved?").
 		AddServiceTask("charge", activity.WithTaskAction("charge-card")).
-		AddUserTask("approve", []string{"manager"}).
+		AddUserTask("approve", activity.WithEligibleRoles("manager")).
 		AddEndEvent("e").
 		Connect("s", "gw").
 		Connect("gw", "charge").
