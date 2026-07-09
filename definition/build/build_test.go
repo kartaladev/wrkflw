@@ -43,7 +43,7 @@ func TestFluentChain(t *testing.T) {
 	def, err := build.NewBuilder("order", 1).
 		AddStartEvent("s").
 		AddExclusiveGateway("gw", "Approved?").
-		AddServiceTask("charge", activity.WithActionName("charge-card")).
+		AddServiceTask("charge", activity.WithTaskAction("charge-card")).
 		AddUserTask("approve", []string{"manager"}).
 		AddEndEvent("e").
 		Connect("s", "gw").
@@ -76,7 +76,7 @@ func TestFluentAllAdders(t *testing.T) {
 		AddEventBasedGateway("evt").
 		AddReceiveTask("recv", "msg").
 		AddSendTask("send", "msg").
-		AddBusinessRuleTask("rule", activity.WithActionName("r")).
+		AddBusinessRuleTask("rule", activity.WithTaskAction("r")).
 		AddSubProcess("sp", subDef).
 		AddCallActivity("call", model.Version("sub", 1)).
 		AddEventSubProcess("esp", subDef).

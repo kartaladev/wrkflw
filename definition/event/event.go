@@ -139,8 +139,8 @@ func optName(name []string) string {
 	return ""
 }
 
-// NewStart constructs a StartEvent. Use WithName plus WithStartSignal/
-// WithStartMessage/WithStartTimer to configure EventSubProcess triggers.
+// NewStart constructs a StartEvent. Use WithName plus WithSignalName/
+// WithMessageCorrelator/WithStartTimer to configure EventSubProcess triggers.
 func NewStart(id string, opts ...StartOption) model.Node {
 	n := StartEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
@@ -165,7 +165,8 @@ func NewErrorEnd(id, errorCode string, name ...string) model.Node {
 }
 
 // NewIntermediateCatch constructs an IntermediateCatchEvent. Options can be WithCatchTimer,
-// WithCatchSignal, WithCatchMessage, WithCatchDeadline, WithCatchWaitReminder, or WithName.
+// WithSignalName, WithMessageCorrelator, WithWaitDeadline, WithDeadlineAction, WithWaitAction,
+// or WithName.
 func NewIntermediateCatch(id string, opts ...CatchOption) model.Node {
 	n := IntermediateCatchEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
@@ -174,7 +175,7 @@ func NewIntermediateCatch(id string, opts ...CatchOption) model.Node {
 	return n
 }
 
-// NewIntermediateThrow constructs an IntermediateThrowEvent. Use WithThrowSignal,
+// NewIntermediateThrow constructs an IntermediateThrowEvent. Use WithThrowSignalName,
 // WithCompensateRef, or WithThrowName.
 func NewIntermediateThrow(id string, opts ...ThrowOption) model.Node {
 	n := IntermediateThrowEvent{Base: model.NewBase(id, "")}
@@ -185,7 +186,8 @@ func NewIntermediateThrow(id string, opts ...ThrowOption) model.Node {
 }
 
 // NewBoundary constructs a BoundaryEvent attached to the given host activity.
-// Use WithBoundarySignal/Message/Timer/ErrorCode, WithBoundaryNonInterrupting, WithName.
+// Use WithSignalName, WithMessageCorrelator, WithBoundaryTimer/ErrorCode,
+// WithBoundaryNonInterrupting, WithName.
 func NewBoundary(id, attachedTo string, opts ...BoundaryOption) model.Node {
 	n := BoundaryEvent{Base: model.NewBase(id, ""), AttachedTo: attachedTo}
 	for _, o := range opts {

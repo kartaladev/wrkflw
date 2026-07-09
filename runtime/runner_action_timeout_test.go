@@ -26,7 +26,7 @@ func timeoutTaskDef() *model.ProcessDefinition {
 		ID: "timeout-test", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("t")),
+			activity.NewServiceTask("task", activity.WithTaskAction("t")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

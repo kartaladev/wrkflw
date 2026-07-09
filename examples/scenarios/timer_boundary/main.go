@@ -3,7 +3,7 @@
 // time — a per-activity SLA/timeout.
 //
 // NOTE: this is distinct from the sibling usertask_deadline example, which
-// demonstrates activity.WithDeadline (a different feature). This one uses the
+// demonstrates activity.WithWaitDeadline (a different feature). This one uses the
 // true boundary-event API, event.NewBoundary + event.WithBoundaryTimer.
 //
 // An order-settlement process parks at a ReceiveTask awaiting a
@@ -67,7 +67,7 @@ func main() {
 			activity.WithCorrelationKey("orderID"))).
 		Add(event.NewBoundary("bnd-timeout", "await-payment",
 			event.WithBoundaryTimer(schedule.AfterDuration(30*time.Minute)))).
-		Add(activity.NewServiceTask("escalate", activity.WithActionName("escalate-payment"))).
+		Add(activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-payment"))).
 		Add(event.NewEnd("end-settled")).
 		Add(event.NewEnd("end-escalated")).
 		Connect("start", "await-payment").

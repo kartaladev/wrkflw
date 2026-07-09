@@ -42,11 +42,11 @@ func main() {
 
 	def, err := definition.NewBuilder("application-screening", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("assess", activity.WithActionName("assess"))).
+		Add(activity.NewServiceTask("assess", activity.WithTaskAction("assess"))).
 		Add(gateway.NewInclusive("split")).
-		Add(activity.NewServiceTask("notify-risk", activity.WithActionName("notify-risk"))).
-		Add(activity.NewServiceTask("senior-review", activity.WithActionName("senior-review"))).
-		Add(activity.NewServiceTask("fraud-check", activity.WithActionName("fraud-check"))).
+		Add(activity.NewServiceTask("notify-risk", activity.WithTaskAction("notify-risk"))).
+		Add(activity.NewServiceTask("senior-review", activity.WithTaskAction("senior-review"))).
+		Add(activity.NewServiceTask("fraud-check", activity.WithTaskAction("fraud-check"))).
 		Add(gateway.NewInclusive("join")).
 		Add(event.NewEnd("end")).
 		Connect("start", "assess").

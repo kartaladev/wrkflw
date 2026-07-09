@@ -105,13 +105,13 @@ func buildDef(data []byte) *model.ProcessDefinition {
 		id := nodeID(i + 1)
 		switch data[i] % 4 {
 		case 0:
-			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithTaskAction("act")))
 		case 1:
 			nodes = append(nodes, activity.NewUserTask(id, []string{"role"}))
 		case 2:
-			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act2")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithTaskAction("act2")))
 		default:
-			nodes = append(nodes, activity.NewServiceTask(id, activity.WithActionName("act3")))
+			nodes = append(nodes, activity.NewServiceTask(id, activity.WithTaskAction("act3")))
 		}
 	}
 

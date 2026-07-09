@@ -27,7 +27,7 @@ func TestParseYAML(t *testing.T) {
 		t.Fatalf("def = %+v", def)
 	}
 	st, ok := def.Nodes[1].(activity.ServiceTask)
-	if !ok || st.Action != "charge-card" || st.CompensationAction != "refund-card" {
+	if !ok || st.Action != "charge-card" || st.CompensateAction != "refund-card" {
 		t.Fatalf("node[1] = %#v", def.Nodes[1])
 	}
 }

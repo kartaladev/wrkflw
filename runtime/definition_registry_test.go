@@ -132,7 +132,7 @@ func ensureDefaultSubDef(t *testing.T) (parentDef *model.ProcessDefinition) {
 			Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("s"),
-				activity.NewServiceTask("svc", activity.WithActionName(actionName)),
+				activity.NewServiceTask("svc", activity.WithTaskAction(actionName)),
 				event.NewEnd("e"),
 			},
 			Flows: []flow.SequenceFlow{
@@ -233,7 +233,7 @@ func TestWithDefinitionsCustomOverridesDefault(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("s"),
-			activity.NewServiceTask("svc", activity.WithActionName(subActionName)),
+			activity.NewServiceTask("svc", activity.WithTaskAction(subActionName)),
 			event.NewEnd("e"),
 		},
 		Flows: []flow.SequenceFlow{

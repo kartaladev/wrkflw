@@ -45,21 +45,53 @@ func WithName(name string) interface {
 	return nameOpt{name}
 }
 
+// --- WithMessageCorrelator (Start, Catch, Boundary) ---
+
+type messageCorrelatorOpt struct{ msg, key string }
+
+func (o messageCorrelatorOpt) applyStart(n *StartEvent) {
+	n.MessageName, n.CorrelationKey = o.msg, o.key
+}
+func (o messageCorrelatorOpt) applyCatch(n *IntermediateCatchEvent) {
+	n.MessageName, n.CorrelationKey = o.msg, o.key
+}
+func (o messageCorrelatorOpt) applyBoundary(n *BoundaryEvent) {
+	n.MessageName, n.CorrelationKey = o.msg, o.key
+}
+
+// WithMessageCorrelator sets the message name and correlation key on a start,
+// catch, or boundary event.
+func WithMessageCorrelator(msg, key string) interface {
+	StartOption
+	CatchOption
+	BoundaryOption
+} {
+	return messageCorrelatorOpt{msg, key}
+}
+
+// --- WithSignalName (Start, Catch, Boundary) ---
+
+type signalNameOpt struct{ name string }
+
+func (o signalNameOpt) applyStart(n *StartEvent)             { n.SignalName = o.name }
+func (o signalNameOpt) applyCatch(n *IntermediateCatchEvent) { n.SignalName = o.name }
+func (o signalNameOpt) applyBoundary(n *BoundaryEvent)       { n.SignalName = o.name }
+
+// WithSignalName sets the signal reference on a start, catch, or boundary
+// event (was the three separate per-kind signal setters).
+func WithSignalName(name string) interface {
+	StartOption
+	CatchOption
+	BoundaryOption
+} {
+	return signalNameOpt{name}
+}
+
 // --- StartEvent options (EventSubProcess triggers) ---
 
 type startFuncOpt struct{ fn func(*StartEvent) }
 
 func (o startFuncOpt) applyStart(n *StartEvent) { o.fn(n) }
-
-// WithStartSignal sets SignalName on a StartEvent (for EventSubProcess triggers).
-func WithStartSignal(name string) StartOption {
-	return startFuncOpt{func(n *StartEvent) { n.SignalName = name }}
-}
-
-// WithStartMessage sets MessageName and CorrelationKey on a StartEvent.
-func WithStartMessage(msg, key string) StartOption {
-	return startFuncOpt{func(n *StartEvent) { n.MessageName, n.CorrelationKey = msg, key }}
-}
 
 // WithStartTimer sets the Timer trigger on a StartEvent. Use schedule.AfterExpr,
 // schedule.AfterDuration, schedule.Cron, etc. to build the TriggerSpec.
@@ -90,30 +122,29 @@ func WithCatchTimer(t schedule.TriggerSpec) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.Timer = t }}
 }
 
-// WithCatchSignal sets the signal reference (was WithSignalName).
-func WithCatchSignal(name string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.SignalName = name }}
-}
-
-// WithCatchMessage sets MessageName and CorrelationKey (was WithMessageNameAndKey).
-func WithCatchMessage(msg, key string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.MessageName, n.CorrelationKey = msg, key }}
-}
-
-// WithCatchDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow,
-// and DeadlineAction on an IntermediateCatchEvent. Use schedule.AfterDuration,
-// schedule.AfterExpr, or any other TriggerSpec constructor.
-func WithCatchDeadline(t schedule.TriggerSpec, flowID, action string) CatchOption {
+// WithWaitDeadline sets the DeadlineTimer (schedule.TriggerSpec) and DeadlineFlow
+// on an IntermediateCatchEvent — the trigger governing when the deadline fires
+// and the sequence flow taken on breach. Use schedule.AfterDuration,
+// schedule.AfterExpr, or any other TriggerSpec constructor. Pair with
+// WithDeadlineAction to also run an action on breach.
+func WithWaitDeadline(t schedule.TriggerSpec, flowID string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) {
-		n.DeadlineTimer, n.DeadlineFlow, n.DeadlineAction = t, flowID, action
+		n.DeadlineTimer, n.DeadlineFlow = t, flowID
 	}}
 }
 
-// WithCatchWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
-// on an IntermediateCatchEvent. Use schedule.Every, schedule.EveryExpr, or any
-// other recurring TriggerSpec constructor.
-func WithCatchWaitReminder(t schedule.TriggerSpec, action string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = t, action }}
+// WithDeadlineAction sets the optional action.Action name invoked on deadline
+// breach, in addition to (or instead of) taking DeadlineFlow.
+func WithDeadlineAction(action string) CatchOption {
+	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.DeadlineAction = action }}
+}
+
+// WithWaitAction sets the WaitEvery (schedule.TriggerSpec) and WaitAction
+// on an IntermediateCatchEvent — the in-wait action run periodically while the
+// event is pending. Use schedule.Every, schedule.EveryExpr, or any other
+// recurring TriggerSpec constructor.
+func WithWaitAction(t schedule.TriggerSpec, action string) CatchOption {
+	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.WaitEvery, n.WaitAction = t, action }}
 }
 
 type catchPayloadValidationOpt struct{ s validate.ValidationStrategy }
@@ -128,8 +159,8 @@ func WithPayloadValidation(s validate.ValidationStrategy) CatchOption {
 
 // --- IntermediateThrowEvent options ---
 
-// WithThrowSignal sets SignalName on an IntermediateThrowEvent.
-func WithThrowSignal(name string) ThrowOption {
+// WithThrowSignalName sets SignalName on an IntermediateThrowEvent.
+func WithThrowSignalName(name string) ThrowOption {
 	return func(n *IntermediateThrowEvent) { n.SignalName = name }
 }
 
@@ -148,16 +179,6 @@ func WithThrowName(name string) ThrowOption {
 type boundaryFuncOpt struct{ fn func(*BoundaryEvent) }
 
 func (o boundaryFuncOpt) applyBoundary(n *BoundaryEvent) { o.fn(n) }
-
-// WithBoundarySignal sets SignalName on a BoundaryEvent.
-func WithBoundarySignal(name string) BoundaryOption {
-	return boundaryFuncOpt{func(n *BoundaryEvent) { n.SignalName = name }}
-}
-
-// WithBoundaryMessage sets MessageName and CorrelationKey on a BoundaryEvent.
-func WithBoundaryMessage(msg, key string) BoundaryOption {
-	return boundaryFuncOpt{func(n *BoundaryEvent) { n.MessageName, n.CorrelationKey = msg, key }}
-}
 
 // WithBoundaryTimer sets the Timer trigger on a BoundaryEvent. Use
 // schedule.AfterDuration, schedule.AfterExpr, schedule.Cron, etc. to build

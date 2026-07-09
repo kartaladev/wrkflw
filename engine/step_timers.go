@@ -122,7 +122,7 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 //   - If the guarded task is no longer open (token gone, task Completed or
 //     Cancelled), the reminder is stale: clean no-op, stale record removed.
 //   - If the task is still open:
-//     (1) emits InvokeAction(node.ReminderAction) if non-empty (fire-and-forget),
+//     (1) emits InvokeAction(node.WaitAction) if non-empty (fire-and-forget),
 //     (2) does NOT reschedule — the reminder was armed once at task entry with
 //     its recurring trigger and the scheduler re-delivers TimerFired natively;
 //     the reminder record stays in place and the token does NOT move.
@@ -159,22 +159,22 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 		return StepResult{}, tdefReminderErr
 	}
 
-	// Resolve the node to get ReminderEvery and ReminderAction.
+	// Resolve the node to get WaitEvery and WaitAction.
 	node, ok := tdefReminder.Node(rec.NodeID)
 	if !ok {
 		return StepResult{}, fmt.Errorf("workflow-engine: reminder fired: node %q not found in definition", rec.NodeID)
 	}
 
-	_, reminderAction := model.ReminderOf(node)
+	_, waitActionName := model.WaitActionOf(node)
 
 	var cmds []Command
 
 	// (1) Fire-and-forget reminder action, if configured.
-	if reminderAction != "" {
+	if waitActionName != "" {
 		cmdID := s.nextCommandID()
 		cmds = append(cmds, InvokeAction{
 			CommandID:     cmdID,
-			Name:          reminderAction,
+			Name:          waitActionName,
 			Input:         copyVars(s.Variables),
 			FireAndForget: true,
 		})
@@ -213,7 +213,6 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 	cmds := []Command{InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
 		Scoped:    tdef.ScopedCatalog(),
 		Input:     serviceActionInput(s, node),
 	}}

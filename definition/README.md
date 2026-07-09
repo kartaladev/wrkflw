@@ -131,20 +131,21 @@ kind-specific data generically).
 ### Shared activity options (`definition/activity`)
 
 Work on all activity constructors: `WithName`, `WithRetryPolicy(*RetryPolicy)`,
-`WithRecoveryFlow(flowID)`, `WithCompensation(actionName)`,
-`WithCancelHandler(actionName)`, `WithDeadline(dur, flowID, actionName)`,
-`WithWaitReminder(every, actionName)`.
+`WithRecoveryFlow(flowID)`, `WithCompensateAction(actionName)`,
+`WithCancelAction(actionName)`, `WithWaitDeadline(dur, flowID)`,
+`WithDeadlineAction(actionName)`, `WithWaitAction(every, actionName)`.
 
-Kind-specific: `WithActionName` / `WithAction` / `WithActionFunc` (service &
-business-rule tasks), `WithEligibilityExpr` / `WithEligibilityPrivileges` (user
-task), `WithCorrelationKey` (receive & send tasks).
+Kind-specific: `WithTaskAction` (service & business-rule tasks — resolves by catalog name,
+scoped → global; omit for default-by-id), `WithEligibilityExpr` /
+`WithEligibilityPrivileges` (user task), `WithCorrelationKey` (receive & send tasks).
 
 ```go
 task := activity.NewServiceTask("charge",
-    activity.WithActionName("charge-card"),
+    activity.WithTaskAction("charge-card"),
     activity.WithName("Charge Card"),
-    activity.WithCompensation("refund-card"),
-    activity.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
+    activity.WithCompensateAction("refund-card"),
+    activity.WithWaitDeadline("2h", "sla-breach-flow"),
+    activity.WithDeadlineAction("notify-ops"),
     activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: 2 * time.Second, BackoffCoef: 2.0,
     }),
@@ -153,12 +154,13 @@ task := activity.NewServiceTask("charge",
 
 ### Event options (`definition/event`)
 
-`WithName` (start/catch/boundary/event-sub-process); start triggers
-`WithStartSignal` / `WithStartMessage` / `WithStartTimer`; catch
-`WithCatchTimer` / `WithCatchSignal` / `WithCatchMessage` / `WithCatchDeadline` /
-`WithCatchWaitReminder`; throw `WithThrowSignal` / `WithCompensateRef` /
-`WithThrowName`; boundary `WithBoundaryTimer` / `WithBoundarySignal` /
-`WithBoundaryMessage` / `WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
+`WithName` (start/catch/boundary/event-sub-process); `WithMessageCorrelator`
+(start/catch/boundary); `WithSignalName` (start/catch/boundary); start triggers
+`WithStartTimer`; catch
+`WithCatchTimer` / `WithWaitDeadline` /
+`WithDeadlineAction` / `WithWaitAction`; throw `WithThrowSignalName` / `WithCompensateRef` /
+`WithThrowName`; boundary `WithBoundaryTimer` /
+`WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
 event-sub-process `WithEventSubProcessNonInterrupting`.
 
 > The start / catch / boundary trigger options are symmetric
@@ -182,8 +184,8 @@ import (
 def, err := definition.NewBuilder("order-fulfillment", 1).
     AddStartEvent("start").
     AddServiceTask("charge",
-        activity.WithActionName("charge-card"),
-        activity.WithCompensation("refund-card")).
+        activity.WithTaskAction("charge-card"),
+        activity.WithCompensateAction("refund-card")).
     AddUserTask("approve", []string{"manager"}).
     AddEndEvent("end").
     Connect("start", "charge").
@@ -202,7 +204,7 @@ import "github.com/zakyalvan/krtlwrkflw/definition/flow"
 def, err := definition.NewBuilder("loan", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewExclusive("gw")).
-    Add(activity.NewServiceTask("approve", activity.WithActionName("approve-loan"))).
+    Add(activity.NewServiceTask("approve", activity.WithTaskAction("approve-loan"))).
     Add(event.NewEnd("end-ok")).
     Connect("start", "gw").
     Connect("gw", "approve", flow.WithCondition("score >= 700")).
@@ -274,10 +276,9 @@ joined error. The sentinel errors live in `definition/model` — check them with
 
 ### Kind-agnostic accessors
 
-`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `ReminderOf(n)`, `ActionOf(n)`,
-`InlineActionOf(n)` read kind-specific fields off any `Node` (returning zero
-values for kinds that don't carry them), so callers never type-switch on concrete
-leaf types.
+`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `WaitActionOf(n)`, `ActionOf(n)` read
+kind-specific fields off any `Node` (returning zero values for kinds that don't
+carry them), so callers never type-switch on concrete leaf types.
 
 ---
 

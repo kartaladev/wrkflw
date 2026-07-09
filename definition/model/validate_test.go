@@ -72,7 +72,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("x")),
+					activity.NewServiceTask("task", activity.WithTaskAction("x")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -89,7 +89,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("x")),
+					activity.NewServiceTask("task", activity.WithTaskAction("x")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -108,7 +108,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
-					activity.NewServiceTask("task", activity.WithActionName("x")),
+					activity.NewServiceTask("task", activity.WithTaskAction("x")),
 				},
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -142,8 +142,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -164,8 +164,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -186,8 +186,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -209,8 +209,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
-					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
-					event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("msg.b", "")),
+					event.NewIntermediateCatch("sig-catch", event.WithSignalName("sig.a")),
+					event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("msg.b", "")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -231,8 +231,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
-					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
-					activity.NewServiceTask("task", activity.WithActionName("do-work")), // non-catch
+					event.NewIntermediateCatch("sig-catch", event.WithSignalName("sig.a")),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")), // non-catch
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -253,9 +253,9 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("do-work")),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
 					// NonInterrupting omitted (false) = interrupting, the default.
-					event.NewBoundary("boundary", "task", event.WithBoundarySignal("cancel")),
+					event.NewBoundary("boundary", "task", event.WithSignalName("cancel")),
 					event.NewEnd("end"),
 					event.NewEnd("cancel-end"),
 				},
@@ -275,7 +275,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
-					event.NewBoundary("boundary", "ghost", event.WithBoundarySignal("cancel")),
+					event.NewBoundary("boundary", "ghost", event.WithSignalName("cancel")),
 				},
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -292,11 +292,11 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 					// boundary attached to a gateway — not an activity
-					event.NewBoundary("boundary", "xor", event.WithBoundarySignal("cancel")),
+					event.NewBoundary("boundary", "xor", event.WithSignalName("cancel")),
 				},
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -317,8 +317,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -339,11 +339,11 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewExclusive("gw"),
-					activity.NewServiceTask("c", activity.WithActionName("c")),
-					activity.NewServiceTask("d", activity.WithActionName("d")),
+					activity.NewServiceTask("c", activity.WithTaskAction("c")),
+					activity.NewServiceTask("d", activity.WithTaskAction("d")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -367,8 +367,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("gw"),
-					activity.NewServiceTask("c", activity.WithActionName("c")),
-					activity.NewServiceTask("d", activity.WithActionName("d")),
+					activity.NewServiceTask("c", activity.WithTaskAction("c")),
+					activity.NewServiceTask("d", activity.WithTaskAction("d")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -390,8 +390,8 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
-					activity.NewServiceTask("orphan", activity.WithActionName("o")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
+					activity.NewServiceTask("orphan", activity.WithTaskAction("o")),
 					event.NewEnd("orphan-end"),
 					event.NewEnd("end"),
 				},
@@ -410,9 +410,9 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
 					event.NewBoundary("bnd", "task", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
-					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
 					event.NewEnd("end"),
 				},
@@ -439,7 +439,7 @@ func TestValidate(t *testing.T) {
 					event.NewStart("start"),
 					activity.NewUserTask("approve", []string{"mgr"}),
 					event.NewBoundary("bnd", "approve", event.WithBoundaryTimer(schedule.AfterExpr("PT1H"))),
-					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
 					event.NewEnd("end"),
 				},
@@ -460,11 +460,11 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
 					event.NewEnd("end"),
-					activity.NewServiceTask("ghost", activity.WithActionName("g")), // unreachable host
+					activity.NewServiceTask("ghost", activity.WithTaskAction("g")), // unreachable host
 					event.NewBoundary("bnd", "ghost", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
-					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -498,8 +498,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -522,8 +522,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -546,8 +546,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewInclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -571,8 +571,8 @@ func TestValidate(t *testing.T) {
 					event.NewStart("s1"),
 					event.NewStart("s2"),
 					gateway.NewExclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 					event.NewEnd("end2"),
@@ -601,8 +601,8 @@ func TestValidate(t *testing.T) {
 					event.NewStart("start"),
 					gateway.NewExclusive("merge"), // loop-back merge (pure join)
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					gateway.NewExclusive("loop"), // loop-back decision (pure split)
 					event.NewEnd("end"),
@@ -628,13 +628,13 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
 					event.NewEnd("end"),
 					// Disconnected component: an exclusive split feeding a parallel join
 					// (would be ErrUnpairedJoin if reachable) — but it is unreachable.
 					gateway.NewExclusive("osplit"),
-					activity.NewServiceTask("ox", activity.WithActionName("x")),
-					activity.NewServiceTask("oy", activity.WithActionName("y")),
+					activity.NewServiceTask("ox", activity.WithTaskAction("x")),
+					activity.NewServiceTask("oy", activity.WithTaskAction("y")),
 					gateway.NewParallel("oj"),
 					event.NewEnd("oend"),
 				},
@@ -659,8 +659,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewInclusive("j"),
 					event.NewEnd("end"),
 				},
@@ -684,7 +684,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("do-work")),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
 					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("missing-node")),
 					event.NewEnd("end"),
 				},
@@ -704,7 +704,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("do-work"), activity.WithCompensation("undo-work")),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work"), activity.WithCompensateAction("undo-work")),
 					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("task")),
 					event.NewEnd("end"),
 				},
@@ -725,7 +725,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					event.NewIntermediateThrow("throw", event.WithThrowSignal("sig.done")),
+					event.NewIntermediateThrow("throw", event.WithThrowSignalName("sig.done")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -784,7 +784,7 @@ func validSubprocessDef(id string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("ns-start"),
-			activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
+			activity.NewServiceTask("ns-task", activity.WithTaskAction("inner")),
 			event.NewEnd("ns-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -860,7 +860,7 @@ func TestValidateSubProcess(t *testing.T) {
 						Version: 1,
 						Nodes: []model.Node{
 							event.NewStart("ns-start"),
-							activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
+							activity.NewServiceTask("ns-task", activity.WithTaskAction("inner")),
 							event.NewEnd("ns-end"),
 						},
 						Flows: []flow.SequenceFlow{
@@ -953,11 +953,11 @@ func TestValidateSubProcess(t *testing.T) {
 						Version: 1,
 						Nodes: []model.Node{
 							event.NewStart("ns-start"),
-							activity.NewServiceTask("na", activity.WithActionName("na")),
-							activity.NewServiceTask("nb", activity.WithActionName("nb")),
+							activity.NewServiceTask("na", activity.WithTaskAction("na")),
+							activity.NewServiceTask("nb", activity.WithTaskAction("nb")),
 							gateway.NewParallel("ngw"),
-							activity.NewServiceTask("nc", activity.WithActionName("nc")),
-							activity.NewServiceTask("nd", activity.WithActionName("nd")),
+							activity.NewServiceTask("nc", activity.WithTaskAction("nc")),
+							activity.NewServiceTask("nd", activity.WithTaskAction("nd")),
 							event.NewEnd("ns-end"),
 						},
 						Flows: []flow.SequenceFlow{
@@ -993,8 +993,8 @@ func TestValidateSubProcess(t *testing.T) {
 						Nodes: []model.Node{
 							event.NewStart("ns-start"),
 							gateway.NewExclusive("nsplit"),
-							activity.NewServiceTask("na", activity.WithActionName("na")),
-							activity.NewServiceTask("nb", activity.WithActionName("nb")),
+							activity.NewServiceTask("na", activity.WithTaskAction("na")),
+							activity.NewServiceTask("nb", activity.WithTaskAction("nb")),
 							gateway.NewParallel("nj"), // parallel join fed by exclusive split
 							event.NewEnd("ns-end"),
 						},
@@ -1037,7 +1037,7 @@ func TestValidateRejectsBadRetryPolicy(t *testing.T) {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a"),
+			activity.NewServiceTask("task", activity.WithTaskAction("a"),
 				activity.WithRetryPolicy(&model.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}),
 			),
 			event.NewEnd("end"),
@@ -1059,7 +1059,7 @@ func TestValidateRejectsRecoveryFlowNotFromNode(t *testing.T) {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRecoveryFlow("nope")),
+			activity.NewServiceTask("task", activity.WithTaskAction("a"), activity.WithRecoveryFlow("nope")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -1197,6 +1197,68 @@ func TestValidate_RejectsVersionBelow1(t *testing.T) {
 	}
 }
 
+// TestValidate_RejectsRecurringDeadlineTrigger checks that Validate rejects a
+// node whose WithWaitDeadline trigger is recurring (e.g. schedule.Every) — a
+// deadline must fire at most once, since the deadline flow/action is only
+// meaningful the first time it breaches. A one-shot trigger (AfterDuration)
+// remains accepted.
+func TestValidate_RejectsRecurringDeadlineTrigger(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "recurring deadline trigger (Every) is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.Every(24*time.Hour), "escalate")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDeadlineTriggerRecurring)
+			},
+		},
+		{
+			name: "one-shot deadline trigger (AfterDuration) is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrDeadlineTriggerRecurring)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
 func TestValidateCancelActions(t *testing.T) {
 	base := func(cancel []string) *model.ProcessDefinition {
 		return &model.ProcessDefinition{
@@ -1287,7 +1349,7 @@ func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
 		{
 			name: "signal catch + payload validation is rejected",
 			def: catchDef(event.NewIntermediateCatch("catch",
-				event.WithCatchSignal("go"), event.WithPayloadValidation(payload))),
+				event.WithSignalName("go"), event.WithPayloadValidation(payload))),
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrPayloadValidationRequiresMessage)
 			},
@@ -1303,7 +1365,7 @@ func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
 		{
 			name: "message catch + payload validation is allowed",
 			def: catchDef(event.NewIntermediateCatch("catch",
-				event.WithCatchMessage("msg", ""), event.WithPayloadValidation(payload))),
+				event.WithMessageCorrelator("msg", ""), event.WithPayloadValidation(payload))),
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
 			},
@@ -1313,6 +1375,269 @@ func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
 			def: recvDef(activity.NewReceiveTask("recv", "msg",
 				activity.WithPayloadValidation(payload))),
 			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidate_RejectsCompletionActionOnUnsupportedKind checks that Validate
+// rejects a node whose CompletionAction is set but whose kind does not honor
+// it (only UserTask/ReceiveTask do — engine.completionActionOf silently
+// ignores it on any other kind). The field lives on the shared ActivityFields
+// embed, so it can be set on e.g. a ServiceTask via direct construction (or a
+// hand-authored wire/YAML payload) even though no WithCompletionAction option
+// targets that kind; Validate is the only place that catches it.
+func TestValidate_RejectsCompletionActionOnUnsupportedKind(t *testing.T) {
+	svcWithCompletion := activity.NewServiceTask("svc", activity.WithTaskAction("act")).(activity.ServiceTask)
+	svcWithCompletion.CompletionAction = "notAllowed"
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "ServiceTask with CompletionAction is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					svcWithCompletion,
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "svc"},
+					{ID: "f2", Source: "svc", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompletionActionUnsupportedKind)
+			},
+		},
+		{
+			name: "UserTask with CompletionAction is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("u1", []string{"r"}, activity.WithCompletionAction("recordApproval")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "u1"},
+					{ID: "f2", Source: "u1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompletionActionUnsupportedKind)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "ReceiveTask with CompletionAction is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewReceiveTask("r1", "m", activity.WithCompletionAction("ackOrder")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "r1"},
+					{ID: "f2", Source: "r1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompletionActionUnsupportedKind)
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidate_RejectsDeadlineActionWithoutDeadline checks that Validate
+// rejects a node whose DeadlineAction is set but whose DeadlineTimer is zero
+// (i.e. WithDeadlineAction was used without WithWaitDeadline) — the action
+// would never fire since no deadline timer is ever armed.
+func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "DeadlineAction without WithWaitDeadline is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadlineAction("notify")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDeadlineActionWithoutDeadline)
+			},
+		},
+		{
+			name: "WithWaitDeadline + WithDeadlineAction together is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate"),
+						activity.WithDeadlineAction("notify")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrDeadlineActionWithoutDeadline)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "WithWaitDeadline alone (no action) is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrDeadlineActionWithoutDeadline)
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidate_RejectsCompensateActionWithoutForwardAction checks that Validate
+// rejects a UserTask/ReceiveTask whose CompensateAction is set but whose
+// CompletionAction is empty. For these two kinds the completion action IS the
+// forward action (engine.handleActionCompleted records compensation only when a
+// completion action runs), so a compensate action with no completion action can
+// never produce a compensation record — dead config. ServiceTask and other
+// activity kinds always have their own forward action (the task Action /
+// sub-work) and are NOT gated by this rule.
+func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "UserTask with CompensateAction but no CompletionAction is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("u1", []string{"r"}, activity.WithCompensateAction("refund")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "u1"},
+					{ID: "f2", Source: "u1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
+			},
+		},
+		{
+			name: "ReceiveTask with CompensateAction but no CompletionAction is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewReceiveTask("r1", "msg", activity.WithCompensateAction("refund")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "r1"},
+					{ID: "f2", Source: "r1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
+			},
+		},
+		{
+			name: "UserTask with both CompletionAction and CompensateAction is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("u1", []string{"r"},
+						activity.WithCompletionAction("recordApproval"),
+						activity.WithCompensateAction("refund")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "u1"},
+					{ID: "f2", Source: "u1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "ServiceTask with CompensateAction and no CompletionAction is unaffected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("svc", activity.WithTaskAction("charge-card"),
+						activity.WithCompensateAction("refund-card")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "svc"},
+					{ID: "f2", Source: "svc", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
 				require.NoError(t, err)
 			},
 		},

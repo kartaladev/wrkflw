@@ -24,13 +24,13 @@ func TestBaseNewAndSetName(t *testing.T) {
 }
 
 // TestActivityFieldsCarriers covers the unexported carrier methods that the
-// kind-agnostic accessors (DeadlineOf/ReminderOf/RetryPolicyOf/recoveryFlowOf)
+// kind-agnostic accessors (DeadlineOf/WaitActionOf/RetryPolicyOf/recoveryFlowOf)
 // dispatch on after the node kinds move into leaf packages.
 func TestActivityFieldsCarriers(t *testing.T) {
 	a := ActivityFields{
 		WaitFields: WaitFields{
 			DeadlineTimer: schedule.AfterDuration(2 * time.Hour), DeadlineFlow: "f", DeadlineAction: "act",
-			ReminderEvery: schedule.Every(time.Hour), ReminderAction: "r",
+			WaitEvery: schedule.Every(time.Hour), WaitAction: "r",
 		},
 		RetryPolicy:  &RetryPolicy{MaxAttempts: 5},
 		RecoveryFlow: "rec",
@@ -40,10 +40,10 @@ func TestActivityFieldsCarriers(t *testing.T) {
 	} else if d, ok := dt.Duration(); !ok || d != 2*time.Hour {
 		t.Fatalf("deadline() duration = %v", d)
 	}
-	if re, r := a.reminder(); r != "r" {
-		t.Fatalf("reminder() action = %q", r)
+	if re, r := a.waitAction(); r != "r" {
+		t.Fatalf("waitAction() action = %q", r)
 	} else if d, ok := re.Duration(); !ok || d != time.Hour {
-		t.Fatalf("reminder() duration = %v", d)
+		t.Fatalf("waitAction() duration = %v", d)
 	}
 	if a.retry().MaxAttempts != 5 {
 		t.Fatalf("retry() = %+v", a.retry())

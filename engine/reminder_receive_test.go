@@ -18,14 +18,14 @@ import (
 // receiveReminderDef returns a linear definition whose ReceiveTask parks awaiting
 // the "PaymentReceived" message and carries a recurring in-wait reminder:
 //
-//	Start → receive[ReceiveTask "PaymentReceived", WithWaitReminder(Every 30m, "nudge")] → End
+//	Start → receive[ReceiveTask "PaymentReceived", WithWaitAction(Every 30m, "nudge")] → End
 func receiveReminderDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-recv-reminder", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewReceiveTask("receive", "PaymentReceived",
-				activity.WithWaitReminder(schedule.Every(30*time.Minute), "nudge")),
+				activity.WithWaitAction(schedule.Every(30*time.Minute), "nudge")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

@@ -17,14 +17,14 @@ import (
 // catchReminderDef builds a linear definition whose intermediate catch event
 // waits on the given variant and carries a recurring in-wait reminder:
 //
-//	Start → catch[<variant>, WithCatchWaitReminder(Every 30m, "nudge")] → End
+//	Start → catch[<variant>, WithWaitAction(Every 30m, "nudge")] → End
 func catchReminderDef(catchOpt event.CatchOption) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-catch-reminder", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewIntermediateCatch("await", catchOpt,
-				event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge")),
+				event.WithWaitAction(schedule.Every(30*time.Minute), "nudge")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -47,13 +47,13 @@ func TestIntermediateCatchReminderFiresAndCancelsOnResolve(t *testing.T) {
 		resolve func(t *testing.T, s engine.InstanceState, intermediateID string) engine.Trigger
 	}{
 		"signal": {
-			catchOpt: event.WithCatchSignal("approved"),
+			catchOpt: event.WithSignalName("approved"),
 			resolve: func(_ *testing.T, _ engine.InstanceState, _ string) engine.Trigger {
 				return engine.NewSignalReceived(startAt.Add(45*time.Minute), "approved", nil)
 			},
 		},
 		"message": {
-			catchOpt: event.WithCatchMessage("PaymentReceived", ""),
+			catchOpt: event.WithMessageCorrelator("PaymentReceived", ""),
 			resolve: func(_ *testing.T, _ engine.InstanceState, _ string) engine.Trigger {
 				return engine.NewMessageReceived(startAt.Add(45*time.Minute), "PaymentReceived", "", nil)
 			},

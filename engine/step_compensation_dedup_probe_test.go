@@ -29,7 +29,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
-// dedupProbeDef: start → svc(CompensationAction "cancel-svc") → userTask → end.
+// dedupProbeDef: start → svc(CompensateAction "cancel-svc") → userTask → end.
 // svc is a single compensable activity; the userTask parks so we can inspect the
 // recorded compensation without the instance completing.
 func dedupProbeDef() *model.ProcessDefinition {
@@ -37,7 +37,7 @@ func dedupProbeDef() *model.ProcessDefinition {
 		ID: "dedup-probe", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensation("cancel-svc")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-svc")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},

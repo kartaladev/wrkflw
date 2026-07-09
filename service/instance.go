@@ -98,7 +98,6 @@ type actionBindingJSON struct {
 	NodeID   string `json:"node_id"`
 	NodeKind string `json:"node_kind"`
 	Action   string `json:"action,omitempty"`
-	Inline   bool   `json:"inline"`
 }
 
 // tokenStateString converts an engine.TokenState to its canonical string
@@ -194,14 +193,12 @@ func newInstanceJSON(def *model.ProcessDefinition, st engine.InstanceState) inst
 					NodeID:   n.ID(),
 					NodeKind: "serviceTask",
 					Action:   model.ActionOf(n),
-					Inline:   model.InlineActionOf(n) != nil,
 				})
 			case model.KindBusinessRuleTask:
 				bindings = append(bindings, actionBindingJSON{
 					NodeID:   n.ID(),
 					NodeKind: "businessRuleTask",
 					Action:   model.ActionOf(n),
-					Inline:   model.InlineActionOf(n) != nil,
 				})
 			}
 		}

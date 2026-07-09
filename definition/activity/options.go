@@ -1,9 +1,6 @@
 package activity
 
 import (
-	"context"
-
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
@@ -11,11 +8,11 @@ import (
 
 // Option-scoping convention: an option valid on only a subset of activity kinds
 // MUST return a narrow anonymous interface embedding just those kinds' option
-// interfaces (e.g. WithActionName returns interface { ServiceTaskOption;
+// interfaces (e.g. WithTaskAction returns interface { ServiceTaskOption;
 // BusinessRuleOption }), so mis-applying it is a compile-time error. The broad
 // activityOnlyOption type means "valid on EVERY activity kind" and is reserved
-// for genuinely-universal options (WithRetryPolicy, WithCompensation,
-// WithDeadline, WithRecoveryFlow, WithCancelHandler). There is no runtime lint
+// for genuinely-universal options (WithRetryPolicy, WithCompensateAction,
+// WithWaitDeadline, WithDeadlineAction, WithRecoveryFlow, WithCancelAction). There is no runtime lint
 // pass; the type system is the guardrail.
 
 // --- option interfaces ---
@@ -72,36 +69,12 @@ type actionNameOpt struct{ name string }
 func (o actionNameOpt) applyServiceTask(s *ServiceTask)       { s.Action = o.name }
 func (o actionNameOpt) applyBusinessRule(b *BusinessRuleTask) { b.Action = o.name }
 
-// WithActionName sets the catalog action name. Resolved scoped→global at runtime.
-// Mutually exclusive with WithAction/WithActionFunc (Build reports a conflict).
-func WithActionName(name string) interface {
+// WithTaskAction sets the catalog action name. Resolved scoped→global at runtime.
+func WithTaskAction(name string) interface {
 	ServiceTaskOption
 	BusinessRuleOption
 } {
 	return actionNameOpt{name}
-}
-
-type inlineActionOpt struct{ a action.Action }
-
-func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.Inline = o.a }
-func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.Inline = o.a }
-
-// WithAction attaches a node-local inline action.Action available to this node
-// only. Mutually exclusive with WithActionName (Build reports a conflict). Inline
-// actions are never serialized; a persisted definition must re-attach them in code.
-func WithAction(a action.Action) interface {
-	ServiceTaskOption
-	BusinessRuleOption
-} {
-	return inlineActionOpt{a}
-}
-
-// WithActionFunc is WithAction sugar wrapping a plain function as action.ActionFunc.
-func WithActionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) interface {
-	ServiceTaskOption
-	BusinessRuleOption
-} {
-	return inlineActionOpt{actionFunc(fn)}
 }
 
 // --- shared activity-field options (work on all activity constructors) ---
@@ -134,52 +107,81 @@ func WithRecoveryFlow(flowID string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.RecoveryFlow = flowID })
 }
 
-// WithCompensation sets the action.Action name invoked during rollback.
-func WithCompensation(action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) { a.CompensationAction = action })
+// WithCompensateAction sets the action.Action name invoked during rollback.
+func WithCompensateAction(action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.CompensateAction = action })
 }
 
-// WithCancelHandler sets the action.Action run when the node is interrupted.
-func WithCancelHandler(action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) { a.CancelHandler = action })
+// WithCancelAction sets the action.Action run when the node is interrupted.
+func WithCancelAction(action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.CancelAction = action })
 }
 
-// WithDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow, and
-// DeadlineAction on an activity node. Use schedule.AfterDuration, schedule.AfterExpr,
-// or any other TriggerSpec constructor.
-func WithDeadline(t schedule.TriggerSpec, flowID, action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) { a.DeadlineTimer, a.DeadlineFlow, a.DeadlineAction = t, flowID, action })
+// WithWaitDeadline sets the DeadlineTimer (schedule.TriggerSpec) and DeadlineFlow
+// on an activity node — the trigger governing when the deadline fires and the
+// sequence flow taken on breach. Use schedule.AfterDuration, schedule.AfterExpr,
+// or any other TriggerSpec constructor. Pair with WithDeadlineAction to also run
+// an action on breach.
+func WithWaitDeadline(t schedule.TriggerSpec, flowID string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.DeadlineTimer, a.DeadlineFlow = t, flowID })
 }
 
-// reminderOpt narrows WithWaitReminder to only the activity kinds whose engine
-// strategy actually arms an in-wait reminder: UserTask and ReceiveTask.
-// IntermediateCatchEvent uses the event-side event.WithCatchWaitReminder.
-// Applying a reminder to any other activity kind (ServiceTask, SendTask,
+// WithDeadlineAction sets the optional action.Action name invoked on deadline
+// breach, in addition to (or instead of) taking DeadlineFlow.
+func WithDeadlineAction(action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.DeadlineAction = action })
+}
+
+// waitActionOpt narrows WithWaitAction to only the activity kinds whose engine
+// strategy actually arms an in-wait action: UserTask and ReceiveTask.
+// IntermediateCatchEvent uses the event-side event.WithWaitAction.
+// Applying an in-wait action to any other activity kind (ServiceTask, SendTask,
 // BusinessRuleTask, SubProcess, CallActivity) is a compile-time error.
-type reminderOpt struct {
+type waitActionOpt struct {
 	every  schedule.TriggerSpec
 	action string
 }
 
-func (o reminderOpt) applyUserTask(u *UserTask) {
-	u.ReminderEvery, u.ReminderAction = o.every, o.action
+func (o waitActionOpt) applyUserTask(u *UserTask) {
+	u.WaitEvery, u.WaitAction = o.every, o.action
 }
 
-func (o reminderOpt) applyReceiveTask(r *ReceiveTask) {
-	r.ReminderEvery, r.ReminderAction = o.every, o.action
+func (o waitActionOpt) applyReceiveTask(r *ReceiveTask) {
+	r.WaitEvery, r.WaitAction = o.every, o.action
 }
 
-// WithWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// WithWaitAction sets the WaitEvery (schedule.TriggerSpec) and WaitAction
 // on a UserTask or ReceiveTask — the only activity kinds whose engine strategy arms
-// an in-wait reminder. Passing it to any other activity constructor is a compile
-// error (see reminderOpt). Use schedule.Every, schedule.EveryExpr, or any other
+// an in-wait action. Passing it to any other activity constructor is a compile
+// error (see waitActionOpt). Use schedule.Every, schedule.EveryExpr, or any other
 // recurring TriggerSpec constructor. For IntermediateCatchEvent, use
-// event.WithCatchWaitReminder instead.
-func WithWaitReminder(t schedule.TriggerSpec, action string) interface {
+// event.WithWaitAction instead.
+func WithWaitAction(t schedule.TriggerSpec, action string) interface {
 	UserTaskOption
 	ReceiveTaskOption
 } {
-	return reminderOpt{t, action}
+	return waitActionOpt{t, action}
+}
+
+// completionActionOpt narrows WithCompletionAction to only the activity kinds
+// whose engine strategy runs a completion action: UserTask and ReceiveTask.
+// Applying a completion action to any other activity kind is a compile-time error.
+type completionActionOpt struct{ action string }
+
+func (o completionActionOpt) applyUserTask(u *UserTask)       { u.CompletionAction = o.action }
+func (o completionActionOpt) applyReceiveTask(r *ReceiveTask) { r.CompletionAction = o.action }
+
+// WithCompletionAction attaches a catalog action run when a UserTask or
+// ReceiveTask completion is triggered (human completion / message receive),
+// after the completion input is merged. Its returned vars merge into the
+// instance variables. Failure is governed by the node's WithRetryPolicy /
+// error boundary (same machinery as a ServiceTask action). Distinct from
+// WithCompletionValidation, which gates the completion input; this runs after it.
+func WithCompletionAction(name string) interface {
+	UserTaskOption
+	ReceiveTaskOption
+} {
+	return completionActionOpt{name}
 }
 
 // --- UserTask-only options ---

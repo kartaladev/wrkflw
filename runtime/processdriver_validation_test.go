@@ -10,7 +10,6 @@ package runtime_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -31,16 +30,14 @@ import (
 )
 
 // startValidationDef returns start[validated: amount > 0] → svc → end. The
-// service task uses an inline no-op action so the test needs no catalog.
+// service task resolves "noop" against the shared noopCatalog() helper
+// (defined in expression_timeout_test.go).
 func startValidationDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "start-validation", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start", event.WithInputValidation(vexpr.New("amount > 0"))),
-			activity.NewServiceTask("svc", activity.WithActionFunc(
-				func(_ context.Context, _ map[string]any) (map[string]any, error) {
-					return nil, nil
-				})),
+			activity.NewServiceTask("svc", activity.WithTaskAction("noop")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -94,7 +91,7 @@ func TestValidateInputStart(t *testing.T) {
 
 			fc := clockwork.NewFakeClock()
 			store := runtimetest.MustMemStore(t)
-			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
+			r := runtimetest.MustRunner(t, noopCatalog(), store, runtime.WithClock(fc))
 			def := startValidationDef()
 
 			st, err := r.Drive(t.Context(), def, tc.instanceID, tc.vars)
@@ -324,7 +321,7 @@ func catchMessageValidationDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewIntermediateCatch("confirm-catch",
-				event.WithCatchMessage("confirm", ""),
+				event.WithMessageCorrelator("confirm", ""),
 				event.WithPayloadValidation(vexpr.New("ok == true"))),
 			event.NewEnd("end"),
 		},

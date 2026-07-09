@@ -59,7 +59,7 @@ func linearDef() *model.ProcessDefinition {
 		ID: "greeting", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -112,7 +112,7 @@ func signalCatchDef(signalName string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("wait-signal", event.WithCatchSignal(signalName)),
+			event.NewIntermediateCatch("wait-signal", event.WithSignalName(signalName)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -129,7 +129,7 @@ func messageCatchDef(msgName string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewIntermediateCatch("wait-msg", event.WithMessageCorrelator(msgName, "orderId")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

@@ -1,7 +1,6 @@
 package model
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
@@ -35,40 +34,51 @@ func DeadlineOf(n Node) (schedule.TriggerSpec, string, string) {
 	return schedule.TriggerSpec{}, "", ""
 }
 
-// ReminderOf returns the ReminderEvery (schedule.TriggerSpec) and ReminderAction
-// of a Node that carries reminder fields (activities and IntermediateCatchEvent).
+// WaitActionOf returns the WaitEvery (schedule.TriggerSpec) and WaitAction
+// of a Node that carries in-wait fields (activities and IntermediateCatchEvent).
 // Returns a zero TriggerSpec and an empty string for nodes that do not carry
-// reminder fields.
-func ReminderOf(n Node) (schedule.TriggerSpec, string) {
+// in-wait fields.
+func WaitActionOf(n Node) (schedule.TriggerSpec, string) {
 	if w, ok := n.(interface {
-		reminder() (schedule.TriggerSpec, string)
+		waitAction() (schedule.TriggerSpec, string)
 	}); ok {
-		return w.reminder()
+		return w.waitAction()
 	}
 	return schedule.TriggerSpec{}, ""
+}
+
+// CompletionActionOf returns the CompletionAction field of a node that carries
+// ActivityFields (any activity kind), or "" for nodes that do not carry it at
+// all (events, gateways). It is kind-agnostic — it does not check whether the
+// concrete kind actually honors CompletionAction at execution time (only
+// UserTask and ReceiveTask do); combine it with Node.Kind() where that
+// distinction matters.
+func CompletionActionOf(n Node) string {
+	if a, ok := n.(interface{ completionAction() string }); ok {
+		return a.completionAction()
+	}
+	return ""
+}
+
+// CompensateActionOf returns the CompensateAction field of a node that carries
+// ActivityFields (any activity kind), or "" for nodes that do not carry it at
+// all (events, gateways). It is kind-agnostic — it does not check whether the
+// concrete kind can ever produce a compensation record at execution time (only
+// a node that also ran a forward action can); combine it with Node.Kind() and
+// CompletionActionOf where that distinction matters (see
+// ErrCompensateActionWithoutForwardAction).
+func CompensateActionOf(n Node) string {
+	if a, ok := n.(interface{ compensateAction() string }); ok {
+		return a.compensateAction()
+	}
+	return ""
 }
 
 // ActionOf returns the Action field of a node that has one (ServiceTask or
 // BusinessRuleTask), or "" for all other kinds.
 func ActionOf(n Node) string {
-	if t, ok := n.(interface {
-		taskAction() (string, action.Action)
-	}); ok {
-		name, _ := t.taskAction()
-		return name
+	if t, ok := n.(interface{ taskAction() string }); ok {
+		return t.taskAction()
 	}
 	return ""
-}
-
-// InlineActionOf returns the node-local inline action.Action of a ServiceTask or
-// BusinessRuleTask, or nil when the node has none (or is another kind). Inline
-// actions are never serialized; a node decoded from JSONB always returns nil.
-func InlineActionOf(n Node) action.Action {
-	if t, ok := n.(interface {
-		taskAction() (string, action.Action)
-	}); ok {
-		_, inline := t.taskAction()
-		return inline
-	}
-	return nil
 }

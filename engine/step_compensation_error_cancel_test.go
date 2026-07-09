@@ -31,7 +31,7 @@ func cancelWithCompDef() *model.ProcessDefinition {
 		ID: "cancel-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
 			activity.NewUserTask("user", nil),
 			event.NewEnd("end"),
 		},
@@ -51,8 +51,8 @@ func errorWithCompDef() *model.ProcessDefinition {
 		ID: "error-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc1", activity.WithActionName("charge"), activity.WithCompensation("refund")),
-			activity.NewServiceTask("svc2", activity.WithActionName("notify")),
+			activity.NewServiceTask("svc1", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
+			activity.NewServiceTask("svc2", activity.WithTaskAction("notify")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -71,8 +71,8 @@ func twoCompNodesDef() *model.ProcessDefinition {
 		ID: "two-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc1", activity.WithActionName("step1"), activity.WithCompensation("undo1")),
-			activity.NewServiceTask("svc2", activity.WithActionName("step2"), activity.WithCompensation("undo2")),
+			activity.NewServiceTask("svc1", activity.WithTaskAction("step1"), activity.WithCompensateAction("undo1")),
+			activity.NewServiceTask("svc2", activity.WithTaskAction("step2"), activity.WithCompensateAction("undo2")),
 			activity.NewUserTask("user", nil),
 			event.NewEnd("end"),
 		},
@@ -107,7 +107,7 @@ func findFailInstance(cmds []engine.Command) (engine.FailInstance, bool) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-// TestCancelWithCompensation verifies that CancelRequested on an instance with
+// TestCancelWithCompensateAction verifies that CancelRequested on an instance with
 // completed compensable nodes routes through the compensation walk before
 // terminating.
 //
@@ -115,7 +115,7 @@ func findFailInstance(cmds []engine.Command) (engine.FailInstance, bool) {
 //  1. Start → svc completes (compensable "refund") → user task parked
 //  2. CancelRequested → Status=StatusCompensating, InvokeAction{Name:"refund"} emitted
 //  3. ActionCompleted for the comp action → StatusTerminated + FailInstance{Err:"cancelled"}
-func TestCancelWithCompensation(t *testing.T) {
+func TestCancelWithCompensateAction(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 	def := cancelWithCompDef()
 
@@ -165,7 +165,7 @@ func TestCancelWithCompensation(t *testing.T) {
 	assert.Equal(t, "cancelled", fi.Err)
 }
 
-// TestErrorWithCompensation verifies that an unhandled ActionFailed on an instance
+// TestErrorWithCompensateAction verifies that an unhandled ActionFailed on an instance
 // with completed compensable nodes routes through the compensation walk before
 // setting StatusFailed.
 //
@@ -173,7 +173,7 @@ func TestCancelWithCompensation(t *testing.T) {
 //  1. Start → svc1 completes (compensable "refund") → svc2 starts
 //  2. svc2 fails (no retry/boundary) → Status=StatusCompensating, "refund" emitted
 //  3. ActionCompleted for comp action → StatusFailed + FailInstance{Err:"notify-err"}
-func TestErrorWithCompensation(t *testing.T) {
+func TestErrorWithCompensateAction(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 	def := errorWithCompDef()
 
@@ -230,12 +230,12 @@ func TestErrorWithCompensation(t *testing.T) {
 // records still terminates immediately (unchanged behaviour).
 func TestEmptyRecordsCancelImmediate(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
-	// Non-compensable process: no CompensationAction on svc.
+	// Non-compensable process: no CompensateAction on svc.
 	def := &model.ProcessDefinition{
 		ID: "no-comp-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge")),
 			activity.NewUserTask("user", nil),
 			event.NewEnd("end"),
 		},
@@ -275,7 +275,7 @@ func TestEmptyRecordsErrorImmediate(t *testing.T) {
 		ID: "no-comp-err-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -463,7 +463,7 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 			ID: "no-double-nested", Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("inner-start"),
-				activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+				activity.NewServiceTask("inner-svc", activity.WithTaskAction("book-inner"), activity.WithCompensateAction("cancel-inner")),
 				event.NewEnd("inner-end"),
 			},
 			Flows: []flow.SequenceFlow{

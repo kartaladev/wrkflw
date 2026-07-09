@@ -5,45 +5,58 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
-// compensationActionOf returns the CompensationAction of an activity node, or "".
-func compensationActionOf(n model.Node) string {
+// compensateActionOf returns the CompensateAction of an activity node, or "".
+func compensateActionOf(n model.Node) string {
 	switch v := n.(type) {
 	case activity.ServiceTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.UserTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.ReceiveTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.SendTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.BusinessRuleTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.SubProcess:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.CallActivity:
-		return v.CompensationAction
+		return v.CompensateAction
 	default:
 		return ""
 	}
 }
 
-// cancelHandlerOf returns the CancelHandler of an activity node, or "".
-func cancelHandlerOf(n model.Node) string {
+// completionActionOf returns the CompletionAction of a completion-triggered
+// activity node (UserTask, ReceiveTask), or "".
+func completionActionOf(n model.Node) string {
+	switch v := n.(type) {
+	case activity.UserTask:
+		return v.CompletionAction
+	case activity.ReceiveTask:
+		return v.CompletionAction
+	default:
+		return ""
+	}
+}
+
+// cancelActionOf returns the CancelAction of an activity node, or "".
+func cancelActionOf(n model.Node) string {
 	switch v := n.(type) {
 	case activity.ServiceTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.UserTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.ReceiveTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.SendTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.BusinessRuleTask:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.SubProcess:
-		return v.CancelHandler
+		return v.CancelAction
 	case activity.CallActivity:
-		return v.CancelHandler
+		return v.CancelAction
 	default:
 		return ""
 	}

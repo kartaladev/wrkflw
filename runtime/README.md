@@ -81,7 +81,7 @@ def := &model.ProcessDefinition{
     ID: "greeting", Version: 1,
     Nodes: []definition.Node{
         event.NewStart("start"),
-        activity.NewServiceTask("greet", activity.WithActionName("greet")),
+        activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
         event.NewEnd("end"),
     },
     Flows: []definition.SequenceFlow{
@@ -340,8 +340,8 @@ constructing the runner.
 ### Timers and deadlines
 
 Wire `WithScheduler` to enable timer nodes (`IntermediateCatchEvent` with
-`WithCatchTimer`), deadlines (`WithDeadline` on any activity), and reminders
-(`WithWaitReminder`). Use `NewMemScheduler` for tests:
+`WithCatchTimer`), deadlines (`WithWaitDeadline` on any activity), and reminders
+(`WithWaitAction`). Use `NewMemScheduler` for tests:
 
 ```go
 fc    := clockwork.NewFakeClockAt(startAt)

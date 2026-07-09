@@ -51,11 +51,11 @@ func main() {
 	// book and pay each carry a compensation action; ship has none and fails.
 	def, err := definition.NewBuilder("booking-saga", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("book", activity.WithActionName("book"),
-			activity.WithCompensation("cancel-booking"))).
-		Add(activity.NewServiceTask("pay", activity.WithActionName("pay"),
-			activity.WithCompensation("refund"))).
-		Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+		Add(activity.NewServiceTask("book", activity.WithTaskAction("book"),
+			activity.WithCompensateAction("cancel-booking"))).
+		Add(activity.NewServiceTask("pay", activity.WithTaskAction("pay"),
+			activity.WithCompensateAction("refund"))).
+		Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship"))).
 		// Catch-all boundary error keeps recorded compensations intact for the
 		// explicit rollback below.
 		Add(event.NewBoundary("ship-err", "ship",

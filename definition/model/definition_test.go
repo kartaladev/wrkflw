@@ -20,7 +20,7 @@ func linearDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -85,26 +85,26 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 	}{
 		{
 			name: "signal-catch",
-			node: event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("order.placed")),
+			node: event.NewIntermediateCatch("sig-catch", event.WithSignalName("order.placed")),
 		},
 		{
 			name: "message-catch",
-			node: event.NewIntermediateCatch("msg-catch", event.WithCatchMessage("payment.received", "order.id")),
+			node: event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("payment.received", "order.id")),
 		},
 		{
 			name: "signal-throw",
-			node: event.NewIntermediateThrow("sig-throw", event.WithThrowSignal("order.shipped")),
+			node: event.NewIntermediateThrow("sig-throw", event.WithThrowSignalName("order.shipped")),
 		},
 		{
 			// Zero-value NonInterrupting (false) = interrupting — the default.
 			name: "boundary-interrupting-default",
-			node: event.NewBoundary("boundary-1", "task-1", event.WithBoundarySignal("cancel.signal")),
+			node: event.NewBoundary("boundary-1", "task-1", event.WithSignalName("cancel.signal")),
 		},
 		{
 			// NonInterrupting: true = non-interrupting boundary event.
 			name: "boundary-non-interrupting",
 			node: event.NewBoundary("boundary-2", "task-2",
-				event.WithBoundaryMessage("reminder.msg", ""),
+				event.WithMessageCorrelator("reminder.msg", ""),
 				event.WithBoundaryNonInterrupting(),
 			),
 		},
@@ -153,7 +153,7 @@ func TestNodeSubProcessField(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("ns-start"),
-			activity.NewServiceTask("ns-task", activity.WithActionName("inner-action")),
+			activity.NewServiceTask("ns-task", activity.WithTaskAction("inner-action")),
 			event.NewEnd("ns-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -189,7 +189,7 @@ func TestNodeEventSubProcessField(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			// The trigger is encoded on the nested StartEvent's SignalName field.
-			event.NewStart("es-start", event.WithStartSignal("cancel.signal")),
+			event.NewStart("es-start", event.WithSignalName("cancel.signal")),
 			event.NewEnd("es-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -265,7 +265,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "deadline-with-flow-and-action",
 			node: activity.NewUserTask("review", nil,
 				activity.WithName("Review"),
-				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach-flow", "notify-manager"),
+				activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach-flow"), activity.WithDeadlineAction("notify-manager"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
@@ -281,23 +281,23 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "reminder-every-with-action",
 			node: activity.NewUserTask("approve", nil,
 				activity.WithName("Approve"),
-				activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
+				activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
-				d, ok := ut.ReminderEvery.Duration()
+				d, ok := ut.WaitEvery.Duration()
 				require.True(t, ok)
 				assert.Equal(t, 4*time.Hour, d)
-				assert.Equal(t, "send-reminder", ut.ReminderAction)
+				assert.Equal(t, "send-reminder", ut.WaitAction)
 			},
 		},
 		{
 			name: "all-six-fields",
 			node: activity.NewUserTask("task-full", nil,
 				activity.WithName("Full Task"),
-				activity.WithDeadline(schedule.AfterDuration(48*time.Hour), "escalate", "escalate-action"),
-				activity.WithWaitReminder(schedule.Every(6*time.Hour), "remind-action"),
+				activity.WithWaitDeadline(schedule.AfterDuration(48*time.Hour), "escalate"), activity.WithDeadlineAction("escalate-action"),
+				activity.WithWaitAction(schedule.Every(6*time.Hour), "remind-action"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
@@ -307,10 +307,10 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 				assert.Equal(t, 48*time.Hour, dd)
 				assert.Equal(t, "escalate", ut.DeadlineFlow)
 				assert.Equal(t, "escalate-action", ut.DeadlineAction)
-				rd, ok := ut.ReminderEvery.Duration()
+				rd, ok := ut.WaitEvery.Duration()
 				require.True(t, ok)
 				assert.Equal(t, 6*time.Hour, rd)
-				assert.Equal(t, "remind-action", ut.ReminderAction)
+				assert.Equal(t, "remind-action", ut.WaitAction)
 			},
 		},
 	}

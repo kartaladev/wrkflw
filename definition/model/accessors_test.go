@@ -18,7 +18,7 @@ import (
 
 func TestRetryPolicyOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 5}
-	n := activity.NewServiceTask("a", activity.WithActionName("act"), activity.WithRetryPolicy(p))
+	n := activity.NewServiceTask("a", activity.WithTaskAction("act"), activity.WithRetryPolicy(p))
 	if model.RetryPolicyOf(n) != p {
 		t.Fatal("RetryPolicyOf did not return the activity's policy")
 	}
@@ -30,7 +30,7 @@ func TestRetryPolicyOf(t *testing.T) {
 		activity.NewUserTask("ut", nil, activity.WithRetryPolicy(p)),
 		activity.NewReceiveTask("rt", "msg", activity.WithRetryPolicy(p)),
 		activity.NewSendTask("st", "msg", activity.WithRetryPolicy(p)),
-		activity.NewBusinessRuleTask("brt", activity.WithActionName("act"), activity.WithRetryPolicy(p)),
+		activity.NewBusinessRuleTask("brt", activity.WithTaskAction("act"), activity.WithRetryPolicy(p)),
 		activity.NewSubProcess("sp", nil, activity.WithRetryPolicy(p)),
 		activity.NewCallActivity("ca", model.Latest("ref"), activity.WithRetryPolicy(p)),
 	}
@@ -73,20 +73,20 @@ func TestDeadlineOf(t *testing.T) {
 	}
 
 	t.Run("service task with deadline", func(t *testing.T) {
-		n := activity.NewServiceTask("st", activity.WithActionName("act"),
-			activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"))
+		n := activity.NewServiceTask("st", activity.WithTaskAction("act"),
+			activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), activity.WithDeadlineAction("sla-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "sla-flow", "sla-act", 24*time.Hour)
 	})
 	t.Run("user task with deadline", func(t *testing.T) {
 		n := activity.NewUserTask("ut", nil,
-			activity.WithDeadline(schedule.AfterDuration(2*time.Hour), "ut-flow", "ut-act"))
+			activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "ut-flow"), activity.WithDeadlineAction("ut-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "ut-flow", "ut-act", 2*time.Hour)
 	})
 	t.Run("intermediate catch event with deadline", func(t *testing.T) {
 		n := event.NewIntermediateCatch("ice",
-			event.WithCatchDeadline(schedule.AfterDuration(48*time.Hour), "ice-flow", "ice-act"))
+			event.WithWaitDeadline(schedule.AfterDuration(48*time.Hour), "ice-flow"), event.WithDeadlineAction("ice-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "ice-flow", "ice-act", 48*time.Hour)
 	})
@@ -98,35 +98,44 @@ func TestDeadlineOf(t *testing.T) {
 	})
 }
 
-func TestReminderOf(t *testing.T) {
+func TestWaitActionOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
 	n := activity.NewUserTask("ut", nil,
 		activity.WithRetryPolicy(p),
-		activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
+		activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 	)
-	every, act := model.ReminderOf(n)
+	every, act := model.WaitActionOf(n)
 	d, ok := every.Duration()
 	require.True(t, ok)
 	assert.Equal(t, 4*time.Hour, d)
 	assert.Equal(t, "send-reminder", act)
 
 	// Non-activity returns zero TriggerSpec + empty action
-	every, act = model.ReminderOf(event.NewStart("s"))
+	every, act = model.WaitActionOf(event.NewStart("s"))
 	assert.True(t, every.IsZero())
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
-	ice := event.NewIntermediateCatch("ice", event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "ice-remind"))
-	every, act = model.ReminderOf(ice)
+	ice := event.NewIntermediateCatch("ice", event.WithWaitAction(schedule.Every(2*time.Hour), "ice-remind"))
+	every, act = model.WaitActionOf(ice)
 	d, ok = every.Duration()
 	require.True(t, ok)
 	assert.Equal(t, 2*time.Hour, d)
 	assert.Equal(t, "ice-remind", act)
 }
 
+func TestCompletionActionOf(t *testing.T) {
+	assert.Equal(t, "recordApproval",
+		model.CompletionActionOf(activity.NewUserTask("ut", nil, activity.WithCompletionAction("recordApproval"))))
+	assert.Equal(t, "ackOrder",
+		model.CompletionActionOf(activity.NewReceiveTask("rt", "msg", activity.WithCompletionAction("ackOrder"))))
+	assert.Equal(t, "", model.CompletionActionOf(activity.NewUserTask("ut2", nil)))
+	assert.Equal(t, "", model.CompletionActionOf(event.NewStart("s")))
+}
+
 func TestActionOf(t *testing.T) {
-	assert.Equal(t, "charge-card", model.ActionOf(activity.NewServiceTask("st", activity.WithActionName("charge-card"))))
-	assert.Equal(t, "apply-discount", model.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithActionName("apply-discount"))))
+	assert.Equal(t, "charge-card", model.ActionOf(activity.NewServiceTask("st", activity.WithTaskAction("charge-card"))))
+	assert.Equal(t, "apply-discount", model.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithTaskAction("apply-discount"))))
 	assert.Equal(t, "", model.ActionOf(activity.NewUserTask("ut", nil)))
 	assert.Equal(t, "", model.ActionOf(event.NewStart("s")))
 }
@@ -141,23 +150,23 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start", event.WithName("Start")),
 			activity.NewServiceTask("charge",
-				activity.WithActionName("charge-card"),
-				activity.WithCompensation("refund-card"),
+				activity.WithTaskAction("charge-card"),
+				activity.WithCompensateAction("refund-card"),
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),
-				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
-				activity.WithCancelHandler("cancel-charge"),
+				activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), activity.WithDeadlineAction("sla-act"),
+				activity.WithCancelAction("cancel-charge"),
 			),
 			activity.NewUserTask("approve", []string{"manager", "admin"},
 				activity.WithEligibilityExpr("amount > 1000"),
 				activity.WithName("Approve"),
-				activity.WithWaitReminder(schedule.Every(4*time.Hour), "remind-act"),
+				activity.WithWaitAction(schedule.Every(4*time.Hour), "remind-act"),
 			),
 			event.NewIntermediateCatch("wait",
 				event.WithCatchTimer(schedule.AfterExpr("PT30M")),
 				event.WithName("Wait"),
 			),
-			event.NewIntermediateThrow("signal-done", event.WithThrowSignal("order.done")),
+			event.NewIntermediateThrow("signal-done", event.WithThrowSignalName("order.done")),
 			event.NewBoundary("error-bnd", "charge",
 				event.WithBoundaryErrorCode("ERR_PAYMENT"),
 			),
@@ -205,9 +214,9 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	charge, ok := restored.Nodes[1].(activity.ServiceTask)
 	require.True(t, ok)
 	assert.Equal(t, "charge-card", charge.Action)
-	assert.Equal(t, "refund-card", charge.CompensationAction)
+	assert.Equal(t, "refund-card", charge.CompensateAction)
 	assert.Equal(t, "f-error", charge.RecoveryFlow)
-	assert.Equal(t, "cancel-charge", charge.CancelHandler)
+	assert.Equal(t, "cancel-charge", charge.CancelAction)
 	// DeadlineTimer is now schedule.TriggerSpec; verify via Duration()
 	deadlineDur, deadlineOk := charge.DeadlineTimer.Duration()
 	require.True(t, deadlineOk, "DeadlineTimer should be set")
@@ -220,9 +229,9 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, approve.CandidateRoles)
 	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
-	// ReminderEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
-	reminderDur, reminderOk := approve.ReminderEvery.Duration()
-	require.True(t, reminderOk, "ReminderEvery should be set on UserTask")
+	// WaitEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
+	reminderDur, reminderOk := approve.WaitEvery.Duration()
+	require.True(t, reminderOk, "WaitEvery should be set on UserTask")
 	assert.Equal(t, 4*time.Hour, reminderDur)
 }
 
@@ -235,7 +244,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 		"version": 1,
 		"nodes": [
 			{"id": "start", "kind": "startEvent", "name": "Start"},
-			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensationAction": "refund-card", "cancelHandler": "cancel-charge"},
+			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensateAction": "refund-card", "cancelAction": "cancel-charge"},
 			{"id": "approve", "kind": "userTask", "candidateRoles": ["manager"], "eligibilityExpr": "amount > 1000"},
 			{"id": "wait", "kind": "intermediateCatchEvent", "timerDuration": "PT1H"},
 			{"id": "throw", "kind": "intermediateThrowEvent", "signalName": "done"},
@@ -271,8 +280,8 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	st, ok := def.Nodes[1].(activity.ServiceTask)
 	require.True(t, ok, "nodes[1] should be ServiceTask")
 	assert.Equal(t, "charge-card", st.Action)
-	assert.Equal(t, "refund-card", st.CompensationAction)
-	assert.Equal(t, "cancel-charge", st.CancelHandler)
+	assert.Equal(t, "refund-card", st.CompensateAction)
+	assert.Equal(t, "cancel-charge", st.CancelAction)
 
 	ut, ok := def.Nodes[2].(activity.UserTask)
 	require.True(t, ok, "nodes[2] should be UserTask")
@@ -348,19 +357,19 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	assert.Equal(t, "charge", compThrow.CompensateRef)
 }
 
-// TestDeadlineReminderTyped verifies that DeadlineOf and ReminderOf return
-// schedule.TriggerSpec values (Task 3: typed deadline/reminder migration).
+// TestDeadlineReminderTyped verifies that DeadlineOf and WaitActionOf return
+// schedule.TriggerSpec values (Task 3: typed deadline/wait migration).
 func TestDeadlineReminderTyped(t *testing.T) {
 	n := activity.NewUserTask("ut", nil,
-		activity.WithDeadline(schedule.AfterDuration(2*time.Hour), "sla", "notify"),
-		activity.WithWaitReminder(schedule.Every(time.Hour), "remind"),
+		activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "sla"), activity.WithDeadlineAction("notify"),
+		activity.WithWaitAction(schedule.Every(time.Hour), "remind"),
 	)
 	spec, flow, action := model.DeadlineOf(n)
 	if d, ok := spec.Duration(); !ok || d != 2*time.Hour || flow != "sla" || action != "notify" {
 		t.Fatalf("DeadlineOf = %v %q %q", d, flow, action)
 	}
-	every, ra := model.ReminderOf(n)
+	every, ra := model.WaitActionOf(n)
 	if d, ok := every.Duration(); !ok || d != time.Hour || ra != "remind" {
-		t.Fatalf("ReminderOf = %v %q", d, ra)
+		t.Fatalf("WaitActionOf = %v %q", d, ra)
 	}
 }

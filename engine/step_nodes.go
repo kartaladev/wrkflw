@@ -90,7 +90,6 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
@@ -121,7 +120,6 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
@@ -423,12 +421,12 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 					return cmds, false, fmt.Errorf("workflow-engine: sub-process exit: %w", err)
 				}
 
-				// If the sub-process node itself carries a CompensationAction, record
+				// If the sub-process node itself carries a CompensateAction, record
 				// it in the parent scope. The snapshot is taken after the scope is
 				// closed (consistent: the sub-process completed at this point).
 				if spNode, spOK := parentDef.Node(subNodeID); spOK {
-					if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensationAction != "" {
-						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensationAction, c.at, copyVars(c.s.Variables))
+					if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensateAction != "" {
+						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensateAction, c.at, copyVars(c.s.Variables))
 					}
 				}
 
@@ -498,7 +496,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 // reminder — the human-task token for a UserTask, the parked token id for a
 // ReceiveTask or IntermediateCatchEvent.
 func armWaitReminder(c *stepCtx, tok *Token, node model.Node, cancelKey string, cmds []Command) ([]Command, error) {
-	rawSpec, _ := model.ReminderOf(node)
+	rawSpec, _ := model.WaitActionOf(node)
 	reminderSpec, err := ResolveTrigger(c.eval, rawSpec, c.s.Variables)
 	if err != nil {
 		return cmds, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)

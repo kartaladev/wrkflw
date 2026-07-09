@@ -17,7 +17,7 @@
 //
 //	def, err := definition.NewBuilder("order", 1).
 //		AddStartEvent("start").
-//		AddServiceTask("charge", activity.WithActionName("charge-card")).
+//		AddServiceTask("charge", activity.WithTaskAction("charge-card")).
 //		AddEndEvent("end").
 //		Connect("start", "charge").Connect("charge", "end").
 //		Build() // returns *model.ProcessDefinition

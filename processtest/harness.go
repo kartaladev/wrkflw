@@ -66,8 +66,8 @@ type config struct {
 // Option configures a [Harness].
 type Option func(*config)
 
-// WithAction registers a single action under name in the harness catalog.
-func WithAction(name string, a action.Action) Option {
+// WithCatalogAction registers a single action under name in the harness catalog.
+func WithCatalogAction(name string, a action.Action) Option {
 	return func(c *config) {
 		if c.actions == nil {
 			c.actions = make(map[string]action.Action)
@@ -76,9 +76,9 @@ func WithAction(name string, a action.Action) Option {
 	}
 }
 
-// WithActionFunc registers fn as an action under name.
-func WithActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) Option {
-	return WithAction(name, action.ActionFunc(fn))
+// WithCatalogActionFunc registers fn as an action under name.
+func WithCatalogActionFunc(name string, fn func(context.Context, map[string]any) (map[string]any, error)) Option {
+	return WithCatalogAction(name, action.ActionFunc(fn))
 }
 
 // WithActions registers a whole action map in the harness catalog.

@@ -57,12 +57,12 @@ func main() {
 	// catches a matching error.
 	def, err := definition.NewBuilder("payment", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"))).
 		// Error boundary matching exactly "INSUFFICIENT_FUNDS". Use
 		// WithBoundaryErrorCode("") for a catch-all instead.
 		Add(event.NewBoundary("bnd-declined", "charge",
 			event.WithBoundaryErrorCode(codeInsufficientFunds))).
-		Add(activity.NewServiceTask("decline", activity.WithActionName("notify-decline"))).
+		Add(activity.NewServiceTask("decline", activity.WithTaskAction("notify-decline"))).
 		Add(event.NewEnd("end-paid")).
 		Add(event.NewEnd("end-declined")).
 		Connect("start", "charge").

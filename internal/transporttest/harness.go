@@ -111,7 +111,7 @@ func LinearProcess() *model.ProcessDefinition {
 		ID: "greeting", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -147,7 +147,7 @@ func SignalProcess(signalName string) *model.ProcessDefinition {
 		ID: "signal-catch-" + signalName, Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("wait", event.WithCatchSignal(signalName)),
+			event.NewIntermediateCatch("wait", event.WithSignalName(signalName)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -165,7 +165,7 @@ func MessageProcess(msgName string) *model.ProcessDefinition {
 		ID: "message-catch-" + msgName, Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("wait-msg", event.WithCatchMessage(msgName, "orderId")),
+			event.NewIntermediateCatch("wait-msg", event.WithMessageCorrelator(msgName, "orderId")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

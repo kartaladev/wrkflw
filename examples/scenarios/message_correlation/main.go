@@ -44,7 +44,7 @@ func main() {
 		Add(event.NewStart("start")).
 		Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
 			activity.WithCorrelationKey("orderID"))).
-		Add(activity.NewServiceTask("ship", activity.WithActionName("ship-order"))).
+		Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship-order"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await-payment").
 		Connect("await-payment", "ship").

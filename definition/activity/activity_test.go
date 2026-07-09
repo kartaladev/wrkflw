@@ -1,12 +1,10 @@
 package activity_test
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
@@ -15,11 +13,11 @@ import (
 func TestServiceTaskOptions(t *testing.T) {
 	n := activity.NewServiceTask("charge",
 		activity.WithName("Charge"),
-		activity.WithActionName("charge-card"),
-		activity.WithCompensation("refund"),
-		activity.WithCancelHandler("abort"),
+		activity.WithTaskAction("charge-card"),
+		activity.WithCompensateAction("refund"),
+		activity.WithCancelAction("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
-		activity.WithDeadline(schedule.AfterExpr(`"2h"`), "sla", "notify"),
+		activity.WithWaitDeadline(schedule.AfterExpr(`"2h"`), "sla"), activity.WithDeadlineAction("notify"),
 		activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 5}),
 	)
 	if n.Kind() != model.KindServiceTask || n.Name() != "Charge" {
@@ -37,18 +35,6 @@ func TestServiceTaskOptions(t *testing.T) {
 	}
 	if rp := model.RetryPolicyOf(n); rp == nil || rp.MaxAttempts != 5 {
 		t.Errorf("RetryPolicyOf = %+v", rp)
-	}
-}
-
-func TestInlineActionOptions(t *testing.T) {
-	fn := func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }
-	n := activity.NewServiceTask("x", activity.WithActionFunc(fn))
-	if model.InlineActionOf(n) == nil {
-		t.Fatal("WithActionFunc: expected inline action")
-	}
-	n2 := activity.NewBusinessRuleTask("y", activity.WithAction(action.ActionFunc(fn)))
-	if model.InlineActionOf(n2) == nil {
-		t.Fatal("WithAction: expected inline action")
 	}
 }
 
@@ -99,7 +85,7 @@ func TestOtherActivityConstructors(t *testing.T) {
 		{activity.NewUserTask("u", []string{"mgr"}, activity.WithEligibilityExpr(`vars["r"]=="EU"`), activity.WithEligibilityPrivileges("t claim")), model.KindUserTask},
 		{activity.NewReceiveTask("r", "msg", activity.WithCorrelationKey("k")), model.KindReceiveTask},
 		{activity.NewSendTask("s", "msg", activity.WithCorrelationKey("k")), model.KindSendTask},
-		{activity.NewBusinessRuleTask("b", activity.WithActionName("rule")), model.KindBusinessRuleTask},
+		{activity.NewBusinessRuleTask("b", activity.WithTaskAction("rule")), model.KindBusinessRuleTask},
 		{activity.NewSubProcess("sp", sub, activity.WithName("Sub")), model.KindSubProcess},
 		{activity.NewCallActivity("ca", model.Version("ref", 1), activity.WithName("Call")), model.KindCallActivity},
 	}
@@ -138,7 +124,7 @@ func TestActivityRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "a", Version: 1,
 		Nodes: []model.Node{
-			activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithDeadline(schedule.AfterExpr(`"1h"`), "f", "a")),
+			activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithWaitDeadline(schedule.AfterExpr(`"1h"`), "f"), activity.WithDeadlineAction("a")),
 			activity.NewUserTask("ut", []string{"mgr"}, activity.WithEligibilityExpr("x")),
 			activity.NewReceiveTask("rt", "m", activity.WithCorrelationKey("k")),
 			activity.NewSendTask("snt", "m"),

@@ -22,15 +22,15 @@ import (
 )
 
 // oneCompensableDef returns a minimal definition with one compensable service task
-// (CompensationAction "refund") so that beginCompensation has one record to emit.
+// (CompensateAction "refund") so that beginCompensation has one record to emit.
 //
-//	start → svc(CompensationAction:"refund") → end
+//	start → svc(CompensateAction:"refund") → end
 func oneCompensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "one-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

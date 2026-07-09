@@ -15,8 +15,8 @@ import (
 
 func TestServiceTaskConstructorAndAccessors(t *testing.T) {
 	n := activity.NewServiceTask("pay",
-		activity.WithActionName("charge-card"),
-		activity.WithCompensation("refund-card"),
+		activity.WithTaskAction("charge-card"),
+		activity.WithCompensateAction("refund-card"),
 		activity.WithRecoveryFlow("to-manual"),
 	)
 	if n.Kind() != model.KindServiceTask {
@@ -29,7 +29,7 @@ func TestServiceTaskConstructorAndAccessors(t *testing.T) {
 	if !ok {
 		t.Fatalf("node is %T, want activity.ServiceTask", n)
 	}
-	if st.Action != "charge-card" || st.CompensationAction != "refund-card" || st.RecoveryFlow != "to-manual" {
+	if st.Action != "charge-card" || st.CompensateAction != "refund-card" || st.RecoveryFlow != "to-manual" {
 		t.Fatalf("fields = %+v", st)
 	}
 }
@@ -85,8 +85,8 @@ func TestErrorEndEventConstructor(t *testing.T) {
 func TestUserTaskConstructor(t *testing.T) {
 	n := activity.NewUserTask("task-1", []string{"manager", "admin"},
 		activity.WithEligibilityExpr("amount > 1000"),
-		activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach", "notify-manager"),
-		activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
+		activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach"), activity.WithDeadlineAction("notify-manager"),
+		activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 	)
 	if n.Kind() != model.KindUserTask {
 		t.Fatalf("Kind() = %v, want KindUserTask", n.Kind())
@@ -104,15 +104,15 @@ func TestUserTaskConstructor(t *testing.T) {
 	if dd, ok := ut.DeadlineTimer.Duration(); !ok || dd != 24*time.Hour || ut.DeadlineFlow != "sla-breach" || ut.DeadlineAction != "notify-manager" {
 		t.Fatalf("deadline fields = %v/%q/%q", dd, ut.DeadlineFlow, ut.DeadlineAction)
 	}
-	if rd, ok := ut.ReminderEvery.Duration(); !ok || rd != 4*time.Hour || ut.ReminderAction != "send-reminder" {
-		t.Fatalf("reminder fields = %v/%q", rd, ut.ReminderAction)
+	if rd, ok := ut.WaitEvery.Duration(); !ok || rd != 4*time.Hour || ut.WaitAction != "send-reminder" {
+		t.Fatalf("wait fields = %v/%q", rd, ut.WaitAction)
 	}
 }
 
 func TestReceiveTaskConstructor(t *testing.T) {
 	n := activity.NewReceiveTask("recv", "payment.received",
 		activity.WithCorrelationKey("order.id"),
-		activity.WithCancelHandler("cancel-payment"),
+		activity.WithCancelAction("cancel-payment"),
 	)
 	if n.Kind() != model.KindReceiveTask {
 		t.Fatalf("Kind() = %v, want KindReceiveTask", n.Kind())
@@ -127,8 +127,8 @@ func TestReceiveTaskConstructor(t *testing.T) {
 	if rt.CorrelationKey != "order.id" {
 		t.Fatalf("CorrelationKey = %q", rt.CorrelationKey)
 	}
-	if rt.CancelHandler != "cancel-payment" {
-		t.Fatalf("CancelHandler = %q", rt.CancelHandler)
+	if rt.CancelAction != "cancel-payment" {
+		t.Fatalf("CancelAction = %q", rt.CancelAction)
 	}
 }
 
@@ -158,7 +158,7 @@ func TestSendTaskCorrelationKey(t *testing.T) {
 }
 
 func TestBusinessRuleTaskConstructor(t *testing.T) {
-	n := activity.NewBusinessRuleTask("brt", activity.WithActionName("apply-discount"))
+	n := activity.NewBusinessRuleTask("brt", activity.WithTaskAction("apply-discount"))
 	if n.Kind() != model.KindBusinessRuleTask {
 		t.Fatalf("Kind() = %v, want KindBusinessRuleTask", n.Kind())
 	}
@@ -218,8 +218,8 @@ func TestEventSubProcessConstructor(t *testing.T) {
 func TestIntermediateCatchEventConstructor(t *testing.T) {
 	n := event.NewIntermediateCatch("ice",
 		event.WithCatchTimer(schedule.AfterExpr("PT1H")),
-		event.WithCatchDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
-		event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "remind-act"),
+		event.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), event.WithDeadlineAction("sla-act"),
+		event.WithWaitAction(schedule.Every(2*time.Hour), "remind-act"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
 		t.Fatalf("Kind() = %v, want KindIntermediateCatchEvent", n.Kind())
@@ -237,7 +237,7 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 }
 
 func TestIntermediateCatchEventSignal(t *testing.T) {
-	n := event.NewIntermediateCatch("ice-sig", event.WithCatchSignal("my.signal"))
+	n := event.NewIntermediateCatch("ice-sig", event.WithSignalName("my.signal"))
 	ice, ok := n.(event.IntermediateCatchEvent)
 	if !ok {
 		t.Fatalf("node is %T, want event.IntermediateCatchEvent", n)
@@ -249,7 +249,7 @@ func TestIntermediateCatchEventSignal(t *testing.T) {
 
 func TestIntermediateCatchEventMessage(t *testing.T) {
 	n := event.NewIntermediateCatch("ice-msg",
-		event.WithCatchMessage("payment.received", "order.id"),
+		event.WithMessageCorrelator("payment.received", "order.id"),
 	)
 	ice, ok := n.(event.IntermediateCatchEvent)
 	if !ok {
@@ -265,7 +265,7 @@ func TestIntermediateCatchEventMessage(t *testing.T) {
 
 func TestIntermediateThrowEventConstructor(t *testing.T) {
 	n := event.NewIntermediateThrow("ite",
-		event.WithThrowSignal("order.shipped"),
+		event.WithThrowSignalName("order.shipped"),
 	)
 	if n.Kind() != model.KindIntermediateThrowEvent {
 		t.Fatalf("Kind() = %v, want KindIntermediateThrowEvent", n.Kind())
@@ -294,7 +294,7 @@ func TestIntermediateThrowEventCompensateRef(t *testing.T) {
 
 func TestBoundaryEventConstructor(t *testing.T) {
 	n := event.NewBoundary("bnd", "task-1",
-		event.WithBoundarySignal("cancel.signal"),
+		event.WithSignalName("cancel.signal"),
 		event.WithBoundaryNonInterrupting(),
 	)
 	if n.Kind() != model.KindBoundaryEvent {
@@ -334,7 +334,7 @@ func TestGatewayConstructors(t *testing.T) {
 
 func TestWithNameOnActivities(t *testing.T) {
 	// WithName option should work on all kinds.
-	n := activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithName("My Task"))
+	n := activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithName("My Task"))
 	if n.Name() != "My Task" {
 		t.Fatalf("Name() = %q, want 'My Task'", n.Name())
 	}
@@ -357,7 +357,7 @@ func TestWithNameOnActivities(t *testing.T) {
 
 func TestRetryPolicyOption(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 5}
-	n := activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithRetryPolicy(p))
+	n := activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithRetryPolicy(p))
 	st, _ := n.(activity.ServiceTask)
 	if st.RetryPolicy != p {
 		t.Fatal("RetryPolicy not set")

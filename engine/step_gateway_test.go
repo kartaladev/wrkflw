@@ -22,8 +22,8 @@ func exclusiveDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
-			activity.NewServiceTask("big", activity.WithActionName("big")),
-			activity.NewServiceTask("small", activity.WithActionName("small")),
+			activity.NewServiceTask("big", activity.WithTaskAction("big")),
+			activity.NewServiceTask("small", activity.WithTaskAction("small")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -68,8 +68,8 @@ func parallelForkDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewServiceTask("a", activity.WithActionName("a")),
-			activity.NewServiceTask("b", activity.WithActionName("b")),
+			activity.NewServiceTask("a", activity.WithTaskAction("a")),
+			activity.NewServiceTask("b", activity.WithTaskAction("b")),
 			event.NewEnd("enda"),
 			event.NewEnd("endb"),
 		},
@@ -113,8 +113,8 @@ func diamondDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewServiceTask("a", activity.WithActionName("a")),
-			activity.NewServiceTask("b", activity.WithActionName("b")),
+			activity.NewServiceTask("a", activity.WithTaskAction("a")),
+			activity.NewServiceTask("b", activity.WithTaskAction("b")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
@@ -176,8 +176,8 @@ func dualSubProcessParallelDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			gateway.NewParallel("ifork"),
-			activity.NewServiceTask("inner-a", activity.WithActionName("action-a")),
-			activity.NewServiceTask("inner-b", activity.WithActionName("action-b")),
+			activity.NewServiceTask("inner-a", activity.WithTaskAction("action-a")),
+			activity.NewServiceTask("inner-b", activity.WithTaskAction("action-b")),
 			gateway.NewParallel("ijoin"),
 			event.NewEnd("inner-end"),
 		},
@@ -343,7 +343,7 @@ func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
-			activity.NewServiceTask("big", activity.WithActionName("big")),
+			activity.NewServiceTask("big", activity.WithTaskAction("big")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

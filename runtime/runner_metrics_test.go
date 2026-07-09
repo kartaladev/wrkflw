@@ -71,7 +71,7 @@ func failingActionDef() *model.ProcessDefinition {
 		ID: "failing-action-metrics", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("fail")),
+			activity.NewServiceTask("task", activity.WithTaskAction("fail")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

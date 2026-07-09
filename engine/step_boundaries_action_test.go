@@ -78,7 +78,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "signal/interrupting/with-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundarySignal("sig"),
+				event.WithSignalName("sig"),
 				event.WithBoundaryAction("notify"),
 			},
 			fire: func(engine.StepResult) engine.Trigger {
@@ -90,7 +90,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "message/interrupting/with-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundaryMessage("msg", ""),
+				event.WithMessageCorrelator("msg", ""),
 				event.WithBoundaryAction("notify"),
 			},
 			fire: func(engine.StepResult) engine.Trigger {
@@ -121,7 +121,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "signal/non-interrupting/with-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundarySignal("sig"),
+				event.WithSignalName("sig"),
 				event.WithBoundaryNonInterrupting(),
 				event.WithBoundaryAction("notify"),
 			},
@@ -134,7 +134,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "message/non-interrupting/with-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundaryMessage("msg", ""),
+				event.WithMessageCorrelator("msg", ""),
 				event.WithBoundaryNonInterrupting(),
 				event.WithBoundaryAction("notify"),
 			},
@@ -148,7 +148,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "signal/interrupting/no-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundarySignal("sig"),
+				event.WithSignalName("sig"),
 				// no WithBoundaryAction
 			},
 			fire: func(engine.StepResult) engine.Trigger {
@@ -236,7 +236,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 			ID: "p-bnd-act-err-direct", Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("start"),
-				activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
+				activity.NewServiceTask("svc", activity.WithTaskAction("svc-action")),
 				event.NewBoundary("bnd-err", "svc",
 					event.WithBoundaryErrorCode("E1"),
 					event.WithBoundaryAction("notify"),
@@ -302,7 +302,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 			ID: "sp-bnd-act-err", Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("inner-start"),
-				activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+				activity.NewServiceTask("inner-svc", activity.WithTaskAction("inner-action")),
 				event.NewErrorEnd("inner-err-end", "E1"),
 			},
 			Flows: []flow.SequenceFlow{

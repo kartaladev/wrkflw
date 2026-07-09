@@ -40,7 +40,7 @@ func main() {
 	// The nested definition embedded inside the sub-process node.
 	hotel, err := definition.NewBuilder("hotel-reservation", 1).
 		Add(event.NewStart("hotel-start")).
-		Add(activity.NewServiceTask("book-room", activity.WithActionName("book-room"))).
+		Add(activity.NewServiceTask("book-room", activity.WithTaskAction("book-room"))).
 		Add(event.NewEnd("hotel-end")).
 		Connect("hotel-start", "book-room").
 		Connect("book-room", "hotel-end").
@@ -53,7 +53,7 @@ func main() {
 	def, err := definition.NewBuilder("travel-booking", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewSubProcess("reserve-hotel", hotel)).
-		Add(activity.NewServiceTask("send-confirmation", activity.WithActionName("send-confirmation"))).
+		Add(activity.NewServiceTask("send-confirmation", activity.WithTaskAction("send-confirmation"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "reserve-hotel").
 		Connect("reserve-hotel", "send-confirmation").

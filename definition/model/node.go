@@ -1,7 +1,6 @@
 package model
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
@@ -34,10 +33,10 @@ func (b Base) Name() string { return b.name }
 // packages, which mutate the embedded Base.
 func (b *Base) SetName(name string) { b.name = name }
 
-// WaitFields holds the deadline + reminder fields shared by activity kinds and by
+// WaitFields holds the deadline + in-wait fields shared by activity kinds and by
 // IntermediateCatchEvent (all of which can wait and so can carry a deadline
-// escalation and periodic reminders). It is embedded by ActivityFields and by
-// event.IntermediateCatchEvent; the kind-agnostic accessors DeadlineOf/ReminderOf
+// escalation and periodic in-wait actions). It is embedded by ActivityFields and by
+// event.IntermediateCatchEvent; the kind-agnostic accessors DeadlineOf/WaitActionOf
 // dispatch on its (unexported) carrier methods.
 type WaitFields struct {
 	// DeadlineTimer is the trigger spec that governs when the deadline fires
@@ -47,18 +46,18 @@ type WaitFields struct {
 	DeadlineFlow string
 	// DeadlineAction is the name of the action.Action to invoke on deadline breach.
 	DeadlineAction string
-	// ReminderEvery is the trigger spec that governs the reminder interval
-	// (e.g. schedule.Every(24*time.Hour) or schedule.EveryExpr("reminderExpr")).
-	ReminderEvery schedule.TriggerSpec
-	// ReminderAction is the name of the action.Action to invoke for each reminder.
-	ReminderAction string
+	// WaitEvery is the trigger spec that governs the in-wait action interval
+	// (e.g. schedule.Every(24*time.Hour) or schedule.EveryExpr("waitExpr")).
+	WaitEvery schedule.TriggerSpec
+	// WaitAction is the name of the action.Action to invoke for each in-wait firing.
+	WaitAction string
 }
 
 func (w WaitFields) deadline() (schedule.TriggerSpec, string, string) {
 	return w.DeadlineTimer, w.DeadlineFlow, w.DeadlineAction
 }
-func (w WaitFields) reminder() (schedule.TriggerSpec, string) {
-	return w.ReminderEvery, w.ReminderAction
+func (w WaitFields) waitAction() (schedule.TriggerSpec, string) {
+	return w.WaitEvery, w.WaitAction
 }
 
 // ActivityFields holds the cross-cutting fields every activity kind shares (retry,
@@ -71,24 +70,38 @@ type ActivityFields struct {
 	RetryPolicy *RetryPolicy
 	// RecoveryFlow is the ID of the sequence flow to take when retries are exhausted.
 	RecoveryFlow string
-	// CompensationAction is the name of the action.Action to invoke during rollback.
-	CompensationAction string
-	// CancelHandler is the optional action.Action to run when this node is interrupted.
-	CancelHandler string
+	// CompensateAction is the name of the action.Action to invoke during rollback.
+	CompensateAction string
+	// CancelAction is the optional action.Action to run when this node is interrupted.
+	CancelAction string
+	// CompletionAction is the optional action.Action invoked when the node's
+	// completion is triggered (human completion / message receive), before the
+	// token advances. Its returned vars merge into the instance variables.
+	CompletionAction string
 }
 
 func (a ActivityFields) retry() *RetryPolicy  { return a.RetryPolicy }
 func (a ActivityFields) recoveryFlow() string { return a.RecoveryFlow }
 
+// completionAction returns the raw CompletionAction field. Note this carrier is
+// present on EVERY activity kind (CompletionAction lives on the shared
+// ActivityFields embed) even though only UserTask/ReceiveTask honor it at
+// execution time; CompletionActionOf is therefore kind-agnostic by design —
+// callers that must restrict it to UserTask/ReceiveTask (e.g. validateStructure's
+// ErrCompletionActionUnsupportedKind guard) combine it with Node.Kind().
+func (a ActivityFields) completionAction() string { return a.CompletionAction }
+
+// compensateAction returns the raw CompensateAction field. Present on every
+// activity kind (CompensateAction lives on the shared ActivityFields embed);
+// CompensateActionOf is therefore kind-agnostic by design.
+func (a ActivityFields) compensateAction() string { return a.CompensateAction }
+
 // TaskAction holds the action reference shared by ServiceTask and BusinessRuleTask:
-// a catalog name and/or a node-local inline action. Embedded so the ActionOf/
-// InlineActionOf accessors dispatch on its carrier method across the activity leaf.
+// the catalog action name. Embedded so the ActionOf accessor dispatches on its
+// carrier method across the activity leaf.
 type TaskAction struct {
 	// Action is the service-action name; empty means default to the node id.
 	Action string
-	// Inline is a node-local action.Action taking precedence over name lookup.
-	// It is never serialized (re-attached in code on rehydration).
-	Inline action.Action
 }
 
-func (t TaskAction) taskAction() (string, action.Action) { return t.Action, t.Inline }
+func (t TaskAction) taskAction() string { return t.Action }

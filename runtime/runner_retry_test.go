@@ -28,7 +28,7 @@ func retryContractDef() *model.ProcessDefinition {
 		ID: "retry-contract", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a")),
+			activity.NewServiceTask("task", activity.WithTaskAction("a")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

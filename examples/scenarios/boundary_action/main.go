@@ -9,9 +9,9 @@
 //  2. Cancels the human task and routes the token down the escalation path.
 //
 // Contrast with the sibling usertask_deadline example, which demonstrates the
-// activity.WithDeadline option — a bundled timer + fire-once action + escape
-// flow expressed as a single activity option rather than an explicit boundary
-// node. WithBoundaryAction on a true event.NewBoundary node gives the same
+// activity.WithWaitDeadline + activity.WithDeadlineAction options — a timer +
+// fire-once action + escape flow expressed as activity options rather than an
+// explicit boundary node. WithBoundaryAction on a true event.NewBoundary node gives the same
 // fire-once action semantics but as a first-class boundary-event feature,
 // available on any trigger type (timer, message, signal, error).
 //
@@ -67,7 +67,7 @@ func main() {
 			event.WithBoundaryTimer(schedule.AfterDuration(time.Hour)),
 			event.WithBoundaryAction("notify-overdue"),
 		)).
-		Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
+		Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 		Add(event.NewEnd("end-approved")).
 		Add(event.NewEnd("end-escalated")).
 		Connect("start", "review").

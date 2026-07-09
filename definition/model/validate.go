@@ -115,6 +115,39 @@ var (
 	// silently skipped (fail-open). The combination is rejected at authoring
 	// time to keep validation fail-closed.
 	ErrPayloadValidationRequiresMessage = errors.New("workflow-definition: payload validation requires a message catch")
+	// ErrDeadlineTriggerRecurring is returned when a node's DeadlineTimer
+	// (set via WithWaitDeadline) is a recurring schedule.TriggerSpec (e.g.
+	// Every, Cron, Daily). A deadline must fire at most once: the
+	// DeadlineFlow/DeadlineAction breach only makes sense the first time the
+	// wait overruns, so the trigger must be one-shot (AfterDuration, At, or
+	// AfterExpr).
+	ErrDeadlineTriggerRecurring = errors.New("workflow-definition: deadline trigger must be one-shot")
+	// ErrCompletionActionUnsupportedKind is returned when a node's
+	// CompletionAction is non-empty but the node's kind is not UserTask or
+	// ReceiveTask — the only two kinds with an external completion trigger that
+	// engine.completionActionOf honors. CompletionAction lives on the shared
+	// ActivityFields embed, so it can be set on any activity kind via direct
+	// construction or a hand-authored wire/YAML payload even though no
+	// WithCompletionAction option targets those kinds; without this guard the
+	// field would silently never run.
+	ErrCompletionActionUnsupportedKind = errors.New("workflow-definition: completion action only supported on UserTask or ReceiveTask")
+	// ErrDeadlineActionWithoutDeadline is returned when a node's DeadlineAction
+	// is non-empty but its DeadlineTimer is zero (WithDeadlineAction used
+	// without WithWaitDeadline). Without an armed deadline timer the action
+	// would never fire, so the combination is rejected at authoring time.
+	ErrDeadlineActionWithoutDeadline = errors.New("workflow-definition: deadline action set without a deadline timer")
+	// ErrCompensateActionWithoutForwardAction is returned when a UserTask or
+	// ReceiveTask node's CompensateAction is non-empty but its CompletionAction
+	// is empty. For these two kinds, the completion action IS the forward
+	// action: engine.handleActionCompleted records a compensation entry only
+	// when a completion action runs (a UserTask/ReceiveTask never runs any
+	// other action). Without a completion action, the node can never have
+	// "done" anything to undo, so the compensate action is dead config — you
+	// can only compensate a node that executed a forward action. Other
+	// activity kinds (ServiceTask, BusinessRuleTask, SendTask, SubProcess,
+	// CallActivity) always have their own forward action and are not gated by
+	// this rule.
+	ErrCompensateActionWithoutForwardAction = errors.New("workflow-definition: compensate action requires a forward action (completion action) on user/receive task")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -395,6 +428,53 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 		if ValidationStrategyFor(n) != nil && toWire(n).MessageName == "" {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrPayloadValidationRequiresMessage, n.ID()))
+		}
+	}
+
+	// DeadlineTimer: a deadline trigger (WithWaitDeadline, on activities and
+	// IntermediateCatchEvent) must be one-shot. A recurring trigger (Every,
+	// Cron, Daily, ...) would keep re-firing the same DeadlineFlow/Action
+	// after the first breach, which is not a meaningful deadline semantics.
+	// Nodes without a deadline (zero TriggerSpec) are skipped.
+	for _, n := range d.Nodes {
+		deadline, _, _ := DeadlineOf(n)
+		if !deadline.IsZero() && deadline.Recurring() {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadlineTriggerRecurring, n.ID()))
+		}
+	}
+
+	// DeadlineAction without a DeadlineTimer: the action would never fire since
+	// no deadline timer is ever armed. Nodes without a DeadlineAction are skipped.
+	for _, n := range d.Nodes {
+		deadline, _, deadlineAction := DeadlineOf(n)
+		if deadlineAction != "" && deadline.IsZero() {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadlineActionWithoutDeadline, n.ID()))
+		}
+	}
+
+	// CompletionAction only supported on UserTask/ReceiveTask: the field lives on
+	// the shared ActivityFields embed, so it can be set on any activity kind, but
+	// engine.completionActionOf only honors it for the two kinds with an
+	// external completion trigger.
+	for _, n := range d.Nodes {
+		if CompletionActionOf(n) == "" {
+			continue
+		}
+		if n.Kind() != KindUserTask && n.Kind() != KindReceiveTask {
+			errs = append(errs, fmt.Errorf("%w: node %q (kind %d)", ErrCompletionActionUnsupportedKind, n.ID(), n.Kind()))
+		}
+	}
+
+	// CompensateAction on UserTask/ReceiveTask requires a forward action (their
+	// CompletionAction): the completion action IS the forward action for these
+	// two kinds, and the engine only records a compensation entry when a
+	// completion action runs. Without it, the compensate action is dead config.
+	for _, n := range d.Nodes {
+		if n.Kind() != KindUserTask && n.Kind() != KindReceiveTask {
+			continue
+		}
+		if CompensateActionOf(n) != "" && CompletionActionOf(n) == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrCompensateActionWithoutForwardAction, n.ID()))
 		}
 	}
 

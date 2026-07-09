@@ -31,17 +31,17 @@ import (
 )
 
 // compensationOnCancelDef returns a definition that:
-//   - executes a compensable service task "charge" (CompensationAction:"refund")
+//   - executes a compensable service task "charge" (CompensateAction:"refund")
 //   - parks at a user task "approve" so Run returns StatusRunning
 //   - ending flow leads to the end event
 //
-// start → charge (KindServiceTask, CompensationAction:"refund") → approve (KindUserTask) → end
+// start → charge (KindServiceTask, CompensateAction:"refund") → approve (KindUserTask) → end
 func compensationOnCancelDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "comp-cancel-def", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("charge", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("charge", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
 			activity.NewUserTask("approve", []string{"reviewer"}),
 			event.NewEnd("end"),
 		},

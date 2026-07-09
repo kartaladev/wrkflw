@@ -56,10 +56,10 @@ func main() {
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
 		Add(gateway.NewParallel("fork")).
-		Add(activity.NewServiceTask("pick-items", activity.WithActionName("pick-items"))).
-		Add(activity.NewServiceTask("charge-card", activity.WithActionName("charge-card"))).
+		Add(activity.NewServiceTask("pick-items", activity.WithTaskAction("pick-items"))).
+		Add(activity.NewServiceTask("charge-card", activity.WithTaskAction("charge-card"))).
 		Add(gateway.NewParallel("join")).
-		Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+		Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "fork").
 		// Two flows out of the fork → the branches the AND-split token-splits into.

@@ -25,13 +25,14 @@ type nodeYAML struct {
 	DeadlineDuration      string          `yaml:"deadlineDuration,omitempty"`
 	DeadlineFlow          string          `yaml:"deadlineFlow,omitempty"`
 	DeadlineAction        string          `yaml:"deadlineAction,omitempty"`
-	ReminderEvery         string          `yaml:"reminderEvery,omitempty"`
-	ReminderAction        string          `yaml:"reminderAction,omitempty"`
+	WaitEvery             string          `yaml:"waitEvery,omitempty"`
+	WaitAction            string          `yaml:"waitAction,omitempty"`
 	RetryPolicy           *RetryPolicy    `yaml:"retryPolicy,omitempty"`
 	RecoveryFlow          string          `yaml:"recoveryFlow,omitempty"`
-	CompensationAction    string          `yaml:"compensationAction,omitempty"`
+	CompensateAction      string          `yaml:"compensateAction,omitempty"`
 	CompensateRef         string          `yaml:"compensateRef,omitempty"`
-	CancelHandler         string          `yaml:"cancelHandler,omitempty"`
+	CancelAction          string          `yaml:"cancelAction,omitempty"`
+	CompletionAction      string          `yaml:"completionAction,omitempty"`
 	SignalName            string          `yaml:"signalName,omitempty"`
 	MessageName           string          `yaml:"messageName,omitempty"`
 	CorrelationKey        string          `yaml:"correlationKey,omitempty"`
@@ -99,13 +100,14 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		DeadlineDuration:      ny.DeadlineDuration,
 		DeadlineFlow:          ny.DeadlineFlow,
 		DeadlineAction:        ny.DeadlineAction,
-		ReminderEvery:         ny.ReminderEvery,
-		ReminderAction:        ny.ReminderAction,
+		WaitEvery:             ny.WaitEvery,
+		WaitAction:            ny.WaitAction,
 		RetryPolicy:           ny.RetryPolicy,
 		RecoveryFlow:          ny.RecoveryFlow,
-		CompensationAction:    ny.CompensationAction,
+		CompensateAction:      ny.CompensateAction,
 		CompensateRef:         ny.CompensateRef,
-		CancelHandler:         ny.CancelHandler,
+		CancelAction:          ny.CancelAction,
+		CompletionAction:      ny.CompletionAction,
 		SignalName:            ny.SignalName,
 		MessageName:           ny.MessageName,
 		CorrelationKey:        ny.CorrelationKey,

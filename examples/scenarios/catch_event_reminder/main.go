@@ -59,8 +59,8 @@ func main() {
 	def, err := definition.NewBuilder("approval-await", 1).
 		Add(event.NewStart("start")).
 		Add(event.NewIntermediateCatch("await",
-			event.WithCatchMessage("approved", "request"),
-			event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"),
+			event.WithMessageCorrelator("approved", "request"),
+			event.WithWaitAction(schedule.Every(30*time.Minute), "nudge"),
 		)).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").

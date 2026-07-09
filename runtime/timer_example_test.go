@@ -87,7 +87,7 @@ func deadlineUserTaskDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadline(schedule.AfterExpr(`"30m"`), "escalate", "notify-escalation")),
+			activity.NewUserTask("review", []string{"reviewer"}, activity.WithWaitDeadline(schedule.AfterExpr(`"30m"`), "escalate"), activity.WithDeadlineAction("notify-escalation")),
 			event.NewEnd("end-normal"),
 			event.NewEnd("end-escalated"),
 		},

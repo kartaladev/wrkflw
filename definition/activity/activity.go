@@ -6,9 +6,6 @@
 package activity
 
 import (
-	"context"
-
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
@@ -76,7 +73,7 @@ type SendTask struct {
 // Kind returns model.KindSendTask.
 func (SendTask) Kind() model.NodeKind { return model.KindSendTask }
 
-// BusinessRuleTask executes a business rule action (by name or inline).
+// BusinessRuleTask executes a named business rule action.
 type BusinessRuleTask struct {
 	model.Base
 	model.ActivityFields
@@ -112,9 +109,9 @@ func (CallActivity) Kind() model.NodeKind { return model.KindCallActivity }
 
 // --- constructors ---
 
-// NewServiceTask constructs a ServiceTask. Set the action with WithActionName
-// (catalog reference) or WithAction/WithActionFunc (node-local inline); with
-// neither, the action name defaults to the node id at execution time.
+// NewServiceTask constructs a ServiceTask. Set the action with WithTaskAction
+// (catalog reference); with no name, the action name defaults to the node id
+// at execution time.
 func NewServiceTask(id string, opts ...ServiceTaskOption) model.Node {
 	s := ServiceTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {
@@ -151,7 +148,7 @@ func NewSendTask(id, messageName string, opts ...SendTaskOption) model.Node {
 }
 
 // NewBusinessRuleTask constructs a BusinessRuleTask. Action configuration mirrors
-// NewServiceTask (WithActionName / WithAction / WithActionFunc / default-by-id).
+// NewServiceTask (WithTaskAction / default-by-id).
 func NewBusinessRuleTask(id string, opts ...BusinessRuleOption) model.Node {
 	b := BusinessRuleTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {
@@ -173,13 +170,6 @@ func NewCallActivity(id string, ref model.Qualifier, opts ...ActivityOption) mod
 	n := CallActivity{Base: model.NewBase(id, ""), DefRef: ref}
 	applyActivityOpts(&n.Base, &n.ActivityFields, opts)
 	return n
-}
-
-// --- action.ActionFunc adapter re-export convenience ---
-
-// actionFunc adapts a plain function to action.Action for WithActionFunc.
-func actionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) action.Action {
-	return action.ActionFunc(fn)
 }
 
 // parseOrZero parses a CallActivity def-ref wire string into a model.Qualifier,

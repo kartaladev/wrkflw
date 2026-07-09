@@ -13,8 +13,8 @@ import (
 func TestStartEventOptions(t *testing.T) {
 	n := event.NewStart("s",
 		event.WithName("Start"),
-		event.WithStartSignal("go"),
-		event.WithStartMessage("kick", "k"),
+		event.WithSignalName("go"),
+		event.WithMessageCorrelator("kick", "k"),
 		event.WithStartTimer(schedule.AfterExpr(`"1h"`)),
 	).(event.StartEvent)
 	if n.Kind() != model.KindStartEvent || n.Name() != "Start" {
@@ -32,10 +32,10 @@ func TestCatchRenamedOptions(t *testing.T) {
 	n := event.NewIntermediateCatch("wait",
 		event.WithName("Wait"),
 		event.WithCatchTimer(schedule.AfterExpr(`"15m"`)),
-		event.WithCatchSignal("resume"),
-		event.WithCatchMessage("go", "k"),
-		event.WithCatchDeadline(schedule.AfterExpr(`"4h"`), "esc", "escalate"),
-		event.WithCatchWaitReminder(schedule.EveryExpr(`"1h"`), "nudge"),
+		event.WithSignalName("resume"),
+		event.WithMessageCorrelator("go", "k"),
+		event.WithWaitDeadline(schedule.AfterExpr(`"4h"`), "esc"), event.WithDeadlineAction("escalate"),
+		event.WithWaitAction(schedule.EveryExpr(`"1h"`), "nudge"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
 		t.Fatalf("kind = %v", n.Kind())
@@ -44,9 +44,9 @@ func TestCatchRenamedOptions(t *testing.T) {
 	if d.IsZero() || f != "esc" || a != "escalate" {
 		t.Errorf("DeadlineOf = %v,%q,%q", d, f, a)
 	}
-	re, ra := model.ReminderOf(n)
+	re, ra := model.WaitActionOf(n)
 	if re.IsZero() || ra != "nudge" {
-		t.Errorf("ReminderOf = %v,%q", re, ra)
+		t.Errorf("WaitActionOf = %v,%q", re, ra)
 	}
 	ce := n.(event.IntermediateCatchEvent)
 	if ce.Timer.IsZero() {
@@ -55,15 +55,15 @@ func TestCatchRenamedOptions(t *testing.T) {
 }
 
 func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
-	th := event.NewIntermediateThrow("t", event.WithThrowName("Emit"), event.WithThrowSignal("done"), event.WithCompensateRef("charge")).(event.IntermediateThrowEvent)
+	th := event.NewIntermediateThrow("t", event.WithThrowName("Emit"), event.WithThrowSignalName("done"), event.WithCompensateRef("charge")).(event.IntermediateThrowEvent)
 	if th.Name() != "Emit" || th.SignalName != "done" || th.CompensateRef != "charge" {
 		t.Errorf("throw = %+v", th)
 	}
 	b := event.NewBoundary("b", "host",
 		event.WithName("B"),
 		event.WithBoundaryTimer(schedule.AfterExpr("5m")),
-		event.WithBoundarySignal("s"),
-		event.WithBoundaryMessage("m", "k"),
+		event.WithSignalName("s"),
+		event.WithMessageCorrelator("m", "k"),
 		event.WithBoundaryErrorCode("E"),
 		event.WithBoundaryNonInterrupting(),
 	).(event.BoundaryEvent)
@@ -107,8 +107,8 @@ func TestEventRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "e", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("s", event.WithStartSignal("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
-			event.NewIntermediateCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithCatchDeadline(schedule.AfterExpr(`"2h"`), "f", "a")),
+			event.NewStart("s", event.WithSignalName("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
+			event.NewIntermediateCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithWaitDeadline(schedule.AfterExpr(`"2h"`), "f"), event.WithDeadlineAction("a")),
 			event.NewIntermediateThrow("th", event.WithCompensateRef("s")),
 			event.NewBoundary("b", "c", event.WithBoundaryTimer(schedule.AfterDuration(5*time.Minute)), event.WithBoundaryErrorCode("E")),
 			event.NewEnd("end"),

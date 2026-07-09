@@ -43,13 +43,13 @@ func main() {
 
 	// ── Block 1: define a process with the Go builder ─────────────────────────
 	// The fluent builder is the compile-checked authoring form. Nothing runs here —
-	// Build() just validates and returns the definition template. WithCompensation
+	// Build() just validates and returns the definition template. WithCompensateAction
 	// attaches a rollback action to the charge step; the user task parks for a
 	// "manager" actor. Neither is exercised in this quickstart; they show the shape.
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
-			activity.WithCompensation("refund-card"),
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"),
+			activity.WithCompensateAction("refund-card"),
 		)).
 		Add(activity.NewUserTask("approve", []string{"manager"})).
 		Add(event.NewEnd("end")).
@@ -76,7 +76,7 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensationAction: refund-card
+    compensateAction: refund-card
   - id: e
     kind: endEvent
 flows:
@@ -102,7 +102,7 @@ flows:
 	// to completion. Drive returns the terminal InstanceState with its variables.
 	simpleDef, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"))).
 		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").

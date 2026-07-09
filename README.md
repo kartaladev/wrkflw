@@ -73,8 +73,8 @@ func main() {
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		AddStartEvent("start").
 		AddServiceTask("charge",
-			activity.WithActionName("charge-card"),
-			activity.WithCompensation("refund-card"),
+			activity.WithTaskAction("charge-card"),
+			activity.WithCompensateAction("refund-card"),
 		).
 		AddUserTask("approve", []string{"manager"}).
 		AddEndEvent("end").
@@ -89,32 +89,37 @@ func main() {
 }
 ```
 
-### Definition-scoped & inline actions
+### Definition-scoped actions
 
-Actions can be bound to a definition or a node in three ways:
+Actions can be bound to a definition or a node in two ways:
 
 | Style | How | Scope |
 |---|---|---|
-| Named catalog reference | `WithActionName("name")` | Resolves scoped → global |
-| Node-local inline | `WithActionFunc(fn)` / `WithAction(a)` | That node only; never serialized |
+| Named catalog reference | `WithTaskAction("name")` | Resolves scoped → global |
 | Default-by-id | omit name | Node id is the lookup key |
+
+Every action resolves by catalog name — either a definition-scoped entry (`RegisterAction`,
+visible only within that definition) or the global catalog passed to
+`runtime.NewProcessDriver`. There is no node-local inline action; register the action under a
+name and reference it with `WithTaskAction`, or omit the name and let the node id be the
+lookup key.
 
 ```go
 score := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
     return map[string]any{"score": 42}, nil
 })
+notify := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+    return in, nil
+})
 
 def, _ := definition.NewBuilder("loan", 1).
     RegisterAction("score", score).                   // def-scoped, by name
+    RegisterAction("notify", notify).                 // def-scoped, resolved by default-by-id below
     Add(event.NewStart("start")).
     Add(activity.NewServiceTask("risk",
-        activity.WithActionName("score"),             // resolves scoped → global
+        activity.WithTaskAction("score"),             // resolves scoped → global
     )).
-    Add(activity.NewServiceTask("notify",
-        activity.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
-            return in, nil                            // node-local inline
-        }),
-    )).
+    Add(activity.NewServiceTask("notify")).           // default-by-id → looks up "notify"
     Add(activity.NewServiceTask("archive")).          // default-by-id → looks up "archive"
     Add(event.NewEnd("end")).
     Connect("start", "risk").Connect("risk", "notify").
@@ -122,9 +127,7 @@ def, _ := definition.NewBuilder("loan", 1).
     Build()
 ```
 
-`WithActionName` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
-returns `model.ErrActionInlineAndNameConflict` if both are set. See
-`runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
+See `runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
 
 ### Author in YAML
 
@@ -138,7 +141,7 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensationAction: refund-card
+    compensateAction: refund-card
   - id: e
     kind: endEvent
 flows:
@@ -177,7 +180,7 @@ func main() {
 
 	def, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"))).
 		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
@@ -436,8 +439,9 @@ Configure timers on nodes:
 // expressions evaluated to a Go duration via time.ParseDuration, so they are
 // backtick-wrapped quoted duration literals ("72h", "24h" — not ISO-8601).
 activity.NewUserTask("approve", []string{"manager"},
-    activity.WithDeadline(`"72h"`, "escalate-flow", "notify-manager"),
-    activity.WithWaitReminder(`"24h"`, "send-reminder"),
+    activity.WithWaitDeadline(`"72h"`, "escalate-flow"),
+    activity.WithDeadlineAction("notify-manager"),
+    activity.WithWaitAction(`"24h"`, "send-reminder"),
 )
 ```
 
@@ -452,8 +456,8 @@ process (e.g. after a downstream failure), it runs compensation actions in rever
 
 ```go
 activity.NewServiceTask("charge",
-    activity.WithActionName("charge-card"),
-    activity.WithCompensation("refund-card"),
+    activity.WithTaskAction("charge-card"),
+    activity.WithCompensateAction("refund-card"),
 )
 ```
 
@@ -644,10 +648,11 @@ same set of functional options:
 | `model.WithName(string)` | Human-readable display name. |
 | `activity.WithRetryPolicy(*model.RetryPolicy)` | Per-node retry policy (see below). |
 | `activity.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
-| `activity.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
-| `activity.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
-| `activity.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
-| `activity.WithWaitReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
+| `activity.WithCompensateAction(actionName string)` | Service action invoked on rollback (reverse order). |
+| `activity.WithCancelAction(actionName string)` | Service action run when the node is interrupted. |
+| `activity.WithWaitDeadline(duration, flowID string)` | On deadline breach: take `flowID`. |
+| `activity.WithDeadlineAction(actionName string)` | Run `actionName` on deadline breach (optional; pairs with `WithWaitDeadline`). |
+| `activity.WithWaitAction(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
 Two options are **compile-enforced** to a single constructor:
 
@@ -659,8 +664,8 @@ Two options are **compile-enforced** to a single constructor:
 
 > **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
 > them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
-> not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithDeadline`,
-> `WithWaitReminder`, `WithStartTimer`, and `WithCatchDeadline`/`WithCatchWaitReminder`.
+> not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithWaitDeadline`
+> (activity and event), `WithWaitAction` (activity and event), and `WithStartTimer`.
 
 `RetryPolicy` fields:
 
@@ -685,7 +690,7 @@ model.RetryPolicy{
 | **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `event.NewErrorEnd(id, errorCode string, name ...string) Node` |
 
 `NewStartEvent` options (only meaningful when the start is an EventSubProcess trigger):
-`WithName(string)`, `WithStartSignal(name)`, `WithStartMessage(msg, key)`,
+`WithName(string)`, `WithSignalName(name)`, `WithMessageCorrelator(msg, key)`,
 `WithStartTimer(dur)`. An empty `errorCode` on `NewErrorEndEvent` throws an anonymous
 (catch-all) error.
 
@@ -716,12 +721,13 @@ is interrupting) — its nested start event carries the trigger.
 
 ```go
 activity.NewServiceTask("charge",
-    activity.WithActionName("charge-card"),
-    activity.WithCompensation("refund-card"),
+    activity.WithTaskAction("charge-card"),
+    activity.WithCompensateAction("refund-card"),
     activity.WithRetryPolicy(&retry),
 )
 activity.NewUserTask("approve", []string{"manager"},
-    activity.WithDeadline(`"3h"`, "escalate-flow", "notify-manager"),
+    activity.WithWaitDeadline(`"3h"`, "escalate-flow"),
+    activity.WithDeadlineAction("notify-manager"),
     activity.WithEligibilityExpr(`vars["region"] == "EU"`),
 )
 activity.NewReceiveTask("await-payment", "payment-received",
@@ -729,7 +735,7 @@ activity.NewReceiveTask("await-payment", "payment-received",
 )
 activity.NewSubProcess("reserve-hotel", hotelDef)
 activity.NewCallActivity("credit-check", "credit-check")        // resolved via a DefinitionRegistry
-event.NewEventSubProcess("on-cancel", cancelHandlerDef, event.WithEventSubProcessNonInterrupting())
+event.NewEventSubProcess("on-cancel", cancelActionDef, event.WithEventSubProcessNonInterrupting())
 ```
 
 ### SendTask delivery (transactional outbox)
@@ -760,13 +766,13 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 | **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `event.NewIntermediateThrow(id string, opts ...) Node` |
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
-`NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
-`WithCatchMessage(msg, key)`, `WithCatchDeadline(dur, flow, action)`,
-`WithCatchWaitReminder(every, action)`, `WithName(string)`.
-`NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
+`NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithSignalName(name)`,
+`WithMessageCorrelator(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
+`WithWaitAction(every, action)`, `WithName(string)`.
+`NewIntermediateThrowEvent` options: `WithThrowSignalName(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
-`NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithBoundarySignal(name)`,
-`WithBoundaryMessage(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
+`NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithSignalName(name)`,
+`WithMessageCorrelator(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
 `WithBoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
 
 > **Boundary events:** timer, signal, error, and message boundaries are all armed and
@@ -806,9 +812,9 @@ Assemble nodes and flows with the fluent builder, then `Build()` (which validate
 def, err := definition.NewBuilder("order-fulfillment", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewExclusive("route")).
-    Add(activity.NewServiceTask("manual-review", activity.WithActionName("manual-review"))).
-    Add(activity.NewServiceTask("auto-approve", activity.WithActionName("auto-approve"))).
-    Add(activity.NewServiceTask("reject", activity.WithActionName("reject"))).
+    Add(activity.NewServiceTask("manual-review", activity.WithTaskAction("manual-review"))).
+    Add(activity.NewServiceTask("auto-approve", activity.WithTaskAction("auto-approve"))).
+    Add(activity.NewServiceTask("reject", activity.WithTaskAction("reject"))).
     Add(event.NewEnd("end")).
     Connect("start", "route").
     Connect("route", "manual-review", flow.WithCondition("amount > 50000")).
@@ -851,7 +857,7 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensationAction: refund-card
+    compensateAction: refund-card
     retryPolicy: { maxAttempts: 5, initialInterval: 1s, backoffCoef: 2.0 }
   - id: approve
     kind: userTask
@@ -897,10 +903,10 @@ start → fork[Parallel] → pick-items[Service]  ┐
 def, _ := definition.NewBuilder("order-fulfillment", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewParallel("fork")).
-    Add(activity.NewServiceTask("pick-items", activity.WithActionName("pick-items"))).
-    Add(activity.NewServiceTask("charge-card", activity.WithActionName("charge-card"))).
+    Add(activity.NewServiceTask("pick-items", activity.WithTaskAction("pick-items"))).
+    Add(activity.NewServiceTask("charge-card", activity.WithTaskAction("charge-card"))).
     Add(gateway.NewParallel("join")).
-    Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+    Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship"))).
     Add(event.NewEnd("end")).
     Connect("start", "fork").
     Connect("fork", "pick-items").
@@ -942,10 +948,10 @@ variable key `amount`, not `vars.amount`.
 
 ### 3. Activity deadline / timeout escalation
 
-A **`WithDeadline`** option attached to an activity arms a deadline timer; if the
-activity is still in progress when the deadline elapses, the engine runs the fire-once
-breach action (the third argument), cancels the in-progress task, and routes the token
-down a named deadline flow to an escalation path.
+A **`WithWaitDeadline`** option attached to an activity arms a deadline timer; if the
+activity is still in progress when the deadline elapses, the engine runs the optional
+fire-once breach action (set via **`WithDeadlineAction`**), cancels the in-progress task,
+and routes the token down a named deadline flow to an escalation path.
 
 ```
 start → review[UserTask, deadline "1h" → flow "review-overdue", action "notify-overdue"] ──→ approved-end
@@ -956,8 +962,9 @@ start → review[UserTask, deadline "1h" → flow "review-overdue", action "noti
 
 ```go
 Add(activity.NewUserTask("review", []string{"reviewer"},
-    activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"))). // fire-once breach action
-Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
+    activity.WithWaitDeadline(`"1h"`, "review-overdue"),
+    activity.WithDeadlineAction("notify-overdue"))). // fire-once breach action
+Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 // ...
 Connect("review", "approved-end").                                  // normal path
 Connect("review", "escalate", flow.WithFlowID("review-overdue")).  // deadline flow
@@ -976,7 +983,7 @@ parks) and `WithScheduler` (so the timer arms).
 
 ### 4. Compensation / saga rollback
 
-Activities carrying `WithCompensation(...)` record an undo action when they complete. On
+Activities carrying `WithCompensateAction(...)` record an undo action when they complete. On
 rollback the engine invokes those undo actions in **reverse completion order**.
 
 ```
@@ -989,9 +996,9 @@ then: deliver CompensateRequested("") → refund, then cancel-booking → termin
 ```
 
 ```go
-Add(activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensation("cancel-booking"))).
-Add(activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensation("refund"))).
-Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+Add(activity.NewServiceTask("book", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-booking"))).
+Add(activity.NewServiceTask("pay", activity.WithTaskAction("pay"), activity.WithCompensateAction("refund"))).
+Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship"))).
 Add(event.NewBoundary("ship-err", "ship", event.WithBoundaryErrorCode(""))).
 // ... after the forward run completes via the boundary path:
 trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
@@ -1160,7 +1167,7 @@ def, _ := definition.NewBuilder("order-shipping", 1).
     Add(event.NewStart("start")).
     Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
         activity.WithCorrelationKey("orderID"))).
-    Add(activity.NewServiceTask("ship", activity.WithActionName("ship-order"))).
+    Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship-order"))).
     Add(event.NewEnd("end")).
     Connect("start", "await-payment").
     Connect("await-payment", "ship").Connect("ship", "end").
@@ -1213,7 +1220,7 @@ start → charge[Service "charge-card", retry ≤5, backoff ×2] → end
 ```
 
 ```go
-Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
+Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"),
     activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: time.Second, BackoffCoef: 2.0,
     })))
@@ -1232,9 +1239,9 @@ reaches `StatusCompleted` with no incident raised.
 
 ### 12. In-wait reminders
 
-`WithWaitReminder(every, action)` schedules a recurring in-wait action that fires once per
+`WithWaitAction(every, action)` schedules a recurring in-wait action that fires once per
 interval **while** a task is open, re-arming itself each time. It stops automatically once
-the task is completed, cancelled, or breached — distinct from the one-shot `WithDeadline`
+the task is completed, cancelled, or breached — distinct from the one-shot `WithWaitDeadline`
 escalation in scenario 3.
 
 ```
@@ -1243,7 +1250,7 @@ start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
 
 ```go
 Add(activity.NewUserTask("review", []string{"reviewer"},
-    activity.WithWaitReminder(`"30m"`, "nudge-reviewer")))
+    activity.WithWaitAction(`"30m"`, "nudge-reviewer")))
 // driver wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
 driver.Drive(ctx, def, "review-77", nil)                            // parks; first reminder armed
 for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire
@@ -1268,7 +1275,7 @@ start → gw[event-based] ─┬─ await-payment[catch signal "payment-confirme
 
 ```go
 Add(gateway.NewEventBased("gw")).
-Add(event.NewIntermediateCatch("await-payment", event.WithCatchSignal("payment-confirmed"))).
+Add(event.NewIntermediateCatch("await-payment", event.WithSignalName("payment-confirmed"))).
 Add(event.NewIntermediateCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
 // ... gw → both arms; each arm → its own service task + end
 driver.Drive(ctx, def, "order-fast", nil) // parks at gw with both arms live
@@ -1283,7 +1290,7 @@ decided by whichever event happened first.
 
 ### 14. Catch-event in-wait reminder
 
-`WithCatchWaitReminder(every, action)` attaches a recurring in-wait reminder to an
+`WithWaitAction(every, action)` attaches a recurring in-wait reminder to an
 **intermediate catch event** — the same reminder mechanism as scenario 12, now generalized
 beyond `UserTask`. The reminder fires once per interval **while** the instance is parked
 awaiting the catch, re-arming itself each time, and is cancelled automatically the moment the
@@ -1295,8 +1302,8 @@ start → await[catch signal "approved", reminder every "30m" → "nudge"] → e
 
 ```go
 Add(event.NewIntermediateCatch("await",
-    event.WithCatchSignal("approved"),
-    event.WithCatchWaitReminder(schedule.Every(30*time.Minute), "nudge"))).
+    event.WithSignalName("approved"),
+    event.WithWaitAction(schedule.Every(30*time.Minute), "nudge"))).
 // driver wired with WithClock(fc), WithScheduler(sched), WithSignalBus(bus)
 driver.Drive(ctx, def, "approval-001", nil)                  // parks; reminder armed
 for range 3 { fc.Advance(30 * time.Minute) }                 // 3 nudges fire

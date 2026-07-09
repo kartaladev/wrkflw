@@ -1,5 +1,5 @@
 // Package main demonstrates message BOUNDARY events attached to an activity —
-// the true event.NewBoundary API, distinct from the activity WithDeadline shown
+// the true event.NewBoundary API, distinct from the activity WithWaitDeadline shown
 // in the sibling usertask_deadline example.
 //
 // An order-approval process parks at a UserTask("approve") that hosts TWO
@@ -75,13 +75,13 @@ func main() {
 		// Interrupting message boundary: cancels the approval on "order.cancel"
 		// correlated to this order.
 		Add(event.NewBoundary("bnd-cancel", "approve",
-			event.WithBoundaryMessage("order.cancel", "orderID"))).
+			event.WithMessageCorrelator("order.cancel", "orderID"))).
 		// Non-interrupting message boundary: reminds without interrupting,
 		// correlated to this order.
 		Add(event.NewBoundary("bnd-remind", "approve",
-			event.WithBoundaryMessage("order.remind", "orderID"),
+			event.WithMessageCorrelator("order.remind", "orderID"),
 			event.WithBoundaryNonInterrupting())).
-		Add(activity.NewServiceTask("notify", activity.WithActionName("notify-approver"))).
+		Add(activity.NewServiceTask("notify", activity.WithTaskAction("notify-approver"))).
 		Add(event.NewEnd("end-approved")).
 		Add(event.NewEnd("end-cancelled")).
 		Add(event.NewEnd("end-reminded")).

@@ -58,7 +58,7 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 		preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 	}
 	// Resolve the effective definition for the token's scope so we can look up
-	// the node and check for a CompensationAction BEFORE merging output.
+	// the node and check for a CompensateAction BEFORE merging output.
 	tdef, err := defForScope(def, s, tok.ScopeID)
 	if err != nil {
 		return StepResult{}, err
@@ -66,7 +66,7 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 	// Record compensation BEFORE merging the output: the snapshot captures the
 	// instance variables as they existed when the activity was invoked.
 	if node, ok := tdef.Node(tok.NodeID); ok {
-		if compAction := compensationActionOf(node); compAction != "" {
+		if compAction := compensateActionOf(node); compAction != "" {
 			s.recordCompensation(tok.ScopeID, node.ID(), compAction, t.OccurredAt(), copyVars(s.Variables))
 		}
 	}
@@ -96,7 +96,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 	}
 
 	// Per-node cancel handlers (ADR-0035): collect InvokeCancelAction for each
-	// active token whose node carries a non-empty CancelHandler.
+	// active token whose node carries a non-empty CancelAction.
 	// This MUST happen before the compensation/immediate branch because
 	// beginCompensation (and the immediate path) clear s.Tokens.
 	// Tokens are iterated in slice order for determinism.
@@ -109,7 +109,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 			continue
 		}
 		if node, ok := tdef.Node(tok.NodeID); ok {
-			if ch := cancelHandlerOf(node); ch != "" {
+			if ch := cancelActionOf(node); ch != "" {
 				nodeCancelCmds = append(nodeCancelCmds, InvokeCancelAction{Name: ch, Input: copyVars(s.Variables)})
 			}
 		}
@@ -156,7 +156,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		if err != nil {
 			return StepResult{}, err
 		}
-		// Ordering: [def.CancelActions…, per-node CancelHandlers…, task cancels…, compensation walk…]
+		// Ordering: [def.CancelActions…, per-node CancelActions…, task cancels…, compensation walk…]
 		// Reconcile the human-task projection before the compensation walk so a
 		// cancel-with-compensation instance also closes its parked tasks (ADR-0088).
 		taskCancelCmds := s.cancelOpenTasks()
@@ -173,7 +173,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
 	}
 	s.Tokens = nil
-	// Ordering: [def.CancelActions…, per-node CancelHandlers…, FailInstance, timers, arms].
+	// Ordering: [def.CancelActions…, per-node CancelActions…, FailInstance, timers, arms].
 	// Start from a fresh slice so we never alias cancelActionCmds' backing array
 	// (matches the compensation branch's append(append(...)) idiom).
 	cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
@@ -432,6 +432,38 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	return StepResult{State: *s, Commands: append(timerPreCmds, driveCmds...)}, nil
 }
 
+// parkOnCompletionAction checks whether tok's node (resolved against tdef, the
+// scope-effective definition) carries a CompletionAction and, if so, parks the
+// token on the action round-trip instead of advancing now: it appends an
+// InvokeAction to cmds, sets the token to TokenWaitingCommand awaiting the new
+// command, and returns (result, true) — the caller must return this result
+// immediately without falling through to its own moveAlongSingleFlow+drive.
+// When the node carries no CompletionAction, it returns (StepResult{}, false)
+// and the caller proceeds with its own advance-and-drive as usual.
+//
+// Shared by handleHumanCompleted and handleMessageReceived (both completion
+// triggers whose park-then-invoke-then-resume shape is otherwise identical).
+func parkOnCompletionAction(s *InstanceState, tdef *model.ProcessDefinition, tok *Token, cmds []Command) (StepResult, bool) {
+	node, ok := tdef.Node(tok.NodeID)
+	if !ok {
+		return StepResult{}, false
+	}
+	ca := completionActionOf(node)
+	if ca == "" {
+		return StepResult{}, false
+	}
+	cmdID := s.nextCommandID()
+	cmds = append(cmds, InvokeAction{
+		CommandID: cmdID,
+		Name:      ca,
+		Scoped:    tdef.ScopedCatalog(),
+		Input:     copyVars(s.Variables),
+	})
+	tok.State = TokenWaitingCommand
+	tok.AwaitCommand = cmdID
+	return StepResult{State: *s, Commands: cmds}, true
+}
+
 // handleHumanCompleted processes a HumanCompleted trigger: merges output,
 // completes the task, advances the token, cancels guarding timers, and drives forward.
 func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t HumanCompleted, opt StepOptions) (StepResult, error) {
@@ -456,7 +488,6 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 	if humanTdefErr != nil {
 		return StepResult{}, humanTdefErr
 	}
-	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
 	cmds := []Command{UpdateTask{Task: *task}}
 	// Cancel any deadline or reminder timers that were guarding this task.
 	for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
@@ -464,14 +495,19 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 	}
 	// Cancel any boundary arms on this host token (token ID is the same as the
 	// HostToken recorded at arm time; at this point tok.ID is still valid since
-	// moveAlongSingleFlow keeps the same token — it just changes NodeID).
-	// We find the original token ID via the task token's parked token:
-	// tok.ID is already the token that was parked (we looked it up via
-	// tokenAwaiting(t.TaskToken) above, and moveAlongSingleFlow does not change
-	// the token ID, only its NodeID). So tok.ID is the correct HostToken.
+	// the token has not moved yet — tok.ID is already the token that was
+	// parked, looked up via tokenAwaiting(t.TaskToken) above).
 	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
+	// Completion action: park on the action round-trip instead of advancing now.
+	// handleActionCompleted resumes: it merges the action output and advances the
+	// token along the single outgoing flow (the token is still at humanTdef's node).
+	if res, parked := parkOnCompletionAction(s, humanTdef, tok, cmds); parked {
+		return res, nil
+	}
+	// No completion action: advance + drive as before.
+	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
 	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 	if err != nil {
 		return StepResult{}, err
@@ -729,6 +765,13 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	if msgTdefErr != nil {
 		return StepResult{}, msgTdefErr
 	}
+	// Completion action: park on the action round-trip instead of advancing now.
+	// handleActionCompleted resumes: it merges the action output and advances the
+	// token along the single outgoing flow (the token is still at msgTdef's node).
+	if res, parked := parkOnCompletionAction(s, msgTdef, tok, preCmds); parked {
+		return res, nil
+	}
+	// No completion action: advance + drive as before.
 	s.moveAlongSingleFlow(msgTdef, tok, t.OccurredAt())
 	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 	if err != nil {

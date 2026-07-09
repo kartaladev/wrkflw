@@ -265,7 +265,7 @@ Two phases: an **undo log** accumulated during forward flow, then replayed in
 reverse. The replay reuses the normal `InvokeAction` → `action.Catalog` machinery.
 
 ```
-PHASE 1 — forward: each activity with a CompensationAction appends a
+PHASE 1 — forward: each activity with a CompensateAction appends a
           CompensationRecord{NodeID, Action, Input} to s.RootCompensations
           (oldest-first). Sub-process scopes archive theirs on close.
 
@@ -809,7 +809,7 @@ loader API (e.g. a test helper that only registers actions):
 
 ```go
 b := definition.NewBuilder("order", 1).
-    AddServiceTask("charge", activity.WithActionName("charge-card"))
+    AddServiceTask("charge", activity.WithTaskAction("charge-card"))
 // hand off to a helper that knows nothing about the structure:
 myHelper(b.Loader())
 ```

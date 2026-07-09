@@ -92,6 +92,51 @@ release.
 - **`action.Default()` → `action.DefaultCatalog()`** — the zero-argument catalog accessor
   is renamed to be unambiguous.
 
+- **Activity/event option-naming consolidation, deadline/wait split, and inline-action
+  removal (ADR-0114).** Public option renames (hard renames, no deprecated aliases):
+  - `activity.WithCompensation(a)` → `WithCompensateAction(a)` (field `CompensationAction`
+    → `CompensateAction`).
+  - `activity.WithCancelHandler(a)` → `WithCancelAction(a)` (field `CancelHandler` →
+    `CancelAction`).
+  - `activity.WithActionName(a)` → `WithTaskAction(a)`.
+  - `activity.WithDeadline(t, flow, action)` / `event.WithCatchDeadline(t, flow, action)` →
+    split into a mandatory `WithWaitDeadline(t schedule.TriggerSpec, flow string)` plus the
+    new optional `WithDeadlineAction(action string)` (see Added below). `WithWaitDeadline`
+    now rejects a recurring trigger at `Build`, returning the new sentinel error
+    `ErrDeadlineTriggerRecurring`.
+  - `activity.WithWaitReminder(t, action)` / `event.WithCatchWaitReminder(t, action)` →
+    `WithWaitAction(t schedule.TriggerSpec, action string)` (accepts one-shot or recurring
+    triggers). Backing fields rename `WaitFields.ReminderEvery` → `WaitEvery` and
+    `ReminderAction` → `WaitAction`.
+  - `event.WithStartMessage`/`WithCatchMessage`/`WithBoundaryMessage` → one
+    `event.WithMessageCorrelator(msg, key string)` usable on Start/Catch/Boundary events.
+  - `event.WithStartSignal`/`WithCatchSignal`/`WithBoundarySignal` → one
+    `event.WithSignalName(name string)` usable on Start/Catch/Boundary events.
+  - `event.WithThrowSignal(name)` → `event.WithThrowSignalName(name)`.
+  - `processtest` harness: `WithAction`/`WithActionFunc` → `WithCatalogAction`/
+    `WithCatalogActionFunc`.
+
+  **Removed, no replacement:** `activity.WithAction`/`activity.WithActionFunc` (inline
+  node-local action closures), `model.TaskAction.Inline`, `engine.InvokeAction.Inline`, and
+  the inline-vs-name conflict check at `Build`. Every action now resolves by catalog name
+  only — register it (`action.Register`/`action.RegisterFunc`) and reference it via
+  `WithTaskAction` (or another `WithXxxAction` option). Definitions are consequently fully
+  serializable: no node can carry a non-serializable closure.
+
+  **Wire/YAML key renames** (persisted definitions serialized with the old keys will not
+  decode — see the migration note below): `compensationAction` → `compensateAction`,
+  `cancelHandler` → `cancelAction`, `reminderTrigger`/`reminderAction`/`reminderEvery` →
+  `waitTrigger`/`waitAction`/`waitEvery`. The `service` instance JSON `inline` action-binding
+  field is removed. **Unchanged:** `deadlineTrigger`/`deadlineFlow`/`deadlineAction`,
+  `signalName`, `messageName`, `correlationKey`.
+
+  **Migration note.** Persisted process definitions serialized with the old wire/YAML keys
+  (`compensationAction`, `cancelHandler`, `reminderTrigger`/`reminderAction`/`reminderEvery`)
+  will fail to decode after upgrading — re-author or re-serialize them with the renamed keys.
+  Any definition relying on an inline node-local action closure must register that action in
+  a catalog and reference it by name via `WithTaskAction` (or the matching `WithXxxAction`
+  option) instead.
+
 ### Added
 
 - **`definition.Qualifier`: typed process-definition reference (ADR-0101).**
@@ -133,6 +178,23 @@ release.
   actions: `httpcall` (10 MiB body cap by default via `WithMaxResponseSize`), `email`,
   `transform`, and `logaction`. Service-action invocations time out after 30s by default
   (`runtime.WithActionTimeout`); a timeout surfaces as a retryable failure.
+
+- **`activity.WithCompletionAction(name string)` — optional post-completion action hook on
+  UserTask/ReceiveTask (ADR-0114).** Sets `ActivityFields.CompletionAction` (wire/YAML key
+  `completionAction`, decode-only per existing YAML convention). When set,
+  `handleHumanCompleted`/`handleMessageReceived` (`engine/step_triggers.go`) merge the
+  completion's output vars, then invoke the named catalog action via the existing
+  `InvokeAction`/`ActionCompleted` round-trip — parking the token as `TokenWaitingCommand` —
+  before advancing; the action's return vars are merged and the token advances only once the
+  action completes. Failure is governed by the host node's `RetryPolicy` and error boundary,
+  identically to a service-task action failure: no new token state or failure model was
+  introduced. Distinct from the existing `WithCompletionValidation` (which gates the
+  completion input *before* it is accepted) — this option runs an action *after* the
+  completion is accepted.
+- **`activity.WithDeadlineAction(name string)` — optional standalone deadline-breach action
+  (ADR-0114).** Split out of the old bundled `WithDeadline(t, flow, action)` (see the Breaking
+  changes section above); pair it with the new mandatory `WithWaitDeadline(t, flow)` to
+  attach a breach action only when one is actually wanted.
 
 - **Default `DefinitionRegistry` for zero-config call activities (ADR-0097, follows ADR-0096).**
   `runtime.NewProcessDriver()` now wires `runtime.DefaultDefinitionRegistry()` automatically,

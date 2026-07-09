@@ -1,18 +1,18 @@
 package engine_test
 
 // step_cancel_handlers_test.go — Task 1: per-node cancel handlers
-// (Node.CancelHandler) emitted as InvokeCancelAction on CancelRequested.
+// (Node.CancelAction) emitted as InvokeCancelAction on CancelRequested.
 //
 // Design:  docs/specs/2026-06-23-cancel-handlers-design.md
 // ADR:     0035
 //
 // Cases:
-//  (a) one active node with CancelHandler → InvokeCancelAction emitted alongside def.CancelActions
+//  (a) one active node with CancelAction → InvokeCancelAction emitted alongside def.CancelActions
 //  (b) two parallel active tokens, one node has handler one doesn't → exactly ONE node-cancel cmd
 //  (c) active node inside a sub-process scope with handler → emitted via defForScope
 //  (d) cancel-with-compensation + node handler → both node-cancel InvokeCancelAction AND comp
 //      walk's first InvokeAction present; node-cancel ordered before the comp walk command
-//  (e) no CancelHandler set anywhere → identical command set to today (no extra InvokeCancelAction)
+//  (e) no CancelAction set anywhere → identical command set to today (no extra InvokeCancelAction)
 //  (f) determinism: same (def, state) ⇒ same commands
 
 import (
@@ -66,11 +66,11 @@ func indexOfInvokeAction(cmds []engine.Command, name string) int {
 	return -1
 }
 
-// ── (a) one active node with CancelHandler ───────────────────────────────────
+// ── (a) one active node with CancelAction ───────────────────────────────────
 
 // TestCancelHandler_SingleActiveNode verifies that when CancelRequested fires
 // while exactly one node is active (a UserTask parked) and that node has a
-// CancelHandler, an InvokeCancelAction for the handler is emitted alongside
+// CancelAction, an InvokeCancelAction for the handler is emitted alongside
 // any def.CancelActions.
 func TestCancelHandler_SingleActiveNode(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
@@ -80,7 +80,7 @@ func TestCancelHandler_SingleActiveNode(t *testing.T) {
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("user", nil, activity.WithCancelHandler("release-hold")),
+			activity.NewUserTask("user", nil, activity.WithCancelAction("release-hold")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -109,13 +109,13 @@ func TestCancelHandler_SingleActiveNode(t *testing.T) {
 	// Must include the def-level action.
 	assert.Contains(t, names, "global-cleanup", "def.CancelActions must be emitted")
 	// Must include the per-node handler.
-	assert.Contains(t, names, "release-hold", "node CancelHandler must be emitted as InvokeCancelAction")
+	assert.Contains(t, names, "release-hold", "node CancelAction must be emitted as InvokeCancelAction")
 }
 
 // ── (b) two parallel tokens, one with handler, one without ──────────────────
 
 // TestCancelHandler_TwoParallelTokens verifies that with two parallel active
-// tokens only the one whose node has a CancelHandler emits an
+// tokens only the one whose node has a CancelAction emits an
 // InvokeCancelAction; the other contributes nothing.
 func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
@@ -126,8 +126,8 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewServiceTask("svc-a", activity.WithActionName("do-a"), activity.WithCancelHandler("cleanup-a")),
-			activity.NewServiceTask("svc-b", activity.WithActionName("do-b")),
+			activity.NewServiceTask("svc-a", activity.WithTaskAction("do-a"), activity.WithCancelAction("cleanup-a")),
+			activity.NewServiceTask("svc-b", activity.WithTaskAction("do-b")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
@@ -162,7 +162,7 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 // ── (c) active node inside a sub-process scope ───────────────────────────────
 
 // TestCancelHandler_SubProcessScope verifies that an active node inside a
-// sub-process scope with a CancelHandler is resolved via defForScope and its
+// sub-process scope with a CancelAction is resolved via defForScope and its
 // InvokeCancelAction is emitted.
 func TestCancelHandler_SubProcessScope(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
@@ -172,7 +172,7 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 		ID: "inner", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action"), activity.WithCancelHandler("inner-cleanup")),
+			activity.NewServiceTask("inner-svc", activity.WithTaskAction("inner-action"), activity.WithCancelAction("inner-cleanup")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -224,27 +224,27 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 
 	require.Len(t, icas, 1, "exactly one node-cancel InvokeCancelAction (the inner active node) expected")
 	assert.Contains(t, names, "inner-cleanup",
-		"CancelHandler on node in sub-process scope must be emitted via defForScope")
+		"CancelAction on node in sub-process scope must be emitted via defForScope")
 }
 
 // ── (d) cancel-with-compensation + node handler ──────────────────────────────
 
-// TestCancelHandler_WithCompensation verifies that on cancel, when both
+// TestCancelHandler_WithCompensateAction verifies that on cancel, when both
 // compensation records exist (completed compensable nodes) AND an active node
-// has a CancelHandler:
+// has a CancelAction:
 //   - the per-node InvokeCancelAction is emitted
 //   - the compensation walk's first InvokeAction is emitted
 //   - the per-node command appears before the compensation walk command
-func TestCancelHandler_WithCompensation(t *testing.T) {
+func TestCancelHandler_WithCompensateAction(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
-	// start → compensable-svc → user-task (with CancelHandler) → end
+	// start → compensable-svc → user-task (with CancelAction) → end
 	def := &model.ProcessDefinition{
 		ID: "ch-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
-			activity.NewUserTask("user", nil, activity.WithCancelHandler("release-hold")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
+			activity.NewUserTask("user", nil, activity.WithCancelAction("release-hold")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -286,12 +286,12 @@ func TestCancelHandler_WithCompensation(t *testing.T) {
 
 	// Assert ordering: per-node cancel action BEFORE the compensation walk action.
 	assert.Less(t, idxCancel, idxComp,
-		"node CancelHandler InvokeCancelAction must appear before the compensation InvokeAction")
+		"node CancelAction InvokeCancelAction must appear before the compensation InvokeAction")
 }
 
-// ── (e) no CancelHandler set anywhere → identical to today ──────────────────
+// ── (e) no CancelAction set anywhere → identical to today ──────────────────
 
-// TestCancelHandler_NoneSet verifies that when no node sets CancelHandler the
+// TestCancelHandler_NoneSet verifies that when no node sets CancelAction the
 // command set produced by CancelRequested is byte-for-behaviour identical to
 // the pre-change baseline (i.e. no extra InvokeCancelAction beyond
 // def.CancelActions).
@@ -303,7 +303,7 @@ func TestCancelHandler_NoneSet(t *testing.T) {
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("user", nil), // no CancelHandler
+			activity.NewUserTask("user", nil), // no CancelAction
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -323,7 +323,7 @@ func TestCancelHandler_NoneSet(t *testing.T) {
 	icas := findInvokeCancelActions(r1.Commands)
 
 	// Only the def-level global-cleanup InvokeCancelAction should be present.
-	require.Len(t, icas, 1, "only def.CancelActions InvokeCancelAction must be present when no node sets CancelHandler")
+	require.Len(t, icas, 1, "only def.CancelActions InvokeCancelAction must be present when no node sets CancelAction")
 	assert.Equal(t, "global-cleanup", icas[0].Name)
 }
 
@@ -339,7 +339,7 @@ func TestCancelHandler_Determinism(t *testing.T) {
 		CancelActions: []string{"def-action"},
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("work"), activity.WithCancelHandler("node-cleanup")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("work"), activity.WithCancelAction("node-cleanup")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
