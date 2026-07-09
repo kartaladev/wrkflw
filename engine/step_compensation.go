@@ -75,15 +75,18 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 	// restarting beginCompensation would re-walk records that are still
 	// mid-consumption and re-emit the in-flight compensation (double-compensation).
 	//
-	// A reverse trigger (t.ReverseNode != "") is the one exception: the runtime
-	// facade (ProcessDriver.ReverseInstance) admits a Compensating instance, so a
-	// reverse arriving mid-walk must not be silently discarded — the caller would
-	// otherwise believe it succeeded when nothing happened. Reject it with an
-	// error instead. A plain admin/partial CompensateRequested (ReverseNode == "")
-	// keeps today's silent no-op — that path is shared with admin/cancel/error
-	// callers that may legitimately re-deliver a trigger mid-walk.
+	// A facade-originated reverse trigger — full (t.ReverseNode != "") OR target
+	// (t.RestoreTargetVars, set only by NewReverseToNode) — is the one exception:
+	// the runtime facade (ProcessDriver.ReverseInstance) admits a Compensating
+	// instance for both WithFullReverse and WithTargetNode, so a reverse arriving
+	// mid-walk must not be silently discarded — the caller would otherwise believe
+	// it succeeded when nothing happened. Reject it with an error instead. A plain
+	// admin/partial CompensateRequested (both ReverseNode == "" and
+	// RestoreTargetVars == false — a raw engine.NewCompensateRequested) keeps
+	// today's silent no-op — that path is shared with admin/cancel/error callers
+	// that may legitimately re-deliver a trigger mid-walk.
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
-		if t.ReverseNode != "" {
+		if t.ReverseNode != "" || t.RestoreTargetVars {
 			return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse instance while a compensation walk is in flight")
 		}
 		return StepResult{State: *s}, nil

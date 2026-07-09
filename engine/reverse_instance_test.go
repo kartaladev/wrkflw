@@ -572,6 +572,26 @@ func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
 			},
 		},
 		{
+			// FU#1 sharpened this: WithTargetNode(X) emits NewReverseToNode, which
+			// sets RestoreTargetVars (not ReverseNode). Before this case's fix, the
+			// mid-walk guard only recognized ReverseNode != "" as facade-originated
+			// reverse intent, so a target reverse arriving mid-walk fell through to
+			// the silent no-op below — the caller believed ReverseInstance(id,
+			// WithTargetNode(X)) succeeded when nothing happened. Must error exactly
+			// like the full-reverse case above.
+			name:    "target reverse trigger during active walk errors instead of silently discarding",
+			trigger: engine.NewReverseToNode(t0, "svc"),
+			assert: func(t *testing.T, before, result engine.InstanceState, err error) {
+				require.Error(t, err, "a target reverse arriving mid-walk must not be silently discarded")
+				assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
+				assert.Contains(t, err.Error(), "in flight", "error must explain the rejection is due to an in-flight compensation walk")
+				// Step is pure (clones state internally); the caller's original state
+				// value must be unaffected by the erroring call.
+				assert.Equal(t, before.Status, midWalk.Status, "original state must be unchanged after a rejected target reverse")
+				assert.Equal(t, before.Compensating, midWalk.Compensating, "original cursor must be unchanged after a rejected target reverse")
+			},
+		},
+		{
 			name:    "admin/partial trigger during active walk still silently no-ops (unchanged)",
 			trigger: engine.NewCompensateRequested(t0, "start"),
 			assert: func(t *testing.T, before, result engine.InstanceState, err error) {
