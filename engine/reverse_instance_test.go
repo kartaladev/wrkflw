@@ -515,3 +515,84 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 		})
 	}
 }
+
+// TestCompensateRequested_DuringActiveWalk is the Fork C (ADR-0109 hardening)
+// regression: stepCompensateRequested's mid-walk guard (StatusCompensating &&
+// ActiveCmdID != "") today silently no-ops ANY CompensateRequested delivered
+// while a compensation walk is already in flight — including a reverse
+// trigger (ReverseNode != ""). The runtime facade admits a reverse against a
+// Compensating instance, so a reverse arriving mid-walk is currently
+// discarded with no error: the caller believes it succeeded when nothing
+// happened. This must instead return a workflow-engine: error. A plain
+// admin/partial CompensateRequested (ReverseNode == "") delivered during the
+// same in-flight walk is UNCHANGED — it keeps the existing silent no-op,
+// which is shared with admin/cancel/error callers that may legitimately
+// re-deliver a trigger mid-walk.
+func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
+	def := reverseSvcDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	// Drive to an in-flight compensation walk: start -> complete "do" (records
+	// svc's compensation, parks on "park") -> NewReverseToStart begins the
+	// walk and emits the "undo" InvokeAction WITHOUT completing it, so the
+	// cursor's ActiveCmdID is non-empty (mid-walk) at this state.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdDo := findInvokeActionID(t, r1.Commands, "do")
+	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation must be recorded")
+
+	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompensating, r3.State.Status, "precondition: walk in flight")
+	require.NotEmpty(t, r3.State.Compensating.ActiveCmdID, "precondition: walk is mid-flight (undo not yet completed)")
+	midWalk := r3.State
+
+	type testCase struct {
+		name    string
+		trigger engine.CompensateRequested
+		assert  func(t *testing.T, before, result engine.InstanceState, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:    "reverse trigger during active walk errors instead of silently discarding",
+			trigger: engine.NewReverseToStart(t0, "start"),
+			assert: func(t *testing.T, before, result engine.InstanceState, err error) {
+				require.Error(t, err, "a reverse arriving mid-walk must not be silently discarded")
+				assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
+				assert.Contains(t, err.Error(), "in flight", "error must explain the rejection is due to an in-flight compensation walk")
+				// Step is pure (clones state internally); the caller's original state
+				// value must be unaffected by the erroring call.
+				assert.Equal(t, before.Status, midWalk.Status, "original state must be unchanged after a rejected reverse")
+				assert.Equal(t, before.Compensating, midWalk.Compensating, "original cursor must be unchanged after a rejected reverse")
+			},
+		},
+		{
+			name:    "admin/partial trigger during active walk still silently no-ops (unchanged)",
+			trigger: engine.NewCompensateRequested(t0, "start"),
+			assert: func(t *testing.T, before, result engine.InstanceState, err error) {
+				require.NoError(t, err, "admin trigger mid-walk must keep the existing silent no-op")
+				// Compare the fields the no-op guard is actually responsible for
+				// leaving untouched, rather than full struct equality: a second
+				// cloneState pass over an already-empty slice field (e.g. Tokens)
+				// collapses "empty-but-non-nil" to nil, which is an unrelated
+				// cloneState quirk (append onto nil with zero elements yields nil),
+				// not a behavior this guard could ever affect.
+				assert.Equal(t, before.Status, result.Status, "admin no-op must not change Status")
+				assert.Equal(t, before.Compensating, result.Compensating, "admin no-op must not change the compensation cursor")
+				assert.Equal(t, before.RootCompensations, result.RootCompensations, "admin no-op must not change RootCompensations")
+				assert.Equal(t, before.Variables, result.Variables, "admin no-op must not change Variables")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := engine.Step(def, midWalk, tc.trigger, engine.StepOptions{})
+			tc.assert(t, midWalk, r.State, err)
+		})
+	}
+}
