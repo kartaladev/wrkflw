@@ -148,3 +148,29 @@ func TestActivityRoundTrip(t *testing.T) {
 		t.Errorf("deadline Timer expr after round-trip = %q, ok=%v", dExpr, dOk)
 	}
 }
+
+// TestUserTaskManualWireRoundTrip verifies UserTask.Manual (ADR-0118) survives
+// a JSON wire round-trip (ToWire -> NodeWire -> FromWire).
+func TestUserTaskManualWireRoundTrip(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "d", Version: 1,
+		Nodes: []model.Node{
+			activity.NewUserTask("confirm", activity.WithManual()),
+		},
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got model.ProcessDefinition
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	ut, ok := got.Nodes[0].(activity.UserTask)
+	if !ok {
+		t.Fatalf("node is %T, want activity.UserTask", got.Nodes[0])
+	}
+	if !ut.Manual {
+		t.Fatal("Manual not preserved across JSON round-trip")
+	}
+}

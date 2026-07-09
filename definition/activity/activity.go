@@ -208,7 +208,7 @@ func init() {
 	model.RegisterKind(model.KindUserTask, model.NodeSpec{
 		Name: "userTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			n := UserTask{Base: b, ActivityFields: w.Activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr}
+			n := UserTask{Base: b, ActivityFields: w.Activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr, Manual: w.Manual}
 			if w.Validation != nil {
 				n.CompletionValidation = model.PendingValidation(*w.Validation)
 			}
@@ -217,6 +217,7 @@ func init() {
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(UserTask)
 			w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
+			w.Manual = v.Manual
 			w.PutActivity(v.ActivityFields)
 			w.Validation = model.PutValidation(v.CompletionValidation)
 		},
