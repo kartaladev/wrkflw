@@ -213,6 +213,99 @@ highest-indexed match on `NodeID`. For a node visited N times in a loop, this
 is ambiguous by design — there is no way to address a specific earlier visit
 by node ID alone — and is documented as such in `WithTargetNode`'s godoc.
 
+## Hardening (post-review, 2026-07-10)
+
+A whole-branch review of the initial implementation (`feat/reverse-instance`,
+`docs/plans/2026-07-09-reverse-instance-hardening.md`) found several gaps
+between the facade-only guards above and what the engine itself would accept
+if called directly (or if the facade's pre-check window raced a concurrent
+change). The following changes close those gaps; none alter the operation
+trio's documented behaviour for any pre-existing (non-reverse) caller.
+
+**Engine-level guards, defense in depth.** Three new checks in
+`stepCompensateRequested` (`engine/step_compensation.go`), all scoped
+STRICTLY to reverse intent so admin/cancel/error compensation callers are
+unaffected:
+
+- **Terminal-instance guard.** `t.ReverseNode != "" && s.Status.IsTerminal()`
+  is rejected with a `workflow-engine:` error. `Status.IsTerminal()`
+  (`engine/state.go`) is a new `Status` method reporting `StatusCompleted`,
+  `StatusFailed`, or `StatusTerminated`. This closes the TOCTOU race in point
+  4 above: the facade's terminal check runs against a `Load`ed snapshot, and
+  an instance could complete between that `Load` and the engine's `Step` —
+  without this guard, such a race would silently resurrect a terminal
+  instance into `StatusRunning`.
+- **In-flight-walk guard.** A reverse trigger arriving while a compensation
+  walk is already active (`s.Status == StatusCompensating &&
+  s.Compensating.ActiveCmdID != ""`) is rejected with a `workflow-engine:`
+  error instead of the silent no-op every other `CompensateRequested` caller
+  gets on redelivery — a reverse the caller believes succeeded must not
+  actually be a no-op.
+- **`ResetVars` requires `ReverseNode`.** `CompensateRequested` is a public,
+  directly-constructible struct, so a caller could hand-build
+  `CompensateRequested{ResetVars: true}` (bypassing `NewReverseToStart`) and
+  reach the pre-existing full-rollback TERMINATE branch, which silently
+  discards `ResetVars` and terminates instead of resuming. This is the
+  engine-level twin of the facade's `WithTargetNode("")` guard (point 3
+  above) and is checked first, ahead of the state-dependent guards.
+
+**Reverse now targets Running/Compensating only, end to end.** Both the
+facade's pre-check and the new engine terminal guard converge on the same
+constraint: only `StatusRunning` and `StatusCompensating` instances are
+reversible. The hardening pass reshaped the fixtures/tests accordingly — they
+reverse a `Running` (parked) instance rather than a completed one, matching
+what both layers now enforce.
+
+**Unified compensation-finish refactor.** `stepCompensationFinish`
+(`engine/step_compensation.go`) previously branched ad hoc across its four
+possible outcomes. It now computes a single `finishPlan` value describing the
+outcome (throw-resume / partial rollback / full-reverse / terminate) and
+applies it uniformly through one `applyFinish` function — a single site where
+a compensation walk concludes, instead of four divergent code paths. The
+terminate branch (used by cancel, unhandled-error, and admin full-rollback)
+is behavior-identical to before the refactor. A byproduct of unifying the
+paths: `EndedAt` is now cleared on **every** resume outcome (throw-resume and
+partial rollback included), fixing a latent bug where those two resume paths
+could leave a stale `EndedAt` set on an instance that had gone back to
+`StatusRunning`.
+
+**Full reverse re-arms root-scope event sub-processes.** A full reverse
+previously left any root-scope (top-level) event sub-process unarmed after
+resuming at the start node — a `StatusRunning` instance that looked
+freshly-started but was not actually listening for its top-level ESP
+triggers. `finishPlan.rearmRootESP` (set only when the resume scope is root,
+i.e. `scopeID == ""`) now re-arms those event sub-processes and
+re-schedules their timers via `armEventSubprocesses`, restoring true
+fresh-start semantics. Because `beginCompensation` never sweeps
+`s.EventSubprocesses` when a full walk begins, `applyFinish` sweeps the
+surviving root-scope ESP arms (and cancels their timers) immediately before
+re-arming, so the resume is idempotent — it neither duplicates nor leaks the
+Start-time arm/timer.
+
+**Cancel preempts an in-flight reverse walk.** `CancelInstance` arriving
+while a reverse walk is in flight now **terminates** the instance
+(`StatusTerminated`) instead of letting the reverse's resume win, mirroring
+the pre-existing throw-walk `PendingCancel` protocol (ADR-0039): both the
+throw-resume and full-reverse-resume finish branches set
+`finishPlan.consumePendingCancel = true`, and `applyFinish` checks
+`s.PendingCancel` before honoring a resume outcome. Without this, a cancel
+racing a reverse could leave the instance `Running` when the caller expected
+it terminated.
+
+**Journal codec round-trips `ReverseNode`/`ResetVars`.** The `CompensateRequested`
+JSON envelope (`internal/persistence/store/trigger_codec.go`) now carries
+`reverse_node` and `reset_vars` alongside the pre-existing `to_node`, so a
+persisted reverse trigger replays with full fidelity from the journal —
+previously only `ToNode` round-tripped, silently dropping the reverse
+intent on decode. State rehydration itself was already correct (it is
+snapshot-based, not trigger-replay-based); this closes an audit-trail gap,
+not a correctness gap in running state.
+
+**Still deferred.** "Restore node-start variables on target reverse" (see
+Consequences below) remains out of scope for this hardening wave — it is
+unrelated to the guards/refactors above and is left for its own future ADR
+(next free number: **0116**).
+
 ## Consequences
 
 - **Positive.** Consumers no longer need to know about

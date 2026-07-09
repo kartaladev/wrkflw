@@ -58,6 +58,12 @@ func WithTargetNode(nodeID string) ReverseOption {
 // that does not resolve to exactly one start event — both checked before any
 // state change.
 //
+// The engine independently rejects reversing a terminal instance and
+// reversing while a compensation walk is already in flight (ADR-0109
+// hardening) — defense in depth against the TOCTOU window between this
+// facade's pre-check Load and the engine's own Step, so this facade's guards
+// are not the only line of defense.
+//
 // It returns the reversed [engine.InstanceState].
 func (driver *ProcessDriver) ReverseInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string, opts ...ReverseOption) (engine.InstanceState, error) {
 	var cfg reverseConfig
