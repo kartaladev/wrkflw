@@ -37,16 +37,48 @@ func TestWithEligibleRoles(t *testing.T) {
 }
 
 func TestWithManual(t *testing.T) {
-	n := activity.NewUserTask("confirm", activity.WithManual())
-	ut, ok := n.(activity.UserTask)
-	if !ok {
-		t.Fatalf("node is %T, want activity.UserTask", n)
+	cases := []struct {
+		name      string
+		immediate bool
+		assert    func(t *testing.T, ut activity.UserTask)
+	}{
+		{
+			name:      "wait mode",
+			immediate: false,
+			assert: func(t *testing.T, ut activity.UserTask) {
+				if !ut.Manual {
+					t.Fatal("Manual = false, want true")
+				}
+				if ut.ManualImmediate {
+					t.Fatal("ManualImmediate = true, want false (wait mode)")
+				}
+			},
+		},
+		{
+			name:      "immediate mode",
+			immediate: true,
+			assert: func(t *testing.T, ut activity.UserTask) {
+				if !ut.Manual {
+					t.Fatal("Manual = false, want true")
+				}
+				if !ut.ManualImmediate {
+					t.Fatal("ManualImmediate = false, want true (immediate mode)")
+				}
+			},
+		},
 	}
-	if !ut.Manual {
-		t.Fatal("Manual = false, want true")
-	}
-	if len(ut.EligibleRoles) != 0 {
-		t.Fatalf("EligibleRoles = %v, want empty (manual task has no eligibility by default)", ut.EligibleRoles)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			n := activity.NewUserTask("confirm", activity.WithManual(tc.immediate))
+			ut, ok := n.(activity.UserTask)
+			if !ok {
+				t.Fatalf("node is %T, want activity.UserTask", n)
+			}
+			if len(ut.EligibleRoles) != 0 {
+				t.Fatalf("EligibleRoles = %v, want empty", ut.EligibleRoles)
+			}
+			tc.assert(t, ut)
+		})
 	}
 }
 

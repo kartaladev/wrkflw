@@ -33,7 +33,7 @@ func main() {
 
 	def, err := definition.NewBuilder("employee-onboarding", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("handOverBadge", activity.WithManual())).
+		Add(activity.NewUserTask("handOverBadge", activity.WithManual(false))).
 		Add(event.NewEnd("end")).
 		Connect("start", "handOverBadge").
 		Connect("handOverBadge", "end").

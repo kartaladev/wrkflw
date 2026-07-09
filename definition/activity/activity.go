@@ -44,6 +44,11 @@ type UserTask struct {
 	// auto-completes): a manual task here keeps a durable "someone confirmed this"
 	// checkpoint.
 	Manual bool
+	// ManualImmediate, meaningful only when Manual is true, selects the manual
+	// completion mode: false (default) waits for a bare completion trigger; true
+	// auto-completes the task on entry (a documentation marker) — the engine
+	// records a completed task for audit and advances without waiting. See ADR-0118.
+	ManualImmediate bool
 }
 
 // Kind returns model.KindUserTask.

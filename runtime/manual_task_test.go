@@ -15,14 +15,14 @@ import (
 )
 
 // TestManualTaskCompletesOnBareTrigger locks ADR-0118: a manual, roleless
-// UserTask (WithManual(), no eligibility) drives to StatusCompleted via a
+// UserTask (WithManual(false), no eligibility) drives to StatusCompleted via a
 // bare completion trigger — no claim, no payload.
 func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
 	ctx := t.Context()
 
 	def, err := definition.NewBuilder("manual-demo", 1).
 		Add(event.NewStart("s")).
-		Add(activity.NewUserTask("confirm", activity.WithManual())). // no eligibility
+		Add(activity.NewUserTask("confirm", activity.WithManual(false))). // no eligibility
 		Add(event.NewEnd("e")).
 		Connect("s", "confirm").Connect("confirm", "e").
 		Build()

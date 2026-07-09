@@ -220,14 +220,23 @@ func WithEligiblePrivileges(privs ...string) UserTaskOption {
 	return eligiblePrivilegesOpt{privs: privs}
 }
 
-type manualOpt struct{}
+type manualOpt struct{ immediate bool }
 
-func (manualOpt) applyUserTask(u *UserTask) { u.Manual = true }
+func (o manualOpt) applyUserTask(u *UserTask) {
+	u.Manual = true
+	u.ManualImmediate = o.immediate
+}
 
-// WithManual marks a UserTask as a manual task: completion needs only a bare
-// trigger (no payload/form-data), and the task must not carry completion
-// validation (rejected at Build time). See ADR-0118.
-func WithManual() UserTaskOption { return manualOpt{} }
+// WithManual marks a UserTask as a manual task: a form-less human checkpoint.
+// immediate selects the completion mode:
+//   - false: the task parks and completes on a bare trigger; a non-empty
+//     completion payload is rejected (engine.ErrManualTaskPayload).
+//   - true:  the task auto-completes on entry (a documentation marker); the
+//     engine records a completed task for audit and advances without waiting.
+//
+// A manual task must not carry completion validation (rejected at Build time,
+// ErrManualTaskValidation), regardless of mode. See ADR-0118.
+func WithManual(immediate bool) UserTaskOption { return manualOpt{immediate} }
 
 type completionValidationOpt struct{ s validate.ValidationStrategy }
 

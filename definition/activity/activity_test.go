@@ -155,7 +155,7 @@ func TestUserTaskManualWireRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "d", Version: 1,
 		Nodes: []model.Node{
-			activity.NewUserTask("confirm", activity.WithManual()),
+			activity.NewUserTask("confirm", activity.WithManual(false)),
 		},
 	}
 	data, err := json.Marshal(def)

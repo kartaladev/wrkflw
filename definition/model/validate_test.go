@@ -1682,7 +1682,7 @@ func TestValidateManualTaskRejectsCompletionValidation(t *testing.T) {
 		{
 			name: "manual task with completion validation is rejected",
 			def: def(
-				activity.WithManual(),
+				activity.WithManual(false),
 				activity.WithCompletionValidation(vexpr.New("ok == true")),
 			),
 			assert: func(t *testing.T, err error) {
@@ -1691,7 +1691,7 @@ func TestValidateManualTaskRejectsCompletionValidation(t *testing.T) {
 		},
 		{
 			name: "manual task with no completion validation is accepted",
-			def:  def(activity.WithManual()),
+			def:  def(activity.WithManual(false)),
 			assert: func(t *testing.T, err error) {
 				require.NotErrorIs(t, err, model.ErrManualTaskValidation)
 			},
