@@ -1,22 +1,21 @@
 // Package main demonstrates optional, definition-declared input validation at
-// two of the three external-input boundaries: manually-provided start vars
-// (ProcessDriver.Drive) and human-task completion output (TaskService.Complete).
-// The third boundary — message payloads (DeliverMessage) — is exercised in
+// the manually-provided start-vars boundary (ProcessDriver.Drive). The
+// human-task completion-output boundary (TaskService.Complete) is being
+// redesigned to an engine-decides / runtime-executes path (see
+// docs/specs/2026-07-09-input-validation-redesign.md) and is temporarily
+// unenforced; it will be re-added here once that path lands. The message
+// boundary (DeliverMessage) is exercised in
 // runtime/processdriver_message_validation_test.go and is not repeated here.
 //
 // Flow:
 //
-//	start[validated: amount > 0] → approve[UserTask, roles: manager,
-//	  validated: decision in ['approve','reject']] → end
+//	start[validated: amount > 0] → approve[UserTask, roles: manager] → end
 //
-// Both boundaries use the expr-lang adapter (validation/expr): a
+// The start-vars boundary uses the expr-lang adapter (validation/expr): a
 // [validation.ValidationStrategy] attached to a node via
-// [event.WithInputValidation] / [activity.WithCompletionValidation]. The
-// ProcessDriver validates start vars BEFORE any instance is created; the
-// TaskService validates completion output AFTER authorization succeeds but
-// BEFORE issuing the completion trigger — see TaskService.Complete's doc
-// comment. Both share the "input-owner validates" placement: whoever accepts
-// the external input validates it, not the engine core.
+// [event.WithInputValidation]. The ProcessDriver validates start vars BEFORE
+// any instance is created — "input-owner validates" placement: whoever
+// accepts the external input validates it, not the engine core.
 //
 // This is a reference wiring example — not a shipped binary.
 package main
@@ -48,11 +47,10 @@ func main() {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Build the definition: both boundaries carry an expr-lang validation strategy.
+	// Build the definition: the start event carries an expr-lang validation strategy.
 	def, err := definition.NewBuilder("expense-approval-validated", 1).
 		Add(event.NewStart("start", event.WithInputValidation(vexpr.New("amount > 0")))).
-		Add(activity.NewUserTask("approve", []string{"manager"},
-			activity.WithCompletionValidation(vexpr.New(`decision in ['approve','reject']`)))).
+		Add(activity.NewUserTask("approve", []string{"manager"})).
 		Add(event.NewEnd("end")).
 		Connect("start", "approve").
 		Connect("approve", "end").
@@ -60,11 +58,6 @@ func main() {
 	if err != nil {
 		log.Fatal("build def:", err)
 	}
-
-	// A registry indexing this definition lets TaskService.Complete resolve the
-	// completing node's CompletionValidation strategy by Qualifier (def id + version,
-	// carried on the HumanTask since the task was created by driving this def).
-	registry := kernel.NewMapDefinitionRegistry(def)
 
 	// Human-task ports.
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
@@ -87,16 +80,12 @@ func main() {
 		log.Fatal("driver:", err)
 	}
 
-	// Wiring the DefinitionResolver opts Complete into completion-output validation.
-	svc, err := task.NewTaskService(taskStore, az,
-		task.WithClock(clk),
-		task.WithDefinitionResolver(registry),
-	)
+	svc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
 	if err != nil {
 		log.Fatal("task service:", err)
 	}
 
-	fmt.Println("--- Input Validation: start vars + completion output ---")
+	fmt.Println("--- Input Validation: start vars ---")
 
 	// 1. REJECTED Drive: amount <= 0 fails the start event's InputValidation.
 	//    No instance is created — the gate runs before any state mutation.
@@ -134,14 +123,8 @@ func main() {
 	}
 	fmt.Println("task claimed by", manager.ID)
 
-	// 3. REJECTED Complete: "maybe" is not in ['approve','reject'].
-	_, err = svc.Complete(ctx, taskToken, manager, map[string]any{"decision": "maybe"})
-	logOutcome(logger, `complete output (decision="maybe")`, err)
-	if !errors.Is(err, validation.ErrInvalidInput) {
-		log.Fatalf("expected ErrInvalidInput, got: %v", err)
-	}
-
-	// 4. ACCEPTED Complete: "approve" satisfies the completion-validation predicate.
+	// 3. Complete: completion-output validation is temporarily unenforced
+	// (see the package doc comment); any output is accepted here.
 	completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"decision": "approve"})
 	if err != nil {
 		log.Fatal("complete (valid output):", err)

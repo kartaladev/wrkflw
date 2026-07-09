@@ -21,8 +21,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
 )
 
 // harness wires a real in-memory engine for the service tests.
@@ -77,26 +75,6 @@ func approvalDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", []string{"manager"}),
-			event.NewEnd("end"),
-		},
-		Flows: []flow.SequenceFlow{
-			{ID: "f1", Source: "start", Target: "approve"},
-			{ID: "f2", Source: "approve", Target: "end"},
-		},
-	}
-}
-
-// approvalValidatedDef returns start → userTask("approve", role "manager") → end,
-// with a CompletionValidation strategy on the UserTask requiring decision to be
-// either "approve" or "reject".
-func approvalValidatedDef() *model.ProcessDefinition {
-	return &model.ProcessDefinition{
-		ID:      "approval-validated",
-		Version: 1,
-		Nodes: []model.Node{
-			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"manager"},
-				activity.WithCompletionValidation(vexpr.New("decision in ['approve','reject']"))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -503,73 +481,6 @@ func TestNewEngineDefaultClockNoPanic(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.NotNil(t, e)
-}
-
-// TestCompleteTaskValidatesOutputWhenResolverWired verifies that the
-// zero-config service.Engine wires a DefinitionResolver into its TaskService
-// so that a UserTask's CompletionValidation strategy is enforced on
-// CompleteTask, rejecting invalid output with validation.ErrInvalidInput and
-// accepting valid output.
-func TestCompleteTaskValidatesOutputWhenResolverWired(t *testing.T) {
-	def := approvalValidatedDef()
-	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
-
-	type testCase struct {
-		name       string
-		instanceID string
-		output     map[string]any
-		assert     func(t *testing.T, st service.ProcessInstance, err error)
-	}
-
-	cases := []testCase{
-		{
-			name:       "invalid output rejected",
-			instanceID: "approval-validated-invalid",
-			output:     map[string]any{"decision": "maybe"},
-			assert: func(t *testing.T, _ service.ProcessInstance, err error) {
-				require.Error(t, err)
-				assert.ErrorIs(t, err, validation.ErrInvalidInput)
-			},
-		},
-		{
-			name:       "valid output accepted",
-			instanceID: "approval-validated-valid",
-			output:     map[string]any{"decision": "approve"},
-			assert: func(t *testing.T, st service.ProcessInstance, err error) {
-				require.NoError(t, err)
-				assert.Equal(t, engine.StatusCompleted, st.State().Status)
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			h := newHarness(t, def)
-			svc := h.newEngine(t)
-
-			ctx := t.Context()
-
-			parked, err := h.driver.Drive(ctx, def, tc.instanceID, nil)
-			require.NoError(t, err)
-			require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
-			require.Len(t, parked.Tokens, 1)
-			taskToken := parked.Tokens[0].AwaitCommand
-			require.NotEmpty(t, taskToken, "task token must be set")
-
-			_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{
-				TaskToken: taskToken,
-				Actor:     manager,
-			})
-			require.NoError(t, err)
-
-			st, err := svc.CompleteTask(ctx, service.CompleteTaskRequest{
-				TaskToken: taskToken,
-				Actor:     manager,
-				Output:    tc.output,
-			})
-			tc.assert(t, st, err)
-		})
-	}
 }
 
 // TestNewEngineWithClockOption verifies that WithClock injects a fake clock.

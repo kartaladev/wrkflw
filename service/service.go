@@ -180,8 +180,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 		return nil, err
 	}
 
-	tasks, err := task.NewTaskService(c.taskStore, c.authz,
-		task.WithClock(c.clk), task.WithDefinitionResolver(c.reg))
+	tasks, err := task.NewTaskService(c.taskStore, c.authz, task.WithClock(c.clk))
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: task service: %w", err)
 	}
