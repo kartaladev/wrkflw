@@ -106,7 +106,7 @@ var (
 	// Version is below 1. Version 0 is reserved as the "latest" resolution
 	// sentinel (see Qualifier), so an authored definition must use a concrete
 	// Version >= 1.
-	ErrInvalidVersion = errors.New("workflow-model: definition version must be >= 1 (0 reserved as latest sentinel)")
+	ErrInvalidVersion = errors.New("workflow-definition: definition version must be >= 1 (0 reserved as latest sentinel)")
 )
 
 // Validate checks structural well-formedness of a process definition. It
