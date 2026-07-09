@@ -322,8 +322,9 @@ type finishPlan struct {
 	// only — ADR-0071 serialization).
 	popDeferred bool
 	// consumePendingCancel makes a cancel that arrived mid-walk preempt the resume
-	// and terminate instead. Today only the throw walk sets it (preserving the
-	// prior throw-walk protocol); other resume paths keep resuming.
+	// and terminate instead. The throw walk (preserving the prior throw-walk
+	// protocol) and the full-reverse walk (ADR-0109 hardening, finding #2) set it;
+	// the partial-rollback resume keeps resuming.
 	consumePendingCancel bool
 	// rearmRootESP re-arms ROOT-scope event sub-processes (ADR-0109 hardening,
 	// finding #1) via armEventSubprocesses(def, s, "", at, eval), mirroring
