@@ -115,6 +115,13 @@ var (
 	// silently skipped (fail-open). The combination is rejected at authoring
 	// time to keep validation fail-closed.
 	ErrPayloadValidationRequiresMessage = errors.New("workflow-definition: payload validation requires a message catch")
+	// ErrDeadlineTriggerRecurring is returned when a node's DeadlineTimer
+	// (set via WithWaitDeadline) is a recurring schedule.TriggerSpec (e.g.
+	// Every, Cron, Daily). A deadline must fire at most once: the
+	// DeadlineFlow/DeadlineAction breach only makes sense the first time the
+	// wait overruns, so the trigger must be one-shot (AfterDuration, At, or
+	// AfterExpr).
+	ErrDeadlineTriggerRecurring = errors.New("workflow-definition: deadline trigger must be one-shot")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -395,6 +402,18 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 		if ValidationStrategyFor(n) != nil && toWire(n).MessageName == "" {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrPayloadValidationRequiresMessage, n.ID()))
+		}
+	}
+
+	// DeadlineTimer: a deadline trigger (WithWaitDeadline, on activities and
+	// IntermediateCatchEvent) must be one-shot. A recurring trigger (Every,
+	// Cron, Daily, ...) would keep re-firing the same DeadlineFlow/Action
+	// after the first breach, which is not a meaningful deadline semantics.
+	// Nodes without a deadline (zero TriggerSpec) are skipped.
+	for _, n := range d.Nodes {
+		deadline, _, _ := DeadlineOf(n)
+		if !deadline.IsZero() && deadline.Recurring() {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadlineTriggerRecurring, n.ID()))
 		}
 	}
 

@@ -1197,6 +1197,68 @@ func TestValidate_RejectsVersionBelow1(t *testing.T) {
 	}
 }
 
+// TestValidate_RejectsRecurringDeadlineTrigger checks that Validate rejects a
+// node whose WithWaitDeadline trigger is recurring (e.g. schedule.Every) — a
+// deadline must fire at most once, since the deadline flow/action is only
+// meaningful the first time it breaches. A one-shot trigger (AfterDuration)
+// remains accepted.
+func TestValidate_RejectsRecurringDeadlineTrigger(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "recurring deadline trigger (Every) is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.Every(24*time.Hour), "escalate")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDeadlineTriggerRecurring)
+			},
+		},
+		{
+			name: "one-shot deadline trigger (AfterDuration) is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrDeadlineTriggerRecurring)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
 func TestValidateCancelActions(t *testing.T) {
 	base := func(cancel []string) *model.ProcessDefinition {
 		return &model.ProcessDefinition{
