@@ -7,6 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // nodeYAML is the flat YAML representation of any node. It mirrors NodeWire
@@ -39,6 +40,8 @@ type nodeYAML struct {
 	NonInterrupting       bool            `yaml:"nonInterrupting,omitempty"`
 	Subprocess            *definitionYAML `yaml:"subprocess,omitempty"`
 	DefRef                string          `yaml:"defRef,omitempty"`
+	// Validation mirrors NodeWire.Validation for the YAML authoring form.
+	Validation *validate.ValidationDescriptor `yaml:"validation,omitempty"`
 }
 
 // sequenceFlowYAML decodes a flow.SequenceFlow from YAML. Field names match the
@@ -111,6 +114,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		NonInterrupting:       ny.NonInterrupting,
 		Subprocess:            subDef,
 		DefRef:                ny.DefRef,
+		Validation:            ny.Validation,
 	}
 	return fromWire(w)
 }
@@ -137,10 +141,11 @@ func coreFromYAML(dy *definitionYAML) (*definitionCore, error) {
 
 // ParseYAML reads a YAML process-definition from r and returns a
 // DefinitionLoader whose structure (nodes, flows) is already declared. Register
-// any definition-scoped actions via RegisterAction/RegisterActionFunc, then call
-// Build to validate and obtain the *ProcessDefinition. The root definition
-// package exposes this as definition.NewLoader.
-func ParseYAML(r io.Reader) (DefinitionLoader, error) {
+// any definition-scoped actions via RegisterAction/RegisterActionFunc, apply any
+// LoaderOption (e.g. WithValidatorRegistry), then call Build to validate and
+// obtain the *ProcessDefinition. The root definition package exposes this as
+// definition.NewLoader.
+func ParseYAML(r io.Reader, opts ...LoaderOption) (DefinitionLoader, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-definition: read YAML: %w", err)
@@ -152,6 +157,9 @@ func ParseYAML(r io.Reader) (DefinitionLoader, error) {
 	core, err := coreFromYAML(&dy)
 	if err != nil {
 		return nil, err
+	}
+	for _, o := range opts {
+		o(core)
 	}
 	return &definitionLoader{core}, nil
 }

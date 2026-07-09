@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // NodeWire is the flat JSON/JSONB representation of any node. It is the single
@@ -44,6 +45,12 @@ type NodeWire struct {
 	BoundaryErrorExpr  string             `json:"boundaryErrorExpr,omitempty"`
 	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
 	DefRef             string             `json:"defRef,omitempty"`
+	// Validation is the descriptor for the node's validation-strategy slot, when
+	// it has one and the strategy is describable (validate.DescribableStrategy)
+	// or a pending reconstruction placeholder (PendingValidation). nil means
+	// unset. A non-describable (callback) strategy never reaches here —
+	// ProcessDefinition.MarshalJSON fails closed first (ErrUnserializableValidation).
+	Validation *validate.ValidationDescriptor `json:"validation,omitempty"`
 }
 
 // toWire flattens a Node into its wire form via the kind's registered spec.
@@ -121,6 +128,11 @@ func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 	}
 	dw.Nodes = make([]NodeWire, len(d.Nodes))
 	for i, n := range d.Nodes {
+		if strat := ValidationStrategyFor(n); strat != nil {
+			if _, ok := strat.(validate.DescribableStrategy); !ok {
+				return nil, fmt.Errorf("%w: node %q", ErrUnserializableValidation, n.ID())
+			}
+		}
 		dw.Nodes[i] = toWire(n)
 	}
 	return json.Marshal(dw)
@@ -143,7 +155,11 @@ func (d *ProcessDefinition) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		d.Nodes[i] = n
+		// Durable-reload reconciliation: resolve a pending validation descriptor
+		// against the process-global DefaultRegistry (adapters self-register via
+		// init()). Lenient by design — an unregistered kind leaves the slot pending
+		// so it fails closed at runtime rather than breaking the load.
+		d.Nodes[i] = reconcileNodeValidationLenient(n, validate.DefaultRegistry())
 	}
 	return nil
 }

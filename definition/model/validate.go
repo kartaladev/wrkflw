@@ -102,19 +102,43 @@ var (
 	// enclosing process definition. The referenced node must exist so the engine
 	// can resolve the compensation target at execution time.
 	ErrCompensateRefNotFound = errors.New("workflow-definition: compensation throw references unknown node")
+	// ErrInvalidVersion is returned by Validate when a (root) definition's
+	// Version is below 1. Version 0 is reserved as the "latest" resolution
+	// sentinel (see Qualifier), so an authored definition must use a concrete
+	// Version >= 1.
+	ErrInvalidVersion = errors.New("workflow-definition: definition version must be >= 1 (0 reserved as latest sentinel)")
+	// ErrPayloadValidationRequiresMessage is returned when a
+	// KindIntermediateCatchEvent declares payload validation but is not a
+	// message catch. Only message-delivered payloads reach a single validatable
+	// target at runtime; signal catches are broadcast (no single target) and
+	// timer catches carry no payload, so the declared validation would be
+	// silently skipped (fail-open). The combination is rejected at authoring
+	// time to keep validation fail-closed.
+	ErrPayloadValidationRequiresMessage = errors.New("workflow-definition: payload validation requires a message catch")
 )
 
 // Validate checks structural well-formedness of a process definition. It
-// returns a joined error covering every violation found.
+// returns a joined error covering every violation found. The Version >= 1
+// check applies only to the root definition — a nested subprocess definition
+// is not independently resolved by qualifier and may legitimately be Version 0.
 func Validate(d *ProcessDefinition) error {
-	return validate(d, make(map[*ProcessDefinition]bool))
+	var errs []error
+	if d.Version < 1 {
+		errs = append(errs, fmt.Errorf("%w: got %d", ErrInvalidVersion, d.Version))
+	}
+	if err := validateStructure(d, make(map[*ProcessDefinition]bool)); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
-// validate is the recursive implementation of Validate with a visited-set
-// cycle guard. If seen[d] is already true, the definition has already been
-// visited in this call chain (cycle detected) and we return immediately to
-// avoid a stack overflow on hand-constructed cyclic subprocess pointer graphs.
-func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
+// validateStructure is the recursive implementation of Validate with a
+// visited-set cycle guard. If seen[d] is already true, the definition has
+// already been visited in this call chain (cycle detected) and we return
+// immediately to avoid a stack overflow on hand-constructed cyclic subprocess
+// pointer graphs. Named distinctly from the imported definition/model/validate
+// package to avoid a file-scope identifier collision.
+func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 	if seen[d] {
 		return nil
 	}
@@ -321,7 +345,7 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrMissingSubprocess, n.ID()))
 			continue
 		}
-		if nestedErr := validate(sub, seen); nestedErr != nil {
+		if nestedErr := validateStructure(sub, seen); nestedErr != nil {
 			errs = append(errs, fmt.Errorf("subprocess %q: %w", n.ID(), nestedErr))
 		}
 	}
@@ -355,6 +379,22 @@ func validate(d *ProcessDefinition, seen map[*ProcessDefinition]bool) error {
 			if !found {
 				errs = append(errs, fmt.Errorf("%w: node %q flow %q", ErrInvalidRecoveryFlow, n.ID(), rf))
 			}
+		}
+	}
+
+	// IntermediateCatchEvent payload validation is only meaningful for a message
+	// catch: a message is delivered to a single correlated target that can be
+	// validated before commit. Signal catches are broadcast (no single target)
+	// and timer catches carry no payload, so a validation strategy declared on a
+	// non-message catch would be silently skipped at runtime (fail-open). Reject
+	// the combination at authoring time. model cannot import the leaf event
+	// package, so a message catch is identified by a non-empty wire MessageName.
+	for _, n := range d.Nodes {
+		if n.Kind() != KindIntermediateCatchEvent {
+			continue
+		}
+		if ValidationStrategyFor(n) != nil && toWire(n).MessageName == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrPayloadValidationRequiresMessage, n.ID()))
 		}
 	}
 

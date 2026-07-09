@@ -23,6 +23,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
 )
 
@@ -95,6 +96,12 @@ type ProcessDriver struct {
 	// consumer-injected scheduler is consumer-owned, so this stays nil and the
 	// consumer manages its lifecycle.
 	ownedScheduler *scheduling.Scheduler
+
+	// gate is the executor-side validation memoizer (runtime/validation.Gate)
+	// used by validateInput to compile-once-and-cache each
+	// validate.ValidationStrategy by its descriptor (kind + schema). Always
+	// non-nil after NewProcessDriver.
+	gate *validation.Gate
 }
 
 // NewProcessDriver constructs a ProcessDriver with sensible in-memory defaults
@@ -135,6 +142,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		jitter:        kernel.NewJitterSource(),
 		actionTimeout: defaultActionTimeout,
 		msgWaiters:    make(map[msgKey]string),
+		gate:          validation.NewGate(),
 	}
 	for _, o := range opts {
 		o(driver)
@@ -384,6 +392,10 @@ func (driver *ProcessDriver) deliverLoop(
 		prevStatus := st.Status
 		prevIncidents := len(st.Incidents)
 
+		if err := driver.validateInput(ctx, def, st, t); err != nil {
+			return st, fmt.Errorf("workflow-runtime: validate input: %w", err)
+		}
+
 		stepCtx, span := driver.obs.tracer().Start(ctx, "wrkflw.step", trace.WithAttributes(
 			attribute.String("wrkflw.instance_id", st.InstanceID),
 			attribute.String("wrkflw.def_id", def.ID),
@@ -486,4 +498,37 @@ func (driver *ProcessDriver) deliverLoop(
 		}
 	}
 	return st, nil
+}
+
+// validateInput enforces the target node's validation strategy against an external-input trigger's
+// payload BEFORE Step, so a failure rejects the trigger before any state is committed. Returns nil
+// when the trigger is not input-bearing or the target node has no validation slot.
+func (driver *ProcessDriver) validateInput(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, trg engine.Trigger) error {
+	node, ok := engine.TargetNode(def, st, trg)
+	if !ok {
+		return nil
+	}
+	strat := model.ValidationStrategyFor(node)
+	if strat == nil {
+		return nil
+	}
+	if err := driver.gate.Validate(ctx, strat, inputOf(trg)); err != nil {
+		return err // already wraps validation.ErrInvalidInput; errors.Is survives the caller's %w
+	}
+	return nil
+}
+
+// inputOf extracts the external-input payload carried by trg, or nil for any trigger kind that does
+// not carry one (engine.TargetNode already gates which trigger kinds reach here).
+func inputOf(trg engine.Trigger) map[string]any {
+	switch t := trg.(type) {
+	case engine.StartInstance:
+		return t.Vars
+	case engine.MessageReceived:
+		return t.Payload
+	case engine.HumanCompleted:
+		return t.Output
+	default:
+		return nil
+	}
 }

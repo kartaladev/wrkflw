@@ -10,6 +10,7 @@ import (
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
 // --- concrete node types ---
@@ -35,6 +36,10 @@ type UserTask struct {
 	EligibilityPrivileges []string
 	// EligibilityExpr is an optional attribute predicate (expr) for fine-grained eligibility.
 	EligibilityExpr string
+	// CompletionValidation, when set, validates the task's completion output
+	// before it is applied to the process instance's variables. Nil = no
+	// validation. Set via WithCompletionValidation.
+	CompletionValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindUserTask.
@@ -48,6 +53,10 @@ type ReceiveTask struct {
 	MessageName string
 	// CorrelationKey is an expr expression evaluated at runtime to derive the correlation key.
 	CorrelationKey string
+	// PayloadValidation, when set, validates the inbound message payload before
+	// it is applied to the process instance's variables. Nil = no validation.
+	// Set via WithPayloadValidation.
+	PayloadValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindReceiveTask.
@@ -199,23 +208,45 @@ func init() {
 	model.RegisterKind(model.KindUserTask, model.NodeSpec{
 		Name: "userTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return UserTask{Base: b, ActivityFields: w.Activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr}
+			n := UserTask{Base: b, ActivityFields: w.Activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr}
+			if w.Validation != nil {
+				n.CompletionValidation = model.PendingValidation(*w.Validation)
+			}
+			return n
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(UserTask)
 			w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
 			w.PutActivity(v.ActivityFields)
+			w.Validation = model.PutValidation(v.CompletionValidation)
+		},
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(UserTask).CompletionValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
+			v := n.(UserTask)
+			v.CompletionValidation = s
+			return v
 		},
 	})
 	model.RegisterKind(model.KindReceiveTask, model.NodeSpec{
 		Name: "receiveTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return ReceiveTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
+			n := ReceiveTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
+			if w.Validation != nil {
+				n.PayloadValidation = model.PendingValidation(*w.Validation)
+			}
+			return n
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(ReceiveTask)
 			w.MessageName, w.CorrelationKey = v.MessageName, v.CorrelationKey
 			w.PutActivity(v.ActivityFields)
+			w.Validation = model.PutValidation(v.PayloadValidation)
+		},
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(ReceiveTask).PayloadValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
+			v := n.(ReceiveTask)
+			v.PayloadValidation = s
+			return v
 		},
 	})
 	model.RegisterKind(model.KindSendTask, model.NodeSpec{

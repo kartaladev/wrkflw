@@ -7,6 +7,7 @@ package event
 
 import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
@@ -21,6 +22,10 @@ type StartEvent struct {
 	CorrelationKey string
 	// Timer is the trigger spec for a timer-start event (e.g. schedule.AfterExpr("...")).
 	Timer schedule.TriggerSpec
+	// InputValidation, when set, validates the manually-provided start vars
+	// (Drive) against this start event's contract before the instance is
+	// created. Nil = no validation. Set via WithInputValidation.
+	InputValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindStartEvent.
@@ -58,6 +63,10 @@ type IntermediateCatchEvent struct {
 	SignalName     string
 	MessageName    string
 	CorrelationKey string
+	// PayloadValidation, when set, validates a message catch's payload before
+	// it is applied to the process instance's variables. Nil = no validation.
+	// Set via WithPayloadValidation.
+	PayloadValidation validate.ValidationStrategy
 }
 
 // Kind returns model.KindIntermediateCatchEvent.
@@ -201,13 +210,24 @@ func init() {
 	model.RegisterKind(model.KindStartEvent, model.NodeSpec{
 		Name: "startEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
+			n := StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
 				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
+			if w.Validation != nil {
+				n.InputValidation = model.PendingValidation(*w.Validation)
+			}
+			return n
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(StartEvent)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.TimerTrigger = model.PutTrigger(v.Timer)
+			w.Validation = model.PutValidation(v.InputValidation)
+		},
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(StartEvent).InputValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
+			v := n.(StartEvent)
+			v.InputValidation = s
+			return v
 		},
 	})
 	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
@@ -228,14 +248,25 @@ func init() {
 	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return IntermediateCatchEvent{Base: b, WaitFields: w.Wait(),
+			n := IntermediateCatchEvent{Base: b, WaitFields: w.Wait(),
 				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false), SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
+			if w.Validation != nil {
+				n.PayloadValidation = model.PendingValidation(*w.Validation)
+			}
+			return n
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(IntermediateCatchEvent)
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
 			w.PutWait(v.WaitFields)
+			w.Validation = model.PutValidation(v.PayloadValidation)
+		},
+		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(IntermediateCatchEvent).PayloadValidation },
+		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
+			v := n.(IntermediateCatchEvent)
+			v.PayloadValidation = s
+			return v
 		},
 	})
 	model.RegisterKind(model.KindIntermediateThrowEvent, model.NodeSpec{

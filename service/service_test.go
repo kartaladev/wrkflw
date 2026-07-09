@@ -16,10 +16,12 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
 	"github.com/zakyalvan/krtlwrkflw/service"
 )
 
@@ -75,6 +77,25 @@ func approvalDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", []string{"manager"}),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "approve"},
+			{ID: "f2", Source: "approve", Target: "end"},
+		},
+	}
+}
+
+// approvalValidatedDef returns start → userTask("approve", role "manager",
+// completion validated: decision in ['approve','reject']) → end.
+func approvalValidatedDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "approval-validated",
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("approve", []string{"manager"},
+				activity.WithCompletionValidation(vexpr.New("decision in ['approve','reject']"))),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -328,6 +349,70 @@ func TestHumanTaskLifecycle(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, engine.StatusCompleted, st.State().Status)
 	})
+}
+
+// TestCompleteTaskValidatesCompletionOutput verifies the pre-Step validation
+// hook wired into ProcessDriver.deliverLoop (engine.TargetNode +
+// model.ValidationStrategyFor + runtime/validation.Gate) enforces a UserTask's
+// CompletionValidation on the batteries-included path: CompleteTask requires
+// NO resolver wiring of its own — the hook covers it uniformly.
+func TestCompleteTaskValidatesCompletionOutput(t *testing.T) {
+	t.Parallel()
+
+	def := approvalValidatedDef()
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+
+	type testCase struct {
+		name   string
+		output map[string]any
+		assert func(t *testing.T, st service.ProcessInstance, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:   "reject: decision not in the allowed enum",
+			output: map[string]any{"decision": "maybe"},
+			assert: func(t *testing.T, _ service.ProcessInstance, err error) {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, validation.ErrInvalidInput)
+			},
+		},
+		{
+			name:   "accept: decision is a valid enum value",
+			output: map[string]any{"decision": "approve"},
+			assert: func(t *testing.T, st service.ProcessInstance, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, engine.StatusCompleted, st.State().Status)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t, def)
+			svc := h.newEngine(t)
+			ctx := t.Context()
+
+			parked, err := h.driver.Drive(ctx, def, "approve-validated-1", nil)
+			require.NoError(t, err)
+			require.Equal(t, engine.StatusRunning, parked.Status, "must park at the user task")
+			require.Len(t, parked.Tokens, 1)
+			taskToken := parked.Tokens[0].AwaitCommand
+			require.NotEmpty(t, taskToken)
+
+			_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{TaskToken: taskToken, Actor: manager})
+			require.NoError(t, err)
+
+			st, cerr := svc.CompleteTask(ctx, service.CompleteTaskRequest{
+				TaskToken: taskToken,
+				Actor:     manager,
+				Output:    tc.output,
+			})
+			tc.assert(t, st, cerr)
+		})
+	}
 }
 
 // TestDeliverMessage verifies DeliverMessage delegates to the driver's message routing.
