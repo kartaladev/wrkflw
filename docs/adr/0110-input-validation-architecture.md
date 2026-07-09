@@ -3,6 +3,13 @@
 - Status: Amended (2026-07-09) — see below and ADR-0115
 - Date: 2026-07-08
 
+> **Amended 2026-07-09 — read the `## Revision 2026-07-09` section at the end before relying on
+> anything below.** The original decision (validate at the three runtime boundaries;
+> `HumanTask.def_id`/`def_version` columns; "Task 7b remains open") was superseded: validation now
+> runs pre-`Step` in the runtime via the pure `engine.TargetNode` query, the `def_id`/`def_version`
+> columns + their migration were reverted, and the durable-reload work ("Task 7b") landed via
+> `validate.DefaultRegistry()`. The unedited body below is preserved for history.
+
 ## Context
 
 The engine has three boundaries where a caller-supplied `map[string]any` is merged directly
