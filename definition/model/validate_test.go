@@ -1649,3 +1649,27 @@ func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateManualTaskRejectsCompletionValidation proves the fail-closed
+// authoring rule from ADR-0118: a UserTask marked Manual (WithManual)
+// completes on a bare trigger with no payload, so it must not also carry
+// completion validation (WithCompletionValidation) — there is no input for the
+// validation strategy to ever check.
+func TestValidateManualTaskRejectsCompletionValidation(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("confirm",
+				activity.WithManual(),
+				activity.WithCompletionValidation(vexpr.New("ok == true"))),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "confirm"},
+			{ID: "f2", Source: "confirm", Target: "end"},
+		},
+	}
+
+	require.ErrorIs(t, model.Validate(def), model.ErrManualTaskValidation)
+}
