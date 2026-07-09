@@ -174,6 +174,26 @@ func TestNewReverseToStart_SetsReverseFields(t *testing.T) {
 	assert.False(t, c.ResetVars)
 }
 
+// TestNewReverseToNode_SetsRestoreTargetVars asserts that NewReverseToNode stamps
+// ToNode and RestoreTargetVars for the target-reverse walk (ReverseNode/ResetVars
+// left zero — those are the full-reverse fields set by NewReverseToStart), and that
+// the pre-existing NewCompensateRequested constructor stays back-compat by leaving
+// RestoreTargetVars false.
+func TestNewReverseToNode_SetsRestoreTargetVars(t *testing.T) {
+	t0 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+
+	trg := engine.NewReverseToNode(t0, "X")
+	assert.Equal(t, t0, trg.OccurredAt(), "OccurredAt must match the given time")
+	assert.Equal(t, "X", trg.ToNode)
+	assert.True(t, trg.RestoreTargetVars)
+	assert.Equal(t, "", trg.ReverseNode, "target-reverse is not a full-reverse-to-start walk")
+	assert.False(t, trg.ResetVars, "target-reverse restores the target's own snapshot, not StartVariables")
+
+	// Back-compat: NewCompensateRequested leaves RestoreTargetVars zero.
+	c := engine.NewCompensateRequested(t0, "X")
+	assert.False(t, c.RestoreTargetVars)
+}
+
 // TestCancelRequestedFields asserts that NewCancelRequested stamps OccurredAt
 // faithfully and satisfies the Trigger interface.
 func TestCancelRequestedFields(t *testing.T) {
