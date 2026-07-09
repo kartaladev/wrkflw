@@ -314,3 +314,84 @@ func TestValidateInput_DurableReloadUnregisteredKindFailsClosed(t *testing.T) {
 	_, _, loadErr := store.Load(t.Context(), instanceID)
 	assert.ErrorIs(t, loadErr, kernel.ErrInstanceNotFound, "rejected trigger must not commit any state")
 }
+
+// catchMessageValidationDef returns start → IntermediateCatch(message "confirm",
+// validated: ok == true) → end. Top-level message catch is enough here; the
+// nested-scope path is already covered for ReceiveTask.
+func catchMessageValidationDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "catch-msg-validation", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			event.NewIntermediateCatch("confirm-catch",
+				event.WithCatchMessage("confirm", ""),
+				event.WithPayloadValidation(vexpr.New("ok == true"))),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "confirm-catch"},
+			{ID: "f2", Source: "confirm-catch", Target: "end"},
+		},
+	}
+}
+
+// TestValidateInputIntermediateCatchMessage is the driver E2E for the one
+// validation-bearing kind that previously lacked a driver-level rejection test:
+// an IntermediateCatchEvent message catch. A rejected payload leaves the parked
+// instance state unchanged (no advance); an accepted payload advances to
+// completion.
+func TestValidateInputIntermediateCatchMessage(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name    string
+		payload map[string]any
+		assert  func(t *testing.T, before, after engine.InstanceState, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:    "reject: ok=false rejects before any advance",
+			payload: map[string]any{"ok": false},
+			assert: func(t *testing.T, before, after engine.InstanceState, err error) {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, validation.ErrInvalidInput)
+				assert.Equal(t, before, after, "instance state must be unchanged when the catch payload is rejected")
+			},
+		},
+		{
+			name:    "accept: ok=true advances past the catch to completion",
+			payload: map[string]any{"ok": true},
+			assert: func(t *testing.T, _, after engine.InstanceState, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, engine.StatusCompleted, after.Status)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fc := clockwork.NewFakeClock()
+			store := runtimetest.MustMemStore(t)
+			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
+			def := catchMessageValidationDef()
+
+			const instanceID = "catch-msg-1"
+			parked, err := r.Drive(t.Context(), def, instanceID, nil)
+			require.NoError(t, err)
+			require.Equal(t, engine.StatusRunning, parked.Status, "must park at the message catch")
+
+			before, _, err := store.Load(t.Context(), instanceID)
+			require.NoError(t, err)
+
+			derr := r.DeliverMessage(t.Context(), def, "confirm", "", tc.payload)
+
+			after, _, loadErr := store.Load(t.Context(), instanceID)
+			require.NoError(t, loadErr)
+
+			tc.assert(t, before, after, derr)
+		})
+	}
+}
