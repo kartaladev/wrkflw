@@ -194,6 +194,19 @@ func (o eligibilityExprOpt) applyUserTask(u *UserTask) { u.EligibilityExpr = o.e
 // It may only be passed to NewUserTask.
 func WithEligibilityExpr(expr string) UserTaskOption { return eligibilityExprOpt{expr} }
 
+type candidateRolesOpt struct{ roles []string }
+
+func (o candidateRolesOpt) applyUserTask(u *UserTask) {
+	u.CandidateRoles = append(u.CandidateRoles, o.roles...)
+}
+
+// WithCandidateRoles sets the roles eligible to claim and complete a UserTask.
+// Roles are one of three co-equal, optional eligibility dimensions (with
+// WithEligibilityPrivileges and WithEligibilityExpr). With no eligibility set,
+// the engine gate is open and authorization defers to the consumer's transport
+// layer (e.g. HTTP security middleware). See ADR-0117.
+func WithCandidateRoles(roles ...string) UserTaskOption { return candidateRolesOpt{roles} }
+
 type eligibilityPrivilegesOpt struct{ privs []string }
 
 func (o eligibilityPrivilegesOpt) applyUserTask(u *UserTask) {

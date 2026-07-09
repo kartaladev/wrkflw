@@ -24,9 +24,21 @@ type stubValidator struct{}
 
 func (stubValidator) Validate(context.Context, map[string]any) error { return nil }
 
+func TestWithCandidateRoles(t *testing.T) {
+	n := activity.NewUserTask("approve",
+		activity.WithCandidateRoles("manager", "director"))
+	ut, ok := n.(activity.UserTask)
+	if !ok {
+		t.Fatalf("node is %T, want activity.UserTask", n)
+	}
+	if len(ut.CandidateRoles) != 2 || ut.CandidateRoles[0] != "manager" || ut.CandidateRoles[1] != "director" {
+		t.Fatalf("CandidateRoles = %v, want [manager director]", ut.CandidateRoles)
+	}
+}
+
 func TestWithCompletionValidation_SetsSlot(t *testing.T) {
 	t.Parallel()
-	n := activity.NewUserTask("approve", nil, activity.WithCompletionValidation(stubStrategy{}))
+	n := activity.NewUserTask("approve", activity.WithCompletionValidation(stubStrategy{}))
 	ut, ok := n.(activity.UserTask)
 	if !ok {
 		t.Fatalf("node kind = %T", n)
@@ -50,7 +62,7 @@ func TestWithPayloadValidation_Receive_SetsSlot(t *testing.T) {
 
 func TestWithCompletionAction_SetsFieldOnUserAndReceive(t *testing.T) {
 	t.Parallel()
-	u := activity.NewUserTask("u1", []string{"r"}, activity.WithCompletionAction("recordApproval")).(activity.UserTask)
+	u := activity.NewUserTask("u1", activity.WithCandidateRoles("r"), activity.WithCompletionAction("recordApproval")).(activity.UserTask)
 	assert.Equal(t, "recordApproval", u.CompletionAction)
 
 	r := activity.NewReceiveTask("r1", "m", activity.WithCompletionAction("ackOrder")).(activity.ReceiveTask)
@@ -59,7 +71,7 @@ func TestWithCompletionAction_SetsFieldOnUserAndReceive(t *testing.T) {
 
 func TestWithWaitDeadline_And_WithDeadlineAction(t *testing.T) {
 	t.Parallel()
-	st := activity.NewUserTask("u1", []string{"r"},
+	st := activity.NewUserTask("u1", activity.WithCandidateRoles("r"),
 		activity.WithWaitDeadline(schedule.AfterDuration(72*time.Hour), "escalate"),
 		activity.WithDeadlineAction("notify"),
 	).(activity.UserTask)
