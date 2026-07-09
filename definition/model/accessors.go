@@ -60,6 +60,20 @@ func CompletionActionOf(n Node) string {
 	return ""
 }
 
+// CompensateActionOf returns the CompensateAction field of a node that carries
+// ActivityFields (any activity kind), or "" for nodes that do not carry it at
+// all (events, gateways). It is kind-agnostic — it does not check whether the
+// concrete kind can ever produce a compensation record at execution time (only
+// a node that also ran a forward action can); combine it with Node.Kind() and
+// CompletionActionOf where that distinction matters (see
+// ErrCompensateActionWithoutForwardAction).
+func CompensateActionOf(n Node) string {
+	if a, ok := n.(interface{ compensateAction() string }); ok {
+		return a.compensateAction()
+	}
+	return ""
+}
+
 // ActionOf returns the Action field of a node that has one (ServiceTask or
 // BusinessRuleTask), or "" for all other kinds.
 func ActionOf(n Node) string {

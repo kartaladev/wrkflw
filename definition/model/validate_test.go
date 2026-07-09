@@ -1549,3 +1549,103 @@ func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
 		})
 	}
 }
+
+// TestValidate_RejectsCompensateActionWithoutForwardAction checks that Validate
+// rejects a UserTask/ReceiveTask whose CompensateAction is set but whose
+// CompletionAction is empty. For these two kinds the completion action IS the
+// forward action (engine.handleActionCompleted records compensation only when a
+// completion action runs), so a compensate action with no completion action can
+// never produce a compensation record — dead config. ServiceTask and other
+// activity kinds always have their own forward action (the task Action /
+// sub-work) and are NOT gated by this rule.
+func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "UserTask with CompensateAction but no CompletionAction is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("u1", []string{"r"}, activity.WithCompensateAction("refund")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "u1"},
+					{ID: "f2", Source: "u1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
+			},
+		},
+		{
+			name: "ReceiveTask with CompensateAction but no CompletionAction is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewReceiveTask("r1", "msg", activity.WithCompensateAction("refund")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "r1"},
+					{ID: "f2", Source: "r1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
+			},
+		},
+		{
+			name: "UserTask with both CompletionAction and CompensateAction is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("u1", []string{"r"},
+						activity.WithCompletionAction("recordApproval"),
+						activity.WithCompensateAction("refund")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "u1"},
+					{ID: "f2", Source: "u1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "ServiceTask with CompensateAction and no CompletionAction is unaffected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("svc", activity.WithTaskAction("charge-card"),
+						activity.WithCompensateAction("refund-card")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "svc"},
+					{ID: "f2", Source: "svc", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompensateActionWithoutForwardAction)
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}

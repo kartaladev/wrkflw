@@ -91,6 +91,11 @@ func (a ActivityFields) recoveryFlow() string { return a.RecoveryFlow }
 // ErrCompletionActionUnsupportedKind guard) combine it with Node.Kind().
 func (a ActivityFields) completionAction() string { return a.CompletionAction }
 
+// compensateAction returns the raw CompensateAction field. Present on every
+// activity kind (CompensateAction lives on the shared ActivityFields embed);
+// CompensateActionOf is therefore kind-agnostic by design.
+func (a ActivityFields) compensateAction() string { return a.CompensateAction }
+
 // TaskAction holds the action reference shared by ServiceTask and BusinessRuleTask:
 // the catalog action name. Embedded so the ActionOf accessor dispatches on its
 // carrier method across the activity leaf.

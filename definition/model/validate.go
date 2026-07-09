@@ -136,6 +136,18 @@ var (
 	// without WithWaitDeadline). Without an armed deadline timer the action
 	// would never fire, so the combination is rejected at authoring time.
 	ErrDeadlineActionWithoutDeadline = errors.New("workflow-definition: deadline action set without a deadline timer")
+	// ErrCompensateActionWithoutForwardAction is returned when a UserTask or
+	// ReceiveTask node's CompensateAction is non-empty but its CompletionAction
+	// is empty. For these two kinds, the completion action IS the forward
+	// action: engine.handleActionCompleted records a compensation entry only
+	// when a completion action runs (a UserTask/ReceiveTask never runs any
+	// other action). Without a completion action, the node can never have
+	// "done" anything to undo, so the compensate action is dead config — you
+	// can only compensate a node that executed a forward action. Other
+	// activity kinds (ServiceTask, BusinessRuleTask, SendTask, SubProcess,
+	// CallActivity) always have their own forward action and are not gated by
+	// this rule.
+	ErrCompensateActionWithoutForwardAction = errors.New("workflow-definition: compensate action requires a forward action (completion action) on user/receive task")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -450,6 +462,19 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 		if n.Kind() != KindUserTask && n.Kind() != KindReceiveTask {
 			errs = append(errs, fmt.Errorf("%w: node %q (kind %d)", ErrCompletionActionUnsupportedKind, n.ID(), n.Kind()))
+		}
+	}
+
+	// CompensateAction on UserTask/ReceiveTask requires a forward action (their
+	// CompletionAction): the completion action IS the forward action for these
+	// two kinds, and the engine only records a compensation entry when a
+	// completion action runs. Without it, the compensate action is dead config.
+	for _, n := range d.Nodes {
+		if n.Kind() != KindUserTask && n.Kind() != KindReceiveTask {
+			continue
+		}
+		if CompensateActionOf(n) != "" && CompletionActionOf(n) == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrCompensateActionWithoutForwardAction, n.ID()))
 		}
 	}
 
