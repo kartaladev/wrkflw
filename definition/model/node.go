@@ -75,6 +75,10 @@ type ActivityFields struct {
 	CompensationAction string
 	// CancelHandler is the optional action.Action to run when this node is interrupted.
 	CancelHandler string
+	// CompletionAction is the optional action.Action invoked when the node's
+	// completion is triggered (human completion / message receive), before the
+	// token advances. Its returned vars merge into the instance variables.
+	CompletionAction string
 }
 
 func (a ActivityFields) retry() *RetryPolicy  { return a.RetryPolicy }

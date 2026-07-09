@@ -32,6 +32,7 @@ type nodeYAML struct {
 	CompensationAction    string          `yaml:"compensationAction,omitempty"`
 	CompensateRef         string          `yaml:"compensateRef,omitempty"`
 	CancelHandler         string          `yaml:"cancelHandler,omitempty"`
+	CompletionAction      string          `yaml:"completionAction,omitempty"`
 	SignalName            string          `yaml:"signalName,omitempty"`
 	MessageName           string          `yaml:"messageName,omitempty"`
 	CorrelationKey        string          `yaml:"correlationKey,omitempty"`
@@ -106,6 +107,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		CompensationAction:    ny.CompensationAction,
 		CompensateRef:         ny.CompensateRef,
 		CancelHandler:         ny.CancelHandler,
+		CompletionAction:      ny.CompletionAction,
 		SignalName:            ny.SignalName,
 		MessageName:           ny.MessageName,
 		CorrelationKey:        ny.CorrelationKey,
