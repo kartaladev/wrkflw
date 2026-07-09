@@ -1,6 +1,6 @@
 # 110. Input validation architecture
 
-- Status: Accepted
+- Status: Amended (2026-07-09) — see below and ADR-0115
 - Date: 2026-07-08
 
 ## Context
@@ -173,3 +173,99 @@ every re-upsert rather than let a later zeroed re-upsert clobber them.
 - See ADR-0111 (JSON Schema adapter library choice: `santhosh-tekuri/jsonschema/v6` +
   `invopop/jsonschema`) and ADR-0112 (Avro adapter library choice: `linkedin/goavro`) for the
   per-adapter third-party dependency decisions this ADR delegates to.
+
+## Revision 2026-07-09 — engine decides, runtime executes
+
+The "input-owner validates" placement above shipped, then a whole-branch review plus a user
+design review found it structurally wrong, on two counts:
+
+- **Fail-open on nested nodes.** Each boundary resolved its target node with the flat
+  `(*ProcessDefinition).Node(id)` lookup — `def.Node`, or the boundary-local
+  `MessageTargetNode`/completion-token lookups built on it — which scans only the top-level
+  `Nodes` slice. A `UserTask` / `ReceiveTask` / `IntermediateCatchEvent` nested inside a
+  sub-process was never found, so its validation was silently skipped: the opposite of the
+  fail-closed guarantee this feature exists to provide.
+- **Scope-derivation smells forced onto the wrong types.** Scope-correct node resolution
+  already lives in the engine (`defForScope`, reading `InstanceState`'s private scope/token/arm
+  bookkeeping); the boundary components (`ProcessDriver`, `TaskService`) had no clean way to get
+  at it. The two remedies both smelled: growing `InstanceState` an ad-hoc
+  `MessageValidationNode` method, or persisting a scope path onto `humantask.HumanTask` (meant
+  to stay a clean task bucket) — this branch had in fact already done the latter, adding
+  `HumanTask.DefID`/`DefVersion` plus a 3-dialect migration solely so `TaskService.Complete`
+  could resolve the completing node's definition.
+
+**New design.** The engine exposes a pure, validation-agnostic scope-aware resolver,
+`engine.TargetNode(def *model.ProcessDefinition, st InstanceState, trg Trigger) (model.Node,
+bool)` (`engine/target_node.go`). It mirrors `Step`'s own trigger dispatch tier-for-tier —
+`StartInstance` → the sole start node; `MessageReceived` → the same 4-tier priority
+`handleMessageReceived` uses (event-gateway arm → boundary arm → event-subprocess arm →
+standalone parked token), each resolved against the *scope-owning* `ProcessDefinition` via
+`defForScope`; `HumanCompleted` → the parked task token's node, likewise resolved in its own
+scope — so the query and `Step` dispatch can never disagree on which node wins, including one
+nested arbitrarily deep in a sub-process.
+
+The runtime composes the resolver with strategy extraction and execution, before `Step` ever
+runs:
+
+```go
+func (driver *ProcessDriver) validateInput(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, trg engine.Trigger) error {
+	node, ok := engine.TargetNode(def, st, trg)
+	if !ok {
+		return nil
+	}
+	strat := model.ValidationStrategyFor(node)
+	if strat == nil {
+		return nil
+	}
+	return driver.gate.Validate(ctx, keyFor(def, node), strat, inputOf(trg))
+}
+```
+
+`deliverLoop` (`runtime/processdriver.go`) calls `validateInput` at the top of its per-trigger
+loop, before the store `Commit`/`Create` — so a rejection returns before any state is
+persisted, on all three input-bearing trigger kinds it processes: `Drive` builds the
+`StartInstance` trigger and enters `deliverLoop` directly (start vars validate here); message
+payload and completion output validate when their trigger (`MessageReceived` /
+`HumanCompleted`) reaches `deliverLoop` via `ApplyTrigger`. `model.ValidationStrategyFor`
+(`definition/model/validation_wire.go`) extracts the strategy through the registered
+`NodeSpec.ValidationGet` rather than a type switch, so `model` never needs to know about the
+leaf node packages' concrete types.
+
+Validator *execution* stays entirely out of the pure `Step`: no `Gate` is threaded into
+`StepOptions`, and no validator runs in the engine core. This preserves `Step`'s determinism —
+a validated external trigger is validated once, before it is ever handed to `Step`, and is
+never replayed — the property the original design's boundary-injection placement was, in
+effect, also trying to preserve, just from the wrong components and with a lookup that could
+silently miss a nested node.
+
+This reverts, rather than layers onto, several pieces of the original decision:
+`TaskService.Complete` no longer validates — it goes back to authz-then-emit-trigger only, and
+`WithDefinitionResolver` is gone. `humantask.HumanTask.DefID`/`DefVersion` and their migration
+are reverted: the token's own live scope (available to the engine at completion time) supplies
+node resolution, so the task bucket no longer needs to carry definition identity for this
+feature's sake. `MessageTargetNode` (the bare-nodeID, scope-blind precursor) is superseded by
+`engine.TargetNode`.
+
+**Package segregation.** The validation port, adapters, and reconstruction registry moved from
+the original single `validation` package into `definition/model/validate` (package `validate`)
+— colocated with the node model + wire descriptors it decorates, importing nothing from
+`runtime`/`engine`. The executor — the `Gate` and `ErrInvalidInput` — moved into
+`runtime/validation` (package `validation`), which imports `definition/model/validate` to
+consume its `ValidationStrategy`/`Validator` types. See ADR-0115 for the full dependency-
+direction rationale.
+
+**Durable reload stays as designed, now correctly located.** `ProcessDefinition.UnmarshalJSON`
+still reconciles any pending validation descriptor against a process-global
+`validate.DefaultRegistry()` (`definition/model/validate/registry.go`) — now **leniently**: an
+unregistered kind leaves the node's slot pending rather than erroring the whole decode, so it
+fails closed at validation time (`ErrValidationNotReconstructed`) instead of failing the reload.
+`definitionCore.build()` (`definition/model/builder.go`) falls back to the same
+`DefaultRegistry()` when no explicit `WithValidatorRegistry` is configured, but **strictly** — an
+unregistered kind fails `Build` with `ErrUnknownKind`, giving early authoring-time feedback
+instead of a silently pending node. Adapters (`validate/expr`, `validate/jsonschema`,
+`validate/avro`) self-register into `DefaultRegistry()` via `init()`, so importing an adapter
+package is what arms both paths for its kind.
+
+See `docs/specs/2026-07-09-input-validation-redesign.md` for the full design record (including
+the revert list with commit references) and ADR-0115 for the `TargetNode`/package-layout
+decision this revision delegates to.

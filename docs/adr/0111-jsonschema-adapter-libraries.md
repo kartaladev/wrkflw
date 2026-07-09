@@ -30,7 +30,7 @@ graph.
 
 ## Decision
 
-We adopt two libraries, both confined to `validation/jsonschema` (this package) — the
+We adopt two libraries, both confined to `definition/model/validate/jsonschema` (this package) — the
 `definition`/engine core imports neither:
 
 - **`github.com/santhosh-tekuri/jsonschema/v6`** as the validator. It compiles JSON Schema
@@ -67,9 +67,9 @@ constructor produced it originally.
 ## Consequences
 
 - Two new third-party dependencies enter `go.mod`, but both are isolated behind
-  `validation/jsonschema`; swapping either (e.g. a different JSON Schema draft implementation)
-  touches only this package, not `definition`/engine core or other adapters
-  (`validation/expr`, `validation/callback`).
+  `definition/model/validate/jsonschema`; swapping either (e.g. a different JSON Schema draft
+  implementation) touches only this package, not `definition`/engine core or other adapters
+  (`definition/model/validate/expr`, `definition/model/validate/callback`).
 - JSON Schema draft 2020-12 semantics are supported (santhosh-tekuri/jsonschema/v6's default
   draft), giving access to modern keywords (`prefixItems`, `unevaluatedProperties`, etc.) if a
   consumer's schema needs them, at the cost of not supporting the oldest Draft-4-only
@@ -79,8 +79,13 @@ constructor produced it originally.
   reflector panics internally on unsupported field types (e.g. channels, functions);
   `NewFromStruct` recovers that panic via a deferred `recover()` and converts it into a
   wrapped `workflow-validation/jsonschema: ...` error, so the panic never escapes to the
-  caller and the function's `(validation.DescribableStrategy, error)` contract holds even for
+  caller and the function's `(validate.DescribableStrategy, error)` contract holds even for
   callers passing arbitrary `any` rather than a well-formed DTO struct.
 - Every strategy's `Descriptor()` returns canonical JSON, so a compiled definition round-trips
   through storage/wire (YAML or DB) without re-deriving from the original Go struct; the
   reflection step only ever runs once, at authoring time.
+
+> **Note (2026-07-09).** This package relocated from `validation/jsonschema` to
+> `definition/model/validate/jsonschema` per ADR-0115 (the engine-decides / runtime-executes
+> package segregation). The library choice recorded above is unchanged; only the import path
+> moved. The adapter's error-string prefix (`workflow-validation/jsonschema:`) is unchanged.
