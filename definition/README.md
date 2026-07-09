@@ -132,8 +132,8 @@ kind-specific data generically).
 
 Work on all activity constructors: `WithName`, `WithRetryPolicy(*RetryPolicy)`,
 `WithRecoveryFlow(flowID)`, `WithCompensateAction(actionName)`,
-`WithCancelAction(actionName)`, `WithDeadline(dur, flowID, actionName)`,
-`WithWaitReminder(every, actionName)`.
+`WithCancelAction(actionName)`, `WithWaitDeadline(dur, flowID)`,
+`WithDeadlineAction(actionName)`, `WithWaitReminder(every, actionName)`.
 
 Kind-specific: `WithTaskAction` / `WithAction` / `WithActionFunc` (service &
 business-rule tasks), `WithEligibilityExpr` / `WithEligibilityPrivileges` (user
@@ -144,7 +144,8 @@ task := activity.NewServiceTask("charge",
     activity.WithTaskAction("charge-card"),
     activity.WithName("Charge Card"),
     activity.WithCompensateAction("refund-card"),
-    activity.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
+    activity.WithWaitDeadline("2h", "sla-breach-flow"),
+    activity.WithDeadlineAction("notify-ops"),
     activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: 2 * time.Second, BackoffCoef: 2.0,
     }),
@@ -155,8 +156,8 @@ task := activity.NewServiceTask("charge",
 
 `WithName` (start/catch/boundary/event-sub-process); start triggers
 `WithStartSignal` / `WithStartMessage` / `WithStartTimer`; catch
-`WithCatchTimer` / `WithCatchSignal` / `WithCatchMessage` / `WithCatchDeadline` /
-`WithCatchWaitReminder`; throw `WithThrowSignal` / `WithCompensateRef` /
+`WithCatchTimer` / `WithCatchSignal` / `WithCatchMessage` / `WithWaitDeadline` /
+`WithDeadlineAction` / `WithCatchWaitReminder`; throw `WithThrowSignal` / `WithCompensateRef` /
 `WithThrowName`; boundary `WithBoundaryTimer` / `WithBoundarySignal` /
 `WithBoundaryMessage` / `WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
 event-sub-process `WithEventSubProcessNonInterrupting`.

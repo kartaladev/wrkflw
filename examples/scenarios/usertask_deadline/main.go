@@ -1,19 +1,21 @@
-// Package main demonstrates an activity deadline via the activity.WithDeadline
-// option — a UserTask that escalates when not completed in time.
+// Package main demonstrates an activity deadline via the
+// activity.WithWaitDeadline + activity.WithDeadlineAction options — a
+// UserTask that escalates when not completed in time.
 //
-// WithDeadline bundles a timer, an escape flow, and a fire-once breach action
-// into a single activity option. It is the ergonomic shorthand for the common
-// "wait up to N, then do something else" pattern. For the boundary-native
-// equivalent — an explicit event.NewBoundary node with event.WithBoundaryAction
-// — see the sibling boundary_action example, which shows the same fire-once
-// action semantics through the true boundary-event API.
+// WithWaitDeadline sets the deadline timer and escape flow; WithDeadlineAction
+// attaches an optional fire-once breach action. Together they are the
+// ergonomic shorthand for the common "wait up to N, then do something else"
+// pattern. For the boundary-native equivalent — an explicit event.NewBoundary
+// node with event.WithBoundaryAction — see the sibling boundary_action
+// example, which shows the same fire-once action semantics through the true
+// boundary-event API.
 //
-// WithDeadline(triggerSpec, flowID, action) attaches a TimerDeadline to the
-// activity. When a token sits past the duration the engine, on breach, does two
-// things:
+// WithWaitDeadline(triggerSpec, flowID) attaches a TimerDeadline to the
+// activity; WithDeadlineAction(action) attaches the breach action. When a
+// token sits past the duration the engine, on breach, does two things:
 //
-//  1. Runs the breach action (a fire-once action.Action — the third argument —
-//     invoked for its side effect; its result is not fed back), and
+//  1. Runs the breach action (a fire-once action.Action, invoked for its
+//     side effect; its result is not fed back), and
 //  2. Routes the token down the named deadline flow to an alternative path,
 //     cancelling the in-progress human task.
 //
@@ -70,19 +72,21 @@ func main() {
 	//
 	// Durations are expr-lang expressions parsed by time.ParseDuration, so they
 	// are quoted Go-duration strings ("1h", "30m", "45s"). The outer backticks
-	// keep the inner quotes literal. The third argument is the fire-once breach
-	// action; the escalation work proper is the service task on the deadline path.
+	// keep the inner quotes literal. WithDeadlineAction attaches the fire-once
+	// breach action; the escalation work proper is the service task on the
+	// deadline path.
 	def, err := definition.NewBuilder("review-escalation", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewUserTask("review", []string{"reviewer"},
-			activity.WithDeadline(schedule.AfterDuration(time.Hour), "review-overdue", "notify-overdue"),
+			activity.WithWaitDeadline(schedule.AfterDuration(time.Hour), "review-overdue"),
+			activity.WithDeadlineAction("notify-overdue"),
 		)).
 		Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 		Add(event.NewEnd("approved-end")).
 		Add(event.NewEnd("escalated-end")).
 		Connect("start", "review").
 		Connect("review", "approved-end"). // normal completion path
-		// The deadline flow: its ID must match the WithDeadline flowID above.
+		// The deadline flow: its ID must match the WithWaitDeadline flowID above.
 		Connect("review", "escalate", flow.WithFlowID("review-overdue")).
 		Connect("escalate", "escalated-end").
 		Build()
@@ -143,7 +147,7 @@ func main() {
 
 	const instanceID = "review-001"
 
-	fmt.Println("--- Review Escalation: Activity Deadline (WithDeadline) ---")
+	fmt.Println("--- Review Escalation: Activity Deadline (WithWaitDeadline + WithDeadlineAction) ---")
 
 	// Run parks at the user task; the deadline timer is armed.
 	parked, err := driver.Drive(ctx, def, instanceID, nil)

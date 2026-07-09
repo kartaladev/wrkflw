@@ -100,13 +100,21 @@ func WithCatchMessage(msg, key string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.MessageName, n.CorrelationKey = msg, key }}
 }
 
-// WithCatchDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow,
-// and DeadlineAction on an IntermediateCatchEvent. Use schedule.AfterDuration,
-// schedule.AfterExpr, or any other TriggerSpec constructor.
-func WithCatchDeadline(t schedule.TriggerSpec, flowID, action string) CatchOption {
+// WithWaitDeadline sets the DeadlineTimer (schedule.TriggerSpec) and DeadlineFlow
+// on an IntermediateCatchEvent — the trigger governing when the deadline fires
+// and the sequence flow taken on breach. Use schedule.AfterDuration,
+// schedule.AfterExpr, or any other TriggerSpec constructor. Pair with
+// WithDeadlineAction to also run an action on breach.
+func WithWaitDeadline(t schedule.TriggerSpec, flowID string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) {
-		n.DeadlineTimer, n.DeadlineFlow, n.DeadlineAction = t, flowID, action
+		n.DeadlineTimer, n.DeadlineFlow = t, flowID
 	}}
+}
+
+// WithDeadlineAction sets the optional action.Action name invoked on deadline
+// breach, in addition to (or instead of) taking DeadlineFlow.
+func WithDeadlineAction(action string) CatchOption {
+	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.DeadlineAction = action }}
 }
 
 // WithCatchWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction

@@ -15,7 +15,7 @@ import (
 // BusinessRuleOption }), so mis-applying it is a compile-time error. The broad
 // activityOnlyOption type means "valid on EVERY activity kind" and is reserved
 // for genuinely-universal options (WithRetryPolicy, WithCompensateAction,
-// WithDeadline, WithRecoveryFlow, WithCancelAction). There is no runtime lint
+// WithWaitDeadline, WithDeadlineAction, WithRecoveryFlow, WithCancelAction). There is no runtime lint
 // pass; the type system is the guardrail.
 
 // --- option interfaces ---
@@ -144,11 +144,19 @@ func WithCancelAction(action string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.CancelAction = action })
 }
 
-// WithDeadline sets the DeadlineTimer (schedule.TriggerSpec), DeadlineFlow, and
-// DeadlineAction on an activity node. Use schedule.AfterDuration, schedule.AfterExpr,
-// or any other TriggerSpec constructor.
-func WithDeadline(t schedule.TriggerSpec, flowID, action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) { a.DeadlineTimer, a.DeadlineFlow, a.DeadlineAction = t, flowID, action })
+// WithWaitDeadline sets the DeadlineTimer (schedule.TriggerSpec) and DeadlineFlow
+// on an activity node — the trigger governing when the deadline fires and the
+// sequence flow taken on breach. Use schedule.AfterDuration, schedule.AfterExpr,
+// or any other TriggerSpec constructor. Pair with WithDeadlineAction to also run
+// an action on breach.
+func WithWaitDeadline(t schedule.TriggerSpec, flowID string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.DeadlineTimer, a.DeadlineFlow = t, flowID })
+}
+
+// WithDeadlineAction sets the optional action.Action name invoked on deadline
+// breach, in addition to (or instead of) taking DeadlineFlow.
+func WithDeadlineAction(action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.DeadlineAction = action })
 }
 
 // reminderOpt narrows WithWaitReminder to only the activity kinds whose engine

@@ -3,10 +3,12 @@ package activity_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 // stubStrategy is a no-op validate.ValidationStrategy used to exercise the
@@ -53,4 +55,15 @@ func TestWithCompletionAction_SetsFieldOnUserAndReceive(t *testing.T) {
 
 	r := activity.NewReceiveTask("r1", "m", activity.WithCompletionAction("ackOrder")).(activity.ReceiveTask)
 	assert.Equal(t, "ackOrder", r.CompletionAction)
+}
+
+func TestWithWaitDeadline_And_WithDeadlineAction(t *testing.T) {
+	t.Parallel()
+	st := activity.NewUserTask("u1", []string{"r"},
+		activity.WithWaitDeadline(schedule.AfterDuration(72*time.Hour), "escalate"),
+		activity.WithDeadlineAction("notify"),
+	).(activity.UserTask)
+	assert.Equal(t, "escalate", st.DeadlineFlow)
+	assert.Equal(t, "notify", st.DeadlineAction)
+	assert.False(t, st.DeadlineTimer.IsZero())
 }

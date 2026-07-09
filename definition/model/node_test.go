@@ -85,7 +85,7 @@ func TestErrorEndEventConstructor(t *testing.T) {
 func TestUserTaskConstructor(t *testing.T) {
 	n := activity.NewUserTask("task-1", []string{"manager", "admin"},
 		activity.WithEligibilityExpr("amount > 1000"),
-		activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach", "notify-manager"),
+		activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach"), activity.WithDeadlineAction("notify-manager"),
 		activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
 	)
 	if n.Kind() != model.KindUserTask {
@@ -218,7 +218,7 @@ func TestEventSubProcessConstructor(t *testing.T) {
 func TestIntermediateCatchEventConstructor(t *testing.T) {
 	n := event.NewIntermediateCatch("ice",
 		event.WithCatchTimer(schedule.AfterExpr("PT1H")),
-		event.WithCatchDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
+		event.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), event.WithDeadlineAction("sla-act"),
 		event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "remind-act"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {

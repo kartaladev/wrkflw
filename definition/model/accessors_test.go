@@ -74,19 +74,19 @@ func TestDeadlineOf(t *testing.T) {
 
 	t.Run("service task with deadline", func(t *testing.T) {
 		n := activity.NewServiceTask("st", activity.WithTaskAction("act"),
-			activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"))
+			activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), activity.WithDeadlineAction("sla-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "sla-flow", "sla-act", 24*time.Hour)
 	})
 	t.Run("user task with deadline", func(t *testing.T) {
 		n := activity.NewUserTask("ut", nil,
-			activity.WithDeadline(schedule.AfterDuration(2*time.Hour), "ut-flow", "ut-act"))
+			activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "ut-flow"), activity.WithDeadlineAction("ut-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "ut-flow", "ut-act", 2*time.Hour)
 	})
 	t.Run("intermediate catch event with deadline", func(t *testing.T) {
 		n := event.NewIntermediateCatch("ice",
-			event.WithCatchDeadline(schedule.AfterDuration(48*time.Hour), "ice-flow", "ice-act"))
+			event.WithWaitDeadline(schedule.AfterDuration(48*time.Hour), "ice-flow"), event.WithDeadlineAction("ice-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "ice-flow", "ice-act", 48*time.Hour)
 	})
@@ -145,7 +145,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithCompensateAction("refund-card"),
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),
-				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
+				activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), activity.WithDeadlineAction("sla-act"),
 				activity.WithCancelAction("cancel-charge"),
 			),
 			activity.NewUserTask("approve", []string{"manager", "admin"},
@@ -352,7 +352,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 // schedule.TriggerSpec values (Task 3: typed deadline/reminder migration).
 func TestDeadlineReminderTyped(t *testing.T) {
 	n := activity.NewUserTask("ut", nil,
-		activity.WithDeadline(schedule.AfterDuration(2*time.Hour), "sla", "notify"),
+		activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "sla"), activity.WithDeadlineAction("notify"),
 		activity.WithWaitReminder(schedule.Every(time.Hour), "remind"),
 	)
 	spec, flow, action := model.DeadlineOf(n)

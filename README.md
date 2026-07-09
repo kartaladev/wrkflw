@@ -436,7 +436,8 @@ Configure timers on nodes:
 // expressions evaluated to a Go duration via time.ParseDuration, so they are
 // backtick-wrapped quoted duration literals ("72h", "24h" — not ISO-8601).
 activity.NewUserTask("approve", []string{"manager"},
-    activity.WithDeadline(`"72h"`, "escalate-flow", "notify-manager"),
+    activity.WithWaitDeadline(`"72h"`, "escalate-flow"),
+    activity.WithDeadlineAction("notify-manager"),
     activity.WithWaitReminder(`"24h"`, "send-reminder"),
 )
 ```
@@ -646,7 +647,8 @@ same set of functional options:
 | `activity.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
 | `activity.WithCompensateAction(actionName string)` | Service action invoked on rollback (reverse order). |
 | `activity.WithCancelAction(actionName string)` | Service action run when the node is interrupted. |
-| `activity.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
+| `activity.WithWaitDeadline(duration, flowID string)` | On deadline breach: take `flowID`. |
+| `activity.WithDeadlineAction(actionName string)` | Run `actionName` on deadline breach (optional; pairs with `WithWaitDeadline`). |
 | `activity.WithWaitReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
 Two options are **compile-enforced** to a single constructor:
@@ -659,8 +661,8 @@ Two options are **compile-enforced** to a single constructor:
 
 > **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
 > them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
-> not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithDeadline`,
-> `WithWaitReminder`, `WithStartTimer`, and `WithCatchDeadline`/`WithCatchWaitReminder`.
+> not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithWaitDeadline`
+> (activity and event), `WithWaitReminder`, `WithStartTimer`, and `WithCatchWaitReminder`.
 
 `RetryPolicy` fields:
 
@@ -721,7 +723,8 @@ activity.NewServiceTask("charge",
     activity.WithRetryPolicy(&retry),
 )
 activity.NewUserTask("approve", []string{"manager"},
-    activity.WithDeadline(`"3h"`, "escalate-flow", "notify-manager"),
+    activity.WithWaitDeadline(`"3h"`, "escalate-flow"),
+    activity.WithDeadlineAction("notify-manager"),
     activity.WithEligibilityExpr(`vars["region"] == "EU"`),
 )
 activity.NewReceiveTask("await-payment", "payment-received",
@@ -761,7 +764,7 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
 `NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
-`WithCatchMessage(msg, key)`, `WithCatchDeadline(dur, flow, action)`,
+`WithCatchMessage(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
 `WithCatchWaitReminder(every, action)`, `WithName(string)`.
 `NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
@@ -942,10 +945,10 @@ variable key `amount`, not `vars.amount`.
 
 ### 3. Activity deadline / timeout escalation
 
-A **`WithDeadline`** option attached to an activity arms a deadline timer; if the
-activity is still in progress when the deadline elapses, the engine runs the fire-once
-breach action (the third argument), cancels the in-progress task, and routes the token
-down a named deadline flow to an escalation path.
+A **`WithWaitDeadline`** option attached to an activity arms a deadline timer; if the
+activity is still in progress when the deadline elapses, the engine runs the optional
+fire-once breach action (set via **`WithDeadlineAction`**), cancels the in-progress task,
+and routes the token down a named deadline flow to an escalation path.
 
 ```
 start → review[UserTask, deadline "1h" → flow "review-overdue", action "notify-overdue"] ──→ approved-end
@@ -956,7 +959,8 @@ start → review[UserTask, deadline "1h" → flow "review-overdue", action "noti
 
 ```go
 Add(activity.NewUserTask("review", []string{"reviewer"},
-    activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"))). // fire-once breach action
+    activity.WithWaitDeadline(`"1h"`, "review-overdue"),
+    activity.WithDeadlineAction("notify-overdue"))). // fire-once breach action
 Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 // ...
 Connect("review", "approved-end").                                  // normal path

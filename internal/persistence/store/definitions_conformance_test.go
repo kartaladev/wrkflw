@@ -42,7 +42,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 			activity.NewUserTask("review", []string{"reviewer", "manager"},
 				activity.WithName("Review Order"),
 				activity.WithEligibilityExpr("vars.amount > 100"),
-				activity.WithDeadline(schedule.AfterExpr("PT24H"), "sla-breach", "notify-manager"),
+				activity.WithWaitDeadline(schedule.AfterExpr("PT24H"), "sla-breach"), activity.WithDeadlineAction("notify-manager"),
 				activity.WithWaitReminder(schedule.EveryExpr("PT6H"), "send-reminder"),
 				activity.WithCompensateAction("cancel-review"),
 			),

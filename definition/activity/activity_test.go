@@ -19,7 +19,7 @@ func TestServiceTaskOptions(t *testing.T) {
 		activity.WithCompensateAction("refund"),
 		activity.WithCancelAction("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
-		activity.WithDeadline(schedule.AfterExpr(`"2h"`), "sla", "notify"),
+		activity.WithWaitDeadline(schedule.AfterExpr(`"2h"`), "sla"), activity.WithDeadlineAction("notify"),
 		activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 5}),
 	)
 	if n.Kind() != model.KindServiceTask || n.Name() != "Charge" {
@@ -138,7 +138,7 @@ func TestActivityRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "a", Version: 1,
 		Nodes: []model.Node{
-			activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithDeadline(schedule.AfterExpr(`"1h"`), "f", "a")),
+			activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithWaitDeadline(schedule.AfterExpr(`"1h"`), "f"), activity.WithDeadlineAction("a")),
 			activity.NewUserTask("ut", []string{"mgr"}, activity.WithEligibilityExpr("x")),
 			activity.NewReceiveTask("rt", "m", activity.WithCorrelationKey("k")),
 			activity.NewSendTask("snt", "m"),

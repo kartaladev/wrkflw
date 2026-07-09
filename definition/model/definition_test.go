@@ -265,7 +265,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "deadline-with-flow-and-action",
 			node: activity.NewUserTask("review", nil,
 				activity.WithName("Review"),
-				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach-flow", "notify-manager"),
+				activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach-flow"), activity.WithDeadlineAction("notify-manager"),
 			),
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
@@ -296,7 +296,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			name: "all-six-fields",
 			node: activity.NewUserTask("task-full", nil,
 				activity.WithName("Full Task"),
-				activity.WithDeadline(schedule.AfterDuration(48*time.Hour), "escalate", "escalate-action"),
+				activity.WithWaitDeadline(schedule.AfterDuration(48*time.Hour), "escalate"), activity.WithDeadlineAction("escalate-action"),
 				activity.WithWaitReminder(schedule.Every(6*time.Hour), "remind-action"),
 			),
 			check: func(t *testing.T, n model.Node) {

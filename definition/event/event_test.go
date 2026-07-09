@@ -34,7 +34,7 @@ func TestCatchRenamedOptions(t *testing.T) {
 		event.WithCatchTimer(schedule.AfterExpr(`"15m"`)),
 		event.WithCatchSignal("resume"),
 		event.WithCatchMessage("go", "k"),
-		event.WithCatchDeadline(schedule.AfterExpr(`"4h"`), "esc", "escalate"),
+		event.WithWaitDeadline(schedule.AfterExpr(`"4h"`), "esc"), event.WithDeadlineAction("escalate"),
 		event.WithCatchWaitReminder(schedule.EveryExpr(`"1h"`), "nudge"),
 	)
 	if n.Kind() != model.KindIntermediateCatchEvent {
@@ -108,7 +108,7 @@ func TestEventRoundTrip(t *testing.T) {
 		ID: "e", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("s", event.WithStartSignal("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
-			event.NewIntermediateCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithCatchDeadline(schedule.AfterExpr(`"2h"`), "f", "a")),
+			event.NewIntermediateCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithWaitDeadline(schedule.AfterExpr(`"2h"`), "f"), event.WithDeadlineAction("a")),
 			event.NewIntermediateThrow("th", event.WithCompensateRef("s")),
 			event.NewBoundary("b", "c", event.WithBoundaryTimer(schedule.AfterDuration(5*time.Minute)), event.WithBoundaryErrorCode("E")),
 			event.NewEnd("end"),

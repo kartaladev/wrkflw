@@ -1029,7 +1029,7 @@ func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("p-start"),
 			gateway.NewParallel("p-fork"),
-			activity.NewUserTask("p-user", nil, activity.WithDeadline(schedule.AfterExpr(`"1h"`), "", "")),
+			activity.NewUserTask("p-user", nil, activity.WithWaitDeadline(schedule.AfterExpr(`"1h"`), "")),
 			activity.NewCallActivity("p-call", model.Latest("child")),
 			gateway.NewParallel("p-join"),
 			event.NewEnd("p-end"),
@@ -1617,7 +1617,7 @@ func deadlineUserTaskInsideSubProcessDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewUserTask("inner-user", []string{"reviewer"},
-				activity.WithDeadline(schedule.AfterExpr(`"30m"`), "inner-escalate", "notify-action")),
+				activity.WithWaitDeadline(schedule.AfterExpr(`"30m"`), "inner-escalate"), activity.WithDeadlineAction("notify-action")),
 			event.NewEnd("inner-end"),
 			event.NewEnd("escalate-node"),
 		},
