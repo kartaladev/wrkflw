@@ -335,12 +335,16 @@ unrelated to the guards/refactors above and is left for its own future ADR
   to make that possible. Callers must understand this asymmetry: a target
   reverse is a checkpoint-and-continue with current data, not a full replay
   to that point in time.
-- **Deferred (user-approved, 2026-07-09).** "Restore node-start variables on
-  target reverse" is a known, deliberately deferred enhancement — the data
-  (`CompensationRecord.Input`) already exists to support it, but adopting it
-  changes the documented target-reverse variable semantics in point 7 above
-  and therefore needs its own future ADR (next free number: 0116), not a
-  silent behavior change bundled into this one.
+- **Deferred (user-approved, 2026-07-09) — RESOLVED by
+  [ADR-0116](0116-reverse-target-node-variables.md), 2026-07-10.** "Restore
+  node-start variables on target reverse" is a known, deliberately deferred
+  enhancement — the data (`CompensationRecord.Input`) already exists to
+  support it, but adopting it changes the documented target-reverse variable
+  semantics in point 7 above and therefore needs its own future ADR (next
+  free number: 0116), not a silent behavior change bundled into this one.
+  ADR-0116 implements the restore as an opt-in (`RestoreTargetVars` /
+  `NewReverseToNode`) so this ADR's raw `NewCompensateRequested` callers keep
+  the current-variables behavior described above unchanged.
 - **Neutral.** `ReverseInstance` is the only facade using functional options;
   this is scoped to its two-mode-plus-default shape and is not adopted as a
   new blanket convention for the facade layer — `CancelInstance`,
