@@ -25,7 +25,7 @@ func signalCatchDef() *model.ProcessDefinition {
 		ID: "p-signal", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("catch-approved", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("catch-approved", event.WithSignalName("approved")),
 			activity.NewServiceTask("complete", activity.WithTaskAction("complete-action")),
 			event.NewEnd("end"),
 		},
@@ -66,7 +66,7 @@ func signalThrowDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("setup", activity.WithTaskAction("setup-action")),
-			event.NewIntermediateThrow("throw-done", event.WithThrowSignal("done")),
+			event.NewIntermediateThrow("throw-done", event.WithThrowSignalName("done")),
 			activity.NewServiceTask("after", activity.WithTaskAction("after-action")),
 			event.NewEnd("end"),
 		},
@@ -89,8 +89,8 @@ func twoSignalTokensDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			event.NewIntermediateCatch("catch1", event.WithCatchSignal("wake")),
-			event.NewIntermediateCatch("catch2", event.WithCatchSignal("wake")),
+			event.NewIntermediateCatch("catch1", event.WithSignalName("wake")),
+			event.NewIntermediateCatch("catch2", event.WithSignalName("wake")),
 			event.NewEnd("end1"),
 			event.NewEnd("end2"),
 		},
@@ -349,7 +349,7 @@ func eventGatewayDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewIntermediateCatch("signal-catch", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("signal-catch", event.WithSignalName("approved")),
 			activity.NewServiceTask("timer-branch", activity.WithTaskAction("timer-action")),
 			activity.NewServiceTask("signal-branch", activity.WithTaskAction("signal-action")),
 			event.NewEnd("end1"),
@@ -801,7 +801,7 @@ func nonInterruptingBoundaryDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("work", nil),
-			event.NewBoundary("bnd-signal", "work", event.WithBoundarySignal("notify"), event.WithBoundaryNonInterrupting()),
+			event.NewBoundary("bnd-signal", "work", event.WithSignalName("notify"), event.WithBoundaryNonInterrupting()),
 			activity.NewServiceTask("notify-svc", activity.WithTaskAction("notify-action")),
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
@@ -1119,9 +1119,9 @@ func nonInterruptingBoundarySignalSelfCascadeDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("work", nil),
-			event.NewBoundary("bnd-pulse", "work", event.WithBoundarySignal("pulse"), event.WithBoundaryNonInterrupting()),
+			event.NewBoundary("bnd-pulse", "work", event.WithSignalName("pulse"), event.WithBoundaryNonInterrupting()),
 			// The boundary's outgoing path leads to a signal catch for the same signal.
-			event.NewIntermediateCatch("inner-catch", event.WithCatchSignal("pulse")),
+			event.NewIntermediateCatch("inner-catch", event.WithSignalName("pulse")),
 			event.NewEnd("end"),
 			event.NewEnd("end2"),
 		},

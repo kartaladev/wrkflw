@@ -85,7 +85,7 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 	}{
 		{
 			name: "signal-catch",
-			node: event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("order.placed")),
+			node: event.NewIntermediateCatch("sig-catch", event.WithSignalName("order.placed")),
 		},
 		{
 			name: "message-catch",
@@ -93,12 +93,12 @@ func TestNodeEventBoundaryFields(t *testing.T) {
 		},
 		{
 			name: "signal-throw",
-			node: event.NewIntermediateThrow("sig-throw", event.WithThrowSignal("order.shipped")),
+			node: event.NewIntermediateThrow("sig-throw", event.WithThrowSignalName("order.shipped")),
 		},
 		{
 			// Zero-value NonInterrupting (false) = interrupting — the default.
 			name: "boundary-interrupting-default",
-			node: event.NewBoundary("boundary-1", "task-1", event.WithBoundarySignal("cancel.signal")),
+			node: event.NewBoundary("boundary-1", "task-1", event.WithSignalName("cancel.signal")),
 		},
 		{
 			// NonInterrupting: true = non-interrupting boundary event.
@@ -189,7 +189,7 @@ func TestNodeEventSubProcessField(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			// The trigger is encoded on the nested StartEvent's SignalName field.
-			event.NewStart("es-start", event.WithStartSignal("cancel.signal")),
+			event.NewStart("es-start", event.WithSignalName("cancel.signal")),
 			event.NewEnd("es-end"),
 		},
 		Flows: []flow.SequenceFlow{

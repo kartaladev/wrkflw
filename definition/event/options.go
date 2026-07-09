@@ -69,16 +69,29 @@ func WithMessageCorrelator(msg, key string) interface {
 	return messageCorrelatorOpt{msg, key}
 }
 
+// --- WithSignalName (Start, Catch, Boundary) ---
+
+type signalNameOpt struct{ name string }
+
+func (o signalNameOpt) applyStart(n *StartEvent)             { n.SignalName = o.name }
+func (o signalNameOpt) applyCatch(n *IntermediateCatchEvent) { n.SignalName = o.name }
+func (o signalNameOpt) applyBoundary(n *BoundaryEvent)       { n.SignalName = o.name }
+
+// WithSignalName sets the signal reference on a start, catch, or boundary
+// event (was the three separate per-kind signal setters).
+func WithSignalName(name string) interface {
+	StartOption
+	CatchOption
+	BoundaryOption
+} {
+	return signalNameOpt{name}
+}
+
 // --- StartEvent options (EventSubProcess triggers) ---
 
 type startFuncOpt struct{ fn func(*StartEvent) }
 
 func (o startFuncOpt) applyStart(n *StartEvent) { o.fn(n) }
-
-// WithStartSignal sets SignalName on a StartEvent (for EventSubProcess triggers).
-func WithStartSignal(name string) StartOption {
-	return startFuncOpt{func(n *StartEvent) { n.SignalName = name }}
-}
 
 // WithStartTimer sets the Timer trigger on a StartEvent. Use schedule.AfterExpr,
 // schedule.AfterDuration, schedule.Cron, etc. to build the TriggerSpec.
@@ -107,11 +120,6 @@ func (o catchFuncOpt) applyCatch(n *IntermediateCatchEvent) { o.fn(n) }
 // the TriggerSpec.
 func WithCatchTimer(t schedule.TriggerSpec) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.Timer = t }}
-}
-
-// WithCatchSignal sets the signal reference (was WithSignalName).
-func WithCatchSignal(name string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.SignalName = name }}
 }
 
 // WithWaitDeadline sets the DeadlineTimer (schedule.TriggerSpec) and DeadlineFlow
@@ -151,8 +159,8 @@ func WithPayloadValidation(s validate.ValidationStrategy) CatchOption {
 
 // --- IntermediateThrowEvent options ---
 
-// WithThrowSignal sets SignalName on an IntermediateThrowEvent.
-func WithThrowSignal(name string) ThrowOption {
+// WithThrowSignalName sets SignalName on an IntermediateThrowEvent.
+func WithThrowSignalName(name string) ThrowOption {
 	return func(n *IntermediateThrowEvent) { n.SignalName = name }
 }
 
@@ -171,11 +179,6 @@ func WithThrowName(name string) ThrowOption {
 type boundaryFuncOpt struct{ fn func(*BoundaryEvent) }
 
 func (o boundaryFuncOpt) applyBoundary(n *BoundaryEvent) { o.fn(n) }
-
-// WithBoundarySignal sets SignalName on a BoundaryEvent.
-func WithBoundarySignal(name string) BoundaryOption {
-	return boundaryFuncOpt{func(n *BoundaryEvent) { n.SignalName = name }}
-}
 
 // WithBoundaryTimer sets the Timer trigger on a BoundaryEvent. Use
 // schedule.AfterDuration, schedule.AfterExpr, schedule.Cron, etc. to build

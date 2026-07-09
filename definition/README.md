@@ -155,10 +155,11 @@ task := activity.NewServiceTask("charge",
 ### Event options (`definition/event`)
 
 `WithName` (start/catch/boundary/event-sub-process); `WithMessageCorrelator`
-(start/catch/boundary); start triggers `WithStartSignal` / `WithStartTimer`; catch
-`WithCatchTimer` / `WithCatchSignal` / `WithWaitDeadline` /
-`WithDeadlineAction` / `WithWaitAction`; throw `WithThrowSignal` / `WithCompensateRef` /
-`WithThrowName`; boundary `WithBoundaryTimer` / `WithBoundarySignal` /
+(start/catch/boundary); `WithSignalName` (start/catch/boundary); start triggers
+`WithStartTimer`; catch
+`WithCatchTimer` / `WithWaitDeadline` /
+`WithDeadlineAction` / `WithWaitAction`; throw `WithThrowSignalName` / `WithCompensateRef` /
+`WithThrowName`; boundary `WithBoundaryTimer` /
 `WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
 event-sub-process `WithEventSubProcessNonInterrupting`.
 

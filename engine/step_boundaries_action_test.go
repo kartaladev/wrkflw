@@ -78,7 +78,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "signal/interrupting/with-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundarySignal("sig"),
+				event.WithSignalName("sig"),
 				event.WithBoundaryAction("notify"),
 			},
 			fire: func(engine.StepResult) engine.Trigger {
@@ -121,7 +121,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "signal/non-interrupting/with-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundarySignal("sig"),
+				event.WithSignalName("sig"),
 				event.WithBoundaryNonInterrupting(),
 				event.WithBoundaryAction("notify"),
 			},
@@ -148,7 +148,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 		{
 			name: "signal/interrupting/no-action",
 			boundaryOpts: []event.BoundaryOption{
-				event.WithBoundarySignal("sig"),
+				event.WithSignalName("sig"),
 				// no WithBoundaryAction
 			},
 			fire: func(engine.StepResult) engine.Trigger {

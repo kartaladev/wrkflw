@@ -209,7 +209,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
-					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
+					event.NewIntermediateCatch("sig-catch", event.WithSignalName("sig.a")),
 					event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("msg.b", "")),
 					event.NewEnd("end"),
 				},
@@ -231,7 +231,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
-					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
+					event.NewIntermediateCatch("sig-catch", event.WithSignalName("sig.a")),
 					activity.NewServiceTask("task", activity.WithTaskAction("do-work")), // non-catch
 					event.NewEnd("end"),
 				},
@@ -255,7 +255,7 @@ func TestValidate(t *testing.T) {
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
 					// NonInterrupting omitted (false) = interrupting, the default.
-					event.NewBoundary("boundary", "task", event.WithBoundarySignal("cancel")),
+					event.NewBoundary("boundary", "task", event.WithSignalName("cancel")),
 					event.NewEnd("end"),
 					event.NewEnd("cancel-end"),
 				},
@@ -275,7 +275,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
-					event.NewBoundary("boundary", "ghost", event.WithBoundarySignal("cancel")),
+					event.NewBoundary("boundary", "ghost", event.WithSignalName("cancel")),
 				},
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -296,7 +296,7 @@ func TestValidate(t *testing.T) {
 					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 					// boundary attached to a gateway — not an activity
-					event.NewBoundary("boundary", "xor", event.WithBoundarySignal("cancel")),
+					event.NewBoundary("boundary", "xor", event.WithSignalName("cancel")),
 				},
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "xor"},
@@ -725,7 +725,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					event.NewIntermediateThrow("throw", event.WithThrowSignal("sig.done")),
+					event.NewIntermediateThrow("throw", event.WithThrowSignalName("sig.done")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1349,7 +1349,7 @@ func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
 		{
 			name: "signal catch + payload validation is rejected",
 			def: catchDef(event.NewIntermediateCatch("catch",
-				event.WithCatchSignal("go"), event.WithPayloadValidation(payload))),
+				event.WithSignalName("go"), event.WithPayloadValidation(payload))),
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrPayloadValidationRequiresMessage)
 			},

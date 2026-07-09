@@ -52,7 +52,7 @@ func eventGatewayDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			gateway.NewEventBased("gw"),
 			event.NewIntermediateCatch("timer-arm", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewIntermediateCatch("signal-arm", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("signal-arm", event.WithSignalName("approved")),
 			event.NewEnd("timer-end"),
 			event.NewEnd("signal-end"),
 		},
@@ -127,7 +127,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateThrow("throw", event.WithThrowSignal("approved")),
+			event.NewIntermediateThrow("throw", event.WithThrowSignalName("approved")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

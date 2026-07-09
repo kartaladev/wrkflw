@@ -687,7 +687,7 @@ model.RetryPolicy{
 | **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `event.NewErrorEnd(id, errorCode string, name ...string) Node` |
 
 `NewStartEvent` options (only meaningful when the start is an EventSubProcess trigger):
-`WithName(string)`, `WithStartSignal(name)`, `WithMessageCorrelator(msg, key)`,
+`WithName(string)`, `WithSignalName(name)`, `WithMessageCorrelator(msg, key)`,
 `WithStartTimer(dur)`. An empty `errorCode` on `NewErrorEndEvent` throws an anonymous
 (catch-all) error.
 
@@ -763,12 +763,12 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 | **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `event.NewIntermediateThrow(id string, opts ...) Node` |
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
-`NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithCatchSignal(name)`,
+`NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithSignalName(name)`,
 `WithMessageCorrelator(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
 `WithWaitAction(every, action)`, `WithName(string)`.
-`NewIntermediateThrowEvent` options: `WithThrowSignal(name)`,
+`NewIntermediateThrowEvent` options: `WithThrowSignalName(name)`,
 `WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
-`NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithBoundarySignal(name)`,
+`NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithSignalName(name)`,
 `WithMessageCorrelator(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
 `WithBoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
 
@@ -1272,7 +1272,7 @@ start → gw[event-based] ─┬─ await-payment[catch signal "payment-confirme
 
 ```go
 Add(gateway.NewEventBased("gw")).
-Add(event.NewIntermediateCatch("await-payment", event.WithCatchSignal("payment-confirmed"))).
+Add(event.NewIntermediateCatch("await-payment", event.WithSignalName("payment-confirmed"))).
 Add(event.NewIntermediateCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
 // ... gw → both arms; each arm → its own service task + end
 driver.Drive(ctx, def, "order-fast", nil) // parks at gw with both arms live
@@ -1299,7 +1299,7 @@ start → await[catch signal "approved", reminder every "30m" → "nudge"] → e
 
 ```go
 Add(event.NewIntermediateCatch("await",
-    event.WithCatchSignal("approved"),
+    event.WithSignalName("approved"),
     event.WithWaitAction(schedule.Every(30*time.Minute), "nudge"))).
 // driver wired with WithClock(fc), WithScheduler(sched), WithSignalBus(bus)
 driver.Drive(ctx, def, "approval-001", nil)                  // parks; reminder armed

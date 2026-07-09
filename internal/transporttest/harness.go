@@ -147,7 +147,7 @@ func SignalProcess(signalName string) *model.ProcessDefinition {
 		ID: "signal-catch-" + signalName, Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			event.NewIntermediateCatch("wait", event.WithCatchSignal(signalName)),
+			event.NewIntermediateCatch("wait", event.WithSignalName(signalName)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

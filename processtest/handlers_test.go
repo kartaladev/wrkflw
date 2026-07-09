@@ -34,7 +34,7 @@ func signalDef(t *testing.T) *model.ProcessDefinition {
 	t.Helper()
 	def, err := definition.NewBuilder("sig", 1).
 		Add(event.NewStart("start")).
-		Add(event.NewIntermediateCatch("await", event.WithCatchSignal("go"))).
+		Add(event.NewIntermediateCatch("await", event.WithSignalName("go"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").
 		Connect("await", "end").

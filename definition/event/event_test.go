@@ -13,7 +13,7 @@ import (
 func TestStartEventOptions(t *testing.T) {
 	n := event.NewStart("s",
 		event.WithName("Start"),
-		event.WithStartSignal("go"),
+		event.WithSignalName("go"),
 		event.WithMessageCorrelator("kick", "k"),
 		event.WithStartTimer(schedule.AfterExpr(`"1h"`)),
 	).(event.StartEvent)
@@ -32,7 +32,7 @@ func TestCatchRenamedOptions(t *testing.T) {
 	n := event.NewIntermediateCatch("wait",
 		event.WithName("Wait"),
 		event.WithCatchTimer(schedule.AfterExpr(`"15m"`)),
-		event.WithCatchSignal("resume"),
+		event.WithSignalName("resume"),
 		event.WithMessageCorrelator("go", "k"),
 		event.WithWaitDeadline(schedule.AfterExpr(`"4h"`), "esc"), event.WithDeadlineAction("escalate"),
 		event.WithWaitAction(schedule.EveryExpr(`"1h"`), "nudge"),
@@ -55,14 +55,14 @@ func TestCatchRenamedOptions(t *testing.T) {
 }
 
 func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
-	th := event.NewIntermediateThrow("t", event.WithThrowName("Emit"), event.WithThrowSignal("done"), event.WithCompensateRef("charge")).(event.IntermediateThrowEvent)
+	th := event.NewIntermediateThrow("t", event.WithThrowName("Emit"), event.WithThrowSignalName("done"), event.WithCompensateRef("charge")).(event.IntermediateThrowEvent)
 	if th.Name() != "Emit" || th.SignalName != "done" || th.CompensateRef != "charge" {
 		t.Errorf("throw = %+v", th)
 	}
 	b := event.NewBoundary("b", "host",
 		event.WithName("B"),
 		event.WithBoundaryTimer(schedule.AfterExpr("5m")),
-		event.WithBoundarySignal("s"),
+		event.WithSignalName("s"),
 		event.WithMessageCorrelator("m", "k"),
 		event.WithBoundaryErrorCode("E"),
 		event.WithBoundaryNonInterrupting(),
@@ -107,7 +107,7 @@ func TestEventRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "e", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("s", event.WithStartSignal("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
+			event.NewStart("s", event.WithSignalName("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
 			event.NewIntermediateCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithWaitDeadline(schedule.AfterExpr(`"2h"`), "f"), event.WithDeadlineAction("a")),
 			event.NewIntermediateThrow("th", event.WithCompensateRef("s")),
 			event.NewBoundary("b", "c", event.WithBoundaryTimer(schedule.AfterDuration(5*time.Minute)), event.WithBoundaryErrorCode("E")),

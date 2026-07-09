@@ -33,7 +33,7 @@ func catchReminderInterruptDef() *model.ProcessDefinition {
 			event.NewStart("inner-start"),
 			gateway.NewParallel("pgw"),
 			event.NewIntermediateCatch("await",
-				event.WithCatchSignal("resume"),
+				event.WithSignalName("resume"),
 				event.WithWaitAction(schedule.Every(30*time.Minute), "nudge")),
 			event.NewEnd("await-end"),
 			event.NewErrorEnd("boom", "E1"),

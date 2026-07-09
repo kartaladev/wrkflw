@@ -24,7 +24,7 @@ func TestHandleReminderFiredStaleness(t *testing.T) {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			event.NewIntermediateCatch("await",
-				event.WithCatchSignal("approved"),
+				event.WithSignalName("approved"),
 				event.WithWaitAction(schedule.Every(1), "nudge")),
 		},
 	}

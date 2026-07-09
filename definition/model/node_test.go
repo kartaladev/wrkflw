@@ -237,7 +237,7 @@ func TestIntermediateCatchEventConstructor(t *testing.T) {
 }
 
 func TestIntermediateCatchEventSignal(t *testing.T) {
-	n := event.NewIntermediateCatch("ice-sig", event.WithCatchSignal("my.signal"))
+	n := event.NewIntermediateCatch("ice-sig", event.WithSignalName("my.signal"))
 	ice, ok := n.(event.IntermediateCatchEvent)
 	if !ok {
 		t.Fatalf("node is %T, want event.IntermediateCatchEvent", n)
@@ -265,7 +265,7 @@ func TestIntermediateCatchEventMessage(t *testing.T) {
 
 func TestIntermediateThrowEventConstructor(t *testing.T) {
 	n := event.NewIntermediateThrow("ite",
-		event.WithThrowSignal("order.shipped"),
+		event.WithThrowSignalName("order.shipped"),
 	)
 	if n.Kind() != model.KindIntermediateThrowEvent {
 		t.Fatalf("Kind() = %v, want KindIntermediateThrowEvent", n.Kind())
@@ -294,7 +294,7 @@ func TestIntermediateThrowEventCompensateRef(t *testing.T) {
 
 func TestBoundaryEventConstructor(t *testing.T) {
 	n := event.NewBoundary("bnd", "task-1",
-		event.WithBoundarySignal("cancel.signal"),
+		event.WithSignalName("cancel.signal"),
 		event.WithBoundaryNonInterrupting(),
 	)
 	if n.Kind() != model.KindBoundaryEvent {

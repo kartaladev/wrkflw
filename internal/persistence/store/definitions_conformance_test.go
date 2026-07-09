@@ -36,7 +36,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start",
 				event.WithName("Order Received"),
-				event.WithStartSignal("sig-order"),
+				event.WithSignalName("sig-order"),
 				event.WithMessageCorrelator("msg-order", "vars.orderID"),
 			),
 			activity.NewUserTask("review", []string{"reviewer", "manager"},
@@ -67,7 +67,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 			),
 			event.NewBoundary("boundary-sig", "review",
 				event.WithBoundaryNonInterrupting(),
-				event.WithBoundarySignal("sig-cancel"),
+				event.WithSignalName("sig-cancel"),
 			),
 			activity.NewCallActivity("call", model.Version("sub-def", 3),
 				activity.WithName("Call Sub-process"),

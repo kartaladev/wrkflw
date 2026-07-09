@@ -157,7 +157,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				event.WithCatchTimer(schedule.AfterExpr("PT30M")),
 				event.WithName("Wait"),
 			),
-			event.NewIntermediateThrow("signal-done", event.WithThrowSignal("order.done")),
+			event.NewIntermediateThrow("signal-done", event.WithThrowSignalName("order.done")),
 			event.NewBoundary("error-bnd", "charge",
 				event.WithBoundaryErrorCode("ERR_PAYMENT"),
 			),

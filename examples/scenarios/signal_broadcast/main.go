@@ -47,7 +47,7 @@ func main() {
 
 	def, err := definition.NewBuilder("trading-desk", 1).
 		Add(event.NewStart("start")).
-		Add(event.NewIntermediateCatch("await", event.WithCatchSignal("market-open"))).
+		Add(event.NewIntermediateCatch("await", event.WithSignalName("market-open"))).
 		Add(activity.NewServiceTask("trade", activity.WithTaskAction("place-trade"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").

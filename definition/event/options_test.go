@@ -78,3 +78,31 @@ func TestWithMessageCorrelator_AllKinds(t *testing.T) {
 		assert.Equal(t, "k", b.CorrelationKey)
 	})
 }
+
+func TestWithSignalName_ListenKinds(t *testing.T) {
+	t.Parallel()
+
+	t.Run("catch", func(t *testing.T) {
+		t.Parallel()
+		n := event.NewIntermediateCatch("c", event.WithSignalName("s"))
+		c, ok := n.(event.IntermediateCatchEvent)
+		require.Truef(t, ok, "node kind = %T", n)
+		assert.Equal(t, "s", c.SignalName)
+	})
+
+	t.Run("start", func(t *testing.T) {
+		t.Parallel()
+		n := event.NewStart("s", event.WithSignalName("go"))
+		se, ok := n.(event.StartEvent)
+		require.Truef(t, ok, "node kind = %T", n)
+		assert.Equal(t, "go", se.SignalName)
+	})
+
+	t.Run("boundary", func(t *testing.T) {
+		t.Parallel()
+		n := event.NewBoundary("b", "host", event.WithSignalName("s"))
+		b, ok := n.(event.BoundaryEvent)
+		require.Truef(t, ok, "node kind = %T", n)
+		assert.Equal(t, "s", b.SignalName)
+	})
+}

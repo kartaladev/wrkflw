@@ -47,7 +47,7 @@ func TestIntermediateCatchReminderFiresAndCancelsOnResolve(t *testing.T) {
 		resolve func(t *testing.T, s engine.InstanceState, intermediateID string) engine.Trigger
 	}{
 		"signal": {
-			catchOpt: event.WithCatchSignal("approved"),
+			catchOpt: event.WithSignalName("approved"),
 			resolve: func(_ *testing.T, _ engine.InstanceState, _ string) engine.Trigger {
 				return engine.NewSignalReceived(startAt.Add(45*time.Minute), "approved", nil)
 			},

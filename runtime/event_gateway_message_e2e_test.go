@@ -35,7 +35,7 @@ func eventGatewayCorrelatedMsgDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewIntermediateCatch("msg-catch", event.WithMessageCorrelator("payment-confirmed", "order")),
-			event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("cancelled")),
+			event.NewIntermediateCatch("sig-catch", event.WithSignalName("cancelled")),
 			activity.NewServiceTask("ship", activity.WithTaskAction("ship-order")),
 			activity.NewServiceTask("cancel", activity.WithTaskAction("cancel-order")),
 			event.NewEnd("end-shipped"),

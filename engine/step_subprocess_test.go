@@ -209,7 +209,7 @@ func eventSubProcessDef(nonInterrupting bool) *model.ProcessDefinition {
 	evtsubInner := &model.ProcessDefinition{
 		ID: "evtsub-inner", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("evtsub-start", event.WithStartSignal("cancel")),
+			event.NewStart("evtsub-start", event.WithSignalName("cancel")),
 			activity.NewServiceTask("evtsub-svc", activity.WithTaskAction("cancel-action")),
 			event.NewEnd("evtsub-end"),
 		},
@@ -639,7 +639,7 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 	evtsubInner := &model.ProcessDefinition{
 		ID: "esp-gw-evtsub-inner", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("evtsub-start", event.WithStartSignal("cancel")),
+			event.NewStart("evtsub-start", event.WithSignalName("cancel")),
 			activity.NewServiceTask("evtsub-svc", activity.WithTaskAction("cancel-action")),
 			event.NewEnd("evtsub-end"),
 		},
@@ -655,7 +655,7 @@ func espWithEventGatewayDef() *model.ProcessDefinition {
 			event.NewStart("inner-start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"2h"`))),
-			event.NewIntermediateCatch("signal-catch", event.WithCatchSignal("done")),
+			event.NewIntermediateCatch("signal-catch", event.WithSignalName("done")),
 			event.NewEnd("normal-end"),
 			event.NewEventSubProcess("evtsub", evtsubInner),
 		},
@@ -776,7 +776,7 @@ func rootLevelESPDef() *model.ProcessDefinition {
 	espInner := &model.ProcessDefinition{
 		ID: "root-esp-inner", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("esp-start", event.WithStartSignal("cancel")),
+			event.NewStart("esp-start", event.WithSignalName("cancel")),
 			activity.NewServiceTask("esp-svc", activity.WithTaskAction("esp-action")),
 			event.NewEnd("esp-end"),
 		},
@@ -1346,7 +1346,7 @@ func eventBasedGatewayInsideSubProcessDef() *model.ProcessDefinition {
 			event.NewStart("inner-start"),
 			gateway.NewEventBased("evtgw"),
 			event.NewIntermediateCatch("timer-catch", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			event.NewIntermediateCatch("signal-catch", event.WithCatchSignal("approved")),
+			event.NewIntermediateCatch("signal-catch", event.WithSignalName("approved")),
 			activity.NewServiceTask("svc-timer", activity.WithTaskAction("timer-action")),
 			activity.NewServiceTask("svc-signal", activity.WithTaskAction("signal-action")),
 			event.NewEnd("inner-end"),
