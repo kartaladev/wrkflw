@@ -36,6 +36,20 @@ func TestWithCandidateRoles(t *testing.T) {
 	}
 }
 
+func TestWithManual(t *testing.T) {
+	n := activity.NewUserTask("confirm", activity.WithManual())
+	ut, ok := n.(activity.UserTask)
+	if !ok {
+		t.Fatalf("node is %T, want activity.UserTask", n)
+	}
+	if !ut.Manual {
+		t.Fatal("Manual = false, want true")
+	}
+	if len(ut.CandidateRoles) != 0 {
+		t.Fatalf("CandidateRoles = %v, want empty (manual task has no eligibility by default)", ut.CandidateRoles)
+	}
+}
+
 func TestWithCompletionValidation_SetsSlot(t *testing.T) {
 	t.Parallel()
 	n := activity.NewUserTask("approve", activity.WithCompletionValidation(stubStrategy{}))

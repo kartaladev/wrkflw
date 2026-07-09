@@ -37,6 +37,13 @@ type UserTask struct {
 	// before it is applied to the process instance's variables. Nil = no
 	// validation. Set via WithCompletionValidation.
 	CompletionValidation validate.ValidationStrategy
+	// Manual, when true, marks this UserTask as a manual task: it completes on a
+	// bare trigger (no payload/form-data) and must not carry CompletionValidation.
+	// Eligibility is still honored if set. See ADR-0118. This deliberately
+	// diverges from strict BPMN Manual Task (which has no execution semantics /
+	// auto-completes): a manual task here keeps a durable "someone confirmed this"
+	// checkpoint.
+	Manual bool
 }
 
 // Kind returns model.KindUserTask.

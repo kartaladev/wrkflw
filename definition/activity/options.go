@@ -220,6 +220,15 @@ func WithEligibilityPrivileges(privs ...string) UserTaskOption {
 	return eligibilityPrivilegesOpt{privs: privs}
 }
 
+type manualOpt struct{}
+
+func (manualOpt) applyUserTask(u *UserTask) { u.Manual = true }
+
+// WithManual marks a UserTask as a manual task: completion needs only a bare
+// trigger (no payload/form-data), and the task must not carry completion
+// validation (rejected at Build time). See ADR-0118.
+func WithManual() UserTaskOption { return manualOpt{} }
+
 type completionValidationOpt struct{ s validate.ValidationStrategy }
 
 func (o completionValidationOpt) applyUserTask(u *UserTask) { u.CompletionValidation = o.s }
