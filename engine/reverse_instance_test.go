@@ -14,12 +14,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
+
+// findInvokeActionID scans cmds for an InvokeAction with the given Name and
+// returns its CommandID, failing the test if none is found. Shared by the
+// cycle/LIFO and completion-action reversibility tests below, which each
+// drive several rounds of Step/ActionCompleted and need to pluck out the
+// next command id to complete.
+func findInvokeActionID(t *testing.T, cmds []engine.Command, name string) string {
+	t.Helper()
+	for _, c := range cmds {
+		if ia, ok := c.(engine.InvokeAction); ok && ia.Name == name {
+			return ia.CommandID
+		}
+	}
+	require.Fail(t, "InvokeAction not found", "wanted action %q in %#v", name, cmds)
+	return ""
+}
 
 // reverseSvcDef: start → svc(compensable) → end.
 func reverseSvcDef() *model.ProcessDefinition {
@@ -137,4 +155,208 @@ func TestReverseToStart_ZeroRecords_StillResumesAtStart(t *testing.T) {
 	// proving the early-finish path honours the reverse intent instead of terminating.
 	require.Len(t, r2.State.Tokens, 1)
 	assert.Equal(t, "svc", r2.State.Tokens[0].NodeID, "execution resumed from start and advanced to svc")
+}
+
+// reverseLoopDef: start -> prep(compensable, once) -> svc(compensable) -> xor
+// -{attempts < 3}-> back to svc ; -default-> end.
+//
+// prep is a distinct compensable node BEFORE the loop, recorded exactly once.
+// svc is the loop body, driven to complete 3 times (3 separate compensation
+// records, same NodeID "svc"). This shape lets a single driven-to-completion
+// state serve two different reverse scenarios below: a FULL reverse (walks
+// all 4 records: prep, svc, svc, svc) and a PARTIAL reverse targeting "prep"
+// (walks only the 3 svc records, excluding — but retaining — prep's own).
+func reverseLoopDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-rev-loop", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("prep", activity.WithTaskAction("prep"), activity.WithCompensateAction("unprep")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("work"), activity.WithCompensateAction("undo")),
+			gateway.NewExclusive("xor"),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "prep"},
+			{ID: "f2", Source: "prep", Target: "svc"},
+			{ID: "f3", Source: "svc", Target: "xor"},
+			{ID: "f4", Source: "xor", Target: "svc", Condition: "attempts < 3"},
+			{ID: "f5", Source: "xor", Target: "end", IsDefault: true},
+		},
+	}
+}
+
+// driveReverseLoopToCompletion drives reverseLoopDef through start -> prep ->
+// svc (looped 3x via the xor reject/re-escalate condition) -> end, recording
+// 4 compensation entries in completion order: prep, svc, svc, svc. Returns
+// the StepResult at instance completion, ready to fork into either a full or
+// a partial reverse.
+func driveReverseLoopToCompletion(t *testing.T, def *model.ProcessDefinition, t0 time.Time) engine.StepResult {
+	t.Helper()
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdPrep := findInvokeActionID(t, r1.Commands, "prep")
+
+	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdPrep, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdSvc1 := findInvokeActionID(t, r2.Commands, "work")
+
+	r3, err := engine.Step(def, r2.State, engine.NewActionCompleted(t0, cmdSvc1, map[string]any{"attempts": 1}), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdSvc2 := findInvokeActionID(t, r3.Commands, "work")
+
+	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, cmdSvc2, map[string]any{"attempts": 2}), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdSvc3 := findInvokeActionID(t, r4.Commands, "work")
+
+	r5, err := engine.Step(def, r4.State, engine.NewActionCompleted(t0, cmdSvc3, map[string]any{"attempts": 3}), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompleted, r5.State.Status, "loop exits (attempts==3) and instance completes")
+	require.Len(t, r5.State.RootCompensations, 4, "prep + 3x svc compensation records")
+
+	return r5
+}
+
+// TestReverseCycleLIFO locks in the reverse-compensation walk's LIFO ordering
+// across a gateway reject/re-escalate loop that completes the same
+// compensable node (svc) 3 times. Both the FULL reverse-to-start walk and a
+// PARTIAL (WithTargetNode-style) reverse via CompensateRequested must fire
+// exactly the 3 "undo" InvokeActions, newest-completed-first.
+func TestReverseCycleLIFO(t *testing.T) {
+	def := reverseLoopDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+	base := driveReverseLoopToCompletion(t, def, t0)
+
+	t.Run("full reverse: 3 undo fire newest-first, resumes running at start", func(t *testing.T) {
+		// The walk is FIFO-driven one ActionCompleted at a time; each step's
+		// InvokeAction is the record immediately after the one just compensated,
+		// so asserting the action name at each hop proves the newest-first order.
+		r6, err := engine.Step(def, base.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+		require.NoError(t, err)
+		undo1 := findInvokeActionID(t, r6.Commands, "undo") // svc (3rd/newest completion)
+
+		r7, err := engine.Step(def, r6.State, engine.NewActionCompleted(t0, undo1, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		undo2 := findInvokeActionID(t, r7.Commands, "undo") // svc (2nd completion)
+
+		r8, err := engine.Step(def, r7.State, engine.NewActionCompleted(t0, undo2, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		undo3 := findInvokeActionID(t, r8.Commands, "undo") // svc (1st completion)
+
+		r9, err := engine.Step(def, r8.State, engine.NewActionCompleted(t0, undo3, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		// Exactly 3 undo hops: the record immediately after undo3 is prep's own
+		// (oldest, distinct action name "unprep") — findInvokeActionID fails the
+		// test outright if an "undo" showed up instead, proving no 4th undo fires.
+		unprepID := findInvokeActionID(t, r9.Commands, "unprep")
+
+		r10, err := engine.Step(def, r9.State, engine.NewActionCompleted(t0, unprepID, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, engine.StatusRunning, r10.State.Status, "full reverse resumes Running, NOT terminated")
+		assert.Empty(t, r10.State.RootCompensations, "records cleared after full reverse")
+		require.Len(t, r10.State.Tokens, 1)
+		assert.Equal(t, "prep", r10.State.Tokens[0].NodeID, "resumed from start and advanced to prep")
+	})
+
+	t.Run("partial reverse to prep: same 3 undo fire newest-first, resumes running at prep", func(t *testing.T) {
+		p1, err := engine.Step(def, base.State, engine.NewCompensateRequested(t0, "prep"), engine.StepOptions{})
+		require.NoError(t, err)
+		undo1 := findInvokeActionID(t, p1.Commands, "undo") // svc (3rd/newest completion)
+
+		p2, err := engine.Step(def, p1.State, engine.NewActionCompleted(t0, undo1, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		undo2 := findInvokeActionID(t, p2.Commands, "undo") // svc (2nd completion)
+
+		p3, err := engine.Step(def, p2.State, engine.NewActionCompleted(t0, undo2, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		undo3 := findInvokeActionID(t, p3.Commands, "undo") // svc (1st completion)
+
+		// The walk must stop at the "prep" boundary WITHOUT compensating prep's own
+		// record (it is the rollback target, excluded — not re-run), and resume
+		// Running with a token placed back at "prep" (re-invoking its own action).
+		p4, err := engine.Step(def, p3.State, engine.NewActionCompleted(t0, undo3, nil), engine.StepOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, engine.StatusRunning, p4.State.Status, "partial reverse resumes Running at the target node")
+		require.Len(t, p4.State.Tokens, 1)
+		assert.Equal(t, "prep", p4.State.Tokens[0].NodeID, "resumed at target node and re-invoked")
+		reinvokedPrep := findInvokeActionID(t, p4.Commands, "prep")
+		assert.NotEmpty(t, reinvokedPrep, "resuming at the target node re-invokes its own action")
+		// Partial rollback intentionally RETAINS all records (documented behavior:
+		// the instance keeps running and a later full walk must still see them).
+		assert.Len(t, p4.State.RootCompensations, 4, "partial rollback retains all records, unlike full reverse")
+	})
+}
+
+// userTaskCompletionReversibleDef: a UserTask carrying BOTH a CompletionAction
+// ("record") and a CompensateAction ("unrecord") — the combination the Item-4
+// Build guard (ErrCompensateActionWithoutForwardAction) requires: a
+// UserTask/ReceiveTask's CompensateAction is only valid when it also has a
+// CompletionAction (the completion action IS the forward action for these
+// kinds).
+func userTaskCompletionReversibleDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-rev-uc", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("u1", []string{"r"},
+				activity.WithCompletionAction("record"),
+				activity.WithCompensateAction("unrecord"),
+			),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "u1"},
+			{ID: "f2", Source: "u1", Target: "end"},
+		},
+	}
+}
+
+// TestReverseCompletionActionReversibility proves that the Item-4
+// completion-action round-trip (WithCompletionAction) creates a genuinely
+// reversible compensation record: completing the human task parks on the
+// completion action's InvokeAction/ActionCompleted round-trip (per
+// completion_action_test.go), which is exactly the code path that records a
+// CompensationRecord (handleActionCompleted records compensation for ANY
+// completed action whose node carries a CompensateAction — the completion
+// action's ActionCompleted is no exception). A subsequent full reverse must
+// then fire the paired "unrecord" compensate action and resume at start.
+func TestReverseCompletionActionReversibility(t *testing.T) {
+	def := userTaskCompletionReversibleDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.Tasks, 1)
+	taskToken := r1.State.Tasks[0].TaskToken
+
+	// Complete the human task: the completion action ("record") fires as an
+	// InvokeAction and the token parks on it — the instance must not complete yet.
+	r2, err := engine.Step(def, r1.State,
+		engine.NewHumanCompleted(t0, taskToken, map[string]any{"approved": true}, authz.Actor{ID: "alice"}),
+		engine.StepOptions{})
+	require.NoError(t, err)
+	recordCmdID := findInvokeActionID(t, r2.Commands, "record")
+	assert.NotEqual(t, engine.StatusCompleted, r2.State.Status, "must not complete before the completion action returns")
+
+	// The completion action returns: this ActionCompleted is the round-trip that
+	// records the compensation entry (Fix under test), then the instance completes.
+	r3, err := engine.Step(def, r2.State, engine.NewActionCompleted(t0, recordCmdID, map[string]any{"recorded": true}), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompleted, r3.State.Status)
+	require.Len(t, r3.State.RootCompensations, 1, "the completion-action round-trip must record a compensation entry")
+	assert.Equal(t, "u1", r3.State.RootCompensations[0].NodeID)
+	assert.Equal(t, "unrecord", r3.State.RootCompensations[0].Action)
+
+	// Reverse to start: the paired compensate action ("unrecord") must fire.
+	r4, err := engine.Step(def, r3.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	require.NoError(t, err)
+	unrecordCmdID := findInvokeActionID(t, r4.Commands, "unrecord")
+
+	r5, err := engine.Step(def, r4.State, engine.NewActionCompleted(t0, unrecordCmdID, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r5.State.Status, "reverse resumes Running, NOT terminated")
+	assert.Empty(t, r5.State.RootCompensations, "records cleared after full reverse")
+	require.Len(t, r5.State.Tokens, 1)
+	assert.Equal(t, "u1", r5.State.Tokens[0].NodeID, "resumed from start and advanced back to the human task")
 }
