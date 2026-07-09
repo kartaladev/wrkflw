@@ -444,8 +444,18 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 
 	type testCase struct {
-		name  string
-		state func(t *testing.T) (def *model.ProcessDefinition, s engine.InstanceState)
+		name   string
+		state  func(t *testing.T) (def *model.ProcessDefinition, s engine.InstanceState)
+		assert func(t *testing.T, err error)
+	}
+
+	// rejectsTerminal is the shared assertion: every terminal status must be
+	// rejected identically, so each case carries the same assert closure.
+	rejectsTerminal := func(t *testing.T, err error) {
+		t.Helper()
+		require.Error(t, err, "reversing a terminal instance must be rejected")
+		assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
+		assert.Contains(t, err.Error(), "terminal", "error must explain the rejection is due to terminal status")
 	}
 
 	cases := []testCase{
@@ -463,6 +473,7 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 				require.Equal(t, engine.StatusCompleted, r2.State.Status, "precondition: instance must have completed")
 				return def, r2.State
 			},
+			assert: rejectsTerminal,
 		},
 		{
 			name: "failed instance (hand-crafted terminal state)",
@@ -474,6 +485,7 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 					Status:     engine.StatusFailed,
 				}
 			},
+			assert: rejectsTerminal,
 		},
 		{
 			name: "terminated instance (hand-crafted terminal state)",
@@ -485,6 +497,7 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 					Status:     engine.StatusTerminated,
 				}
 			},
+			assert: rejectsTerminal,
 		},
 	}
 
@@ -495,9 +508,7 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 
 			_, err := engine.Step(def, before, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 
-			require.Error(t, err, "reversing a terminal instance must be rejected")
-			assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
-			assert.Contains(t, err.Error(), "terminal", "error must explain the rejection is due to terminal status")
+			tc.assert(t, err)
 			// Step is pure (clones state internally); the caller's original state
 			// value must be unaffected by the erroring call.
 			assert.Equal(t, beforeStatus, before.Status, "original state must be unchanged after a rejected reverse")
