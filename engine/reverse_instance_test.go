@@ -230,21 +230,42 @@ func TestReverseCycleLIFO(t *testing.T) {
 
 	t.Run("full reverse: 3 undo fire newest-first, resumes running at start", func(t *testing.T) {
 		// The walk is FIFO-driven one ActionCompleted at a time; each step's
-		// InvokeAction is the record immediately after the one just compensated,
-		// so asserting the action name at each hop proves the newest-first order.
+		// InvokeAction is the record immediately after the one just compensated.
+		// Action name alone ("undo") cannot distinguish the 3 same-node svc
+		// records from one another, so a whole-walk reversal bug (e.g. the 3 svc
+		// records fired oldest-first, or interleaved with prep) would slip past
+		// name-only assertions. recordCompensation snapshots s.Variables BEFORE
+		// merging each completion's output (see handleActionCompleted), and the
+		// fixture's loop feeds distinct "attempts" values per svc completion —
+		// so each undo's InvokeAction.Input carries a distinct, ORDER-REVEALING
+		// fingerprint. Empirically confirmed (driveReverseLoopToCompletion feeds
+		// nil, {attempts:1}, {attempts:2} across the 3 "work" completions, and
+		// each is recorded pre-merge): completion order is
+		//   svc#1 input=nil -> svc#2 input={attempts:1} -> svc#3 input={attempts:2}
+		// so the newest-first walk must fire svc#3, svc#2, svc#1 — i.e.
+		// attempts 2, then 1, then absent. Asserting Input at each hop (not just
+		// the action name) proves the LIFO order among the indistinguishable-by-
+		// name records; a same-node reordering regression now fails here instead
+		// of silently passing.
 		r6, err := engine.Step(def, base.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 		require.NoError(t, err)
-		undo1 := findInvokeActionID(t, r6.Commands, "undo") // svc (3rd/newest completion)
+		undo1, ok := findInvokeAction(r6.Commands, "undo") // svc (3rd/newest completion)
+		require.True(t, ok, "reverse must invoke the compensate action")
+		assert.Equal(t, 2, undo1.Input["attempts"], "hop 1 compensates the 3rd/newest svc completion (pre-merge attempts=2)")
 
-		r7, err := engine.Step(def, r6.State, engine.NewActionCompleted(t0, undo1, nil), engine.StepOptions{})
+		r7, err := engine.Step(def, r6.State, engine.NewActionCompleted(t0, undo1.CommandID, nil), engine.StepOptions{})
 		require.NoError(t, err)
-		undo2 := findInvokeActionID(t, r7.Commands, "undo") // svc (2nd completion)
+		undo2, ok := findInvokeAction(r7.Commands, "undo") // svc (2nd completion)
+		require.True(t, ok, "reverse must invoke the compensate action")
+		assert.Equal(t, 1, undo2.Input["attempts"], "hop 2 compensates the 2nd svc completion (pre-merge attempts=1)")
 
-		r8, err := engine.Step(def, r7.State, engine.NewActionCompleted(t0, undo2, nil), engine.StepOptions{})
+		r8, err := engine.Step(def, r7.State, engine.NewActionCompleted(t0, undo2.CommandID, nil), engine.StepOptions{})
 		require.NoError(t, err)
-		undo3 := findInvokeActionID(t, r8.Commands, "undo") // svc (1st completion)
+		undo3, ok := findInvokeAction(r8.Commands, "undo") // svc (1st completion)
+		require.True(t, ok, "reverse must invoke the compensate action")
+		assert.NotContains(t, undo3.Input, "attempts", "hop 3 compensates the 1st svc completion (pre-merge, attempts not yet set)")
 
-		r9, err := engine.Step(def, r8.State, engine.NewActionCompleted(t0, undo3, nil), engine.StepOptions{})
+		r9, err := engine.Step(def, r8.State, engine.NewActionCompleted(t0, undo3.CommandID, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		// Exactly 3 undo hops: the record immediately after undo3 is prep's own
 		// (oldest, distinct action name "unprep") — findInvokeActionID fails the
