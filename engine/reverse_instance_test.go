@@ -39,18 +39,27 @@ func findInvokeActionID(t *testing.T, cmds []engine.Command, name string) string
 	return ""
 }
 
-// reverseSvcDef: start → svc(compensable) → end.
+// reverseSvcDef: start → svc(compensable) → park → end. "park" is a plain
+// (non-compensable) ServiceTask whose InvokeAction is intentionally never
+// completed by the tests below: driving the "do" action to completion
+// auto-advances the token onto "park" and stops there, so the instance is
+// StatusRunning (not Completed) — with svc's compensation already recorded —
+// by the time a reverse is requested. This is the shape Fork A's terminal
+// guard (ADR-0109 hardening) requires: reverse only ever needs to work
+// against a Running instance.
 func reverseSvcDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-rev", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("do"), activity.WithCompensateAction("undo")),
+			activity.NewServiceTask("park", activity.WithTaskAction("park")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
-			{ID: "f2", Source: "svc", Target: "end"},
+			{ID: "f2", Source: "svc", Target: "park"},
+			{ID: "f3", Source: "park", Target: "end"},
 		},
 	}
 }
@@ -73,12 +82,14 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdID, map[string]any{"amount": 500}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.RootCompensations, 1, "svc must have recorded a compensation")
-	// Sanity precondition for the EndedAt regression below: the flow auto-drives
-	// svc -> end within the same Step call, so the instance is already COMPLETED
-	// (with EndedAt stamped) before reverse is ever requested. This is the primary
-	// use case the reverse-to-start branch must handle correctly.
-	require.Equal(t, engine.StatusCompleted, r2.State.Status, "instance must have reached completion before reverse")
-	require.NotNil(t, r2.State.EndedAt, "completed instance must have EndedAt stamped")
+	// Precondition for the reverse below: the flow auto-drives svc -> park within
+	// the same Step call, and park's InvokeAction is deliberately left uncompleted,
+	// so the instance is RUNNING (parked on "park") — not completed — when reverse
+	// is requested. This is the shape Fork A's terminal guard requires: reverse
+	// must work against a Running instance that already carries compensation
+	// records.
+	require.Equal(t, engine.StatusRunning, r2.State.Status, "instance must be running (parked) before reverse")
+	require.Nil(t, r2.State.EndedAt, "running instance must not have EndedAt stamped")
 
 	// Reverse to start: expect the "undo" compensation to fire, then resume at start with reset vars.
 	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
@@ -93,7 +104,7 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r4.State.Status, "reverse resumes Running, NOT terminated")
-	assert.Nil(t, r4.State.EndedAt, "Running instance must have EndedAt cleared (was stamped at prior completion)")
+	assert.Nil(t, r4.State.EndedAt, "Running instance must have EndedAt nil")
 	assert.Equal(t, 100, r4.State.Variables["amount"], "vars reset to StartVariables")
 	assert.Empty(t, r4.State.RootCompensations, "records cleared after full reverse")
 	// The finish places a token at the start node and drives forward, so execution
@@ -158,14 +169,18 @@ func TestReverseToStart_ZeroRecords_StillResumesAtStart(t *testing.T) {
 }
 
 // reverseLoopDef: start -> prep(compensable, once) -> svc(compensable) -> xor
-// -{attempts < 3}-> back to svc ; -default-> end.
+// -{attempts < 3}-> back to svc ; -default-> park -> end.
 //
 // prep is a distinct compensable node BEFORE the loop, recorded exactly once.
 // svc is the loop body, driven to complete 3 times (3 separate compensation
-// records, same NodeID "svc"). This shape lets a single driven-to-completion
-// state serve two different reverse scenarios below: a FULL reverse (walks
-// all 4 records: prep, svc, svc, svc) and a PARTIAL reverse targeting "prep"
-// (walks only the 3 svc records, excluding — but retaining — prep's own).
+// records, same NodeID "svc"). "park" is a plain (non-compensable) ServiceTask
+// whose InvokeAction is intentionally never completed: exiting the loop drives
+// the token onto "park" and stops there, so the driven-to-completion state is
+// StatusRunning (parked), not Completed — the shape Fork A's terminal guard
+// requires. This shape lets a single such state serve two different reverse
+// scenarios below: a FULL reverse (walks all 4 records: prep, svc, svc, svc)
+// and a PARTIAL reverse targeting "prep" (walks only the 3 svc records,
+// excluding — but retaining — prep's own).
 func reverseLoopDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-rev-loop", Version: 1,
@@ -174,6 +189,7 @@ func reverseLoopDef() *model.ProcessDefinition {
 			activity.NewServiceTask("prep", activity.WithTaskAction("prep"), activity.WithCompensateAction("unprep")),
 			activity.NewServiceTask("svc", activity.WithTaskAction("work"), activity.WithCompensateAction("undo")),
 			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("park", activity.WithTaskAction("park")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -181,16 +197,18 @@ func reverseLoopDef() *model.ProcessDefinition {
 			{ID: "f2", Source: "prep", Target: "svc"},
 			{ID: "f3", Source: "svc", Target: "xor"},
 			{ID: "f4", Source: "xor", Target: "svc", Condition: "attempts < 3"},
-			{ID: "f5", Source: "xor", Target: "end", IsDefault: true},
+			{ID: "f5", Source: "xor", Target: "park", IsDefault: true},
+			{ID: "f6", Source: "park", Target: "end"},
 		},
 	}
 }
 
 // driveReverseLoopToCompletion drives reverseLoopDef through start -> prep ->
-// svc (looped 3x via the xor reject/re-escalate condition) -> end, recording
-// 4 compensation entries in completion order: prep, svc, svc, svc. Returns
-// the StepResult at instance completion, ready to fork into either a full or
-// a partial reverse.
+// svc (looped 3x via the xor reject/re-escalate condition) -> park, recording
+// 4 compensation entries in completion order: prep, svc, svc, svc, and parking
+// (StatusRunning, park's InvokeAction left uncompleted) rather than reaching
+// "end". Returns the StepResult at that parked, Running state, ready to fork
+// into either a full or a partial reverse.
 func driveReverseLoopToCompletion(t *testing.T, def *model.ProcessDefinition, t0 time.Time) engine.StepResult {
 	t.Helper()
 
@@ -212,7 +230,7 @@ func driveReverseLoopToCompletion(t *testing.T, def *model.ProcessDefinition, t0
 
 	r5, err := engine.Step(def, r4.State, engine.NewActionCompleted(t0, cmdSvc3, map[string]any{"attempts": 3}), engine.StepOptions{})
 	require.NoError(t, err)
-	require.Equal(t, engine.StatusCompleted, r5.State.Status, "loop exits (attempts==3) and instance completes")
+	require.Equal(t, engine.StatusRunning, r5.State.Status, "loop exits (attempts==3) and the instance parks at the trailing node")
 	require.Len(t, r5.State.RootCompensations, 4, "prep + 3x svc compensation records")
 
 	return r5
@@ -314,7 +332,11 @@ func TestReverseCycleLIFO(t *testing.T) {
 // Build guard (ErrCompensateActionWithoutForwardAction) requires: a
 // UserTask/ReceiveTask's CompensateAction is only valid when it also has a
 // CompletionAction (the completion action IS the forward action for these
-// kinds).
+// kinds). "park" is a plain (non-compensable) ServiceTask whose InvokeAction
+// is intentionally never completed: the completion action's round-trip
+// auto-advances the token onto "park" and stops there, so the instance is
+// StatusRunning (not Completed) — with u1's compensation already recorded —
+// by the time a reverse is requested.
 func userTaskCompletionReversibleDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-rev-uc", Version: 1,
@@ -324,11 +346,13 @@ func userTaskCompletionReversibleDef() *model.ProcessDefinition {
 				activity.WithCompletionAction("record"),
 				activity.WithCompensateAction("unrecord"),
 			),
+			activity.NewServiceTask("park", activity.WithTaskAction("park")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "u1"},
-			{ID: "f2", Source: "u1", Target: "end"},
+			{ID: "f2", Source: "u1", Target: "park"},
+			{ID: "f3", Source: "park", Target: "end"},
 		},
 	}
 }
@@ -361,10 +385,11 @@ func TestReverseCompletionActionReversibility(t *testing.T) {
 	assert.NotEqual(t, engine.StatusCompleted, r2.State.Status, "must not complete before the completion action returns")
 
 	// The completion action returns: this ActionCompleted is the round-trip that
-	// records the compensation entry (Fix under test), then the instance completes.
+	// records the compensation entry (Fix under test), then the token auto-advances
+	// onto "park" and stops there (instance stays Running).
 	r3, err := engine.Step(def, r2.State, engine.NewActionCompleted(t0, recordCmdID, map[string]any{"recorded": true}), engine.StepOptions{})
 	require.NoError(t, err)
-	require.Equal(t, engine.StatusCompleted, r3.State.Status)
+	require.Equal(t, engine.StatusRunning, r3.State.Status, "instance auto-advances onto park and stops there, not completed")
 	require.Len(t, r3.State.RootCompensations, 1, "the completion-action round-trip must record a compensation entry")
 	assert.Equal(t, "u1", r3.State.RootCompensations[0].NodeID)
 	assert.Equal(t, "unrecord", r3.State.RootCompensations[0].Action)
