@@ -21,6 +21,7 @@ type nodeYAML struct {
 	CandidateRoles        []string        `yaml:"candidateRoles,omitempty"`
 	EligibilityPrivileges []string        `yaml:"eligibilityPrivileges,omitempty"`
 	EligibilityExpr       string          `yaml:"eligibilityExpr,omitempty"`
+	Manual                bool            `yaml:"manual,omitempty"`
 	TimerDuration         string          `yaml:"timerDuration,omitempty"`
 	DeadlineDuration      string          `yaml:"deadlineDuration,omitempty"`
 	DeadlineFlow          string          `yaml:"deadlineFlow,omitempty"`
@@ -96,6 +97,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		CandidateRoles:        ny.CandidateRoles,
 		EligibilityPrivileges: ny.EligibilityPrivileges,
 		EligibilityExpr:       ny.EligibilityExpr,
+		Manual:                ny.Manual,
 		TimerDuration:         ny.TimerDuration,
 		DeadlineDuration:      ny.DeadlineDuration,
 		DeadlineFlow:          ny.DeadlineFlow,
