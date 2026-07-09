@@ -67,6 +67,9 @@ func (driver *ProcessDriver) ReverseInstance(ctx context.Context, def *model.Pro
 	if cfg.full && cfg.targeted {
 		return engine.InstanceState{}, fmt.Errorf("workflow-runtime: ReverseInstance %q: WithFullReverse and WithTargetNode are mutually exclusive", instanceID)
 	}
+	if cfg.targeted && cfg.target == "" {
+		return engine.InstanceState{}, fmt.Errorf("workflow-runtime: ReverseInstance %q: WithTargetNode requires a non-empty node ID", instanceID)
+	}
 
 	st, _, err := driver.store.Load(ctx, instanceID)
 	if err != nil {

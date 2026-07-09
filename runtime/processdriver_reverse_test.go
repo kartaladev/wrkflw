@@ -298,6 +298,25 @@ func TestReverseInstance(t *testing.T) {
 			},
 		},
 		{
+			name: "WithTargetNode empty string is a rejected error with no state change",
+			setup: func(t *testing.T) (reverseFixture, *model.ProcessDefinition, []runtime.ReverseOption) {
+				fx := driveReverseFixtureToApprove2(t)
+				return fx, fx.def, []runtime.ReverseOption{runtime.WithTargetNode("")}
+			},
+			assert: func(t *testing.T, fx reverseFixture, got engine.InstanceState, err error) {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "workflow-runtime")
+				assert.EqualValues(t, 0, fx.counts.undo.Load(), "no compensation must fire before the guard rejects")
+				assert.EqualValues(t, 0, fx.counts.unnext.Load())
+
+				reloaded, _, loadErr := fx.store.Load(t.Context(), fx.instanceID)
+				require.NoError(t, loadErr)
+				assert.Equal(t, engine.StatusRunning, reloaded.Status, "no state change on a rejected call; instance must NOT be silently terminated")
+				assert.EqualValues(t, 999, reloaded.Variables["amount"])
+				assert.Len(t, reloaded.RootCompensations, 2)
+			},
+		},
+		{
 			name: "zero start events surfaces a start-resolution error",
 			setup: func(t *testing.T) (reverseFixture, *model.ProcessDefinition, []runtime.ReverseOption) {
 				fx := driveRunningInstanceForMalformedDefCases(t)
