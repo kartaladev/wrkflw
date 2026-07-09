@@ -792,9 +792,8 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 //
 // A well-formed NewReverseToStart trigger (ReverseNode AND ResetVars both
 // set) and a plain NewCompensateRequested (ResetVars left false) must both be
-// completely unaffected by this guard — proven by the sibling table row and
-// by every other test in this file that continues to exercise those two
-// shapes end-to-end.
+// completely unaffected by this guard — proven by the sibling tests in this
+// file that continue to exercise those two shapes end-to-end.
 func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
 	def := reverseSvcDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
@@ -822,15 +821,22 @@ func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
 	malformed.ResetVars = true
 	require.Empty(t, malformed.ReverseNode, "precondition: trigger under test has ResetVars set but ReverseNode empty")
 
+	// Snapshot the caller's observable state BEFORE the erroring Step so the
+	// no-mutation assertions below compare against an independent baseline
+	// (before is the very value passed into Step, so comparing it to itself
+	// afterwards would be tautological).
+	wantStatus := before.Status
+	wantRecords := append([]engine.CompensationRecord(nil), before.RootCompensations...)
+
 	_, err = engine.Step(def, before, malformed, engine.StepOptions{})
 	require.Error(t, err, "ResetVars without ReverseNode must be rejected, not silently terminate the instance")
 	assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
 	assert.Contains(t, err.Error(), "ResetVars", "error must name the offending field")
 	assert.Contains(t, err.Error(), "ReverseNode", "error must name the missing field")
 
-	// Step is pure (clones state internally); the caller's original state
-	// value must be unaffected by the erroring call — in particular it must
-	// NOT have been silently terminated.
-	assert.Equal(t, before.Status, r2.State.Status, "original state must be unchanged after a rejected trigger")
-	assert.Equal(t, before.RootCompensations, r2.State.RootCompensations, "original compensation records must be unchanged after a rejected trigger")
+	// Step is pure (clones state internally); the caller's original state value
+	// must be unaffected by the erroring call — in particular it must NOT have
+	// been silently terminated or had its records mutated in place.
+	assert.Equal(t, wantStatus, before.Status, "caller's state must be unchanged (still Running) after a rejected trigger")
+	assert.Equal(t, wantRecords, before.RootCompensations, "caller's compensation records must be unchanged after a rejected trigger")
 }
