@@ -1386,3 +1386,166 @@ func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
 		})
 	}
 }
+
+// TestValidate_RejectsCompletionActionOnUnsupportedKind checks that Validate
+// rejects a node whose CompletionAction is set but whose kind does not honor
+// it (only UserTask/ReceiveTask do — engine.completionActionOf silently
+// ignores it on any other kind). The field lives on the shared ActivityFields
+// embed, so it can be set on e.g. a ServiceTask via direct construction (or a
+// hand-authored wire/YAML payload) even though no WithCompletionAction option
+// targets that kind; Validate is the only place that catches it.
+func TestValidate_RejectsCompletionActionOnUnsupportedKind(t *testing.T) {
+	svcWithCompletion := activity.NewServiceTask("svc", activity.WithTaskAction("act")).(activity.ServiceTask)
+	svcWithCompletion.CompletionAction = "notAllowed"
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "ServiceTask with CompletionAction is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					svcWithCompletion,
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "svc"},
+					{ID: "f2", Source: "svc", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompletionActionUnsupportedKind)
+			},
+		},
+		{
+			name: "UserTask with CompletionAction is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("u1", []string{"r"}, activity.WithCompletionAction("recordApproval")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "u1"},
+					{ID: "f2", Source: "u1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompletionActionUnsupportedKind)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "ReceiveTask with CompletionAction is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewReceiveTask("r1", "m", activity.WithCompletionAction("ackOrder")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "r1"},
+					{ID: "f2", Source: "r1", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrCompletionActionUnsupportedKind)
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidate_RejectsDeadlineActionWithoutDeadline checks that Validate
+// rejects a node whose DeadlineAction is set but whose DeadlineTimer is zero
+// (i.e. WithDeadlineAction was used without WithWaitDeadline) — the action
+// would never fire since no deadline timer is ever armed.
+func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "DeadlineAction without WithWaitDeadline is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadlineAction("notify")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDeadlineActionWithoutDeadline)
+			},
+		},
+		{
+			name: "WithWaitDeadline + WithDeadlineAction together is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate"),
+						activity.WithDeadlineAction("notify")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrDeadlineActionWithoutDeadline)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "WithWaitDeadline alone (no action) is accepted",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewUserTask("review", []string{"reviewer"},
+						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
+					event.NewEnd("end"),
+					event.NewEnd("escalate"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "review"},
+					{ID: "f2", Source: "review", Target: "end"},
+					{ID: "escalate", Source: "review", Target: "escalate"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrDeadlineActionWithoutDeadline)
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}

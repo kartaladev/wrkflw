@@ -132,12 +132,31 @@ service-task action invocation, the host node's `RetryPolicy` governs completion
 and a terminal failure raises an admin-resumable incident, or — if an error boundary is attached
 to the host node — routes there instead. A node with no retry policy and no error boundary simply
 fails the instance on a terminal completion-action failure, exactly as any other unhandled action
-failure does today. As with compensation/deadline/wait actions, a completion action resolves
-against the root definition's scoped catalog plus the global catalog, not against nested scoped
-catalogs. `WithCompletionAction` is distinct from the already-shipped
-`WithCompletionValidation` (an input-validation gate evaluated *before* completion is accepted);
-the two are documented side by side in godoc to avoid confusion — one gates the completion input,
-the other runs an action after it is accepted.
+failure does today. A completion action resolves **scope-locally**: the emitted `InvokeAction`
+carries `Scoped: tdef.ScopedCatalog()`, where `tdef` is the scope-effective definition resolved
+for the token's `ScopeID` (`defForScope`) — the same definition whose `ScopedCatalog()` a
+service-task action on that node would consult. A completion action registered on a
+sub-process's own scoped catalog therefore resolves without needing to be visible on the root
+definition or the global catalog (whole-branch review fix; see also
+`engine.parkOnCompletionAction`, extracted as the single park-block shared by
+`handleHumanCompleted` and `handleMessageReceived`). `WithCompletionAction` is distinct from the
+already-shipped `WithCompletionValidation` (an input-validation gate evaluated *before*
+completion is accepted); the two are documented side by side in godoc to avoid confusion — one
+gates the completion input, the other runs an action after it is accepted.
+
+**Post-Phase-A guards (whole-branch review, added after the phases above landed).** Two
+Build-time guards close gaps where a field set via direct construction or hand-authored
+wire/YAML bypasses the type-safe `WithXxxAction` options:
+
+- `ErrCompletionActionUnsupportedKind` — `CompletionAction` lives on the shared `ActivityFields`
+  embed (present on all seven activity kinds), but only `UserTask`/`ReceiveTask` honor it
+  (`engine.completionActionOf`). `Validate` now rejects any node whose `CompletionAction` is
+  non-empty and whose kind is neither, via the new kind-agnostic `model.CompletionActionOf`
+  accessor combined with `Node.Kind()`.
+- `ErrDeadlineActionWithoutDeadline` — `WithDeadlineAction` can be set without `WithWaitDeadline`
+  (they are independent options per #2 above), leaving `DeadlineAction` non-empty with a zero
+  `DeadlineTimer`; the action would then never fire since no deadline timer is ever armed.
+  `Validate` now rejects that combination using the existing `model.DeadlineOf` accessor.
 
 All renames are **hard renames** — no deprecated aliases are kept, matching the project's prior
 rename convention (e.g. ADR-0064, ADR-0066, ADR-0087). Renames land across Phases B-F of the
@@ -161,9 +180,15 @@ Phases B-F are mechanical renames/removals gated by the compiler and existing te
   closure, which matters for the library's core promise of portable, storable process
   definitions.
 - **Positive.** The completion-action adds no new token state and no new engine machinery beyond
-  two call sites in `step_triggers.go` — it reuses the same `InvokeAction`/`ActionCompleted`
-  round-trip, `TokenWaitingCommand` park state, and retry/incident/error-boundary handling that
-  service-task actions already exercise, keeping the engine's action-failure model singular.
+  a single shared park helper (`engine.parkOnCompletionAction`) called from both
+  `handleHumanCompleted` and `handleMessageReceived` — it reuses the same
+  `InvokeAction`/`ActionCompleted` round-trip, `TokenWaitingCommand` park state, and
+  retry/incident/error-boundary handling that service-task actions already exercise, keeping the
+  engine's action-failure model singular.
+- **Positive.** Two new `Validate`/`Build`-time guards (`ErrCompletionActionUnsupportedKind`,
+  `ErrDeadlineActionWithoutDeadline`) catch definitions where a field set via direct construction
+  or hand-authored wire/YAML would otherwise be silently dropped at runtime instead of failing
+  fast at authoring time.
 - **Breaking (accepted, pre-1.0).** Public option renames and removals:
   `WithCompensation`→`WithCompensateAction`, `WithCancelHandler`→`WithCancelAction`,
   `WithActionName`→`WithTaskAction`, `WithDeadline`/`WithCatchDeadline` split into

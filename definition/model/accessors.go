@@ -47,6 +47,19 @@ func WaitActionOf(n Node) (schedule.TriggerSpec, string) {
 	return schedule.TriggerSpec{}, ""
 }
 
+// CompletionActionOf returns the CompletionAction field of a node that carries
+// ActivityFields (any activity kind), or "" for nodes that do not carry it at
+// all (events, gateways). It is kind-agnostic — it does not check whether the
+// concrete kind actually honors CompletionAction at execution time (only
+// UserTask and ReceiveTask do); combine it with Node.Kind() where that
+// distinction matters.
+func CompletionActionOf(n Node) string {
+	if a, ok := n.(interface{ completionAction() string }); ok {
+		return a.completionAction()
+	}
+	return ""
+}
+
 // ActionOf returns the Action field of a node that has one (ServiceTask or
 // BusinessRuleTask), or "" for all other kinds.
 func ActionOf(n Node) string {

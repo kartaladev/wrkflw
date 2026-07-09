@@ -432,6 +432,38 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	return StepResult{State: *s, Commands: append(timerPreCmds, driveCmds...)}, nil
 }
 
+// parkOnCompletionAction checks whether tok's node (resolved against tdef, the
+// scope-effective definition) carries a CompletionAction and, if so, parks the
+// token on the action round-trip instead of advancing now: it appends an
+// InvokeAction to cmds, sets the token to TokenWaitingCommand awaiting the new
+// command, and returns (result, true) — the caller must return this result
+// immediately without falling through to its own moveAlongSingleFlow+drive.
+// When the node carries no CompletionAction, it returns (StepResult{}, false)
+// and the caller proceeds with its own advance-and-drive as usual.
+//
+// Shared by handleHumanCompleted and handleMessageReceived (both completion
+// triggers whose park-then-invoke-then-resume shape is otherwise identical).
+func parkOnCompletionAction(s *InstanceState, tdef *model.ProcessDefinition, tok *Token, cmds []Command) (StepResult, bool) {
+	node, ok := tdef.Node(tok.NodeID)
+	if !ok {
+		return StepResult{}, false
+	}
+	ca := completionActionOf(node)
+	if ca == "" {
+		return StepResult{}, false
+	}
+	cmdID := s.nextCommandID()
+	cmds = append(cmds, InvokeAction{
+		CommandID: cmdID,
+		Name:      ca,
+		Scoped:    tdef.ScopedCatalog(),
+		Input:     copyVars(s.Variables),
+	})
+	tok.State = TokenWaitingCommand
+	tok.AwaitCommand = cmdID
+	return StepResult{State: *s, Commands: cmds}, true
+}
+
 // handleHumanCompleted processes a HumanCompleted trigger: merges output,
 // completes the task, advances the token, cancels guarding timers, and drives forward.
 func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t HumanCompleted, opt StepOptions) (StepResult, error) {
@@ -471,14 +503,8 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 	// Completion action: park on the action round-trip instead of advancing now.
 	// handleActionCompleted resumes: it merges the action output and advances the
 	// token along the single outgoing flow (the token is still at humanTdef's node).
-	if node, ok := humanTdef.Node(tok.NodeID); ok {
-		if ca := completionActionOf(node); ca != "" {
-			cmdID := s.nextCommandID()
-			cmds = append(cmds, InvokeAction{CommandID: cmdID, Name: ca, Input: copyVars(s.Variables)})
-			tok.State = TokenWaitingCommand
-			tok.AwaitCommand = cmdID
-			return StepResult{State: *s, Commands: cmds}, nil
-		}
+	if res, parked := parkOnCompletionAction(s, humanTdef, tok, cmds); parked {
+		return res, nil
 	}
 	// No completion action: advance + drive as before.
 	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
@@ -742,14 +768,8 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	// Completion action: park on the action round-trip instead of advancing now.
 	// handleActionCompleted resumes: it merges the action output and advances the
 	// token along the single outgoing flow (the token is still at msgTdef's node).
-	if node, ok := msgTdef.Node(tok.NodeID); ok {
-		if ca := completionActionOf(node); ca != "" {
-			cmdID := s.nextCommandID()
-			preCmds = append(preCmds, InvokeAction{CommandID: cmdID, Name: ca, Input: copyVars(s.Variables)})
-			tok.State = TokenWaitingCommand
-			tok.AwaitCommand = cmdID
-			return StepResult{State: *s, Commands: preCmds}, nil
-		}
+	if res, parked := parkOnCompletionAction(s, msgTdef, tok, preCmds); parked {
+		return res, nil
 	}
 	// No completion action: advance + drive as before.
 	s.moveAlongSingleFlow(msgTdef, tok, t.OccurredAt())

@@ -83,6 +83,14 @@ type ActivityFields struct {
 func (a ActivityFields) retry() *RetryPolicy  { return a.RetryPolicy }
 func (a ActivityFields) recoveryFlow() string { return a.RecoveryFlow }
 
+// completionAction returns the raw CompletionAction field. Note this carrier is
+// present on EVERY activity kind (CompletionAction lives on the shared
+// ActivityFields embed) even though only UserTask/ReceiveTask honor it at
+// execution time; CompletionActionOf is therefore kind-agnostic by design —
+// callers that must restrict it to UserTask/ReceiveTask (e.g. validateStructure's
+// ErrCompletionActionUnsupportedKind guard) combine it with Node.Kind().
+func (a ActivityFields) completionAction() string { return a.CompletionAction }
+
 // TaskAction holds the action reference shared by ServiceTask and BusinessRuleTask:
 // the catalog action name. Embedded so the ActionOf accessor dispatches on its
 // carrier method across the activity leaf.

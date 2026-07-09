@@ -124,6 +124,15 @@ func TestWaitActionOf(t *testing.T) {
 	assert.Equal(t, "ice-remind", act)
 }
 
+func TestCompletionActionOf(t *testing.T) {
+	assert.Equal(t, "recordApproval",
+		model.CompletionActionOf(activity.NewUserTask("ut", nil, activity.WithCompletionAction("recordApproval"))))
+	assert.Equal(t, "ackOrder",
+		model.CompletionActionOf(activity.NewReceiveTask("rt", "msg", activity.WithCompletionAction("ackOrder"))))
+	assert.Equal(t, "", model.CompletionActionOf(activity.NewUserTask("ut2", nil)))
+	assert.Equal(t, "", model.CompletionActionOf(event.NewStart("s")))
+}
+
 func TestActionOf(t *testing.T) {
 	assert.Equal(t, "charge-card", model.ActionOf(activity.NewServiceTask("st", activity.WithTaskAction("charge-card"))))
 	assert.Equal(t, "apply-discount", model.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithTaskAction("apply-discount"))))

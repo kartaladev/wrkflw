@@ -122,6 +122,20 @@ var (
 	// wait overruns, so the trigger must be one-shot (AfterDuration, At, or
 	// AfterExpr).
 	ErrDeadlineTriggerRecurring = errors.New("workflow-definition: deadline trigger must be one-shot")
+	// ErrCompletionActionUnsupportedKind is returned when a node's
+	// CompletionAction is non-empty but the node's kind is not UserTask or
+	// ReceiveTask — the only two kinds with an external completion trigger that
+	// engine.completionActionOf honors. CompletionAction lives on the shared
+	// ActivityFields embed, so it can be set on any activity kind via direct
+	// construction or a hand-authored wire/YAML payload even though no
+	// WithCompletionAction option targets those kinds; without this guard the
+	// field would silently never run.
+	ErrCompletionActionUnsupportedKind = errors.New("workflow-definition: completion action only supported on UserTask or ReceiveTask")
+	// ErrDeadlineActionWithoutDeadline is returned when a node's DeadlineAction
+	// is non-empty but its DeadlineTimer is zero (WithDeadlineAction used
+	// without WithWaitDeadline). Without an armed deadline timer the action
+	// would never fire, so the combination is rejected at authoring time.
+	ErrDeadlineActionWithoutDeadline = errors.New("workflow-definition: deadline action set without a deadline timer")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -414,6 +428,28 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		deadline, _, _ := DeadlineOf(n)
 		if !deadline.IsZero() && deadline.Recurring() {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadlineTriggerRecurring, n.ID()))
+		}
+	}
+
+	// DeadlineAction without a DeadlineTimer: the action would never fire since
+	// no deadline timer is ever armed. Nodes without a DeadlineAction are skipped.
+	for _, n := range d.Nodes {
+		deadline, _, deadlineAction := DeadlineOf(n)
+		if deadlineAction != "" && deadline.IsZero() {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadlineActionWithoutDeadline, n.ID()))
+		}
+	}
+
+	// CompletionAction only supported on UserTask/ReceiveTask: the field lives on
+	// the shared ActivityFields embed, so it can be set on any activity kind, but
+	// engine.completionActionOf only honors it for the two kinds with an
+	// external completion trigger.
+	for _, n := range d.Nodes {
+		if CompletionActionOf(n) == "" {
+			continue
+		}
+		if n.Kind() != KindUserTask && n.Kind() != KindReceiveTask {
+			errs = append(errs, fmt.Errorf("%w: node %q (kind %d)", ErrCompletionActionUnsupportedKind, n.ID(), n.Kind()))
 		}
 	}
 
