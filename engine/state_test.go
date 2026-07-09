@@ -42,6 +42,36 @@ func TestStatus_String(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Status.IsTerminal
+// ---------------------------------------------------------------------------
+
+func TestStatus_IsTerminal(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		status Status
+		assert func(t *testing.T, got bool)
+	}
+
+	cases := []testCase{
+		{"running is not terminal", StatusRunning, func(t *testing.T, got bool) { assert.False(t, got) }},
+		{"compensating is not terminal", StatusCompensating, func(t *testing.T, got bool) { assert.False(t, got) }},
+		{"completed is terminal", StatusCompleted, func(t *testing.T, got bool) { assert.True(t, got) }},
+		{"failed is terminal", StatusFailed, func(t *testing.T, got bool) { assert.True(t, got) }},
+		{"terminated is terminal", StatusTerminated, func(t *testing.T, got bool) { assert.True(t, got) }},
+		{"out-of-range is not terminal", Status(99), func(t *testing.T, got bool) { assert.False(t, got) }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.status.IsTerminal())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // cloneState: compensationCursor outcome fields
 // ---------------------------------------------------------------------------
 

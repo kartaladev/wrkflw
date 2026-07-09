@@ -272,6 +272,12 @@ func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
 func cloneState(st InstanceState) InstanceState {
 	s := st
 	s.Variables = copyVars(st.Variables)
+	// StartVariables is immutable-by-convention after handleStartInstance sets it
+	// once, so a per-Step deep copy is not required for correctness — but it is
+	// kept deep anyway to satisfy Clone's "independently allocated maps" contract
+	// (see TestCloneStateDeepCopiesStartVariables); sharing the reference here
+	// would be a footgun for any future caller that assumes clone independence.
+	s.StartVariables = copyVars(st.StartVariables)
 	s.Tokens = append([]Token(nil), st.Tokens...)
 	for i := range s.Tokens {
 		s.Tokens[i].Payload = copyVars(s.Tokens[i].Payload)

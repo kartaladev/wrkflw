@@ -231,6 +231,26 @@ func (s Status) String() string {
 	}
 }
 
+// IsTerminal reports whether s is one of the instance's terminal statuses
+// (StatusCompleted, StatusFailed, StatusTerminated) — a status from which no
+// further trigger may resume normal execution. StatusRunning and
+// StatusCompensating (mid-flight) are not terminal; an out-of-range Status
+// value is also treated as not terminal.
+//
+// Used by stepCompensateRequested to reject a reverse trigger
+// (CompensateRequested.ReverseNode != "") against an already-terminal
+// instance (ADR-0109 hardening) — a defense-in-depth guard against the TOCTOU
+// race where an instance completes between a caller's pre-check Load and the
+// engine's own state.
+func (s Status) IsTerminal() bool {
+	switch s {
+	case StatusCompleted, StatusFailed, StatusTerminated:
+		return true
+	default:
+		return false
+	}
+}
+
 // TokenState is the execution state of a single token.
 type TokenState int
 
@@ -375,6 +395,24 @@ type compensationCursor struct {
 	ResumeScope string
 	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
 	ToNode string
+	// ReverseNode, when non-empty, makes the FULL-rollback finish resume at this
+	// node (StatusRunning) instead of terminating — the ReverseInstance full-reverse
+	// form (ADR-0109). Kept DISTINCT from ResumeNode (the compensation-throw resume)
+	// so the throw-walk branch is never triggered by a reverse-to-start walk.
+	ReverseNode string
+	// ReverseResetVars, when true, resets Variables to StartVariables when the
+	// full-rollback finish resumes at ReverseNode.
+	ReverseResetVars bool
+	// RestoreTargetVars, when true, makes the PARTIAL-rollback finish (ToNode
+	// non-empty) restore Variables to ToNode's own start-of-visit snapshot — the
+	// Input captured on ToNode's most-recent compensation record — instead of
+	// leaving the current variables untouched (FU#1, ADR-0116). Carried on the
+	// cursor (all-scalar) from the CompensateRequested trigger; the snapshot map
+	// itself is resolved at finish time and lives on the transient finishPlan, so
+	// the cursor stays value-copyable by cloneState with no map to deep-copy.
+	// Zero (false) for every other walk — admin partial rollback keeps current
+	// vars, matching ADR-0109's original WithTargetNode contract.
+	RestoreTargetVars bool
 	// NextIndex is the index of the CompensationRecord currently in-flight
 	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
 	// compensation actions complete; the next record to emit is NextIndex-1.
@@ -406,10 +444,14 @@ type InstanceState struct {
 	DefVersion int
 	Status     Status
 	Variables  map[string]any
-	Tokens     []Token
-	StartedAt  time.Time
-	EndedAt    *time.Time
-	History    []NodeVisit
+	// StartVariables is an immutable copy of the variables the instance began with,
+	// captured once on StartInstance. Used by a full ReverseInstance to restore a
+	// fresh slate when resuming at the start node.
+	StartVariables map[string]any
+	Tokens         []Token
+	StartedAt      time.Time
+	EndedAt        *time.Time
+	History        []NodeVisit
 
 	// Tasks holds the in-flight human-task records for this instance.
 	Tasks []humantask.HumanTask
@@ -624,16 +666,20 @@ func (s *InstanceState) cancelAllTimers() []Command {
 // This is called alongside cancelAllTimers on ALL terminal paths to prevent
 // gateway and boundary timer arms from leaking as orphaned scheduled tasks in
 // the runtime scheduler. Callers:
-//   - handleCancelRequested (admin cancel → StatusTerminated)
+//   - handleCancelRequested (admin cancel, no compensation records → StatusTerminated)
 //   - handleSubInstanceFailed (child instance failed → parent StatusFailed)
-//   - propagateError (unhandled-error terminal path)
-//   - beginCompensation and stepCompensationFinish (cancel in-flight tokens
-//     before/while compensating)
+//   - propagateError (unhandled-error, no compensation records → terminal path)
+//   - beginCompensation (cancel in-flight tokens at compensation walk-start)
+//   - applyTerminate (compensation walk finish, reached via stepCompensationFinish
+//     → applyFinish, when the walk ends the instance rather than resuming it)
 //
-// EventSubprocesses arms are also drained on the terminal and compensation paths
-// via removeEventSubprocessArmsForScope — this function does NOT drain them, so
-// callers that need to cover ESP arms call removeEventSubprocessArmsForScope
-// separately.
+// This function does NOT drain s.EventSubprocesses. beginCompensation invokes
+// it at walk-START, where root-scope ESP arms must survive — the walk may
+// still resume the instance (a ReverseNode target) rather than end it, so
+// their timers must keep running. The other four callers above run once the
+// instance is genuinely terminating and each additionally drains ESP arms
+// itself, via removeAllEventSubprocessArms (a sweep across ALL scopes) — not
+// through this function.
 func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	var cmds []Command
 	for _, ae := range s.ArmedEvents {
@@ -884,6 +930,24 @@ func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []stri
 		out = append(out, ea)
 	}
 	s.EventSubprocesses = out
+	return cancelTimerIDs
+}
+
+// removeAllEventSubprocessArms drains every armed event sub-process across ALL
+// scopes (unlike removeEventSubprocessArmsForScope, which is scoped to one
+// EnclosingScopeID), returning the TimerIDs of any timer-armed entries so the
+// caller can emit CancelTimer commands. It is the sweep-all used by terminal
+// paths (terminate / immediate-cancel / immediate-fail) where no ESP arm
+// should survive instance end. Iterates s.EventSubprocesses in slice order for
+// deterministic output.
+func (s *InstanceState) removeAllEventSubprocessArms() []string {
+	var cancelTimerIDs []string
+	for _, ea := range s.EventSubprocesses {
+		if ea.TimerID != "" {
+			cancelTimerIDs = append(cancelTimerIDs, ea.TimerID)
+		}
+	}
+	s.EventSubprocesses = nil
 	return cancelTimerIDs
 }
 

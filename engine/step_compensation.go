@@ -42,14 +42,70 @@ func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecor
 // finalErr, producing StatusTerminated with no FailInstance on a full rollback —
 // identical to the prior behaviour.
 func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+	// Reject a malformed trigger that expresses reverse intent (ResetVars)
+	// without naming a resume target (ReverseNode). CompensateRequested is a
+	// public, directly-constructible struct — a caller who builds one by hand
+	// (e.g. CompensateRequested{ResetVars: true}) instead of going through
+	// NewReverseToStart can produce exactly this shape. Without this guard,
+	// stepCompensationFinish's outcome switch falls through to the full-
+	// rollback TERMINATE branch (ReverseNode == "" takes no reverse branch),
+	// silently discarding ResetVars and terminating the instance instead of
+	// resuming it — the engine-level twin of the WithTargetNode("") footgun
+	// already guarded at the runtime facade (ADR-0109 hardening, finding #5).
+	// Checked first, ahead of the state-dependent guards below, because it is
+	// a pure trigger-shape validation independent of s.Status.
+	if t.ResetVars && t.ReverseNode == "" {
+		return StepResult{}, fmt.Errorf("workflow-engine: ResetVars requires ReverseNode (use NewReverseToStart)")
+	}
+	// Sibling guard (F1.2, FU#1): reject a malformed trigger that expresses
+	// target-reverse variable-restore intent (RestoreTargetVars) without a
+	// target node (ToNode) to look the snapshot up on. RestoreTargetVars
+	// restores Variables to ToNode's own start-of-visit snapshot (the Input
+	// captured on ToNode's compensation record) — with ToNode == "" there is
+	// no record to read the snapshot from. CompensateRequested is a public,
+	// directly-constructible struct, so a caller who builds one by hand
+	// (e.g. CompensateRequested{RestoreTargetVars: true}) instead of going
+	// through NewReverseToNode can produce exactly this shape. Same
+	// pure-trigger-shape rationale as the ResetVars guard above, and checked
+	// alongside it for the same reason.
+	if t.RestoreTargetVars && t.ToNode == "" {
+		return StepResult{}, fmt.Errorf("workflow-engine: RestoreTargetVars requires ToNode (use NewReverseToNode)")
+	}
 	// If a compensation walk is already in flight, ignore the redundant request:
 	// restarting beginCompensation would re-walk records that are still
 	// mid-consumption and re-emit the in-flight compensation (double-compensation).
+	//
+	// A facade-originated reverse trigger — full (t.ReverseNode != "") OR target
+	// (t.RestoreTargetVars, set only by NewReverseToNode) — is the one exception:
+	// the runtime facade (ProcessDriver.ReverseInstance) admits a Compensating
+	// instance for both WithFullReverse and WithTargetNode, so a reverse arriving
+	// mid-walk must not be silently discarded — the caller would otherwise believe
+	// it succeeded when nothing happened. Reject it with an error instead. A plain
+	// admin/partial CompensateRequested (both ReverseNode == "" and
+	// RestoreTargetVars == false — a raw engine.NewCompensateRequested) keeps
+	// today's silent no-op — that path is shared with admin/cancel/error callers
+	// that may legitimately re-deliver a trigger mid-walk.
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
+		if t.ReverseNode != "" || t.RestoreTargetVars {
+			return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse instance while a compensation walk is in flight")
+		}
 		return StepResult{State: *s}, nil
 	}
+	// Reject a reverse trigger (ADR-0109 ReverseInstance) against an
+	// already-terminal instance instead of silently resurrecting it. This is a
+	// defense-in-depth guard: the runtime facade (ProcessDriver.ReverseInstance)
+	// already rejects a terminal instance on its own pre-check Load, but a
+	// concurrent completion between that Load and this Step call (TOCTOU) would
+	// otherwise slip through undetected. Scoped STRICTLY to reverse intent
+	// (t.ReverseNode != "") — a plain admin/partial CompensateRequested keeps
+	// today's behaviour (e.g. cancel/error terminal paths that re-deliver
+	// CompensateRequested on an already-terminal instance as a no-op-ish
+	// full rollback).
+	if t.ReverseNode != "" && s.Status.IsTerminal() {
+		return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse a terminal instance (status %v)", s.Status)
+	}
 	s.Status = StatusCompensating
-	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode, eval)
+	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode, eval, t.ReverseNode, t.ResetVars, t.RestoreTargetVars)
 }
 
 // beginCompensation is the shared initiator of a reverse-order compensation walk.
@@ -74,7 +130,17 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 //
 // The FinalStatus/FinalErr values are carried on the cursor across all advance steps
 // so that stepCompensationFinish applies them when the walk completes.
-func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+// reverseNode/reverseResetVars carry the ReverseInstance full-reverse intent
+// (ADR-0109): when reverseNode is non-empty, a FULL-rollback finish resumes at
+// reverseNode (StatusRunning) — optionally resetting Variables to StartVariables —
+// instead of terminating. All cancel/error/throw callers pass "", false so their
+// terminate behaviour is unchanged.
+// restoreTargetVars carries the FU#1 target-reverse intent (ADR-0116): when true
+// (only the NewReverseToNode path sets it, always alongside a non-empty toNode),
+// the PARTIAL-rollback finish restores Variables to toNode's start-of-visit
+// snapshot. Cancel/error/throw/admin/full-reverse callers pass false so their
+// variable handling is unchanged.
+func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator, reverseNode string, reverseResetVars bool, restoreTargetVars bool) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -152,7 +218,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 				// toNode != "", stepCompensationFinish takes the partial-rollback branch
 				// (resume at toNode) regardless of FinalStatus/FinalErr — which is correct
 				// for the admin path (outcome fields are zero).
-				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
+				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars, RestoreTargetVars: restoreTargetVars}
 				finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
 				if finishErr != nil {
 					return StepResult{}, finishErr
@@ -171,9 +237,11 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	}
 
 	if startIndex < 0 {
-		// No records at all — apply the terminal outcome immediately.
-		// Stamp the cursor so stepCompensationFinish reads the outcome fields.
-		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
+		// No records at all — apply the terminal outcome (or, for a reverse walk,
+		// resume at ReverseNode) immediately. Stamp the cursor so
+		// stepCompensationFinish reads the outcome AND reverse fields — a
+		// reverse-to-start with ZERO eligible records must still resume at start.
+		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars, RestoreTargetVars: restoreTargetVars}
 		finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
 		if finishErr != nil {
 			return StepResult{}, finishErr
@@ -186,12 +254,15 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	rec := records[startIndex]
 	cmdID := s.nextCommandID()
 	s.Compensating = compensationCursor{
-		ScopeID:     scopeID,
-		ToNode:      toNode,
-		NextIndex:   startIndex,
-		ActiveCmdID: cmdID,
-		FinalStatus: finalStatus,
-		FinalErr:    finalErr,
+		ScopeID:           scopeID,
+		ToNode:            toNode,
+		NextIndex:         startIndex,
+		ActiveCmdID:       cmdID,
+		FinalStatus:       finalStatus,
+		FinalErr:          finalErr,
+		ReverseNode:       reverseNode,
+		ReverseResetVars:  reverseResetVars,
+		RestoreTargetVars: restoreTargetVars,
 	}
 	cmd := InvokeAction{
 		CommandID: cmdID,
@@ -239,15 +310,18 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 	rec := records[nextIdx]
 	cmdID := s.nextCommandID()
 	s.Compensating = compensationCursor{
-		ScopeID:     cur.ScopeID,
-		ArchiveKey:  cur.ArchiveKey,
-		ResumeNode:  cur.ResumeNode,
-		ResumeScope: cur.ResumeScope,
-		ToNode:      cur.ToNode,
-		NextIndex:   nextIdx,
-		ActiveCmdID: cmdID,
-		FinalStatus: cur.FinalStatus,
-		FinalErr:    cur.FinalErr,
+		ScopeID:           cur.ScopeID,
+		ArchiveKey:        cur.ArchiveKey,
+		ResumeNode:        cur.ResumeNode,
+		ResumeScope:       cur.ResumeScope,
+		ToNode:            cur.ToNode,
+		NextIndex:         nextIdx,
+		ActiveCmdID:       cmdID,
+		FinalStatus:       cur.FinalStatus,
+		FinalErr:          cur.FinalErr,
+		ReverseNode:       cur.ReverseNode,
+		ReverseResetVars:  cur.ReverseResetVars,
+		RestoreTargetVars: cur.RestoreTargetVars,
 	}
 	cmd := InvokeAction{
 		CommandID: cmdID,
@@ -257,14 +331,117 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 	return StepResult{State: *s, Commands: []Command{cmd}}, nil
 }
 
-// stepCompensationFinish finalises the compensation walk:
-//   - If ResumeNode != "" (compensation throw walk): delete the archive entry,
-//     set Status = StatusRunning, place a token at ResumeNode in ResumeScope,
-//     and drive forward (resuming execution past the throw event).
-//   - If toNode != "" (partial rollback via CompensateRequested): place a token
-//     at toNode, set Status = StatusRunning, and drive forward.
-//   - If toNode == "" and ResumeNode == "": full rollback — apply the cursor's
-//     terminal FinalStatus (StatusTerminated / StatusFailed).
+// finishPlan is the parameterized description of ONE compensation-walk finish
+// outcome. Every finish — throw-resume, partial-rollback, full-reverse, and
+// terminate — is expressed as a finishPlan and applied by applyFinish, so the
+// resume/terminate invariant-restoration lives in exactly one place (previously
+// four independent branches drifted apart — finding #4).
+type finishPlan struct {
+	// resume is true for a resume outcome (Status → Running, place a token, drive)
+	// and false for a terminate outcome (apply FinalStatus, stamp EndedAt).
+	resume bool
+	// resumeAt is the node to place the resume token at (resume outcomes only).
+	resumeAt string
+	// resumeScope is the ScopeID for the resume token ("" = root). Only the throw
+	// resume uses a non-root scope (the throw token's scope); partial/reverse
+	// resume at root.
+	resumeScope string
+	// clearScope is the scope whose compensation records are cleared when
+	// doClearRecords is set ("" = root/RootCompensations).
+	clearScope string
+	// doClearRecords clears clearScope's records. Full-reverse and terminate clear;
+	// throw and partial RETAIN their records.
+	doClearRecords bool
+	// resetVars resets Variables to StartVariables (full-reverse with reset only).
+	resetVars bool
+	// restoreVars, when non-nil, replaces Variables with a copy of this snapshot on
+	// resume — the target node's start-of-visit Input for a target reverse (FU#1,
+	// ADR-0116). nil (the default) leaves Variables untouched. Mutually exclusive
+	// with resetVars by construction: a full-reverse (resetVars) never carries a
+	// ToNode, and a target reverse (restoreVars) never carries a ReverseNode.
+	restoreVars map[string]any
+	// deleteArchive is the throw-walk ArchivedCompensations key to delete on finish
+	// ("" = none) — single-ownership consume semantics.
+	deleteArchive string
+	// popDeferred re-activates exactly one deferred compensation throw (throw walk
+	// only — ADR-0071 serialization).
+	popDeferred bool
+	// consumePendingCancel makes a cancel that arrived mid-walk preempt the resume
+	// and terminate instead. The throw walk (preserving the prior throw-walk
+	// protocol) and the full-reverse walk (ADR-0109 hardening, finding #2) set it;
+	// the partial-rollback resume keeps resuming.
+	consumePendingCancel bool
+	// rearmRootESP re-arms ROOT-scope event sub-processes (ADR-0109 hardening,
+	// finding #1) via armEventSubprocesses(def, s, "", at, eval), mirroring
+	// handleStartInstance's own arm-then-drive sequence. Only the full-reverse
+	// resume AT ROOT SCOPE sets this: beginCompensation does not sweep
+	// s.EventSubprocesses when a walk starts, so without a full reverse a
+	// root-level event sub-process (armed at StartInstance, or left un-armed
+	// after an earlier interrupting fire) is either stale or silently lost by
+	// the time the instance resumes. Partial and throw resumes stay at their
+	// own (possibly non-root) scope and must NOT re-arm.
+	rearmRootESP bool
+	// finalStatus / finalErr are the terminal outcome (terminate only).
+	finalStatus Status
+	finalErr    string
+}
+
+// clearRecords drops the compensation records for the given scope ("" = root).
+// Shared by the full-reverse and terminate finish outcomes so a re-delivered
+// terminal trigger cannot re-enter a walk and double-compensate.
+func clearRecords(s *InstanceState, scopeID string) {
+	if scopeID == "" {
+		s.RootCompensations = nil
+	} else if sc := s.scopeByID(scopeID); sc != nil {
+		sc.Compensations = nil
+	}
+}
+
+// lastCompensationRecordByNode returns a pointer to the LAST record in records
+// whose NodeID equals nodeID (the most-recent visit of that node — matching
+// beginCompensation's most-recent-match rule for a rollback target), or nil when
+// no record names the node. Used by the target-reverse finish to read the
+// resume target's start-of-visit variable snapshot (its Input). The returned
+// pointer aliases the slice element; callers copyVars its Input before handing it
+// to a resumed instance so the retained record's map is never mutated in place.
+func lastCompensationRecordByNode(records []CompensationRecord, nodeID string) *CompensationRecord {
+	for i := len(records) - 1; i >= 0; i-- {
+		if records[i].NodeID == nodeID {
+			return &records[i]
+		}
+	}
+	return nil
+}
+
+// popOneDeferredThrow re-activates exactly ONE deferred compensation throw token
+// (ADR-0071 serialization). The caller has already cleared the cursor, so the
+// subsequent drive re-enters the throw handler for that token via the normal
+// walk-start path. Popping one-per-finish keeps at most one walk in flight; any
+// further deferred throws stay queued and drain as each walk completes. No-op
+// when nothing is deferred.
+func popOneDeferredThrow(s *InstanceState) {
+	if len(s.DeferredCompensationThrows) == 0 {
+		return
+	}
+	deferredTok := s.DeferredCompensationThrows[0]
+	s.DeferredCompensationThrows = s.DeferredCompensationThrows[1:]
+	if tok := s.tokenByID(deferredTok); tok != nil {
+		tok.State = TokenActive
+	}
+}
+
+// stepCompensationFinish finalises the compensation walk. It saves the cursor's
+// outcome/metadata, clears the cursor, builds the finishPlan matching the walk's
+// outcome, and delegates to applyFinish. The four outcomes are:
+//   - ResumeNode != "" (compensation throw walk): delete the archive entry,
+//     resume Running at ResumeNode in ResumeScope, pop one deferred throw, drive.
+//   - toNode != "" (partial rollback via CompensateRequested): resume Running at
+//     toNode (records RETAINED), drive.
+//   - ReverseNode != "" (ReverseInstance full-reverse, ADR-0109): clear records,
+//     optionally reset Variables to StartVariables, resume Running at ReverseNode,
+//     drive.
+//   - otherwise (full rollback): apply the cursor's terminal FinalStatus
+//     (StatusTerminated / StatusFailed), stamp EndedAt, clear records.
 func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Save outcome fields AND cursor metadata BEFORE clearing the cursor.
 	finalStatus := s.Compensating.FinalStatus
@@ -273,75 +450,177 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	archiveKey := s.Compensating.ArchiveKey
 	resumeNode := s.Compensating.ResumeNode
 	resumeScope := s.Compensating.ResumeScope
+	reverseNode := s.Compensating.ReverseNode
+	reverseResetVars := s.Compensating.ReverseResetVars
+	restoreTargetVars := s.Compensating.RestoreTargetVars
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
-	// ── Phase 3: compensation throw resume branch ─────────────────────────────
-	// A throw walk always has a non-empty ResumeNode. When the walk finishes,
-	// we delete the archive entry (single ownership: a second throw to the same
-	// ref finds len == 0 and becomes a no-op; a later cancel walk also won't
-	// re-run them because the archive key is already gone), resume status to
-	// Running, and place a token at the throw's successor.
-	if resumeNode != "" {
-		// Remove the archive entry (consume semantics — single ownership).
-		if archiveKey != "" && s.ArchivedCompensations != nil {
-			delete(s.ArchivedCompensations, archiveKey)
+	// Build the finishPlan matching this walk's outcome. Branch order mirrors the
+	// pre-refactor precedence: throw resume, then partial, then full-reverse, then
+	// terminate. History is intentionally RETAINED across every resume outcome:
+	// re-execution appends fresh visits on top, keeping the full run history intact.
+	var plan finishPlan
+	switch {
+	case resumeNode != "":
+		// Compensation throw resume: consume the archive entry (single ownership:
+		// a second throw to the same ref finds len == 0 and no-ops; a later cancel
+		// walk also won't re-run them), resume at the throw's successor in its own
+		// scope, and re-activate one deferred throw. A cancel arriving mid-walk
+		// preempts the resume and terminates (consumePendingCancel).
+		plan = finishPlan{
+			resume:               true,
+			resumeAt:             resumeNode,
+			resumeScope:          resumeScope,
+			deleteArchive:        archiveKey,
+			popDeferred:          true,
+			consumePendingCancel: true,
 		}
-		if s.PendingCancel {
-			// A cancel arrived mid-throw-walk. The throw's target is now compensated and
-			// removed from the archive, so a full cancel over the REMAINING records
-			// (root + other archives) cannot double-run it. Run it and terminate.
-			s.PendingCancel = false
-			s.Status = StatusCompensating
-			return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval)
+	case toNode != "":
+		// Partial rollback: resume at toNode. Records are RETAINED (not cleared):
+		// the instance keeps running and a later full walk must still see them.
+		// No double-compensation risk — consolidateArchiveIntoRoot already drained
+		// the archive into RootCompensations (single ownership).
+		//
+		// FU#1 (ADR-0116): a target reverse (RestoreTargetVars, set only by
+		// NewReverseToNode) additionally restores Variables to toNode's own
+		// start-of-visit snapshot — the Input on toNode's most-recent compensation
+		// record (records are RETAINED on a partial finish, so the record is still
+		// present here). A raw admin CompensateRequested leaves RestoreTargetVars
+		// false and keeps the current variables.
+		plan = finishPlan{
+			resume:   true,
+			resumeAt: toNode,
 		}
-		s.Status = StatusRunning
-		// Place the resume token in the correct scope (the throw token's scope).
-		s.placeTokenInScope(resumeNode, resumeScope, at)
-		// SERIALIZE (ADR-0071): if compensation throws were deferred while this walk
-		// was in flight, re-activate exactly ONE now. The cursor was just cleared
-		// (ActiveCmdID == ""), so the subsequent drive re-enters the throw handler for
-		// that token and starts its walk through the normal walk-start path — no logic
-		// duplication. Popping one-per-finish keeps at most one walk in flight; any
-		// further deferred throws stay queued and drain as each walk completes.
-		if len(s.DeferredCompensationThrows) > 0 {
-			deferredTok := s.DeferredCompensationThrows[0]
-			s.DeferredCompensationThrows = s.DeferredCompensationThrows[1:]
-			if tok := s.tokenByID(deferredTok); tok != nil {
-				tok.State = TokenActive
+		if restoreTargetVars {
+			if rec := lastCompensationRecordByNode(s.RootCompensations, toNode); rec != nil {
+				plan.restoreVars = rec.Input
 			}
 		}
-		driveCmds, err := drive(def, s, at, mode, eval)
-		if err != nil {
-			return StepResult{}, err
+	case reverseNode != "":
+		// Full reverse (ADR-0109): clear the scope's records (as full rollback
+		// does), optionally reset Variables, resume at ReverseNode. Re-arm root
+		// event sub-processes when the walk was rooted at scope "" (today the
+		// only case: NewReverseToStart always targets the root scope) — see
+		// finishPlan.rearmRootESP. A cancel arriving mid-walk preempts the resume
+		// and terminates (consumePendingCancel), mirroring the throw walk — Fork B.
+		plan = finishPlan{
+			resume:               true,
+			resumeAt:             reverseNode,
+			doClearRecords:       true,
+			clearScope:           scopeID,
+			resetVars:            reverseResetVars,
+			rearmRootESP:         scopeID == "",
+			consumePendingCancel: true,
 		}
-		return StepResult{State: *s, Commands: driveCmds}, nil
+	default:
+		// Full rollback / terminate. Zero FinalStatus (== StatusRunning, the iota-0
+		// constant) means UNSET; applyTerminate maps it to StatusTerminated. Safe:
+		// full-rollback finish is always terminal. The admin path (CompensateRequested)
+		// leaves FinalStatus zero; error/cancel paths set it explicitly.
+		plan = finishPlan{
+			resume:         false,
+			doClearRecords: true,
+			clearScope:     scopeID,
+			finalStatus:    finalStatus,
+			finalErr:       finalErr,
+		}
+	}
+	return applyFinish(def, s, plan, at, mode, eval)
+}
+
+// applyFinish applies a finishPlan: the single site where a compensation walk
+// either resumes (Status → Running, EndedAt cleared, token placed, drive) or
+// terminates (FinalStatus applied, EndedAt stamped, records cleared). Collapsing
+// the four former branches here means the resume/terminate invariants can no
+// longer drift apart.
+func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+	// Throw-walk archive consume (single ownership). No-op for other plans
+	// (deleteArchive == "").
+	if plan.deleteArchive != "" && s.ArchivedCompensations != nil {
+		delete(s.ArchivedCompensations, plan.deleteArchive)
 	}
 
-	// ── Partial rollback (CompensateRequested with non-empty ToNode) ──────────
-	if toNode != "" {
-		// Records are intentionally RETAINED here (not cleared): the instance
-		// keeps running and a later full walk must still see them. There is no
-		// double-compensation risk — consolidateArchiveIntoRoot already drained
-		// the archive into RootCompensations (single ownership: the records now
-		// live only in root, with ArchivedCompensations nil).
-		s.Status = StatusRunning
-		// Place a new token at toNode and drive forward.
-		s.placeToken(toNode, at)
-		driveCmds, err := drive(def, s, at, mode, eval)
-		if err != nil {
-			return StepResult{}, err
+	// A cancel that arrived mid-walk preempts the resume: the walk's target is
+	// already compensated (and, for a throw, removed from the archive above), so a
+	// full cancel over the REMAINING records cannot double-run it. Terminate.
+	if plan.resume && plan.consumePendingCancel && s.PendingCancel {
+		s.PendingCancel = false
+		// Clear THIS walk's own already-compensated records BEFORE the cancel walk
+		// so it cannot re-run them (double-compensation). The throw walk deleted
+		// its archive above (deleteArchive) and RETAINS RootCompensations — those
+		// are genuinely-uncompensated outer records the cancel walk must still
+		// compensate (doClearRecords == false, skipped here). A full-reverse walk
+		// compensated ALL of RootCompensations, so it clears them here
+		// (doClearRecords == true): the re-issued beginCompensation then finds zero
+		// eligible records and drops straight into the terminate branch
+		// (FailInstance{"cancelled"}, StatusTerminated) — the correct outcome.
+		if plan.doClearRecords {
+			clearRecords(s, plan.clearScope)
 		}
-		return StepResult{State: *s, Commands: driveCmds}, nil
+		s.Status = StatusCompensating
+		return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval, "", false, false)
 	}
 
-	// ── Full rollback (toNode == "" and ResumeNode == "") ─────────────────────
-	// Apply the cursor's terminal outcome.
-	// Zero FinalStatus (== StatusRunning, the iota-0 constant) means UNSET;
-	// map it to StatusTerminated. Safe: full-rollback finish is always
-	// terminal, so no caller of beginCompensation ever wants a non-terminal
-	// outcome here. The admin path (CompensateRequested) leaves FinalStatus
-	// zero; error/cancel paths set it explicitly (StatusFailed / StatusTerminated).
+	if !plan.resume {
+		return applyTerminate(s, plan, at), nil
+	}
+
+	// ── Resume outcome ────────────────────────────────────────────────────────
+	if plan.doClearRecords {
+		clearRecords(s, plan.clearScope)
+	}
+	s.Status = StatusRunning
+	// Every resume clears EndedAt: a Running instance must never carry an end
+	// timestamp. Load-bearing after a reverse; defensive for throw/partial (a
+	// non-terminal instance never has EndedAt set post-hardening) — one cheap
+	// assignment that keeps the invariant true on all resume paths (finding #4).
+	s.EndedAt = nil
+	if plan.resetVars {
+		s.Variables = copyVars(s.StartVariables)
+	} else if plan.restoreVars != nil {
+		// Target reverse (FU#1, ADR-0116): restore the resume target's
+		// start-of-visit snapshot. copyVars protects the retained compensation
+		// record's Input map from later mutation by the resumed instance.
+		s.Variables = copyVars(plan.restoreVars)
+	}
+	s.placeTokenInScope(plan.resumeAt, plan.resumeScope, at)
+	if plan.popDeferred {
+		popOneDeferredThrow(s)
+	}
+	var preDriveCmds []Command
+	if plan.rearmRootESP {
+		// beginCompensation never sweeps s.EventSubprocesses when a walk
+		// starts, so a root-scope arm from before the walk (or a leftover
+		// one-shot removal from an earlier interrupting fire) may still be
+		// present. Drop any stale root-scope arms first (emitting CancelTimer
+		// for timer-triggered ones) so the re-arm below is idempotent instead
+		// of appending a duplicate entry, then re-arm exactly as
+		// handleStartInstance does for a fresh StartInstance.
+		for _, timerID := range s.removeEventSubprocessArmsForScope("") {
+			preDriveCmds = append(preDriveCmds, CancelTimer{TimerID: timerID})
+		}
+		espCmds, espErr := armEventSubprocesses(def, s, "", at, eval)
+		if espErr != nil {
+			return StepResult{}, espErr
+		}
+		preDriveCmds = append(preDriveCmds, espCmds...)
+	}
+	driveCmds, err := drive(def, s, at, mode, eval)
+	if err != nil {
+		return StepResult{}, err
+	}
+	return StepResult{State: *s, Commands: append(preDriveCmds, driveCmds...)}, nil
+}
+
+// applyTerminate reproduces the terminal-outcome finish: map an unset FinalStatus
+// to StatusTerminated, stamp EndedAt, clear the walk's records, then reconcile the
+// human-task projection (a parked UserTask on a sibling branch must not be left
+// open once the instance terminates — ADR-0088/0089), emit FailInstance when a
+// finalErr is set, and cancel outstanding timers/arms/boundaries. Command list
+// and ordering are unchanged from the pre-refactor terminate branch.
+func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult {
+	finalStatus := plan.finalStatus
 	if finalStatus == 0 {
 		finalStatus = StatusTerminated
 	}
@@ -349,29 +628,19 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	ended := at
 	s.EndedAt = &ended
 
-	// Clear the compensation records for the walk's scope so that a re-delivered
-	// CancelRequested (or any other terminal trigger) on an already-terminal instance
-	// cannot re-enter the walk and double-compensate money-moving actions.
-	// beginCompensation today always uses scopeID="" (root scope); future scope-targeted
-	// walks (ADR-0035) will set a non-empty scopeID, which the else branch handles.
-	if scopeID == "" {
-		s.RootCompensations = nil
-	} else {
-		if sc := s.scopeByID(scopeID); sc != nil {
-			sc.Compensations = nil
-		}
+	if plan.doClearRecords {
+		clearRecords(s, plan.clearScope)
 	}
 
 	var cmds []Command
-	// Reconcile the human-task projection at the terminal of every compensation
-	// walk: a parked UserTask on a sibling branch must not be left open in the
-	// TaskStore once the instance is terminated/failed (ADR-0088/0089). Idempotent
-	// for cancel-with-compensation, whose tasks were already cancelled at trigger.
 	cmds = append(cmds, s.cancelOpenTasks()...)
-	if finalErr != "" {
-		cmds = append(cmds, FailInstance{Err: finalErr})
+	if plan.finalErr != "" {
+		cmds = append(cmds, FailInstance{Err: plan.finalErr})
 	}
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	return StepResult{State: *s, Commands: cmds}, nil
+	for _, timerID := range s.removeAllEventSubprocessArms() {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
+	return StepResult{State: *s, Commands: cmds}
 }

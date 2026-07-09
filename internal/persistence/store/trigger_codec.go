@@ -50,25 +50,28 @@ var AllTriggerKinds = []string{
 // Fields unused by a given kind are omitted (omitempty). The At field carries
 // the trigger's OccurredAt timestamp and is always present.
 type triggerEnvelope struct {
-	At             time.Time      `json:"at"`
-	Vars           map[string]any `json:"vars,omitempty"`
-	Output         map[string]any `json:"output,omitempty"`
-	Payload        map[string]any `json:"payload,omitempty"`
-	CommandID      string         `json:"command_id,omitempty"`
-	Err            string         `json:"err,omitempty"`
-	Retryable      bool           `json:"retryable,omitempty"`
-	TaskToken      string         `json:"task_token,omitempty"`
-	Actor          authz.Actor    `json:"actor,omitempty"`
-	From           string         `json:"from,omitempty"`
-	To             string         `json:"to,omitempty"`
-	By             authz.Actor    `json:"by,omitempty"`
-	TimerID        string         `json:"timer_id,omitempty"`
-	Name           string         `json:"name,omitempty"`
-	CorrelationKey string         `json:"correlation_key,omitempty"`
-	ToNode         string         `json:"to_node,omitempty"`
-	Jitter         float64        `json:"jitter,omitempty"`
-	IncidentID     string         `json:"incident_id,omitempty"`
-	AddAttempts    int            `json:"add_attempts,omitempty"`
+	At                time.Time      `json:"at"`
+	Vars              map[string]any `json:"vars,omitempty"`
+	Output            map[string]any `json:"output,omitempty"`
+	Payload           map[string]any `json:"payload,omitempty"`
+	CommandID         string         `json:"command_id,omitempty"`
+	Err               string         `json:"err,omitempty"`
+	Retryable         bool           `json:"retryable,omitempty"`
+	TaskToken         string         `json:"task_token,omitempty"`
+	Actor             authz.Actor    `json:"actor,omitempty"`
+	From              string         `json:"from,omitempty"`
+	To                string         `json:"to,omitempty"`
+	By                authz.Actor    `json:"by,omitempty"`
+	TimerID           string         `json:"timer_id,omitempty"`
+	Name              string         `json:"name,omitempty"`
+	CorrelationKey    string         `json:"correlation_key,omitempty"`
+	ToNode            string         `json:"to_node,omitempty"`
+	ReverseNode       string         `json:"reverse_node,omitempty"`
+	ResetVars         bool           `json:"reset_vars,omitempty"`
+	RestoreTargetVars bool           `json:"restore_target_vars,omitempty"`
+	Jitter            float64        `json:"jitter,omitempty"`
+	IncidentID        string         `json:"incident_id,omitempty"`
+	AddAttempts       int            `json:"add_attempts,omitempty"`
 }
 
 // MarshalTrigger serialises a sealed Trigger to JSON and returns the JSON bytes,
@@ -105,7 +108,7 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 	case engine.SubInstanceFailed:
 		kind, env.CommandID, env.Err = kindSubInstanceFailed, v.CommandID, v.Err
 	case engine.CompensateRequested:
-		kind, env.ToNode = kindCompensateRequested, v.ToNode
+		kind, env.ToNode, env.ReverseNode, env.ResetVars, env.RestoreTargetVars = kindCompensateRequested, v.ToNode, v.ReverseNode, v.ResetVars, v.RestoreTargetVars
 	case engine.CancelRequested:
 		kind = kindCancelRequested
 	case engine.ResolveIncident:
@@ -152,7 +155,16 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 	case kindSubInstanceFailed:
 		return engine.NewSubInstanceFailed(env.At, env.CommandID, env.Err), nil
 	case kindCompensateRequested:
-		return engine.NewCompensateRequested(env.At, env.ToNode), nil
+		// Reconstruct all four fields explicitly (rather than routing through
+		// NewReverseToStart/NewReverseToNode) so every ToNode/ReverseNode/
+		// ResetVars/RestoreTargetVars combination written by MarshalTrigger —
+		// not just the ReverseToStart/ReverseToNode happy paths — round-trips
+		// faithfully.
+		cr := engine.NewCompensateRequested(env.At, env.ToNode)
+		cr.ReverseNode = env.ReverseNode
+		cr.ResetVars = env.ResetVars
+		cr.RestoreTargetVars = env.RestoreTargetVars
+		return cr, nil
 	case kindCancelRequested:
 		return engine.NewCancelRequested(env.At), nil
 	case kindResolveIncident:

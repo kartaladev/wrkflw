@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/engine"
@@ -205,4 +206,73 @@ func TestActionFailedJitterBackwardCompat(t *testing.T) {
 	require.Equal(t, "old error", af.Err)
 	require.True(t, af.Retryable)
 	require.Equal(t, 0.0, af.JitterFraction, "missing jitter key must default to 0 — no migration needed")
+}
+
+// TestCompensateRequestedReverseRoundTrip asserts that the ReverseNode/ResetVars/
+// RestoreTargetVars fields added for ReverseInstance (ADR-0109/FU#1) survive a
+// MarshalTrigger→UnmarshalTrigger round-trip, and that a plain ToNode-only
+// trigger still round-trips with ReverseNode/ResetVars/RestoreTargetVars left at
+// their zero values (back-compat with journal rows written before these fields
+// existed).
+func TestCompensateRequestedReverseRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	at := time.Unix(1700000000, 0).UTC()
+
+	type testCase struct {
+		name   string
+		in     engine.CompensateRequested
+		assert func(t *testing.T, got engine.CompensateRequested)
+	}
+
+	cases := []testCase{
+		{
+			name: "plain ToNode leaves ReverseNode, ResetVars and RestoreTargetVars at zero value",
+			in:   engine.NewCompensateRequested(at, "n1"),
+			assert: func(t *testing.T, got engine.CompensateRequested) {
+				assert.Equal(t, "n1", got.ToNode)
+				assert.Empty(t, got.ReverseNode)
+				assert.False(t, got.ResetVars)
+				assert.False(t, got.RestoreTargetVars)
+			},
+		},
+		{
+			name: "ReverseToStart round-trips ReverseNode and ResetVars, leaves RestoreTargetVars false",
+			in:   engine.NewReverseToStart(at, "start"),
+			assert: func(t *testing.T, got engine.CompensateRequested) {
+				assert.Empty(t, got.ToNode)
+				assert.Equal(t, "start", got.ReverseNode)
+				assert.True(t, got.ResetVars)
+				assert.False(t, got.RestoreTargetVars)
+			},
+		},
+		{
+			name: "ReverseToNode round-trips ToNode and RestoreTargetVars, leaves ReverseNode/ResetVars false",
+			in:   engine.NewReverseToNode(at, "X"),
+			assert: func(t *testing.T, got engine.CompensateRequested) {
+				assert.Equal(t, "X", got.ToNode)
+				assert.Empty(t, got.ReverseNode)
+				assert.False(t, got.ResetVars)
+				assert.True(t, got.RestoreTargetVars)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			data, kind, err := st.MarshalTrigger(tc.in)
+			require.NoError(t, err)
+			require.Equal(t, "compensate_requested", kind)
+
+			got, err := st.UnmarshalTrigger(kind, data)
+			require.NoError(t, err)
+
+			cr, ok := got.(engine.CompensateRequested)
+			require.True(t, ok)
+			require.True(t, tc.in.OccurredAt().Equal(got.OccurredAt()))
+			tc.assert(t, cr)
+		})
+	}
 }

@@ -394,7 +394,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	// happens inside beginCompensation.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
-		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode, eval)
+		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode, eval, "", false, false)
 		if err != nil {
 			return nil, err
 		}
@@ -412,5 +412,8 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	cmds = append(cmds, FailInstance{Err: errorCode})
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+	for _, timerID := range s.removeAllEventSubprocessArms() {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
 	return cmds, nil
 }
