@@ -1081,3 +1081,122 @@ func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T
 	assert.Contains(t, r2.Commands, engine.CancelTimer{TimerID: espTimerID},
 		"SubInstanceFailed terminate must cancel the surviving root-ESP timer")
 }
+
+// TestReverseToNode_RestoresTargetStartOfVisitVariables (FU#1, Task F1.3) pins the
+// CORE contract: a NewReverseToNode(at, X) — carrying RestoreTargetVars — restores
+// s.Variables to X's OWN start-of-visit snapshot (the Input captured on X's
+// compensation record, i.e. the variables as they stood when execution first
+// arrived at X, before X ran) when the partial-rollback walk resumes at X. A raw
+// admin NewCompensateRequested(at, X) leaves the current variables untouched.
+//
+// The run mutates variables on each compensable step's completion so every node's
+// record Input is a DISTINCT snapshot:
+//
+//	step1.Input = {a:1}             (start vars, before step1's output merges)
+//	step2.Input = {a:9,b:2}         (after step1 output {a:9,b:2})
+//	step3.Input = {a:9,b:2,c:3}     (after step2 output {c:3})
+//	parked vars = {a:9,b:2,c:3,d:4} (after step3 output {d:4})
+func TestReverseToNode_RestoresTargetStartOfVisitVariables(t *testing.T) {
+	t.Parallel()
+
+	t0 := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
+
+	// parked drives threeCompensableDef to a Running state parked at the user task
+	// with three RootCompensations, each recording a distinct start-of-visit Input.
+	parked := func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
+		t.Helper()
+		def := threeCompensableDef()
+		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i"},
+			engine.NewStartInstance(t0, map[string]any{"a": 1}), engine.StepOptions{})
+		require.NoError(t, err)
+		id1 := findInvokeActionID(t, r1.Commands, "a1")
+		r2, err := engine.Step(def, r1.State,
+			engine.NewActionCompleted(t0, id1, map[string]any{"a": 9, "b": 2}), engine.StepOptions{})
+		require.NoError(t, err)
+		id2 := findInvokeActionID(t, r2.Commands, "a2")
+		r3, err := engine.Step(def, r2.State,
+			engine.NewActionCompleted(t0, id2, map[string]any{"c": 3}), engine.StepOptions{})
+		require.NoError(t, err)
+		id3 := findInvokeActionID(t, r3.Commands, "a3")
+		r4, err := engine.Step(def, r3.State,
+			engine.NewActionCompleted(t0, id3, map[string]any{"d": 4}), engine.StepOptions{})
+		require.NoError(t, err)
+		require.Equal(t, engine.StatusRunning, r4.State.Status)
+		require.Len(t, r4.State.RootCompensations, 3, "step1+step2+step3 recorded")
+		require.Equal(t, map[string]any{"a": 1}, r4.State.RootCompensations[0].Input)
+		require.Equal(t, map[string]any{"a": 9, "b": 2, "c": 3, "d": 4}, r4.State.Variables)
+		return def, r4.State
+	}
+
+	// driveToFinish delivers trig then completes each one-at-a-time compensation
+	// undo action until the walk finishes (Status leaves StatusCompensating).
+	driveToFinish := func(t *testing.T, def *model.ProcessDefinition, state engine.InstanceState, trig engine.CompensateRequested) engine.InstanceState {
+		t.Helper()
+		r, err := engine.Step(def, state, trig, engine.StepOptions{})
+		require.NoError(t, err)
+		for r.State.Status == engine.StatusCompensating {
+			var undoID string
+			for _, c := range r.Commands {
+				if ia, ok := c.(engine.InvokeAction); ok {
+					undoID = ia.CommandID
+				}
+			}
+			require.NotEmpty(t, undoID, "a compensation InvokeAction must be in flight while compensating")
+			r, err = engine.Step(def, r.State,
+				engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+			require.NoError(t, err)
+		}
+		return r.State
+	}
+
+	type testCase struct {
+		name   string
+		trig   engine.CompensateRequested
+		assert func(t *testing.T, resumed engine.InstanceState)
+	}
+
+	cases := []testCase{
+		{
+			name: "reverse to step1 restores step1 start-of-visit vars",
+			trig: engine.NewReverseToNode(t0, "step1"),
+			assert: func(t *testing.T, resumed engine.InstanceState) {
+				assert.Equal(t, engine.StatusRunning, resumed.Status)
+				require.Len(t, resumed.Tokens, 1)
+				assert.Equal(t, "step1", resumed.Tokens[0].NodeID, "resumes at target node")
+				assert.Equal(t, map[string]any{"a": 1}, resumed.Variables,
+					"vars restored to step1's start-of-visit Input, NOT the current {a:9,b:2,c:3,d:4}")
+			},
+		},
+		{
+			name: "reverse to step3 early-finish restores step3 start-of-visit vars",
+			trig: engine.NewReverseToNode(t0, "step3"),
+			assert: func(t *testing.T, resumed engine.InstanceState) {
+				assert.Equal(t, engine.StatusRunning, resumed.Status)
+				require.Len(t, resumed.Tokens, 1)
+				assert.Equal(t, "step3", resumed.Tokens[0].NodeID, "resumes at target node")
+				assert.Equal(t, map[string]any{"a": 9, "b": 2, "c": 3}, resumed.Variables,
+					"early-finish (nothing above step3) still restores step3's Input; d dropped")
+			},
+		},
+		{
+			name: "admin partial rollback to step1 keeps current vars",
+			trig: engine.NewCompensateRequested(t0, "step1"),
+			assert: func(t *testing.T, resumed engine.InstanceState) {
+				assert.Equal(t, engine.StatusRunning, resumed.Status)
+				require.Len(t, resumed.Tokens, 1)
+				assert.Equal(t, "step1", resumed.Tokens[0].NodeID)
+				assert.Equal(t, map[string]any{"a": 9, "b": 2, "c": 3, "d": 4}, resumed.Variables,
+					"admin partial rollback leaves current variables UNCHANGED")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			def, state := parked(t)
+			resumed := driveToFinish(t, def, state, tc.trig)
+			tc.assert(t, resumed)
+		})
+	}
+}

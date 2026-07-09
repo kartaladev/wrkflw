@@ -37,5 +37,5 @@ func ScopeByID(s *InstanceState, id string) *Scope {
 // the non-zero FinalStatus/FinalErr outcome branch of stepCompensationFinish
 // without going through a full trigger-dispatch path.
 func BeginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
-	return beginCompensation(def, s, toNode, finalStatus, finalErr, at, mode, conditions, "", false)
+	return beginCompensation(def, s, toNode, finalStatus, finalErr, at, mode, conditions, "", false, false)
 }

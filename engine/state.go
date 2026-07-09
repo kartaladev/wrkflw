@@ -403,6 +403,16 @@ type compensationCursor struct {
 	// ReverseResetVars, when true, resets Variables to StartVariables when the
 	// full-rollback finish resumes at ReverseNode.
 	ReverseResetVars bool
+	// RestoreTargetVars, when true, makes the PARTIAL-rollback finish (ToNode
+	// non-empty) restore Variables to ToNode's own start-of-visit snapshot — the
+	// Input captured on ToNode's most-recent compensation record — instead of
+	// leaving the current variables untouched (FU#1, ADR-0116). Carried on the
+	// cursor (all-scalar) from the CompensateRequested trigger; the snapshot map
+	// itself is resolved at finish time and lives on the transient finishPlan, so
+	// the cursor stays value-copyable by cloneState with no map to deep-copy.
+	// Zero (false) for every other walk — admin partial rollback keeps current
+	// vars, matching ADR-0109's original WithTargetNode contract.
+	RestoreTargetVars bool
 	// NextIndex is the index of the CompensationRecord currently in-flight
 	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
 	// compensation actions complete; the next record to emit is NextIndex-1.
