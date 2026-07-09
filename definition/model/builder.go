@@ -11,10 +11,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
 
-// ErrActionInlineAndNameConflict is returned by Build when a node carries both
-// an inline action (WithAction/WithActionFunc) and an action name (WithTaskAction).
-var ErrActionInlineAndNameConflict = errors.New("workflow-definition: node has both an inline action and an action name")
-
 // ErrDuplicateScopedAction is returned by Build when RegisterAction registered
 // the same name twice.
 var ErrDuplicateScopedAction = errors.New("workflow-definition: duplicate scoped action name")
@@ -117,11 +113,6 @@ func (c *definitionCore) build() (*ProcessDefinition, error) {
 			return nil, err
 		}
 		c.nodes[i] = reconciled
-	}
-	for _, n := range c.nodes {
-		if ActionOf(n) != "" && InlineActionOf(n) != nil {
-			return nil, fmt.Errorf("%w: node %q", ErrActionInlineAndNameConflict, n.ID())
-		}
 	}
 	def := ProcessDefinition{
 		ID:            c.id,

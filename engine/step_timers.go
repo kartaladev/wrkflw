@@ -213,7 +213,6 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 	cmds := []Command{InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
 		Scoped:    tdef.ScopedCatalog(),
 		Input:     serviceActionInput(s, node),
 	}}

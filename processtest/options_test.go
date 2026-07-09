@@ -46,9 +46,9 @@ func TestHarnessOptions(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "WithActionFunc registers an invokable action",
+			name: "WithCatalogActionFunc registers an invokable action",
 			opts: []processtest.Option{
-				processtest.WithActionFunc("greet", func(_ context.Context, in map[string]any) (map[string]any, error) {
+				processtest.WithCatalogActionFunc("greet", func(_ context.Context, in map[string]any) (map[string]any, error) {
 					return map[string]any{"greeted": true}, nil
 				}),
 			},
@@ -61,12 +61,12 @@ func TestHarnessOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "WithActions and WithAction register actions",
+			name: "WithActions and WithCatalogAction register actions",
 			opts: []processtest.Option{
 				processtest.WithActions(map[string]action.Action{
 					"a": action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }),
 				}),
-				processtest.WithAction("b", action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) {
+				processtest.WithCatalogAction("b", action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) {
 					noted = true
 					return nil, nil
 				})),

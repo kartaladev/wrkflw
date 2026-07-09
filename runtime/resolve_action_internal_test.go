@@ -51,10 +51,10 @@ func resolveActionScopedDef(t *testing.T) *model.ProcessDefinition {
 	return def
 }
 
-// TestResolveInvokeAction verifies the inline→scoped→global precedence chain of
-// resolveInvokeAction, where inline and the scope-effective scoped catalog are
-// carried on the command by the engine (with a fallback to the top-level def's
-// scoped catalog when the command carries none).
+// TestResolveInvokeAction verifies the scoped→global precedence chain of
+// resolveInvokeAction, where the scope-effective scoped catalog is carried on
+// the command by the engine (with a fallback to the top-level def's scoped
+// catalog when the command carries none).
 func TestResolveInvokeAction(t *testing.T) {
 	t.Parallel()
 
@@ -83,15 +83,6 @@ func TestResolveInvokeAction(t *testing.T) {
 	}
 
 	cases := []testCase{
-		{
-			name: "inline carried wins over scoped and global",
-			def:  def,
-			cmd:  engine.InvokeAction{Name: "x", Inline: tag("inline"), Scoped: cmdScoped},
-			assert: func(t *testing.T, got action.Action, ok bool) {
-				require.True(t, ok, "must resolve")
-				assert.Equal(t, "inline", tagOf(t, got))
-			},
-		},
 		{
 			name: "carried scoped catalog is used (over global, ignoring def)",
 			def:  def,

@@ -135,9 +135,9 @@ Work on all activity constructors: `WithName`, `WithRetryPolicy(*RetryPolicy)`,
 `WithCancelAction(actionName)`, `WithWaitDeadline(dur, flowID)`,
 `WithDeadlineAction(actionName)`, `WithWaitAction(every, actionName)`.
 
-Kind-specific: `WithTaskAction` / `WithAction` / `WithActionFunc` (service &
-business-rule tasks), `WithEligibilityExpr` / `WithEligibilityPrivileges` (user
-task), `WithCorrelationKey` (receive & send tasks).
+Kind-specific: `WithTaskAction` (service & business-rule tasks — resolves by catalog name,
+scoped → global; omit for default-by-id), `WithEligibilityExpr` /
+`WithEligibilityPrivileges` (user task), `WithCorrelationKey` (receive & send tasks).
 
 ```go
 task := activity.NewServiceTask("charge",
@@ -276,10 +276,9 @@ joined error. The sentinel errors live in `definition/model` — check them with
 
 ### Kind-agnostic accessors
 
-`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `WaitActionOf(n)`, `ActionOf(n)`,
-`InlineActionOf(n)` read kind-specific fields off any `Node` (returning zero
-values for kinds that don't carry them), so callers never type-switch on concrete
-leaf types.
+`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `WaitActionOf(n)`, `ActionOf(n)` read
+kind-specific fields off any `Node` (returning zero values for kinds that don't
+carry them), so callers never type-switch on concrete leaf types.
 
 ---
 

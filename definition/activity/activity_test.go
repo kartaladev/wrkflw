@@ -1,12 +1,10 @@
 package activity_test
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
@@ -37,18 +35,6 @@ func TestServiceTaskOptions(t *testing.T) {
 	}
 	if rp := model.RetryPolicyOf(n); rp == nil || rp.MaxAttempts != 5 {
 		t.Errorf("RetryPolicyOf = %+v", rp)
-	}
-}
-
-func TestInlineActionOptions(t *testing.T) {
-	fn := func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }
-	n := activity.NewServiceTask("x", activity.WithActionFunc(fn))
-	if model.InlineActionOf(n) == nil {
-		t.Fatal("WithActionFunc: expected inline action")
-	}
-	n2 := activity.NewBusinessRuleTask("y", activity.WithAction(action.ActionFunc(fn)))
-	if model.InlineActionOf(n2) == nil {
-		t.Fatal("WithAction: expected inline action")
 	}
 }
 

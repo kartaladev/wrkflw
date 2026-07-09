@@ -6,15 +6,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
-// resolveInvokeAction resolves the action for a main-action InvokeAction:
-// node-local inline (carried by the engine, scope-correct) → the scope-effective
-// scoped catalog carried on the command (falling back to the top-level def's
-// scoped catalog when the command carries none, e.g. secondary actions) → the
-// global catalog.
+// resolveInvokeAction resolves the action for a main-action InvokeAction: the
+// scope-effective scoped catalog carried on the command (falling back to the
+// top-level def's scoped catalog when the command carries none, e.g. secondary
+// actions) → the global catalog.
 func (driver *ProcessDriver) resolveInvokeAction(def *model.ProcessDefinition, cmd engine.InvokeAction) (action.Action, bool) {
-	if cmd.Inline != nil {
-		return cmd.Inline, true
-	}
 	scoped := cmd.Scoped
 	if scoped == nil && def != nil {
 		scoped = def.ScopedCatalog()

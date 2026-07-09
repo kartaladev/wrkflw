@@ -1,7 +1,6 @@
 package model
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
@@ -85,14 +84,11 @@ func (a ActivityFields) retry() *RetryPolicy  { return a.RetryPolicy }
 func (a ActivityFields) recoveryFlow() string { return a.RecoveryFlow }
 
 // TaskAction holds the action reference shared by ServiceTask and BusinessRuleTask:
-// a catalog name and/or a node-local inline action. Embedded so the ActionOf/
-// InlineActionOf accessors dispatch on its carrier method across the activity leaf.
+// the catalog action name. Embedded so the ActionOf accessor dispatches on its
+// carrier method across the activity leaf.
 type TaskAction struct {
 	// Action is the service-action name; empty means default to the node id.
 	Action string
-	// Inline is a node-local action.Action taking precedence over name lookup.
-	// It is never serialized (re-attached in code on rehydration).
-	Inline action.Action
 }
 
-func (t TaskAction) taskAction() (string, action.Action) { return t.Action, t.Inline }
+func (t TaskAction) taskAction() string { return t.Action }

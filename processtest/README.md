@@ -85,7 +85,7 @@ That's the whole shape: **`New` → `Start` → `DriveToCompletion(..., handler)
 | signal bus | `signal.SignalBus` (opt-in) | `h.Bus()` |
 | driver | `runtime.ProcessDriver` | `h.Driver()` |
 
-Options: `WithAction(name, a)`, `WithActionFunc(name, fn)`, `WithActions(map)`,
+Options: `WithCatalogAction(name, a)`, `WithCatalogActionFunc(name, fn)`, `WithActions(map)`,
 `WithAuthorizer(decideFn)`, `WithActorResolver(r)`, `WithSignalBus()`,
 `WithDefinitions(reg)` (call activities), `WithDriveLimit(n)`, `WithClockStart(t)`.
 
@@ -192,7 +192,7 @@ All three fakes are exported for standalone use too.
 ### `SpyCatalog` — assert which actions ran
 
 ```go
-h, _ := processtest.New(processtest.WithActionFunc("charge",
+h, _ := processtest.New(processtest.WithCatalogActionFunc("charge",
     func(_ context.Context, in map[string]any) (map[string]any, error) {
         return map[string]any{"charged": true}, nil
     }))
@@ -227,7 +227,7 @@ mail := email.NewEmail(
     email.WithSubjectTemplate("Notice"),
     email.WithBodyTemplate("Hello {{.name}}"),
 )
-h, _ := processtest.New(processtest.WithAction("notify", mail))
+h, _ := processtest.New(processtest.WithCatalogAction("notify", mail))
 // ... drive ...
 sent := cap.Sent()
 assert.Len(t, sent, 1)

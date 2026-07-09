@@ -1,9 +1,6 @@
 package activity
 
 import (
-	"context"
-
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
@@ -73,35 +70,11 @@ func (o actionNameOpt) applyServiceTask(s *ServiceTask)       { s.Action = o.nam
 func (o actionNameOpt) applyBusinessRule(b *BusinessRuleTask) { b.Action = o.name }
 
 // WithTaskAction sets the catalog action name. Resolved scoped→global at runtime.
-// Mutually exclusive with WithAction/WithActionFunc (Build reports a conflict).
 func WithTaskAction(name string) interface {
 	ServiceTaskOption
 	BusinessRuleOption
 } {
 	return actionNameOpt{name}
-}
-
-type inlineActionOpt struct{ a action.Action }
-
-func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.Inline = o.a }
-func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.Inline = o.a }
-
-// WithAction attaches a node-local inline action.Action available to this node
-// only. Mutually exclusive with WithTaskAction (Build reports a conflict). Inline
-// actions are never serialized; a persisted definition must re-attach them in code.
-func WithAction(a action.Action) interface {
-	ServiceTaskOption
-	BusinessRuleOption
-} {
-	return inlineActionOpt{a}
-}
-
-// WithActionFunc is WithAction sugar wrapping a plain function as action.ActionFunc.
-func WithActionFunc(fn func(context.Context, map[string]any) (map[string]any, error)) interface {
-	ServiceTaskOption
-	BusinessRuleOption
-} {
-	return inlineActionOpt{actionFunc(fn)}
 }
 
 // --- shared activity-field options (work on all activity constructors) ---

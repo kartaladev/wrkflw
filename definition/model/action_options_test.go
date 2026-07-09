@@ -24,9 +24,6 @@ func TestServiceTaskActionOptions(t *testing.T) {
 				if got := model.ActionOf(node); got != "pay" {
 					t.Fatalf("ActionOf = %q, want %q", got, "pay")
 				}
-				if got := model.InlineActionOf(node) != nil; got != false {
-					t.Fatalf("InlineActionOf present = %v, want %v", got, false)
-				}
 			},
 		},
 		"empty default": {
@@ -34,31 +31,6 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			func(t *testing.T, node model.Node) {
 				if got := model.ActionOf(node); got != "" {
 					t.Fatalf("ActionOf = %q, want %q", got, "")
-				}
-				if got := model.InlineActionOf(node) != nil; got != false {
-					t.Fatalf("InlineActionOf present = %v, want %v", got, false)
-				}
-			},
-		},
-		"inline action": {
-			activity.NewServiceTask("st", activity.WithAction(action.ActionFunc(noopFn))),
-			func(t *testing.T, node model.Node) {
-				if got := model.ActionOf(node); got != "" {
-					t.Fatalf("ActionOf = %q, want %q", got, "")
-				}
-				if got := model.InlineActionOf(node) != nil; got != true {
-					t.Fatalf("InlineActionOf present = %v, want %v", got, true)
-				}
-			},
-		},
-		"inline func": {
-			activity.NewServiceTask("st", activity.WithActionFunc(noopFn)),
-			func(t *testing.T, node model.Node) {
-				if got := model.ActionOf(node); got != "" {
-					t.Fatalf("ActionOf = %q, want %q", got, "")
-				}
-				if got := model.InlineActionOf(node) != nil; got != true {
-					t.Fatalf("InlineActionOf present = %v, want %v", got, true)
 				}
 			},
 		},
@@ -68,20 +40,6 @@ func TestServiceTaskActionOptions(t *testing.T) {
 				if got := model.ActionOf(node); got != "rule" {
 					t.Fatalf("ActionOf = %q, want %q", got, "rule")
 				}
-				if got := model.InlineActionOf(node) != nil; got != false {
-					t.Fatalf("InlineActionOf present = %v, want %v", got, false)
-				}
-			},
-		},
-		"businessrule inline": {
-			activity.NewBusinessRuleTask("br", activity.WithAction(action.ActionFunc(noopFn))),
-			func(t *testing.T, node model.Node) {
-				if got := model.ActionOf(node); got != "" {
-					t.Fatalf("ActionOf = %q, want %q", got, "")
-				}
-				if got := model.InlineActionOf(node) != nil; got != true {
-					t.Fatalf("InlineActionOf present = %v, want %v", got, true)
-				}
 			},
 		},
 		"with name + retry": {
@@ -89,9 +47,6 @@ func TestServiceTaskActionOptions(t *testing.T) {
 			func(t *testing.T, node model.Node) {
 				if got := model.ActionOf(node); got != "pay" {
 					t.Fatalf("ActionOf = %q, want %q", got, "pay")
-				}
-				if got := model.InlineActionOf(node) != nil; got != false {
-					t.Fatalf("InlineActionOf present = %v, want %v", got, false)
 				}
 			},
 		},
@@ -125,19 +80,6 @@ func TestRegisterActionScopedCatalog(t *testing.T) {
 	}
 	if _, ok := cat.Resolve("notify"); !ok {
 		t.Fatal("scoped catalog missing 'notify'")
-	}
-}
-
-func TestBuildRejectsInlineAndNameConflict(t *testing.T) {
-	_, err := model.NewBuilder("d", 1).
-		Add(event.NewStart("st")).
-		Add(activity.NewServiceTask("s", activity.WithTaskAction("x"), activity.WithAction(action.ActionFunc(noopFn)))).
-		Add(event.NewEnd("e")).
-		Connect("st", "s").
-		Connect("s", "e").
-		Build()
-	if !errors.Is(err, model.ErrActionInlineAndNameConflict) {
-		t.Fatalf("err = %v, want ErrActionInlineAndNameConflict", err)
 	}
 }
 

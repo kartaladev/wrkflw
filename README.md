@@ -89,32 +89,37 @@ func main() {
 }
 ```
 
-### Definition-scoped & inline actions
+### Definition-scoped actions
 
-Actions can be bound to a definition or a node in three ways:
+Actions can be bound to a definition or a node in two ways:
 
 | Style | How | Scope |
 |---|---|---|
 | Named catalog reference | `WithTaskAction("name")` | Resolves scoped → global |
-| Node-local inline | `WithActionFunc(fn)` / `WithAction(a)` | That node only; never serialized |
 | Default-by-id | omit name | Node id is the lookup key |
+
+Every action resolves by catalog name — either a definition-scoped entry (`RegisterAction`,
+visible only within that definition) or the global catalog passed to
+`runtime.NewProcessDriver`. There is no node-local inline action; register the action under a
+name and reference it with `WithTaskAction`, or omit the name and let the node id be the
+lookup key.
 
 ```go
 score := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
     return map[string]any{"score": 42}, nil
 })
+notify := action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
+    return in, nil
+})
 
 def, _ := definition.NewBuilder("loan", 1).
     RegisterAction("score", score).                   // def-scoped, by name
+    RegisterAction("notify", notify).                 // def-scoped, resolved by default-by-id below
     Add(event.NewStart("start")).
     Add(activity.NewServiceTask("risk",
         activity.WithTaskAction("score"),             // resolves scoped → global
     )).
-    Add(activity.NewServiceTask("notify",
-        activity.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
-            return in, nil                            // node-local inline
-        }),
-    )).
+    Add(activity.NewServiceTask("notify")).           // default-by-id → looks up "notify"
     Add(activity.NewServiceTask("archive")).          // default-by-id → looks up "archive"
     Add(event.NewEnd("end")).
     Connect("start", "risk").Connect("risk", "notify").
@@ -122,9 +127,7 @@ def, _ := definition.NewBuilder("loan", 1).
     Build()
 ```
 
-`WithTaskAction` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
-returns `model.ErrActionInlineAndNameConflict` if both are set. See
-`runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
+See `runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
 
 ### Author in YAML
 

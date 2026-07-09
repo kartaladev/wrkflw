@@ -44,7 +44,7 @@ func TestReview_BusRoutesPerDefinition(t *testing.T) {
 
 	h, err := processtest.New(
 		processtest.WithSignalBus(),
-		processtest.WithAction("noop", action.ActionFunc(func(_ context.Context, m map[string]any) (map[string]any, error) { return nil, nil })),
+		processtest.WithCatalogAction("noop", action.ActionFunc(func(_ context.Context, m map[string]any) (map[string]any, error) { return nil, nil })),
 	)
 	require.NoError(t, err)
 

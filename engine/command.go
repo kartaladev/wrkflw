@@ -71,27 +71,24 @@ type CancelTimer struct {
 // Name is the lookup key: the explicit action name, or the node id when the node
 // declared no name (default-by-id).
 //
-// Inline and Scoped are set by the engine for MAIN-action invocations only
-// (KindServiceTask / KindBusinessRuleTask entry and retry re-invocation). The
-// engine holds the exact scope-effective definition and node at those sites, so
-// it resolves both tiers from the CORRECT scope — which is essential for nodes
-// nested inside a sub-process, where a runtime-side flat node lookup against the
-// top-level definition would miss (or, with repeated ids across sub-processes,
-// match the wrong node).
+// Scoped is set by the engine for MAIN-action invocations only (KindServiceTask /
+// KindBusinessRuleTask entry and retry re-invocation). The engine holds the exact
+// scope-effective definition at those sites, so it resolves the scoped catalog
+// from the CORRECT scope — which is essential for nodes nested inside a
+// sub-process, where a runtime-side flat node lookup against the top-level
+// definition would miss (or, with repeated ids across sub-processes, match the
+// wrong node).
 //
-//   - Inline is the node-local inline action (WithAction/WithActionFunc), or nil.
-//     When non-nil the runtime runs it directly, bypassing name resolution.
 //   - Scoped is the scope-effective definition's scoped catalog, or nil. The
 //     runtime resolves Name against it before the global catalog.
 //
 // SECONDARY invocations (compensation, deadline, reminder, throw-compensation) leave
-// both nil; the runtime falls back to the top-level definition's scoped catalog
+// Scoped nil; the runtime falls back to the top-level definition's scoped catalog
 // + global for them. That is a documented limitation: secondary actions resolve
 // against the ROOT definition's scoped catalog + global, not nested scoped catalogs.
 type InvokeAction struct {
 	CommandID string
 	Name      string
-	Inline    action.Action
 	Scoped    action.Catalog
 	Input     map[string]any
 	// FireAndForget marks an action the engine runs for its side effect only

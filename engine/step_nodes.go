@@ -90,7 +90,6 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})
@@ -121,7 +120,6 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 	cmds = append(cmds, InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
-		Inline:    model.InlineActionOf(node),
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	})

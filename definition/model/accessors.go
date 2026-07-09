@@ -1,7 +1,6 @@
 package model
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
@@ -51,24 +50,8 @@ func WaitActionOf(n Node) (schedule.TriggerSpec, string) {
 // ActionOf returns the Action field of a node that has one (ServiceTask or
 // BusinessRuleTask), or "" for all other kinds.
 func ActionOf(n Node) string {
-	if t, ok := n.(interface {
-		taskAction() (string, action.Action)
-	}); ok {
-		name, _ := t.taskAction()
-		return name
+	if t, ok := n.(interface{ taskAction() string }); ok {
+		return t.taskAction()
 	}
 	return ""
-}
-
-// InlineActionOf returns the node-local inline action.Action of a ServiceTask or
-// BusinessRuleTask, or nil when the node has none (or is another kind). Inline
-// actions are never serialized; a node decoded from JSONB always returns nil.
-func InlineActionOf(n Node) action.Action {
-	if t, ok := n.(interface {
-		taskAction() (string, action.Action)
-	}); ok {
-		_, inline := t.taskAction()
-		return inline
-	}
-	return nil
 }
