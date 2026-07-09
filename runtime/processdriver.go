@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/authz"
 	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -26,7 +24,6 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 	"github.com/zakyalvan/krtlwrkflw/scheduling"
-	"github.com/zakyalvan/krtlwrkflw/validation"
 )
 
 // ProcessDriver is the reference single-process driver loop.
@@ -43,10 +40,6 @@ type ProcessDriver struct {
 	defsReg    kernel.DefinitionRegistry
 	callLinks  kernel.CallLinkStore
 	timerStore kernel.TimerStore
-	// validationGate validates manually-provided start vars (Drive) against a
-	// start event's InputValidation strategy before an instance is created.
-	// Always non-nil after NewProcessDriver (defaults to validation.NewGate()).
-	validationGate *validation.Gate
 	// jitter supplies the random fraction used to de-synchronize retry backoff.
 	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
 	// trigger so that engine replay remains deterministic.
@@ -134,15 +127,14 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	defaultStore := memStore
 
 	driver := &ProcessDriver{
-		cat:            action.DefaultCatalog(),
-		clk:            clock.System(),
-		idgen:          idgen.XID(),
-		store:          memStore,
-		defsReg:        defaultDefinitionRegistry,
-		jitter:         kernel.NewJitterSource(),
-		actionTimeout:  defaultActionTimeout,
-		msgWaiters:     make(map[msgKey]string),
-		validationGate: validation.NewGate(),
+		cat:           action.DefaultCatalog(),
+		clk:           clock.System(),
+		idgen:         idgen.XID(),
+		store:         memStore,
+		defsReg:       defaultDefinitionRegistry,
+		jitter:        kernel.NewJitterSource(),
+		actionTimeout: defaultActionTimeout,
+		msgWaiters:    make(map[msgKey]string),
 	}
 	for _, o := range opts {
 		o(driver)
@@ -314,24 +306,6 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 		instanceID = id
 	}
 	st := engine.InstanceState{InstanceID: instanceID}
-
-	// Validate the caller-supplied start vars against the (sole) start event's
-	// InputValidation strategy, if any, BEFORE any instance state is created.
-	// Multiple start nodes (event sub-process triggers) are left to the engine's
-	// existing arity check in handleStartInstance; only the single-start-node
-	// case has one unambiguous contract to validate against.
-	starts := def.StartNodes()
-	if len(starts) == 1 {
-		if se, ok := starts[0].(event.StartEvent); ok && se.InputValidation != nil {
-			key := def.ID + ":" + strconv.Itoa(def.Version) + ":" + se.ID()
-			if verr := driver.validationGate.Validate(ctx, key, se.InputValidation, vars); verr != nil {
-				span.RecordError(verr)
-				span.SetStatus(codes.Error, verr.Error())
-				return engine.InstanceState{}, verr
-			}
-		}
-	}
-
 	out, err := driver.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(driver.clk.Now(), vars))
 	if err != nil {
 		span.RecordError(err)

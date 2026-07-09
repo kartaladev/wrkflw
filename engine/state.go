@@ -855,40 +855,6 @@ func (s *InstanceState) eventSubprocessArmByMessage(name, correlationKey string)
 	return nil
 }
 
-// MessageTargetNode returns the ID of the node that a delivered message
-// (name, correlationKey) WOULD wake, without mutating s or applying the
-// trigger. It mirrors, tier-for-tier and predicate-for-predicate, the
-// dispatch priority handleMessageReceived uses (engine/step_triggers.go):
-//
-//  1. event-based-gateway message arm (armedEventByMessage) — the catch-event
-//     node the arm sits on wins.
-//  2. message boundary-event arm (boundaryArmByMessage) — the boundary event
-//     node wins.
-//  3. event-subprocess message arm (eventSubprocessArmByMessage) — the event
-//     sub-process node wins.
-//  4. standalone parked message token (tokenAwaitingMessage) — the node the
-//     token is parked on wins.
-//
-// ok is false when no tier matches (the message would be a clean no-op if
-// delivered). A runtime uses this query to resolve which node's validation
-// strategy applies to an inbound message payload before applying the
-// trigger, so the two must never disagree on which node wins.
-func (s *InstanceState) MessageTargetNode(name, correlationKey string) (nodeID string, ok bool) {
-	if ae := s.armedEventByMessage(name, correlationKey); ae != nil {
-		return ae.CatchNode, true
-	}
-	if ba := s.boundaryArmByMessage(name, correlationKey); ba != nil {
-		return ba.BoundaryNode, true
-	}
-	if ea := s.eventSubprocessArmByMessage(name, correlationKey); ea != nil {
-		return ea.EventSubprocessNode, true
-	}
-	if tok := s.tokenAwaitingMessage(name, correlationKey); tok != nil {
-		return tok.NodeID, true
-	}
-	return "", false
-}
-
 // removeEventSubprocessArm removes the single eventSubprocessArm for the given
 // (enclosingScopeID, eventSubprocessNode) pair. It is a no-op if no such entry exists.
 func (s *InstanceState) removeEventSubprocessArm(enclosingScopeID, espNode string) {
