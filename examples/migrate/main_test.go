@@ -30,7 +30,7 @@ func TestRun_SQLiteUpThenStatusThenVersion(t *testing.T) {
 
 	out.Reset()
 	require.Equal(t, 0, run([]string{"-dialect=sqlite", "-dsn=" + dsn, "version"}, &out))
-	assert.Contains(t, out.String(), "current version: 4", "version should report head 4")
+	assert.Contains(t, out.String(), "current version: 3", "version should report head 3")
 
 	out.Reset()
 	require.Equal(t, 0, run([]string{"-dialect=sqlite", "-dsn=" + dsn, "status"}, &out))

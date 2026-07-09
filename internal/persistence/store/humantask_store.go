@@ -66,18 +66,10 @@ func (s *HumanTaskStore) querier() database.Querier {
 // humanTaskColumns is the canonical column list used in SELECT and INSERT
 // statements. Order must match the scan order in [scanTask].
 const humanTaskColumns = `task_token, instance_id, node_id, state, claimed_by,
-	eligibility, candidates, vars, created_at, due_at, def_id, def_version`
+	eligibility, candidates, vars, created_at, due_at`
 
 // Upsert inserts or replaces the task identified by t.TaskToken.
 // The upsert conflict clause is dialect-specific (via [dialect.Dialect.UpsertTask]).
-//
-// def_id/def_version are intentionally EXCLUDED from every dialect's
-// conflict-update SET clause: they are write-once, set at task creation
-// (see [humantask.HumanTask.DefID]) and never repopulated by the engine's
-// later task-update calls (claim/complete/etc. pass a zeroed skeleton for
-// these fields). Excluding them from SET means a re-upsert preserves the
-// original value instead of clobbering it with zeros; do not add them to
-// the dialect SET clauses.
 func (s *HumanTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) error {
 	eligibility, err := json.Marshal(t.Eligibility)
 	if err != nil {
@@ -95,11 +87,10 @@ func (s *HumanTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) erro
 	q := s.querier()
 	_, err = q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_human_task (`+humanTaskColumns+`)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`+s.dialect.UpsertTask()),
+		 VALUES (?,?,?,?,?,?,?,?,?,?)`+s.dialect.UpsertTask()),
 		t.TaskToken, t.InstanceID, t.NodeID, t.State.String(), t.ClaimedBy,
 		eligibility, candidates, vars,
 		timeArg(s.dialect, t.CreatedAt), s.dueArg(t.DueAt),
-		t.DefID, t.DefVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert task %s: %w", t.TaskToken, err)
@@ -198,7 +189,6 @@ func (s *HumanTaskStore) scanTask(scan func(dest ...any) error) (humantask.Human
 		if err := scan(
 			&t.TaskToken, &t.InstanceID, &t.NodeID, &stateStr, &t.ClaimedBy,
 			&eligibility, &candidates, &vars, &createdStr, &dueStr,
-			&t.DefID, &t.DefVersion,
 		); err != nil {
 			return humantask.HumanTask{}, err
 		}
@@ -221,7 +211,6 @@ func (s *HumanTaskStore) scanTask(scan func(dest ...any) error) (humantask.Human
 		if err := scan(
 			&t.TaskToken, &t.InstanceID, &t.NodeID, &stateStr, &t.ClaimedBy,
 			&eligibility, &candidates, &vars, &createdAt, &dueAt,
-			&t.DefID, &t.DefVersion,
 		); err != nil {
 			return humantask.HumanTask{}, err
 		}

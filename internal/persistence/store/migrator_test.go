@@ -45,12 +45,12 @@ func TestMigrator_SQLiteLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, pending, "fresh DB must have pending migrations")
 
-	// Up applies everything; SQLite head is 0004 (consolidated init + human_task
-	// + timers_trigger + human_task defref).
+	// Up applies everything; SQLite head is 0003 (consolidated init + human_task
+	// + timers_trigger).
 	require.NoError(t, m.Up(ctx))
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(4), v, "SQLite migration head is version 4")
+	assert.Equal(t, int64(3), v, "SQLite migration head is version 3")
 
 	pending, err = m.HasPending(ctx)
 	require.NoError(t, err)
@@ -96,8 +96,8 @@ func (m *Migrator) provDB(t *testing.T) *sql.DB {
 }
 
 // TestMigrator_SQLiteUpByOneAndDown exercises UpByOne and Down against an
-// in-memory SQLite migrator (SQLite head is version 4: consolidated init +
-// human_task + timers_trigger + human_task defref):
+// in-memory SQLite migrator (SQLite head is version 3: consolidated init +
+// human_task + timers_trigger):
 //   - UpByOne applies one pending migration at a time until head.
 //   - Down rolls each migration back until the wrkflw_instances table is gone.
 func TestMigrator_SQLiteUpByOneAndDown(t *testing.T) {
@@ -106,7 +106,7 @@ func TestMigrator_SQLiteUpByOneAndDown(t *testing.T) {
 	require.NoError(t, err)
 	ctx := t.Context()
 
-	// First UpByOne applies migration 1; migrations 2, 3, and 4 are still pending.
+	// First UpByOne applies migration 1; migrations 2 and 3 are still pending.
 	require.NoError(t, m.UpByOne(ctx))
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
@@ -114,36 +114,25 @@ func TestMigrator_SQLiteUpByOneAndDown(t *testing.T) {
 
 	pending, err := m.HasPending(ctx)
 	require.NoError(t, err)
-	assert.True(t, pending, "still pending after one of four migrations")
+	assert.True(t, pending, "still pending after one of three migrations")
 
-	// Second UpByOne applies migration 2; migrations 3 and 4 are still pending.
+	// Second UpByOne applies migration 2; migration 3 is still pending.
 	require.NoError(t, m.UpByOne(ctx))
 	v, err = m.Version(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), v, "second UpByOne must land on version 2")
 
-	// Third UpByOne applies migration 3; migration 4 is still pending.
+	// Third UpByOne reaches head.
 	require.NoError(t, m.UpByOne(ctx))
 	v, err = m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(3), v, "third UpByOne must land on version 3")
-
-	// Fourth UpByOne reaches head.
-	require.NoError(t, m.UpByOne(ctx))
-	v, err = m.Version(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, int64(4), v, "fourth UpByOne must reach head version 4")
+	assert.Equal(t, int64(3), v, "third UpByOne must reach head version 3")
 
 	pending, err = m.HasPending(ctx)
 	require.NoError(t, err)
 	assert.False(t, pending, "no pending migrations after UpByOne reaches head")
 
 	// Down rolls back one migration at a time back to empty.
-	require.NoError(t, m.Down(ctx))
-	v, err = m.Version(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, int64(3), v, "Down rolls back to version 3")
-
 	require.NoError(t, m.Down(ctx))
 	v, err = m.Version(ctx)
 	require.NoError(t, err)
@@ -157,7 +146,7 @@ func TestMigrator_SQLiteUpByOneAndDown(t *testing.T) {
 	require.NoError(t, m.Down(ctx))
 	v, err = m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), v, "version must be 0 after fourth Down")
+	assert.Equal(t, int64(0), v, "version must be 0 after third Down")
 
 	var n int
 	err = m.provDB(t).QueryRow(

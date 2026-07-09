@@ -201,8 +201,6 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 			Candidates:  candidateIDs,
 			State:       humantask.Unclaimed,
 			CreatedAt:   driver.clk.Now(),
-			DefID:       def.ID,
-			DefVersion:  def.Version,
 			// Snapshot the process variables so attribute-based eligibility predicates
 			// that reference data variables (e.g. vars["region"] == "EU") are
 			// deterministically evaluated against the state at task-creation time.
