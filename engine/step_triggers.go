@@ -456,7 +456,6 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 	if humanTdefErr != nil {
 		return StepResult{}, humanTdefErr
 	}
-	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
 	cmds := []Command{UpdateTask{Task: *task}}
 	// Cancel any deadline or reminder timers that were guarding this task.
 	for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
@@ -464,14 +463,25 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 	}
 	// Cancel any boundary arms on this host token (token ID is the same as the
 	// HostToken recorded at arm time; at this point tok.ID is still valid since
-	// moveAlongSingleFlow keeps the same token — it just changes NodeID).
-	// We find the original token ID via the task token's parked token:
-	// tok.ID is already the token that was parked (we looked it up via
-	// tokenAwaiting(t.TaskToken) above, and moveAlongSingleFlow does not change
-	// the token ID, only its NodeID). So tok.ID is the correct HostToken.
+	// the token has not moved yet — tok.ID is already the token that was
+	// parked, looked up via tokenAwaiting(t.TaskToken) above).
 	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
+	// Completion action: park on the action round-trip instead of advancing now.
+	// handleActionCompleted resumes: it merges the action output and advances the
+	// token along the single outgoing flow (the token is still at humanTdef's node).
+	if node, ok := humanTdef.Node(tok.NodeID); ok {
+		if ca := completionActionOf(node); ca != "" {
+			cmdID := s.nextCommandID()
+			cmds = append(cmds, InvokeAction{CommandID: cmdID, Name: ca, Input: copyVars(s.Variables)})
+			tok.State = TokenWaitingCommand
+			tok.AwaitCommand = cmdID
+			return StepResult{State: *s, Commands: cmds}, nil
+		}
+	}
+	// No completion action: advance + drive as before.
+	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
 	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 	if err != nil {
 		return StepResult{}, err

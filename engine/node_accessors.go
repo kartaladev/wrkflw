@@ -27,6 +27,19 @@ func compensationActionOf(n model.Node) string {
 	}
 }
 
+// completionActionOf returns the CompletionAction of a completion-triggered
+// activity node (UserTask, ReceiveTask), or "".
+func completionActionOf(n model.Node) string {
+	switch v := n.(type) {
+	case activity.UserTask:
+		return v.CompletionAction
+	case activity.ReceiveTask:
+		return v.CompletionAction
+	default:
+		return ""
+	}
+}
+
 // cancelHandlerOf returns the CancelHandler of an activity node, or "".
 func cancelHandlerOf(n model.Node) string {
 	switch v := n.(type) {
