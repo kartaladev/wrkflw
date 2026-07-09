@@ -739,6 +739,19 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	if msgTdefErr != nil {
 		return StepResult{}, msgTdefErr
 	}
+	// Completion action: park on the action round-trip instead of advancing now.
+	// handleActionCompleted resumes: it merges the action output and advances the
+	// token along the single outgoing flow (the token is still at msgTdef's node).
+	if node, ok := msgTdef.Node(tok.NodeID); ok {
+		if ca := completionActionOf(node); ca != "" {
+			cmdID := s.nextCommandID()
+			preCmds = append(preCmds, InvokeAction{CommandID: cmdID, Name: ca, Input: copyVars(s.Variables)})
+			tok.State = TokenWaitingCommand
+			tok.AwaitCommand = cmdID
+			return StepResult{State: *s, Commands: preCmds}, nil
+		}
+	}
+	// No completion action: advance + drive as before.
 	s.moveAlongSingleFlow(msgTdef, tok, t.OccurredAt())
 	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 	if err != nil {
