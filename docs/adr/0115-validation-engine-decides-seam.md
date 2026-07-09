@@ -117,10 +117,15 @@ runtime's perspective, not about defining what one is — live in `runtime/valid
   eliminating the drift risk a runtime-side reimplementation would carry.
 - `Step` stays pure: no `Gate`, no validator, no I/O in the engine core; determinism and replay
   safety are unaffected by this feature.
-- The Gate cache key (`keyFor`, `runtime/processdriver.go`) is built in exactly one place —
-  `fmt.Sprintf("%q:%d:%q", def.ID, def.Version, n.ID())`, `%q`-quoted so a colon embedded in any
-  id cannot forge a collision with a different `(def, version, node)` triple's key — rather than
-  three independent hand-rolled versions at each former boundary.
+- The Gate caches compiled validators keyed by the strategy's **descriptor** (`kind` + `schema`),
+  not by node location: `runtime/validation.Gate.Validate(ctx, strategy, input)` derives the key
+  itself. This is what actually determines a compiled validator, so it is correct across scopes (a
+  node nested in a sub-process can share an id with a top-level node yet carry a different schema —
+  keying by node id would collide and validate against the wrong schema), bounded (finite distinct
+  schemas — no per-instance cache growth), and shares one compiled validator across every node that
+  declares the same schema. Non-describable (`callback`) strategies have no descriptor and are built
+  fresh each call (their `NewValidator` is a trivial identity wrap). This replaces the three
+  independent hand-rolled boundary keys.
 - `validate/callback` (arbitrary Go closures) remains usable, but strictly in-memory: it has no
   `Descriptor()` and cannot round-trip through wire/YAML (`ProcessDefinition.MarshalJSON` fails
   closed with `ErrUnserializableValidation` if one reaches serialization) — this is unchanged from

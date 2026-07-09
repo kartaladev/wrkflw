@@ -224,7 +224,7 @@ func (driver *ProcessDriver) validateInput(ctx context.Context, def *model.Proce
 	if strat == nil {
 		return nil
 	}
-	return driver.gate.Validate(ctx, keyFor(def, node), strat, inputOf(trg))
+	return driver.gate.Validate(ctx, strat, inputOf(trg)) // Gate keys by strat's descriptor (kind+schema)
 }
 ```
 
