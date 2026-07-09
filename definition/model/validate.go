@@ -107,6 +107,14 @@ var (
 	// sentinel (see Qualifier), so an authored definition must use a concrete
 	// Version >= 1.
 	ErrInvalidVersion = errors.New("workflow-definition: definition version must be >= 1 (0 reserved as latest sentinel)")
+	// ErrPayloadValidationRequiresMessage is returned when a
+	// KindIntermediateCatchEvent declares payload validation but is not a
+	// message catch. Only message-delivered payloads reach a single validatable
+	// target at runtime; signal catches are broadcast (no single target) and
+	// timer catches carry no payload, so the declared validation would be
+	// silently skipped (fail-open). The combination is rejected at authoring
+	// time to keep validation fail-closed.
+	ErrPayloadValidationRequiresMessage = errors.New("workflow-definition: payload validation requires a message catch")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -371,6 +379,22 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 			if !found {
 				errs = append(errs, fmt.Errorf("%w: node %q flow %q", ErrInvalidRecoveryFlow, n.ID(), rf))
 			}
+		}
+	}
+
+	// IntermediateCatchEvent payload validation is only meaningful for a message
+	// catch: a message is delivered to a single correlated target that can be
+	// validated before commit. Signal catches are broadcast (no single target)
+	// and timer catches carry no payload, so a validation strategy declared on a
+	// non-message catch would be silently skipped at runtime (fail-open). Reject
+	// the combination at authoring time. model cannot import the leaf event
+	// package, so a message catch is identified by a non-empty wire MessageName.
+	for _, n := range d.Nodes {
+		if n.Kind() != KindIntermediateCatchEvent {
+			continue
+		}
+		if ValidationStrategyFor(n) != nil && toWire(n).MessageName == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrPayloadValidationRequiresMessage, n.ID()))
 		}
 	}
 

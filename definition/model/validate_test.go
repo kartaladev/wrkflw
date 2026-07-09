@@ -11,6 +11,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
@@ -1233,5 +1234,93 @@ func TestValidateCancelActions(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) { tc.assert(t, model.Validate(tc.def)) })
+	}
+}
+
+// TestValidate_RejectsPayloadValidationOnNonMessageCatch proves the fail-closed
+// authoring rule: an IntermediateCatchEvent that declares payload validation but
+// is NOT a message catch is rejected, because signal/timer-delivered payloads are
+// never validated at runtime (signals are broadcast — no single validatable
+// target). A message catch with payload validation is allowed, and a ReceiveTask
+// with payload validation is unaffected (the rule is scoped to catch events).
+func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
+	t.Parallel()
+
+	// catchDef wraps a single IntermediateCatchEvent between start and end.
+	catchDef := func(catch model.Node) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "catch-validation", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				catch,
+				event.NewEnd("end"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "catch"},
+				{ID: "f2", Source: "catch", Target: "end"},
+			},
+		}
+	}
+	// recvDef wraps a single ReceiveTask between start and end.
+	recvDef := func(recv model.Node) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "recv-validation", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				recv,
+				event.NewEnd("end"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "recv"},
+				{ID: "f2", Source: "recv", Target: "end"},
+			},
+		}
+	}
+
+	payload := vexpr.New("ok == true")
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "signal catch + payload validation is rejected",
+			def: catchDef(event.NewIntermediateCatch("catch",
+				event.WithCatchSignal("go"), event.WithPayloadValidation(payload))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrPayloadValidationRequiresMessage)
+			},
+		},
+		{
+			name: "timer catch + payload validation is rejected",
+			def: catchDef(event.NewIntermediateCatch("catch",
+				event.WithCatchTimer(schedule.AfterDuration(time.Hour)), event.WithPayloadValidation(payload))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrPayloadValidationRequiresMessage)
+			},
+		},
+		{
+			name: "message catch + payload validation is allowed",
+			def: catchDef(event.NewIntermediateCatch("catch",
+				event.WithCatchMessage("msg", ""), event.WithPayloadValidation(payload))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "receive task + payload validation is unaffected",
+			def: recvDef(activity.NewReceiveTask("recv", "msg",
+				activity.WithPayloadValidation(payload))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
 	}
 }
