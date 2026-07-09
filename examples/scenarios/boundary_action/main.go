@@ -67,7 +67,7 @@ func main() {
 			event.WithBoundaryTimer(schedule.AfterDuration(time.Hour)),
 			event.WithBoundaryAction("notify-overdue"),
 		)).
-		Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
+		Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 		Add(event.NewEnd("end-approved")).
 		Add(event.NewEnd("end-escalated")).
 		Connect("start", "review").

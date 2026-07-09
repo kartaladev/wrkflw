@@ -72,7 +72,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("x")),
+					activity.NewServiceTask("task", activity.WithTaskAction("x")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -89,7 +89,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("x")),
+					activity.NewServiceTask("task", activity.WithTaskAction("x")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -108,7 +108,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					event.NewEnd("end"),
-					activity.NewServiceTask("task", activity.WithActionName("x")),
+					activity.NewServiceTask("task", activity.WithTaskAction("x")),
 				},
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "end"},
@@ -142,8 +142,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -164,8 +164,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -186,8 +186,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -232,7 +232,7 @@ func TestValidate(t *testing.T) {
 					event.NewStart("start"),
 					gateway.NewEventBased("ebg"),
 					event.NewIntermediateCatch("sig-catch", event.WithCatchSignal("sig.a")),
-					activity.NewServiceTask("task", activity.WithActionName("do-work")), // non-catch
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")), // non-catch
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -253,7 +253,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("do-work")),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
 					// NonInterrupting omitted (false) = interrupting, the default.
 					event.NewBoundary("boundary", "task", event.WithBoundarySignal("cancel")),
 					event.NewEnd("end"),
@@ -292,8 +292,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 					// boundary attached to a gateway — not an activity
 					event.NewBoundary("boundary", "xor", event.WithBoundarySignal("cancel")),
@@ -317,8 +317,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("xor"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -339,11 +339,11 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewExclusive("gw"),
-					activity.NewServiceTask("c", activity.WithActionName("c")),
-					activity.NewServiceTask("d", activity.WithActionName("d")),
+					activity.NewServiceTask("c", activity.WithTaskAction("c")),
+					activity.NewServiceTask("d", activity.WithTaskAction("d")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -367,8 +367,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("gw"),
-					activity.NewServiceTask("c", activity.WithActionName("c")),
-					activity.NewServiceTask("d", activity.WithActionName("d")),
+					activity.NewServiceTask("c", activity.WithTaskAction("c")),
+					activity.NewServiceTask("d", activity.WithTaskAction("d")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -390,8 +390,8 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
-					activity.NewServiceTask("orphan", activity.WithActionName("o")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
+					activity.NewServiceTask("orphan", activity.WithTaskAction("o")),
 					event.NewEnd("orphan-end"),
 					event.NewEnd("end"),
 				},
@@ -410,9 +410,9 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
 					event.NewBoundary("bnd", "task", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
-					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
 					event.NewEnd("end"),
 				},
@@ -439,7 +439,7 @@ func TestValidate(t *testing.T) {
 					event.NewStart("start"),
 					activity.NewUserTask("approve", []string{"mgr"}),
 					event.NewBoundary("bnd", "approve", event.WithBoundaryTimer(schedule.AfterExpr("PT1H"))),
-					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
 					event.NewEnd("end"),
 				},
@@ -460,11 +460,11 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
 					event.NewEnd("end"),
-					activity.NewServiceTask("ghost", activity.WithActionName("g")), // unreachable host
+					activity.NewServiceTask("ghost", activity.WithTaskAction("g")), // unreachable host
 					event.NewBoundary("bnd", "ghost", event.WithBoundaryTimer(schedule.AfterExpr("PT1M"))),
-					activity.NewServiceTask("handler", activity.WithActionName("h")),
+					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -498,8 +498,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -522,8 +522,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -546,8 +546,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewInclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 				},
@@ -571,8 +571,8 @@ func TestValidate(t *testing.T) {
 					event.NewStart("s1"),
 					event.NewStart("s2"),
 					gateway.NewExclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					event.NewEnd("end"),
 					event.NewEnd("end2"),
@@ -601,8 +601,8 @@ func TestValidate(t *testing.T) {
 					event.NewStart("start"),
 					gateway.NewExclusive("merge"), // loop-back merge (pure join)
 					gateway.NewParallel("fork"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewParallel("j"),
 					gateway.NewExclusive("loop"), // loop-back decision (pure split)
 					event.NewEnd("end"),
@@ -628,13 +628,13 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("t")),
+					activity.NewServiceTask("task", activity.WithTaskAction("t")),
 					event.NewEnd("end"),
 					// Disconnected component: an exclusive split feeding a parallel join
 					// (would be ErrUnpairedJoin if reachable) — but it is unreachable.
 					gateway.NewExclusive("osplit"),
-					activity.NewServiceTask("ox", activity.WithActionName("x")),
-					activity.NewServiceTask("oy", activity.WithActionName("y")),
+					activity.NewServiceTask("ox", activity.WithTaskAction("x")),
+					activity.NewServiceTask("oy", activity.WithTaskAction("y")),
 					gateway.NewParallel("oj"),
 					event.NewEnd("oend"),
 				},
@@ -659,8 +659,8 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					gateway.NewExclusive("split"),
-					activity.NewServiceTask("a", activity.WithActionName("a")),
-					activity.NewServiceTask("b", activity.WithActionName("b")),
+					activity.NewServiceTask("a", activity.WithTaskAction("a")),
+					activity.NewServiceTask("b", activity.WithTaskAction("b")),
 					gateway.NewInclusive("j"),
 					event.NewEnd("end"),
 				},
@@ -684,7 +684,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("do-work")),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
 					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("missing-node")),
 					event.NewEnd("end"),
 				},
@@ -704,7 +704,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("do-work"), activity.WithCompensateAction("undo-work")),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work"), activity.WithCompensateAction("undo-work")),
 					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("task")),
 					event.NewEnd("end"),
 				},
@@ -784,7 +784,7 @@ func validSubprocessDef(id string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("ns-start"),
-			activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
+			activity.NewServiceTask("ns-task", activity.WithTaskAction("inner")),
 			event.NewEnd("ns-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -860,7 +860,7 @@ func TestValidateSubProcess(t *testing.T) {
 						Version: 1,
 						Nodes: []model.Node{
 							event.NewStart("ns-start"),
-							activity.NewServiceTask("ns-task", activity.WithActionName("inner")),
+							activity.NewServiceTask("ns-task", activity.WithTaskAction("inner")),
 							event.NewEnd("ns-end"),
 						},
 						Flows: []flow.SequenceFlow{
@@ -953,11 +953,11 @@ func TestValidateSubProcess(t *testing.T) {
 						Version: 1,
 						Nodes: []model.Node{
 							event.NewStart("ns-start"),
-							activity.NewServiceTask("na", activity.WithActionName("na")),
-							activity.NewServiceTask("nb", activity.WithActionName("nb")),
+							activity.NewServiceTask("na", activity.WithTaskAction("na")),
+							activity.NewServiceTask("nb", activity.WithTaskAction("nb")),
 							gateway.NewParallel("ngw"),
-							activity.NewServiceTask("nc", activity.WithActionName("nc")),
-							activity.NewServiceTask("nd", activity.WithActionName("nd")),
+							activity.NewServiceTask("nc", activity.WithTaskAction("nc")),
+							activity.NewServiceTask("nd", activity.WithTaskAction("nd")),
 							event.NewEnd("ns-end"),
 						},
 						Flows: []flow.SequenceFlow{
@@ -993,8 +993,8 @@ func TestValidateSubProcess(t *testing.T) {
 						Nodes: []model.Node{
 							event.NewStart("ns-start"),
 							gateway.NewExclusive("nsplit"),
-							activity.NewServiceTask("na", activity.WithActionName("na")),
-							activity.NewServiceTask("nb", activity.WithActionName("nb")),
+							activity.NewServiceTask("na", activity.WithTaskAction("na")),
+							activity.NewServiceTask("nb", activity.WithTaskAction("nb")),
 							gateway.NewParallel("nj"), // parallel join fed by exclusive split
 							event.NewEnd("ns-end"),
 						},
@@ -1037,7 +1037,7 @@ func TestValidateRejectsBadRetryPolicy(t *testing.T) {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a"),
+			activity.NewServiceTask("task", activity.WithTaskAction("a"),
 				activity.WithRetryPolicy(&model.RetryPolicy{InitialInterval: time.Second, BackoffCoef: bad}),
 			),
 			event.NewEnd("end"),
@@ -1059,7 +1059,7 @@ func TestValidateRejectsRecoveryFlowNotFromNode(t *testing.T) {
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRecoveryFlow("nope")),
+			activity.NewServiceTask("task", activity.WithTaskAction("a"), activity.WithRecoveryFlow("nope")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

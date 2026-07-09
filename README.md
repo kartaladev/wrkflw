@@ -73,7 +73,7 @@ func main() {
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		AddStartEvent("start").
 		AddServiceTask("charge",
-			activity.WithActionName("charge-card"),
+			activity.WithTaskAction("charge-card"),
 			activity.WithCompensateAction("refund-card"),
 		).
 		AddUserTask("approve", []string{"manager"}).
@@ -95,7 +95,7 @@ Actions can be bound to a definition or a node in three ways:
 
 | Style | How | Scope |
 |---|---|---|
-| Named catalog reference | `WithActionName("name")` | Resolves scoped → global |
+| Named catalog reference | `WithTaskAction("name")` | Resolves scoped → global |
 | Node-local inline | `WithActionFunc(fn)` / `WithAction(a)` | That node only; never serialized |
 | Default-by-id | omit name | Node id is the lookup key |
 
@@ -108,7 +108,7 @@ def, _ := definition.NewBuilder("loan", 1).
     RegisterAction("score", score).                   // def-scoped, by name
     Add(event.NewStart("start")).
     Add(activity.NewServiceTask("risk",
-        activity.WithActionName("score"),             // resolves scoped → global
+        activity.WithTaskAction("score"),             // resolves scoped → global
     )).
     Add(activity.NewServiceTask("notify",
         activity.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
@@ -122,7 +122,7 @@ def, _ := definition.NewBuilder("loan", 1).
     Build()
 ```
 
-`WithActionName` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
+`WithTaskAction` and `WithAction`/`WithActionFunc` are mutually exclusive on a node; `Build`
 returns `model.ErrActionInlineAndNameConflict` if both are set. See
 `runtime.ExampleDefinitionBuilder_RegisterAction` for a runnable version.
 
@@ -177,7 +177,7 @@ func main() {
 
 	def, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"))).
 		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").
@@ -452,7 +452,7 @@ process (e.g. after a downstream failure), it runs compensation actions in rever
 
 ```go
 activity.NewServiceTask("charge",
-    activity.WithActionName("charge-card"),
+    activity.WithTaskAction("charge-card"),
     activity.WithCompensateAction("refund-card"),
 )
 ```
@@ -716,7 +716,7 @@ is interrupting) — its nested start event carries the trigger.
 
 ```go
 activity.NewServiceTask("charge",
-    activity.WithActionName("charge-card"),
+    activity.WithTaskAction("charge-card"),
     activity.WithCompensateAction("refund-card"),
     activity.WithRetryPolicy(&retry),
 )
@@ -806,9 +806,9 @@ Assemble nodes and flows with the fluent builder, then `Build()` (which validate
 def, err := definition.NewBuilder("order-fulfillment", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewExclusive("route")).
-    Add(activity.NewServiceTask("manual-review", activity.WithActionName("manual-review"))).
-    Add(activity.NewServiceTask("auto-approve", activity.WithActionName("auto-approve"))).
-    Add(activity.NewServiceTask("reject", activity.WithActionName("reject"))).
+    Add(activity.NewServiceTask("manual-review", activity.WithTaskAction("manual-review"))).
+    Add(activity.NewServiceTask("auto-approve", activity.WithTaskAction("auto-approve"))).
+    Add(activity.NewServiceTask("reject", activity.WithTaskAction("reject"))).
     Add(event.NewEnd("end")).
     Connect("start", "route").
     Connect("route", "manual-review", flow.WithCondition("amount > 50000")).
@@ -897,10 +897,10 @@ start → fork[Parallel] → pick-items[Service]  ┐
 def, _ := definition.NewBuilder("order-fulfillment", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewParallel("fork")).
-    Add(activity.NewServiceTask("pick-items", activity.WithActionName("pick-items"))).
-    Add(activity.NewServiceTask("charge-card", activity.WithActionName("charge-card"))).
+    Add(activity.NewServiceTask("pick-items", activity.WithTaskAction("pick-items"))).
+    Add(activity.NewServiceTask("charge-card", activity.WithTaskAction("charge-card"))).
     Add(gateway.NewParallel("join")).
-    Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+    Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship"))).
     Add(event.NewEnd("end")).
     Connect("start", "fork").
     Connect("fork", "pick-items").
@@ -957,7 +957,7 @@ start → review[UserTask, deadline "1h" → flow "review-overdue", action "noti
 ```go
 Add(activity.NewUserTask("review", []string{"reviewer"},
     activity.WithDeadline(`"1h"`, "review-overdue", "notify-overdue"))). // fire-once breach action
-Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
+Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 // ...
 Connect("review", "approved-end").                                  // normal path
 Connect("review", "escalate", flow.WithFlowID("review-overdue")).  // deadline flow
@@ -989,9 +989,9 @@ then: deliver CompensateRequested("") → refund, then cancel-booking → termin
 ```
 
 ```go
-Add(activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensateAction("cancel-booking"))).
-Add(activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensateAction("refund"))).
-Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
+Add(activity.NewServiceTask("book", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-booking"))).
+Add(activity.NewServiceTask("pay", activity.WithTaskAction("pay"), activity.WithCompensateAction("refund"))).
+Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship"))).
 Add(event.NewBoundary("ship-err", "ship", event.WithBoundaryErrorCode(""))).
 // ... after the forward run completes via the boundary path:
 trg := engine.NewCompensateRequested(clk.Now(), "") // "" = full rollback
@@ -1160,7 +1160,7 @@ def, _ := definition.NewBuilder("order-shipping", 1).
     Add(event.NewStart("start")).
     Add(activity.NewReceiveTask("await-payment", "PaymentReceived",
         activity.WithCorrelationKey("orderID"))).
-    Add(activity.NewServiceTask("ship", activity.WithActionName("ship-order"))).
+    Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship-order"))).
     Add(event.NewEnd("end")).
     Connect("start", "await-payment").
     Connect("await-payment", "ship").Connect("ship", "end").
@@ -1213,7 +1213,7 @@ start → charge[Service "charge-card", retry ≤5, backoff ×2] → end
 ```
 
 ```go
-Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
+Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"),
     activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: time.Second, BackoffCoef: 2.0,
     })))

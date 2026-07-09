@@ -31,7 +31,7 @@ func childDef() *model.ProcessDefinition {
 		ID: "child", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("child-start"),
-			activity.NewServiceTask("child-svc", activity.WithActionName("set-output")),
+			activity.NewServiceTask("child-svc", activity.WithTaskAction("set-output")),
 			event.NewEnd("child-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -151,7 +151,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		ID: "failing-child", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("child-start"),
-			activity.NewServiceTask("child-svc", activity.WithActionName("failing-action")),
+			activity.NewServiceTask("child-svc", activity.WithTaskAction("failing-action")),
 			event.NewEnd("child-end"),
 		},
 		Flows: []flow.SequenceFlow{

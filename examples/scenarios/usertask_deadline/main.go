@@ -77,7 +77,7 @@ func main() {
 		Add(activity.NewUserTask("review", []string{"reviewer"},
 			activity.WithDeadline(schedule.AfterDuration(time.Hour), "review-overdue", "notify-overdue"),
 		)).
-		Add(activity.NewServiceTask("escalate", activity.WithActionName("reassign"))).
+		Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 		Add(event.NewEnd("approved-end")).
 		Add(event.NewEnd("escalated-end")).
 		Connect("start", "review").

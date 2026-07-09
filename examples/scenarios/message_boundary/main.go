@@ -81,7 +81,7 @@ func main() {
 		Add(event.NewBoundary("bnd-remind", "approve",
 			event.WithBoundaryMessage("order.remind", "orderID"),
 			event.WithBoundaryNonInterrupting())).
-		Add(activity.NewServiceTask("notify", activity.WithActionName("notify-approver"))).
+		Add(activity.NewServiceTask("notify", activity.WithTaskAction("notify-approver"))).
 		Add(event.NewEnd("end-approved")).
 		Add(event.NewEnd("end-cancelled")).
 		Add(event.NewEnd("end-reminded")).

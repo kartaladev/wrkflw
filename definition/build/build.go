@@ -6,7 +6,7 @@
 //
 //	def, err := definition.NewBuilder("order", 1).
 //		AddStartEvent("s").
-//		AddServiceTask("charge", activity.WithActionName("charge-card")).
+//		AddServiceTask("charge", activity.WithTaskAction("charge-card")).
 //		AddEndEvent("e").
 //		Connect("s", "charge").Connect("charge", "e").
 //		Build()

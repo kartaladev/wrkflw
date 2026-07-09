@@ -12,7 +12,7 @@ import (
 )
 
 // ErrActionInlineAndNameConflict is returned by Build when a node carries both
-// an inline action (WithAction/WithActionFunc) and an action name (WithActionName).
+// an inline action (WithAction/WithActionFunc) and an action name (WithTaskAction).
 var ErrActionInlineAndNameConflict = errors.New("workflow-definition: node has both an inline action and an action name")
 
 // ErrDuplicateScopedAction is returned by Build when RegisterAction registered
@@ -159,7 +159,7 @@ type definitionLoader struct{ *definitionCore }
 //
 //	def, err := definition.NewBuilder("order", 1).
 //		Add(event.NewStart("s")).
-//		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+//		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"))).
 //		Add(event.NewEnd("e")).
 //		Connect("s", "charge").Connect("charge", "e").
 //		Build()

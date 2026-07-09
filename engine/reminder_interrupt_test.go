@@ -51,7 +51,7 @@ func catchReminderInterruptDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewSubProcess("sp", nested),
 			event.NewBoundary("bnd-err", "sp", event.WithBoundaryErrorCode("E1")),
-			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			activity.NewServiceTask("recover", activity.WithTaskAction("recover-action")),
 			event.NewEnd("end"),
 			event.NewEnd("end-ok"),
 		},

@@ -31,7 +31,7 @@ func oneNodeDef(actionName string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName(actionName)),
+			activity.NewServiceTask("task", activity.WithTaskAction(actionName)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

@@ -63,8 +63,8 @@ func main() {
 		Add(gateway.NewEventBased("gw")).
 		Add(event.NewIntermediateCatch("await-payment", event.WithCatchMessage("payment-confirmed", "order"))).
 		Add(event.NewIntermediateCatch("payment-window", event.WithCatchTimer(schedule.AfterDuration(24*time.Hour)))).
-		Add(activity.NewServiceTask("ship", activity.WithActionName("ship-order"))).
-		Add(activity.NewServiceTask("cancel", activity.WithActionName("cancel-order"))).
+		Add(activity.NewServiceTask("ship", activity.WithTaskAction("ship-order"))).
+		Add(activity.NewServiceTask("cancel", activity.WithTaskAction("cancel-order"))).
 		Add(event.NewEnd("shipped-end")).
 		Add(event.NewEnd("cancelled-end")).
 		Connect("start", "gw").

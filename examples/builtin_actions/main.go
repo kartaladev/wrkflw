@@ -144,10 +144,10 @@ func main() {
 	// --- 3. Process definition ——————————————————————————————————————————————
 	def, err := definition.NewBuilder("builtin-actions-demo", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("enrich", activity.WithActionName("enrich"))).
-		Add(activity.NewServiceTask("call-api", activity.WithActionName("call-api"))).
-		Add(activity.NewServiceTask("notify", activity.WithActionName("notify"))).
-		Add(activity.NewServiceTask("audit", activity.WithActionName("audit"))).
+		Add(activity.NewServiceTask("enrich", activity.WithTaskAction("enrich"))).
+		Add(activity.NewServiceTask("call-api", activity.WithTaskAction("call-api"))).
+		Add(activity.NewServiceTask("notify", activity.WithTaskAction("notify"))).
+		Add(activity.NewServiceTask("audit", activity.WithTaskAction("audit"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "enrich").
 		Connect("enrich", "call-api").

@@ -30,7 +30,7 @@ func timerIntermediateE2EDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			event.NewIntermediateCatch("wait1h", event.WithCatchTimer(schedule.AfterExpr(`"1h"`))),
-			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

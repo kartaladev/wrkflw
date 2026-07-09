@@ -15,7 +15,7 @@ import (
 
 func TestServiceTaskConstructorAndAccessors(t *testing.T) {
 	n := activity.NewServiceTask("pay",
-		activity.WithActionName("charge-card"),
+		activity.WithTaskAction("charge-card"),
 		activity.WithCompensateAction("refund-card"),
 		activity.WithRecoveryFlow("to-manual"),
 	)
@@ -158,7 +158,7 @@ func TestSendTaskCorrelationKey(t *testing.T) {
 }
 
 func TestBusinessRuleTaskConstructor(t *testing.T) {
-	n := activity.NewBusinessRuleTask("brt", activity.WithActionName("apply-discount"))
+	n := activity.NewBusinessRuleTask("brt", activity.WithTaskAction("apply-discount"))
 	if n.Kind() != model.KindBusinessRuleTask {
 		t.Fatalf("Kind() = %v, want KindBusinessRuleTask", n.Kind())
 	}
@@ -334,7 +334,7 @@ func TestGatewayConstructors(t *testing.T) {
 
 func TestWithNameOnActivities(t *testing.T) {
 	// WithName option should work on all kinds.
-	n := activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithName("My Task"))
+	n := activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithName("My Task"))
 	if n.Name() != "My Task" {
 		t.Fatalf("Name() = %q, want 'My Task'", n.Name())
 	}
@@ -357,7 +357,7 @@ func TestWithNameOnActivities(t *testing.T) {
 
 func TestRetryPolicyOption(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 5}
-	n := activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithRetryPolicy(p))
+	n := activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithRetryPolicy(p))
 	st, _ := n.(activity.ServiceTask)
 	if st.RetryPolicy != p {
 		t.Fatal("RetryPolicy not set")

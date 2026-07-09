@@ -81,7 +81,7 @@ def := &model.ProcessDefinition{
     ID: "greeting", Version: 1,
     Nodes: []definition.Node{
         event.NewStart("start"),
-        activity.NewServiceTask("greet", activity.WithActionName("greet")),
+        activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
         event.NewEnd("end"),
     },
     Flows: []definition.SequenceFlow{

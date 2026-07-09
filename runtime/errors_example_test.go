@@ -82,9 +82,9 @@ func sagaDef() *model.ProcessDefinition {
 		ID: "saga", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensateAction("cancel-booking")),
-			activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensateAction("refund")),
-			activity.NewServiceTask("ship", activity.WithActionName("ship")),
+			activity.NewServiceTask("book", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-booking")),
+			activity.NewServiceTask("pay", activity.WithTaskAction("pay"), activity.WithCompensateAction("refund")),
+			activity.NewServiceTask("ship", activity.WithTaskAction("ship")),
 			// Boundary catches ship failure so the unhandled-error auto-compensation
 			// path (ADR-0034) is not triggered; RootCompensations stays intact for
 			// the admin-triggered CompensateRequested below.
@@ -191,10 +191,10 @@ func boundaryErrorDef() *model.ProcessDefinition {
 		ID: "boundary-error-recovery", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("risky", activity.WithActionName("risky-action")),
+			activity.NewServiceTask("risky", activity.WithTaskAction("risky-action")),
 			// KindBoundaryEvent: error boundary attached to "risky", catch-all (ErrorCode=="").
 			event.NewBoundary("err-boundary", "risky", event.WithBoundaryErrorCode("")),
-			activity.NewServiceTask("recover", activity.WithActionName("recover-action")),
+			activity.NewServiceTask("recover", activity.WithTaskAction("recover-action")),
 			event.NewEnd("end"),
 			event.NewEnd("end-recovery"),
 		},

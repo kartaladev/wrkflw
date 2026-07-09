@@ -11,7 +11,7 @@ import (
 
 // Option-scoping convention: an option valid on only a subset of activity kinds
 // MUST return a narrow anonymous interface embedding just those kinds' option
-// interfaces (e.g. WithActionName returns interface { ServiceTaskOption;
+// interfaces (e.g. WithTaskAction returns interface { ServiceTaskOption;
 // BusinessRuleOption }), so mis-applying it is a compile-time error. The broad
 // activityOnlyOption type means "valid on EVERY activity kind" and is reserved
 // for genuinely-universal options (WithRetryPolicy, WithCompensateAction,
@@ -72,9 +72,9 @@ type actionNameOpt struct{ name string }
 func (o actionNameOpt) applyServiceTask(s *ServiceTask)       { s.Action = o.name }
 func (o actionNameOpt) applyBusinessRule(b *BusinessRuleTask) { b.Action = o.name }
 
-// WithActionName sets the catalog action name. Resolved scoped→global at runtime.
+// WithTaskAction sets the catalog action name. Resolved scoped→global at runtime.
 // Mutually exclusive with WithAction/WithActionFunc (Build reports a conflict).
-func WithActionName(name string) interface {
+func WithTaskAction(name string) interface {
 	ServiceTaskOption
 	BusinessRuleOption
 } {
@@ -87,7 +87,7 @@ func (o inlineActionOpt) applyServiceTask(s *ServiceTask)       { s.Inline = o.a
 func (o inlineActionOpt) applyBusinessRule(b *BusinessRuleTask) { b.Inline = o.a }
 
 // WithAction attaches a node-local inline action.Action available to this node
-// only. Mutually exclusive with WithActionName (Build reports a conflict). Inline
+// only. Mutually exclusive with WithTaskAction (Build reports a conflict). Inline
 // actions are never serialized; a persisted definition must re-attach them in code.
 func WithAction(a action.Action) interface {
 	ServiceTaskOption

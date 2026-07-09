@@ -37,7 +37,7 @@ func dedupProbeDef() *model.ProcessDefinition {
 		ID: "dedup-probe", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensateAction("cancel-svc")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-svc")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},

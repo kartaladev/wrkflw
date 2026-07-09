@@ -31,8 +31,8 @@ func gatewayBlockDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
-			activity.NewServiceTask("big", activity.WithActionName("noop")),
-			activity.NewServiceTask("small", activity.WithActionName("noop")),
+			activity.NewServiceTask("big", activity.WithTaskAction("noop")),
+			activity.NewServiceTask("small", activity.WithTaskAction("noop")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -106,8 +106,8 @@ func exclusiveRuntimeDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewExclusive("xor"),
-			activity.NewServiceTask("big", activity.WithActionName("noop")),
-			activity.NewServiceTask("small", activity.WithActionName("noop")),
+			activity.NewServiceTask("big", activity.WithTaskAction("noop")),
+			activity.NewServiceTask("small", activity.WithTaskAction("noop")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

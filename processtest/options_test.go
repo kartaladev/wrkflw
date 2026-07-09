@@ -26,7 +26,7 @@ func serviceDef(t *testing.T, actionName string) *model.ProcessDefinition {
 	t.Helper()
 	def, err := definition.NewBuilder("svc", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("call", activity.WithActionName(actionName))).
+		Add(activity.NewServiceTask("call", activity.WithTaskAction(actionName))).
 		Add(event.NewEnd("end")).
 		Connect("start", "call").
 		Connect("call", "end").

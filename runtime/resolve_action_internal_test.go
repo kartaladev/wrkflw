@@ -42,7 +42,7 @@ func resolveActionScopedDef(t *testing.T) *model.ProcessDefinition {
 		RegisterAction("x", tag("scoped")).
 		RegisterAction("scoped-only", tag("scoped-only")).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("idNode", activity.WithActionName("idNode"))).
+		Add(activity.NewServiceTask("idNode", activity.WithTaskAction("idNode"))).
 		Add(event.NewEnd("e")).
 		Connect("start", "idNode").
 		Connect("idNode", "e").

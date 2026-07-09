@@ -22,9 +22,9 @@ func inclusiveForkDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewInclusive("or"),
-			activity.NewServiceTask("ta", activity.WithActionName("a")),
-			activity.NewServiceTask("tb", activity.WithActionName("b")),
-			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			activity.NewServiceTask("ta", activity.WithTaskAction("a")),
+			activity.NewServiceTask("tb", activity.WithTaskAction("b")),
+			activity.NewServiceTask("tc", activity.WithTaskAction("c")),
 			event.NewEnd("ea"),
 			event.NewEnd("eb"),
 			event.NewEnd("ec"),
@@ -88,8 +88,8 @@ func TestInclusiveForkUnconditionalFlowSuppressesDefault(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewInclusive("or"),
-			activity.NewServiceTask("ta", activity.WithActionName("a")), // unconditional (empty condition)
-			activity.NewServiceTask("tb", activity.WithActionName("b")), // default
+			activity.NewServiceTask("ta", activity.WithTaskAction("a")), // unconditional (empty condition)
+			activity.NewServiceTask("tb", activity.WithTaskAction("b")), // default
 			event.NewEnd("ea"),
 			event.NewEnd("eb"),
 		},
@@ -120,11 +120,11 @@ func orDiamondDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewInclusive("orsplit"),
-			activity.NewServiceTask("ta", activity.WithActionName("a")),
-			activity.NewServiceTask("tb", activity.WithActionName("b")),
-			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			activity.NewServiceTask("ta", activity.WithTaskAction("a")),
+			activity.NewServiceTask("tb", activity.WithTaskAction("b")),
+			activity.NewServiceTask("tc", activity.WithTaskAction("c")),
 			gateway.NewInclusive("orjoin"),
-			activity.NewServiceTask("post", activity.WithActionName("post")),
+			activity.NewServiceTask("post", activity.WithTaskAction("post")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -213,7 +213,7 @@ func TestInclusiveForkNoMatchNoDefaultErrors(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewInclusive("or"),
-			activity.NewServiceTask("ta", activity.WithActionName("a")),
+			activity.NewServiceTask("ta", activity.WithTaskAction("a")),
 			event.NewEnd("ea"),
 		},
 		Flows: []flow.SequenceFlow{

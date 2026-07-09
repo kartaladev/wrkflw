@@ -67,7 +67,7 @@ func main() {
 			activity.WithCorrelationKey("orderID"))).
 		Add(event.NewBoundary("bnd-timeout", "await-payment",
 			event.WithBoundaryTimer(schedule.AfterDuration(30*time.Minute)))).
-		Add(activity.NewServiceTask("escalate", activity.WithActionName("escalate-payment"))).
+		Add(activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-payment"))).
 		Add(event.NewEnd("end-settled")).
 		Add(event.NewEnd("end-escalated")).
 		Connect("start", "await-payment").

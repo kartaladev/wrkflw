@@ -18,7 +18,7 @@ import (
 
 func TestRetryPolicyOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 5}
-	n := activity.NewServiceTask("a", activity.WithActionName("act"), activity.WithRetryPolicy(p))
+	n := activity.NewServiceTask("a", activity.WithTaskAction("act"), activity.WithRetryPolicy(p))
 	if model.RetryPolicyOf(n) != p {
 		t.Fatal("RetryPolicyOf did not return the activity's policy")
 	}
@@ -30,7 +30,7 @@ func TestRetryPolicyOf(t *testing.T) {
 		activity.NewUserTask("ut", nil, activity.WithRetryPolicy(p)),
 		activity.NewReceiveTask("rt", "msg", activity.WithRetryPolicy(p)),
 		activity.NewSendTask("st", "msg", activity.WithRetryPolicy(p)),
-		activity.NewBusinessRuleTask("brt", activity.WithActionName("act"), activity.WithRetryPolicy(p)),
+		activity.NewBusinessRuleTask("brt", activity.WithTaskAction("act"), activity.WithRetryPolicy(p)),
 		activity.NewSubProcess("sp", nil, activity.WithRetryPolicy(p)),
 		activity.NewCallActivity("ca", model.Latest("ref"), activity.WithRetryPolicy(p)),
 	}
@@ -73,7 +73,7 @@ func TestDeadlineOf(t *testing.T) {
 	}
 
 	t.Run("service task with deadline", func(t *testing.T) {
-		n := activity.NewServiceTask("st", activity.WithActionName("act"),
+		n := activity.NewServiceTask("st", activity.WithTaskAction("act"),
 			activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"))
 		spec, fl, act := model.DeadlineOf(n)
 		assert(t, spec, fl, act, "sla-flow", "sla-act", 24*time.Hour)
@@ -125,8 +125,8 @@ func TestReminderOf(t *testing.T) {
 }
 
 func TestActionOf(t *testing.T) {
-	assert.Equal(t, "charge-card", model.ActionOf(activity.NewServiceTask("st", activity.WithActionName("charge-card"))))
-	assert.Equal(t, "apply-discount", model.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithActionName("apply-discount"))))
+	assert.Equal(t, "charge-card", model.ActionOf(activity.NewServiceTask("st", activity.WithTaskAction("charge-card"))))
+	assert.Equal(t, "apply-discount", model.ActionOf(activity.NewBusinessRuleTask("brt", activity.WithTaskAction("apply-discount"))))
 	assert.Equal(t, "", model.ActionOf(activity.NewUserTask("ut", nil)))
 	assert.Equal(t, "", model.ActionOf(event.NewStart("s")))
 }
@@ -141,7 +141,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start", event.WithName("Start")),
 			activity.NewServiceTask("charge",
-				activity.WithActionName("charge-card"),
+				activity.WithTaskAction("charge-card"),
 				activity.WithCompensateAction("refund-card"),
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),

@@ -135,13 +135,13 @@ Work on all activity constructors: `WithName`, `WithRetryPolicy(*RetryPolicy)`,
 `WithCancelAction(actionName)`, `WithDeadline(dur, flowID, actionName)`,
 `WithWaitReminder(every, actionName)`.
 
-Kind-specific: `WithActionName` / `WithAction` / `WithActionFunc` (service &
+Kind-specific: `WithTaskAction` / `WithAction` / `WithActionFunc` (service &
 business-rule tasks), `WithEligibilityExpr` / `WithEligibilityPrivileges` (user
 task), `WithCorrelationKey` (receive & send tasks).
 
 ```go
 task := activity.NewServiceTask("charge",
-    activity.WithActionName("charge-card"),
+    activity.WithTaskAction("charge-card"),
     activity.WithName("Charge Card"),
     activity.WithCompensateAction("refund-card"),
     activity.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
@@ -182,7 +182,7 @@ import (
 def, err := definition.NewBuilder("order-fulfillment", 1).
     AddStartEvent("start").
     AddServiceTask("charge",
-        activity.WithActionName("charge-card"),
+        activity.WithTaskAction("charge-card"),
         activity.WithCompensateAction("refund-card")).
     AddUserTask("approve", []string{"manager"}).
     AddEndEvent("end").
@@ -202,7 +202,7 @@ import "github.com/zakyalvan/krtlwrkflw/definition/flow"
 def, err := definition.NewBuilder("loan", 1).
     Add(event.NewStart("start")).
     Add(gateway.NewExclusive("gw")).
-    Add(activity.NewServiceTask("approve", activity.WithActionName("approve-loan"))).
+    Add(activity.NewServiceTask("approve", activity.WithTaskAction("approve-loan"))).
     Add(event.NewEnd("end-ok")).
     Connect("start", "gw").
     Connect("gw", "approve", flow.WithCondition("score >= 700")).

@@ -47,7 +47,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 				activity.WithCompensateAction("cancel-review"),
 			),
 			gateway.NewExclusive("approve", "Approved?"),
-			activity.NewServiceTask("fulfill", activity.WithActionName("fulfillment-service"),
+			activity.NewServiceTask("fulfill", activity.WithTaskAction("fulfillment-service"),
 				activity.WithName("Fulfill Order"),
 				activity.WithCompensateAction("rollback-fulfillment"),
 			),

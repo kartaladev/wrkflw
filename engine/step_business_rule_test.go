@@ -36,7 +36,7 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				ID: "p-svc-default", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("work"), // no WithActionName → default-by-id
+					activity.NewServiceTask("work"), // no WithTaskAction → default-by-id
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -55,7 +55,7 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				ID: "p-svc-explicit", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("work", activity.WithActionName("pay")),
+					activity.NewServiceTask("work", activity.WithTaskAction("pay")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -93,7 +93,7 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				ID: "p-br-explicit", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewBusinessRuleTask("rule", activity.WithActionName("decide")),
+					activity.NewBusinessRuleTask("rule", activity.WithTaskAction("decide")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -112,7 +112,7 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 				ID: "p-br-default", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewBusinessRuleTask("brule"), // no WithActionName → default-by-id
+					activity.NewBusinessRuleTask("brule"), // no WithTaskAction → default-by-id
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{

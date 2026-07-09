@@ -137,7 +137,7 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 					ID: "c-svc", Version: 1,
 					Nodes: []model.Node{
 						event.NewStart("start"),
-						activity.NewServiceTask("svc", activity.WithActionName("work")),
+						activity.NewServiceTask("svc", activity.WithTaskAction("work")),
 						event.NewEnd("end"),
 					},
 					Flows: []flow.SequenceFlow{
@@ -185,7 +185,7 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 		ID: "cc-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
 			activity.NewUserTask("user", []string{"r"}),
 			event.NewEnd("end"),
 		},

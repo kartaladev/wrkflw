@@ -39,7 +39,7 @@ func main() {
 	// Child definition — a reusable credit-check process.
 	child, err := definition.NewBuilder("credit-check", 1).
 		Add(event.NewStart("child-start")).
-		Add(activity.NewServiceTask("score", activity.WithActionName("score"))).
+		Add(activity.NewServiceTask("score", activity.WithTaskAction("score"))).
 		Add(event.NewEnd("child-end")).
 		Connect("child-start", "score").
 		Connect("score", "child-end").

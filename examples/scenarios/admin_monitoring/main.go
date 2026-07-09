@@ -122,7 +122,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.InstanceSto
 	// Simple linear definition: start → greet → end.
 	def, err := definition.NewBuilder("greet", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("greet", activity.WithActionName("say-hello"))).
+		Add(activity.NewServiceTask("greet", activity.WithTaskAction("say-hello"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "greet").
 		Connect("greet", "end").
@@ -198,7 +198,7 @@ func demonstrateLister(ctx context.Context, db *sql.DB, store kernel.InstanceSto
 func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceStore) error {
 	def, err := definition.NewBuilder("incident-demo", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("risky-op", activity.WithActionName("risky"))).
+		Add(activity.NewServiceTask("risky-op", activity.WithTaskAction("risky"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "risky-op").
 		Connect("risky-op", "end").
@@ -294,7 +294,7 @@ func demonstrateDeadLetter(ctx context.Context, db *sql.DB, store kernel.Instanc
 	// A simple definition that completes immediately → emits a terminal outbox event.
 	def, err := definition.NewBuilder("dl-demo", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("work", activity.WithActionName("work"))).
+		Add(activity.NewServiceTask("work", activity.WithTaskAction("work"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "work").
 		Connect("work", "end").

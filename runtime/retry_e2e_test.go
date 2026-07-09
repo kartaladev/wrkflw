@@ -31,7 +31,7 @@ func retryE2EDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("task", activity.WithActionName("a"), activity.WithRetryPolicy(&model.RetryPolicy{
+			activity.NewServiceTask("task", activity.WithTaskAction("a"), activity.WithRetryPolicy(&model.RetryPolicy{
 				MaxAttempts:     5,
 				InitialInterval: time.Second,
 				BackoffCoef:     2.0,

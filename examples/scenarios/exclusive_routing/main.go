@@ -37,11 +37,11 @@ func main() {
 	// Build the process definition once; run it multiple times with different vars.
 	def, err := definition.NewBuilder("loan-approval", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("check-credit", activity.WithActionName("check-credit"))).
+		Add(activity.NewServiceTask("check-credit", activity.WithTaskAction("check-credit"))).
 		Add(gateway.NewExclusive("route")).
-		Add(activity.NewServiceTask("manual-review", activity.WithActionName("manual-review"))).
-		Add(activity.NewServiceTask("auto-approve", activity.WithActionName("auto-approve"))).
-		Add(activity.NewServiceTask("reject", activity.WithActionName("reject"))).
+		Add(activity.NewServiceTask("manual-review", activity.WithTaskAction("manual-review"))).
+		Add(activity.NewServiceTask("auto-approve", activity.WithTaskAction("auto-approve"))).
+		Add(activity.NewServiceTask("reject", activity.WithTaskAction("reject"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "check-credit").
 		Connect("check-credit", "route").

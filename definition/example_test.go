@@ -48,7 +48,7 @@ func ExampleNewBuilder() {
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		AddStartEvent("start").
 		AddServiceTask("charge",
-			activity.WithActionName("charge-card"),
+			activity.WithTaskAction("charge-card"),
 			activity.WithCompensateAction("refund-card"),
 		).
 		AddUserTask("approve", []string{"manager"}).

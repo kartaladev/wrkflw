@@ -126,8 +126,8 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewServiceTask("svc-a", activity.WithActionName("do-a"), activity.WithCancelAction("cleanup-a")),
-			activity.NewServiceTask("svc-b", activity.WithActionName("do-b")),
+			activity.NewServiceTask("svc-a", activity.WithTaskAction("do-a"), activity.WithCancelAction("cleanup-a")),
+			activity.NewServiceTask("svc-b", activity.WithTaskAction("do-b")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
@@ -172,7 +172,7 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 		ID: "inner", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action"), activity.WithCancelAction("inner-cleanup")),
+			activity.NewServiceTask("inner-svc", activity.WithTaskAction("inner-action"), activity.WithCancelAction("inner-cleanup")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -243,7 +243,7 @@ func TestCancelHandler_WithCompensateAction(t *testing.T) {
 		ID: "ch-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
 			activity.NewUserTask("user", nil, activity.WithCancelAction("release-hold")),
 			event.NewEnd("end"),
 		},
@@ -339,7 +339,7 @@ func TestCancelHandler_Determinism(t *testing.T) {
 		CancelActions: []string{"def-action"},
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("work"), activity.WithCancelAction("node-cleanup")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("work"), activity.WithCancelAction("node-cleanup")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

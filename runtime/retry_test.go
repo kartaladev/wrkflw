@@ -34,7 +34,7 @@ func noRetryServiceTaskDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			// RetryPolicy intentionally omitted — no node-level policy.
-			activity.NewServiceTask("task", activity.WithActionName("a")),
+			activity.NewServiceTask("task", activity.WithTaskAction("a")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -137,7 +137,7 @@ func incidentTaskDef() *model.ProcessDefinition {
 			// RetryPolicy intentionally omitted — default policy of MaxAttempts=1
 			// causes the first failure to exhaust the budget immediately, parking
 			// the instance as an incident rather than scheduling a retry.
-			activity.NewServiceTask("task", activity.WithActionName("a")),
+			activity.NewServiceTask("task", activity.WithTaskAction("a")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

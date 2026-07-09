@@ -20,7 +20,7 @@ func ExampleDefinitionBuilder_RegisterAction() {
 	def, err := definition.NewBuilder("loan", 1).
 		RegisterAction("score", score). // def-scoped, by name
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("risk", activity.WithActionName("score"))). // scoped→global
+		Add(activity.NewServiceTask("risk", activity.WithTaskAction("score"))). // scoped→global
 		Add(activity.NewServiceTask("notify", activity.WithActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return in, nil // node-local inline
 		}))).

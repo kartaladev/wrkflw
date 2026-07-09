@@ -809,7 +809,7 @@ loader API (e.g. a test helper that only registers actions):
 
 ```go
 b := definition.NewBuilder("order", 1).
-    AddServiceTask("charge", activity.WithActionName("charge-card"))
+    AddServiceTask("charge", activity.WithTaskAction("charge-card"))
 // hand off to a helper that knows nothing about the structure:
 myHelper(b.Loader())
 ```

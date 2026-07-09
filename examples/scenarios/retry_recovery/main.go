@@ -64,7 +64,7 @@ func main() {
 	def, err := definition.NewBuilder("payment", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("charge",
-			activity.WithActionName("charge-card"),
+			activity.WithTaskAction("charge-card"),
 			activity.WithRetryPolicy(&model.RetryPolicy{
 				MaxAttempts:     5,
 				InitialInterval: time.Second,

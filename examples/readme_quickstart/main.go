@@ -48,7 +48,7 @@ func main() {
 	// "manager" actor. Neither is exercised in this quickstart; they show the shape.
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"),
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"),
 			activity.WithCompensateAction("refund-card"),
 		)).
 		Add(activity.NewUserTask("approve", []string{"manager"})).
@@ -102,7 +102,7 @@ flows:
 	// to completion. Drive returns the terminal InstanceState with its variables.
 	simpleDef, _ := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"))).
 		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").

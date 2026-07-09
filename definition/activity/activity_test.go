@@ -15,7 +15,7 @@ import (
 func TestServiceTaskOptions(t *testing.T) {
 	n := activity.NewServiceTask("charge",
 		activity.WithName("Charge"),
-		activity.WithActionName("charge-card"),
+		activity.WithTaskAction("charge-card"),
 		activity.WithCompensateAction("refund"),
 		activity.WithCancelAction("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
@@ -99,7 +99,7 @@ func TestOtherActivityConstructors(t *testing.T) {
 		{activity.NewUserTask("u", []string{"mgr"}, activity.WithEligibilityExpr(`vars["r"]=="EU"`), activity.WithEligibilityPrivileges("t claim")), model.KindUserTask},
 		{activity.NewReceiveTask("r", "msg", activity.WithCorrelationKey("k")), model.KindReceiveTask},
 		{activity.NewSendTask("s", "msg", activity.WithCorrelationKey("k")), model.KindSendTask},
-		{activity.NewBusinessRuleTask("b", activity.WithActionName("rule")), model.KindBusinessRuleTask},
+		{activity.NewBusinessRuleTask("b", activity.WithTaskAction("rule")), model.KindBusinessRuleTask},
 		{activity.NewSubProcess("sp", sub, activity.WithName("Sub")), model.KindSubProcess},
 		{activity.NewCallActivity("ca", model.Version("ref", 1), activity.WithName("Call")), model.KindCallActivity},
 	}
@@ -138,7 +138,7 @@ func TestActivityRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "a", Version: 1,
 		Nodes: []model.Node{
-			activity.NewServiceTask("st", activity.WithActionName("act"), activity.WithDeadline(schedule.AfterExpr(`"1h"`), "f", "a")),
+			activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithDeadline(schedule.AfterExpr(`"1h"`), "f", "a")),
 			activity.NewUserTask("ut", []string{"mgr"}, activity.WithEligibilityExpr("x")),
 			activity.NewReceiveTask("rt", "m", activity.WithCorrelationKey("k")),
 			activity.NewSendTask("snt", "m"),

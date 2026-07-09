@@ -44,7 +44,7 @@ func scopeCompensationDef() *model.ProcessDefinition {
 		ID: "scope-comp-nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensateAction("cancel-book")),
+			activity.NewServiceTask("inner-svc", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-book")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{

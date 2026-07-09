@@ -32,7 +32,7 @@ func compensableDef() *model.ProcessDefinition {
 		ID: "comp-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -48,7 +48,7 @@ func nonCompensableDef() *model.ProcessDefinition {
 		ID: "plain-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("charge")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -66,7 +66,7 @@ func compensableSubProcessDef() *model.ProcessDefinition {
 		ID: "nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensateAction("cancel-booking")),
+			activity.NewServiceTask("inner-svc", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-booking")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -259,7 +259,7 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 		ID: "nested-hoist", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensateAction("cancel-inner")),
+			activity.NewServiceTask("inner-svc", activity.WithTaskAction("book-inner"), activity.WithCompensateAction("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -355,7 +355,7 @@ func openSubProcessWithParkDef() *model.ProcessDefinition {
 		ID: "nested-park", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensateAction("x")),
+			activity.NewServiceTask("svc", activity.WithTaskAction("book"), activity.WithCompensateAction("x")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("inner-end"),
 		},
@@ -444,9 +444,9 @@ func threeCompensableDef() *model.ProcessDefinition {
 		ID: "three-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("step1", activity.WithActionName("a1"), activity.WithCompensateAction("c1")),
-			activity.NewServiceTask("step2", activity.WithActionName("a2"), activity.WithCompensateAction("c2")),
-			activity.NewServiceTask("step3", activity.WithActionName("a3"), activity.WithCompensateAction("c3")),
+			activity.NewServiceTask("step1", activity.WithTaskAction("a1"), activity.WithCompensateAction("c1")),
+			activity.NewServiceTask("step2", activity.WithTaskAction("a2"), activity.WithCompensateAction("c2")),
+			activity.NewServiceTask("step3", activity.WithTaskAction("a3"), activity.WithCompensateAction("c3")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},
@@ -635,7 +635,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 		ID: "nested-order", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-book"), activity.WithCompensateAction("inner-comp")),
+			activity.NewServiceTask("inner-svc", activity.WithTaskAction("inner-book"), activity.WithCompensateAction("inner-comp")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -647,7 +647,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 		ID: "order-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("rootSvc", activity.WithActionName("root-book"), activity.WithCompensateAction("root-comp")),
+			activity.NewServiceTask("rootSvc", activity.WithTaskAction("root-book"), activity.WithCompensateAction("root-comp")),
 			activity.NewSubProcess("sub", nested),
 			activity.NewUserTask("rootUserTask", nil),
 			event.NewEnd("end"),
@@ -761,7 +761,7 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 		ID: "grandchild", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("g-start"),
-			activity.NewServiceTask("grandchildSvc", activity.WithActionName("gc-book"), activity.WithCompensateAction("gc-comp")),
+			activity.NewServiceTask("grandchildSvc", activity.WithTaskAction("gc-book"), activity.WithCompensateAction("gc-comp")),
 			event.NewEnd("g-end"),
 		},
 		Flows: []flow.SequenceFlow{

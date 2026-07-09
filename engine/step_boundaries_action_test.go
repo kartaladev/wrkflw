@@ -236,7 +236,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 			ID: "p-bnd-act-err-direct", Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("start"),
-				activity.NewServiceTask("svc", activity.WithActionName("svc-action")),
+				activity.NewServiceTask("svc", activity.WithTaskAction("svc-action")),
 				event.NewBoundary("bnd-err", "svc",
 					event.WithBoundaryErrorCode("E1"),
 					event.WithBoundaryAction("notify"),
@@ -302,7 +302,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 			ID: "sp-bnd-act-err", Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("inner-start"),
-				activity.NewServiceTask("inner-svc", activity.WithActionName("inner-action")),
+				activity.NewServiceTask("inner-svc", activity.WithTaskAction("inner-action")),
 				event.NewErrorEnd("inner-err-end", "E1"),
 			},
 			Flows: []flow.SequenceFlow{

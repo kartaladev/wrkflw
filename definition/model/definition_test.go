@@ -20,7 +20,7 @@ func linearDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -153,7 +153,7 @@ func TestNodeSubProcessField(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("ns-start"),
-			activity.NewServiceTask("ns-task", activity.WithActionName("inner-action")),
+			activity.NewServiceTask("ns-task", activity.WithTaskAction("inner-action")),
 			event.NewEnd("ns-end"),
 		},
 		Flows: []flow.SequenceFlow{

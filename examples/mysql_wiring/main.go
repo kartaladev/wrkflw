@@ -200,7 +200,7 @@ func run(logger *slog.Logger) error {
 	// --- A demo definition + catalog so the engine can actually run instances ---
 	def, derr := definition.NewBuilder("order", 1).
 		Add(event.NewStart("s")).
-		Add(activity.NewServiceTask("charge", activity.WithActionName("charge-card"))).
+		Add(activity.NewServiceTask("charge", activity.WithTaskAction("charge-card"))).
 		Add(event.NewEnd("e")).
 		Connect("s", "charge").
 		Connect("charge", "e").

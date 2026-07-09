@@ -22,7 +22,7 @@ func linearDef() *model.ProcessDefinition {
 		ID: "greeting", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("greet", activity.WithActionName("greet")),
+			activity.NewServiceTask("greet", activity.WithTaskAction("greet")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -38,8 +38,8 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewServiceTask("a", activity.WithActionName("a")),
-			activity.NewServiceTask("b", activity.WithActionName("b")),
+			activity.NewServiceTask("a", activity.WithTaskAction("a")),
+			activity.NewServiceTask("b", activity.WithTaskAction("b")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
 		},
@@ -82,9 +82,9 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewInclusive("orsplit"),
-			activity.NewServiceTask("ta", activity.WithActionName("a")),
-			activity.NewServiceTask("tb", activity.WithActionName("b")),
-			activity.NewServiceTask("tc", activity.WithActionName("c")),
+			activity.NewServiceTask("ta", activity.WithTaskAction("a")),
+			activity.NewServiceTask("tb", activity.WithTaskAction("b")),
+			activity.NewServiceTask("tc", activity.WithTaskAction("c")),
 			gateway.NewInclusive("orjoin"),
 			event.NewEnd("end"),
 		},

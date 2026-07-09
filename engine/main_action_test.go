@@ -21,7 +21,7 @@ func TestMainActionName(t *testing.T) {
 	cases := []testCase{
 		{
 			name: "explicit name on service task",
-			node: activity.NewServiceTask("s", activity.WithActionName("pay")),
+			node: activity.NewServiceTask("s", activity.WithTaskAction("pay")),
 			assert: func(t *testing.T, got string) {
 				assert.Equal(t, "pay", got)
 			},
@@ -35,7 +35,7 @@ func TestMainActionName(t *testing.T) {
 		},
 		{
 			name: "explicit name on business rule task",
-			node: activity.NewBusinessRuleTask("b", activity.WithActionName("rule")),
+			node: activity.NewBusinessRuleTask("b", activity.WithTaskAction("rule")),
 			assert: func(t *testing.T, got string) {
 				assert.Equal(t, "rule", got)
 			},

@@ -112,7 +112,7 @@ func (CallActivity) Kind() model.NodeKind { return model.KindCallActivity }
 
 // --- constructors ---
 
-// NewServiceTask constructs a ServiceTask. Set the action with WithActionName
+// NewServiceTask constructs a ServiceTask. Set the action with WithTaskAction
 // (catalog reference) or WithAction/WithActionFunc (node-local inline); with
 // neither, the action name defaults to the node id at execution time.
 func NewServiceTask(id string, opts ...ServiceTaskOption) model.Node {
@@ -151,7 +151,7 @@ func NewSendTask(id, messageName string, opts ...SendTaskOption) model.Node {
 }
 
 // NewBusinessRuleTask constructs a BusinessRuleTask. Action configuration mirrors
-// NewServiceTask (WithActionName / WithAction / WithActionFunc / default-by-id).
+// NewServiceTask (WithTaskAction / WithAction / WithActionFunc / default-by-id).
 func NewBusinessRuleTask(id string, opts ...BusinessRuleOption) model.Node {
 	b := BusinessRuleTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {

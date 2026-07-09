@@ -36,7 +36,7 @@ func TestReview_BusRoutesPerDefinition(t *testing.T) {
 	defB, err := definition.NewBuilder("defB", 1).
 		Add(event.NewStart("start")).
 		Add(event.NewIntermediateCatch("await", event.WithCatchSignal("go"))).
-		Add(activity.NewServiceTask("run", activity.WithActionName("noop"))).
+		Add(activity.NewServiceTask("run", activity.WithTaskAction("noop"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "await").Connect("await", "run").Connect("run", "end").
 		Build()

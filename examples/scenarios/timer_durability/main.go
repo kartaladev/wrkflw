@@ -101,7 +101,7 @@ func main() {
 			event.WithCatchTimer(schedule.AfterDuration(1*time.Hour)),
 		)).
 		Add(activity.NewServiceTask("announce",
-			activity.WithActionName("announce"),
+			activity.WithTaskAction("announce"),
 		)).
 		Add(event.NewEnd("end")).
 		Connect("start", "wait1h").
