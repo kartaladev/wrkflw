@@ -8,6 +8,7 @@ package engine_test
 // is the regression guard for that.
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -405,4 +406,101 @@ func TestReverseCompletionActionReversibility(t *testing.T) {
 	assert.Empty(t, r5.State.RootCompensations, "records cleared after full reverse")
 	require.Len(t, r5.State.Tokens, 1)
 	assert.Equal(t, "u1", r5.State.Tokens[0].NodeID, "resumed from start and advanced back to the human task")
+}
+
+// reverseCompletableDef: start -> svc -> end, with NO compensate action, so
+// completing "do" auto-drives the token all the way to "end" within the same
+// Step call — the smallest def that reaches StatusCompleted synchronously.
+// Used only by TestReverseToStart_RejectsTerminalInstance to reach a genuine
+// StatusCompleted instance via normal drive (the Completed case in the table).
+func reverseCompletableDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-rev-completed", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithTaskAction("do")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "svc"},
+			{ID: "f2", Source: "svc", Target: "end"},
+		},
+	}
+}
+
+// TestReverseToStart_RejectsTerminalInstance is the Fork A (ADR-0109 hardening)
+// regression: a reverse trigger (NewReverseToStart, i.e. CompensateRequested
+// with ReverseNode != "") against an already-terminal instance (Completed,
+// Failed, or Terminated) must return a workflow-engine error instead of
+// silently resurrecting the instance. This closes the TOCTOU race between the
+// runtime facade's pre-check Load and the engine's own ApplyTrigger Load.
+//
+// Scope is strictly the reverse intent (t.ReverseNode != ""); a plain
+// NewCompensateRequested (admin/partial rollback) on a terminal instance keeps
+// today's behavior and is NOT covered here — see
+// TestFullCompensation_WithoutReverse_StillTerminates and the existing partial
+// admin-rollback tests, which are unaffected by this guard.
+func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name  string
+		state func(t *testing.T) (def *model.ProcessDefinition, s engine.InstanceState)
+	}
+
+	cases := []testCase{
+		{
+			name: "completed instance (driven via normal execution)",
+			state: func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
+				t.Helper()
+				def := reverseCompletableDef()
+				r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+					engine.NewStartInstance(t0, nil), engine.StepOptions{})
+				require.NoError(t, err)
+				cmdID := findInvokeActionID(t, r1.Commands, "do")
+				r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdID, nil), engine.StepOptions{})
+				require.NoError(t, err)
+				require.Equal(t, engine.StatusCompleted, r2.State.Status, "precondition: instance must have completed")
+				return def, r2.State
+			},
+		},
+		{
+			name: "failed instance (hand-crafted terminal state)",
+			state: func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
+				t.Helper()
+				def := reverseSvcDef()
+				return def, engine.InstanceState{
+					InstanceID: "i1",
+					Status:     engine.StatusFailed,
+				}
+			},
+		},
+		{
+			name: "terminated instance (hand-crafted terminal state)",
+			state: func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
+				t.Helper()
+				def := reverseSvcDef()
+				return def, engine.InstanceState{
+					InstanceID: "i1",
+					Status:     engine.StatusTerminated,
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			def, before := tc.state(t)
+			beforeStatus := before.Status
+
+			_, err := engine.Step(def, before, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+
+			require.Error(t, err, "reversing a terminal instance must be rejected")
+			assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
+			assert.Contains(t, err.Error(), "terminal", "error must explain the rejection is due to terminal status")
+			// Step is pure (clones state internally); the caller's original state
+			// value must be unaffected by the erroring call.
+			assert.Equal(t, beforeStatus, before.Status, "original state must be unchanged after a rejected reverse")
+		})
+	}
 }

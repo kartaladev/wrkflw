@@ -48,6 +48,19 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
 		return StepResult{State: *s}, nil
 	}
+	// Reject a reverse trigger (ADR-0109 ReverseInstance) against an
+	// already-terminal instance instead of silently resurrecting it. This is a
+	// defense-in-depth guard: the runtime facade (ProcessDriver.ReverseInstance)
+	// already rejects a terminal instance on its own pre-check Load, but a
+	// concurrent completion between that Load and this Step call (TOCTOU) would
+	// otherwise slip through undetected. Scoped STRICTLY to reverse intent
+	// (t.ReverseNode != "") — a plain admin/partial CompensateRequested keeps
+	// today's behaviour (e.g. cancel/error terminal paths that re-deliver
+	// CompensateRequested on an already-terminal instance as a no-op-ish
+	// full rollback).
+	if t.ReverseNode != "" && s.Status.IsTerminal() {
+		return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse a terminal instance (status %v)", s.Status)
+	}
 	s.Status = StatusCompensating
 	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode, eval, t.ReverseNode, t.ResetVars)
 }
@@ -362,9 +375,11 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			sc.Compensations = nil
 		}
 		s.Status = StatusRunning
-		// The primary use case reverses a COMPLETED instance, which stamped
-		// EndedAt when it reached its end event. A Running instance must have
-		// EndedAt == nil, so clear it here to restore that invariant.
+		// stepCompensateRequested rejects a reverse trigger against a terminal
+		// instance (ADR-0109 hardening), so a reverse walk only ever runs
+		// against a Running instance — EndedAt is already nil here. This
+		// assignment is defensive-only (restores the invariant if that guard is
+		// ever bypassed) and is cheap enough to keep unconditionally.
 		s.EndedAt = nil
 		// History is intentionally RETAINED (not reset) across the reverse:
 		// re-execution from ReverseNode appends fresh visits on top of it, so

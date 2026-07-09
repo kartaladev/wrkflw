@@ -231,6 +231,26 @@ func (s Status) String() string {
 	}
 }
 
+// IsTerminal reports whether s is one of the instance's terminal statuses
+// (StatusCompleted, StatusFailed, StatusTerminated) — a status from which no
+// further trigger may resume normal execution. StatusRunning and
+// StatusCompensating (mid-flight) are not terminal; an out-of-range Status
+// value is also treated as not terminal.
+//
+// Used by stepCompensateRequested to reject a reverse trigger
+// (CompensateRequested.ReverseNode != "") against an already-terminal
+// instance (ADR-0109 hardening) — a defense-in-depth guard against the TOCTOU
+// race where an instance completes between a caller's pre-check Load and the
+// engine's own state.
+func (s Status) IsTerminal() bool {
+	switch s {
+	case StatusCompleted, StatusFailed, StatusTerminated:
+		return true
+	default:
+		return false
+	}
+}
+
 // TokenState is the execution state of a single token.
 type TokenState int
 

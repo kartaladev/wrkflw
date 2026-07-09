@@ -261,6 +261,11 @@ func NewCompensateRequested(at time.Time, toNode string) CompensateRequested {
 // NewReverseToStart builds a CompensateRequested that compensates ALL records and,
 // on finish, resumes at startNode (StatusRunning) with variables reset to
 // StartVariables — the full-reverse form of ReverseInstance (does NOT terminate).
+//
+// Delivering this trigger against an already-terminal instance (StatusCompleted,
+// StatusFailed, StatusTerminated) is rejected with a workflow-engine error rather
+// than resurrecting it (ADR-0109 hardening) — this is a defense-in-depth guard
+// behind the runtime facade's own terminal pre-check.
 func NewReverseToStart(at time.Time, startNode string) CompensateRequested {
 	return CompensateRequested{baseTrigger: baseTrigger{at: at}, ReverseNode: startNode, ResetVars: true}
 }
