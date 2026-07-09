@@ -437,7 +437,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("approve", activity.WithCandidateRoles("mgr")),
+					activity.NewUserTask("approve", activity.WithEligibleRoles("mgr")),
 					event.NewBoundary("bnd", "approve", event.WithBoundaryTimer(schedule.AfterExpr("PT1H"))),
 					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
@@ -1214,7 +1214,7 @@ func TestValidate_RejectsRecurringDeadlineTrigger(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"),
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.Every(24*time.Hour), "escalate")),
 					event.NewEnd("end"),
 					event.NewEnd("escalate"),
@@ -1235,7 +1235,7 @@ func TestValidate_RejectsRecurringDeadlineTrigger(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"),
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
 					event.NewEnd("end"),
 					event.NewEnd("escalate"),
@@ -1427,7 +1427,7 @@ func TestValidate_RejectsCompletionActionOnUnsupportedKind(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("u1", activity.WithCandidateRoles("r"), activity.WithCompletionAction("recordApproval")),
+					activity.NewUserTask("u1", activity.WithEligibleRoles("r"), activity.WithCompletionAction("recordApproval")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1484,7 +1484,7 @@ func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"), activity.WithDeadlineAction("notify")),
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"), activity.WithDeadlineAction("notify")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1502,7 +1502,7 @@ func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"),
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate"),
 						activity.WithDeadlineAction("notify")),
 					event.NewEnd("end"),
@@ -1525,7 +1525,7 @@ func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"),
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
 					event.NewEnd("end"),
 					event.NewEnd("escalate"),
@@ -1570,7 +1570,7 @@ func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("u1", activity.WithCandidateRoles("r"), activity.WithCompensateAction("refund")),
+					activity.NewUserTask("u1", activity.WithEligibleRoles("r"), activity.WithCompensateAction("refund")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1606,7 +1606,7 @@ func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("u1", activity.WithCandidateRoles("r"),
+					activity.NewUserTask("u1", activity.WithEligibleRoles("r"),
 						activity.WithCompletionAction("recordApproval"),
 						activity.WithCompensateAction("refund")),
 					event.NewEnd("end"),

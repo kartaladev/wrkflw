@@ -33,7 +33,7 @@ func notifierChildDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("child-start"),
-			activity.NewUserTask("child-task", activity.WithCandidateRoles("worker")),
+			activity.NewUserTask("child-task", activity.WithEligibleRoles("worker")),
 			event.NewEnd("child-end"),
 		},
 		Flows: []flow.SequenceFlow{

@@ -56,7 +56,7 @@ func main() {
 	// action "nudge-reviewer" runs fire-and-forget once per interval.
 	def, err := definition.NewBuilder("periodic-review", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"),
+		Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 			activity.WithWaitAction(schedule.Every(30*time.Minute), "nudge-reviewer"),
 		)).
 		Add(event.NewEnd("end")).

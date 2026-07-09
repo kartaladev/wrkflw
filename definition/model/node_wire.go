@@ -16,7 +16,7 @@ type NodeWire struct {
 	Kind                  NodeKind `json:"kind"`
 	Name                  string   `json:"name,omitempty"`
 	Action                string   `json:"action,omitempty"`
-	CandidateRoles        []string `json:"candidateRoles,omitempty"`
+	EligibleRoles         []string `json:"eligibleRoles,omitempty"`
 	EligibilityPrivileges []string `json:"eligibilityPrivileges,omitempty"`
 	EligibilityExpr       string   `json:"eligibilityExpr,omitempty"`
 	Manual                bool     `json:"manual,omitempty"`

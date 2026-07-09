@@ -25,7 +25,7 @@ func userTaskDef() *model.ProcessDefinition {
 		ID: "p-ht", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", activity.WithCandidateRoles("manager"), activity.WithEligibilityExpr(`actor.ID != ""`)),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager"), activity.WithEligibilityExpr(`actor.ID != ""`)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -137,8 +137,8 @@ func TestUserTaskTaskSeqIncrements(t *testing.T) {
 		ID: "p-ht2", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("task1", activity.WithCandidateRoles("a")),
-			activity.NewUserTask("task2", activity.WithCandidateRoles("b")),
+			activity.NewUserTask("task1", activity.WithEligibleRoles("a")),
+			activity.NewUserTask("task2", activity.WithEligibleRoles("b")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

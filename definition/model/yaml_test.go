@@ -182,7 +182,7 @@ nodes:
     kind: startEvent
   - id: approve
     kind: userTask
-    candidateRoles: ["manager"]
+    eligibleRoles: ["manager"]
     eligibilityPrivileges: ["finance-task claim"]
   - id: end
     kind: endEvent
@@ -210,8 +210,8 @@ flows:
 	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "finance-task claim" {
 		t.Fatalf("EligibilityPrivileges = %v, want [finance-task claim]", ut.EligibilityPrivileges)
 	}
-	if len(ut.CandidateRoles) != 1 || ut.CandidateRoles[0] != "manager" {
-		t.Fatalf("CandidateRoles = %v, want [manager]", ut.CandidateRoles)
+	if len(ut.EligibleRoles) != 1 || ut.EligibleRoles[0] != "manager" {
+		t.Fatalf("EligibleRoles = %v, want [manager]", ut.EligibleRoles)
 	}
 }
 

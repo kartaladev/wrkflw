@@ -21,7 +21,7 @@ func approvalDef(t *testing.T) *model.ProcessDefinition {
 	t.Helper()
 	def, err := definition.NewBuilder("approval", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("approve", activity.WithCandidateRoles("manager"))).
+		Add(activity.NewUserTask("approve", activity.WithEligibleRoles("manager"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "approve").
 		Connect("approve", "end").

@@ -26,7 +26,7 @@ func TestNewActionableView(t *testing.T) {
 	// The task's AllowedActions come from def.Outgoing("approve") = [{approve->gw}].
 	def, err := definition.NewBuilder("d1", 1).
 		Add(event.NewStart("s")).
-		Add(activity.NewUserTask("approve", activity.WithCandidateRoles("manager"))).
+		Add(activity.NewUserTask("approve", activity.WithEligibleRoles("manager"))).
 		Add(gateway.NewExclusive("gw")).
 		Add(event.NewEnd("e")).
 		Connect("s", "approve").

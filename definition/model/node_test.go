@@ -83,7 +83,7 @@ func TestErrorEndEventConstructor(t *testing.T) {
 }
 
 func TestUserTaskConstructor(t *testing.T) {
-	n := activity.NewUserTask("task-1", activity.WithCandidateRoles("manager", "admin"),
+	n := activity.NewUserTask("task-1", activity.WithEligibleRoles("manager", "admin"),
 		activity.WithEligibilityExpr("amount > 1000"),
 		activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach"), activity.WithDeadlineAction("notify-manager"),
 		activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
@@ -98,8 +98,8 @@ func TestUserTaskConstructor(t *testing.T) {
 	if ut.EligibilityExpr != "amount > 1000" {
 		t.Fatalf("EligibilityExpr = %q", ut.EligibilityExpr)
 	}
-	if len(ut.CandidateRoles) != 2 || ut.CandidateRoles[0] != "manager" {
-		t.Fatalf("CandidateRoles = %v", ut.CandidateRoles)
+	if len(ut.EligibleRoles) != 2 || ut.EligibleRoles[0] != "manager" {
+		t.Fatalf("EligibleRoles = %v", ut.EligibleRoles)
 	}
 	if dd, ok := ut.DeadlineTimer.Duration(); !ok || dd != 24*time.Hour || ut.DeadlineFlow != "sla-breach" || ut.DeadlineAction != "notify-manager" {
 		t.Fatalf("deadline fields = %v/%q/%q", dd, ut.DeadlineFlow, ut.DeadlineAction)
@@ -380,7 +380,7 @@ func TestEventSubProcessNonInterrupting(t *testing.T) {
 // WithRetryPolicy can all be combined on NewUserTask and that each field is set.
 func TestUserTaskCombinedOptions(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 1}
-	n := activity.NewUserTask("u", activity.WithCandidateRoles("reviewer"),
+	n := activity.NewUserTask("u", activity.WithEligibleRoles("reviewer"),
 		activity.WithEligibilityExpr("vars.score > 50"),
 		activity.WithName("Review Task"),
 		activity.WithRetryPolicy(p),
@@ -429,7 +429,7 @@ func TestReceiveTaskCombinedOptions(t *testing.T) {
 // a non-UserTask constructor is a compile-time error (not tested here, by design).
 func TestWithEligibilityPrivileges(t *testing.T) {
 	privs := []string{"finance-task claim", "finance-task read"}
-	n := activity.NewUserTask("approve", activity.WithCandidateRoles("approver"),
+	n := activity.NewUserTask("approve", activity.WithEligibleRoles("approver"),
 		activity.WithEligibilityPrivileges(privs...),
 	)
 	ut, ok := n.(activity.UserTask)

@@ -534,7 +534,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	var cmds []Command
 	taskToken := c.s.nextTaskToken()
 	spec := authz.AuthzSpec{
-		Roles:      ut.CandidateRoles,
+		Roles:      ut.EligibleRoles,
 		Privileges: ut.EligibilityPrivileges,
 		Attribute:  ut.EligibilityExpr,
 	}

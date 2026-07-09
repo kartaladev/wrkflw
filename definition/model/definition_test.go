@@ -58,7 +58,7 @@ func TestNodeUserTaskFields(t *testing.T) {
 		ID:      "p2",
 		Version: 1,
 		Nodes: []model.Node{
-			activity.NewUserTask("approve", activity.WithCandidateRoles("manager", "admin"),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager", "admin"),
 				activity.WithName("Approve Request"),
 				activity.WithEligibilityExpr("amount > 1000"),
 			),
@@ -72,7 +72,7 @@ func TestNodeUserTaskFields(t *testing.T) {
 	assert.Equal(t, "Approve Request", n.Name())
 	ut, ok := n.(activity.UserTask)
 	require.True(t, ok)
-	assert.Equal(t, []string{"manager", "admin"}, ut.CandidateRoles)
+	assert.Equal(t, []string{"manager", "admin"}, ut.EligibleRoles)
 	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
 }
 

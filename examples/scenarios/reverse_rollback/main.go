@@ -68,10 +68,10 @@ func main() {
 
 	def, err := definition.NewBuilder("reject-reescalate-approval", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"),
+		Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 			activity.WithCompletionAction("log-review"),
 			activity.WithCompensateAction("revert-review"))).
-		Add(activity.NewUserTask("escalate", activity.WithCandidateRoles("approver"),
+		Add(activity.NewUserTask("escalate", activity.WithEligibleRoles("approver"),
 			activity.WithCompletionAction("record-decision"),
 			activity.WithCompensateAction("revert-decision"))).
 		Add(gateway.NewExclusive("decision")).

@@ -107,7 +107,7 @@ func buildDef(data []byte) *model.ProcessDefinition {
 		case 0:
 			nodes = append(nodes, activity.NewServiceTask(id, activity.WithTaskAction("act")))
 		case 1:
-			nodes = append(nodes, activity.NewUserTask(id, activity.WithCandidateRoles("role")))
+			nodes = append(nodes, activity.NewUserTask(id, activity.WithEligibleRoles("role")))
 		case 2:
 			nodes = append(nodes, activity.NewServiceTask(id, activity.WithTaskAction("act2")))
 		default:

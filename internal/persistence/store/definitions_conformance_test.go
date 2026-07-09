@@ -39,7 +39,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 				event.WithSignalName("sig-order"),
 				event.WithMessageCorrelator("msg-order", "vars.orderID"),
 			),
-			activity.NewUserTask("review", activity.WithCandidateRoles("reviewer", "manager"),
+			activity.NewUserTask("review", activity.WithEligibleRoles("reviewer", "manager"),
 				activity.WithName("Review Order"),
 				activity.WithEligibilityExpr("vars.amount > 100"),
 				activity.WithWaitDeadline(schedule.AfterExpr("PT24H"), "sla-breach"), activity.WithDeadlineAction("notify-manager"),

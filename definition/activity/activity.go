@@ -26,8 +26,8 @@ func (ServiceTask) Kind() model.NodeKind { return model.KindServiceTask }
 type UserTask struct {
 	model.Base
 	model.ActivityFields
-	// CandidateRoles are the roles eligible to claim and complete this task.
-	CandidateRoles []string
+	// EligibleRoles are the roles eligible to claim and complete this task.
+	EligibleRoles []string
 	// EligibilityPrivileges is a list of resource-privilege tokens (e.g. "finance-task claim")
 	// evaluated by a casbin-backed Authorizer. Set via WithEligibilityPrivileges.
 	EligibilityPrivileges []string
@@ -128,7 +128,7 @@ func NewServiceTask(id string, opts ...ServiceTaskOption) model.Node {
 }
 
 // NewUserTask constructs a UserTask. Eligibility is optional and set via
-// WithCandidateRoles / WithEligibilityPrivileges / WithEligibilityExpr; with
+// WithEligibleRoles / WithEligibilityPrivileges / WithEligibilityExpr; with
 // none set, the engine gate is open (authorization defers to the transport
 // layer). See ADR-0117.
 func NewUserTask(id string, opts ...UserTaskOption) model.Node {
@@ -208,7 +208,7 @@ func init() {
 	model.RegisterKind(model.KindUserTask, model.NodeSpec{
 		Name: "userTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			n := UserTask{Base: b, ActivityFields: w.Activity(), CandidateRoles: w.CandidateRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr, Manual: w.Manual}
+			n := UserTask{Base: b, ActivityFields: w.Activity(), EligibleRoles: w.EligibleRoles, EligibilityPrivileges: w.EligibilityPrivileges, EligibilityExpr: w.EligibilityExpr, Manual: w.Manual}
 			if w.Validation != nil {
 				n.CompletionValidation = model.PendingValidation(*w.Validation)
 			}
@@ -216,7 +216,7 @@ func init() {
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(UserTask)
-			w.CandidateRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.CandidateRoles, v.EligibilityPrivileges, v.EligibilityExpr
+			w.EligibleRoles, w.EligibilityPrivileges, w.EligibilityExpr = v.EligibleRoles, v.EligibilityPrivileges, v.EligibilityExpr
 			w.Manual = v.Manual
 			w.PutActivity(v.ActivityFields)
 			w.Validation = model.PutValidation(v.CompletionValidation)

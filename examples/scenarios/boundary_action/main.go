@@ -61,7 +61,7 @@ func main() {
 	// escalation path taken on timeout.
 	def, err := definition.NewBuilder("review-with-boundary-action", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"))).
+		Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"))).
 		// Interrupting timer boundary with a fire-once notify action.
 		Add(event.NewBoundary("bnd-overdue", "review",
 			event.WithBoundaryTimer(schedule.AfterDuration(time.Hour)),

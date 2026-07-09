@@ -45,7 +45,7 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 		ID: "cancel-evt", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("wait", activity.WithCandidateRoles("r")),
+			activity.NewUserTask("wait", activity.WithEligibleRoles("r")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

@@ -157,7 +157,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow"), activity.WithDeadlineAction("sla-act"),
 				activity.WithCancelAction("cancel-charge"),
 			),
-			activity.NewUserTask("approve", activity.WithCandidateRoles("manager", "admin"),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager", "admin"),
 				activity.WithEligibilityExpr("amount > 1000"),
 				activity.WithName("Approve"),
 				activity.WithWaitAction(schedule.Every(4*time.Hour), "remind-act"),
@@ -227,7 +227,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	// Verify UserTask fields
 	approve, ok := restored.Nodes[2].(activity.UserTask)
 	require.True(t, ok)
-	assert.Equal(t, []string{"manager", "admin"}, approve.CandidateRoles)
+	assert.Equal(t, []string{"manager", "admin"}, approve.EligibleRoles)
 	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
 	// WaitEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
 	reminderDur, reminderOk := approve.WaitEvery.Duration()
@@ -245,7 +245,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 		"nodes": [
 			{"id": "start", "kind": "startEvent", "name": "Start"},
 			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensateAction": "refund-card", "cancelAction": "cancel-charge"},
-			{"id": "approve", "kind": "userTask", "candidateRoles": ["manager"], "eligibilityExpr": "amount > 1000"},
+			{"id": "approve", "kind": "userTask", "eligibleRoles": ["manager"], "eligibilityExpr": "amount > 1000"},
 			{"id": "wait", "kind": "intermediateCatchEvent", "timerDuration": "PT1H"},
 			{"id": "throw", "kind": "intermediateThrowEvent", "signalName": "done"},
 			{"id": "bnd", "kind": "boundaryEvent", "attachedTo": "charge", "errorCode": "ERR", "nonInterrupting": false},
@@ -285,7 +285,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 
 	ut, ok := def.Nodes[2].(activity.UserTask)
 	require.True(t, ok, "nodes[2] should be UserTask")
-	assert.Equal(t, []string{"manager"}, ut.CandidateRoles)
+	assert.Equal(t, []string{"manager"}, ut.EligibleRoles)
 	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
 
 	ice, ok := def.Nodes[3].(event.IntermediateCatchEvent)

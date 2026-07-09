@@ -76,7 +76,7 @@ func approvalDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", activity.WithCandidateRoles("manager")),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -94,7 +94,7 @@ func approvalValidatedDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", activity.WithCandidateRoles("manager"),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
 				activity.WithCompletionValidation(vexpr.New("decision in ['approve','reject']"))),
 			event.NewEnd("end"),
 		},

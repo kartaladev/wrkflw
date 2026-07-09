@@ -23,7 +23,7 @@ func cancelDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", activity.WithCandidateRoles("manager")),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

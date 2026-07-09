@@ -82,7 +82,7 @@ func TestOtherActivityConstructors(t *testing.T) {
 		n model.Node
 		k model.NodeKind
 	}{
-		{activity.NewUserTask("u", activity.WithCandidateRoles("mgr"), activity.WithEligibilityExpr(`vars["r"]=="EU"`), activity.WithEligibilityPrivileges("t claim")), model.KindUserTask},
+		{activity.NewUserTask("u", activity.WithEligibleRoles("mgr"), activity.WithEligibilityExpr(`vars["r"]=="EU"`), activity.WithEligibilityPrivileges("t claim")), model.KindUserTask},
 		{activity.NewReceiveTask("r", "msg", activity.WithCorrelationKey("k")), model.KindReceiveTask},
 		{activity.NewSendTask("s", "msg", activity.WithCorrelationKey("k")), model.KindSendTask},
 		{activity.NewBusinessRuleTask("b", activity.WithTaskAction("rule")), model.KindBusinessRuleTask},
@@ -125,7 +125,7 @@ func TestActivityRoundTrip(t *testing.T) {
 		ID: "a", Version: 1,
 		Nodes: []model.Node{
 			activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithWaitDeadline(schedule.AfterExpr(`"1h"`), "f"), activity.WithDeadlineAction("a")),
-			activity.NewUserTask("ut", activity.WithCandidateRoles("mgr"), activity.WithEligibilityExpr("x")),
+			activity.NewUserTask("ut", activity.WithEligibleRoles("mgr"), activity.WithEligibilityExpr("x")),
 			activity.NewReceiveTask("rt", "m", activity.WithCorrelationKey("k")),
 			activity.NewSendTask("snt", "m"),
 			activity.NewCallActivity("ca", model.Version("ref", 2)),

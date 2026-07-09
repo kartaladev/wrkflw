@@ -49,7 +49,7 @@
       "id": "approve",
       "kind": "userTask",
       "name": "Approve",
-      "candidateRoles": [
+      "eligibleRoles": [
         "manager",
         "director"
       ],

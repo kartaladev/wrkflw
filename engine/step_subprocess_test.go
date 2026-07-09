@@ -1616,7 +1616,7 @@ func deadlineUserTaskInsideSubProcessDef() *model.ProcessDefinition {
 		ID: "inner-sla", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewUserTask("inner-user", activity.WithCandidateRoles("reviewer"),
+			activity.NewUserTask("inner-user", activity.WithEligibleRoles("reviewer"),
 				activity.WithWaitDeadline(schedule.AfterExpr(`"30m"`), "inner-escalate"), activity.WithDeadlineAction("notify-action")),
 			event.NewEnd("inner-end"),
 			event.NewEnd("escalate-node"),

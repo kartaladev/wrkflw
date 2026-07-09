@@ -861,7 +861,7 @@ nodes:
     retryPolicy: { maxAttempts: 5, initialInterval: 1s, backoffCoef: 2.0 }
   - id: approve
     kind: userTask
-    candidateRoles: [manager]
+    eligibleRoles: [manager]
     deadlineDuration: "3h"
     deadlineFlow: escalate
     deadlineAction: notify-manager

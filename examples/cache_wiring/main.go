@@ -133,7 +133,7 @@ func run() error {
 
 	def, err := definition.NewBuilder("review", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("review", activity.WithCandidateRoles("reviewer"))).
+		Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "review").
 		Connect("review", "end").

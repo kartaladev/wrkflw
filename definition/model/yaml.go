@@ -18,7 +18,7 @@ type nodeYAML struct {
 	Kind                  string          `yaml:"kind"`
 	Name                  string          `yaml:"name,omitempty"`
 	Action                string          `yaml:"action,omitempty"`
-	CandidateRoles        []string        `yaml:"candidateRoles,omitempty"`
+	EligibleRoles         []string        `yaml:"eligibleRoles,omitempty"`
 	EligibilityPrivileges []string        `yaml:"eligibilityPrivileges,omitempty"`
 	EligibilityExpr       string          `yaml:"eligibilityExpr,omitempty"`
 	Manual                bool            `yaml:"manual,omitempty"`
@@ -94,7 +94,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		Kind:                  kind,
 		Name:                  ny.Name,
 		Action:                ny.Action,
-		CandidateRoles:        ny.CandidateRoles,
+		EligibleRoles:         ny.EligibleRoles,
 		EligibilityPrivileges: ny.EligibilityPrivileges,
 		EligibilityExpr:       ny.EligibilityExpr,
 		Manual:                ny.Manual,

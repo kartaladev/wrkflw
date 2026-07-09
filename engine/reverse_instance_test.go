@@ -344,7 +344,7 @@ func userTaskCompletionReversibleDef() *model.ProcessDefinition {
 		ID: "p-rev-uc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("u1", activity.WithCandidateRoles("r"),
+			activity.NewUserTask("u1", activity.WithEligibleRoles("r"),
 				activity.WithCompletionAction("record"),
 				activity.WithCompensateAction("unrecord"),
 			),
