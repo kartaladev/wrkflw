@@ -375,6 +375,14 @@ type compensationCursor struct {
 	ResumeScope string
 	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
 	ToNode string
+	// ReverseNode, when non-empty, makes the FULL-rollback finish resume at this
+	// node (StatusRunning) instead of terminating — the ReverseInstance full-reverse
+	// form (ADR-0109). Kept DISTINCT from ResumeNode (the compensation-throw resume)
+	// so the throw-walk branch is never triggered by a reverse-to-start walk.
+	ReverseNode string
+	// ReverseResetVars, when true, resets Variables to StartVariables when the
+	// full-rollback finish resumes at ReverseNode.
+	ReverseResetVars bool
 	// NextIndex is the index of the CompensationRecord currently in-flight
 	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
 	// compensation actions complete; the next record to emit is NextIndex-1.

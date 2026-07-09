@@ -49,7 +49,7 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 		return StepResult{State: *s}, nil
 	}
 	s.Status = StatusCompensating
-	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode, eval)
+	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode, eval, t.ReverseNode, t.ResetVars)
 }
 
 // beginCompensation is the shared initiator of a reverse-order compensation walk.
@@ -74,7 +74,12 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 //
 // The FinalStatus/FinalErr values are carried on the cursor across all advance steps
 // so that stepCompensationFinish applies them when the walk completes.
-func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+// reverseNode/reverseResetVars carry the ReverseInstance full-reverse intent
+// (ADR-0109): when reverseNode is non-empty, a FULL-rollback finish resumes at
+// reverseNode (StatusRunning) — optionally resetting Variables to StartVariables —
+// instead of terminating. All cancel/error/throw callers pass "", false so their
+// terminate behaviour is unchanged.
+func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator, reverseNode string, reverseResetVars bool) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -152,7 +157,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 				// toNode != "", stepCompensationFinish takes the partial-rollback branch
 				// (resume at toNode) regardless of FinalStatus/FinalErr — which is correct
 				// for the admin path (outcome fields are zero).
-				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
+				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars}
 				finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
 				if finishErr != nil {
 					return StepResult{}, finishErr
@@ -171,9 +176,11 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	}
 
 	if startIndex < 0 {
-		// No records at all — apply the terminal outcome immediately.
-		// Stamp the cursor so stepCompensationFinish reads the outcome fields.
-		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr}
+		// No records at all — apply the terminal outcome (or, for a reverse walk,
+		// resume at ReverseNode) immediately. Stamp the cursor so
+		// stepCompensationFinish reads the outcome AND reverse fields — a
+		// reverse-to-start with ZERO eligible records must still resume at start.
+		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars}
 		finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
 		if finishErr != nil {
 			return StepResult{}, finishErr
@@ -186,12 +193,14 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	rec := records[startIndex]
 	cmdID := s.nextCommandID()
 	s.Compensating = compensationCursor{
-		ScopeID:     scopeID,
-		ToNode:      toNode,
-		NextIndex:   startIndex,
-		ActiveCmdID: cmdID,
-		FinalStatus: finalStatus,
-		FinalErr:    finalErr,
+		ScopeID:          scopeID,
+		ToNode:           toNode,
+		NextIndex:        startIndex,
+		ActiveCmdID:      cmdID,
+		FinalStatus:      finalStatus,
+		FinalErr:         finalErr,
+		ReverseNode:      reverseNode,
+		ReverseResetVars: reverseResetVars,
 	}
 	cmd := InvokeAction{
 		CommandID: cmdID,
@@ -239,15 +248,17 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 	rec := records[nextIdx]
 	cmdID := s.nextCommandID()
 	s.Compensating = compensationCursor{
-		ScopeID:     cur.ScopeID,
-		ArchiveKey:  cur.ArchiveKey,
-		ResumeNode:  cur.ResumeNode,
-		ResumeScope: cur.ResumeScope,
-		ToNode:      cur.ToNode,
-		NextIndex:   nextIdx,
-		ActiveCmdID: cmdID,
-		FinalStatus: cur.FinalStatus,
-		FinalErr:    cur.FinalErr,
+		ScopeID:          cur.ScopeID,
+		ArchiveKey:       cur.ArchiveKey,
+		ResumeNode:       cur.ResumeNode,
+		ResumeScope:      cur.ResumeScope,
+		ToNode:           cur.ToNode,
+		NextIndex:        nextIdx,
+		ActiveCmdID:      cmdID,
+		FinalStatus:      cur.FinalStatus,
+		FinalErr:         cur.FinalErr,
+		ReverseNode:      cur.ReverseNode,
+		ReverseResetVars: cur.ReverseResetVars,
 	}
 	cmd := InvokeAction{
 		CommandID: cmdID,
@@ -273,6 +284,8 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	archiveKey := s.Compensating.ArchiveKey
 	resumeNode := s.Compensating.ResumeNode
 	resumeScope := s.Compensating.ResumeScope
+	reverseNode := s.Compensating.ReverseNode
+	reverseResetVars := s.Compensating.ReverseResetVars
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
@@ -293,7 +306,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			// (root + other archives) cannot double-run it. Run it and terminate.
 			s.PendingCancel = false
 			s.Status = StatusCompensating
-			return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval)
+			return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval, "", false)
 		}
 		s.Status = StatusRunning
 		// Place the resume token in the correct scope (the throw token's scope).
@@ -328,6 +341,31 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		s.Status = StatusRunning
 		// Place a new token at toNode and drive forward.
 		s.placeToken(toNode, at)
+		driveCmds, err := drive(def, s, at, mode, eval)
+		if err != nil {
+			return StepResult{}, err
+		}
+		return StepResult{State: *s, Commands: driveCmds}, nil
+	}
+
+	// ── Full reverse (ReverseInstance full-reverse, ADR-0109) ─────────────────
+	// A full walk (toNode == "" && resumeNode == "") that carries a ReverseNode
+	// resumes at that node instead of terminating: clear the scope's compensation
+	// records (as full rollback does), optionally reset Variables to
+	// StartVariables, set Status = StatusRunning, place a token at ReverseNode,
+	// and drive. Gated ENTIRELY on reverseNode != "" so the cancel/error terminate
+	// path below is byte-for-byte unchanged for non-reverse walks.
+	if reverseNode != "" {
+		if scopeID == "" {
+			s.RootCompensations = nil
+		} else if sc := s.scopeByID(scopeID); sc != nil {
+			sc.Compensations = nil
+		}
+		s.Status = StatusRunning
+		if reverseResetVars {
+			s.Variables = copyVars(s.StartVariables)
+		}
+		s.placeToken(reverseNode, at)
 		driveCmds, err := drive(def, s, at, mode, eval)
 		if err != nil {
 			return StepResult{}, err

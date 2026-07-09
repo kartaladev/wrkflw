@@ -153,7 +153,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		// and FinalErr="cancelled". stepCompensationFinish will emit
 		// FailInstance{"cancelled"} at walk end.
 		s.Status = StatusCompensating
-		res, err := beginCompensation(def, s, "", StatusTerminated, "cancelled", t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		res, err := beginCompensation(def, s, "", StatusTerminated, "cancelled", t.OccurredAt(), opt.Mode, resolveEvaluator(opt), "", false)
 		if err != nil {
 			return StepResult{}, err
 		}
