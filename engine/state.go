@@ -919,6 +919,24 @@ func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []stri
 	return cancelTimerIDs
 }
 
+// removeAllEventSubprocessArms drains every armed event sub-process across ALL
+// scopes (unlike removeEventSubprocessArmsForScope, which is scoped to one
+// EnclosingScopeID), returning the TimerIDs of any timer-armed entries so the
+// caller can emit CancelTimer commands. It is the sweep-all used by terminal
+// paths (terminate / immediate-cancel / immediate-fail) where no ESP arm
+// should survive instance end. Iterates s.EventSubprocesses in slice order for
+// deterministic output.
+func (s *InstanceState) removeAllEventSubprocessArms() []string {
+	var cancelTimerIDs []string
+	for _, ea := range s.EventSubprocesses {
+		if ea.TimerID != "" {
+			cancelTimerIDs = append(cancelTimerIDs, ea.TimerID)
+		}
+	}
+	s.EventSubprocesses = nil
+	return cancelTimerIDs
+}
+
 // recordCompensation appends a CompensationRecord to the scope identified by
 // scopeID. If scopeID is "" (root-level token), the record is appended to
 // s.RootCompensations — the root-scope compensation list that is stored directly
