@@ -98,26 +98,26 @@ func TestDeadlineOf(t *testing.T) {
 	})
 }
 
-func TestReminderOf(t *testing.T) {
+func TestWaitActionOf(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2}
 	n := activity.NewUserTask("ut", nil,
 		activity.WithRetryPolicy(p),
 		activity.WithWaitReminder(schedule.Every(4*time.Hour), "send-reminder"),
 	)
-	every, act := model.ReminderOf(n)
+	every, act := model.WaitActionOf(n)
 	d, ok := every.Duration()
 	require.True(t, ok)
 	assert.Equal(t, 4*time.Hour, d)
 	assert.Equal(t, "send-reminder", act)
 
 	// Non-activity returns zero TriggerSpec + empty action
-	every, act = model.ReminderOf(event.NewStart("s"))
+	every, act = model.WaitActionOf(event.NewStart("s"))
 	assert.True(t, every.IsZero())
 	assert.Equal(t, "", act)
 
 	// IntermediateCatchEvent with ICE reminder
 	ice := event.NewIntermediateCatch("ice", event.WithCatchWaitReminder(schedule.Every(2*time.Hour), "ice-remind"))
-	every, act = model.ReminderOf(ice)
+	every, act = model.WaitActionOf(ice)
 	d, ok = every.Duration()
 	require.True(t, ok)
 	assert.Equal(t, 2*time.Hour, d)
@@ -220,9 +220,9 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, approve.CandidateRoles)
 	assert.Equal(t, "amount > 1000", approve.EligibilityExpr)
-	// ReminderEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
-	reminderDur, reminderOk := approve.ReminderEvery.Duration()
-	require.True(t, reminderOk, "ReminderEvery should be set on UserTask")
+	// WaitEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
+	reminderDur, reminderOk := approve.WaitEvery.Duration()
+	require.True(t, reminderOk, "WaitEvery should be set on UserTask")
 	assert.Equal(t, 4*time.Hour, reminderDur)
 }
 
@@ -348,8 +348,8 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	assert.Equal(t, "charge", compThrow.CompensateRef)
 }
 
-// TestDeadlineReminderTyped verifies that DeadlineOf and ReminderOf return
-// schedule.TriggerSpec values (Task 3: typed deadline/reminder migration).
+// TestDeadlineReminderTyped verifies that DeadlineOf and WaitActionOf return
+// schedule.TriggerSpec values (Task 3: typed deadline/wait migration).
 func TestDeadlineReminderTyped(t *testing.T) {
 	n := activity.NewUserTask("ut", nil,
 		activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "sla"), activity.WithDeadlineAction("notify"),
@@ -359,8 +359,8 @@ func TestDeadlineReminderTyped(t *testing.T) {
 	if d, ok := spec.Duration(); !ok || d != 2*time.Hour || flow != "sla" || action != "notify" {
 		t.Fatalf("DeadlineOf = %v %q %q", d, flow, action)
 	}
-	every, ra := model.ReminderOf(n)
+	every, ra := model.WaitActionOf(n)
 	if d, ok := every.Duration(); !ok || d != time.Hour || ra != "remind" {
-		t.Fatalf("ReminderOf = %v %q", d, ra)
+		t.Fatalf("WaitActionOf = %v %q", d, ra)
 	}
 }

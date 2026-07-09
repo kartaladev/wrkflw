@@ -23,13 +23,13 @@
         "kind": "expr",
         "expr": "2h"
       },
-      "reminderTrigger": {
+      "waitTrigger": {
         "kind": "everyExpr",
         "expr": "30m"
       },
       "deadlineFlow": "sla-flow",
       "deadlineAction": "notify-ops",
-      "reminderAction": "ping",
+      "waitAction": "ping",
       "retryPolicy": {
         "MaxAttempts": 5,
         "InitialInterval": 2000000000,
@@ -154,13 +154,13 @@
         "kind": "expr",
         "expr": "4h"
       },
-      "reminderTrigger": {
+      "waitTrigger": {
         "kind": "everyExpr",
         "expr": "1h"
       },
       "deadlineFlow": "wait-\u003eesc",
       "deadlineAction": "escalate",
-      "reminderAction": "nudge",
+      "waitAction": "nudge",
       "signalName": "resume",
       "messageName": "go-on",
       "correlationKey": "orderId"

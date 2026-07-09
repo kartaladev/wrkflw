@@ -34,10 +34,10 @@ func (b Base) Name() string { return b.name }
 // packages, which mutate the embedded Base.
 func (b *Base) SetName(name string) { b.name = name }
 
-// WaitFields holds the deadline + reminder fields shared by activity kinds and by
+// WaitFields holds the deadline + in-wait fields shared by activity kinds and by
 // IntermediateCatchEvent (all of which can wait and so can carry a deadline
-// escalation and periodic reminders). It is embedded by ActivityFields and by
-// event.IntermediateCatchEvent; the kind-agnostic accessors DeadlineOf/ReminderOf
+// escalation and periodic in-wait actions). It is embedded by ActivityFields and by
+// event.IntermediateCatchEvent; the kind-agnostic accessors DeadlineOf/WaitActionOf
 // dispatch on its (unexported) carrier methods.
 type WaitFields struct {
 	// DeadlineTimer is the trigger spec that governs when the deadline fires
@@ -47,18 +47,18 @@ type WaitFields struct {
 	DeadlineFlow string
 	// DeadlineAction is the name of the action.Action to invoke on deadline breach.
 	DeadlineAction string
-	// ReminderEvery is the trigger spec that governs the reminder interval
-	// (e.g. schedule.Every(24*time.Hour) or schedule.EveryExpr("reminderExpr")).
-	ReminderEvery schedule.TriggerSpec
-	// ReminderAction is the name of the action.Action to invoke for each reminder.
-	ReminderAction string
+	// WaitEvery is the trigger spec that governs the in-wait action interval
+	// (e.g. schedule.Every(24*time.Hour) or schedule.EveryExpr("waitExpr")).
+	WaitEvery schedule.TriggerSpec
+	// WaitAction is the name of the action.Action to invoke for each in-wait firing.
+	WaitAction string
 }
 
 func (w WaitFields) deadline() (schedule.TriggerSpec, string, string) {
 	return w.DeadlineTimer, w.DeadlineFlow, w.DeadlineAction
 }
-func (w WaitFields) reminder() (schedule.TriggerSpec, string) {
-	return w.ReminderEvery, w.ReminderAction
+func (w WaitFields) waitAction() (schedule.TriggerSpec, string) {
+	return w.WaitEvery, w.WaitAction
 }
 
 // ActivityFields holds the cross-cutting fields every activity kind shares (retry,

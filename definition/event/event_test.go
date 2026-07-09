@@ -44,9 +44,9 @@ func TestCatchRenamedOptions(t *testing.T) {
 	if d.IsZero() || f != "esc" || a != "escalate" {
 		t.Errorf("DeadlineOf = %v,%q,%q", d, f, a)
 	}
-	re, ra := model.ReminderOf(n)
+	re, ra := model.WaitActionOf(n)
 	if re.IsZero() || ra != "nudge" {
-		t.Errorf("ReminderOf = %v,%q", re, ra)
+		t.Errorf("WaitActionOf = %v,%q", re, ra)
 	}
 	ce := n.(event.IntermediateCatchEvent)
 	if ce.Timer.IsZero() {

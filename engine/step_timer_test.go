@@ -348,8 +348,8 @@ func TestUserTaskCompletedBeforeDeadlineIgnoresTimer(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
 }
 
-// reminderDef returns a definition with a user task that has both a reminder
-// (ReminderEvery:"1h", ReminderAction:"remind") and a deadline (DeadlineDuration:"3h"):
+// reminderDef returns a definition with a user task that has both an in-wait
+// action (WaitEvery:"1h", WaitAction:"remind") and a deadline (DeadlineDuration:"3h"):
 //
 //	Start → userTask → normalEnd
 //	userTask → (escalate flow) → escalateEnd
@@ -373,7 +373,7 @@ func reminderDef() *model.ProcessDefinition {
 // TestInWaitReminderRepeatsUntilCompletion verifies the full reminder lifecycle
 // AFTER Plan 2 Task 1 moved recurrence to the scheduler (native recurring trigger,
 // no engine reschedule):
-//  1. Entering a user task with ReminderEvery emits AwaitHuman + ScheduleTimer(Deadline) + ScheduleTimer(InWait).
+//  1. Entering a user task with WaitEvery emits AwaitHuman + ScheduleTimer(Deadline) + ScheduleTimer(InWait).
 //     The in-wait timer carries a RECURRING Every(1h) trigger — armed ONCE.
 //  2. Each TimerFired for the in-wait reminder emits InvokeAction("remind") ONLY,
 //     and NO new ScheduleTimer: native scheduler recurrence re-delivers TimerFired
@@ -472,7 +472,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 		}
 	}
 	require.True(t, foundIA1, "InvokeAction not found after first reminder; got: %v", r2.Commands)
-	assert.Equal(t, "remind", ia1.Name, "InvokeAction name must be the ReminderAction")
+	assert.Equal(t, "remind", ia1.Name, "InvokeAction name must be the WaitAction")
 
 	// Token must NOT move — still parked at userTask; reminder record persists.
 	require.Len(t, r2.State.Tokens, 1)
@@ -534,14 +534,14 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, r5.State.Status, "instance must remain completed after late reminder")
 }
 
-// TestInWaitReminderNoActionEmitsNothingOnFire verifies that when ReminderEvery is
-// set but ReminderAction is empty, a reminder fire emits NO InvokeAction (no action
+// TestInWaitReminderNoActionEmitsNothingOnFire verifies that when WaitEvery is
+// set but WaitAction is empty, a reminder fire emits NO InvokeAction (no action
 // configured) AND — after Plan 2 Task 1 — NO new ScheduleTimer (recurrence is native
 // to the scheduler; the engine armed the recurring timer once at entry and does not
 // reschedule per fire). This proves the action field is genuinely optional and that
 // the engine no longer owns re-arming.
 func TestInWaitReminderNoActionEmitsNothingOnFire(t *testing.T) {
-	// Use a definition with ReminderEvery but no ReminderAction.
+	// Use a definition with WaitEvery but no WaitAction.
 	def := &model.ProcessDefinition{
 		ID:      "p-reminder-noaction",
 		Version: 1,

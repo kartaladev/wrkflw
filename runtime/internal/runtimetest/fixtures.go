@@ -49,18 +49,18 @@ func TimerIntermediateDef() *model.ProcessDefinition {
 }
 
 // ApprovalWithReminderDef returns the ApprovalDef process whose user task
-// carries a recurring in-wait reminder (Every reminderEvery, action
-// reminderAction). The reminder is armed once with its recurring TriggerSpec and
+// carries a recurring in-wait reminder (Every waitEvery, action
+// waitAction). The reminder is armed once with its recurring TriggerSpec and
 // survives each fire; it is cancelled when the task completes. Used to exercise
 // the recurrence-aware timer cancel in the runtime.
-func ApprovalWithReminderDef(reminderEvery time.Duration, reminderAction string) *model.ProcessDefinition {
+func ApprovalWithReminderDef(waitEvery time.Duration, waitAction string) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID:      "approval-reminder",
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewUserTask("approve", []string{"manager"},
-				activity.WithWaitReminder(schedule.Every(reminderEvery), reminderAction)),
+				activity.WithWaitReminder(schedule.Every(waitEvery), waitAction)),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

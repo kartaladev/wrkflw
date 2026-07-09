@@ -286,10 +286,10 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 			check: func(t *testing.T, n model.Node) {
 				ut, ok := n.(activity.UserTask)
 				require.True(t, ok)
-				d, ok := ut.ReminderEvery.Duration()
+				d, ok := ut.WaitEvery.Duration()
 				require.True(t, ok)
 				assert.Equal(t, 4*time.Hour, d)
-				assert.Equal(t, "send-reminder", ut.ReminderAction)
+				assert.Equal(t, "send-reminder", ut.WaitAction)
 			},
 		},
 		{
@@ -307,10 +307,10 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 				assert.Equal(t, 48*time.Hour, dd)
 				assert.Equal(t, "escalate", ut.DeadlineFlow)
 				assert.Equal(t, "escalate-action", ut.DeadlineAction)
-				rd, ok := ut.ReminderEvery.Duration()
+				rd, ok := ut.WaitEvery.Duration()
 				require.True(t, ok)
 				assert.Equal(t, 6*time.Hour, rd)
-				assert.Equal(t, "remind-action", ut.ReminderAction)
+				assert.Equal(t, "remind-action", ut.WaitAction)
 			},
 		},
 	}

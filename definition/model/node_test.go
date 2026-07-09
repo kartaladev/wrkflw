@@ -104,8 +104,8 @@ func TestUserTaskConstructor(t *testing.T) {
 	if dd, ok := ut.DeadlineTimer.Duration(); !ok || dd != 24*time.Hour || ut.DeadlineFlow != "sla-breach" || ut.DeadlineAction != "notify-manager" {
 		t.Fatalf("deadline fields = %v/%q/%q", dd, ut.DeadlineFlow, ut.DeadlineAction)
 	}
-	if rd, ok := ut.ReminderEvery.Duration(); !ok || rd != 4*time.Hour || ut.ReminderAction != "send-reminder" {
-		t.Fatalf("reminder fields = %v/%q", rd, ut.ReminderAction)
+	if rd, ok := ut.WaitEvery.Duration(); !ok || rd != 4*time.Hour || ut.WaitAction != "send-reminder" {
+		t.Fatalf("wait fields = %v/%q", rd, ut.WaitAction)
 	}
 }
 

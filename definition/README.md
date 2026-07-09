@@ -275,7 +275,7 @@ joined error. The sentinel errors live in `definition/model` — check them with
 
 ### Kind-agnostic accessors
 
-`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `ReminderOf(n)`, `ActionOf(n)`,
+`model.RetryPolicyOf(n)`, `DeadlineOf(n)`, `WaitActionOf(n)`, `ActionOf(n)`,
 `InlineActionOf(n)` read kind-specific fields off any `Node` (returning zero
 values for kinds that don't carry them), so callers never type-switch on concrete
 leaf types.

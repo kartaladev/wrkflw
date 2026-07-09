@@ -170,14 +170,14 @@ type reminderOpt struct {
 }
 
 func (o reminderOpt) applyUserTask(u *UserTask) {
-	u.ReminderEvery, u.ReminderAction = o.every, o.action
+	u.WaitEvery, u.WaitAction = o.every, o.action
 }
 
 func (o reminderOpt) applyReceiveTask(r *ReceiveTask) {
-	r.ReminderEvery, r.ReminderAction = o.every, o.action
+	r.WaitEvery, r.WaitAction = o.every, o.action
 }
 
-// WithWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// WithWaitReminder sets the WaitEvery (schedule.TriggerSpec) and WaitAction
 // on a UserTask or ReceiveTask — the only activity kinds whose engine strategy arms
 // an in-wait reminder. Passing it to any other activity constructor is a compile
 // error (see reminderOpt). Use schedule.Every, schedule.EveryExpr, or any other

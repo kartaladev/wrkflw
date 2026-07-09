@@ -498,7 +498,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 // reminder — the human-task token for a UserTask, the parked token id for a
 // ReceiveTask or IntermediateCatchEvent.
 func armWaitReminder(c *stepCtx, tok *Token, node model.Node, cancelKey string, cmds []Command) ([]Command, error) {
-	rawSpec, _ := model.ReminderOf(node)
+	rawSpec, _ := model.WaitActionOf(node)
 	reminderSpec, err := ResolveTrigger(c.eval, rawSpec, c.s.Variables)
 	if err != nil {
 		return cmds, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)

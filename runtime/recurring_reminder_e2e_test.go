@@ -34,7 +34,7 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 	startAt := time.Date(2026, 7, 7, 9, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
-	const reminderEvery = 15 * time.Minute
+	const waitEvery = 15 * time.Minute
 	var reminderRuns atomic.Int64
 
 	cat := action.NewCatalog(map[string]action.Action{
@@ -59,7 +59,7 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 		runtime.WithScheduler(sched),
 	)
 
-	def := runtimetest.ApprovalWithReminderDef(reminderEvery, "ping")
+	def := runtimetest.ApprovalWithReminderDef(waitEvery, "ping")
 	const instanceID = "rem-1"
 
 	// --- Run: parks at the user task with the recurring reminder armed. ---
@@ -70,16 +70,16 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 	// The reminder timer is pending in the scheduler.
 	fireAt, ok := sched.NextFireAt()
 	require.True(t, ok, "a reminder timer must be armed")
-	require.Equal(t, startAt.Add(reminderEvery), fireAt, "reminder armed at now+interval")
+	require.Equal(t, startAt.Add(waitEvery), fireAt, "reminder armed at now+interval")
 
 	// --- (a) survive-fire: fire the reminder twice; it must re-arm natively. ---
-	fc.Advance(reminderEvery + time.Second)
+	fc.Advance(waitEvery + time.Second)
 	require.NoError(t, sched.Tick(ctx))
 	assert.Equal(t, int64(1), reminderRuns.Load(), "reminder action must run on first fire")
 	_, stillPending := sched.NextFireAt()
 	require.True(t, stillPending, "a recurring reminder must survive its fire (not consumed)")
 
-	fc.Advance(reminderEvery + time.Second)
+	fc.Advance(waitEvery + time.Second)
 	require.NoError(t, sched.Tick(ctx))
 	assert.Equal(t, int64(2), reminderRuns.Load(),
 		"the recurring reminder must fire again — proof it was not cancelled on the first fire")
@@ -110,7 +110,7 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 
 	// A further Tick after completion must NOT run the reminder again.
 	before := reminderRuns.Load()
-	fc.Advance(reminderEvery + time.Second)
+	fc.Advance(waitEvery + time.Second)
 	require.NoError(t, sched.Tick(ctx))
 	assert.Equal(t, before, reminderRuns.Load(), "no reminder fire after the timer is cancelled")
 }

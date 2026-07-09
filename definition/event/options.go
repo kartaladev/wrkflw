@@ -117,11 +117,11 @@ func WithDeadlineAction(action string) CatchOption {
 	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.DeadlineAction = action }}
 }
 
-// WithCatchWaitReminder sets the ReminderEvery (schedule.TriggerSpec) and ReminderAction
+// WithCatchWaitReminder sets the WaitEvery (schedule.TriggerSpec) and WaitAction
 // on an IntermediateCatchEvent. Use schedule.Every, schedule.EveryExpr, or any
 // other recurring TriggerSpec constructor.
 func WithCatchWaitReminder(t schedule.TriggerSpec, action string) CatchOption {
-	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.ReminderEvery, n.ReminderAction = t, action }}
+	return catchFuncOpt{func(n *IntermediateCatchEvent) { n.WaitEvery, n.WaitAction = t, action }}
 }
 
 type catchPayloadValidationOpt struct{ s validate.ValidationStrategy }

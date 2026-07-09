@@ -35,15 +35,15 @@ func DeadlineOf(n Node) (schedule.TriggerSpec, string, string) {
 	return schedule.TriggerSpec{}, "", ""
 }
 
-// ReminderOf returns the ReminderEvery (schedule.TriggerSpec) and ReminderAction
-// of a Node that carries reminder fields (activities and IntermediateCatchEvent).
+// WaitActionOf returns the WaitEvery (schedule.TriggerSpec) and WaitAction
+// of a Node that carries in-wait fields (activities and IntermediateCatchEvent).
 // Returns a zero TriggerSpec and an empty string for nodes that do not carry
-// reminder fields.
-func ReminderOf(n Node) (schedule.TriggerSpec, string) {
+// in-wait fields.
+func WaitActionOf(n Node) (schedule.TriggerSpec, string) {
 	if w, ok := n.(interface {
-		reminder() (schedule.TriggerSpec, string)
+		waitAction() (schedule.TriggerSpec, string)
 	}); ok {
-		return w.reminder()
+		return w.waitAction()
 	}
 	return schedule.TriggerSpec{}, ""
 }
