@@ -9,7 +9,9 @@ package runtime_test
 // lookup silently skipped nested nodes).
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/jonboulle/clockwork"
@@ -263,4 +265,52 @@ func TestValidateInput_NoDescriptorCollisionAcrossScopes(t *testing.T) {
 	after, _, loadErr := store.Load(t.Context(), instanceID)
 	require.NoError(t, loadErr)
 	assert.Equal(t, engine.StatusCompleted, after.Status)
+}
+
+// TestValidateInput_DurableReloadUnregisteredKindFailsClosed proves the
+// fail-closed durable-reload contract AT THE EXECUTOR (not merely up to
+// NewValidator): a definition whose start node carries a validation kind that is
+// NOT registered in validate.DefaultRegistry survives json.Unmarshal with its slot
+// left PENDING, and driving an input trigger through the ProcessDriver is rejected
+// before any state is committed. The rejection is a reconstruction error
+// (model.ErrValidationNotReconstructed — a server-config fault mapped to HTTP 500),
+// which is intentionally DISTINCT from validation.ErrInvalidInput (bad input →
+// 400): a missing adapter is an operator misconfiguration, not caller error.
+func TestValidateInput_DurableReloadUnregisteredKindFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	// Author a valid expr-validated def, marshal it, then rewrite the validation
+	// descriptor's kind to an unregistered "bogus" so durable reload leaves the
+	// slot pending. Node kinds serialize as "startEvent"/"endEvent", so
+	// "kind":"expr" uniquely identifies the validation descriptor.
+	authored := &model.ProcessDefinition{
+		ID: "durable-bogus", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start", event.WithInputValidation(vexpr.New("amount > 0"))),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+	}
+	data, err := json.Marshal(authored)
+	require.NoError(t, err)
+	data = bytes.Replace(data, []byte(`"kind":"expr"`), []byte(`"kind":"bogus"`), 1)
+
+	var reloaded model.ProcessDefinition
+	require.NoError(t, json.Unmarshal(data, &reloaded), "unregistered kind must not break unmarshal")
+
+	fc := clockwork.NewFakeClock()
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
+
+	const instanceID = "durable-bogus-1"
+	_, driveErr := r.Drive(t.Context(), &reloaded, instanceID, map[string]any{"amount": 5})
+
+	require.Error(t, driveErr)
+	assert.ErrorIs(t, driveErr, model.ErrValidationNotReconstructed,
+		"a pending strategy fails closed with a reconstruction error at the executor")
+	assert.NotErrorIs(t, driveErr, validation.ErrInvalidInput,
+		"reconstruction failure is a server-config fault, not bad input")
+
+	_, _, loadErr := store.Load(t.Context(), instanceID)
+	assert.ErrorIs(t, loadErr, kernel.ErrInstanceNotFound, "rejected trigger must not commit any state")
 }
