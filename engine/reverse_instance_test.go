@@ -777,3 +777,60 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	assert.NotEqual(t, originalTimerID, r4.State.EventSubprocesses[0].TimerID,
 		"re-armed root-ESP arm must carry a freshly minted TimerID, not the stale original")
 }
+
+// TestCompensateRequested_ResetVarsWithoutReverseNode is the T6 (ADR-0109
+// hardening, finding #5) regression: CompensateRequested is a public,
+// directly-constructible struct, so a caller can build one by hand expressing
+// reverse intent (ResetVars: true) while leaving ReverseNode empty — e.g.
+// engine.CompensateRequested{ResetVars: true} — instead of going through
+// NewReverseToStart. Today stepCompensateRequested ignores ResetVars whenever
+// ReverseNode == "" and falls through to the full-rollback TERMINATE branch,
+// silently discarding the caller's intent to resume rather than terminate.
+// This is the engine-level twin of the WithTargetNode("") footgun already
+// guarded at the runtime facade (see runtime/processdriver_reverse.go). The
+// combination must instead be rejected with a workflow-engine: error.
+//
+// A well-formed NewReverseToStart trigger (ReverseNode AND ResetVars both
+// set) and a plain NewCompensateRequested (ResetVars left false) must both be
+// completely unaffected by this guard — proven by the sibling table row and
+// by every other test in this file that continues to exercise those two
+// shapes end-to-end.
+func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
+	def := reverseSvcDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	// Drive to a stable Running (parked) state carrying one compensation
+	// record — the same precondition shape as the other reverse regressions
+	// in this file, so the guard is proven against a realistic state rather
+	// than a bare zero-value InstanceState.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdDo := findInvokeActionID(t, r1.Commands, "do")
+	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status, "precondition: instance running (parked) before the malformed trigger")
+	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
+	before := r2.State
+
+	// The malformed trigger under test: ResetVars set, ReverseNode left empty.
+	// NewCompensateRequested only exposes the well-formed shapes, so the
+	// footgun is built the same way an errant caller would build it — a raw
+	// struct literal starting from the constructor's zero-ReverseNode result
+	// and flipping the exported ResetVars field directly.
+	malformed := engine.NewCompensateRequested(t0, "")
+	malformed.ResetVars = true
+	require.Empty(t, malformed.ReverseNode, "precondition: trigger under test has ResetVars set but ReverseNode empty")
+
+	_, err = engine.Step(def, before, malformed, engine.StepOptions{})
+	require.Error(t, err, "ResetVars without ReverseNode must be rejected, not silently terminate the instance")
+	assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
+	assert.Contains(t, err.Error(), "ResetVars", "error must name the offending field")
+	assert.Contains(t, err.Error(), "ReverseNode", "error must name the missing field")
+
+	// Step is pure (clones state internally); the caller's original state
+	// value must be unaffected by the erroring call — in particular it must
+	// NOT have been silently terminated.
+	assert.Equal(t, before.Status, r2.State.Status, "original state must be unchanged after a rejected trigger")
+	assert.Equal(t, before.RootCompensations, r2.State.RootCompensations, "original compensation records must be unchanged after a rejected trigger")
+}

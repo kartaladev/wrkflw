@@ -42,6 +42,21 @@ func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecor
 // finalErr, producing StatusTerminated with no FailInstance on a full rollback —
 // identical to the prior behaviour.
 func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+	// Reject a malformed trigger that expresses reverse intent (ResetVars)
+	// without naming a resume target (ReverseNode). CompensateRequested is a
+	// public, directly-constructible struct — a caller who builds one by hand
+	// (e.g. CompensateRequested{ResetVars: true}) instead of going through
+	// NewReverseToStart can produce exactly this shape. Without this guard,
+	// stepCompensationFinish's outcome switch falls through to the full-
+	// rollback TERMINATE branch (ReverseNode == "" takes no reverse branch),
+	// silently discarding ResetVars and terminating the instance instead of
+	// resuming it — the engine-level twin of the WithTargetNode("") footgun
+	// already guarded at the runtime facade (ADR-0109 hardening, finding #5).
+	// Checked first, ahead of the state-dependent guards below, because it is
+	// a pure trigger-shape validation independent of s.Status.
+	if t.ResetVars && t.ReverseNode == "" {
+		return StepResult{}, fmt.Errorf("workflow-engine: ResetVars requires ReverseNode (use NewReverseToStart)")
+	}
 	// If a compensation walk is already in flight, ignore the redundant request:
 	// restarting beginCompensation would re-walk records that are still
 	// mid-consumption and re-emit the in-flight compensation (double-compensation).
