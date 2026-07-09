@@ -57,6 +57,20 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 	if t.ResetVars && t.ReverseNode == "" {
 		return StepResult{}, fmt.Errorf("workflow-engine: ResetVars requires ReverseNode (use NewReverseToStart)")
 	}
+	// Sibling guard (F1.2, FU#1): reject a malformed trigger that expresses
+	// target-reverse variable-restore intent (RestoreTargetVars) without a
+	// target node (ToNode) to look the snapshot up on. RestoreTargetVars
+	// restores Variables to ToNode's own start-of-visit snapshot (the Input
+	// captured on ToNode's compensation record) — with ToNode == "" there is
+	// no record to read the snapshot from. CompensateRequested is a public,
+	// directly-constructible struct, so a caller who builds one by hand
+	// (e.g. CompensateRequested{RestoreTargetVars: true}) instead of going
+	// through NewReverseToNode can produce exactly this shape. Same
+	// pure-trigger-shape rationale as the ResetVars guard above, and checked
+	// alongside it for the same reason.
+	if t.RestoreTargetVars && t.ToNode == "" {
+		return StepResult{}, fmt.Errorf("workflow-engine: RestoreTargetVars requires ToNode (use NewReverseToNode)")
+	}
 	// If a compensation walk is already in flight, ignore the redundant request:
 	// restarting beginCompensation would re-walk records that are still
 	// mid-consumption and re-emit the in-flight compensation (double-compensation).

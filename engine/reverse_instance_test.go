@@ -841,6 +841,65 @@ func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
 	assert.Equal(t, wantRecords, before.RootCompensations, "caller's compensation records must be unchanged after a rejected trigger")
 }
 
+// TestCompensateRequested_RestoreTargetVarsWithoutToNode is the F1.2 (FU#1)
+// regression: CompensateRequested is a public, directly-constructible struct,
+// so a caller can build one by hand expressing target-reverse intent
+// (RestoreTargetVars: true) while leaving ToNode empty — e.g.
+// engine.CompensateRequested{RestoreTargetVars: true} — instead of going
+// through NewReverseToNode. RestoreTargetVars restores Variables to ToNode's
+// own start-of-visit snapshot, so without a ToNode there is nothing to look
+// up: today stepCompensateRequested ignores RestoreTargetVars whenever
+// ToNode == "" and falls through to the full-rollback TERMINATE branch,
+// silently discarding the caller's intent. This is the sibling footgun to the
+// ResetVars-without-ReverseNode guard proven above; the combination must
+// instead be rejected with a workflow-engine: error.
+//
+// A well-formed NewReverseToNode trigger (ToNode AND RestoreTargetVars both
+// set) and a plain NewCompensateRequested (RestoreTargetVars left false) must
+// both be completely unaffected by this guard.
+func TestCompensateRequested_RestoreTargetVarsWithoutToNode(t *testing.T) {
+	def := reverseSvcDef()
+	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+
+	// Drive to a stable Running (parked) state carrying one compensation
+	// record — same precondition shape as the ResetVars-without-ReverseNode
+	// regression above.
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
+	require.NoError(t, err)
+	cmdDo := findInvokeActionID(t, r1.Commands, "do")
+	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, r2.State.Status, "precondition: instance running (parked) before the malformed trigger")
+	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
+	before := r2.State
+
+	// The malformed trigger under test: RestoreTargetVars set, ToNode left
+	// empty. NewCompensateRequested only exposes the well-formed shapes, so
+	// the footgun is built the same way an errant caller would build it — a
+	// raw struct literal starting from the constructor's zero-ToNode result
+	// and flipping the exported RestoreTargetVars field directly.
+	malformed := engine.NewCompensateRequested(t0, "")
+	malformed.RestoreTargetVars = true
+	require.Empty(t, malformed.ToNode, "precondition: trigger under test has RestoreTargetVars set but ToNode empty")
+
+	// Snapshot the caller's observable state BEFORE the erroring Step so the
+	// no-mutation assertions below compare against an independent baseline.
+	wantStatus := before.Status
+	wantRecords := append([]engine.CompensationRecord(nil), before.RootCompensations...)
+
+	_, err = engine.Step(def, before, malformed, engine.StepOptions{})
+	require.Error(t, err, "RestoreTargetVars without ToNode must be rejected, not silently terminate the instance")
+	assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
+	assert.Contains(t, err.Error(), "RestoreTargetVars", "error must name the offending field")
+	assert.Contains(t, err.Error(), "ToNode", "error must name the missing field")
+
+	// Step is pure (clones state internally); the caller's original state value
+	// must be unaffected by the erroring call.
+	assert.Equal(t, wantStatus, before.Status, "caller's state must be unchanged (still Running) after a rejected trigger")
+	assert.Equal(t, wantRecords, before.RootCompensations, "caller's compensation records must be unchanged after a rejected trigger")
+}
+
 // TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer is the FU#2 /
 // Task F2.2 regression: a CancelRequested arriving while compensation records
 // exist runs the compensation walk to a TERMINATE finish (applyTerminate,
