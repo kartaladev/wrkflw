@@ -208,11 +208,12 @@ func TestActionFailedJitterBackwardCompat(t *testing.T) {
 	require.Equal(t, 0.0, af.JitterFraction, "missing jitter key must default to 0 — no migration needed")
 }
 
-// TestCompensateRequestedReverseRoundTrip asserts that the ReverseNode/ResetVars
-// fields added for ReverseInstance (ADR-0109) survive a MarshalTrigger→
-// UnmarshalTrigger round-trip, and that a plain ToNode-only trigger still
-// round-trips with ReverseNode/ResetVars left at their zero values (back-compat
-// with journal rows written before these fields existed).
+// TestCompensateRequestedReverseRoundTrip asserts that the ReverseNode/ResetVars/
+// RestoreTargetVars fields added for ReverseInstance (ADR-0109/FU#1) survive a
+// MarshalTrigger→UnmarshalTrigger round-trip, and that a plain ToNode-only
+// trigger still round-trips with ReverseNode/ResetVars/RestoreTargetVars left at
+// their zero values (back-compat with journal rows written before these fields
+// existed).
 func TestCompensateRequestedReverseRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -226,21 +227,33 @@ func TestCompensateRequestedReverseRoundTrip(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "plain ToNode leaves ReverseNode and ResetVars at zero value",
+			name: "plain ToNode leaves ReverseNode, ResetVars and RestoreTargetVars at zero value",
 			in:   engine.NewCompensateRequested(at, "n1"),
 			assert: func(t *testing.T, got engine.CompensateRequested) {
 				assert.Equal(t, "n1", got.ToNode)
 				assert.Empty(t, got.ReverseNode)
 				assert.False(t, got.ResetVars)
+				assert.False(t, got.RestoreTargetVars)
 			},
 		},
 		{
-			name: "ReverseToStart round-trips ReverseNode and ResetVars",
+			name: "ReverseToStart round-trips ReverseNode and ResetVars, leaves RestoreTargetVars false",
 			in:   engine.NewReverseToStart(at, "start"),
 			assert: func(t *testing.T, got engine.CompensateRequested) {
 				assert.Empty(t, got.ToNode)
 				assert.Equal(t, "start", got.ReverseNode)
 				assert.True(t, got.ResetVars)
+				assert.False(t, got.RestoreTargetVars)
+			},
+		},
+		{
+			name: "ReverseToNode round-trips ToNode and RestoreTargetVars, leaves ReverseNode/ResetVars false",
+			in:   engine.NewReverseToNode(at, "X"),
+			assert: func(t *testing.T, got engine.CompensateRequested) {
+				assert.Equal(t, "X", got.ToNode)
+				assert.Empty(t, got.ReverseNode)
+				assert.False(t, got.ResetVars)
+				assert.True(t, got.RestoreTargetVars)
 			},
 		},
 	}
