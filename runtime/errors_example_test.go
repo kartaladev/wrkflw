@@ -67,8 +67,8 @@ func (e *sagaActionError) Error() string { return e.msg }
 
 // sagaDef builds a process modelling a classic booking saga:
 //
-//	start → book (CompensationAction:"cancel-booking")
-//	       → pay  (CompensationAction:"refund")
+//	start → book (CompensateAction:"cancel-booking")
+//	       → pay  (CompensateAction:"refund")
 //	       → ship (may fail; caught by boundary error → end-fail)
 //	       → end
 //
@@ -82,8 +82,8 @@ func sagaDef() *model.ProcessDefinition {
 		ID: "saga", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensation("cancel-booking")),
-			activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensateAction("cancel-booking")),
+			activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensateAction("refund")),
 			activity.NewServiceTask("ship", activity.WithActionName("ship")),
 			// Boundary catches ship failure so the unhandled-error auto-compensation
 			// path (ADR-0034) is not triggered; RootCompensations stays intact for

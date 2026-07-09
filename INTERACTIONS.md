@@ -265,7 +265,7 @@ Two phases: an **undo log** accumulated during forward flow, then replayed in
 reverse. The replay reuses the normal `InvokeAction` → `action.Catalog` machinery.
 
 ```
-PHASE 1 — forward: each activity with a CompensationAction appends a
+PHASE 1 — forward: each activity with a CompensateAction appends a
           CompensationRecord{NodeID, Action, Input} to s.RootCompensations
           (oldest-first). Sub-process scopes archive theirs on close.
 

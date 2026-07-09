@@ -49,7 +49,7 @@ func ExampleNewBuilder() {
 		AddStartEvent("start").
 		AddServiceTask("charge",
 			activity.WithActionName("charge-card"),
-			activity.WithCompensation("refund-card"),
+			activity.WithCompensateAction("refund-card"),
 		).
 		AddUserTask("approve", []string{"manager"}).
 		AddEndEvent("end").

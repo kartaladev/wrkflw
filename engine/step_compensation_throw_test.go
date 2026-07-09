@@ -29,7 +29,7 @@ import (
 
 // throwDefWithCompensableSubProcess returns a process definition:
 //
-//	start → sub(inner-start → inner-svc(CompensationAction:"cancel-inner") → inner-end)
+//	start → sub(inner-start → inner-svc(CompensateAction:"cancel-inner") → inner-end)
 //	      → compThrow(KindIntermediateThrowEvent, CompensateRef:"sub")
 //	      → afterThrow(UserTask or ServiceTask — keeps execution parked after resume)
 //	      → end
@@ -42,7 +42,7 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 		ID: "throw-nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensateAction("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -201,7 +201,7 @@ func secondThrowDef() *model.ProcessDefinition {
 		ID: "second-throw-nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book-2"), activity.WithCompensation("cancel-2")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-2"), activity.WithCompensateAction("cancel-2")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -299,7 +299,7 @@ func throwThenCancelDef() *model.ProcessDefinition {
 		ID: "ttc-nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book-ttc"), activity.WithCompensation("cancel-ttc")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-ttc"), activity.WithCompensateAction("cancel-ttc")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -421,7 +421,7 @@ func TestNoDoubleCompensationAfterThrowAndCancel(t *testing.T) {
 // ── (d) Regression: existing instance-wide cancel compensation still passes ──
 //
 // This is covered by the existing tests in step_compensation_error_cancel_test.go
-// (TestCancelWithCompensation, TestErrorWithCompensation, etc.). That test file is
+// (TestCancelWithCompensateAction, TestErrorWithCompensateAction, etc.). That test file is
 // intentionally NOT modified — it regresses the existing behaviour unchanged.
 // Here we add a quick smoke-test that exercises the cancel path WITH archived
 // compensations (no throw before cancel) to ensure consolidateArchiveIntoRoot
@@ -477,7 +477,7 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 
 // cancelMidThrowDef returns a process definition:
 //
-//	start → rootSvc(CompensationAction:"cancel-root") → sub(inner-svc, CompensationAction:"cancel-inner")
+//	start → rootSvc(CompensateAction:"cancel-root") → sub(inner-svc, CompensateAction:"cancel-inner")
 //	      → compThrow(ref:"sub") → afterThrow(UserTask) → end
 //
 // The root-level service task (rootSvc) completes first (recorded in RootCompensations).
@@ -495,7 +495,7 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 		ID: "cmtw-nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensateAction("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -507,7 +507,7 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 		ID: "cmtw-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("rootSvc", activity.WithActionName("book-root"), activity.WithCompensation("cancel-root")),
+			activity.NewServiceTask("rootSvc", activity.WithActionName("book-root"), activity.WithCompensateAction("cancel-root")),
 			activity.NewSubProcess("sub", nested),
 			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
 			activity.NewUserTask("afterThrow", nil),
@@ -683,7 +683,7 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 		ID: "throw-nested-noout", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensateAction("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{

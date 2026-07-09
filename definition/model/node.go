@@ -71,8 +71,8 @@ type ActivityFields struct {
 	RetryPolicy *RetryPolicy
 	// RecoveryFlow is the ID of the sequence flow to take when retries are exhausted.
 	RecoveryFlow string
-	// CompensationAction is the name of the action.Action to invoke during rollback.
-	CompensationAction string
+	// CompensateAction is the name of the action.Action to invoke during rollback.
+	CompensateAction string
 	// CancelHandler is the optional action.Action to run when this node is interrupted.
 	CancelHandler string
 	// CompletionAction is the optional action.Action invoked when the node's

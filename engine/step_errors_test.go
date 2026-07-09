@@ -889,7 +889,7 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 		ID: "p-comp-unknown", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},

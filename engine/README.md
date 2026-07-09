@@ -413,7 +413,7 @@ is appended to `InstanceState.Incidents`. Operators clear incidents with
 
 ### Compensation
 
-Attach `activity.WithCompensation("undo-action")` to any activity. When the
+Attach `activity.WithCompensateAction("undo-action")` to any activity. When the
 activity completes, a `CompensationRecord` is appended (in completion order) to
 the relevant scope's record list.
 

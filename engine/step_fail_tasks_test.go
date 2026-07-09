@@ -97,7 +97,7 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 		ID: "f-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("charge", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("charge", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
 			gateway.NewParallel("fork"),
 			activity.NewUserTask("user", []string{"r"}),
 			activity.NewServiceTask("svc", activity.WithActionName("boom")),

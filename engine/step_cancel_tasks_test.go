@@ -185,7 +185,7 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 		ID: "cc-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
 			activity.NewUserTask("user", []string{"r"}),
 			event.NewEnd("end"),
 		},

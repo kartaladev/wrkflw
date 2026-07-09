@@ -14,7 +14,7 @@ import (
 // interfaces (e.g. WithActionName returns interface { ServiceTaskOption;
 // BusinessRuleOption }), so mis-applying it is a compile-time error. The broad
 // activityOnlyOption type means "valid on EVERY activity kind" and is reserved
-// for genuinely-universal options (WithRetryPolicy, WithCompensation,
+// for genuinely-universal options (WithRetryPolicy, WithCompensateAction,
 // WithDeadline, WithRecoveryFlow, WithCancelHandler). There is no runtime lint
 // pass; the type system is the guardrail.
 
@@ -134,9 +134,9 @@ func WithRecoveryFlow(flowID string) activityOnlyOption {
 	return withActivity(func(a *model.ActivityFields) { a.RecoveryFlow = flowID })
 }
 
-// WithCompensation sets the action.Action name invoked during rollback.
-func WithCompensation(action string) activityOnlyOption {
-	return withActivity(func(a *model.ActivityFields) { a.CompensationAction = action })
+// WithCompensateAction sets the action.Action name invoked during rollback.
+func WithCompensateAction(action string) activityOnlyOption {
+	return withActivity(func(a *model.ActivityFields) { a.CompensateAction = action })
 }
 
 // WithCancelHandler sets the action.Action run when the node is interrupted.

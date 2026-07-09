@@ -58,7 +58,7 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 		preCmds = append(preCmds, CancelTimer{TimerID: timerID})
 	}
 	// Resolve the effective definition for the token's scope so we can look up
-	// the node and check for a CompensationAction BEFORE merging output.
+	// the node and check for a CompensateAction BEFORE merging output.
 	tdef, err := defForScope(def, s, tok.ScopeID)
 	if err != nil {
 		return StepResult{}, err
@@ -66,7 +66,7 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 	// Record compensation BEFORE merging the output: the snapshot captures the
 	// instance variables as they existed when the activity was invoked.
 	if node, ok := tdef.Node(tok.NodeID); ok {
-		if compAction := compensationActionOf(node); compAction != "" {
+		if compAction := compensateActionOf(node); compAction != "" {
 			s.recordCompensation(tok.ScopeID, node.ID(), compAction, t.OccurredAt(), copyVars(s.Variables))
 		}
 	}

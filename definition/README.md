@@ -131,7 +131,7 @@ kind-specific data generically).
 ### Shared activity options (`definition/activity`)
 
 Work on all activity constructors: `WithName`, `WithRetryPolicy(*RetryPolicy)`,
-`WithRecoveryFlow(flowID)`, `WithCompensation(actionName)`,
+`WithRecoveryFlow(flowID)`, `WithCompensateAction(actionName)`,
 `WithCancelHandler(actionName)`, `WithDeadline(dur, flowID, actionName)`,
 `WithWaitReminder(every, actionName)`.
 
@@ -143,7 +143,7 @@ task), `WithCorrelationKey` (receive & send tasks).
 task := activity.NewServiceTask("charge",
     activity.WithActionName("charge-card"),
     activity.WithName("Charge Card"),
-    activity.WithCompensation("refund-card"),
+    activity.WithCompensateAction("refund-card"),
     activity.WithDeadline("2h", "sla-breach-flow", "notify-ops"),
     activity.WithRetryPolicy(&model.RetryPolicy{
         MaxAttempts: 5, InitialInterval: 2 * time.Second, BackoffCoef: 2.0,
@@ -183,7 +183,7 @@ def, err := definition.NewBuilder("order-fulfillment", 1).
     AddStartEvent("start").
     AddServiceTask("charge",
         activity.WithActionName("charge-card"),
-        activity.WithCompensation("refund-card")).
+        activity.WithCompensateAction("refund-card")).
     AddUserTask("approve", []string{"manager"}).
     AddEndEvent("end").
     Connect("start", "charge").

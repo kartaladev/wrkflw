@@ -32,7 +32,7 @@ import (
 // scopeCompensationDef returns a process definition:
 //
 //	start → sub(KindSubProcess: inner-start → inner-svc(ServiceTask, Action:"book",
-//	            CompensationAction:"cancel-book") → inner-end)
+//	            CompensateAction:"cancel-book") → inner-end)
 //	       → compThrow(KindIntermediateThrowEvent, CompensateRef:"sub")
 //	       → end
 //
@@ -44,7 +44,7 @@ func scopeCompensationDef() *model.ProcessDefinition {
 		ID: "scope-comp-nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensation("cancel-book")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensateAction("cancel-book")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{

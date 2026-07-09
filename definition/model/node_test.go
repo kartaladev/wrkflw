@@ -16,7 +16,7 @@ import (
 func TestServiceTaskConstructorAndAccessors(t *testing.T) {
 	n := activity.NewServiceTask("pay",
 		activity.WithActionName("charge-card"),
-		activity.WithCompensation("refund-card"),
+		activity.WithCompensateAction("refund-card"),
 		activity.WithRecoveryFlow("to-manual"),
 	)
 	if n.Kind() != model.KindServiceTask {
@@ -29,7 +29,7 @@ func TestServiceTaskConstructorAndAccessors(t *testing.T) {
 	if !ok {
 		t.Fatalf("node is %T, want activity.ServiceTask", n)
 	}
-	if st.Action != "charge-card" || st.CompensationAction != "refund-card" || st.RecoveryFlow != "to-manual" {
+	if st.Action != "charge-card" || st.CompensateAction != "refund-card" || st.RecoveryFlow != "to-manual" {
 		t.Fatalf("fields = %+v", st)
 	}
 }

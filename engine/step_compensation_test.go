@@ -3,7 +3,7 @@ package engine_test
 // step_compensation_test.go — black-box tests for Plan 8 Task 1:
 // recording CompensationRecord entries when a compensable activity completes.
 //
-// Compensable activity = a node with a non-empty CompensationAction field.
+// Compensable activity = a node with a non-empty CompensateAction field.
 // On completion (ActionCompleted for ServiceTask; sub-process exit), the engine
 // appends a CompensationRecord to the enclosing scope's Compensations list.
 
@@ -23,7 +23,7 @@ import (
 
 // compensableDef returns a minimal process:
 //
-//	start → svc(CompensationAction:"refund") → end
+//	start → svc(CompensateAction:"refund") → end
 //
 // The service task is compensable: when it completes, the engine should append
 // a CompensationRecord into its enclosing scope's Compensations list.
@@ -32,7 +32,7 @@ func compensableDef() *model.ProcessDefinition {
 		ID: "comp-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -42,7 +42,7 @@ func compensableDef() *model.ProcessDefinition {
 	}
 }
 
-// nonCompensableDef returns a process with a service task that has NO CompensationAction.
+// nonCompensableDef returns a process with a service task that has NO CompensateAction.
 func nonCompensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "plain-proc", Version: 1,
@@ -66,7 +66,7 @@ func compensableSubProcessDef() *model.ProcessDefinition {
 		ID: "nested", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensation("cancel-booking")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book"), activity.WithCompensateAction("cancel-booking")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -122,7 +122,7 @@ func TestCompletedActivityRecordsCompensation(t *testing.T) {
 
 	rec := r2.State.RootCompensations[0]
 	assert.Equal(t, "svc", rec.NodeID, "NodeID must identify the completed activity")
-	assert.Equal(t, "refund", rec.Action, "Action must be the node's CompensationAction")
+	assert.Equal(t, "refund", rec.Action, "Action must be the node's CompensateAction")
 	assert.Equal(t, completedAt, rec.CompletedAt, "CompletedAt must be the trigger's OccurredAt")
 	// Input is a snapshot of the instance variables AT completion time
 	// (before merging the action's output). The snapshot contains the vars that
@@ -132,7 +132,7 @@ func TestCompletedActivityRecordsCompensation(t *testing.T) {
 }
 
 // TestNonCompensableActivityDoesNotRecord asserts that a service task WITHOUT
-// a CompensationAction does not append any record.
+// a CompensateAction does not append any record.
 func TestNonCompensableActivityDoesNotRecord(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
 	completedAt := at.Add(5 * time.Second)
@@ -213,7 +213,7 @@ func TestCompensableActivityInsideSubProcessIsArchivedOnClose(t *testing.T) {
 	assert.Equal(t, "inner-svc", r2.State.ArchivedCompensations["sub"][0].NodeID,
 		"archived record NodeID must be the inner compensable activity")
 	assert.Equal(t, "cancel-booking", r2.State.ArchivedCompensations["sub"][0].Action,
-		"archived record Action must be the inner activity's CompensationAction")
+		"archived record Action must be the inner activity's CompensateAction")
 }
 
 // TestCompensationRecordInputIsSnapshotNotReference asserts the Input stored in
@@ -250,7 +250,7 @@ func TestCompensationRecordInputIsSnapshotNotReference(t *testing.T) {
 // compensableSubThenRootDef returns a process:
 //
 //	Outer: start → sub → rootUserTask → end
-//	Inner: inner-start → inner-svc(CompensationAction:"cancel-inner") → inner-end
+//	Inner: inner-start → inner-svc(CompensateAction:"cancel-inner") → inner-end
 //
 // The root user task keeps the instance Running after the sub-process exits, so
 // a CompensateRequested can be issued and must reach the now-hoisted inner record.
@@ -259,7 +259,7 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 		ID: "nested-hoist", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensation("cancel-inner")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("book-inner"), activity.WithCompensateAction("cancel-inner")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -349,13 +349,13 @@ func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 // CompensationRecord was written into the sub-process scope (not the root).
 //
 //	Outer: start → sub → end
-//	Inner: inner-start → svc(CompensationAction:"x") → userTask → inner-end
+//	Inner: inner-start → svc(CompensateAction:"x") → userTask → inner-end
 func openSubProcessWithParkDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "nested-park", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensation("x")),
+			activity.NewServiceTask("svc", activity.WithActionName("book"), activity.WithCompensateAction("x")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("inner-end"),
 		},
@@ -423,7 +423,7 @@ func TestCompensableActivityInsideOpenSubProcessScopeRecords(t *testing.T) {
 	assert.Equal(t, "svc", r2.State.Scopes[0].Compensations[0].NodeID,
 		"NodeID must be the compensable service task")
 	assert.Equal(t, "x", r2.State.Scopes[0].Compensations[0].Action,
-		"Action must be the CompensationAction configured on svc")
+		"Action must be the CompensateAction configured on svc")
 
 	// Root compensations must be empty: activity was inside the sub-process.
 	assert.Empty(t, r2.State.RootCompensations,
@@ -434,8 +434,8 @@ func TestCompensableActivityInsideOpenSubProcessScopeRecords(t *testing.T) {
 
 // threeCompensableDef returns a process:
 //
-//	start → step1(CompensationAction:"c1") → step2(CompensationAction:"c2") →
-//	         step3(CompensationAction:"c3") → userTask → end
+//	start → step1(CompensateAction:"c1") → step2(CompensateAction:"c2") →
+//	         step3(CompensateAction:"c3") → userTask → end
 //
 // The user task keeps the process running after the three compensable steps
 // complete, giving us a stable state to issue CompensateRequested against.
@@ -444,9 +444,9 @@ func threeCompensableDef() *model.ProcessDefinition {
 		ID: "three-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("step1", activity.WithActionName("a1"), activity.WithCompensation("c1")),
-			activity.NewServiceTask("step2", activity.WithActionName("a2"), activity.WithCompensation("c2")),
-			activity.NewServiceTask("step3", activity.WithActionName("a3"), activity.WithCompensation("c3")),
+			activity.NewServiceTask("step1", activity.WithActionName("a1"), activity.WithCompensateAction("c1")),
+			activity.NewServiceTask("step2", activity.WithActionName("a2"), activity.WithCompensateAction("c2")),
+			activity.NewServiceTask("step3", activity.WithActionName("a3"), activity.WithCompensateAction("c3")),
 			activity.NewUserTask("userTask", nil),
 			event.NewEnd("end"),
 		},
@@ -626,7 +626,7 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 
 // rootThenSubProcessCompensableDef returns a process:
 //
-//	start → rootSvc(CompensationAction:"root-comp") → sub(inner-svc CompensationAction:"inner-comp") → rootUserTask → end
+//	start → rootSvc(CompensateAction:"root-comp") → sub(inner-svc CompensateAction:"inner-comp") → rootUserTask → end
 //
 // Completion order: rootSvc(1) → sub exits (inner-svc hoisted 2) → rootUserTask (parked).
 // Expected reverse-order: inner-comp first (most recent), root-comp second.
@@ -635,7 +635,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 		ID: "nested-order", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-book"), activity.WithCompensation("inner-comp")),
+			activity.NewServiceTask("inner-svc", activity.WithActionName("inner-book"), activity.WithCompensateAction("inner-comp")),
 			event.NewEnd("inner-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -647,7 +647,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 		ID: "order-proc", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("rootSvc", activity.WithActionName("root-book"), activity.WithCompensation("root-comp")),
+			activity.NewServiceTask("rootSvc", activity.WithActionName("root-book"), activity.WithCompensateAction("root-comp")),
 			activity.NewSubProcess("sub", nested),
 			activity.NewUserTask("rootUserTask", nil),
 			event.NewEnd("end"),
@@ -753,7 +753,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 //
 //	Outer: start → outerSub → rootUserTask → end
 //	OuterSub: inner-start → innerSub → outer-end
-//	InnerSub: g-start → grandchildSvc(CompensationAction:"gc-comp") → g-end
+//	InnerSub: g-start → grandchildSvc(CompensateAction:"gc-comp") → g-end
 //
 // After both scopes close, the grandchild record must be reachable at root.
 func twoLevelNestedCompensableDef() *model.ProcessDefinition {
@@ -761,7 +761,7 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 		ID: "grandchild", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("g-start"),
-			activity.NewServiceTask("grandchildSvc", activity.WithActionName("gc-book"), activity.WithCompensation("gc-comp")),
+			activity.NewServiceTask("grandchildSvc", activity.WithActionName("gc-book"), activity.WithCompensateAction("gc-comp")),
 			event.NewEnd("g-end"),
 		},
 		Flows: []flow.SequenceFlow{

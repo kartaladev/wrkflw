@@ -29,7 +29,7 @@ type nodeYAML struct {
 	ReminderAction        string          `yaml:"reminderAction,omitempty"`
 	RetryPolicy           *RetryPolicy    `yaml:"retryPolicy,omitempty"`
 	RecoveryFlow          string          `yaml:"recoveryFlow,omitempty"`
-	CompensationAction    string          `yaml:"compensationAction,omitempty"`
+	CompensateAction      string          `yaml:"compensateAction,omitempty"`
 	CompensateRef         string          `yaml:"compensateRef,omitempty"`
 	CancelHandler         string          `yaml:"cancelHandler,omitempty"`
 	CompletionAction      string          `yaml:"completionAction,omitempty"`
@@ -104,7 +104,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		ReminderAction:        ny.ReminderAction,
 		RetryPolicy:           ny.RetryPolicy,
 		RecoveryFlow:          ny.RecoveryFlow,
-		CompensationAction:    ny.CompensationAction,
+		CompensateAction:      ny.CompensateAction,
 		CompensateRef:         ny.CompensateRef,
 		CancelHandler:         ny.CancelHandler,
 		CompletionAction:      ny.CompletionAction,

@@ -74,7 +74,7 @@ func main() {
 		AddStartEvent("start").
 		AddServiceTask("charge",
 			activity.WithActionName("charge-card"),
-			activity.WithCompensation("refund-card"),
+			activity.WithCompensateAction("refund-card"),
 		).
 		AddUserTask("approve", []string{"manager"}).
 		AddEndEvent("end").
@@ -138,7 +138,7 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensationAction: refund-card
+    compensateAction: refund-card
   - id: e
     kind: endEvent
 flows:
@@ -453,7 +453,7 @@ process (e.g. after a downstream failure), it runs compensation actions in rever
 ```go
 activity.NewServiceTask("charge",
     activity.WithActionName("charge-card"),
-    activity.WithCompensation("refund-card"),
+    activity.WithCompensateAction("refund-card"),
 )
 ```
 
@@ -644,7 +644,7 @@ same set of functional options:
 | `model.WithName(string)` | Human-readable display name. |
 | `activity.WithRetryPolicy(*model.RetryPolicy)` | Per-node retry policy (see below). |
 | `activity.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
-| `activity.WithCompensation(actionName string)` | Service action invoked on rollback (reverse order). |
+| `activity.WithCompensateAction(actionName string)` | Service action invoked on rollback (reverse order). |
 | `activity.WithCancelHandler(actionName string)` | Service action run when the node is interrupted. |
 | `activity.WithDeadline(duration, flowID, actionName string)` | On deadline breach: take `flowID` and/or run `actionName`. |
 | `activity.WithWaitReminder(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
@@ -717,7 +717,7 @@ is interrupting) — its nested start event carries the trigger.
 ```go
 activity.NewServiceTask("charge",
     activity.WithActionName("charge-card"),
-    activity.WithCompensation("refund-card"),
+    activity.WithCompensateAction("refund-card"),
     activity.WithRetryPolicy(&retry),
 )
 activity.NewUserTask("approve", []string{"manager"},
@@ -851,7 +851,7 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensationAction: refund-card
+    compensateAction: refund-card
     retryPolicy: { maxAttempts: 5, initialInterval: 1s, backoffCoef: 2.0 }
   - id: approve
     kind: userTask
@@ -976,7 +976,7 @@ parks) and `WithScheduler` (so the timer arms).
 
 ### 4. Compensation / saga rollback
 
-Activities carrying `WithCompensation(...)` record an undo action when they complete. On
+Activities carrying `WithCompensateAction(...)` record an undo action when they complete. On
 rollback the engine invokes those undo actions in **reverse completion order**.
 
 ```
@@ -989,8 +989,8 @@ then: deliver CompensateRequested("") → refund, then cancel-booking → termin
 ```
 
 ```go
-Add(activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensation("cancel-booking"))).
-Add(activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensation("refund"))).
+Add(activity.NewServiceTask("book", activity.WithActionName("book"), activity.WithCompensateAction("cancel-booking"))).
+Add(activity.NewServiceTask("pay", activity.WithActionName("pay"), activity.WithCompensateAction("refund"))).
 Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
 Add(event.NewBoundary("ship-err", "ship", event.WithBoundaryErrorCode(""))).
 // ... after the forward run completes via the boundary path:

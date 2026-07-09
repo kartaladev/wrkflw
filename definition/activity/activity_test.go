@@ -16,7 +16,7 @@ func TestServiceTaskOptions(t *testing.T) {
 	n := activity.NewServiceTask("charge",
 		activity.WithName("Charge"),
 		activity.WithActionName("charge-card"),
-		activity.WithCompensation("refund"),
+		activity.WithCompensateAction("refund"),
 		activity.WithCancelHandler("abort"),
 		activity.WithRecoveryFlow("charge->manual"),
 		activity.WithDeadline(schedule.AfterExpr(`"2h"`), "sla", "notify"),

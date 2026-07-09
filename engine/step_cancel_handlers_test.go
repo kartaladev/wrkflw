@@ -229,13 +229,13 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 
 // ── (d) cancel-with-compensation + node handler ──────────────────────────────
 
-// TestCancelHandler_WithCompensation verifies that on cancel, when both
+// TestCancelHandler_WithCompensateAction verifies that on cancel, when both
 // compensation records exist (completed compensable nodes) AND an active node
 // has a CancelHandler:
 //   - the per-node InvokeCancelAction is emitted
 //   - the compensation walk's first InvokeAction is emitted
 //   - the per-node command appears before the compensation walk command
-func TestCancelHandler_WithCompensation(t *testing.T) {
+func TestCancelHandler_WithCompensateAction(t *testing.T) {
 	at := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
 
 	// start → compensable-svc → user-task (with CancelHandler) → end
@@ -243,7 +243,7 @@ func TestCancelHandler_WithCompensation(t *testing.T) {
 		ID: "ch-comp", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensation("refund")),
+			activity.NewServiceTask("svc", activity.WithActionName("charge"), activity.WithCompensateAction("refund")),
 			activity.NewUserTask("user", nil, activity.WithCancelHandler("release-hold")),
 			event.NewEnd("end"),
 		},

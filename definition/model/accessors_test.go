@@ -142,7 +142,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 			event.NewStart("start", event.WithName("Start")),
 			activity.NewServiceTask("charge",
 				activity.WithActionName("charge-card"),
-				activity.WithCompensation("refund-card"),
+				activity.WithCompensateAction("refund-card"),
 				activity.WithRecoveryFlow("f-error"),
 				activity.WithRetryPolicy(p),
 				activity.WithDeadline(schedule.AfterDuration(24*time.Hour), "sla-flow", "sla-act"),
@@ -205,7 +205,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	charge, ok := restored.Nodes[1].(activity.ServiceTask)
 	require.True(t, ok)
 	assert.Equal(t, "charge-card", charge.Action)
-	assert.Equal(t, "refund-card", charge.CompensationAction)
+	assert.Equal(t, "refund-card", charge.CompensateAction)
 	assert.Equal(t, "f-error", charge.RecoveryFlow)
 	assert.Equal(t, "cancel-charge", charge.CancelHandler)
 	// DeadlineTimer is now schedule.TriggerSpec; verify via Duration()
@@ -235,7 +235,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 		"version": 1,
 		"nodes": [
 			{"id": "start", "kind": "startEvent", "name": "Start"},
-			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensationAction": "refund-card", "cancelHandler": "cancel-charge"},
+			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensateAction": "refund-card", "cancelHandler": "cancel-charge"},
 			{"id": "approve", "kind": "userTask", "candidateRoles": ["manager"], "eligibilityExpr": "amount > 1000"},
 			{"id": "wait", "kind": "intermediateCatchEvent", "timerDuration": "PT1H"},
 			{"id": "throw", "kind": "intermediateThrowEvent", "signalName": "done"},
@@ -271,7 +271,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	st, ok := def.Nodes[1].(activity.ServiceTask)
 	require.True(t, ok, "nodes[1] should be ServiceTask")
 	assert.Equal(t, "charge-card", st.Action)
-	assert.Equal(t, "refund-card", st.CompensationAction)
+	assert.Equal(t, "refund-card", st.CompensateAction)
 	assert.Equal(t, "cancel-charge", st.CancelHandler)
 
 	ut, ok := def.Nodes[2].(activity.UserTask)

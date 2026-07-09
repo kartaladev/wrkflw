@@ -704,7 +704,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithActionName("do-work"), activity.WithCompensation("undo-work")),
+					activity.NewServiceTask("task", activity.WithActionName("do-work"), activity.WithCompensateAction("undo-work")),
 					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("task")),
 					event.NewEnd("end"),
 				},

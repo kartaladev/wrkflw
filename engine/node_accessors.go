@@ -5,23 +5,23 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
-// compensationActionOf returns the CompensationAction of an activity node, or "".
-func compensationActionOf(n model.Node) string {
+// compensateActionOf returns the CompensateAction of an activity node, or "".
+func compensateActionOf(n model.Node) string {
 	switch v := n.(type) {
 	case activity.ServiceTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.UserTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.ReceiveTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.SendTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.BusinessRuleTask:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.SubProcess:
-		return v.CompensationAction
+		return v.CompensateAction
 	case activity.CallActivity:
-		return v.CompensationAction
+		return v.CompensateAction
 	default:
 		return ""
 	}

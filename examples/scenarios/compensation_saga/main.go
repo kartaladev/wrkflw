@@ -52,9 +52,9 @@ func main() {
 	def, err := definition.NewBuilder("booking-saga", 1).
 		Add(event.NewStart("start")).
 		Add(activity.NewServiceTask("book", activity.WithActionName("book"),
-			activity.WithCompensation("cancel-booking"))).
+			activity.WithCompensateAction("cancel-booking"))).
 		Add(activity.NewServiceTask("pay", activity.WithActionName("pay"),
-			activity.WithCompensation("refund"))).
+			activity.WithCompensateAction("refund"))).
 		Add(activity.NewServiceTask("ship", activity.WithActionName("ship"))).
 		// Catch-all boundary error keeps recorded compensations intact for the
 		// explicit rollback below.

@@ -423,12 +423,12 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 					return cmds, false, fmt.Errorf("workflow-engine: sub-process exit: %w", err)
 				}
 
-				// If the sub-process node itself carries a CompensationAction, record
+				// If the sub-process node itself carries a CompensateAction, record
 				// it in the parent scope. The snapshot is taken after the scope is
 				// closed (consistent: the sub-process completed at this point).
 				if spNode, spOK := parentDef.Node(subNodeID); spOK {
-					if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensationAction != "" {
-						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensationAction, c.at, copyVars(c.s.Variables))
+					if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensateAction != "" {
+						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensateAction, c.at, copyVars(c.s.Variables))
 					}
 				}
 

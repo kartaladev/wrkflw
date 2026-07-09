@@ -150,7 +150,7 @@ type eventSubprocessArm struct {
 
 // CompensationRecord is a record of a completed compensable activity within a
 // scope. Plan 8 (compensation/rollback) populates these records when an activity
-// with a non-empty CompensationAction completes; it walks them in reverse
+// with a non-empty CompensateAction completes; it walks them in reverse
 // completion order when rolling back the scope.
 //
 // Fields:

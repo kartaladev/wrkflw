@@ -42,7 +42,7 @@
         ]
       },
       "recoveryFlow": "charge-\u003efallback",
-      "compensationAction": "refund-card",
+      "compensateAction": "refund-card",
       "cancelHandler": "abort-charge"
     },
     {

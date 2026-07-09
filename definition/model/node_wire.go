@@ -24,28 +24,28 @@ type NodeWire struct {
 	DeadlineDuration string `json:"deadlineDuration,omitempty"`
 	ReminderEvery    string `json:"reminderEvery,omitempty"`
 	// nested trigger forms (canonical)
-	TimerTrigger       *TriggerWire       `json:"timerTrigger,omitempty"`
-	DeadlineTrigger    *TriggerWire       `json:"deadlineTrigger,omitempty"`
-	ReminderTrigger    *TriggerWire       `json:"reminderTrigger,omitempty"`
-	DeadlineFlow       string             `json:"deadlineFlow,omitempty"`
-	DeadlineAction     string             `json:"deadlineAction,omitempty"`
-	ReminderAction     string             `json:"reminderAction,omitempty"`
-	RetryPolicy        *RetryPolicy       `json:"retryPolicy,omitempty"`
-	RecoveryFlow       string             `json:"recoveryFlow,omitempty"`
-	CompensationAction string             `json:"compensationAction,omitempty"`
-	CompensateRef      string             `json:"compensateRef,omitempty"`
-	CancelHandler      string             `json:"cancelHandler,omitempty"`
-	CompletionAction   string             `json:"completionAction,omitempty"`
-	SignalName         string             `json:"signalName,omitempty"`
-	MessageName        string             `json:"messageName,omitempty"`
-	CorrelationKey     string             `json:"correlationKey,omitempty"`
-	ErrorCode          string             `json:"errorCode,omitempty"`
-	AttachedTo         string             `json:"attachedTo,omitempty"`
-	NonInterrupting    bool               `json:"nonInterrupting,omitempty"`
-	BoundaryAction     string             `json:"boundaryAction,omitempty"`
-	BoundaryErrorExpr  string             `json:"boundaryErrorExpr,omitempty"`
-	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
-	DefRef             string             `json:"defRef,omitempty"`
+	TimerTrigger      *TriggerWire       `json:"timerTrigger,omitempty"`
+	DeadlineTrigger   *TriggerWire       `json:"deadlineTrigger,omitempty"`
+	ReminderTrigger   *TriggerWire       `json:"reminderTrigger,omitempty"`
+	DeadlineFlow      string             `json:"deadlineFlow,omitempty"`
+	DeadlineAction    string             `json:"deadlineAction,omitempty"`
+	ReminderAction    string             `json:"reminderAction,omitempty"`
+	RetryPolicy       *RetryPolicy       `json:"retryPolicy,omitempty"`
+	RecoveryFlow      string             `json:"recoveryFlow,omitempty"`
+	CompensateAction  string             `json:"compensateAction,omitempty"`
+	CompensateRef     string             `json:"compensateRef,omitempty"`
+	CancelHandler     string             `json:"cancelHandler,omitempty"`
+	CompletionAction  string             `json:"completionAction,omitempty"`
+	SignalName        string             `json:"signalName,omitempty"`
+	MessageName       string             `json:"messageName,omitempty"`
+	CorrelationKey    string             `json:"correlationKey,omitempty"`
+	ErrorCode         string             `json:"errorCode,omitempty"`
+	AttachedTo        string             `json:"attachedTo,omitempty"`
+	NonInterrupting   bool               `json:"nonInterrupting,omitempty"`
+	BoundaryAction    string             `json:"boundaryAction,omitempty"`
+	BoundaryErrorExpr string             `json:"boundaryErrorExpr,omitempty"`
+	Subprocess        *ProcessDefinition `json:"subprocess,omitempty"`
+	DefRef            string             `json:"defRef,omitempty"`
 	// Validation is the descriptor for the node's validation-strategy slot, when
 	// it has one and the strategy is describable (validate.DescribableStrategy)
 	// or a pending reconstruction placeholder (PendingValidation). nil means
@@ -67,14 +67,14 @@ func toWire(n Node) NodeWire {
 // packages call it from their ToWire specs.
 func (w *NodeWire) PutActivity(a ActivityFields) {
 	w.RetryPolicy, w.RecoveryFlow = a.RetryPolicy, a.RecoveryFlow
-	w.CompensationAction, w.CancelHandler, w.CompletionAction = a.CompensationAction, a.CancelHandler, a.CompletionAction
+	w.CompensateAction, w.CancelHandler, w.CompletionAction = a.CompensateAction, a.CancelHandler, a.CompletionAction
 	w.PutWait(a.WaitFields)
 }
 
 // Activity reconstructs the shared activity fields from the wire form. Leaf
 // packages call it from their FromWire specs.
 func (w NodeWire) Activity() ActivityFields {
-	return ActivityFields{WaitFields: w.Wait(), RetryPolicy: w.RetryPolicy, RecoveryFlow: w.RecoveryFlow, CompensationAction: w.CompensationAction, CancelHandler: w.CancelHandler, CompletionAction: w.CompletionAction}
+	return ActivityFields{WaitFields: w.Wait(), RetryPolicy: w.RetryPolicy, RecoveryFlow: w.RecoveryFlow, CompensateAction: w.CompensateAction, CancelHandler: w.CancelHandler, CompletionAction: w.CompletionAction}
 }
 
 // Wait reconstructs the shared deadline+reminder fields from the wire form,
