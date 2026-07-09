@@ -157,6 +157,14 @@ wire/YAML bypasses the type-safe `WithXxxAction` options:
   (they are independent options per #2 above), leaving `DeadlineAction` non-empty with a zero
   `DeadlineTimer`; the action would then never fire since no deadline timer is ever armed.
   `Validate` now rejects that combination using the existing `model.DeadlineOf` accessor.
+- `ErrCompensateActionWithoutForwardAction` — a compensate action can only undo a forward action
+  that actually ran ("if you didn't DO it, you can't UNDO it"). For a `UserTask`/`ReceiveTask`
+  the forward action IS the completion action, and compensation is recorded at runtime only when
+  that completion action runs (`handleActionCompleted`). So `WithCompensateAction` on a
+  `UserTask`/`ReceiveTask` with no `WithCompletionAction` is dead config that can never produce a
+  compensation record; `Validate` now rejects it (via the new `model.CompensateActionOf` +
+  `model.CompletionActionOf` accessors), scoped strictly to those two kinds — the other activity
+  kinds always run a forward action, so their `WithCompensateAction` stays valid unconditionally.
 
 All renames are **hard renames** — no deprecated aliases are kept, matching the project's prior
 rename convention (e.g. ADR-0064, ADR-0066, ADR-0087). Renames land across Phases B-F of the
@@ -185,10 +193,10 @@ Phases B-F are mechanical renames/removals gated by the compiler and existing te
   `InvokeAction`/`ActionCompleted` round-trip, `TokenWaitingCommand` park state, and
   retry/incident/error-boundary handling that service-task actions already exercise, keeping the
   engine's action-failure model singular.
-- **Positive.** Two new `Validate`/`Build`-time guards (`ErrCompletionActionUnsupportedKind`,
-  `ErrDeadlineActionWithoutDeadline`) catch definitions where a field set via direct construction
-  or hand-authored wire/YAML would otherwise be silently dropped at runtime instead of failing
-  fast at authoring time.
+- **Positive.** Three new `Validate`/`Build`-time guards (`ErrCompletionActionUnsupportedKind`,
+  `ErrDeadlineActionWithoutDeadline`, `ErrCompensateActionWithoutForwardAction`) catch definitions
+  where a field set via direct construction or hand-authored wire/YAML would otherwise be silently
+  dropped or become dead config at runtime instead of failing fast at authoring time.
 - **Breaking (accepted, pre-1.0).** Public option renames and removals:
   `WithCompensation`→`WithCompensateAction`, `WithCancelHandler`→`WithCancelAction`,
   `WithActionName`→`WithTaskAction`, `WithDeadline`/`WithCatchDeadline` split into
