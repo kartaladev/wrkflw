@@ -656,16 +656,20 @@ func (s *InstanceState) cancelAllTimers() []Command {
 // This is called alongside cancelAllTimers on ALL terminal paths to prevent
 // gateway and boundary timer arms from leaking as orphaned scheduled tasks in
 // the runtime scheduler. Callers:
-//   - handleCancelRequested (admin cancel → StatusTerminated)
+//   - handleCancelRequested (admin cancel, no compensation records → StatusTerminated)
 //   - handleSubInstanceFailed (child instance failed → parent StatusFailed)
-//   - propagateError (unhandled-error terminal path)
-//   - beginCompensation and stepCompensationFinish (cancel in-flight tokens
-//     before/while compensating)
+//   - propagateError (unhandled-error, no compensation records → terminal path)
+//   - beginCompensation (cancel in-flight tokens at compensation walk-start)
+//   - applyTerminate (compensation walk finish, reached via stepCompensationFinish
+//     → applyFinish, when the walk ends the instance rather than resuming it)
 //
-// EventSubprocesses arms are also drained on the terminal and compensation paths
-// via removeEventSubprocessArmsForScope — this function does NOT drain them, so
-// callers that need to cover ESP arms call removeEventSubprocessArmsForScope
-// separately.
+// This function does NOT drain s.EventSubprocesses. beginCompensation invokes
+// it at walk-START, where root-scope ESP arms must survive — the walk may
+// still resume the instance (a ReverseNode target) rather than end it, so
+// their timers must keep running. The other four callers above run once the
+// instance is genuinely terminating and each additionally drains ESP arms
+// itself, via removeAllEventSubprocessArms (a sweep across ALL scopes) — not
+// through this function.
 func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	var cmds []Command
 	for _, ae := range s.ArmedEvents {

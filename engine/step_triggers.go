@@ -688,6 +688,9 @@ func handleSubInstanceFailed(s *InstanceState, t SubInstanceFailed) (StepResult,
 	cmds = append(cmds, s.cancelOpenTasks()...)
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+	for _, timerID := range s.removeAllEventSubprocessArms() {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 

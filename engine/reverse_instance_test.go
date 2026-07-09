@@ -952,3 +952,73 @@ func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 		})
 	}
 }
+
+// rootESPWithCallActivityDef: start → call-activity → end, plus a root-scope
+// event sub-process armed with a timer, so SubInstanceFailed can be driven
+// while a root ESP timer is outstanding.
+func rootESPWithCallActivityDef() *model.ProcessDefinition {
+	espInner := &model.ProcessDefinition{
+		ID: "resp-inner-ca", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("esp-start", event.WithStartTimer(schedule.AfterExpr(`"1h"`))),
+			activity.NewServiceTask("esp-svc", activity.WithTaskAction("esp-action")),
+			event.NewEnd("esp-end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "re1", Source: "esp-start", Target: "esp-svc"},
+			{ID: "re2", Source: "esp-svc", Target: "esp-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "p-ca-esp", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewCallActivity("call", model.Latest("child")),
+			event.NewEnd("end"),
+			event.NewEventSubProcess("root-esp", espInner),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "call"},
+			{ID: "f2", Source: "call", Target: "end"},
+		},
+	}
+}
+
+// TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer is the FU#2 /
+// Task F2.4 regression (a 4th terminal site found by whole-branch review):
+// handleSubInstanceFailed (a parent instance fails because a child
+// call-activity's sub-instance failed) sweeps s.Timers and
+// s.ArmedEvents/s.Boundaries via cancelAllTimers + cancelAllArmsAndBoundaries
+// but, before this fix, never drained s.EventSubprocesses — leaking a
+// root-level, timer-armed event sub-process's scheduled timer past this
+// terminal path, the same class of leak FU#2 fixed at the other three sites.
+func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) {
+	t0 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	def := rootESPWithCallActivityDef()
+
+	// ---- StartInstance → root ESP arms; call-activity parks awaiting the child. ----
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
+	espTimerID := r1.State.EventSubprocesses[0].TimerID
+	require.NotEmpty(t, espTimerID, "root ESP arm must carry a TimerID")
+
+	var ssiCmdID string
+	for _, cmd := range r1.Commands {
+		if ssi, ok := cmd.(engine.StartSubInstance); ok {
+			ssiCmdID = ssi.CommandID
+		}
+	}
+	require.NotEmpty(t, ssiCmdID, "expected StartSubInstance for the call-activity")
+
+	// ---- SubInstanceFailed → parent fails; the root ESP timer must be cancelled too. ----
+	r2, err := engine.Step(def, r1.State,
+		engine.NewSubInstanceFailed(t0.Add(time.Second), ssiCmdID, "child blew up"), engine.StepOptions{})
+	require.NoError(t, err)
+
+	assert.Equal(t, engine.StatusFailed, r2.State.Status, "parent must fail on SubInstanceFailed")
+	assert.Nil(t, r2.State.EventSubprocesses, "SubInstanceFailed terminate must drain ALL event-subprocess arms")
+	assert.Contains(t, r2.Commands, engine.CancelTimer{TimerID: espTimerID},
+		"SubInstanceFailed terminate must cancel the surviving root-ESP timer")
+}
