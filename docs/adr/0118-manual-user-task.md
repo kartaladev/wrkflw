@@ -104,3 +104,11 @@ Add a manual mode to `UserTask` rather than a new node kind:
   step *can* be restricted (e.g. `WithManual(false), WithEligibleRoles("operator")`)
   when the acknowledgement must come from a specific role. Immediate mode has
   no actor, so eligibility is not consulted.
+- **Immediate-mode audit lives in the instance record, not the claimable task
+  store.** An immediate manual task's completed record is appended to the
+  instance's `Tasks` (durable in the instance store), but no `AwaitHuman`/
+  `UpdateTask` command is emitted, so it never enters the `humantask.TaskStore`.
+  This is intentional: the `TaskStore` holds *claimable / actionable* tasks,
+  and an immediate task is never actionable. Consumers whose audit reporting
+  reads the instance's `Tasks` see it; those reading only the claimable
+  `TaskStore` will not.
