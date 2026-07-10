@@ -1,6 +1,10 @@
 package runtime
 
 import (
+	"fmt"
+	"log/slog"
+
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -52,7 +56,11 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 // pass [WithDefinitions](kernel.NewMemDefinitionRegistry()) to [NewProcessDriver]
 // and register directly into that isolated instance.
 func RegisterDefinition(def *model.ProcessDefinition) error {
-	return defaultDefinitionRegistry.Register(def)
+	if err := defaultDefinitionRegistry.Register(def); err != nil {
+		return err
+	}
+	warnForceTermination(def)
+	return nil
 }
 
 // MustRegisterDefinition registers def into the process-global
@@ -63,4 +71,44 @@ func RegisterDefinition(def *model.ProcessDefinition) error {
 // See [RegisterDefinition] for the error-returning variant and the full contract.
 func MustRegisterDefinition(def *model.ProcessDefinition) {
 	defaultDefinitionRegistry.MustRegister(def)
+	warnForceTermination(def)
+}
+
+// forceTerminationWarnings returns a non-fatal warning for each force-termination
+// end event in a definition that has only a single end event: force-termination
+// exists to cancel *other* branches, so on a single-end definition it is merely
+// redundant. Definitions with 2 or more end events produce no warning, since the
+// force-termination end then has other branches to cancel.
+func forceTerminationWarnings(def *model.ProcessDefinition) []string {
+	if def == nil {
+		return nil
+	}
+	var ends, forced []string
+	for _, n := range def.Nodes {
+		if n.Kind() != model.KindEndEvent {
+			continue
+		}
+		ends = append(ends, n.ID())
+		if ev, ok := n.(event.EndEvent); ok && ev.ForceTermination {
+			forced = append(forced, n.ID())
+		}
+	}
+	if len(ends) > 1 {
+		return nil
+	}
+	var warns []string
+	for _, id := range forced {
+		warns = append(warns, fmt.Sprintf(
+			"workflow-runtime: end event %q in definition %q forces termination but is the only end event; force-termination has no other branch to cancel (redundant)",
+			id, def.ID))
+	}
+	return warns
+}
+
+// warnForceTermination logs each forceTerminationWarnings entry for def at WARN
+// level via the process-wide slog default logger.
+func warnForceTermination(def *model.ProcessDefinition) {
+	for _, w := range forceTerminationWarnings(def) {
+		slog.Default().Warn(w)
+	}
 }

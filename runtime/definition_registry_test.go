@@ -10,6 +10,8 @@ package runtime_test
 //       KindCallActivity whose DefRef is registered via runtime.RegisterDefinition.
 //   (c) WithDefinitions(nil) is ignored; WithDefinitions(custom) overrides.
 //   (d) DEBUG construction summary: definitions=default-global vs definitions=custom.
+//   (e) forceTerminationWarnings + registration-time WARN on redundant
+//       single-end force-termination (ADR-0119).
 
 import (
 	"bytes"
@@ -25,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
@@ -333,3 +336,111 @@ func TestConstructionSummaryDefinitionsField(t *testing.T) {
 // uniqueDefSeq is a process-global counter used to generate unique definition IDs
 // so parallel tests never collide on the shared global registry.
 var uniqueDefSeq atomic.Int64
+
+// ── (e) forceTerminationWarnings + registration-time WARN (ADR-0119) ───────
+
+// TestForceTerminationWarnings verifies the pure forceTerminationWarnings
+// helper: a force-termination end event only warrants a WARN when it is the
+// *only* end event in the definition (redundant — there is no other branch to
+// cancel). Multi-end definitions and definitions with no force-termination end
+// produce no warnings.
+func TestForceTerminationWarnings(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		build  func() *model.ProcessDefinition
+		assert func(t *testing.T, warns []string)
+	}{
+		{
+			name: "single-end force-termination is redundant",
+			build: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("single", 1).
+					AddStartEvent("s").
+					AddEndEvent("e", event.WithForceTermination("x", event.OutcomeAbort)).
+					Connect("s", "e").
+					Build()
+				require.NoError(t, err)
+				return def
+			},
+			assert: func(t *testing.T, warns []string) {
+				require.Len(t, warns, 1)
+			},
+		},
+		{
+			name: "multi-end force-termination is meaningful",
+			build: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("multi", 1).
+					AddStartEvent("s").
+					AddParallelGateway("fork").
+					AddUserTask("a").
+					AddEndEvent("ea").
+					AddEndEvent("halt", event.WithForceTermination("x", event.OutcomeAbort)).
+					Connect("s", "fork").Connect("fork", "a").Connect("a", "ea").Connect("fork", "halt").
+					Build()
+				require.NoError(t, err)
+				return def
+			},
+			assert: func(t *testing.T, warns []string) {
+				require.Empty(t, warns)
+			},
+		},
+		{
+			name: "no force-termination, no warnings",
+			build: func() *model.ProcessDefinition {
+				def, err := definition.NewBuilder("plain", 1).
+					AddStartEvent("s").AddEndEvent("e").Connect("s", "e").Build()
+				require.NoError(t, err)
+				return def
+			},
+			assert: func(t *testing.T, warns []string) {
+				require.Empty(t, warns)
+			},
+		},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.assert(t, runtime.ExportForceTerminationWarnings(c.build()))
+		})
+	}
+}
+
+// TestRegisterDefinitionWarnsOnRedundantForceTermination verifies that
+// RegisterDefinition logs a WARN via slog.Default() after a successful
+// registration of a single-end force-termination definition. This test
+// installs a capturing slog default logger, so it must not run in parallel
+// with other tests that also mutate the process-wide default logger.
+func TestRegisterDefinitionWarnsOnRedundantForceTermination(t *testing.T) {
+	prevLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prevLogger) })
+
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	id := fmt.Sprintf("force-term-warn-%d", uniqueDefSeq.Add(1))
+	def, err := definition.NewBuilder(id, 1).
+		AddStartEvent("s").
+		AddEndEvent("e", event.WithForceTermination("x", event.OutcomeAbort)).
+		Connect("s", "e").
+		Build()
+	require.NoError(t, err)
+
+	require.NoError(t, runtime.RegisterDefinition(def))
+
+	lines := splitNonEmpty(buf.Bytes())
+	var sawWarn bool
+	for _, line := range lines {
+		var entry struct {
+			Level string `json:"level"`
+			Msg   string `json:"msg"`
+		}
+		require.NoError(t, json.Unmarshal(line, &entry))
+		if entry.Level == "WARN" {
+			sawWarn = true
+			assert.Contains(t, entry.Msg, id)
+			assert.Contains(t, entry.Msg, "forces termination but is the only end event")
+		}
+	}
+	assert.True(t, sawWarn, "expected a WARN log record from RegisterDefinition")
+}
