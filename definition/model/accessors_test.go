@@ -41,7 +41,7 @@ func TestRetryPolicyOf(t *testing.T) {
 	nonActivities := []model.Node{
 		event.NewStart("s"),
 		event.NewEnd("e"),
-		event.NewTerminateEnd("te"),
+		event.NewEnd("te", event.WithForceTermination("terminated", event.OutcomeAbort)),
 		event.NewErrorEnd("ee", "ERR"),
 		gateway.NewExclusive("xor"),
 		gateway.NewParallel("par"),
@@ -171,9 +171,9 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 				event.WithBoundaryErrorCode("ERR_PAYMENT"),
 			),
 			gateway.NewExclusive("xor", "Decision"),
-			event.NewEnd("end", "End"),
+			event.NewEnd("end", event.WithName("End")),
 			event.NewErrorEnd("err-end", "ERR_FATAL"),
-			event.NewTerminateEnd("term-end"),
+			event.NewEnd("term-end", event.WithForceTermination("terminated", event.OutcomeAbort)),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "charge"},
@@ -256,7 +256,6 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 			{"id": "inc", "kind": "inclusiveGateway"},
 			{"id": "ebg", "kind": "eventBasedGateway"},
 			{"id": "end", "kind": "endEvent"},
-			{"id": "terend", "kind": "terminateEndEvent"},
 			{"id": "errend", "kind": "errorEndEvent", "errorCode": "FATAL"},
 			{"id": "send", "kind": "sendTask", "messageName": "msg.send"},
 			{"id": "recv", "kind": "receiveTask", "messageName": "msg.recv", "correlationKey": "order.id"},
@@ -271,7 +270,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(legacyJSON), &def))
 
 	assert.Equal(t, "legacy", def.ID)
-	require.Len(t, def.Nodes, 20)
+	require.Len(t, def.Nodes, 19)
 
 	// Spot-check types
 	_, ok := def.Nodes[0].(event.StartEvent)
@@ -328,32 +327,29 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	_, ok = def.Nodes[12].(event.EndEvent)
 	require.True(t, ok, "nodes[12] should be EndEvent")
 
-	_, ok = def.Nodes[13].(event.TerminateEndEvent)
-	require.True(t, ok, "nodes[13] should be TerminateEndEvent")
-
-	ee, ok := def.Nodes[14].(event.ErrorEndEvent)
-	require.True(t, ok, "nodes[14] should be ErrorEndEvent")
+	ee, ok := def.Nodes[13].(event.ErrorEndEvent)
+	require.True(t, ok, "nodes[13] should be ErrorEndEvent")
 	assert.Equal(t, "FATAL", ee.ErrorCode)
 
-	send, ok := def.Nodes[15].(activity.SendTask)
-	require.True(t, ok, "nodes[15] should be SendTask")
+	send, ok := def.Nodes[14].(activity.SendTask)
+	require.True(t, ok, "nodes[14] should be SendTask")
 	assert.Equal(t, "msg.send", send.MessageName)
 
-	recv, ok := def.Nodes[16].(activity.ReceiveTask)
-	require.True(t, ok, "nodes[16] should be ReceiveTask")
+	recv, ok := def.Nodes[15].(activity.ReceiveTask)
+	require.True(t, ok, "nodes[15] should be ReceiveTask")
 	assert.Equal(t, "msg.recv", recv.MessageName)
 	assert.Equal(t, "order.id", recv.CorrelationKey)
 
-	brt, ok := def.Nodes[17].(activity.BusinessRuleTask)
-	require.True(t, ok, "nodes[17] should be BusinessRuleTask")
+	brt, ok := def.Nodes[16].(activity.BusinessRuleTask)
+	require.True(t, ok, "nodes[16] should be BusinessRuleTask")
 	assert.Equal(t, "apply-discount", brt.Action)
 
-	esp, ok := def.Nodes[18].(event.EventSubProcess)
-	require.True(t, ok, "nodes[18] should be EventSubProcess")
+	esp, ok := def.Nodes[17].(event.EventSubProcess)
+	require.True(t, ok, "nodes[17] should be EventSubProcess")
 	require.NotNil(t, esp.Subprocess)
 
-	compThrow, ok := def.Nodes[19].(event.IntermediateThrowEvent)
-	require.True(t, ok, "nodes[19] should be IntermediateThrowEvent")
+	compThrow, ok := def.Nodes[18].(event.IntermediateThrowEvent)
+	require.True(t, ok, "nodes[18] should be IntermediateThrowEvent")
 	assert.Equal(t, "charge", compThrow.CompensateRef)
 }
 

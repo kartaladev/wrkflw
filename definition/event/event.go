@@ -1,5 +1,5 @@
-// Package event holds the workflow event node kinds — start, end, terminate-end,
-// error-end, intermediate catch/throw, boundary, and event sub-process — for the
+// Package event holds the workflow event node kinds — start, end, error-end,
+// intermediate catch/throw, boundary, and event sub-process — for the
 // definition authoring layer. Import it to construct events (event.NewStart, …)
 // and, via its init, to register their (de)serialization with the definition
 // package.
@@ -74,12 +74,6 @@ type EndEvent struct {
 
 // Kind returns model.KindEndEvent.
 func (EndEvent) Kind() model.NodeKind { return model.KindEndEvent }
-
-// TerminateEndEvent terminates the entire process (including parallel branches).
-type TerminateEndEvent struct{ model.Base }
-
-// Kind returns model.KindTerminateEndEvent.
-func (TerminateEndEvent) Kind() model.NodeKind { return model.KindTerminateEndEvent }
 
 // ErrorEndEvent throws a workflow error when reached, caught by a boundary error event.
 type ErrorEndEvent struct {
@@ -197,11 +191,6 @@ func NewEnd(id string, opts ...EndOption) model.Node {
 	return n
 }
 
-// NewTerminateEnd constructs a TerminateEndEvent. An optional name may be provided.
-func NewTerminateEnd(id string, name ...string) model.Node {
-	return TerminateEndEvent{model.NewBase(id, optName(name))}
-}
-
 // NewErrorEnd constructs an ErrorEndEvent. An optional name may be provided.
 func NewErrorEnd(id, errorCode string, name ...string) model.Node {
 	return ErrorEndEvent{model.NewBase(id, optName(name)), errorCode}
@@ -296,11 +285,6 @@ func init() {
 				w.TerminationOutcome = v.Outcome.String()
 			}
 		},
-	})
-	model.RegisterKind(model.KindTerminateEndEvent, model.NodeSpec{
-		Name:     "terminateEndEvent",
-		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return TerminateEndEvent{b} },
-		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
 	model.RegisterKind(model.KindErrorEndEvent, model.NodeSpec{
 		Name:     "errorEndEvent",

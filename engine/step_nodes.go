@@ -55,9 +55,8 @@ type nodeStrategy interface {
 }
 
 // nodeStrategies maps each arm-bearing NodeKind to its strategy.
-// Kinds NOT in this map (KindTerminateEndEvent,
-// KindBoundaryEvent, KindEventSubProcess, KindUnspecified)
-// fall through to the post-dispatch logic in drive() unchanged.
+// Kinds NOT in this map (KindBoundaryEvent, KindEventSubProcess,
+// KindUnspecified) fall through to the post-dispatch logic in drive() unchanged.
 var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindServiceTask:            serviceTaskStrategy{},
 	model.KindBusinessRuleTask:       businessRuleTaskStrategy{},

@@ -72,11 +72,10 @@ func (b *Builder) Add(n model.Node) *Builder { b.inner.Add(n); return b }
 func (b *Builder) AddStartEvent(id string, opts ...event.StartOption) *Builder {
 	return b.Add(event.NewStart(id, opts...))
 }
-func (b *Builder) AddEndEvent(id string, name ...string) *Builder {
-	return b.Add(event.NewEnd(id, name...))
-}
-func (b *Builder) AddTerminateEndEvent(id string, name ...string) *Builder {
-	return b.Add(event.NewTerminateEnd(id, name...))
+
+// AddEndEvent adds an EndEvent. Use event.WithName and event.WithForceTermination.
+func (b *Builder) AddEndEvent(id string, opts ...event.EndOption) *Builder {
+	return b.Add(event.NewEnd(id, opts...))
 }
 func (b *Builder) AddErrorEndEvent(id, errorCode string, name ...string) *Builder {
 	return b.Add(event.NewErrorEnd(id, errorCode, name...))

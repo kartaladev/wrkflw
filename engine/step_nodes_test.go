@@ -30,7 +30,6 @@ var armBearingKinds = []model.NodeKind{
 // intentionallyUnhandledKinds is the set of node kinds that must NOT have a
 // drive() strategy — they fall through to the default park logic in drive().
 var intentionallyUnhandledKinds = []model.NodeKind{
-	model.KindTerminateEndEvent,
 	model.KindBoundaryEvent,
 	model.KindEventSubProcess,
 	model.KindUnspecified,

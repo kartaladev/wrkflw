@@ -155,8 +155,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		} else {
 			// Unhandled node kinds: park the token so the loop terminates rather
 			// than spinning. These are intentionally not in the registry:
-			// KindTerminateEndEvent, KindBoundaryEvent, KindEventSubProcess,
-			// KindUnspecified.
+			// KindBoundaryEvent, KindEventSubProcess, KindUnspecified.
 			tok.State = TokenWaitingCommand
 			stopped = true // token parked: Micro stops here
 		} // end else (non-registry kinds)
