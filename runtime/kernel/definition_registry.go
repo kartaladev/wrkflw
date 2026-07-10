@@ -57,3 +57,25 @@ func (r *MapDefinitionRegistry) Lookup(_ context.Context, q model.Qualifier) (*m
 	}
 	return def, nil
 }
+
+// ListDefinitions implements [DefinitionLister]. It returns each registered
+// definition exactly once, even though the constructor indexes every
+// definition under two Qualifier keys (pinned and latest) — dedupe is by
+// concrete *model.ProcessDefinition pointer, not by map key. ctx is ignored —
+// the enumeration is entirely in-memory. The registry is immutable after
+// construction, so no locking is required.
+func (r *MapDefinitionRegistry) ListDefinitions(context.Context) []*model.ProcessDefinition {
+	seen := make(map[*model.ProcessDefinition]struct{}, len(r.m))
+	out := make([]*model.ProcessDefinition, 0, len(r.m))
+	for _, d := range r.m {
+		if _, ok := seen[d]; ok {
+			continue
+		}
+		seen[d] = struct{}{}
+		out = append(out, d)
+	}
+	return out
+}
+
+// Compile-time assertion: MapDefinitionRegistry satisfies DefinitionLister.
+var _ DefinitionLister = (*MapDefinitionRegistry)(nil)

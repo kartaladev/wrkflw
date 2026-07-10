@@ -129,3 +129,20 @@ func (c *CachingDefinitionRegistry) Lookup(ctx context.Context, q model.Qualifie
 	}
 	return v.(*model.ProcessDefinition), nil
 }
+
+// ListDefinitions implements [DefinitionLister] by delegating to the backing
+// registry when it also implements DefinitionLister. It never enumerates the
+// cache's own entries map — that cache is a partial, TTL-bounded set of
+// recently looked-up qualifiers, not the full registered set, so it would
+// silently under-report. Returns nil when the backing registry does not
+// implement DefinitionLister.
+func (c *CachingDefinitionRegistry) ListDefinitions(ctx context.Context) []*model.ProcessDefinition {
+	lister, ok := c.backing.(DefinitionLister)
+	if !ok {
+		return nil
+	}
+	return lister.ListDefinitions(ctx)
+}
+
+// Compile-time assertion: CachingDefinitionRegistry satisfies DefinitionLister.
+var _ DefinitionLister = (*CachingDefinitionRegistry)(nil)
