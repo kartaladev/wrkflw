@@ -9,15 +9,35 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
+// eventTriggeredStart returns the first event-triggered start event of def — a
+// StartEvent carrying a signal, timer, or message trigger — or (zero,false) if
+// none exists (e.g. every start is a manual/trigger-less start). An event
+// sub-process is entered via this triggered start; StartNodes()[0] may be a
+// manual start now that multi-start nested definitions are legal (ADR-0121).
+func eventTriggeredStart(def *model.ProcessDefinition) (event.StartEvent, bool) {
+	for _, raw := range def.StartNodes() {
+		se, ok := raw.(event.StartEvent)
+		if !ok {
+			continue
+		}
+		if se.SignalName != "" || !se.Timer.IsZero() || se.MessageName != "" {
+			return se, true
+		}
+	}
+	return event.StartEvent{}, false
+}
+
 // armEventSubprocesses scans the given definition for KindEventSubProcess nodes
 // and records an eventSubprocessArm for each. Called when a scope opens (via
 // openScope in the KindSubProcess drive case) and at StartInstance for the root
 // definition. enclosingScopeID is "" for root-level event sub-processes.
 //
-// Trigger encoding:
-//   - Signal trigger: the nested definition's StartNodes()[0].SignalName is non-empty.
-//   - Timer trigger: the nested definition's StartNodes()[0].Timer is set (non-zero TriggerSpec).
-//   - Message trigger: the nested definition's StartNodes()[0].MessageName is non-empty.
+// The trigger is read from the nested definition's event-triggered start (see
+// eventTriggeredStart), not StartNodes()[0], which may be a manual start under
+// multi-start nested definitions (ADR-0121). Trigger encoding:
+//   - Signal trigger: the event-triggered start's SignalName is non-empty.
+//   - Timer trigger: the event-triggered start's Timer is set (non-zero TriggerSpec).
+//   - Message trigger: the event-triggered start's MessageName is non-empty.
 //
 // Timer triggers emit a ScheduleTimer command. Signal/message triggers are recorded
 // only (delivery arrives via SignalReceived/MessageReceived).
@@ -33,11 +53,13 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 		if n.Subprocess == nil {
 			continue // defensive: no nested def, skip
 		}
-		starts := n.Subprocess.StartNodes()
-		if len(starts) == 0 {
-			continue // defensive: no start node in nested def, skip
+		// Select the event-triggered start; StartNodes()[0] may be a manual start
+		// once multi-start nested defs are legal (ADR-0121). An ESP with no
+		// event-triggered start has no delivery to arm — skip it.
+		se, ok := eventTriggeredStart(n.Subprocess)
+		if !ok {
+			continue
 		}
-		startNode := starts[0]
 
 		arm := eventSubprocessArm{
 			EnclosingScopeID:    enclosingScopeID,
@@ -45,31 +67,28 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 			NonInterrupting:     n.NonInterrupting,
 		}
 
-		// startNode is a model.Node; assert to StartEvent to read trigger fields.
-		if se, isSE := startNode.(event.StartEvent); isSE {
-			if se.SignalName != "" {
-				arm.Signal = se.SignalName
-			} else if !se.Timer.IsZero() {
-				timerSpec, err := ResolveTrigger(eval, se.Timer, s.Variables)
-				if err != nil {
-					return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
-				}
-				timerID := s.nextTimerID()
-				arm.TimerID = timerID
-				cmds = append(cmds, ScheduleTimer{
-					TimerID: timerID,
-					Token:   "", // no host token; keyed by enclosing scope
-					Trigger: timerSpec,
-					Kind:    TimerIntermediate,
-				})
-			} else if se.MessageName != "" {
-				resolvedKey, err := eval.EvalString(se.CorrelationKey, s.Variables)
-				if err != nil {
-					return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", n.ID(), err)
-				}
-				arm.Message = se.MessageName
-				arm.MessageKey = resolvedKey
+		if se.SignalName != "" {
+			arm.Signal = se.SignalName
+		} else if !se.Timer.IsZero() {
+			timerSpec, err := ResolveTrigger(eval, se.Timer, s.Variables)
+			if err != nil {
+				return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
 			}
+			timerID := s.nextTimerID()
+			arm.TimerID = timerID
+			cmds = append(cmds, ScheduleTimer{
+				TimerID: timerID,
+				Token:   "", // no host token; keyed by enclosing scope
+				Trigger: timerSpec,
+				Kind:    TimerIntermediate,
+			})
+		} else if se.MessageName != "" {
+			resolvedKey, err := eval.EvalString(se.CorrelationKey, s.Variables)
+			if err != nil {
+				return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", n.ID(), err)
+			}
+			arm.Message = se.MessageName
+			arm.MessageKey = resolvedKey
 		}
 
 		s.EventSubprocesses = append(s.EventSubprocesses, arm)
@@ -138,9 +157,13 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// Not an EventSubProcess or has no nested def: defensive no-op.
 		return nil, nil
 	}
-	innerStarts := espNode.Subprocess.StartNodes()
-	if len(innerStarts) == 0 {
-		return nil, fmt.Errorf("workflow-engine: event sub-process %q: nested definition has no start node", ea.EventSubprocessNode)
+	// Enter the ESP at its event-triggered start (the one that armed this arm),
+	// not StartNodes()[0] which may be a manual start under multi-start nested
+	// defs (ADR-0121). If no event-triggered start exists, the arm should never
+	// have been recorded: defensive no-op.
+	innerStart, ok := eventTriggeredStart(espNode.Subprocess)
+	if !ok {
+		return nil, nil
 	}
 
 	var cmds []Command
@@ -204,7 +227,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// when this child scope drains with no tokens left in the enclosing scope,
 		// it closes the enclosing scope and resumes in the grandparent.
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
-		s.placeTokenInScope(innerStarts[0].ID(), childScopeID, at)
+		s.placeTokenInScope(innerStart.ID(), childScopeID, at)
 	} else {
 		// Non-interrupting: leave enclosing scope running, spawn alongside.
 
@@ -216,7 +239,7 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// This child scope runs alongside; when it drains, it is closed without affecting
 		// the enclosing scope (tokensInScope for the enclosing scope is unaffected).
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
-		s.placeTokenInScope(innerStarts[0].ID(), childScopeID, at)
+		s.placeTokenInScope(innerStart.ID(), childScopeID, at)
 	}
 
 	// Drive forward.

@@ -15,11 +15,22 @@ import "github.com/zakyalvan/krtlwrkflw/definition/model"
 func TargetNode(def *model.ProcessDefinition, st InstanceState, trg Trigger) (model.Node, bool) {
 	switch t := trg.(type) {
 	case StartInstance:
-		starts := def.StartNodes()
-		if len(starts) != 1 {
-			return nil, false
+		// Mirror handleStartInstance's resolution (engine/step_triggers.go): an
+		// explicit StartNodeID (set by NewStartInstanceAtNode for event-started
+		// instances) targets that node directly; an empty StartNodeID resolves the
+		// definition's manual (trigger-less) start. The old len(starts)==1 guard
+		// silently skipped input validation for every multi-start / event-started
+		// definition, since TargetNode is the sole enforcer of a StartEvent's
+		// InputValidation (via validateInput in runtime/processdriver.go).
+		startID := t.StartNodeID
+		if startID == "" {
+			n, err := resolveManualStart(def)
+			if err != nil {
+				return nil, false
+			}
+			startID = n
 		}
-		return starts[0], true
+		return def.Node(startID)
 	case MessageReceived:
 		nodeID, scopeID, ok := st.messageTargetNodeScoped(t.Name, t.CorrelationKey)
 		if !ok {
