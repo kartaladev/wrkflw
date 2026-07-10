@@ -26,28 +26,35 @@ type NodeWire struct {
 	DeadlineDuration string `json:"deadlineDuration,omitempty"`
 	WaitEvery        string `json:"waitEvery,omitempty"`
 	// nested trigger forms (canonical)
-	TimerTrigger      *TriggerWire       `json:"timerTrigger,omitempty"`
-	DeadlineTrigger   *TriggerWire       `json:"deadlineTrigger,omitempty"`
-	WaitTrigger       *TriggerWire       `json:"waitTrigger,omitempty"`
-	DeadlineFlow      string             `json:"deadlineFlow,omitempty"`
-	DeadlineAction    string             `json:"deadlineAction,omitempty"`
-	WaitAction        string             `json:"waitAction,omitempty"`
-	RetryPolicy       *RetryPolicy       `json:"retryPolicy,omitempty"`
-	RecoveryFlow      string             `json:"recoveryFlow,omitempty"`
-	CompensateAction  string             `json:"compensateAction,omitempty"`
-	CompensateRef     string             `json:"compensateRef,omitempty"`
-	CancelAction      string             `json:"cancelAction,omitempty"`
-	CompletionAction  string             `json:"completionAction,omitempty"`
-	SignalName        string             `json:"signalName,omitempty"`
-	MessageName       string             `json:"messageName,omitempty"`
-	CorrelationKey    string             `json:"correlationKey,omitempty"`
-	ErrorCode         string             `json:"errorCode,omitempty"`
-	AttachedTo        string             `json:"attachedTo,omitempty"`
-	NonInterrupting   bool               `json:"nonInterrupting,omitempty"`
-	BoundaryAction    string             `json:"boundaryAction,omitempty"`
-	BoundaryErrorExpr string             `json:"boundaryErrorExpr,omitempty"`
-	Subprocess        *ProcessDefinition `json:"subprocess,omitempty"`
-	DefRef            string             `json:"defRef,omitempty"`
+	TimerTrigger     *TriggerWire `json:"timerTrigger,omitempty"`
+	DeadlineTrigger  *TriggerWire `json:"deadlineTrigger,omitempty"`
+	WaitTrigger      *TriggerWire `json:"waitTrigger,omitempty"`
+	DeadlineFlow     string       `json:"deadlineFlow,omitempty"`
+	DeadlineAction   string       `json:"deadlineAction,omitempty"`
+	WaitAction       string       `json:"waitAction,omitempty"`
+	RetryPolicy      *RetryPolicy `json:"retryPolicy,omitempty"`
+	RecoveryFlow     string       `json:"recoveryFlow,omitempty"`
+	CompensateAction string       `json:"compensateAction,omitempty"`
+	CompensateRef    string       `json:"compensateRef,omitempty"`
+	CancelAction     string       `json:"cancelAction,omitempty"`
+	CompletionAction string       `json:"completionAction,omitempty"`
+	SignalName       string       `json:"signalName,omitempty"`
+	MessageName      string       `json:"messageName,omitempty"`
+	CorrelationKey   string       `json:"correlationKey,omitempty"`
+	ErrorCode        string       `json:"errorCode,omitempty"`
+	// ForceTermination, TerminationReason, and TerminationOutcome carry
+	// EndEvent's force-termination fields (ADR-0119). TerminationOutcome is the
+	// string form of TerminationOutcome ("complete"/"abort"), written only when
+	// ForceTermination is true so plain end events' wire form stays clean.
+	ForceTermination   bool               `json:"forceTermination,omitempty"`
+	TerminationReason  string             `json:"terminationReason,omitempty"`
+	TerminationOutcome string             `json:"terminationOutcome,omitempty"`
+	AttachedTo         string             `json:"attachedTo,omitempty"`
+	NonInterrupting    bool               `json:"nonInterrupting,omitempty"`
+	BoundaryAction     string             `json:"boundaryAction,omitempty"`
+	BoundaryErrorExpr  string             `json:"boundaryErrorExpr,omitempty"`
+	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
+	DefRef             string             `json:"defRef,omitempty"`
 	// Validation is the descriptor for the node's validation-strategy slot, when
 	// it has one and the strategy is describable (validate.DescribableStrategy)
 	// or a pending reconstruction placeholder (PendingValidation). nil means

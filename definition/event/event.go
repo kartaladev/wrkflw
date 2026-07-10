@@ -276,9 +276,26 @@ func init() {
 		},
 	})
 	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
-		Name:     "endEvent",
-		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return EndEvent{Base: b} },
-		ToWire:   func(model.Node, *model.NodeWire) {},
+		Name: "endEvent",
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
+			outcome := OutcomeComplete
+			if w.TerminationOutcome == "abort" {
+				outcome = OutcomeAbort
+			}
+			return EndEvent{
+				Base:              b,
+				ForceTermination:  w.ForceTermination,
+				TerminationReason: w.TerminationReason,
+				Outcome:           outcome,
+			}
+		},
+		ToWire: func(n model.Node, w *model.NodeWire) {
+			v := n.(EndEvent)
+			w.ForceTermination, w.TerminationReason = v.ForceTermination, v.TerminationReason
+			if v.ForceTermination {
+				w.TerminationOutcome = v.Outcome.String()
+			}
+		},
 	})
 	model.RegisterKind(model.KindTerminateEndEvent, model.NodeSpec{
 		Name:     "terminateEndEvent",
