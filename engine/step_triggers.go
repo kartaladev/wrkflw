@@ -1,14 +1,21 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
+
+// ErrNoNoneStart is returned when a StartInstance with an empty StartNodeID is
+// applied to a definition that has no none (trigger-less) start event — i.e.
+// every start event carries a message, signal, or timer trigger (ADR-0121).
+var ErrNoNoneStart = errors.New("workflow-engine: definition has no none start event")
 
 // handleStartInstance processes a StartInstance trigger: initialises instance
 // state, places the start token, arms top-level event sub-processes, and drives
@@ -20,11 +27,15 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	s.DefVersion = def.Version
 	mergeVars(s, t.Vars)
 	s.StartVariables = copyVars(s.Variables)
-	starts := def.StartNodes()
-	if len(starts) != 1 {
-		return StepResult{}, fmt.Errorf("workflow-engine: expected exactly one start, got %d", len(starts))
+	startID := t.StartNodeID
+	if startID == "" {
+		n, err := resolveNoneStart(def)
+		if err != nil {
+			return StepResult{}, err
+		}
+		startID = n
 	}
-	s.placeToken(starts[0].ID(), t.OccurredAt())
+	s.placeToken(startID, t.OccurredAt())
 	// Arm any top-level event sub-processes (root scope, enclosingScopeID == "").
 	espCmds, espErr := armEventSubprocesses(def, s, "", t.OccurredAt(), resolveEvaluator(opt))
 	if espErr != nil {
@@ -36,6 +47,24 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 		return StepResult{}, driveErrStart
 	}
 	return StepResult{State: *s, Commands: append(espCmds, driveCmdsStart...)}, nil
+}
+
+// resolveNoneStart returns the id of the definition's single none (trigger-less)
+// start event — a StartEvent with no message name, signal name, or timer — or
+// ErrNoNoneStart if the definition has none (e.g. every start is event-triggered).
+// When multiple none-starts exist (a definition-authoring choice outside this
+// seam's remit to validate), the first one found in def.StartNodes() order wins.
+func resolveNoneStart(def *model.ProcessDefinition) (string, error) {
+	for _, s := range def.StartNodes() {
+		se, ok := s.(event.StartEvent)
+		if !ok {
+			continue
+		}
+		if se.MessageName == "" && se.SignalName == "" && se.Timer.IsZero() {
+			return se.ID(), nil
+		}
+	}
+	return "", ErrNoNoneStart
 }
 
 // handleActionCompleted processes an ActionCompleted trigger: resumes the token
