@@ -1,12 +1,38 @@
 # Event-based Start Events — Design (ADR-0121)
 
-- **Status:** Approved (design), 2026-07-10
+- **Status:** Approved (design), 2026-07-10 — **shipped with post-review
+  corrections** (see below; ADR-0121 is the canonical shipped record).
 - **Branch:** `feat/bpmn2-event-start` (off `main == 1f28e64`)
 - **ADR:** 0121 (event-based start events; feature #1 of the BPMN2-alignment set)
 - **Supersedes:** the ADR-0121 section of the umbrella spec
   `docs/specs/2026-07-10-bpmn2-alignment-design.md` (which proposed a durable
   `StartSubscriptionStore` and new `StartByMessage`/`StartBySignal` facade methods —
   both dropped here after re-brainstorming against the current source).
+
+## Post-implementation review corrections
+
+The whole-branch `/code-review` surfaced issues this design missed; the shipped
+behaviour (and ADR-0121) incorporates these corrections over the sections below:
+
+1. **Latest version per definition id.** Event-start enumeration collapses to the
+   latest registered version per def id (`latestPerID`) at every site
+   (signal/message/timer + registration uniqueness). Registries keep old versions
+   for in-flight resumption, so without this a version bump broke event-start
+   (message → permanent `ErrAmbiguousMessageStart`; signal/timer → one duplicate
+   per version). Matches Camunda (redeploy replaces the start subscription).
+2. **Keyless message-start.** Default = a fresh instance per message (idgen,
+   BPMN fan-in); opt-in `WithMessageStartSingleton()` = name-only deterministic id
+   (at most one ever). Keyed message-start keeps `(name,key)` deterministic dedup.
+   (§3/§8 below described only the keyed case.)
+3. **Multi-start engine generalization.** Lifting the single-start invariant
+   rippled into three engine sites that assumed `starts[0]` — `TargetNode` (input
+   validation), embedded sub-process entry, and event-sub-process arm/fire — all
+   generalized to resolve the correct start node (else input validation was
+   silently skipped / the wrong node entered).
+4. **Empty-name guard.** `DeliverMessage`/`BroadcastSignal` with an empty name are
+   clean no-ops (an empty name would otherwise match manual starts).
+5. **One-shot timer-start is not restart-safe** (arms re-derived, not persisted);
+   `RehydrateStartTimers` WARNs when the registry lacks `DefinitionLister`.
 
 ## Context
 

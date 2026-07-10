@@ -70,7 +70,17 @@ definition.
   instance seeded with `payload` as start vars. Two or more matching
   message-start definitions is `ErrAmbiguousMessageStart`. No waiter and no
   match is a no-op, preserving today's behaviour for genuinely-unmatched
-  messages.
+  messages. An **empty `name` is always a clean no-op** — it must never match
+  a manual (trigger-less) start, whose message name is also empty.
+  Instantiation dedup follows the correlation key:
+  - **keyed** (`key != ""`) — deterministic id from `(name, key)`; concurrent
+    or redelivered messages for the same key dedup to one instance.
+  - **keyless, default** — each message mints a **fresh** instance (BPMN
+    message fan-in), no dedup.
+  - **keyless + `WithMessageStartSingleton()`** — a name-only deterministic
+    id; at most one instance ever for that message name (later messages are
+    `ErrInstanceExists` no-ops). This opt-in exists for a start that must
+    never double-run (e.g. a daily kickoff).
 - **`BroadcastSignal(ctx, name, payload)`** keeps its signature (it was
   already def-less) but now, in addition to resuming parked waiters,
   creates one instance per registered definition with a matching
@@ -125,6 +135,19 @@ registration mutex, TOCTOU-free) with `ErrDuplicateMessageStart`, backstopped
 by a delivery-time `ErrAmbiguousMessageStart` check for registries that
 bypass `RegisterDefinition`.
 
+**Latest version per definition id.** A registry retains every registered
+version of a definition (old versions must stay resolvable so their in-flight
+instances can complete), so `ListDefinitions` returns all versions. Event-start
+enumeration therefore collapses to the **latest version per definition id**
+(`latestPerID`, highest `Version` wins) at every site — signal/message/timer
+matching and the registration uniqueness check. This matches Camunda's
+semantic that redeploying a process *replaces* the previous version's start
+subscription: old versions still resume their own in-flight instances but do
+not start new ones. Without this collapse a routine version bump would break
+event-start — a second version sharing a message name would make every
+delivery `ErrAmbiguousMessageStart`, and signal/timer starts would create one
+duplicate instance per live version.
+
 ### Engine seam: `StartInstance.StartNodeID`
 
 `engine.StartInstance` gains a `StartNodeID string` field. Empty resolves
@@ -136,6 +159,16 @@ engine executes" seam as ADR-0115, keeping the engine free of
 message/signal/registry concerns. `handleStartInstance` no longer requires
 exactly one start event; a definition may now declare multiple start
 events, subject to the ≤ 1 manual-start invariant.
+
+Lifting the single-start invariant globally means several engine sites that
+assumed a sole `starts[0]` had to be generalized in lockstep (all resolve the
+*correct* start node rather than index zero): `TargetNode` — the sole enforcer
+of a StartEvent's `InputValidation` (ADR-0115) — now honours `StartNodeID` /
+the manual start, so input validation is not silently skipped on multi-start or
+event-started instances; embedded sub-process entry seeds its **manual** start
+(nested event-starts are event-sub-process arms, armed separately); and
+event-sub-process arming/firing selects the **event-triggered** start rather
+than index zero.
 
 ### Concurrency and safety
 
@@ -255,11 +288,22 @@ the single-use-per-lifetime trade-off accepted below.
   best-effort for consumers that register directly into a custom registry
   bypassing that entry point; the delivery-time `ErrAmbiguousMessageStart`
   guard is the authoritative backstop for that case.
+- **Timer-start arms are re-derived from definitions, not persisted, so a
+  one-shot timer-start is not restart-safe.** `RehydrateStartTimers` re-arms
+  purely from the registered definitions (no durable record that a one-shot
+  already fired), so a one-shot timer-start (`schedule.At`/`AfterDuration`)
+  can fire again after a restart and create a second instance. Recurring
+  timer-starts (the common case) are unaffected; a one-shot start that must
+  fire exactly once across restarts should use a keyed/singleton message-start
+  or `Chainer` instead. `RehydrateStartTimers` is a separate, explicit boot
+  step (it is not auto-wired), and logs a WARN when the registry lacks the
+  `DefinitionLister` capability so a silently-disabled event-start is
+  diagnosable.
 - Unblocks ADR-0122 (folding `EventSubProcess` into `SubProcess` with an
   event-triggered inner start), which depends on this feature.
 
-Example: `examples/scenarios/event_start` shows an order signal
-(`order.completed`) fanning out to start **payment** and **shipment**
+Example: `examples/scenarios/event_start` shows an external order signal
+(`order.received`) fanning out to start **payment** and **shipment**
 instances; shipment then parks on a `payment.completed` message that
 correlates-then-completes it — illustrating both fan-out signal-start and
 keyed message correlation in one scenario.
