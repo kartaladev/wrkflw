@@ -29,7 +29,7 @@ func messageBoundaryDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", []string{"manager"}),
+			activity.NewUserTask("review", activity.WithEligibleRoles("manager")),
 			event.NewBoundary("bnd-cancel", "review",
 				event.WithMessageCorrelator("cancel", "")),
 			event.NewEnd("end-ok"),

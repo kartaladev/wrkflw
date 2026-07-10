@@ -83,8 +83,8 @@ func TestErrorEndEventConstructor(t *testing.T) {
 }
 
 func TestUserTaskConstructor(t *testing.T) {
-	n := activity.NewUserTask("task-1", []string{"manager", "admin"},
-		activity.WithEligibilityExpr("amount > 1000"),
+	n := activity.NewUserTask("task-1", activity.WithEligibleRoles("manager", "admin"),
+		activity.WithEligibleExpr("amount > 1000"),
 		activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach"), activity.WithDeadlineAction("notify-manager"),
 		activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 	)
@@ -95,11 +95,11 @@ func TestUserTaskConstructor(t *testing.T) {
 	if !ok {
 		t.Fatalf("node is %T, want activity.UserTask", n)
 	}
-	if ut.EligibilityExpr != "amount > 1000" {
-		t.Fatalf("EligibilityExpr = %q", ut.EligibilityExpr)
+	if ut.EligibleExpr != "amount > 1000" {
+		t.Fatalf("EligibleExpr = %q", ut.EligibleExpr)
 	}
-	if len(ut.CandidateRoles) != 2 || ut.CandidateRoles[0] != "manager" {
-		t.Fatalf("CandidateRoles = %v", ut.CandidateRoles)
+	if len(ut.EligibleRoles) != 2 || ut.EligibleRoles[0] != "manager" {
+		t.Fatalf("EligibleRoles = %v", ut.EligibleRoles)
 	}
 	if dd, ok := ut.DeadlineTimer.Duration(); !ok || dd != 24*time.Hour || ut.DeadlineFlow != "sla-breach" || ut.DeadlineAction != "notify-manager" {
 		t.Fatalf("deadline fields = %v/%q/%q", dd, ut.DeadlineFlow, ut.DeadlineAction)
@@ -339,7 +339,7 @@ func TestWithNameOnActivities(t *testing.T) {
 		t.Fatalf("Name() = %q, want 'My Task'", n.Name())
 	}
 
-	n2 := activity.NewUserTask("ut", nil, activity.WithName("User Step"))
+	n2 := activity.NewUserTask("ut", activity.WithName("User Step"))
 	if n2.Name() != "User Step" {
 		t.Fatalf("Name() = %q, want 'User Step'", n2.Name())
 	}
@@ -376,12 +376,12 @@ func TestEventSubProcessNonInterrupting(t *testing.T) {
 	}
 }
 
-// TestUserTaskCombinedOptions verifies that WithEligibilityExpr, WithName, and
+// TestUserTaskCombinedOptions verifies that WithEligibleExpr, WithName, and
 // WithRetryPolicy can all be combined on NewUserTask and that each field is set.
 func TestUserTaskCombinedOptions(t *testing.T) {
 	p := &model.RetryPolicy{MaxAttempts: 1}
-	n := activity.NewUserTask("u", []string{"reviewer"},
-		activity.WithEligibilityExpr("vars.score > 50"),
+	n := activity.NewUserTask("u", activity.WithEligibleRoles("reviewer"),
+		activity.WithEligibleExpr("vars.score > 50"),
 		activity.WithName("Review Task"),
 		activity.WithRetryPolicy(p),
 	)
@@ -389,8 +389,8 @@ func TestUserTaskCombinedOptions(t *testing.T) {
 	if !ok {
 		t.Fatalf("node is %T, want activity.UserTask", n)
 	}
-	if ut.EligibilityExpr != "vars.score > 50" {
-		t.Errorf("EligibilityExpr = %q, want %q", ut.EligibilityExpr, "vars.score > 50")
+	if ut.EligibleExpr != "vars.score > 50" {
+		t.Errorf("EligibleExpr = %q, want %q", ut.EligibleExpr, "vars.score > 50")
 	}
 	if ut.Name() != "Review Task" {
 		t.Errorf("Name() = %q, want %q", ut.Name(), "Review Task")
@@ -424,31 +424,31 @@ func TestReceiveTaskCombinedOptions(t *testing.T) {
 	}
 }
 
-// TestWithEligibilityPrivileges verifies that WithEligibilityPrivileges sets
-// EligibilityPrivileges on the UserTask node, and that attempting to pass it to
+// TestWithEligiblePrivileges verifies that WithEligiblePrivileges sets
+// EligiblePrivileges on the UserTask node, and that attempting to pass it to
 // a non-UserTask constructor is a compile-time error (not tested here, by design).
-func TestWithEligibilityPrivileges(t *testing.T) {
+func TestWithEligiblePrivileges(t *testing.T) {
 	privs := []string{"finance-task claim", "finance-task read"}
-	n := activity.NewUserTask("approve", []string{"approver"},
-		activity.WithEligibilityPrivileges(privs...),
+	n := activity.NewUserTask("approve", activity.WithEligibleRoles("approver"),
+		activity.WithEligiblePrivileges(privs...),
 	)
 	ut, ok := n.(activity.UserTask)
 	if !ok {
 		t.Fatalf("node is %T, want activity.UserTask", n)
 	}
-	if len(ut.EligibilityPrivileges) != 2 {
-		t.Fatalf("EligibilityPrivileges len = %d, want 2; got %v", len(ut.EligibilityPrivileges), ut.EligibilityPrivileges)
+	if len(ut.EligiblePrivileges) != 2 {
+		t.Fatalf("EligiblePrivileges len = %d, want 2; got %v", len(ut.EligiblePrivileges), ut.EligiblePrivileges)
 	}
-	if ut.EligibilityPrivileges[0] != "finance-task claim" {
-		t.Fatalf("EligibilityPrivileges[0] = %q, want %q", ut.EligibilityPrivileges[0], "finance-task claim")
+	if ut.EligiblePrivileges[0] != "finance-task claim" {
+		t.Fatalf("EligiblePrivileges[0] = %q, want %q", ut.EligiblePrivileges[0], "finance-task claim")
 	}
 }
 
-// TestWithEligibilityPrivilegesRoundTrip verifies that EligibilityPrivileges survives
+// TestWithEligiblePrivilegesRoundTrip verifies that EligiblePrivileges survives
 // a JSON marshal/unmarshal round-trip (via NodeWire).
-func TestWithEligibilityPrivilegesRoundTrip(t *testing.T) {
+func TestWithEligiblePrivilegesRoundTrip(t *testing.T) {
 	privs := []string{"doc read"}
-	n := activity.NewUserTask("u2", nil, activity.WithEligibilityPrivileges(privs...))
+	n := activity.NewUserTask("u2", activity.WithEligiblePrivileges(privs...))
 	def := &model.ProcessDefinition{
 		ID:      "p",
 		Version: 1,
@@ -467,8 +467,8 @@ func TestWithEligibilityPrivilegesRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("decoded node is %T, want activity.UserTask", decoded.Nodes[0])
 	}
-	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "doc read" {
-		t.Fatalf("EligibilityPrivileges = %v, want [doc read]", ut.EligibilityPrivileges)
+	if len(ut.EligiblePrivileges) != 1 || ut.EligiblePrivileges[0] != "doc read" {
+		t.Fatalf("EligiblePrivileges = %v, want [doc read]", ut.EligiblePrivileges)
 	}
 }
 

@@ -114,8 +114,8 @@ func (b *Builder) AddEventBasedGateway(id string, name ...string) *Builder {
 func (b *Builder) AddServiceTask(id string, opts ...activity.ServiceTaskOption) *Builder {
 	return b.Add(activity.NewServiceTask(id, opts...))
 }
-func (b *Builder) AddUserTask(id string, roles []string, opts ...activity.UserTaskOption) *Builder {
-	return b.Add(activity.NewUserTask(id, roles, opts...))
+func (b *Builder) AddUserTask(id string, opts ...activity.UserTaskOption) *Builder {
+	return b.Add(activity.NewUserTask(id, opts...))
 }
 func (b *Builder) AddReceiveTask(id, messageName string, opts ...activity.ReceiveTaskOption) *Builder {
 	return b.Add(activity.NewReceiveTask(id, messageName, opts...))

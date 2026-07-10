@@ -235,7 +235,7 @@ func TestValidationStrategyFor(t *testing.T) {
 			},
 		},
 		"user task completion validation": {
-			node: activity.NewUserTask("approve", nil, activity.WithCompletionValidation(vexpr.New("a > 0"))),
+			node: activity.NewUserTask("approve", activity.WithCompletionValidation(vexpr.New("a > 0"))),
 			assert: func(t *testing.T, s validate.ValidationStrategy) {
 				require.NotNil(t, s)
 			},
@@ -332,7 +332,7 @@ func TestMarshalJSON_ValidationStrategyFailClosed(t *testing.T) {
 			def: &model.ProcessDefinition{
 				ID: "d", Version: 1,
 				Nodes: []model.Node{
-					activity.NewUserTask("u", nil, activity.WithCompletionValidation(
+					activity.NewUserTask("u", activity.WithCompletionValidation(
 						callback.New(func(_ context.Context, _ map[string]any) error { return nil }),
 					)),
 				},

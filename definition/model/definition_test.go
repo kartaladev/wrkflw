@@ -58,9 +58,9 @@ func TestNodeUserTaskFields(t *testing.T) {
 		ID:      "p2",
 		Version: 1,
 		Nodes: []model.Node{
-			activity.NewUserTask("approve", []string{"manager", "admin"},
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager", "admin"),
 				activity.WithName("Approve Request"),
-				activity.WithEligibilityExpr("amount > 1000"),
+				activity.WithEligibleExpr("amount > 1000"),
 			),
 		},
 		Flows: []flow.SequenceFlow{},
@@ -72,8 +72,8 @@ func TestNodeUserTaskFields(t *testing.T) {
 	assert.Equal(t, "Approve Request", n.Name())
 	ut, ok := n.(activity.UserTask)
 	require.True(t, ok)
-	assert.Equal(t, []string{"manager", "admin"}, ut.CandidateRoles)
-	assert.Equal(t, "amount > 1000", ut.EligibilityExpr)
+	assert.Equal(t, []string{"manager", "admin"}, ut.EligibleRoles)
+	assert.Equal(t, "amount > 1000", ut.EligibleExpr)
 }
 
 // TestNodeEventBoundaryFields asserts that the five new event/boundary fields
@@ -263,7 +263,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		},
 		{
 			name: "deadline-with-flow-and-action",
-			node: activity.NewUserTask("review", nil,
+			node: activity.NewUserTask("review",
 				activity.WithName("Review"),
 				activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "sla-breach-flow"), activity.WithDeadlineAction("notify-manager"),
 			),
@@ -279,7 +279,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		},
 		{
 			name: "reminder-every-with-action",
-			node: activity.NewUserTask("approve", nil,
+			node: activity.NewUserTask("approve",
 				activity.WithName("Approve"),
 				activity.WithWaitAction(schedule.Every(4*time.Hour), "send-reminder"),
 			),
@@ -294,7 +294,7 @@ func TestNodeTimerDeadlineReminderFields(t *testing.T) {
 		},
 		{
 			name: "all-six-fields",
-			node: activity.NewUserTask("task-full", nil,
+			node: activity.NewUserTask("task-full",
 				activity.WithName("Full Task"),
 				activity.WithWaitDeadline(schedule.AfterDuration(48*time.Hour), "escalate"), activity.WithDeadlineAction("escalate-action"),
 				activity.WithWaitAction(schedule.Every(6*time.Hour), "remind-action"),

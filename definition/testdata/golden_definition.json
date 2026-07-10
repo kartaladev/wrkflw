@@ -49,15 +49,15 @@
       "id": "approve",
       "kind": "userTask",
       "name": "Approve",
-      "candidateRoles": [
+      "eligibleRoles": [
         "manager",
         "director"
       ],
-      "eligibilityPrivileges": [
+      "eligiblePrivileges": [
         "finance-task claim",
         "finance-task complete"
       ],
-      "eligibilityExpr": "vars[\"region\"] == \"EU\""
+      "eligibleExpr": "vars[\"region\"] == \"EU\""
     },
     {
       "id": "await",

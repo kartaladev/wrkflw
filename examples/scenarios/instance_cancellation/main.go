@@ -59,7 +59,7 @@ func main() {
 	// invokes best-effort, in order, when the instance is cancelled.
 	def, err := definition.NewBuilder("order-fulfilment", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("fulfil", []string{"fulfiller"})).
+		Add(activity.NewUserTask("fulfil", activity.WithEligibleRoles("fulfiller"))).
 		Add(event.NewEnd("end")).
 		Connect("start", "fulfil").
 		Connect("fulfil", "end").

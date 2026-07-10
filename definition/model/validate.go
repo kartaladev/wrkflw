@@ -148,6 +148,11 @@ var (
 	// CallActivity) always have their own forward action and are not gated by
 	// this rule.
 	ErrCompensateActionWithoutForwardAction = errors.New("workflow-definition: compensate action requires a forward action (completion action) on user/receive task")
+	// ErrManualTaskValidation is returned when a UserTask marked Manual
+	// (WithManual) also carries completion validation. A manual task completes
+	// on a bare trigger with no payload, so there is no output to validate — the
+	// combination is contradictory and rejected at authoring time. See ADR-0118.
+	ErrManualTaskValidation = errors.New("workflow-definition: manual user task cannot carry completion validation")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -475,6 +480,19 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 		if CompensateActionOf(n) != "" && CompletionActionOf(n) == "" {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrCompensateActionWithoutForwardAction, n.ID()))
+		}
+	}
+
+	// Manual UserTask must not carry completion validation: a manual task
+	// completes with no payload, so a validation strategy would never receive
+	// input to check. model cannot import the activity package, so Manual is
+	// read via the wire projection. See ADR-0118.
+	for _, n := range d.Nodes {
+		if n.Kind() != KindUserTask {
+			continue
+		}
+		if toWire(n).Manual && ValidationStrategyFor(n) != nil {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrManualTaskValidation, n.ID()))
 		}
 	}
 

@@ -129,7 +129,7 @@ func ApprovalProcess() *model.ProcessDefinition {
 		ID: "approval", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"manager"}),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

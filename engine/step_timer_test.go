@@ -167,7 +167,7 @@ func deadlineDef() *model.ProcessDefinition {
 		ID: "p-deadline", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "escalate"), activity.WithDeadlineAction("notify")),
+			activity.NewUserTask("userTask", activity.WithEligibleRoles("manager"), activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "escalate"), activity.WithDeadlineAction("notify")),
 			event.NewEnd("normalEnd"),
 			event.NewEnd("escalateNode"),
 		},
@@ -358,7 +358,7 @@ func reminderDef() *model.ProcessDefinition {
 		ID: "p-reminder", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "escalate"), activity.WithDeadlineAction("notify"), activity.WithWaitAction(schedule.EveryExpr(`"1h"`), "remind")),
+			activity.NewUserTask("userTask", activity.WithEligibleRoles("manager"), activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "escalate"), activity.WithDeadlineAction("notify"), activity.WithWaitAction(schedule.EveryExpr(`"1h"`), "remind")),
 			event.NewEnd("normalEnd"),
 			event.NewEnd("escalateNode"),
 		},
@@ -547,7 +547,7 @@ func TestInWaitReminderNoActionEmitsNothingOnFire(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithWaitAction(schedule.EveryExpr(`"1h"`), "")),
+			activity.NewUserTask("userTask", activity.WithEligibleRoles("manager"), activity.WithWaitAction(schedule.EveryExpr(`"1h"`), "")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -670,7 +670,7 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewUserTask("userTask", []string{"manager"}, activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "esc"), activity.WithDeadlineAction("notify")),
+			activity.NewUserTask("userTask", activity.WithEligibleRoles("manager"), activity.WithWaitDeadline(schedule.AfterExpr(`"3h"`), "esc"), activity.WithDeadlineAction("notify")),
 			activity.NewServiceTask("svcTask", activity.WithTaskAction("work")),
 			event.NewEnd("endA"),
 			event.NewEnd("endB"),

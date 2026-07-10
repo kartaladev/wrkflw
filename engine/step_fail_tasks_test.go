@@ -39,7 +39,7 @@ func TestUnhandledFailureReconcilesOpenTasks(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewUserTask("user", []string{"r"}),
+			activity.NewUserTask("user", activity.WithEligibleRoles("r")),
 			activity.NewServiceTask("svc", activity.WithTaskAction("boom")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
@@ -99,7 +99,7 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 			event.NewStart("start"),
 			activity.NewServiceTask("charge", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
 			gateway.NewParallel("fork"),
-			activity.NewUserTask("user", []string{"r"}),
+			activity.NewUserTask("user", activity.WithEligibleRoles("r")),
 			activity.NewServiceTask("svc", activity.WithTaskAction("boom")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),
@@ -177,7 +177,7 @@ func TestSubInstanceFailureReconcilesOpenTasks(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
-			activity.NewUserTask("user", []string{"r"}),
+			activity.NewUserTask("user", activity.WithEligibleRoles("r")),
 			activity.NewCallActivity("call", model.Latest("child")),
 			gateway.NewParallel("join"),
 			event.NewEnd("end"),

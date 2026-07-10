@@ -49,7 +49,7 @@ func cancelPropChildDef(id string) *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("c-start"),
-			activity.NewUserTask("c-human", nil),
+			activity.NewUserTask("c-human"),
 			event.NewEnd("c-end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -347,7 +347,7 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("human", nil),
+			activity.NewUserTask("human"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

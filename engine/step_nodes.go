@@ -534,9 +534,9 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	var cmds []Command
 	taskToken := c.s.nextTaskToken()
 	spec := authz.AuthzSpec{
-		Roles:      ut.CandidateRoles,
-		Privileges: ut.EligibilityPrivileges,
-		Attribute:  ut.EligibilityExpr,
+		Roles:      ut.EligibleRoles,
+		Privileges: ut.EligiblePrivileges,
+		Attribute:  ut.EligibleExpr,
 	}
 	ht := humantask.HumanTask{
 		TaskToken:   taskToken,
@@ -545,6 +545,21 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		Eligibility: spec,
 		State:       humantask.Unclaimed,
 		CreatedAt:   c.at,
+	}
+	if ut.Manual && ut.ManualImmediate {
+		// Immediate manual task: no actor acts on it, so it never parks. Record a
+		// completed task for audit (mirrors the state handleHumanCompleted sets)
+		// and advance the token along its single outgoing flow immediately. No
+		// eligibility check, no payload, no deadline/reminder/boundary arming —
+		// none of those are meaningful without a wait period.
+		ht.State = humantask.Completed
+		c.s.Tasks = append(c.s.Tasks, ht)
+		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+		// tok.State is left TokenActive (unchanged by moveAlongSingleFlow), so
+		// drive()'s stopped = tok.State != TokenActive is false and the loop
+		// continues to the next node for this token — same contract as
+		// exclusiveGatewayStrategy.enter's pass-through.
+		return nil, false, nil
 	}
 	// If the node carries a deadline, schedule the deadline timer and record the
 	// deadline on the HumanTask so callers can surface the due date.

@@ -41,7 +41,7 @@ func cancelActionDef() *model.ProcessDefinition {
 		ID: "cancel-handler-def", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"reviewer"}, activity.WithCancelAction("cleanup")),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("reviewer"), activity.WithCancelAction("cleanup")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

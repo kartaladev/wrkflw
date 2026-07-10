@@ -47,7 +47,7 @@ func e2eGrandchildDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("gc-start"),
-			activity.NewUserTask("gc-task", []string{"worker"}),
+			activity.NewUserTask("gc-task", activity.WithEligibleRoles("worker")),
 			event.NewEnd("gc-end"),
 		},
 		Flows: []flow.SequenceFlow{

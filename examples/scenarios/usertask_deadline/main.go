@@ -77,7 +77,7 @@ func main() {
 	// deadline path.
 	def, err := definition.NewBuilder("review-escalation", 1).
 		Add(event.NewStart("start")).
-		Add(activity.NewUserTask("review", []string{"reviewer"},
+		Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 			activity.WithWaitDeadline(schedule.AfterDuration(time.Hour), "review-overdue"),
 			activity.WithDeadlineAction("notify-overdue"),
 		)).

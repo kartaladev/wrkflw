@@ -276,7 +276,7 @@ def := &model.ProcessDefinition{
     ID: "approval", Version: 1,
     Nodes: []definition.Node{
         event.NewStart("start"),
-        activity.NewUserTask("approve", []string{"manager"}),
+        activity.NewUserTask("approve", activity.WithEligibleRoles("manager")),
         event.NewEnd("end"),
     },
     Flows: []definition.SequenceFlow{

@@ -25,4 +25,10 @@ var (
 	// ErrNoMatchingFlow is returned when a gateway has no matching/default outgoing
 	// flow. It is a definition/data error, not a wrong-state transition.
 	ErrNoMatchingFlow = errors.New("workflow-engine: no matching outgoing flow")
+
+	// ErrManualTaskPayload is returned when a wait-mode manual UserTask is completed
+	// with a non-empty output. A manual task is a form-less checkpoint; supplying a
+	// payload is a caller error. Immediate-mode manual tasks never take a trigger.
+	// See ADR-0118.
+	ErrManualTaskPayload = errors.New("workflow-engine: manual user task cannot carry a completion payload")
 )

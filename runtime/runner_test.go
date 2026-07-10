@@ -121,7 +121,7 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("task1", []string{"manager"}),
+			activity.NewUserTask("task1", activity.WithEligibleRoles("manager")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

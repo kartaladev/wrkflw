@@ -80,7 +80,7 @@ func TestCancelHandler_SingleActiveNode(t *testing.T) {
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("user", nil, activity.WithCancelAction("release-hold")),
+			activity.NewUserTask("user", activity.WithCancelAction("release-hold")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -244,7 +244,7 @@ func TestCancelHandler_WithCompensateAction(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("charge"), activity.WithCompensateAction("refund")),
-			activity.NewUserTask("user", nil, activity.WithCancelAction("release-hold")),
+			activity.NewUserTask("user", activity.WithCancelAction("release-hold")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -303,7 +303,7 @@ func TestCancelHandler_NoneSet(t *testing.T) {
 		CancelActions: []string{"global-cleanup"},
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("user", nil), // no CancelAction
+			activity.NewUserTask("user"), // no CancelAction
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

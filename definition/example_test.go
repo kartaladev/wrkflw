@@ -51,7 +51,7 @@ func ExampleNewBuilder() {
 			activity.WithTaskAction("charge-card"),
 			activity.WithCompensateAction("refund-card"),
 		).
-		AddUserTask("approve", []string{"manager"}).
+		AddUserTask("approve", activity.WithEligibleRoles("manager")).
 		AddEndEvent("end").
 		Connect("start", "charge").
 		Connect("charge", "approve").

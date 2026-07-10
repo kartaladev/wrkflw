@@ -12,7 +12,7 @@ import (
 // that validates a UserTask's completion output before it is applied to the
 // process instance's variables.
 func ExampleWithCompletionValidation() {
-	n := activity.NewUserTask("approve", []string{"mgr"},
+	n := activity.NewUserTask("approve", activity.WithEligibleRoles("mgr"),
 		activity.WithCompletionValidation(vexpr.New("decision in ['approve','reject']")),
 	)
 	u := n.(activity.UserTask)

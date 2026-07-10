@@ -702,7 +702,7 @@ func interruptingBoundaryTimerDef() *model.ProcessDefinition {
 		ID: "p-bnd-timer", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", nil),
+			activity.NewUserTask("approve"),
 			event.NewBoundary("bnd-timer", "approve", event.WithBoundaryTimer(schedule.AfterExpr(`"3h"`))),
 			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
 			event.NewEnd("end"),
@@ -800,7 +800,7 @@ func nonInterruptingBoundaryDef() *model.ProcessDefinition {
 		ID: "p-bnd-nonint", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("work", nil),
+			activity.NewUserTask("work"),
 			event.NewBoundary("bnd-signal", "work", event.WithSignalName("notify"), event.WithBoundaryNonInterrupting()),
 			activity.NewServiceTask("notify-svc", activity.WithTaskAction("notify-action")),
 			event.NewEnd("end"),
@@ -1118,7 +1118,7 @@ func nonInterruptingBoundarySignalSelfCascadeDef() *model.ProcessDefinition {
 		ID: "p-nonint-selfcascade", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("work", nil),
+			activity.NewUserTask("work"),
 			event.NewBoundary("bnd-pulse", "work", event.WithSignalName("pulse"), event.WithBoundaryNonInterrupting()),
 			// The boundary's outgoing path leads to a signal catch for the same signal.
 			event.NewIntermediateCatch("inner-catch", event.WithSignalName("pulse")),

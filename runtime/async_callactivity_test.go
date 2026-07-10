@@ -31,7 +31,7 @@ func asyncChildDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("child-start"),
-			activity.NewUserTask("child-human", nil),
+			activity.NewUserTask("child-human"),
 			event.NewEnd("child-end"),
 		},
 		Flows: []flow.SequenceFlow{

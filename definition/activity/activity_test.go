@@ -82,7 +82,7 @@ func TestOtherActivityConstructors(t *testing.T) {
 		n model.Node
 		k model.NodeKind
 	}{
-		{activity.NewUserTask("u", []string{"mgr"}, activity.WithEligibilityExpr(`vars["r"]=="EU"`), activity.WithEligibilityPrivileges("t claim")), model.KindUserTask},
+		{activity.NewUserTask("u", activity.WithEligibleRoles("mgr"), activity.WithEligibleExpr(`vars["r"]=="EU"`), activity.WithEligiblePrivileges("t claim")), model.KindUserTask},
 		{activity.NewReceiveTask("r", "msg", activity.WithCorrelationKey("k")), model.KindReceiveTask},
 		{activity.NewSendTask("s", "msg", activity.WithCorrelationKey("k")), model.KindSendTask},
 		{activity.NewBusinessRuleTask("b", activity.WithTaskAction("rule")), model.KindBusinessRuleTask},
@@ -103,7 +103,7 @@ func TestSharedOptionsAllConstructors(t *testing.T) {
 	sub := &model.ProcessDefinition{ID: "s", Version: 1}
 	nodes := []model.Node{
 		activity.NewServiceTask("st", activity.WithName("N"), activity.WithRetryPolicy(rp)),
-		activity.NewUserTask("ut", nil, activity.WithName("N"), activity.WithRetryPolicy(rp)),
+		activity.NewUserTask("ut", activity.WithName("N"), activity.WithRetryPolicy(rp)),
 		activity.NewReceiveTask("rt", "m", activity.WithName("N"), activity.WithRetryPolicy(rp)),
 		activity.NewSendTask("snt", "m", activity.WithName("N"), activity.WithRetryPolicy(rp)),
 		activity.NewBusinessRuleTask("br", activity.WithName("N"), activity.WithRetryPolicy(rp)),
@@ -125,7 +125,7 @@ func TestActivityRoundTrip(t *testing.T) {
 		ID: "a", Version: 1,
 		Nodes: []model.Node{
 			activity.NewServiceTask("st", activity.WithTaskAction("act"), activity.WithWaitDeadline(schedule.AfterExpr(`"1h"`), "f"), activity.WithDeadlineAction("a")),
-			activity.NewUserTask("ut", []string{"mgr"}, activity.WithEligibilityExpr("x")),
+			activity.NewUserTask("ut", activity.WithEligibleRoles("mgr"), activity.WithEligibleExpr("x")),
 			activity.NewReceiveTask("rt", "m", activity.WithCorrelationKey("k")),
 			activity.NewSendTask("snt", "m"),
 			activity.NewCallActivity("ca", model.Version("ref", 2)),
@@ -146,5 +146,53 @@ func TestActivityRoundTrip(t *testing.T) {
 		t.Errorf("deadline lost after round-trip")
 	} else if dExpr, _, dOk := d.Expr(); !dOk || dExpr != `"1h"` {
 		t.Errorf("deadline Timer expr after round-trip = %q, ok=%v", dExpr, dOk)
+	}
+}
+
+// TestUserTaskManualWireRoundTrip verifies UserTask.Manual (ADR-0118) survives
+// a JSON wire round-trip (ToWire -> NodeWire -> FromWire).
+func TestUserTaskManualWireRoundTrip(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "d", Version: 1,
+		Nodes: []model.Node{
+			activity.NewUserTask("confirm", activity.WithManual(false)),
+		},
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got model.ProcessDefinition
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	ut, ok := got.Nodes[0].(activity.UserTask)
+	if !ok {
+		t.Fatalf("node is %T, want activity.UserTask", got.Nodes[0])
+	}
+	if !ut.Manual {
+		t.Fatal("Manual not preserved across JSON round-trip")
+	}
+}
+
+// TestUserTaskManualImmediateWireRoundTrip verifies UserTask.ManualImmediate
+// (ADR-0118) survives a JSON wire round-trip (ToWire -> NodeWire -> FromWire)
+// alongside Manual.
+func TestUserTaskManualImmediateWireRoundTrip(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "d", Version: 1,
+		Nodes: []model.Node{activity.NewUserTask("confirm", activity.WithManual(true))},
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got model.ProcessDefinition
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	ut := got.Nodes[0].(activity.UserTask)
+	if !ut.Manual || !ut.ManualImmediate {
+		t.Fatalf("Manual=%v ManualImmediate=%v, want both true", ut.Manual, ut.ManualImmediate)
 	}
 }

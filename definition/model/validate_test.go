@@ -437,7 +437,7 @@ func TestValidate(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("approve", []string{"mgr"}),
+					activity.NewUserTask("approve", activity.WithEligibleRoles("mgr")),
 					event.NewBoundary("bnd", "approve", event.WithBoundaryTimer(schedule.AfterExpr("PT1H"))),
 					activity.NewServiceTask("handler", activity.WithTaskAction("h")),
 					event.NewEnd("hend"),
@@ -1214,7 +1214,7 @@ func TestValidate_RejectsRecurringDeadlineTrigger(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", []string{"reviewer"},
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.Every(24*time.Hour), "escalate")),
 					event.NewEnd("end"),
 					event.NewEnd("escalate"),
@@ -1235,7 +1235,7 @@ func TestValidate_RejectsRecurringDeadlineTrigger(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", []string{"reviewer"},
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
 					event.NewEnd("end"),
 					event.NewEnd("escalate"),
@@ -1427,7 +1427,7 @@ func TestValidate_RejectsCompletionActionOnUnsupportedKind(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("u1", []string{"r"}, activity.WithCompletionAction("recordApproval")),
+					activity.NewUserTask("u1", activity.WithEligibleRoles("r"), activity.WithCompletionAction("recordApproval")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1484,7 +1484,7 @@ func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", []string{"reviewer"}, activity.WithDeadlineAction("notify")),
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"), activity.WithDeadlineAction("notify")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1502,7 +1502,7 @@ func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", []string{"reviewer"},
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate"),
 						activity.WithDeadlineAction("notify")),
 					event.NewEnd("end"),
@@ -1525,7 +1525,7 @@ func TestValidate_RejectsDeadlineActionWithoutDeadline(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("review", []string{"reviewer"},
+					activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
 						activity.WithWaitDeadline(schedule.AfterDuration(24*time.Hour), "escalate")),
 					event.NewEnd("end"),
 					event.NewEnd("escalate"),
@@ -1570,7 +1570,7 @@ func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("u1", []string{"r"}, activity.WithCompensateAction("refund")),
+					activity.NewUserTask("u1", activity.WithEligibleRoles("r"), activity.WithCompensateAction("refund")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -1606,7 +1606,7 @@ func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
 					event.NewStart("start"),
-					activity.NewUserTask("u1", []string{"r"},
+					activity.NewUserTask("u1", activity.WithEligibleRoles("r"),
 						activity.WithCompletionAction("recordApproval"),
 						activity.WithCompensateAction("refund")),
 					event.NewEnd("end"),
@@ -1645,6 +1645,70 @@ func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidateManualTaskRejectsCompletionValidation proves the fail-closed
+// authoring rule from ADR-0118: a UserTask marked Manual (WithManual)
+// completes on a bare trigger with no payload, so it must not also carry
+// completion validation (WithCompletionValidation) — there is no input for the
+// validation strategy to ever check. The guard requires BOTH Manual and a
+// validation strategy, so the table pairs the reject case with two accept
+// cases (manual-without-validation, non-manual-with-validation) — either
+// would catch a `&&`→`||` or flipped-`Manual` mutation in the guard.
+func TestValidateManualTaskRejectsCompletionValidation(t *testing.T) {
+	def := func(opts ...activity.UserTaskOption) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "p", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				activity.NewUserTask("confirm", opts...),
+				event.NewEnd("end"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "confirm"},
+				{ID: "f2", Source: "confirm", Target: "end"},
+			},
+		}
+	}
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "manual task with completion validation is rejected",
+			def: def(
+				activity.WithManual(false),
+				activity.WithCompletionValidation(vexpr.New("ok == true")),
+			),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrManualTaskValidation)
+			},
+		},
+		{
+			name: "manual task with no completion validation is accepted",
+			def:  def(activity.WithManual(false)),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrManualTaskValidation)
+			},
+		},
+		{
+			name: "non-manual task with completion validation is accepted",
+			def: def(
+				activity.WithCompletionValidation(vexpr.New("ok == true")),
+			),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrManualTaskValidation)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			tc.assert(t, model.Validate(tc.def))
 		})
 	}

@@ -51,7 +51,7 @@ func interruptingMessageBoundaryDef() *model.ProcessDefinition {
 		ID: "p-bnd-msg-int", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("work", nil),
+			activity.NewUserTask("work"),
 			event.NewBoundary("bnd-msg", "work", event.WithMessageCorrelator("cancel", "")),
 			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
 			event.NewEnd("end"),
@@ -160,7 +160,7 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 			ID: "p-bnd-msg-corr", Version: 1,
 			Nodes: []model.Node{
 				event.NewStart("start"),
-				activity.NewUserTask("work", nil),
+				activity.NewUserTask("work"),
 				event.NewBoundary("bnd-msg", "work",
 					event.WithMessageCorrelator("cancel", "string(orderId)")),
 				activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
@@ -237,7 +237,7 @@ func nonInterruptingMessageBoundaryDef() *model.ProcessDefinition {
 		ID: "p-bnd-msg-nonint", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("work", nil),
+			activity.NewUserTask("work"),
 			event.NewBoundary("bnd-msg", "work",
 				event.WithMessageCorrelator("notify", ""), event.WithBoundaryNonInterrupting()),
 			activity.NewServiceTask("notify-svc", activity.WithTaskAction("notify-action")),

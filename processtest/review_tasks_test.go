@@ -27,8 +27,8 @@ func TestReview_CompleteTasksMemoizesDecision(t *testing.T) {
 	def, err := definition.NewBuilder("two-approvals", 1).
 		Add(event.NewStart("start")).
 		Add(gateway.NewParallel("fork")).
-		Add(activity.NewUserTask("reviewA", []string{"r"})).
-		Add(activity.NewUserTask("reviewB", []string{"r"})).
+		Add(activity.NewUserTask("reviewA", activity.WithEligibleRoles("r"))).
+		Add(activity.NewUserTask("reviewB", activity.WithEligibleRoles("r"))).
 		Add(gateway.NewParallel("join")).
 		Add(event.NewEnd("end")).
 		Connect("start", "fork").

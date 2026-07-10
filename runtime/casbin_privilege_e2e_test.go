@@ -1,7 +1,7 @@
 package runtime_test
 
 // TestCasbinPrivilegeViaBuilderE2E is an end-to-end test that proves the full
-// privilege authz chain: model builder (WithEligibilityPrivileges) →
+// privilege authz chain: model builder (WithEligiblePrivileges) →
 // engine (AwaitHuman.Eligibility.Privileges) → runtime runner (task stored with
 // Privileges) → TaskService.Claim (casbin Authorize). No Docker; in-memory only.
 //
@@ -39,8 +39,8 @@ func financePrivilegeDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("review", nil,
-				activity.WithEligibilityPrivileges("finance-task claim"),
+			activity.NewUserTask("review",
+				activity.WithEligiblePrivileges("finance-task claim"),
 			),
 			event.NewEnd("end"),
 		},

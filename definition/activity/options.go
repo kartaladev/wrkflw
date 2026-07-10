@@ -186,26 +186,57 @@ func WithCompletionAction(name string) interface {
 
 // --- UserTask-only options ---
 
-type eligibilityExprOpt struct{ expr string }
+type eligibleExprOpt struct{ expr string }
 
-func (o eligibilityExprOpt) applyUserTask(u *UserTask) { u.EligibilityExpr = o.expr }
+func (o eligibleExprOpt) applyUserTask(u *UserTask) { u.EligibleExpr = o.expr }
 
-// WithEligibilityExpr sets a UserTask attribute-eligibility predicate (expr).
+// WithEligibleExpr sets a UserTask attribute-eligibility predicate (expr).
 // It may only be passed to NewUserTask.
-func WithEligibilityExpr(expr string) UserTaskOption { return eligibilityExprOpt{expr} }
+func WithEligibleExpr(expr string) UserTaskOption { return eligibleExprOpt{expr} }
 
-type eligibilityPrivilegesOpt struct{ privs []string }
+type eligibleRolesOpt struct{ roles []string }
 
-func (o eligibilityPrivilegesOpt) applyUserTask(u *UserTask) {
-	u.EligibilityPrivileges = append(u.EligibilityPrivileges, o.privs...)
+func (o eligibleRolesOpt) applyUserTask(u *UserTask) {
+	u.EligibleRoles = append(u.EligibleRoles, o.roles...)
 }
 
-// WithEligibilityPrivileges sets resource-privilege tokens on a UserTask. Each
+// WithEligibleRoles sets the roles eligible to claim and complete a UserTask.
+// Roles are one of three co-equal, optional eligibility dimensions (with
+// WithEligiblePrivileges and WithEligibleExpr). With no eligibility set,
+// the engine gate is open and authorization defers to the consumer's transport
+// layer (e.g. HTTP security middleware). See ADR-0117.
+func WithEligibleRoles(roles ...string) UserTaskOption { return eligibleRolesOpt{roles} }
+
+type eligiblePrivilegesOpt struct{ privs []string }
+
+func (o eligiblePrivilegesOpt) applyUserTask(u *UserTask) {
+	u.EligiblePrivileges = append(u.EligiblePrivileges, o.privs...)
+}
+
+// WithEligiblePrivileges sets resource-privilege tokens on a UserTask. Each
 // token is a space-separated "object action" pair. Multiple calls are additive.
 // It may only be passed to NewUserTask.
-func WithEligibilityPrivileges(privs ...string) UserTaskOption {
-	return eligibilityPrivilegesOpt{privs: privs}
+func WithEligiblePrivileges(privs ...string) UserTaskOption {
+	return eligiblePrivilegesOpt{privs: privs}
 }
+
+type manualOpt struct{ immediate bool }
+
+func (o manualOpt) applyUserTask(u *UserTask) {
+	u.Manual = true
+	u.ManualImmediate = o.immediate
+}
+
+// WithManual marks a UserTask as a manual task: a form-less human checkpoint.
+// immediate selects the completion mode:
+//   - false: the task parks and completes on a bare trigger; a non-empty
+//     completion payload is rejected (engine.ErrManualTaskPayload).
+//   - true:  the task auto-completes on entry (a documentation marker); the
+//     engine records a completed task for audit and advances without waiting.
+//
+// A manual task must not carry completion validation (rejected at Build time,
+// ErrManualTaskValidation), regardless of mode. See ADR-0118.
+func WithManual(immediate bool) UserTaskOption { return manualOpt{immediate} }
 
 type completionValidationOpt struct{ s validate.ValidationStrategy }
 

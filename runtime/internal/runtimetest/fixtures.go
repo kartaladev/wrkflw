@@ -59,7 +59,7 @@ func ApprovalWithReminderDef(waitEvery time.Duration, waitAction string) *model.
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"manager"},
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
 				activity.WithWaitAction(schedule.Every(waitEvery), waitAction)),
 			event.NewEnd("end"),
 		},
@@ -78,7 +78,7 @@ func ApprovalDef() *model.ProcessDefinition {
 		Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("start"),
-			activity.NewUserTask("approve", []string{"manager"}),
+			activity.NewUserTask("approve", activity.WithEligibleRoles("manager")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

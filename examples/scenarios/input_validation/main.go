@@ -67,7 +67,7 @@ func main() {
 	// Build the definition: the start event carries an expr-lang validation strategy.
 	def, err := definition.NewBuilder("expense-approval-validated", 1).
 		Add(event.NewStart("start", event.WithInputValidation(vexpr.New("amount > 0")))).
-		Add(activity.NewUserTask("approve", []string{"manager"},
+		Add(activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
 			activity.WithCompletionValidation(vexpr.New(`decision in ['approve','reject']`)))).
 		Add(event.NewEnd("end")).
 		Connect("start", "approve").

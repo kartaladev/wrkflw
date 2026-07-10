@@ -172,8 +172,8 @@ func TestParseYAMLBadYAML(t *testing.T) {
 	_ = strings.Contains(err.Error(), "yaml")
 }
 
-func TestParseYAMLEligibilityPrivilegesRoundTrip(t *testing.T) {
-	// Hand-written YAML with eligibilityPrivileges on a UserTask.
+func TestParseYAMLEligiblePrivilegesRoundTrip(t *testing.T) {
+	// Hand-written YAML with eligiblePrivileges on a UserTask.
 	yamlInput := `
 id: approval-process
 version: 1
@@ -182,8 +182,8 @@ nodes:
     kind: startEvent
   - id: approve
     kind: userTask
-    candidateRoles: ["manager"]
-    eligibilityPrivileges: ["finance-task claim"]
+    eligibleRoles: ["manager"]
+    eligiblePrivileges: ["finance-task claim"]
   - id: end
     kind: endEvent
 flows:
@@ -201,16 +201,79 @@ flows:
 		t.Fatalf("Build: %v", err)
 	}
 
-	// Verify the parsed UserTask has the correct eligibilityPrivileges.
+	// Verify the parsed UserTask has the correct eligiblePrivileges.
 	approveNode := parsed.Nodes[1]
 	ut, ok := approveNode.(activity.UserTask)
 	if !ok {
 		t.Fatalf("node[1] is %T, want activity.UserTask", approveNode)
 	}
-	if len(ut.EligibilityPrivileges) != 1 || ut.EligibilityPrivileges[0] != "finance-task claim" {
-		t.Fatalf("EligibilityPrivileges = %v, want [finance-task claim]", ut.EligibilityPrivileges)
+	if len(ut.EligiblePrivileges) != 1 || ut.EligiblePrivileges[0] != "finance-task claim" {
+		t.Fatalf("EligiblePrivileges = %v, want [finance-task claim]", ut.EligiblePrivileges)
 	}
-	if len(ut.CandidateRoles) != 1 || ut.CandidateRoles[0] != "manager" {
-		t.Fatalf("CandidateRoles = %v, want [manager]", ut.CandidateRoles)
+	if len(ut.EligibleRoles) != 1 || ut.EligibleRoles[0] != "manager" {
+		t.Fatalf("EligibleRoles = %v, want [manager]", ut.EligibleRoles)
+	}
+}
+
+func TestParseYAMLUserTaskManual(t *testing.T) {
+	const src = `
+id: d
+version: 1
+nodes:
+  - {id: s, kind: startEvent}
+  - {id: confirm, kind: userTask, manual: true}
+  - {id: e, kind: endEvent}
+flows:
+  - {id: f1, source: s, target: confirm}
+  - {id: f2, source: confirm, target: e}
+`
+	loader, err := model.ParseYAML(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("ParseYAML: %v", err)
+	}
+	parsed, err := loader.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	n, ok := parsed.Node("confirm")
+	if !ok {
+		t.Fatal("node confirm not found")
+	}
+	ut, ok := n.(activity.UserTask)
+	if !ok {
+		t.Fatalf("node is %T, want activity.UserTask", n)
+	}
+	if !ut.Manual {
+		t.Fatal("Manual not decoded from YAML")
+	}
+}
+
+func TestParseYAMLUserTaskManualImmediate(t *testing.T) {
+	const src = `
+id: d
+version: 1
+nodes:
+  - {id: s, kind: startEvent}
+  - {id: confirm, kind: userTask, manual: true, manualImmediate: true}
+  - {id: e, kind: endEvent}
+flows:
+  - {id: f1, source: s, target: confirm}
+  - {id: f2, source: confirm, target: e}
+`
+	loader, err := model.ParseYAML(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("ParseYAML: %v", err)
+	}
+	parsed, err := loader.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	n, ok := parsed.Node("confirm")
+	if !ok {
+		t.Fatal("node confirm not found")
+	}
+	ut := n.(activity.UserTask)
+	if !ut.Manual || !ut.ManualImmediate {
+		t.Fatalf("Manual=%v ManualImmediate=%v, want both true", ut.Manual, ut.ManualImmediate)
 	}
 }

@@ -38,7 +38,7 @@ func dedupProbeDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("book"), activity.WithCompensateAction("cancel-svc")),
-			activity.NewUserTask("userTask", nil),
+			activity.NewUserTask("userTask"),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
