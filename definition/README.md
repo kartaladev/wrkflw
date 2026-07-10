@@ -64,7 +64,7 @@ flows), `IsDefault`.
 | root (entry) | `.../definition` | **Only** `NewBuilder` (fluent Go entry) and `NewLoader` (YAML entry) — the one place that can import `build` without a cycle. No re-exports; every other symbol is used from its source package below. |
 | model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), the `ErrX` sentinels. The de-facto types package. Imports only `flow`. |
 | flow | `.../definition/flow` | `SequenceFlow`, `Option`, `WithFlowID`, `WithCondition`, `AsDefault`. |
-| events | `.../definition/event` | `NewStart`, `NewEnd`, `NewErrorEnd`, `NewIntermediateCatch`, `NewIntermediateThrow`, `NewBoundary`, `NewEventSubProcess` + their options |
+| events | `.../definition/event` | `NewStart`, `NewEnd`, `NewErrorEnd`, `NewIntermediateCatch`, `NewIntermediateThrow`, `NewBoundary` + their options |
 | gateways | `.../definition/gateway` | `NewExclusive`, `NewParallel`, `NewInclusive`, `NewEventBased` |
 | activities | `.../definition/activity` | `NewServiceTask`, `NewUserTask`, `NewReceiveTask`, `NewSendTask`, `NewBusinessRuleTask`, `NewSubProcess`, `NewCallActivity` + their options |
 | fluent builder | `.../definition/build` | `Builder` with per-kind `AddX` methods (`AddStartEvent`, …); entered via `definition.NewBuilder`. |
@@ -94,14 +94,18 @@ kind-specific data generically).
 
 | Kind constant | Constructor |
 |---|---|
-| `KindStartEvent` | `event.NewStart(id, opts...)` |
+| `KindStartEvent` | `event.NewStart(id, opts...)` (as the event-triggered inner start of an event sub-process, also `WithNonInterrupting`) |
 | `KindEndEvent` | `event.NewEnd(id, opts...)` (`WithName`, `WithForceTermination(reason, outcome)`) |
 | `KindErrorEndEvent` | `event.NewErrorEnd(id, errorCode, name...)` |
 | `KindIntermediateCatchEvent` | `event.NewIntermediateCatch(id, opts...)` |
 | `KindIntermediateThrowEvent` | `event.NewIntermediateThrow(id, opts...)` (signal broadcast only — see `NewCompensateThrow` for compensation) |
 | `KindCompensationThrowEvent` | `event.NewCompensateThrow(id, opts...)` (targeted or scope-wide compensation throw, ADR-0120) |
 | `KindBoundaryEvent` | `event.NewBoundary(id, attachedTo, opts...)` |
-| `KindEventSubProcess` | `event.NewEventSubProcess(id, *ProcessDefinition, opts...)` |
+
+An **event sub-process** is not a distinct kind (ADR-0122): author it as an
+`activity.NewSubProcess` whose nested definition has an event-triggered inner start
+(`event.NewStart` with a signal/message/timer trigger; `event.WithNonInterrupting` on that
+start for the non-interrupting flavour). Such a SubProcess has no incoming sequence flow.
 
 ### Gateways — `definition/gateway`
 
@@ -154,14 +158,14 @@ task := activity.NewServiceTask("charge",
 
 ### Event options (`definition/event`)
 
-`WithName` (start/catch/boundary/event-sub-process); `WithMessageCorrelator`
+`WithName` (start/catch/boundary); `WithMessageCorrelator`
 (start/catch/boundary); `WithSignalName` (start/catch/boundary); start triggers
-`WithStartTimer`; catch
+`WithStartTimer`, plus `WithNonInterrupting` when the start is the event-triggered
+inner start of a SubProcess acting as an event sub-process (ADR-0122); catch
 `WithCatchTimer` / `WithWaitDeadline` /
 `WithDeadlineAction` / `WithWaitAction`; throw `WithThrowSignalName` /
 `WithThrowName`; boundary `WithBoundaryTimer` /
-`WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
-event-sub-process `WithEventSubProcessNonInterrupting`; compensation throw
+`WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`; compensation throw
 (`event.NewCompensateThrow`, `KindCompensationThrowEvent`) `WithCompensateRef` /
 `WithScopeLocalCompensation` / `WithCompensateThrowName` (ADR-0120).
 
@@ -274,8 +278,9 @@ joined error. The sentinel errors live in `definition/model` — check them with
 `ErrUnreachableNode`, `ErrUnpairedJoin`, `ErrBoundaryAttachment`,
 `ErrBoundaryErrorHost`, `ErrMissingSubprocess`, `ErrMissingDefRef`,
 `ErrInvalidRetryPolicy`, `ErrInvalidRecoveryFlow`, `ErrEmptyCancelAction`,
-`ErrCompensateRefNotFound`. Validation recurses into nested `SubProcess` and
-`EventSubProcess` definitions.
+`ErrCompensateRefNotFound`, `ErrEventSubprocessOnFlow` (ADR-0122). Validation
+recurses into nested `SubProcess` definitions (including a SubProcess acting as an
+event sub-process).
 
 ### Kind-agnostic accessors
 
