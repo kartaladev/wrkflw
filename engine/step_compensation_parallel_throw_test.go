@@ -4,7 +4,7 @@ package engine_test
 // compensation throws.
 //
 // In Macro mode drive() advances every active token in one pass. Two
-// compensation-throw IntermediateThrowEvents in parallel branches are both
+// CompensationThrowEvent (ADR-0120) nodes in parallel branches are both
 // processed in the SAME drive pass. Before ADR-0071 the second throw silently
 // OVERWROTE the single Compensating cursor, orphaning the first walk (its
 // ActionCompleted → ErrTokenNotFound).
@@ -57,7 +57,7 @@ func parallelThrowDef(n int) *model.ProcessDefinition {
 	for i := 1; i <= n; i++ {
 		throwID := throwName(i)
 		ref := refName(i)
-		nodes = append(nodes, event.NewIntermediateThrow(throwID, event.WithCompensateRef(ref)))
+		nodes = append(nodes, event.NewCompensateThrow(throwID, event.WithCompensateRef(ref)))
 		flows = append(flows,
 			flow.SequenceFlow{ID: "f-fork-" + throwID, Source: "forkGW", Target: throwID},
 			flow.SequenceFlow{ID: "f-" + throwID + "-join", Source: throwID, Target: "joinGW"},

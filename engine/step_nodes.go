@@ -74,6 +74,7 @@ var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindEventBasedGateway:      eventBasedGatewayStrategy{},
 	model.KindCallActivity:           callActivityStrategy{},
 	model.KindIntermediateThrowEvent: intermediateThrowEventStrategy{},
+	model.KindCompensationThrowEvent: compensationThrowEventStrategy{},
 }
 
 // serviceTaskStrategy handles KindServiceTask node entry.
@@ -931,6 +932,10 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 }
 
 // intermediateThrowEventStrategy handles KindIntermediateThrowEvent node entry.
+// A throw either emits a signal (broadcast, fire-and-forget) or, with no
+// signal set, parks for future plans (e.g. message/error throw). Compensation
+// throws are handled by the separate compensationThrowEventStrategy (ADR-0120)
+// — IntermediateThrowEvent no longer carries compensation behaviour.
 type intermediateThrowEventStrategy struct{}
 
 func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
@@ -940,49 +945,86 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		return nil, false, nil
 	}
 	var cmds []Command
-	if ite.CompensateRef != "" {
-		// Compensation throw intermediate event (ADR-0039, Phase 3).
-		// Runs the archived compensation records for the referenced sub-process
-		// node in reverse order, then resumes execution past the throw node.
-		// This is a localized walk — it does NOT call beginCompensation
-		// (which cancels ALL tokens and is designed for full/partial rollbacks).
-		ref := ite.CompensateRef
+	if ite.SignalName != "" {
+		// Signal intermediate throw: emit ThrowSignal and continue along the
+		// single outgoing flow. The runtime broadcasts the signal; the engine
+		// does not wait for delivery (fire-and-forget from the engine's view).
+		cmds = append(cmds, ThrowSignal{
+			Name:    ite.SignalName,
+			Payload: nil, // no per-instance payload from throw nodes in this plan
+		})
+		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+		// Auto-advance: signal throw is fire-and-forget; tok.State == TokenActive → stopped=false.
+	} else {
+		// Non-signal intermediate throw: park for future plans (e.g. message
+		// throw, error throw). Parking avoids an infinite drive loop.
+		tok.State = TokenWaitingCommand
+		// token parked: tok.State == TokenWaitingCommand → stopped=true.
+	}
+	return cmds, false, nil
+}
+
+// compensationThrowEventStrategy handles KindCompensationThrowEvent node entry
+// (ADR-0120). A compensation throw runs completed compensable activities'
+// compensation actions in reverse order, then RESUMES past the throw node
+// (throw-then-continue — it never terminates the instance). It handles two
+// forms, distinguished by CompensateRef:
+//
+//   - Targeted (CompensateRef != ""): runs the archived records of a specific
+//     completed sub-process node (ArchivedCompensations[ref]). This is the
+//     behaviour ported from the legacy intermediateThrowEventStrategy compensation
+//     branch — same archive source, resume, serialize/defer, and single-ownership
+//     consume (ArchiveKey cursor).
+//   - Scope-wide (CompensateRef == ""): runs the throwing scope's completed
+//     compensable activities. At the root scope the WHOLE-INSTANCE default first
+//     consolidates archived sub-process records into RootCompensations (BPMN
+//     conformant); WithScopeLocalCompensation (ScopeLocal) narrows it to
+//     root-direct records only. The drained records are cleared on finish
+//     (compensate-once — see stepCompensationFinish) so a second throw or a later
+//     cancel cannot re-run them.
+//
+// Like the targeted branch, a scope-wide throw with no eligible records or no
+// outgoing flow auto-advances (fire-and-forget); an overlapping walk already in
+// flight defers this throw (ADR-0071 serialization, one walk at a time).
+type compensationThrowEventStrategy struct{}
+
+func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	cte, ok := node.(event.CompensationThrowEvent)
+	if !ok {
+		tok.State = TokenWaitingCommand
+		return nil, false, nil
+	}
+	var cmds []Command
+
+	// The resume target is the throw's single outgoing successor. A throw with no
+	// successor must NOT start a walk: stepCompensationFinish would see
+	// ResumeNode == "" and take the terminal branch, wrongly terminating the
+	// instance. Validate forbids a dead-end throw (ErrDeadEnd); this guards Step
+	// defensively regardless.
+	resumeNode := ""
+	if out := c.tdef.Outgoing(node.ID()); len(out) > 0 {
+		resumeNode = out[0].Target
+	}
+	tokScope := tok.ScopeID
+
+	if cte.CompensateRef != "" {
+		// Targeted throw (ported verbatim from intermediateThrowEventStrategy's
+		// CompensateRef branch): run the archived records for the referenced
+		// sub-process node in reverse, resume past the throw, and consume the
+		// archive entry on finish (single ownership via the ArchiveKey cursor).
+		ref := cte.CompensateRef
 		records := c.s.ArchivedCompensations[ref]
-		// Determine the resume node: the throw's single outgoing successor.
-		resumeNode := ""
-		if out := c.tdef.Outgoing(node.ID()); len(out) > 0 {
-			resumeNode = out[0].Target
-		}
 		if len(records) == 0 || resumeNode == "" {
-			// No archived records (never ran, already compensated by a prior
-			// throw, or the sub-process had no compensable activities), OR the
-			// throw has no outgoing flow. A throw with no successor must NOT
-			// start a walk: stepCompensationFinish would see ResumeNode=="" and
-			// take the terminal branch, wrongly terminating the instance. Validate
-			// forbids a dead-end throw (ErrDeadEnd); this guards Step defensively
-			// regardless. Auto-advance — fire-and-forget, no InvokeAction emitted.
+			// No archived records (never ran or already compensated), OR no
+			// outgoing flow — auto-advance, no InvokeAction emitted.
 			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
-			// stopped remains false: auto-advance (tok.State == TokenActive).
 		} else if c.s.Compensating.ActiveCmdID != "" {
-			// SERIALIZE (ADR-0071): a compensation walk is already in flight. The
-			// single-cursor model permits at most ONE walk at a time; starting a
-			// second here would overwrite the in-flight cursor and orphan the first
-			// walk. This happens when two compensation throws in parallel branches
-			// are processed in the SAME Macro drive pass. Park (defer) this throw:
-			// do NOT consume the token, do NOT touch the cursor, emit no InvokeAction.
-			// stepCompensationFinish re-activates exactly one deferred throw per finish,
-			// draining the queue one walk at a time. The parked token is re-activated
-			// (TokenActive) later, re-entering this handler when the cursor is clear.
+			// SERIALIZE (ADR-0071): a walk is already in flight — defer this throw.
 			tok.State = TokenWaitingCommand
 			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
-			// token parked: tok.State == TokenWaitingCommand → stopped=true.
 		} else {
 			// Start the throw compensation walk (resumeNode is non-empty here).
-			// Remember the throw token's scope for correct placeTokenInScope on finish.
-			tokScope := tok.ScopeID
-			// Consume the throw token now (finish will place a fresh token at resumeNode).
 			c.s.consumeToken(tok, c.at)
-			// Set instance into compensation mode and stamp the cursor.
 			c.s.Status = StatusCompensating
 			cmdID := c.s.nextCommandID()
 			c.s.Compensating = compensationCursor{
@@ -997,24 +1039,68 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 				Name:      records[len(records)-1].Action,
 				Input:     copyVars(records[len(records)-1].Input),
 			})
-			// walk started; stopped=true: set tok.State to signal stop.
 			tok.State = TokenWaitingCommand
 		}
-	} else if ite.SignalName != "" {
-		// Signal intermediate throw: emit ThrowSignal and continue along the
-		// single outgoing flow. The runtime broadcasts the signal; the engine
-		// does not wait for delivery (fire-and-forget from the engine's view).
-		cmds = append(cmds, ThrowSignal{
-			Name:    ite.SignalName,
-			Payload: nil, // no per-instance payload from throw nodes in this plan
-		})
-		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
-		// Auto-advance: signal throw is fire-and-forget; tok.State == TokenActive → stopped=false.
 	} else {
-		// Non-signal, non-compensation intermediate throw: park for future plans
-		// (e.g. message throw, error throw). Parking avoids an infinite drive loop.
-		tok.State = TokenWaitingCommand
-		// token parked: tok.State == TokenWaitingCommand → stopped=true.
+		// Scope-wide throw (ADR-0120): compensate the throwing scope's completed
+		// compensable activities in reverse, then resume forward.
+		//
+		// consolidateArchiveIntoRoot MUST run only on the path that actually
+		// commits to a walk — it MOVES ArchivedCompensations into RootCompensations
+		// and nils the archive, so running it on a path that never compensates
+		// would silently destroy the archive (review C1). The branch order below
+		// keeps it off the dead-end and defer paths for exactly that reason.
+		switch {
+		case resumeNode == "":
+			// Dead-end throw (no successor): auto-advance/park without starting a
+			// walk. Do NOT consolidate — a throw that never compensates must leave
+			// ArchivedCompensations intact for a later targeted throw or cancel (C1).
+			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+		case c.s.Compensating.ActiveCmdID != "":
+			// SERIALIZE (ADR-0071): defer this throw behind the in-flight walk. Do
+			// NOT consolidate here — merging into RootCompensations under a live
+			// cursor could corrupt the in-flight walk's record source. The deferred
+			// token is re-driven through this strategy when the current walk finishes
+			// (popOneDeferredThrow → drive), so consolidation happens then, on the
+			// committing path below.
+			tok.State = TokenWaitingCommand
+			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
+		default:
+			// Committing to a walk. Whole-instance default (BPMN conformant): merge
+			// archived sub-process records into RootCompensations FIRST so they are
+			// compensated too, THEN read the throwing scope's records. ScopeLocal
+			// skips the merge — root-direct records only.
+			if tokScope == "" && !cte.ScopeLocal {
+				c.s.consolidateArchiveIntoRoot()
+			}
+			records := compensationRecordsForScope(c.s, tokScope)
+			if len(records) == 0 {
+				// Nothing to compensate even after consolidation — auto-advance
+				// (harmless: nothing was there to merge).
+				c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+			} else {
+				// Start the scope-wide walk. The cursor carries NO ArchiveKey, so
+				// cursorRecords reads the throwing scope's live records; the finish
+				// then clears them (compensate-once).
+				c.s.consumeToken(tok, c.at)
+				c.s.Status = StatusCompensating
+				cmdID := c.s.nextCommandID()
+				c.s.Compensating = compensationCursor{
+					ScopeID:          tokScope,
+					ResumeNode:       resumeNode,
+					ResumeScope:      tokScope,
+					NextIndex:        len(records) - 1,
+					StartRecordCount: len(records),
+					ActiveCmdID:      cmdID,
+				}
+				cmds = append(cmds, InvokeAction{
+					CommandID: cmdID,
+					Name:      records[len(records)-1].Action,
+					Input:     copyVars(records[len(records)-1].Input),
+				})
+				tok.State = TokenWaitingCommand
+			}
+		}
 	}
 	return cmds, false, nil
 }

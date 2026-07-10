@@ -413,6 +413,15 @@ type compensationCursor struct {
 	// Zero (false) for every other walk — admin partial rollback keeps current
 	// vars, matching ADR-0109's original WithTargetNode contract.
 	RestoreTargetVars bool
+	// StartRecordCount is the number of records present in the throwing scope
+	// when a SCOPE-WIDE compensation throw walk started (ADR-0120). The walk
+	// drains exactly the prefix [0 .. StartRecordCount-1] in reverse; on finish,
+	// only that prefix is cleared (compensate-once), retaining any record a still-
+	// running sibling appended mid-walk at index >= StartRecordCount (review A1).
+	// Zero for every other walk (targeted throw, admin/cancel/error), which clear
+	// their whole record source instead. Carried on the cursor (scalar) so
+	// cloneState stays a plain value copy.
+	StartRecordCount int
 	// NextIndex is the index of the CompensationRecord currently in-flight
 	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
 	// compensation actions complete; the next record to emit is NextIndex-1.

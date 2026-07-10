@@ -93,6 +93,12 @@ func (b *Builder) AddEventSubProcess(id string, sub *model.ProcessDefinition, op
 	return b.Add(event.NewEventSubProcess(id, sub, opts...))
 }
 
+// AddCompensationThrow adds a compensation throw. Use event.WithCompensateRef
+// (targeted), event.WithScopeLocalCompensation, and event.WithCompensateThrowName.
+func (b *Builder) AddCompensationThrow(id string, opts ...event.CompensateThrowOption) *Builder {
+	return b.Add(event.NewCompensateThrow(id, opts...))
+}
+
 // --- gateways ---
 
 func (b *Builder) AddExclusiveGateway(id string, name ...string) *Builder {

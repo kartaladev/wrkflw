@@ -21,6 +21,9 @@ type EndOption interface{ applyEnd(n *EndEvent) }
 // ThrowOption configures an IntermediateThrowEvent.
 type ThrowOption func(n *IntermediateThrowEvent)
 
+// CompensateThrowOption configures a CompensationThrowEvent.
+type CompensateThrowOption func(n *CompensationThrowEvent)
+
 // BoundaryOption configures a BoundaryEvent.
 type BoundaryOption interface{ applyBoundary(n *BoundaryEvent) }
 
@@ -168,14 +171,28 @@ func WithThrowSignalName(name string) ThrowOption {
 	return func(n *IntermediateThrowEvent) { n.SignalName = name }
 }
 
-// WithCompensateRef sets CompensateRef on an IntermediateThrowEvent.
-func WithCompensateRef(ref string) ThrowOption {
-	return func(n *IntermediateThrowEvent) { n.CompensateRef = ref }
-}
-
 // WithThrowName sets the display name on an IntermediateThrowEvent.
 func WithThrowName(name string) ThrowOption {
 	return func(n *IntermediateThrowEvent) { n.SetName(name) }
+}
+
+// --- CompensationThrowEvent options ---
+
+// WithCompensateRef targets the compensation throw at a specific completed
+// sub-process node's archived records (empty = scope-wide).
+func WithCompensateRef(ref string) CompensateThrowOption {
+	return func(n *CompensationThrowEvent) { n.CompensateRef = ref }
+}
+
+// WithScopeLocalCompensation narrows a scope-wide throw at the root scope to
+// root-direct compensable activities (default is whole-instance).
+func WithScopeLocalCompensation() CompensateThrowOption {
+	return func(n *CompensationThrowEvent) { n.ScopeLocal = true }
+}
+
+// WithCompensateThrowName sets the display name on a compensation throw.
+func WithCompensateThrowName(name string) CompensateThrowOption {
+	return func(n *CompensationThrowEvent) { n.SetName(name) }
 }
 
 // --- BoundaryEvent options ---

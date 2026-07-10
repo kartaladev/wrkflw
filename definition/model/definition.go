@@ -33,6 +33,7 @@ const (
 	KindParallelGateway
 	KindInclusiveGateway
 	KindEventBasedGateway
+	KindCompensationThrowEvent // ADR-0120: dedicated intra-process compensation throw
 )
 
 // ProcessDefinition is the reusable template a process instance executes.

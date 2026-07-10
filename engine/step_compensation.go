@@ -316,6 +316,7 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 		ResumeScope:       cur.ResumeScope,
 		ToNode:            cur.ToNode,
 		NextIndex:         nextIdx,
+		StartRecordCount:  cur.StartRecordCount,
 		ActiveCmdID:       cmdID,
 		FinalStatus:       cur.FinalStatus,
 		FinalErr:          cur.FinalErr,
@@ -350,8 +351,19 @@ type finishPlan struct {
 	// doClearRecords is set ("" = root/RootCompensations).
 	clearScope string
 	// doClearRecords clears clearScope's records. Full-reverse and terminate clear;
-	// throw and partial RETAIN their records.
+	// targeted throw and partial RETAIN their records. A scope-wide throw also sets
+	// it (see scopeWideThrow below for the prefix-only variant).
 	doClearRecords bool
+	// scopeWideThrow marks a SCOPE-WIDE compensation-throw finish (ADR-0120). When
+	// set alongside doClearRecords, only the drainedCount leading records of
+	// clearScope (the prefix the walk actually drained) are cleared instead of the
+	// whole list — so a record a still-running sibling appended mid-walk survives
+	// and stays compensable by a later cancel (review A1). Only the scope-wide
+	// throw branch sets it; every other clearing plan nils the whole scope list.
+	scopeWideThrow bool
+	// drainedCount is the number of leading records a scope-wide throw walk drained
+	// (its StartRecordCount). Used only when scopeWideThrow is set.
+	drainedCount int
 	// resetVars resets Variables to StartVariables (full-reverse with reset only).
 	resetVars bool
 	// restoreVars, when non-nil, replaces Variables with a copy of this snapshot on
@@ -394,6 +406,37 @@ func clearRecords(s *InstanceState, scopeID string) {
 		s.RootCompensations = nil
 	} else if sc := s.scopeByID(scopeID); sc != nil {
 		sc.Compensations = nil
+	}
+}
+
+// clearRecordsPrefix drops only the first n compensation records for the given
+// scope ("" = root), retaining records[n:]. A finished SCOPE-WIDE compensation
+// throw drains exactly the prefix [0 .. n-1] that existed at walk start, so it
+// clears only that prefix (compensate-once) while retaining any record a still-
+// running sibling appended mid-walk at index >= n — that record is genuinely
+// uncompensated and must stay compensable by a later cancel/rollback (ADR-0120
+// review A1). n is clamped to the current slice length (defensive): if the list
+// shrank, everything is cleared. A fresh backing slice is allocated for the
+// retained tail so the drained records are released for GC and no stale element
+// aliases the old array.
+func clearRecordsPrefix(s *InstanceState, scopeID string, n int) {
+	trim := func(records []CompensationRecord) []CompensationRecord {
+		if n >= len(records) {
+			return nil
+		}
+		if n <= 0 {
+			return records
+		}
+		retained := make([]CompensationRecord, len(records)-n)
+		copy(retained, records[n:])
+		return retained
+	}
+	if scopeID == "" {
+		s.RootCompensations = trim(s.RootCompensations)
+		return
+	}
+	if sc := s.scopeByID(scopeID); sc != nil {
+		sc.Compensations = trim(sc.Compensations)
 	}
 }
 
@@ -450,6 +493,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	archiveKey := s.Compensating.ArchiveKey
 	resumeNode := s.Compensating.ResumeNode
 	resumeScope := s.Compensating.ResumeScope
+	startRecordCount := s.Compensating.StartRecordCount
 	reverseNode := s.Compensating.ReverseNode
 	reverseResetVars := s.Compensating.ReverseResetVars
 	restoreTargetVars := s.Compensating.RestoreTargetVars
@@ -475,6 +519,26 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			deleteArchive:        archiveKey,
 			popDeferred:          true,
 			consumePendingCancel: true,
+		}
+		if archiveKey == "" {
+			// Scope-wide compensate throw (ADR-0120): the drained records came from
+			// the throwing scope's LIVE list (RootCompensations or a sub-scope's
+			// Compensations), not an archive entry. Clear them here (compensate-once)
+			// so a second throw or a later cancel/rollback cannot re-run the
+			// already-run compensations. A targeted throw (archiveKey != "") instead
+			// deletes only its archive entry above and RETAINS RootCompensations,
+			// which hold unrelated outer records a later walk must still compensate.
+			//
+			// Clear ONLY the prefix the walk drained (StartRecordCount), not the whole
+			// list: a compensable sibling running concurrently (throw-then-continue
+			// leaves siblings live) can append a fresh record ABOVE that prefix during
+			// the walk. That record is genuinely uncompensated and must survive for a
+			// later cancel/rollback — nilling the whole list would silently lose it
+			// (review A1).
+			plan.doClearRecords = true
+			plan.clearScope = scopeID
+			plan.scopeWideThrow = true
+			plan.drainedCount = startRecordCount
 		}
 	case toNode != "":
 		// Partial rollback: resume at toNode. Records are RETAINED (not cleared):
@@ -529,6 +593,21 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	return applyFinish(def, s, plan, at, mode, eval)
 }
 
+// applyPlanRecordClearing performs a finishPlan's record clearing: a scope-wide
+// throw (scopeWideThrow) clears only the drainedCount-length prefix it consumed,
+// retaining any sibling-appended record (review A1); every other clearing plan
+// nils the whole scope list. No-op when doClearRecords is false.
+func applyPlanRecordClearing(s *InstanceState, plan finishPlan) {
+	if !plan.doClearRecords {
+		return
+	}
+	if plan.scopeWideThrow {
+		clearRecordsPrefix(s, plan.clearScope, plan.drainedCount)
+		return
+	}
+	clearRecords(s, plan.clearScope)
+}
+
 // applyFinish applies a finishPlan: the single site where a compensation walk
 // either resumes (Status → Running, EndedAt cleared, token placed, drive) or
 // terminates (FinalStatus applied, EndedAt stamped, records cleared). Collapsing
@@ -547,17 +626,19 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 	if plan.resume && plan.consumePendingCancel && s.PendingCancel {
 		s.PendingCancel = false
 		// Clear THIS walk's own already-compensated records BEFORE the cancel walk
-		// so it cannot re-run them (double-compensation). The throw walk deleted
-		// its archive above (deleteArchive) and RETAINS RootCompensations — those
-		// are genuinely-uncompensated outer records the cancel walk must still
-		// compensate (doClearRecords == false, skipped here). A full-reverse walk
-		// compensated ALL of RootCompensations, so it clears them here
-		// (doClearRecords == true): the re-issued beginCompensation then finds zero
-		// eligible records and drops straight into the terminate branch
-		// (FailInstance{"cancelled"}, StatusTerminated) — the correct outcome.
-		if plan.doClearRecords {
-			clearRecords(s, plan.clearScope)
-		}
+		// so it cannot re-run them (double-compensation). A TARGETED throw walk
+		// (archiveKey != "") deleted its archive above (deleteArchive) and RETAINS
+		// RootCompensations — those are genuinely-uncompensated outer records the
+		// cancel walk must still compensate (doClearRecords == false, skipped here).
+		// A SCOPE-WIDE throw walk (archiveKey == "", ADR-0120) instead compensated
+		// the throwing scope's own live records, so — like the full-reverse walk —
+		// it clears them here (doClearRecords == true). It clears ONLY the drained
+		// prefix (scopeWideThrow, review A1): the re-issued beginCompensation then
+		// compensates any sibling record appended mid-walk and terminates
+		// (FailInstance{"cancelled"}, StatusTerminated) — the correct compensate-once
+		// outcome that no longer loses the sibling record. A full-reverse walk
+		// compensated ALL of RootCompensations and clears the whole list the same way.
+		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating
 		return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval, "", false, false)
 	}
@@ -567,9 +648,7 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 	}
 
 	// ── Resume outcome ────────────────────────────────────────────────────────
-	if plan.doClearRecords {
-		clearRecords(s, plan.clearScope)
-	}
+	applyPlanRecordClearing(s, plan)
 	s.Status = StatusRunning
 	// Every resume clears EndedAt: a Running instance must never carry an end
 	// timestamp. Load-bearing after a reverse; defensive for throw/partial (a
@@ -628,9 +707,10 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 	ended := at
 	s.EndedAt = &ended
 
-	if plan.doClearRecords {
-		clearRecords(s, plan.clearScope)
-	}
+	// Terminate plans never set scopeWideThrow (a scope-wide throw always resumes),
+	// so this nils the whole scope list as before; routed through the shared helper
+	// for a single clearing path.
+	applyPlanRecordClearing(s, plan)
 
 	var cmds []Command
 	cmds = append(cmds, s.cancelOpenTasks()...)

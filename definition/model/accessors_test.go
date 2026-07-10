@@ -261,7 +261,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 			{"id": "recv", "kind": "receiveTask", "messageName": "msg.recv", "correlationKey": "order.id"},
 			{"id": "brt", "kind": "businessRuleTask", "action": "apply-discount"},
 			{"id": "esp", "kind": "eventSubProcess", "subprocess": {"id": "esp-inner", "version": 1, "nodes": [{"id": "es", "kind": "startEvent"}, {"id": "ee", "kind": "endEvent"}], "flows": [{"id": "ef1", "source": "es", "target": "ee"}]}},
-			{"id": "comp-throw", "kind": "intermediateThrowEvent", "compensateRef": "charge"}
+			{"id": "comp-throw", "kind": "compensationThrowEvent", "compensateRef": "charge"}
 		],
 		"flows": []
 	}`
@@ -348,8 +348,8 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	require.True(t, ok, "nodes[17] should be EventSubProcess")
 	require.NotNil(t, esp.Subprocess)
 
-	compThrow, ok := def.Nodes[18].(event.IntermediateThrowEvent)
-	require.True(t, ok, "nodes[18] should be IntermediateThrowEvent")
+	compThrow, ok := def.Nodes[18].(event.CompensationThrowEvent)
+	require.True(t, ok, "nodes[18] should be CompensationThrowEvent")
 	assert.Equal(t, "charge", compThrow.CompensateRef)
 }
 

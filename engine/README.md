@@ -423,9 +423,14 @@ to least-recent (down to `toNode`, exclusive). When the walk finishes (all
 records processed, or `toNode` reached), the instance enters `StatusTerminated`
 (full rollback) or resumes at `toNode` (partial rollback).
 
-An `IntermediateThrowEvent` with `event.WithCompensateRef("nodeID")` triggers a
-localized compensation walk over the archived records of the named sub-process
-scope, then resumes execution past the throw event.
+A `CompensationThrowEvent` (`event.NewCompensateThrow`, ADR-0120) triggers a
+compensation walk, then resumes execution past the throw event (it never
+terminates the instance). `event.WithCompensateRef("nodeID")` targets a
+specific completed sub-process's archived records; with no ref it is
+scope-wide — the throwing scope's completed compensable activities (root scope
+defaults to whole-instance; narrow with `WithScopeLocalCompensation`).
+`IntermediateThrowEvent` only throws a signal — it carries no compensation
+behaviour.
 
 ### Cancel
 

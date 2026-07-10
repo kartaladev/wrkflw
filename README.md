@@ -762,14 +762,17 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 | Node | What it does | Constructor |
 |---|---|---|
 | **IntermediateCatchEvent** | Pauses until a timer, signal, or message arrives. | `event.NewIntermediateCatch(id string, opts ...) Node` |
-| **IntermediateThrowEvent** | Throws a signal or triggers compensation. | `event.NewIntermediateThrow(id string, opts ...) Node` |
+| **IntermediateThrowEvent** | Throws a signal (broadcast to every waiting instance). | `event.NewIntermediateThrow(id string, opts ...) Node` |
+| **CompensationThrowEvent** | Runs completed compensable activities' compensation, then resumes past the throw (never terminates). Targeted or scope-wide. | `event.NewCompensateThrow(id string, opts ...) Node` |
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
 `NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithSignalName(name)`,
 `WithMessageCorrelator(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
 `WithWaitAction(every, action)`, `WithName(string)`.
-`NewIntermediateThrowEvent` options: `WithThrowSignalName(name)`,
-`WithCompensateRef(nodeID)` (empty = scope-wide compensation), `WithThrowName(name)`.
+`NewIntermediateThrowEvent` options: `WithThrowSignalName(name)`, `WithThrowName(name)`.
+`NewCompensateThrow` options (ADR-0120): `WithCompensateRef(nodeID)` (empty = scope-wide),
+`WithScopeLocalCompensation()` (root scope only — narrows to root-direct records instead of
+whole-instance), `WithCompensateThrowName(name)`.
 `NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithSignalName(name)`,
 `WithMessageCorrelator(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
 `WithBoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
@@ -779,7 +782,7 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 
 ```go
 event.NewIntermediateCatch("wait-1h", event.WithCatchTimer(`"1h"`))
-event.NewIntermediateThrow("compensate", event.WithCompensateRef("reserve-hotel"))
+event.NewCompensateThrow("compensate", event.WithCompensateRef("reserve-hotel"))
 event.NewBoundary("review-timeout", "review", event.WithBoundaryTimer(`"1h"`))
 ```
 
