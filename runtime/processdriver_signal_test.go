@@ -1,12 +1,19 @@
 package runtime_test
 
-// The two tests below both call driver.BroadcastSignal but are kept as standalone
-// TestXxx funcs (not a table) because their setup is structurally different: the
-// happy path needs a forward-referenced SignalBus plus two instances driven to
-// park, while the error path deliberately constructs a bus-less driver.
+// TestBroadcastSignalResumesParkedInstances and TestBroadcastSignalWithoutBusErrors
+// are kept as standalone TestXxx funcs (not a table) because their setup is
+// structurally different: the happy path needs a forward-referenced SignalBus plus
+// two instances driven to park, while the error path deliberately constructs a
+// bus-less driver with no signal-start definitions at all (the one remaining case
+// where BroadcastSignal must still fail).
+//
+// TestBroadcastSignalFanOut below IS a table: every case shares the same call
+// shape (register defs, call BroadcastSignal, assert on the store), so it follows
+// the mandatory table-test form.
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,10 +22,24 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+)
+
+// errFakeIDGen and errFakeDelivery are test-only sentinel errors used to force
+// the id-generation and SignalBus-delivery failure branches of BroadcastSignal's
+// fan-out (see TestBroadcastSignalFanOut), so errors.Join composition is
+// actually exercised rather than merely reachable in principle.
+var (
+	errFakeIDGen    = errors.New("fake id generator failure")
+	errFakeDelivery = errors.New("fake signal delivery failure")
 )
 
 // TestBroadcastSignalResumesParkedInstances verifies that BroadcastSignal — the
@@ -68,4 +89,140 @@ func TestBroadcastSignalWithoutBusErrors(t *testing.T) {
 	err := driver.BroadcastSignal(t.Context(), "approved", nil)
 	require.Error(t, err, "BroadcastSignal must fail when no SignalBus is configured")
 	assert.Contains(t, err.Error(), "SignalBus", "error must mention the missing SignalBus")
+}
+
+// signalStartDef builds a minimal signal-start definition: a signal-start event
+// (on signalName) flowing straight to an end, so a created instance runs to
+// completion with no external collaborators.
+func signalStartDef(t *testing.T, defID, signalName string) *model.ProcessDefinition {
+	t.Helper()
+	return &model.ProcessDefinition{
+		ID:      defID,
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start", event.WithSignalName(signalName)),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "end"},
+		},
+	}
+}
+
+// countCompletedInstances returns the number of instances in store whose status
+// is StatusCompleted.
+func countCompletedInstances(t *testing.T, store *kernel.MemInstanceStore) int {
+	t.Helper()
+	page, err := store.List(t.Context(), kernel.InstanceFilter{Limit: 200})
+	require.NoError(t, err)
+	n := 0
+	for _, item := range page.Items {
+		if item.Status == engine.StatusCompleted {
+			n++
+		}
+	}
+	return n
+}
+
+// TestBroadcastSignalFanOut verifies BroadcastSignal's signal-start fan-out
+// create (ADR-0121): on top of resuming parked waiters through the SignalBus, it
+// creates one new instance per registered definition whose start event listens
+// for the broadcast signal name — and the relaxed nil-sigbus guard, which now
+// only errors when there is neither a bus nor any signal-start match.
+func TestBroadcastSignalFanOut(t *testing.T) {
+	type testCase struct {
+		name string
+		defs []*model.ProcessDefinition
+		// moreOpts builds extra driver options beyond WithDefinitions(reg); nil
+		// means none. Used to inject a failing SignalBus or id generator for the
+		// error-composition cases below.
+		moreOpts func(t *testing.T) []runtime.Option
+		assert   func(t *testing.T, store *kernel.MemInstanceStore, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "fans out to every registered signal-start def, creating one instance each",
+			defs: []*model.ProcessDefinition{
+				signalStartDef(t, "payment", "order.completed"),
+				signalStartDef(t, "shipment", "order.completed"),
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, 2, countCompletedInstances(t, store), "one completed instance per signal-start def")
+			},
+		},
+		{
+			name: "no SignalBus configured but a signal-start matches: still creates, no error",
+			defs: []*model.ProcessDefinition{
+				signalStartDef(t, "solo", "order.completed"),
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, 1, countCompletedInstances(t, store))
+			},
+		},
+		{
+			name: "no SignalBus and no signal-start match: still errors",
+			defs: nil,
+			assert: func(t *testing.T, store *kernel.MemInstanceStore, err error) {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "SignalBus")
+				assert.Equal(t, 0, countCompletedInstances(t, store))
+			},
+		},
+		{
+			name: "signal-start id-generation failure is joined into the returned error",
+			defs: []*model.ProcessDefinition{
+				signalStartDef(t, "flaky", "order.completed"),
+			},
+			moreOpts: func(t *testing.T) []runtime.Option {
+				t.Helper()
+				failingGen := idgen.Func(func() (string, error) { return "", errFakeIDGen })
+				return []runtime.Option{runtime.WithIDGenerator(failingGen)}
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore, err error) {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, errFakeIDGen)
+				assert.Equal(t, 0, countCompletedInstances(t, store), "no instance is created when id generation fails")
+			},
+		},
+		{
+			name: "SignalBus publish failure is joined into the error but signal-start creation still proceeds",
+			defs: []*model.ProcessDefinition{
+				signalStartDef(t, "solo2", "order.completed"),
+			},
+			moreOpts: func(t *testing.T) []runtime.Option {
+				t.Helper()
+				bus := runtimetest.MustSignalBus(t, func(context.Context, string, engine.Trigger) error {
+					return errFakeDelivery
+				})
+				bus.Subscribe("waiter-1", "order.completed") // gives Publish a waiter to fail on
+				return []runtime.Option{runtime.WithSignalBus(bus)}
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore, err error) {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, errFakeDelivery)
+				assert.Equal(t, 1, countCompletedInstances(t, store), "signal-start creation still proceeds despite the bus publish failure")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := kernel.NewMemDefinitionRegistry()
+			for _, d := range tc.defs {
+				require.NoError(t, reg.Register(d))
+			}
+			store := runtimetest.MustMemStore(t)
+			opts := []runtime.Option{runtime.WithDefinitions(reg)}
+			if tc.moreOpts != nil {
+				opts = append(opts, tc.moreOpts(t)...)
+			}
+			driver := runtimetest.MustRunner(t, nil, store, opts...)
+
+			err := driver.BroadcastSignal(t.Context(), "order.completed", map[string]any{"orderId": "7"})
+			tc.assert(t, store, err)
+		})
+	}
 }
