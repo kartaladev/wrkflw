@@ -737,6 +737,67 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err, "a normal throw with no CompensateRef must validate clean")
 			},
 		},
+		"compensation throw event with dangling CompensateRef is rejected": {
+			// KindCompensationThrowEvent (ADR-0120) with CompensateRef pointing to a
+			// non-existent node.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
+					event.NewCompensateThrow("comp-throw", event.WithCompensateTargetRef("no-such")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "comp-throw"},
+					{ID: "f3", Source: "comp-throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
+			},
+		},
+		"compensation throw event with valid CompensateRef is accepted": {
+			// KindCompensationThrowEvent (ADR-0120) with CompensateRef pointing to a
+			// real node.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work"), activity.WithCompensateAction("undo-work")),
+					event.NewCompensateThrow("comp-throw", event.WithCompensateTargetRef("task")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "comp-throw"},
+					{ID: "f3", Source: "comp-throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"scope-wide compensation throw event with empty CompensateRef is accepted": {
+			// KindCompensationThrowEvent (ADR-0120) with empty CompensateRef (scope-wide)
+			// must not trigger ErrCompensateRefNotFound.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewCompensateThrow("comp-throw"),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "comp-throw"},
+					{ID: "f2", Source: "comp-throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err, "a scope-wide compensation throw with no CompensateRef must validate clean")
+			},
+		},
 		"dangling CompensateRef inside a sub-process is rejected (recursion)": {
 			// The CompensateRef rule lives in the recursive validate(), so a dangling
 			// ref inside a nested sub-process definition must also be caught.

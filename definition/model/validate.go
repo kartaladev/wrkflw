@@ -503,12 +503,13 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 
-	// CompensateRef: a KindIntermediateThrowEvent with a non-empty CompensateRef
-	// must reference a node that exists in this definition. An empty CompensateRef
-	// means "scope-wide compensation" and is always valid. This rule recurses into
-	// sub-processes automatically (it lives inside validate).
+	// CompensateRef: a KindIntermediateThrowEvent or KindCompensationThrowEvent
+	// with a non-empty CompensateRef must reference a node that exists in this
+	// definition. An empty CompensateRef means "scope-wide compensation" and is
+	// always valid. This rule recurses into sub-processes automatically (it
+	// lives inside validate).
 	for _, n := range d.Nodes {
-		if n.Kind() != KindIntermediateThrowEvent {
+		if n.Kind() != KindIntermediateThrowEvent && n.Kind() != KindCompensationThrowEvent {
 			continue
 		}
 		compensateRef := toWire(n).CompensateRef
