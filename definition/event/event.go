@@ -32,6 +32,12 @@ type StartEvent struct {
 	// (Drive) against this start event's contract before the instance is
 	// created. Nil = no validation. Set via WithInputValidation.
 	InputValidation validate.ValidationStrategy
+	// NonInterrupting applies only when this start is the event-triggered inner
+	// start of a SubProcess acting as an event sub-process: false (default) =
+	// interrupting (the event sub-process cancels and replaces its enclosing
+	// scope); true = non-interrupting (runs alongside). It has no effect on a
+	// root / manual start. Set via WithNonInterrupting.
+	NonInterrupting bool
 }
 
 // Kind returns model.KindStartEvent.
@@ -285,7 +291,8 @@ func init() {
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
 				MessageStartSingleton: w.MessageStartSingleton,
-				Timer:                 model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
+				Timer:                 model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false),
+				NonInterrupting:       w.NonInterrupting}
 			if w.Validation != nil {
 				n.InputValidation = model.PendingValidation(*w.Validation)
 			}
@@ -297,6 +304,7 @@ func init() {
 			w.MessageStartSingleton = v.MessageStartSingleton
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.Validation = model.PutValidation(v.InputValidation)
+			w.NonInterrupting = v.NonInterrupting
 		},
 		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(StartEvent).InputValidation },
 		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {

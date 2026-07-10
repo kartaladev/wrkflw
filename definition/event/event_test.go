@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
@@ -103,11 +106,56 @@ func TestEndEventConstructors(t *testing.T) {
 	}
 }
 
+// TestWithNonInterrupting verifies WithNonInterrupting sets StartEvent.NonInterrupting
+// and that the default (unset) is interrupting (false).
+func TestWithNonInterrupting(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		build  func() event.StartEvent
+		assert func(t *testing.T, se event.StartEvent)
+	}
+
+	cases := []testCase{
+		{
+			name: "WithNonInterrupting sets NonInterrupting true",
+			build: func() event.StartEvent {
+				n := event.NewStart("s", event.WithMessageCorrelator("cancel", "orderId"), event.WithNonInterrupting())
+				se, ok := n.(event.StartEvent)
+				require.True(t, ok)
+				return se
+			},
+			assert: func(t *testing.T, se event.StartEvent) {
+				assert.True(t, se.NonInterrupting)
+				assert.Equal(t, "cancel", se.MessageName)
+			},
+		},
+		{
+			name: "default is interrupting",
+			build: func() event.StartEvent {
+				return event.NewStart("s2").(event.StartEvent)
+			},
+			assert: func(t *testing.T, se event.StartEvent) {
+				assert.False(t, se.NonInterrupting)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			se := tc.build()
+			tc.assert(t, se)
+		})
+	}
+}
+
 func TestEventRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "e", Version: 1,
 		Nodes: []model.Node{
-			event.NewStart("s", event.WithSignalName("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`))),
+			event.NewStart("s", event.WithSignalName("go"), event.WithStartTimer(schedule.AfterExpr(`"30m"`)), event.WithNonInterrupting()),
 			event.NewIntermediateCatch("c", event.WithCatchTimer(schedule.AfterExpr(`"1h"`)), event.WithWaitDeadline(schedule.AfterExpr(`"2h"`), "f"), event.WithDeadlineAction("a")),
 			event.NewCompensateThrow("th", event.WithCompensateRef("s")),
 			event.NewBoundary("b", "c", event.WithBoundaryTimer(schedule.AfterDuration(5*time.Minute)), event.WithBoundaryErrorCode("E")),
@@ -124,6 +172,9 @@ func TestEventRoundTrip(t *testing.T) {
 	}
 	if got.Nodes[0].(event.StartEvent).SignalName != "go" {
 		t.Error("start signal lost")
+	}
+	if !got.Nodes[0].(event.StartEvent).NonInterrupting {
+		t.Error("start NonInterrupting lost in round-trip")
 	}
 	startTimer := got.Nodes[0].(event.StartEvent).Timer
 	if startTimer.IsZero() {

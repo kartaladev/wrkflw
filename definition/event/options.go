@@ -116,6 +116,14 @@ func WithMessageStartSingleton() StartOption {
 	return startFuncOpt{func(n *StartEvent) { n.MessageStartSingleton = true }}
 }
 
+// WithNonInterrupting marks an event-triggered start as non-interrupting: when
+// this start is the inner start of a SubProcess acting as an event sub-process,
+// the sub-process runs alongside its enclosing scope instead of cancelling it.
+// Default (unset) is interrupting. No effect on a root / manual start.
+func WithNonInterrupting() StartOption {
+	return startFuncOpt{func(n *StartEvent) { n.NonInterrupting = true }}
+}
+
 type inputValidationOpt struct{ s validate.ValidationStrategy }
 
 func (o inputValidationOpt) applyStart(n *StartEvent) { n.InputValidation = o.s }
