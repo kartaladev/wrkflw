@@ -36,7 +36,7 @@ func TestValidate(t *testing.T) {
 				require.ErrorIs(t, err, model.ErrNoStartEvent)
 			},
 		},
-		"multiple none start events": {
+		"multiple manual start events": {
 			// ADR-0121: multiple start events are legal, but at most one may be a
 			// trigger-less "none" start — a second one is rejected.
 			def: &model.ProcessDefinition{
@@ -570,7 +570,7 @@ func TestValidate(t *testing.T) {
 		"multiple starts still runs pairing (reachability well-defined via union)": {
 			// ADR-0121: reachability/pairing are computed over the union of all
 			// starts, so they run (and can flag real defects) even when the start
-			// configuration itself is separately invalid (two none-starts here).
+			// configuration itself is separately invalid (two manual-starts here).
 			// The join "j" is genuinely unpaired regardless of start count: its
 			// only upstream split ("split") is exclusive, not a concurrency
 			// source, so it deadlocks at runtime waiting for a second token.
@@ -1794,8 +1794,8 @@ func TestValidateStartEvents(t *testing.T) {
 		def    *model.ProcessDefinition
 		assert func(t *testing.T, err error)
 	}{
-		"two none starts rejected": {
-			def: twoNoneStartDef(),
+		"two manual starts rejected": {
+			def: twoManualStartDef(),
 			assert: func(t *testing.T, err error) {
 				assert.ErrorIs(t, err, model.ErrMultipleManualStarts)
 			},
@@ -1834,10 +1834,10 @@ func TestValidateStartEvents(t *testing.T) {
 	}
 }
 
-// twoNoneStartDef has two trigger-less start events — always rejected
+// twoManualStartDef has two trigger-less start events — always rejected
 // (ErrMultipleManualStarts), regardless of how many event-triggered starts a
 // definition also carries.
-func twoNoneStartDef() *model.ProcessDefinition {
+func twoManualStartDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
 		Nodes: []model.Node{
@@ -1852,8 +1852,8 @@ func twoNoneStartDef() *model.ProcessDefinition {
 	}
 }
 
-// noneAndMessageStartDef has one none-start plus one message-triggered
-// start — legal under the ADR-0121 relaxation (at most one none-start).
+// noneAndMessageStartDef has one manual-start plus one message-triggered
+// start — legal under the ADR-0121 relaxation (at most one manual-start).
 func noneAndMessageStartDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
@@ -1870,7 +1870,7 @@ func noneAndMessageStartDef() *model.ProcessDefinition {
 }
 
 // signalAndTimerStartDef has two event-triggered starts (signal + timer),
-// zero none-starts — legal.
+// zero manual-starts — legal.
 func signalAndTimerStartDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
@@ -1888,7 +1888,7 @@ func signalAndTimerStartDef() *model.ProcessDefinition {
 
 // messageStartMissingNameDef declares a message-family correlation key
 // without a message name — an incompletely-specified trigger family, not a
-// none-start (ErrEventStartMissingTrigger).
+// manual-start (ErrEventStartMissingTrigger).
 func messageStartMissingNameDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
@@ -1917,7 +1917,7 @@ func signalPlusTimerOneNodeDef() *model.ProcessDefinition {
 	}
 }
 
-// twoStartsBothReachDef has a none-start reaching "end" directly and a
+// twoStartsBothReachDef has a manual-start reaching "end" directly and a
 // message start reaching "end" via "task" — every node is reachable from the
 // union of both starts, so none should be reported unreachable even though
 // "task" is only reachable from the second (non-first) start.

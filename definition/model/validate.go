@@ -50,7 +50,7 @@ var (
 	// ErrEventStartMissingTrigger is returned when a start event declares a
 	// trigger family incompletely — currently: a non-empty CorrelationKey with
 	// no MessageName, i.e. a message start missing its message name. Such a
-	// start is neither a valid none-start nor a valid message start, so it is
+	// start is neither a valid manual-start nor a valid message start, so it is
 	// rejected rather than silently treated as none (ADR-0121).
 	ErrEventStartMissingTrigger = errors.New("workflow-definition: event start missing trigger detail")
 	ErrDanglingFlow             = errors.New("workflow-definition: flow references unknown node")
@@ -212,13 +212,13 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// (ErrMultipleManualStarts); each event-triggered start must set exactly one
 	// trigger family — message, signal, or timer (ErrAmbiguousStartTrigger for
 	// >1 set). A non-empty CorrelationKey with no MessageName is an
-	// incompletely-specified message start, not a none-start
+	// incompletely-specified message start, not a manual-start
 	// (ErrEventStartMissingTrigger).
 	starts := d.StartNodes()
 	if len(starts) == 0 {
 		errs = append(errs, ErrNoStartEvent)
 	}
-	var noneCount int
+	var manualCount int
 	for _, s := range starts {
 		w := toWire(s)
 		hasMessage := w.MessageName != ""
@@ -240,13 +240,13 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 			}
 			switch {
 			case fams == 0:
-				noneCount++
+				manualCount++
 			case fams > 1:
 				errs = append(errs, fmt.Errorf("%w: node %q", ErrAmbiguousStartTrigger, s.ID()))
 			}
 		}
 	}
-	if noneCount > 1 {
+	if manualCount > 1 {
 		errs = append(errs, ErrMultipleManualStarts)
 	}
 
@@ -392,7 +392,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// noise on an already-invalid definition. With >=1 starts (ADR-0121)
 	// reachability is well-defined via the union above, so pairing runs even
 	// when the start configuration itself is otherwise invalid (e.g. multiple
-	// none-starts) — it is an independent structural rule.
+	// manual-starts) — it is an independent structural rule.
 	if reached != nil {
 		for _, n := range d.Nodes {
 			if n.Kind() != KindParallelGateway {
