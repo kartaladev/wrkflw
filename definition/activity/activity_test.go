@@ -174,3 +174,25 @@ func TestUserTaskManualWireRoundTrip(t *testing.T) {
 		t.Fatal("Manual not preserved across JSON round-trip")
 	}
 }
+
+// TestUserTaskManualImmediateWireRoundTrip verifies UserTask.ManualImmediate
+// (ADR-0118) survives a JSON wire round-trip (ToWire -> NodeWire -> FromWire)
+// alongside Manual.
+func TestUserTaskManualImmediateWireRoundTrip(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID: "d", Version: 1,
+		Nodes: []model.Node{activity.NewUserTask("confirm", activity.WithManual(true))},
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got model.ProcessDefinition
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	ut := got.Nodes[0].(activity.UserTask)
+	if !ut.Manual || !ut.ManualImmediate {
+		t.Fatalf("Manual=%v ManualImmediate=%v, want both true", ut.Manual, ut.ManualImmediate)
+	}
+}

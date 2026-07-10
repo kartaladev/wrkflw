@@ -20,6 +20,7 @@ type NodeWire struct {
 	EligiblePrivileges []string `json:"eligiblePrivileges,omitempty"`
 	EligibleExpr       string   `json:"eligibleExpr,omitempty"`
 	Manual             bool     `json:"manual,omitempty"`
+	ManualImmediate    bool     `json:"manualImmediate,omitempty"`
 	// legacy flat forms (decoded via ReadTrigger's flatExpr path; not written by ToWire)
 	TimerDuration    string `json:"timerDuration,omitempty"`
 	DeadlineDuration string `json:"deadlineDuration,omitempty"`

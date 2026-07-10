@@ -247,3 +247,33 @@ flows:
 		t.Fatal("Manual not decoded from YAML")
 	}
 }
+
+func TestParseYAMLUserTaskManualImmediate(t *testing.T) {
+	const src = `
+id: d
+version: 1
+nodes:
+  - {id: s, kind: startEvent}
+  - {id: confirm, kind: userTask, manual: true, manualImmediate: true}
+  - {id: e, kind: endEvent}
+flows:
+  - {id: f1, source: s, target: confirm}
+  - {id: f2, source: confirm, target: e}
+`
+	loader, err := model.ParseYAML(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("ParseYAML: %v", err)
+	}
+	parsed, err := loader.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	n, ok := parsed.Node("confirm")
+	if !ok {
+		t.Fatal("node confirm not found")
+	}
+	ut := n.(activity.UserTask)
+	if !ut.Manual || !ut.ManualImmediate {
+		t.Fatalf("Manual=%v ManualImmediate=%v, want both true", ut.Manual, ut.ManualImmediate)
+	}
+}
