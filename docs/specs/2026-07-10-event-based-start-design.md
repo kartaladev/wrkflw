@@ -96,9 +96,14 @@ operations:
      `InstanceState.DefID`/`DefVersion` via `defsReg.Lookup` and `ApplyTrigger` (resume) — the
      caller no longer supplies it.
   2. On a miss, find the **unique** message-start def for `name` (via §4 enumeration) and
-     **create** a new instance, seeded with `key` as the correlation value and `payload` as
-     start vars, initial token on the matching start node. Steps 1–2 run inside the
-     per-`(name,key)` guarded critical section of §8 (correlate-check-then-create is atomic).
+     **create** a new instance with a **deterministic id** derived from `(name, key)`
+     (`messageStartInstanceID`), initial token on the matching start node, seeded with `payload`
+     as start vars (the key drives the id, not the vars; a caller that needs the key as a
+     process variable includes it in `payload`). `Store.Create` returning
+     `kernel.ErrInstanceExists` (an instance already
+     exists for this key — running or completed) is a **clean no-op**: this is the
+     authoritative dedup (§8). Two or more matching message-start defs ⇒
+     `ErrAmbiguousMessageStart`.
   3. No running waiter and no message-start match ⇒ clean no-op (today's behavior preserved
      for genuinely-unmatched messages).
 - **`BroadcastSignal(ctx, name, payload)`** — signature unchanged (already def-less).
@@ -194,28 +199,32 @@ distinct hazard, handled with the machinery the repo already provides.
 - **Registration uniqueness — TOCTOU-free.** The message-name scan-then-register in
   `RegisterDefinition` runs under a package-level registration mutex (§4), so concurrent
   registrations cannot both pass.
-- **Message-start correlate-then-create — the real hazard (decided: advisory-lock, no new
-  schema).** Two identical `(name,key)` messages must not both create.
-  - **Single node / single replica (authoritative):** an in-process **active-correlation map**
-    `map[msgKey]instanceID` on the `eventStart` unit, guarded by its own mutex, records each
-    message-start instance on create and **evicts it on terminal status** (hooked into
-    `deliverLoop`'s terminal path). The correlate-check-then-create critical section is
-    serialized per `(name,key)` through this mutex, so concurrent identical messages create at
-    most one instance and the second correlates to it. SQLite (single-writer, single-node)
-    relies solely on this and is fully safe.
-  - **Multi-replica (best-effort):** when the store implements the `dialect.Locker` capability
-    (`internal/persistence/dialect/dialect.go:182` — Postgres/MySQL), the critical section is
-    additionally wrapped in an advisory lock on `hash(name,key)` so replicas serialize. Because
-    there is **no shared durable correlation record** (the no-new-table decision), a replica
-    that did not create holds no map entry, so a **narrow cross-replica / post-restart window
-    can still produce a duplicate**. This is an accepted, documented limitation.
-  - **Deferred upgrade path:** full durable, cross-replica, restart-safe dedup is a later ADR —
-    a durable correlation subscription keyed by `(messageName, key)` with a UNIQUE constraint,
-    checked inside the create transaction. The `eventStart` seam and the advisory-lock wrapper
-    are designed so this can be added behind them without changing the public API.
+- **Message-start dedup — deterministic id (decided; the `Chainer` idempotency pattern, no new
+  schema).** Two identical `(name,key)` messages must not both create. The message-start
+  instance's id is a **deterministic function of `(messageName, correlationKey)`**
+  (`messageStartInstanceID`), and `Store.Create`'s `kernel.ErrInstanceExists` (`ports.go:21`)
+  is the **authoritative dedup** — exactly how `runtime/chain.Chainer` dedupes successors
+  (`successorID` + `Store.Create`). The database row is the shared state:
+  - **Concurrency (single- and multi-node):** `Store.Create` is atomic — the in-memory store
+    under its mutex (`memstore.go:98`), the SQL stores under the `instance_id` primary key. Two
+    concurrent identical messages both compute the same id; exactly one `Create` wins, the
+    other gets `ErrInstanceExists` → no-op. **Fully multi-replica and restart safe**, with no
+    advisory lock, no in-process correlation map, and no new table.
+  - **Trade-off (accepted):** a correlation key is **single-use per instance lifetime** — once
+    the instance exists (running *or* completed, its row still present), a later message with
+    the same `(name,key)` correlates/no-ops instead of starting a fresh instance. Correct when
+    keys are once-ever (e.g. `orderId`); callers who need to reuse a key must prune the terminal
+    instance first. Correlate-to-a-*running*-waiter still works via step 1 (`findMessageWaiter`)
+    when the instance is parked on a message.
+  - **No `dialect.Locker`, no runtime `Locker` port** — an advisory lock without shared state
+    only blocks exactly-simultaneous creation (a replica acquiring the lock *after* another
+    released it still can't see the just-created instance, since a message-start instance is not
+    a waiter for its own start message), so it was dropped as ineffective in favor of the
+    DB-authoritative deterministic id.
 - **Shared in-memory state.** Every shared map — `msgWaiters` (`msgMu`), the `sigbus`
-  subscriptions, the new active-correlation map, and any enumeration snapshot — is mutex-guarded
-  or copied before iteration; `go test -race` covers the new paths.
+  subscriptions, and any enumeration snapshot — is mutex-guarded or copied before iteration.
+  Message-start dedup adds **no** new shared in-memory state (the DB row is the shared state);
+  `go test -race` covers the new create paths incl. concurrent identical `(name,key)` delivery.
 
 ### 9. Deliberately dropped (YAGNI)
 
@@ -275,11 +284,12 @@ durable message-start dedup is ever needed.)
 - Message-name uniqueness enforced at `RegisterDefinition` is best-effort for consumers that
   register directly into a custom registry; the delivery-time `ErrAmbiguousMessageStart` guard
   is the authoritative backstop.
-- Message-start dedup is **authoritative single-node, best-effort multi-replica** (advisory
-  `dialect.Locker`, no new schema): a narrow cross-replica / post-restart window can still
-  duplicate an instance for one correlation key. Documented limitation; durable dedup is a
-  deferred follow-up ADR (see §8). Timer-start (Elector) and signal-start (fan-out by design)
-  are fully multi-replica safe.
+- Message-start dedup is **fully multi-replica and restart safe** via a deterministic instance
+  id + `Store.Create`'s `ErrInstanceExists` (the `Chainer` pattern; the DB row is the shared
+  state), with no new schema, no advisory lock, and no in-process map (§8). Accepted trade-off:
+  a correlation key is **single-use per instance lifetime** (a completed instance's row makes a
+  later same-key message a no-op until pruned). Timer-start (Elector) and signal-start (fan-out
+  by design) are also fully multi-replica safe.
 - Unblocks ADR-0122 (EventSubProcess ≡ SubProcess with an event-triggered inner start), which
   depends on this feature.
 
@@ -297,9 +307,9 @@ durable message-start dedup is ever needed.)
 - [ ] `runtime/definition_registry.go`: message-name uniqueness at register (under a
       registration mutex, `ErrDuplicateMessageStart`); delivery-time `ErrAmbiguousMessageStart`
       backstop.
-- [ ] `runtime`: message-start `eventStart` active-correlation map (mutex-guarded, evicted on
-      terminal via `deliverLoop`) + `dialect.Locker`-wrapped critical section; `go test -race`
-      on concurrent identical-`(name,key)` delivery and concurrent signal fan-out.
+- [ ] `runtime`: message-start deterministic id (`messageStartInstanceID`) + `Store.Create`
+      `ErrInstanceExists` → no-op dedup; `go test -race` on concurrent identical-`(name,key)`
+      delivery (assert exactly one instance) and concurrent signal fan-out.
 - [ ] `runtime`: `RehydrateStartTimers(ctx)`; timer-start fire creates instance.
 - [ ] `runtime`: plain `Drive` uses manual-start / errors on only-event-starts.
 - [ ] `service` + `transport/http/{httpcore,stdlib,gin,fiber}`: `DeliverMessage` def-drop

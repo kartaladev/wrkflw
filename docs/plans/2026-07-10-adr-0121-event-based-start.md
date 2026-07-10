@@ -64,7 +64,7 @@ func TestValidateStartEvents(t *testing.T) {
 		assert func(t *testing.T, err error)
 	}{
 		"two manual starts rejected": {
-			def: twoNoneStartDef(),
+			def: twoManualStartDef(),
 			assert: func(t *testing.T, err error) {
 				assert.ErrorIs(t, err, model.ErrMultipleManualStarts)
 			},
@@ -134,7 +134,7 @@ starts := d.StartNodes()
 if len(starts) == 0 {
 	errs = append(errs, ErrNoStartEvent)
 }
-var noneCount int
+var manualCount int
 for _, s := range starts {
 	se, ok := s.(event.StartEvent)
 	if !ok {
@@ -152,7 +152,7 @@ for _, s := range starts {
 	}
 	switch {
 	case fams == 0:
-		noneCount++
+		manualCount++
 	case fams > 1:
 		errs = append(errs, fmt.Errorf("%w: node %q", ErrAmbiguousStartTrigger, se.ID()))
 	}
@@ -160,7 +160,7 @@ for _, s := range starts {
 	// only when nothing is set; a partially-set family (none possible here since a
 	// family is defined by its own field being non-empty) needs no extra check.
 }
-if noneCount > 1 {
+if manualCount > 1 {
 	errs = append(errs, ErrMultipleManualStarts)
 }
 ```
@@ -264,7 +264,7 @@ type StartInstance struct {
 	baseTrigger
 	Vars map[string]any
 	// StartNodeID is the start node to seed. Empty resolves the definition's
-	// none (trigger-less) start; non-empty seeds that specific start node.
+	// manual (trigger-less) start; non-empty seeds that specific start node.
 	StartNodeID string
 }
 
@@ -281,7 +281,7 @@ func NewStartInstanceAtNode(at time.Time, nodeID string, vars map[string]any) St
 
 ```go
 // ErrNoManualStart is returned when a StartInstance with an empty StartNodeID is
-// applied to a definition that has no none (trigger-less) start event.
+// applied to a definition that has no manual (trigger-less) start event.
 var ErrNoManualStart = errors.New("workflow-engine: definition has no manual start event")
 
 func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t StartInstance, opt StepOptions) (StepResult, error) {
@@ -304,7 +304,7 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	// ... unchanged: armEventSubprocesses + drive ...
 }
 
-// resolveManualStart returns the id of the definition's single none (trigger-less)
+// resolveManualStart returns the id of the definition's single manual (trigger-less)
 // start event, or ErrNoManualStart if there is none.
 func resolveManualStart(def *model.ProcessDefinition) (string, error) {
 	for _, s := range def.StartNodes() {
@@ -504,15 +504,29 @@ git commit -m "feat(runtime): eventStart start-node resolution helpers (ADR-0121
 
 ## Task 5: `DeliverMessage` def-drop + correlate-then-create
 
+**Concurrency design (decided — deterministic id, the `Chainer` pattern):** message-start dedup
+is NOT an in-process map or an advisory lock. The created instance's id is a **deterministic
+function of `(messageName, correlationKey)`**, and `Store.Create`'s `kernel.ErrInstanceExists`
+is the authoritative dedup — fully multi-replica + restart safe, DB row = shared state, no new
+schema. This means **Task 4's `eventStart` struct (active map + mu + `newEventStart`) is now
+obsolete and is REMOVED in this task** (its package-level helpers stay). There is **no**
+`lockCorrelation`, **no** `dialect.Locker`, and **no** terminal eviction hook. Trade-off
+(accepted): a correlation key is single-use per instance lifetime.
+
 **Files:**
-- Modify: `runtime/processdriver_message.go`, `runtime/processdriver.go` (create-at-node helper + terminal eviction hook)
+- Modify: `runtime/processdriver_message.go`, `runtime/processdriver.go` (create-at-node helper; REMOVE the `es *eventStart` field + its construction added in Task 4)
+- Modify: `runtime/event_start.go` (DELETE the obsolete `eventStart` struct + `newEventStart`; keep the helper funcs)
 - Modify: `service/service.go`, `service/request.go` (drop `DeliverMessageRequest.DefRef`), `transport/http/{httpcore,stdlib,gin,fiber}/*.go`
 - Modify (callers): 7 `examples/scenarios/*/main.go`, all `*_test.go` calling `DeliverMessage`
 - Test: `runtime/processdriver_message_test.go`
 
 **Interfaces:**
-- Produces: `func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlationKey string, payload map[string]any) error` (**`def` removed**); unexported `func (driver *ProcessDriver) createAtNode(ctx, def, nodeID, corrKey string, vars map[string]any) (engine.InstanceState, error)` seeding `NewStartInstanceAtNode`; correlation locking via `driver.lockKey(name, corrKey)` (uses `dialect.Locker` when the store implements it, else a no-op).
-- Consumes: Task 2 `engine.NewStartInstanceAtNode`; Task 3 `kernel.DefinitionLister`; Task 4 `eventStart`/`uniqueMessageStartDef`/`messageStartNode`; `driver.findMessageWaiter`; `driver.ApplyTrigger`; `driver.deliverLoop`; `driver.defsReg.Lookup`.
+- Produces:
+  - `func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlationKey string, payload map[string]any) error` (**`def` removed**).
+  - unexported `func messageStartInstanceID(name, correlationKey string) string` — a deterministic, collision-safe id (hash-based, e.g. `"msgstart-" + hex(sha256(name "\x00" key))`).
+  - unexported `func (driver *ProcessDriver) createAtNode(ctx context.Context, def *model.ProcessDefinition, nodeID, instanceID string, vars map[string]any) (engine.InstanceState, error)` — seeds `engine.NewStartInstanceAtNode`; `instanceID` empty ⇒ generate via `driver.idgen` (signal/timer), non-empty ⇒ use it verbatim (message-start deterministic id); runs `deliverLoop`.
+  - Sentinel `ErrAmbiguousMessageStart = errors.New("workflow-runtime: ambiguous message start")`.
+- Consumes: Task 2 `engine.NewStartInstanceAtNode`; Task 3 `kernel.DefinitionLister`; Task 4 helpers `uniqueMessageStartDef`/`messageStartNode`; `driver.findMessageWaiter`; `driver.ApplyTrigger`; `driver.deliverLoop`; `driver.defsReg.Lookup`; `kernel.ErrInstanceExists`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -534,9 +548,15 @@ func TestDeliverMessageStartsWhenNoWaiter(t *testing.T) {
 
 func TestDeliverMessageConcurrentSameKeyCreatesOne(t *testing.T) {
 	ctx := t.Context()
-	// register a message-start def that parks (so the created instance stays alive)
-	// fire N concurrent DeliverMessage(name, "42", …); assert exactly one instance exists.
+	// register a message-start def; fire N concurrent DeliverMessage(name, "42", …).
+	// Deterministic id + Store.Create ErrInstanceExists => exactly ONE instance is created,
+	// the rest are clean no-ops. Assert exactly one instance with id == messageStartInstanceID(name,"42").
 	// Run under: go test -race
+}
+
+func TestDeliverMessageSameKeyAfterCompletionIsNoop(t *testing.T) {
+	// deliver once (creates+completes), deliver again with the same key → no-op (id row still
+	// present ⇒ ErrInstanceExists). Documents the single-use-per-lifetime trade-off.
 }
 
 func TestDeliverMessageNoMatchIsNoop(t *testing.T) {
@@ -555,11 +575,9 @@ Expected: FAIL — signature mismatch (`def` removed) / new behavior missing.
 
 ```go
 func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlationKey string, payload map[string]any) error {
-	// Serialize correlate-check-then-create per (name,key). Single-node: eventStart
-	// mutex; multi-replica best-effort: dialect.Locker on hash(name,key).
-	unlock := driver.lockCorrelation(ctx, name, correlationKey)
-	defer unlock()
-
+	// 1. Correlate to a running waiter parked on this message (intermediate catch / boundary /
+	//    event-gateway arm). The instance's def is resolved from its own DefID — caller no
+	//    longer supplies it.
 	if instanceID, found := driver.findMessageWaiter(name, correlationKey); found {
 		def, err := driver.resolveInstanceDef(ctx, instanceID)
 		if err != nil {
@@ -569,28 +587,35 @@ func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlati
 		_, err = driver.ApplyTrigger(ctx, def, instanceID, trg)
 		return err
 	}
-	// no running waiter → try message-start create
-	defs := driver.listDefinitions(ctx)
-	def, nodeID, n := uniqueMessageStartDef(defs, name)
+	// 2. No running waiter → try a message-start create.
+	def, nodeID, n := uniqueMessageStartDef(driver.listDefinitions(ctx), name)
 	switch {
 	case n == 0:
 		return nil // genuinely unmatched — clean no-op
 	case n > 1:
 		return fmt.Errorf("%w: %q", ErrAmbiguousMessageStart, name)
 	}
-	_, err := driver.createAtNode(ctx, def, nodeID, correlationKey, payload)
-	return err
+	// Deterministic id: concurrent/duplicate/redelivered messages for the same (name,key) all
+	// compute the same id; Store.Create lets exactly one win, the rest get ErrInstanceExists.
+	id := messageStartInstanceID(name, correlationKey)
+	switch _, err := driver.createAtNode(ctx, def, nodeID, id, payload); {
+	case errors.Is(err, kernel.ErrInstanceExists):
+		return nil // an instance already exists for this key (running or completed) — no-op dedup
+	case err != nil:
+		return err
+	}
+	return nil
 }
 ```
 
 Add helpers to `processdriver.go`:
-- `resolveInstanceDef(ctx, instanceID)`: `Load` the instance, `defsReg.Lookup(model.Version(st.DefID, st.DefVersion))`.
+- `resolveInstanceDef(ctx, instanceID)`: `store.Load` the instance, `defsReg.Lookup(model.Version(st.DefID, st.DefVersion))`.
 - `listDefinitions(ctx)`: type-assert `driver.defsReg` to `kernel.DefinitionLister`; return `nil` when unsupported.
-- `createAtNode(ctx, def, nodeID, corrKey, vars)`: generate an ID via `driver.idgen`, seed `engine.NewStartInstanceAtNode(driver.clk.Now(), nodeID, vars)`, run `deliverLoop`. On success, record `driver.es.active[msgKey{name,corrKey}] = id` under `es.mu` (message-start only; caller passes the msgKey).
-- `lockCorrelation(ctx, name, key) func()`: acquire `es.mu` (always); additionally `dialect.Locker.TryLock(ctx, hash)` when the store exposes a `Locker` (spin/skip per `ErrUnsupported`); return an unlock closure.
+- `createAtNode(ctx, def, nodeID, instanceID, vars)`: if `instanceID == ""` generate via `driver.idgen`; seed `engine.NewStartInstanceAtNode(driver.clk.Now(), nodeID, vars)`; run `deliverLoop` with that id. It surfaces `kernel.ErrInstanceExists` from `store.Create` unchanged (do NOT swallow it inside `createAtNode` — the caller decides).
+- `messageStartInstanceID(name, correlationKey)`: deterministic, collision-safe (hash the two fields with a separator so different `(name,key)` never collide).
 - Sentinel `ErrAmbiguousMessageStart = errors.New("workflow-runtime: ambiguous message start")`.
 
-Terminal eviction hook in `deliverLoop` (where `isTerminal(st.Status) && !isTerminal(prevStatus)`): `driver.es.evict(st.InstanceID)` — remove any `active` entries whose value equals the terminal instance id.
+REMOVE the now-obsolete `eventStart` struct/`newEventStart`/`es` field (Task 4 scaffold) — the deterministic id needs no in-process correlation state. Keep the package-level helper funcs (`messageStartNode`/`signalStartDefs`/`uniqueMessageStartDef`/`timerStartDefs`).
 
 Then propagate the signature change to every caller:
 - `service/service.go:362` — call `e.driver.DeliverMessage(ctx, req.Name, req.CorrelationKey, req.Payload)`; drop `def` lookup if it existed only for this.
