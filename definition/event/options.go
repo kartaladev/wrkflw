@@ -15,6 +15,9 @@ type CatchOption interface {
 	applyCatch(n *IntermediateCatchEvent)
 }
 
+// EndOption configures an EndEvent.
+type EndOption interface{ applyEnd(n *EndEvent) }
+
 // ThrowOption configures an IntermediateThrowEvent.
 type ThrowOption func(n *IntermediateThrowEvent)
 
@@ -30,14 +33,15 @@ type nameOpt struct{ name string }
 
 func (o nameOpt) applyStart(n *StartEvent)                { n.SetName(o.name) }
 func (o nameOpt) applyCatch(n *IntermediateCatchEvent)    { n.SetName(o.name) }
+func (o nameOpt) applyEnd(n *EndEvent)                    { n.SetName(o.name) }
 func (o nameOpt) applyBoundary(n *BoundaryEvent)          { n.SetName(o.name) }
 func (o nameOpt) applyEventSubProcess(n *EventSubProcess) { n.SetName(o.name) }
 
-// WithName sets the display name on a start, catch, boundary, or event
-// sub-process node. IntermediateThrowEvent uses WithThrowName instead; the end
-// events take an optional name as a trailing constructor argument.
+// WithName sets the display name on a start, end, catch, boundary, or event
+// sub-process node. IntermediateThrowEvent uses WithThrowName instead.
 func WithName(name string) interface {
 	StartOption
+	EndOption
 	CatchOption
 	BoundaryOption
 	EventSubProcessOption
@@ -242,4 +246,29 @@ func (o espFuncOpt) applyEventSubProcess(n *EventSubProcess) { o.fn(n) }
 // (was WithESPNonInterrupting).
 func WithEventSubProcessNonInterrupting() EventSubProcessOption {
 	return espFuncOpt{func(n *EventSubProcess) { n.NonInterrupting = true }}
+}
+
+// --- EndEvent options ---
+
+type forceTerminationOpt struct {
+	reason  string
+	outcome TerminationOutcome
+}
+
+func (o forceTerminationOpt) applyEnd(n *EndEvent) {
+	n.ForceTermination = true
+	n.TerminationReason = o.reason
+	n.Outcome = o.outcome
+}
+
+// WithForceTermination makes an EndEvent terminate the whole instance when
+// reached, cancelling remaining parallel work. outcome selects the terminal
+// status: OutcomeComplete → StatusCompleted (successful halt), OutcomeAbort →
+// StatusTerminated (abort). reason is recorded for observability.
+//
+// Force-termination is only meaningful in a definition with multiple end events
+// (or parallel branches) to cancel; on a single-end definition it is redundant
+// (a WARN is logged at registration).
+func WithForceTermination(reason string, outcome TerminationOutcome) EndOption {
+	return forceTerminationOpt{reason: reason, outcome: outcome}
 }

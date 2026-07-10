@@ -89,7 +89,7 @@ func TestEndEventConstructors(t *testing.T) {
 		n model.Node
 		k model.NodeKind
 	}{
-		{event.NewEnd("e", "End"), model.KindEndEvent},
+		{event.NewEnd("e", event.WithName("End")), model.KindEndEvent},
 		{event.NewTerminateEnd("t"), model.KindTerminateEndEvent},
 		{event.NewErrorEnd("er", "E_BOOM", "Boom"), model.KindErrorEndEvent},
 	}
