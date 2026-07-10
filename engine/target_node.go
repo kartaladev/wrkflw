@@ -71,7 +71,7 @@ func (s *InstanceState) messageTargetNodeScoped(name, correlationKey string) (no
 	if ba := s.boundaryArmByMessage(name, correlationKey); ba != nil {
 		return ba.BoundaryNode, s.scopeOfToken(ba.HostToken), true
 	}
-	if ea := s.eventSubprocessArmByMessage(name, correlationKey); ea != nil {
+	if ea := s.eventTriggeredSubprocessArmByMessage(name, correlationKey); ea != nil {
 		return ea.EventSubprocessNode, ea.EnclosingScopeID, true
 	}
 	if tok := s.tokenAwaitingMessage(name, correlationKey); tok != nil {

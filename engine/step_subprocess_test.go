@@ -574,7 +574,7 @@ func TestTimerEventSubprocessArmsOnScopeOpen(t *testing.T) {
 	require.NotEmpty(t, schedTimer.TimerID, "expected ScheduleTimer for event sub-process timer arm")
 
 	// The event sub-process arm must be recorded in state (1 arm for "evtsub").
-	assert.Len(t, r1.State.EventSubprocesses, 1,
+	assert.Len(t, r1.State.EventTriggeredSubprocesses, 1,
 		"expected one event sub-process arm recorded")
 
 	// ---- Step 2: Timer fires (interrupting) → inner-svc token cancelled, evtsub-svc fires ----
@@ -613,7 +613,7 @@ func TestTimerEventSubprocessArmsOnScopeOpen(t *testing.T) {
 	assert.True(t, found, "expected CompleteInstance")
 
 	// The evtsub arm was cancelled (CancelTimer) as part of arming cleanup?
-	// Actually: timer arm fires = removeEventSubprocessArmsForScope (all arms removed on fire),
+	// Actually: timer arm fires = removeEventTriggeredSubprocessArmsForScope (all arms removed on fire),
 	// so no CancelTimer for the winner's timer. No other timer arms to cancel.
 	// Normal inner-action's ScheduleTimer was the evtsub arm timer — it was the fired timer.
 	// A CancelTimer for the inner-action's InvokeAction command is NOT emitted (no way to cancel
@@ -729,7 +729,7 @@ func TestInterruptingEventSubprocessCancelsGatewayArms(t *testing.T) {
 	require.NotEmpty(t, gwTokID, "expected a gateway-parked token with evtgw: prefix")
 
 	// ESP arm must be recorded (signal "cancel").
-	require.NotEmpty(t, r1.State.EventSubprocesses, "ESP arm must be recorded")
+	require.NotEmpty(t, r1.State.EventTriggeredSubprocesses, "ESP arm must be recorded")
 
 	// ---- Step 2: SignalReceived{"cancel"} — interrupting ESP fires ----
 	r2, err := engine.Step(def, r1.State,
@@ -828,8 +828,8 @@ func TestRootLevelEventSubprocessCompletes(t *testing.T) {
 	require.NotEmpty(t, normalCmdID, "expected InvokeAction for normal-action")
 
 	// Root-level ESP arm must be recorded (EnclosingScopeID == "").
-	require.NotEmpty(t, r1.State.EventSubprocesses, "root-level ESP arm must be recorded")
-	assert.Equal(t, "", r1.State.EventSubprocesses[0].EnclosingScopeID,
+	require.NotEmpty(t, r1.State.EventTriggeredSubprocesses, "root-level ESP arm must be recorded")
+	assert.Equal(t, "", r1.State.EventTriggeredSubprocesses[0].EnclosingScopeID,
 		"root-level ESP arm must have empty EnclosingScopeID")
 
 	// ---- Step 2: SignalReceived{"cancel"} → interrupting ESP fires at root level ----
@@ -1138,7 +1138,7 @@ func TestSubInstanceFailedUnknownCommandID(t *testing.T) {
 //
 // Scenario: A sub-process contains a TIMER event-subprocess arm that does NOT fire.
 // The inner activity completes normally → scope drains → the ESP timer arm must be
-// cancelled (CancelTimer emitted) and s.EventSubprocesses must be empty.
+// cancelled (CancelTimer emitted) and s.EventTriggeredSubprocesses must be empty.
 func TestEventSubprocessArmCancelledOnNormalScopeClose(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := timerEventSubProcessDef()
@@ -1164,7 +1164,7 @@ func TestEventSubprocessArmCancelledOnNormalScopeClose(t *testing.T) {
 	require.NotEmpty(t, espTimerID, "expected ScheduleTimer for ESP timer arm")
 
 	// One ESP arm must be recorded.
-	require.Len(t, r1.State.EventSubprocesses, 1, "one ESP arm must be recorded")
+	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "one ESP arm must be recorded")
 
 	// ---- Step 2: Complete inner-svc normally (ESP timer never fires) → scope drains ----
 	r2, err := engine.Step(def, r1.State,
@@ -1183,9 +1183,9 @@ func TestEventSubprocessArmCancelledOnNormalScopeClose(t *testing.T) {
 	assert.True(t, cancelFound,
 		"CancelTimer for ESP timer arm %q must be emitted on normal scope close", espTimerID)
 
-	// M2 ASSERTION: EventSubprocesses must be empty after scope closes.
-	assert.Empty(t, r2.State.EventSubprocesses,
-		"EventSubprocesses must be empty after scope closes normally")
+	// M2 ASSERTION: EventTriggeredSubprocesses must be empty after scope closes.
+	assert.Empty(t, r2.State.EventTriggeredSubprocesses,
+		"EventTriggeredSubprocesses must be empty after scope closes normally")
 }
 
 // ---- Inner-scope topology tests (Task 6) ----

@@ -38,7 +38,7 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	}
 	s.placeToken(startID, t.OccurredAt())
 	// Arm any top-level event sub-processes (root scope, enclosingScopeID == "").
-	espCmds, espErr := armEventSubprocesses(def, s, "", t.OccurredAt(), resolveEvaluator(opt))
+	espCmds, espErr := armEventTriggeredSubprocesses(def, s, "", t.OccurredAt(), resolveEvaluator(opt))
 	if espErr != nil {
 		return StepResult{}, espErr
 	}
@@ -219,7 +219,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 	cmds = append(cmds, FailInstance{Err: "cancelled"})
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventSubprocessArms() {
+	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
 	return StepResult{State: *s, Commands: cmds}, nil
@@ -415,8 +415,8 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	}
 
 	// 3) Event sub-process arm check.
-	if ea := s.eventSubprocessArmByTimer(t.TimerID); ea != nil {
-		eaCmds, err := fireEventSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	if ea := s.eventTriggeredSubprocessArmByTimer(t.TimerID); ea != nil {
+		eaCmds, err := fireEventTriggeredSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -627,12 +627,12 @@ func handleSignalReceived(def *model.ProcessDefinition, s *InstanceState, t Sign
 	}
 
 	// 3) Check whether the signal matches an event sub-process arm.
-	if ea := s.eventSubprocessArmBySignal(t.Name); ea != nil {
+	if ea := s.eventTriggeredSubprocessArmBySignal(t.Name); ea != nil {
 		if !matched {
 			mergeVars(s, t.Payload)
 			matched = true
 		}
-		eaCmds, err := fireEventSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		eaCmds, err := fireEventTriggeredSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -728,7 +728,7 @@ func handleSubInstanceFailed(s *InstanceState, t SubInstanceFailed) (StepResult,
 	cmds = append(cmds, s.cancelOpenTasks()...)
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventSubprocessArms() {
+	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
 	return StepResult{State: *s, Commands: cmds}, nil
@@ -778,9 +778,9 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	}
 
 	// 3) Check whether the message matches an event sub-process arm.
-	if ea := s.eventSubprocessArmByMessage(t.Name, t.CorrelationKey); ea != nil {
+	if ea := s.eventTriggeredSubprocessArmByMessage(t.Name, t.CorrelationKey); ea != nil {
 		mergeVars(s, t.Payload)
-		eaCmds, err := fireEventSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		eaCmds, err := fireEventTriggeredSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
 		if err != nil {
 			return StepResult{}, err
 		}

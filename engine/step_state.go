@@ -309,10 +309,10 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy Boundaries: boundaryArm is a value type (no pointers), so a slice
 	// copy is sufficient.
 	s.Boundaries = append([]boundaryArm(nil), st.Boundaries...)
-	// Deep-copy EventSubprocesses: eventSubprocessArm is a value type (no pointers),
-	// so a slice copy is sufficient to ensure mutations to the clone do not affect
-	// the original.
-	s.EventSubprocesses = append([]eventSubprocessArm(nil), st.EventSubprocesses...)
+	// Deep-copy EventTriggeredSubprocesses: eventTriggeredSubprocessArm is a value
+	// type (no pointers), so a slice copy is sufficient to ensure mutations to
+	// the clone do not affect the original.
+	s.EventTriggeredSubprocesses = append([]eventTriggeredSubprocessArm(nil), st.EventTriggeredSubprocesses...)
 	// Deep-copy RootCompensations: each CompensationRecord contains an Input
 	// map[string]any (a reference type) that must be independently allocated so
 	// mutations to a clone's record do not affect the original.

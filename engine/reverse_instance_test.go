@@ -700,7 +700,7 @@ func TestReverseToStart_CancelMidWalk_TerminatesNotResumes(t *testing.T) {
 //
 // A timer trigger (rather than signal) lets the T4 regression assert a
 // ScheduleTimer command is re-emitted on the reverse-resume Step, in addition
-// to the EventSubprocesses arm entry itself.
+// to the EventTriggeredSubprocesses arm entry itself.
 func reverseWithRootESPDef() *model.ProcessDefinition {
 	espInner := &model.ProcessDefinition{
 		ID: "resp-inner", Version: 1,
@@ -735,10 +735,10 @@ func reverseWithRootESPDef() *model.ProcessDefinition {
 // hardening, finding #1) regression: a full reverse (WithFullReverse) resets
 // the instance to start and re-runs it, but the resume path never re-arms
 // ROOT-scope event sub-processes the way a genuine handleStartInstance does
-// (armEventSubprocesses(def, s, "", at, eval)) — so a root-level ESP's timer
+// (armEventTriggeredSubprocesses(def, s, "", at, eval)) — so a root-level ESP's timer
 // is never re-scheduled relative to the resume. This must be fixed on the
 // FULL-REVERSE resume path ONLY (root scope): applyFinish must call
-// armEventSubprocesses(def, s, "", at, eval) and prepend its ScheduleTimer
+// armEventTriggeredSubprocesses(def, s, "", at, eval) and prepend its ScheduleTimer
 // commands to the drive commands.
 func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	def := reverseWithRootESPDef()
@@ -748,9 +748,9 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
-	require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
-	assert.Equal(t, "", r1.State.EventSubprocesses[0].EnclosingScopeID, "root ESP arm must have empty EnclosingScopeID")
-	originalTimerID := r1.State.EventSubprocesses[0].TimerID
+	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
+	assert.Equal(t, "", r1.State.EventTriggeredSubprocesses[0].EnclosingScopeID, "root ESP arm must have empty EnclosingScopeID")
+	originalTimerID := r1.State.EventTriggeredSubprocesses[0].TimerID
 	require.NotEmpty(t, originalTimerID, "original (Start-time) root ESP arm must carry a TimerID")
 
 	// ---- Step 2: complete "do" → svc's compensation recorded, token parks on "park" ----
@@ -770,8 +770,8 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r4.State.Status, "reverse resumes Running, NOT terminated")
 
-	require.Len(t, r4.State.EventSubprocesses, 1, "root ESP must be re-armed after full reverse (found %d arms)", len(r4.State.EventSubprocesses))
-	assert.Equal(t, "", r4.State.EventSubprocesses[0].EnclosingScopeID, "re-armed ESP entry must carry EnclosingScopeID == \"\" (root)")
+	require.Len(t, r4.State.EventTriggeredSubprocesses, 1, "root ESP must be re-armed after full reverse (found %d arms)", len(r4.State.EventTriggeredSubprocesses))
+	assert.Equal(t, "", r4.State.EventTriggeredSubprocesses[0].EnclosingScopeID, "re-armed ESP entry must carry EnclosingScopeID == \"\" (root)")
 
 	var schedTimer engine.ScheduleTimer
 	foundTimer := false
@@ -783,10 +783,10 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	}
 	assert.True(t, foundTimer, "resume must re-schedule the root ESP's timer (ScheduleTimer command)")
 	assert.NotEmpty(t, schedTimer.TimerID, "re-scheduled timer must carry a TimerID")
-	assert.Equal(t, r4.State.EventSubprocesses[0].TimerID, schedTimer.TimerID, "re-armed arm's TimerID must match the emitted ScheduleTimer")
+	assert.Equal(t, r4.State.EventTriggeredSubprocesses[0].TimerID, schedTimer.TimerID, "re-armed arm's TimerID must match the emitted ScheduleTimer")
 
 	// The ORIGINAL (Start-time) root-ESP arm is never swept by the compensation
-	// walk itself (cancelAllArmsAndBoundaries does not touch EventSubprocesses),
+	// walk itself (cancelAllArmsAndBoundaries does not touch EventTriggeredSubprocesses),
 	// so it survives until applyFinish's sweep-before-rearm. That stale timer
 	// must be explicitly cancelled — otherwise it leaks and can fire against the
 	// reversed instance. Assert the sweep actually emits CancelTimer for it (not
@@ -794,7 +794,7 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	// different TimerID rather than reusing the stale one.
 	assert.Contains(t, r4.Commands, engine.CancelTimer{TimerID: originalTimerID},
 		"full-reverse re-arm must cancel the stale original root-ESP timer")
-	assert.NotEqual(t, originalTimerID, r4.State.EventSubprocesses[0].TimerID,
+	assert.NotEqual(t, originalTimerID, r4.State.EventTriggeredSubprocesses[0].TimerID,
 		"re-armed root-ESP arm must carry a freshly minted TimerID, not the stale original")
 }
 
@@ -925,10 +925,10 @@ func TestCompensateRequested_RestoreTargetVarsWithoutToNode(t *testing.T) {
 // exist runs the compensation walk to a TERMINATE finish (applyTerminate,
 // step_compensation.go), which sweeps s.Timers and s.ArmedEvents/s.Boundaries
 // (cancelAllTimers / cancelAllArmsAndBoundaries) but — before this fix — never
-// drained s.EventSubprocesses, so a root-level, timer-armed event sub-process
+// drained s.EventTriggeredSubprocesses, so a root-level, timer-armed event sub-process
 // (armed at StartInstance, never touched by the compensation walk itself)
 // leaked its scheduled timer past instance termination. applyTerminate must
-// also call s.removeAllEventSubprocessArms() and emit a CancelTimer for the
+// also call s.removeAllEventTriggeredSubprocessArms() and emit a CancelTimer for the
 // surviving arm.
 func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) {
 	def := reverseWithRootESPDef()
@@ -938,8 +938,8 @@ func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) 
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
-	require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
-	espTimerID := r1.State.EventSubprocesses[0].TimerID
+	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
+	espTimerID := r1.State.EventTriggeredSubprocesses[0].TimerID
 	require.NotEmpty(t, espTimerID, "root ESP arm must carry a TimerID")
 
 	// ---- Step 2: complete "do" → svc's compensation recorded, token parks on "park" ----
@@ -959,7 +959,7 @@ func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) 
 	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, r4.State.Status, "cancel-with-compensation walk still terminates")
-	assert.Nil(t, r4.State.EventSubprocesses, "applyTerminate must drain ALL event-subprocess arms, not just the walk's own scope")
+	assert.Nil(t, r4.State.EventTriggeredSubprocesses, "applyTerminate must drain ALL event-subprocess arms, not just the walk's own scope")
 	assert.Contains(t, r4.Commands, engine.CancelTimer{TimerID: espTimerID},
 		"applyTerminate must cancel the surviving root-ESP timer, not just the walk's own timers/arms")
 }
@@ -969,7 +969,7 @@ func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) 
 // terminal paths — handleCancelRequested's no-records branch (step_triggers.go)
 // and propagateError's no-records unhandled-error branch (step_errors.go) —
 // both sweep s.Timers and s.ArmedEvents/s.Boundaries but, before this fix,
-// never drained s.EventSubprocesses, leaking a root-level timer-armed event
+// never drained s.EventTriggeredSubprocesses, leaking a root-level timer-armed event
 // sub-process's scheduled timer past instance termination/failure.
 func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
@@ -989,7 +989,7 @@ func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 			},
 			assert: func(t *testing.T, r engine.StepResult, espTimerID string) {
 				assert.Equal(t, engine.StatusTerminated, r.State.Status, "immediate cancel (no records) still terminates")
-				assert.Nil(t, r.State.EventSubprocesses, "immediate-cancel path must drain ALL event-subprocess arms")
+				assert.Nil(t, r.State.EventTriggeredSubprocesses, "immediate-cancel path must drain ALL event-subprocess arms")
 				assert.Contains(t, r.Commands, engine.CancelTimer{TimerID: espTimerID},
 					"immediate-cancel path must cancel the surviving root-ESP timer")
 			},
@@ -1003,7 +1003,7 @@ func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 			},
 			assert: func(t *testing.T, r engine.StepResult, espTimerID string) {
 				assert.Equal(t, engine.StatusFailed, r.State.Status, "unhandled root-level failure (no records) still fails the instance")
-				assert.Nil(t, r.State.EventSubprocesses, "immediate-fail path must drain ALL event-subprocess arms")
+				assert.Nil(t, r.State.EventTriggeredSubprocesses, "immediate-fail path must drain ALL event-subprocess arms")
 				assert.Contains(t, r.Commands, engine.CancelTimer{TimerID: espTimerID},
 					"immediate-fail path must cancel the surviving root-ESP timer")
 			},
@@ -1020,8 +1020,8 @@ func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(t0, nil), engine.StepOptions{})
 			require.NoError(t, err)
-			require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
-			espTimerID := r1.State.EventSubprocesses[0].TimerID
+			require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
+			espTimerID := r1.State.EventTriggeredSubprocesses[0].TimerID
 			require.NotEmpty(t, espTimerID, "root ESP arm must carry a TimerID")
 			require.Empty(t, r1.State.RootCompensations, "precondition: no compensation records yet")
 
@@ -1068,7 +1068,7 @@ func rootESPWithCallActivityDef() *model.ProcessDefinition {
 // handleSubInstanceFailed (a parent instance fails because a child
 // call-activity's sub-instance failed) sweeps s.Timers and
 // s.ArmedEvents/s.Boundaries via cancelAllTimers + cancelAllArmsAndBoundaries
-// but, before this fix, never drained s.EventSubprocesses — leaking a
+// but, before this fix, never drained s.EventTriggeredSubprocesses — leaking a
 // root-level, timer-armed event sub-process's scheduled timer past this
 // terminal path, the same class of leak FU#2 fixed at the other three sites.
 func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) {
@@ -1079,8 +1079,8 @@ func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T
 	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
-	require.Len(t, r1.State.EventSubprocesses, 1, "root ESP must arm on StartInstance")
-	espTimerID := r1.State.EventSubprocesses[0].TimerID
+	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
+	espTimerID := r1.State.EventTriggeredSubprocesses[0].TimerID
 	require.NotEmpty(t, espTimerID, "root ESP arm must carry a TimerID")
 
 	var ssiCmdID string
@@ -1097,7 +1097,7 @@ func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T
 	require.NoError(t, err)
 
 	assert.Equal(t, engine.StatusFailed, r2.State.Status, "parent must fail on SubInstanceFailed")
-	assert.Nil(t, r2.State.EventSubprocesses, "SubInstanceFailed terminate must drain ALL event-subprocess arms")
+	assert.Nil(t, r2.State.EventTriggeredSubprocesses, "SubInstanceFailed terminate must drain ALL event-subprocess arms")
 	assert.Contains(t, r2.Commands, engine.CancelTimer{TimerID: espTimerID},
 		"SubInstanceFailed terminate must cancel the surviving root-ESP timer")
 }

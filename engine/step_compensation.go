@@ -384,10 +384,10 @@ type finishPlan struct {
 	// the partial-rollback resume keeps resuming.
 	consumePendingCancel bool
 	// rearmRootESP re-arms ROOT-scope event sub-processes (ADR-0109 hardening,
-	// finding #1) via armEventSubprocesses(def, s, "", at, eval), mirroring
+	// finding #1) via armEventTriggeredSubprocesses(def, s, "", at, eval), mirroring
 	// handleStartInstance's own arm-then-drive sequence. Only the full-reverse
 	// resume AT ROOT SCOPE sets this: beginCompensation does not sweep
-	// s.EventSubprocesses when a walk starts, so without a full reverse a
+	// s.EventTriggeredSubprocesses when a walk starts, so without a full reverse a
 	// root-level event sub-process (armed at StartInstance, or left un-armed
 	// after an earlier interrupting fire) is either stale or silently lost by
 	// the time the instance resumes. Partial and throw resumes stay at their
@@ -669,17 +669,17 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 	}
 	var preDriveCmds []Command
 	if plan.rearmRootESP {
-		// beginCompensation never sweeps s.EventSubprocesses when a walk
+		// beginCompensation never sweeps s.EventTriggeredSubprocesses when a walk
 		// starts, so a root-scope arm from before the walk (or a leftover
 		// one-shot removal from an earlier interrupting fire) may still be
 		// present. Drop any stale root-scope arms first (emitting CancelTimer
 		// for timer-triggered ones) so the re-arm below is idempotent instead
 		// of appending a duplicate entry, then re-arm exactly as
 		// handleStartInstance does for a fresh StartInstance.
-		for _, timerID := range s.removeEventSubprocessArmsForScope("") {
+		for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope("") {
 			preDriveCmds = append(preDriveCmds, CancelTimer{TimerID: timerID})
 		}
-		espCmds, espErr := armEventSubprocesses(def, s, "", at, eval)
+		espCmds, espErr := armEventTriggeredSubprocesses(def, s, "", at, eval)
 		if espErr != nil {
 			return StepResult{}, espErr
 		}
@@ -719,7 +719,7 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 	}
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventSubprocessArms() {
+	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
 	return StepResult{State: *s, Commands: cmds}

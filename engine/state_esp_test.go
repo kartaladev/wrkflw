@@ -2,7 +2,7 @@ package engine
 
 // state_esp_test.go — white-box tests for InstanceState event-subprocess arm
 // sweep helpers. Uses package engine (not engine_test) to access unexported
-// types (eventSubprocessArm) and the unexported helper under test.
+// types (eventTriggeredSubprocessArm) and the unexported helper under test.
 
 import (
 	"testing"
@@ -11,14 +11,14 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// InstanceState.removeAllEventSubprocessArms
+// InstanceState.removeAllEventTriggeredSubprocessArms
 // ---------------------------------------------------------------------------
 
-func TestInstanceState_removeAllEventSubprocessArms(t *testing.T) {
+func TestInstanceState_removeAllEventTriggeredSubprocessArms(t *testing.T) {
 	t.Parallel()
 
 	s := &InstanceState{
-		EventSubprocesses: []eventSubprocessArm{
+		EventTriggeredSubprocesses: []eventTriggeredSubprocessArm{
 			{
 				EnclosingScopeID:    "",
 				EventSubprocessNode: "esp-timer",
@@ -32,8 +32,8 @@ func TestInstanceState_removeAllEventSubprocessArms(t *testing.T) {
 		},
 	}
 
-	got := s.removeAllEventSubprocessArms()
+	got := s.removeAllEventTriggeredSubprocessArms()
 
 	assert.Equal(t, []string{"esp-t1"}, got)
-	assert.Nil(t, s.EventSubprocesses)
+	assert.Nil(t, s.EventTriggeredSubprocesses)
 }

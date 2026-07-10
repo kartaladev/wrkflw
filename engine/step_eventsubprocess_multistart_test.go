@@ -78,8 +78,8 @@ func TestEventSubprocessArmsFromEventStartNotIndexZero(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
 
 	// The arm must be built from the EVENT start's trigger, not a dead empty arm.
-	require.Len(t, r1.State.EventSubprocesses, 1, "expected one ESP arm recorded")
-	arm := r1.State.EventSubprocesses[0]
+	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "expected one ESP arm recorded")
+	arm := r1.State.EventTriggeredSubprocesses[0]
 	assert.Equal(t, "cancel", arm.Signal,
 		"ESP arm must carry the event-start's signal, not an empty (dead) trigger")
 
