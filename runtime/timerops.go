@@ -233,11 +233,17 @@ func (driver *ProcessDriver) RehydrateTimers(ctx context.Context) error {
 }
 
 // startTimerID computes the stable, unique scheduler timer id for a timer-start
-// event (ADR-0121): defID's node nodeID. Stable across process restarts so
+// event (ADR-0121): a definition's (id, version) and node nodeID. Including
+// version is load-bearing — driver.listDefinitions can return MULTIPLE
+// registered versions of the same def id, and a node id like "start" is
+// routinely kept stable across a version bump, so a (defID, nodeID)-only key
+// would collide across versions and the second Schedule would silently replace
+// the first's callback (one version's timer-start would never fire). Each
+// registered VERSION arms independently. Stable across process restarts so
 // [ProcessDriver.RehydrateStartTimers] re-arming on boot replaces the SAME
 // scheduler entry rather than accumulating duplicates.
-func startTimerID(defID, nodeID string) string {
-	return "start-timer:" + defID + ":" + nodeID
+func startTimerID(defID string, version int, nodeID string) string {
+	return fmt.Sprintf("start-timer:%s:%d:%s", defID, version, nodeID)
 }
 
 // startTimerFireFunc builds the fire callback for a timer-start event
@@ -262,6 +268,7 @@ func (driver *ProcessDriver) startTimerFireFunc(def *model.ProcessDefinition, no
 				append(driver.obs.tel.LogAttrs(fireCtx),
 					slog.String("timer_id", timerID),
 					slog.String("def_id", def.ID),
+					slog.Int("def_version", def.Version),
 					slog.String("node_id", nodeID),
 					slog.Any("error", err))...)
 		}
@@ -279,6 +286,7 @@ func (driver *ProcessDriver) armStartTimer(ctx context.Context, def *model.Proce
 			append(driver.obs.tel.LogAttrs(ctx),
 				slog.String("timer_id", timerID),
 				slog.String("def_id", def.ID),
+				slog.Int("def_version", def.Version),
 				slog.String("node_id", nodeID),
 				slog.Any("error", err))...)
 		return
@@ -287,6 +295,7 @@ func (driver *ProcessDriver) armStartTimer(ctx context.Context, def *model.Proce
 		append(driver.obs.tel.LogAttrs(ctx),
 			slog.String("timer_id", timerID),
 			slog.String("def_id", def.ID),
+			slog.Int("def_version", def.Version),
 			slog.String("node_id", nodeID),
 			slog.Time("next_run", nextRun))...)
 }
@@ -315,7 +324,7 @@ func (driver *ProcessDriver) RehydrateStartTimers(ctx context.Context) error {
 		return fmt.Errorf("workflow-runtime: RehydrateStartTimers requires WithScheduler and WithDefinitions")
 	}
 	for _, hit := range timerStartDefs(driver.listDefinitions(ctx)) {
-		driver.armStartTimer(ctx, hit.Def, hit.NodeID, startTimerID(hit.Def.ID, hit.NodeID), hit.Trigger)
+		driver.armStartTimer(ctx, hit.Def, hit.NodeID, startTimerID(hit.Def.ID, hit.Def.Version, hit.NodeID), hit.Trigger)
 	}
 	return nil
 }
