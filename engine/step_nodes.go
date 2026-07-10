@@ -461,6 +461,11 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // StatusCompleted + CompleteInstance). It mirrors the immediate-termination tail
 // of handleCancelRequested and returns halt=true so drive() exits immediately:
 // the instance is terminal and its tokens have been dropped.
+//
+// Scope-agnostic: it terminates the whole instance regardless of the end
+// event's scope. A force-termination end firing inside a sub-process scope still
+// ends the entire instance; scoped (sub-process-local) force-termination is not
+// yet modeled.
 func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
 	ended := c.at
 	c.s.EndedAt = &ended
