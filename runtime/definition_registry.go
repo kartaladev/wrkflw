@@ -50,6 +50,10 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 // For init-time wiring where a registration failure is a programming error use
 // [MustRegisterDefinition].
 //
+// On successful registration it logs (via [slog.Default]) a WARN for each
+// redundant force-termination end event — one that is the only end event in its
+// definition, so it has no sibling branch to cancel (see [event.WithForceTermination]).
+//
 // # Test isolation
 //
 // The global registry is process-wide. Tests that need an isolated registry must
