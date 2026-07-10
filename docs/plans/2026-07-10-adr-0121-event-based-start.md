@@ -25,7 +25,7 @@
 
 - `definition/model/validate.go` — relax start-count rules; union reachability; new sentinels (Task 1).
 - `engine/trigger.go` — `StartInstance.StartNodeID` (Task 2).
-- `engine/step_triggers.go` — generalize `handleStartInstance` node resolution; lift invariant; `ErrNoNoneStart` (Task 2).
+- `engine/step_triggers.go` — generalize `handleStartInstance` node resolution; lift invariant; `ErrNoManualStart` (Task 2).
 - `runtime/kernel/definition_lister.go` (new) — `DefinitionLister` capability (Task 3).
 - `runtime/kernel/mem_definition_registry.go`, `runtime/kernel/definition_registry.go`, `runtime/kernel/caching_definition_registry.go` — implement/passthrough `ListDefinitions` (Task 3).
 - `runtime/event_start.go` (new) — `eventStart` unit: start-node resolution helpers + active-correlation map (Task 4).
@@ -35,7 +35,7 @@
 - `runtime/processdriver_signal.go` — `BroadcastSignal` fan-out create (Task 6).
 - `runtime/definition_registry.go` — message-name uniqueness at register; delivery-time backstop (Task 7).
 - `runtime/timerops.go` — `RehydrateStartTimers`; timer-start fire creates instance (Task 8).
-- `runtime/processdriver.go` (`Drive`) — plain-drive none-start resolution / error (Task 8).
+- `runtime/processdriver.go` (`Drive`) — plain-drive manual-start resolution / error (Task 8).
 - `examples/scenarios/event_start/main.go` (new) + 7 existing example call sites (Task 9).
 - `docs/adr/0121-event-based-start.md` (new) (Task 10).
 
@@ -48,10 +48,10 @@
 - Test: `definition/model/validate_test.go`
 
 **Interfaces:**
-- Produces: sentinels `ErrMultipleNoneStarts`, `ErrAmbiguousStartTrigger` (exported `error` vars); `ErrMultipleStartEvents` is **removed** (multiple starts now legal). Helper `isNoneStart(event.StartEvent) bool` (unexported) and `startTriggerKind(event.StartEvent)` semantics documented below.
+- Produces: sentinels `ErrMultipleManualStarts`, `ErrAmbiguousStartTrigger` (exported `error` vars); `ErrMultipleStartEvents` is **removed** (multiple starts now legal). Helper `isNoneStart(event.StartEvent) bool` (unexported) and `startTriggerKind(event.StartEvent)` semantics documented below.
 - Consumes: `event.StartEvent` fields `MessageName`, `SignalName`, `Timer`, `CorrelationKey`; `d.StartNodes()`.
 
-A start is a **none-start** when `MessageName == "" && SignalName == "" && Timer == nil`. A start is **event-triggered** otherwise; it must set exactly one trigger family (message: `MessageName != ""`; signal: `SignalName != ""`; timer: `Timer != nil`) — two or more set ⇒ `ErrAmbiguousStartTrigger`.
+A start is a **manual-start** when `MessageName == "" && SignalName == "" && Timer == nil`. A start is **event-triggered** otherwise; it must set exactly one trigger family (message: `MessageName != ""`; signal: `SignalName != ""`; timer: `Timer != nil`) — two or more set ⇒ `ErrAmbiguousStartTrigger`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -63,10 +63,10 @@ func TestValidateStartEvents(t *testing.T) {
 		def    *model.ProcessDefinition
 		assert func(t *testing.T, err error)
 	}{
-		"two none starts rejected": {
+		"two manual starts rejected": {
 			def: twoNoneStartDef(),
 			assert: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, model.ErrMultipleNoneStarts)
+				assert.ErrorIs(t, err, model.ErrMultipleManualStarts)
 			},
 		},
 		"one none + one message start allowed": {
@@ -109,16 +109,16 @@ Add the small `*Def()` builders in the test file using `definition/event` + `def
 - [ ] **Step 2: Run — verify RED**
 
 Run: `go test ./definition/model/... -run TestValidateStartEvents -v`
-Expected: FAIL — `undefined: model.ErrMultipleNoneStarts` (and siblings), or assertion failures.
+Expected: FAIL — `undefined: model.ErrMultipleManualStarts` (and siblings), or assertion failures.
 
 - [ ] **Step 3: Implement**
 
 In `validate.go` add sentinels near the existing block (line ~38):
 
 ```go
-// ErrMultipleNoneStarts is returned when a definition has more than one
+// ErrMultipleManualStarts is returned when a definition has more than one
 // trigger-less ("none") start event; at most one is allowed.
-ErrMultipleNoneStarts = errors.New("workflow-definition: multiple none start events")
+ErrMultipleManualStarts = errors.New("workflow-definition: multiple manual start events")
 // ErrAmbiguousStartTrigger is returned when a start event sets more than one
 // trigger family (message/signal/timer).
 ErrAmbiguousStartTrigger = errors.New("workflow-definition: start event has ambiguous trigger")
@@ -161,7 +161,7 @@ for _, s := range starts {
 	// family is defined by its own field being non-empty) needs no extra check.
 }
 if noneCount > 1 {
-	errs = append(errs, ErrMultipleNoneStarts)
+	errs = append(errs, ErrMultipleManualStarts)
 }
 ```
 
@@ -202,10 +202,10 @@ git commit -m "feat(definition): allow multiple/event start events in validation
 - Test: `engine/step_triggers_test.go` (or a new `engine/start_event_test.go`)
 
 **Interfaces:**
-- Produces: `StartInstance.StartNodeID string`; `NewStartInstance(at, vars)` keeps today's signature (StartNodeID defaults `""`); new option `NewStartInstanceAt(at, nodeID, vars)` **or** an exported field set by the caller. Use an exported field + a variadic-free helper: add `func NewStartInstanceAtNode(at time.Time, nodeID string, vars map[string]any) StartInstance`. Sentinel `ErrNoNoneStart` (engine).
+- Produces: `StartInstance.StartNodeID string`; `NewStartInstance(at, vars)` keeps today's signature (StartNodeID defaults `""`); new option `NewStartInstanceAt(at, nodeID, vars)` **or** an exported field set by the caller. Use an exported field + a variadic-free helper: add `func NewStartInstanceAtNode(at time.Time, nodeID string, vars map[string]any) StartInstance`. Sentinel `ErrNoManualStart` (engine).
 - Consumes: `def.StartNodes()`, `s.placeToken(id, at)`.
 
-Empty `StartNodeID` ⇒ resolve the sole **none-start** (a start with no message/signal/timer). No none-start ⇒ `ErrNoNoneStart`. Non-empty ⇒ place token there (must be a start node).
+Empty `StartNodeID` ⇒ resolve the sole **manual-start** (a start with no message/signal/timer). No manual-start ⇒ `ErrNoManualStart`. Non-empty ⇒ place token there (must be a start node).
 
 - [ ] **Step 1: Write failing tests**
 
@@ -216,7 +216,7 @@ func TestHandleStartInstanceResolvesNode(t *testing.T) {
 		nodeID string
 		assert func(t *testing.T, st engine.InstanceState, err error)
 	}{
-		"empty node id uses the none start": {
+		"empty node id uses the manual start": {
 			def: oneNoneStartLinearDef(), nodeID: "",
 			assert: func(t *testing.T, st engine.InstanceState, err error) {
 				require.NoError(t, err)
@@ -233,7 +233,7 @@ func TestHandleStartInstanceResolvesNode(t *testing.T) {
 		"empty node id with only event starts errors": {
 			def: onlyMessageStartDef(), nodeID: "",
 			assert: func(t *testing.T, st engine.InstanceState, err error) {
-				assert.ErrorIs(t, err, engine.ErrNoNoneStart)
+				assert.ErrorIs(t, err, engine.ErrNoManualStart)
 			},
 		},
 	}
@@ -253,7 +253,7 @@ func TestHandleStartInstanceResolvesNode(t *testing.T) {
 - [ ] **Step 2: Run — verify RED**
 
 Run: `go test ./engine/... -run TestHandleStartInstanceResolvesNode -v`
-Expected: FAIL — `undefined: engine.NewStartInstanceAtNode` / `engine.ErrNoNoneStart`.
+Expected: FAIL — `undefined: engine.NewStartInstanceAtNode` / `engine.ErrNoManualStart`.
 
 - [ ] **Step 3: Implement**
 
@@ -280,9 +280,9 @@ func NewStartInstanceAtNode(at time.Time, nodeID string, vars map[string]any) St
 `engine/step_triggers.go` — add sentinel and generalize `handleStartInstance`:
 
 ```go
-// ErrNoNoneStart is returned when a StartInstance with an empty StartNodeID is
+// ErrNoManualStart is returned when a StartInstance with an empty StartNodeID is
 // applied to a definition that has no none (trigger-less) start event.
-var ErrNoNoneStart = errors.New("workflow-engine: definition has no none start event")
+var ErrNoManualStart = errors.New("workflow-engine: definition has no manual start event")
 
 func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t StartInstance, opt StepOptions) (StepResult, error) {
 	s.Status = StatusRunning
@@ -294,7 +294,7 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 
 	startID := t.StartNodeID
 	if startID == "" {
-		n, err := resolveNoneStart(def)
+		n, err := resolveManualStart(def)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -304,9 +304,9 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	// ... unchanged: armEventSubprocesses + drive ...
 }
 
-// resolveNoneStart returns the id of the definition's single none (trigger-less)
-// start event, or ErrNoNoneStart if there is none.
-func resolveNoneStart(def *model.ProcessDefinition) (string, error) {
+// resolveManualStart returns the id of the definition's single none (trigger-less)
+// start event, or ErrNoManualStart if there is none.
+func resolveManualStart(def *model.ProcessDefinition) (string, error) {
 	for _, s := range def.StartNodes() {
 		se, ok := s.(event.StartEvent)
 		if !ok {
@@ -316,7 +316,7 @@ func resolveNoneStart(def *model.ProcessDefinition) (string, error) {
 			return se.ID(), nil
 		}
 	}
-	return "", ErrNoNoneStart
+	return "", ErrNoManualStart
 }
 ```
 
@@ -325,13 +325,13 @@ Remove the `len(starts) != 1` guard. Import `errors` and `definition/event` if n
 - [ ] **Step 4: Run — verify GREEN**
 
 Run: `go test ./engine/... -v`
-Expected: PASS. Existing single-none-start drives still pass (empty StartNodeID → resolveNoneStart).
+Expected: PASS. Existing single-manual-start drives still pass (empty StartNodeID → resolveManualStart).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add engine/trigger.go engine/step_triggers.go engine/*_test.go
-git commit -m "feat(engine): StartNodeID on StartInstance; resolve none-start (ADR-0121)"
+git commit -m "feat(engine): StartNodeID on StartInstance; resolve manual-start (ADR-0121)"
 ```
 
 ---
@@ -780,12 +780,12 @@ git commit -m "feat(runtime): reject duplicate message-start names at registrati
 
 **Files:**
 - Modify: `runtime/timerops.go` (`RehydrateStartTimers`; timer-start fire path)
-- Modify: `runtime/processdriver.go` (`Drive` none-start resolution / friendly error)
+- Modify: `runtime/processdriver.go` (`Drive` manual-start resolution / friendly error)
 - Test: `runtime/timerops_test.go` (or `rehydrate_test.go`), `runtime/processdriver_defaults_test.go`
 
 **Interfaces:**
-- Produces: `func (driver *ProcessDriver) RehydrateStartTimers(ctx context.Context) error` — enumerate `timerStartDefs`, arm each on the scheduler; a fire callback runs `createAtNode(ctx, def, nodeID, "", nil)`. `Drive` on a def with only event-starts returns a wrapped `engine.ErrNoNoneStart` with the friendly message.
-- Consumes: Task 4 `timerStartDefs`; `driver.sched`/`armTimer`; Task 5 `createAtNode`; Task 2 `engine.ErrNoNoneStart`.
+- Produces: `func (driver *ProcessDriver) RehydrateStartTimers(ctx context.Context) error` — enumerate `timerStartDefs`, arm each on the scheduler; a fire callback runs `createAtNode(ctx, def, nodeID, "", nil)`. `Drive` on a def with only event-starts returns a wrapped `engine.ErrNoManualStart` with the friendly message.
+- Consumes: Task 4 `timerStartDefs`; `driver.sched`/`armTimer`; Task 5 `createAtNode`; Task 2 `engine.ErrNoManualStart`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -808,7 +808,7 @@ func TestDriveErrorsWhenOnlyEventStarts(t *testing.T) {
 	def := onlyMessageStartDef()
 	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
 	_, err := driver.Drive(ctx, def, "x", nil)
-	assert.ErrorIs(t, err, engine.ErrNoNoneStart)
+	assert.ErrorIs(t, err, engine.ErrNoManualStart)
 }
 ```
 
@@ -821,11 +821,11 @@ Expected: FAIL — `undefined: RehydrateStartTimers`; `Drive` returns nil instea
 
 - [ ] **Step 3: Implement**
 
-`RehydrateStartTimers` mirrors `RehydrateTimers` (`timerops.go:206`) but sources arms from `timerStartDefs(driver.listDefinitions(ctx))` and its fire callback calls `createAtNode`. `Drive` (`processdriver.go:301`) already seeds `engine.NewStartInstance` (empty StartNodeID); the engine now returns `ErrNoNoneStart` for only-event-start defs — wrap it once with a friendly hint:
+`RehydrateStartTimers` mirrors `RehydrateTimers` (`timerops.go:206`) but sources arms from `timerStartDefs(driver.listDefinitions(ctx))` and its fire callback calls `createAtNode`. `Drive` (`processdriver.go:301`) already seeds `engine.NewStartInstance` (empty StartNodeID); the engine now returns `ErrNoManualStart` for only-event-start defs — wrap it once with a friendly hint:
 
 ```go
 // inside Drive, after deliverLoop:
-if errors.Is(err, engine.ErrNoNoneStart) {
+if errors.Is(err, engine.ErrNoManualStart) {
 	return out, fmt.Errorf("workflow-runtime: definition %s has no plain start; use an event entry point (DeliverMessage / BroadcastSignal / timer start): %w", def.ID, err)
 }
 ```
@@ -839,7 +839,7 @@ Expected: PASS.
 
 ```bash
 git add runtime/timerops.go runtime/processdriver.go runtime/*_test.go
-git commit -m "feat(runtime): RehydrateStartTimers + plain-Drive none-start resolution (ADR-0121)"
+git commit -m "feat(runtime): RehydrateStartTimers + plain-Drive manual-start resolution (ADR-0121)"
 ```
 
 ---

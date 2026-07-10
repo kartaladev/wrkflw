@@ -72,13 +72,13 @@ A "none" start is detected by the absence of all of `MessageName`, `SignalName`,
 
 - Lift the `len(starts) != 1` guard at `step_triggers.go:23`.
 - Add `StartNodeID string` to the `StartInstance` trigger (`engine/trigger.go:25`):
-  - **empty ⇒ resolve the none-start** (plain drive). If there is no none-start, error
-    (`ErrNoNoneStart`, surfaced through the runtime as the plain-`Drive` error in §6).
+  - **empty ⇒ resolve the manual-start** (plain drive). If there is no manual-start, error
+    (`ErrNoManualStart`, surfaced through the runtime as the plain-`Drive` error in §6).
   - **non-empty ⇒ place the initial token on that node.**
 - The **driver decides which start node** fired (by correlating the trigger to a start node);
   the **engine only places the token**. This mirrors the ADR-0115 "runtime decides / engine
   executes" seam and keeps the engine free of message/signal/registry concerns.
-- `handleStartInstance` generalizes: resolve the node from `t.StartNodeID` (or the none-start),
+- `handleStartInstance` generalizes: resolve the node from `t.StartNodeID` (or the manual-start),
   place the token, arm event sub-processes, drive.
 
 ### 3. Runtime — internal event-start unit + reused facades (`runtime/`)
@@ -158,9 +158,9 @@ example call sites update. All mechanical.
 
 ### 6. Plain `Drive` resolution (`runtime/`)
 
-- `Drive` / `StartInstance` with caller-supplied vars uses the **none-start** if one is
+- `Drive` / `StartInstance` with caller-supplied vars uses the **manual-start** if one is
   present (passes empty `StartNodeID`; the engine resolves it).
-- A definition with **only** event-starts (no none-start) makes plain `Drive` **error**:
+- A definition with **only** event-starts (no manual-start) makes plain `Drive` **error**:
   `"workflow-runtime: definition <id> has no plain start; use an event entry point
   (DeliverMessage / BroadcastSignal / timer start)"`.
 
@@ -285,11 +285,11 @@ durable message-start dedup is ever needed.)
 
 ## Verification checklist
 
-- [ ] `definition/model/validate.go`: ≥1 start, ≤1 none-start, coherent event-start trigger,
+- [ ] `definition/model/validate.go`: ≥1 start, ≤1 manual-start, coherent event-start trigger,
       union-of-starts reachability; new sentinels `ErrMultipleNoneStarts`,
       `ErrAmbiguousStartTrigger`.
 - [ ] `engine/trigger.go`: `StartInstance.StartNodeID`; `engine/step_triggers.go` resolves node
-      (or none-start), token placement generalized; `ErrNoNoneStart`.
+      (or manual-start), token placement generalized; `ErrNoManualStart`.
 - [ ] `runtime/kernel`: `DefinitionLister` capability; Mem/Map implement it; caching passes
       through.
 - [ ] `runtime`: `DeliverMessage(ctx, name, key, payload)` (def dropped) correlate-then-create;
@@ -301,7 +301,7 @@ durable message-start dedup is ever needed.)
       terminal via `deliverLoop`) + `dialect.Locker`-wrapped critical section; `go test -race`
       on concurrent identical-`(name,key)` delivery and concurrent signal fan-out.
 - [ ] `runtime`: `RehydrateStartTimers(ctx)`; timer-start fire creates instance.
-- [ ] `runtime`: plain `Drive` uses none-start / errors on only-event-starts.
+- [ ] `runtime`: plain `Drive` uses manual-start / errors on only-event-starts.
 - [ ] `service` + `transport/http/{httpcore,stdlib,gin,fiber}`: `DeliverMessage` def-drop
       propagated; `DeliverMessageRequest.DefRef` removed.
 - [ ] `examples/scenarios/event_start` added; the 7 existing `DeliverMessage` example call sites
