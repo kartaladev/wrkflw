@@ -86,7 +86,7 @@ type Node interface {
 }
 ```
 
-The 19 concrete kinds live in the leaf packages. Constructors return
+The 18 concrete kinds live in the leaf packages. Constructors return
 `model.Node`; you rarely name the concrete type (accessors below read
 kind-specific data generically).
 

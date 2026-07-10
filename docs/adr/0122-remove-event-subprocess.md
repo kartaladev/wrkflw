@@ -58,13 +58,20 @@ where `sub` has an event-triggered inner start.
    reachability root (like the old kind) and is exempt from the outgoing-flow
    requirement — it runs its nested definition to its own end and never hands a
    token back. Detected via the wire projection (`definition/model` cannot import
-   `definition/event`). A new `ErrEventSubprocessOnFlow` rejects such a node that
-   carries an **incoming** sequence flow: it is latent until its trigger fires
-   and is never entered by a flowing token, so an incoming flow is ambiguous
-   between "embedded" and "event sub-process" semantics. A `SubProcess` with
-   *any* event-triggered start is classified as an event sub-process (matching
-   the engine's `eventTriggeredStart` arm behaviour), so a mixed none+event start
-   nested definition is treated as an event sub-process and may not sit on a flow.
+   `definition/event`). A `SubProcess` is embedded XOR an event sub-process: a
+   new `ErrEventSubprocessOnFlow` rejects an event-triggered `SubProcess` that
+   carries **either an incoming or an outgoing** sequence flow — it is latent
+   until its trigger fires (never entered by a flowing token) and resumes via
+   its enclosing scope (never traverses its own flows), so an incoming flow is
+   ambiguous between "embedded" and "event sub-process" semantics while an
+   outgoing flow is dead and would let the reachability seed wrongly mark an
+   otherwise-orphan node reachable. A `SubProcess` with *any* event-triggered
+   start is classified as an event sub-process (matching the engine's
+   `eventTriggeredStart` arm behaviour), so a mixed none+event start nested
+   definition is treated as an event sub-process and may not sit on a flow;
+   because its manual-start branch is then unreachable, such a mixed-start
+   `SubProcess` additionally emits a register-time WARN (not an error — the
+   runtime behaviour is correct, the dead branch is merely a foot-gun).
 
 4. **Clean break on the wire.** The `"eventSubProcess"` discriminator is deleted;
    old JSON/YAML carrying it no longer unmarshals (acceptable, unreleased). There

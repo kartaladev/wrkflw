@@ -178,14 +178,17 @@ var (
 	ErrManualTaskValidation = errors.New("workflow-definition: manual user task cannot carry completion validation")
 	// ErrEventSubprocessOnFlow is returned when a KindSubProcess node whose
 	// nested definition has an event-triggered (signal/message/timer) start
-	// also carries an incoming sequence flow. An event sub-process is latent
-	// until its trigger fires — it is never entered by a token flowing to it —
-	// so an incoming flow into one is unmodelable: authoring intent is
-	// ambiguous between "embedded sub-process" (token-driven, none start) and
-	// "event sub-process" (trigger-driven, no incoming flow). Rejected at
-	// authoring time rather than silently picking one interpretation
-	// (ADR-0122).
-	ErrEventSubprocessOnFlow = errors.New("workflow-definition: event-triggered subprocess has incoming sequence flow")
+	// also carries an incoming or outgoing sequence flow. An event sub-process
+	// is latent until its trigger fires — it is never entered by a token
+	// flowing to it, and it resumes via its enclosing scope rather than
+	// traversing its own sequence flows — so any incoming or outgoing flow on
+	// one is unmodelable. An incoming flow makes authoring intent ambiguous
+	// between "embedded sub-process" (token-driven, none start) and "event
+	// sub-process" (trigger-driven, no flow); an outgoing flow is dead, and the
+	// reachability seed would follow it and wrongly mark an otherwise-orphan
+	// node reachable (escaping ErrUnreachableNode). Rejected at authoring time
+	// rather than silently picking one interpretation (ADR-0122).
+	ErrEventSubprocessOnFlow = errors.New("workflow-definition: event-triggered subprocess has incoming or outgoing sequence flow")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -345,13 +348,15 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 
-	// Event-triggered SubProcess must not carry an incoming sequence flow
-	// (ErrEventSubprocessOnFlow, ADR-0122): it is latent until its trigger
-	// fires, never entered by a flowing token, so an incoming flow would be
-	// unmodelable — ambiguous between "embedded" (token-driven) and "event
-	// sub-process" (trigger-driven) semantics.
+	// Event-triggered SubProcess must not carry an incoming OR outgoing sequence
+	// flow (ErrEventSubprocessOnFlow, ADR-0122): it is latent until its trigger
+	// fires, never entered by a flowing token, and resumes via its enclosing
+	// scope rather than traversing its own flows. An incoming flow is ambiguous
+	// between "embedded" (token-driven) and "event sub-process" (trigger-driven)
+	// semantics; an outgoing flow is dead and would let the reachability seed
+	// (forwardReachable) wrongly mark an otherwise-orphan target reachable.
 	for _, n := range d.Nodes {
-		if isEventTriggeredSubprocess(n) && len(d.Incoming(n.ID())) > 0 {
+		if isEventTriggeredSubprocess(n) && (len(d.Incoming(n.ID())) > 0 || len(d.Outgoing(n.ID())) > 0) {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrEventSubprocessOnFlow, n.ID()))
 		}
 	}

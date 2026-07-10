@@ -882,8 +882,8 @@ flows:
 Valid `kind` values: `startEvent`, `endEvent`, `errorEndEvent`,
 `serviceTask`, `userTask`, `receiveTask`, `sendTask`, `businessRuleTask`, `subProcess`,
 `callActivity`, `intermediateCatchEvent`, `intermediateThrowEvent`,
-`boundaryEvent`, `exclusiveGateway`, `parallelGateway`, `inclusiveGateway`,
-`eventBasedGateway`.
+`compensationThrowEvent`, `boundaryEvent`, `exclusiveGateway`, `parallelGateway`,
+`inclusiveGateway`, `eventBasedGateway`.
 
 ---
 
