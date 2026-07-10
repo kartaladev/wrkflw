@@ -688,14 +688,15 @@ func TestReverseToStart_CancelMidWalk_TerminatesNotResumes(t *testing.T) {
 	assert.True(t, failCancelled, "cancel-preempted reverse must emit FailInstance{\"cancelled\"}")
 }
 
-// reverseWithRootESPDef is modeled on rootLevelESPDef (step_subprocess_test.go)
-// but adds a compensable node + trailing park node (the reverse-fixture shape
-// used throughout this file), so an instance can be driven into StatusRunning
-// (parked, compensation recorded) with a root-level, TIMER-triggered event
-// sub-process armed:
+// reverseWithRootESPDef builds a reverse-fixture (compensable node + trailing
+// park node, the shape used throughout this file), so an instance can be driven
+// into StatusRunning (parked, compensation recorded) with a root-level,
+// TIMER-triggered event sub-process armed. The event sub-process is an
+// activity.SubProcess with an event-triggered inner start (ADR-0122), with NO
+// incoming sequence flow:
 //
 //	start → svc(compensable) → park → end
-//	[KindEventSubProcess "root-esp"] triggered by timer "1h" (root scope, EnclosingScopeID=="")
+//	[event-sub "root-esp"] triggered by timer "1h" (root scope, EnclosingScopeID=="")
 //	  esp-start(timer "1h") → esp-svc("esp-action") → esp-end
 //
 // A timer trigger (rather than signal) lets the T4 regression assert a
@@ -721,7 +722,7 @@ func reverseWithRootESPDef() *model.ProcessDefinition {
 			activity.NewServiceTask("svc", activity.WithTaskAction("do"), activity.WithCompensateAction("undo")),
 			activity.NewServiceTask("park", activity.WithTaskAction("park")),
 			event.NewEnd("end"),
-			event.NewEventSubProcess("root-esp", espInner),
+			activity.NewSubProcess("root-esp", espInner),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -1054,7 +1055,7 @@ func rootESPWithCallActivityDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewCallActivity("call", model.Latest("child")),
 			event.NewEnd("end"),
-			event.NewEventSubProcess("root-esp", espInner),
+			activity.NewSubProcess("root-esp", espInner),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "call"},

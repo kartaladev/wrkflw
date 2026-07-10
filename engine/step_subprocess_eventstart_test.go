@@ -1,11 +1,11 @@
 package engine_test
 
-// step_subprocess_eventstart_test.go — ADR-0122 Task 4 parity tests: the same
-// event-sub-process BEHAVIORS already covered by the legacy event.EventSubProcess
-// kind (see state_esp_test.go, step_eventsubprocess_multistart_test.go, and the
-// ESP cases in step_subprocess_test.go / reverse_instance_test.go), re-authored
-// using the NEW form — an activity.SubProcess whose nested definition has an
-// event-triggered inner start (event.NewStart with WithSignalName /
+// step_subprocess_eventstart_test.go — ADR-0122 event-sub-process parity tests:
+// the event-sub-process BEHAVIORS (root/nested, interrupting/non-interrupting,
+// signal/timer/message triggers, normal-close arm-cancel, sibling + gateway arm
+// cancel, reverse re-arm) authored using the ADR-0122 form — an
+// activity.SubProcess whose nested definition has an event-triggered inner start
+// (event.NewStart with WithSignalName /
 // WithMessageCorrelator / WithStartTimer; WithNonInterrupting for the
 // non-interrupting flavor). The event-sub SubProcess node carries NO incoming
 // sequence flow, exactly like the legacy ESP nodes it mirrors.

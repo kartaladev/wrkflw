@@ -810,7 +810,7 @@ func TestValidate(t *testing.T) {
 		"event-triggered SubProcess with no incoming flow is a reachability root": {
 			// ADR-0122: a KindSubProcess whose nested definition has an
 			// event-triggered (message, here) start is recognized as a
-			// reachability root, the same as the legacy KindEventSubProcess —
+			// reachability root —
 			// it must not be flagged ErrUnreachableNode despite having no
 			// incoming sequence flow of its own.
 			def: eventTriggeredSubprocessRootDef(),
@@ -917,23 +917,6 @@ func TestValidateSubProcess(t *testing.T) {
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
-				},
-			},
-			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, model.ErrMissingSubprocess)
-			},
-		},
-		"event-subprocess with nil Subprocess pointer is invalid": {
-			def: &model.ProcessDefinition{
-				ID: "outer", Version: 1,
-				Nodes: []model.Node{
-					event.NewStart("start"),
-					event.NewEventSubProcess("esp", nil),
-					event.NewEnd("end"),
-				},
-				Flows: []flow.SequenceFlow{
-					{ID: "f1", Source: "start", Target: "esp"},
-					{ID: "f2", Source: "esp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
@@ -1962,8 +1945,7 @@ func twoStartsBothReachDef() *model.ProcessDefinition {
 // flow-reachable nodes are the none-start chain (s -> work -> e), plus a
 // KindSubProcess ("handleCancel") whose nested definition has a
 // message-triggered start and NO incoming sequence flow of its own — it is a
-// reachability root by virtue of its event-triggered inner start, the same
-// as the legacy KindEventSubProcess (ADR-0122).
+// reachability root by virtue of its event-triggered inner start (ADR-0122).
 func eventTriggeredSubprocessRootDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "esc", Version: 1,

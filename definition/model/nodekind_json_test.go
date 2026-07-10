@@ -31,7 +31,6 @@ func TestNodeKindJSONMarshal(t *testing.T) {
 		{model.KindBusinessRuleTask, `"businessRuleTask"`},
 		{model.KindSubProcess, `"subProcess"`},
 		{model.KindCallActivity, `"callActivity"`},
-		{model.KindEventSubProcess, `"eventSubProcess"`},
 		{model.KindIntermediateCatchEvent, `"intermediateCatchEvent"`},
 		{model.KindIntermediateThrowEvent, `"intermediateThrowEvent"`},
 		{model.KindBoundaryEvent, `"boundaryEvent"`},

@@ -181,9 +181,10 @@ func TestNodeSubProcessField(t *testing.T) {
 	assert.Len(t, sp.Subprocess.Flows, 2)
 }
 
-// TestNodeEventSubProcessField asserts that a KindEventSubProcess node with a
-// nested Subprocess *ProcessDefinition round-trips correctly.
-func TestNodeEventSubProcessField(t *testing.T) {
+// TestNodeEventTriggeredSubProcessField asserts that an event sub-process — a
+// KindSubProcess node whose nested Subprocess has an event-triggered inner
+// start — round-trips correctly (ADR-0122).
+func TestNodeEventTriggeredSubProcessField(t *testing.T) {
 	nested := &model.ProcessDefinition{
 		ID:      "event-nested-proc",
 		Version: 1,
@@ -200,14 +201,14 @@ func TestNodeEventSubProcessField(t *testing.T) {
 	d := &model.ProcessDefinition{
 		ID:      "outer2",
 		Version: 1,
-		Nodes:   []model.Node{event.NewEventSubProcess("event-sub-1", nested, event.WithName("Cancel Handler"))},
+		Nodes:   []model.Node{activity.NewSubProcess("event-sub-1", nested, activity.WithName("Cancel Handler"))},
 		Flows:   []flow.SequenceFlow{},
 	}
 
 	n, ok := d.Node("event-sub-1")
 	require.True(t, ok)
-	assert.Equal(t, model.KindEventSubProcess, n.Kind())
-	esp, ok := n.(event.EventSubProcess)
+	assert.Equal(t, model.KindSubProcess, n.Kind())
+	esp, ok := n.(activity.SubProcess)
 	require.True(t, ok)
 	require.NotNil(t, esp.Subprocess)
 	assert.Equal(t, "event-nested-proc", esp.Subprocess.ID)

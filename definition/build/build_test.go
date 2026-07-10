@@ -80,7 +80,6 @@ func TestFluentAllAdders(t *testing.T) {
 		AddBusinessRuleTask("rule", activity.WithTaskAction("r")).
 		AddSubProcess("sp", subDef).
 		AddCallActivity("call", model.Version("sub", 1)).
-		AddEventSubProcess("esp", subDef).
 		AddIntermediateCatchEvent("catch").
 		AddIntermediateThrowEvent("throw").
 		AddBoundaryEvent("bnd", "recv").

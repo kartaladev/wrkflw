@@ -30,24 +30,14 @@ func eventTriggeredStart(def *model.ProcessDefinition) (event.StartEvent, bool) 
 
 // eventSubprocessNested reports whether raw acts as an event sub-process and,
 // if so, returns its nested definition, its event-triggered inner start, and
-// the non-interrupting flag. Two forms are recognized during the ADR-0122
-// migration: (1) the legacy event.EventSubProcess kind (flag on the node);
-// (2) an activity.SubProcess whose inner start is event-triggered (flag on that
-// start event, per ADR-0122). A SubProcess with only a manual/none start is NOT
-// an event sub-process (ok=false) — it stays token-driven inline. The returned
-// inner start is the same one eventTriggeredStart selects, so callers need not
-// re-scan. The legacy case is deleted in T5.
+// the non-interrupting flag. An event sub-process is an activity.SubProcess
+// whose inner start is event-triggered (signal/timer/message); the
+// non-interrupting flag is read from that start event (ADR-0122). A SubProcess
+// with only a manual/none start is NOT an event sub-process (ok=false) — it
+// stays token-driven inline. The returned inner start is the same one
+// eventTriggeredStart selects, so callers need not re-scan.
 func eventSubprocessNested(raw model.Node) (nested *model.ProcessDefinition, innerStart event.StartEvent, nonInterrupting bool, ok bool) {
 	switch n := raw.(type) {
-	case event.EventSubProcess: // legacy kind — removed in T5
-		if n.Subprocess == nil {
-			return nil, event.StartEvent{}, false, false
-		}
-		se, has := eventTriggeredStart(n.Subprocess)
-		if !has {
-			return nil, event.StartEvent{}, false, false
-		}
-		return n.Subprocess, se, n.NonInterrupting, true
 	case activity.SubProcess:
 		if n.Subprocess == nil {
 			return nil, event.StartEvent{}, false, false
@@ -244,7 +234,7 @@ func fireEventTriggeredSubprocessArm(def *model.ProcessDefinition, s *InstanceSt
 		}
 
 		// Open a child scope for the event sub-process, parented to the ENCLOSING scope.
-		// NodeID = the event sub-process node ID (KindEventSubProcess).
+		// NodeID = the event sub-process node ID.
 		// The drain code (KindEndEvent case) detects this as an event sub-process scope
 		// (by checking the node kind in the parent definition) and handles completion:
 		// when this child scope drains with no tokens left in the enclosing scope,
@@ -258,7 +248,7 @@ func fireEventTriggeredSubprocessArm(def *model.ProcessDefinition, s *InstanceSt
 		s.removeEventTriggeredSubprocessArm(ea.EnclosingScopeID, ea.EventSubprocessNode)
 
 		// Open a child scope for the event sub-process, parented to the enclosing scope.
-		// NodeID = the event sub-process node ID (KindEventSubProcess).
+		// NodeID = the event sub-process node ID.
 		// This child scope runs alongside; when it drains, it is closed without affecting
 		// the enclosing scope (tokensInScope for the enclosing scope is unaffected).
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)

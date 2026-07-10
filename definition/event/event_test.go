@@ -80,11 +80,6 @@ func TestThrowAndBoundaryAndEspOptions(t *testing.T) {
 	if !bOk || bExpr != "5m" {
 		t.Errorf("boundary Timer expr = %q, ok=%v", bExpr, bOk)
 	}
-	sub := &model.ProcessDefinition{ID: "s", Version: 1}
-	esp := event.NewEventSubProcess("esp", sub, event.WithName("ESP"), event.WithEventSubProcessNonInterrupting()).(event.EventSubProcess)
-	if !esp.NonInterrupting || esp.Subprocess != sub || esp.Name() != "ESP" {
-		t.Errorf("esp = %+v", esp)
-	}
 }
 
 func TestEndEventConstructors(t *testing.T) {

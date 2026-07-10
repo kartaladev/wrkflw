@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
@@ -35,11 +34,6 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 	}
 	switch n := node.(type) {
 	case activity.SubProcess:
-		if n.Subprocess == nil {
-			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
-		}
-		return n.Subprocess, nil
-	case event.EventSubProcess:
 		if n.Subprocess == nil {
 			return nil, fmt.Errorf("workflow-engine: defForScope: node %q has no Subprocess definition", scope.NodeID)
 		}

@@ -71,10 +71,10 @@ var (
 	// (KindServiceTask, KindUserTask, KindReceiveTask, KindSendTask,
 	// KindBusinessRuleTask, KindSubProcess, KindCallActivity).
 	ErrBoundaryAttachment = errors.New("workflow-definition: boundary event attached to missing or non-activity node")
-	// ErrMissingSubprocess is returned when a KindSubProcess or
-	// KindEventSubProcess node has a nil Subprocess field. Embedded sub-process
-	// and event-sub-process nodes must carry their nested definition inline.
-	ErrMissingSubprocess = errors.New("workflow-definition: subprocess or event-subprocess node missing nested definition")
+	// ErrMissingSubprocess is returned when a KindSubProcess node has a nil
+	// Subprocess field. Embedded sub-process nodes (including a SubProcess acting
+	// as an event sub-process) must carry their nested definition inline.
+	ErrMissingSubprocess = errors.New("workflow-definition: subprocess node missing nested definition")
 	// ErrMissingDefRef is returned when a KindCallActivity node has an empty
 	// DefRef field. A call-activity must name the top-level definition it
 	// delegates to so the runtime registry can resolve it at execution time.
@@ -271,18 +271,18 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 
 	for _, n := range d.Nodes {
 		isEnd := n.Kind() == KindEndEvent || n.Kind() == KindErrorEndEvent
-		// An event sub-process (legacy KindEventSubProcess, or its ADR-0122
-		// replacement — a KindSubProcess whose inner start is event-triggered)
-		// is not sequenced by flow: it is latent until its trigger fires, runs
-		// its nested definition to its OWN end, and never hands a token back to
-		// the enclosing graph via an outgoing sequence flow. It is exempt from
-		// the outgoing-flow requirement the same way it is exempt from the
-		// incoming-flow requirement (see the reachability-root seed below).
-		isEventSubProcessRoot := n.Kind() == KindEventSubProcess || isEventTriggeredSubprocess(n)
+		// An event sub-process (a KindSubProcess whose inner start is
+		// event-triggered) is not sequenced by flow: it is latent until its
+		// trigger fires, runs its nested definition to its OWN end, and never
+		// hands a token back to the enclosing graph via an outgoing sequence
+		// flow. It is exempt from the outgoing-flow requirement the same way it
+		// is exempt from the incoming-flow requirement (see the reachability-root
+		// seed below).
+		isEventSubprocessRoot := isEventTriggeredSubprocess(n)
 		out := d.Outgoing(n.ID())
 		in := d.Incoming(n.ID())
 
-		if !isEnd && !isEventSubProcessRoot && len(out) == 0 {
+		if !isEnd && !isEventSubprocessRoot && len(out) == 0 {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadEnd, n.ID()))
 		}
 		if n.Kind() == KindStartEvent && len(in) > 0 {
@@ -373,7 +373,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 			}
 		}
 		for _, n := range d.Nodes {
-			if n.Kind() == KindEventSubProcess || isEventTriggeredSubprocess(n) {
+			if isEventTriggeredSubprocess(n) {
 				for id := range forwardReachable(d, n.ID()) {
 					reached[id] = true
 				}
@@ -472,7 +472,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// definition are wrapped with the host node id so callers can trace which
 	// sub-process contains the violation.
 	for _, n := range d.Nodes {
-		if n.Kind() != KindSubProcess && n.Kind() != KindEventSubProcess {
+		if n.Kind() != KindSubProcess {
 			continue
 		}
 		sub := toWire(n).Subprocess
@@ -630,12 +630,11 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 // isEventTriggeredSubprocess reports whether n is a KindSubProcess whose nested
 // definition has an event-triggered (signal/message/timer) start. Model-space
 // only — uses the wire projection because definition/model cannot import event
-// (import cycle). This is the ADR-0122 replacement for the legacy
-// KindEventSubProcess discriminator: a SubProcess whose inner start carries a
-// trigger is an event sub-process (a reachability root, latent until its
-// trigger fires); a SubProcess whose inner start is a plain "none" start is an
-// embedded sub-process (token-driven inline). Returns false for a nil
-// Subprocess (reported separately as ErrMissingSubprocess).
+// (import cycle). A SubProcess whose inner start carries a trigger is an event
+// sub-process (a reachability root, latent until its trigger fires); a
+// SubProcess whose inner start is a plain "none" start is an embedded
+// sub-process (token-driven inline). Returns false for a nil Subprocess
+// (reported separately as ErrMissingSubprocess).
 func isEventTriggeredSubprocess(n Node) bool {
 	if n.Kind() != KindSubProcess {
 		return false

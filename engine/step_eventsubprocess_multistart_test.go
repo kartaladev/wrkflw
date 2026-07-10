@@ -55,7 +55,7 @@ func espManualBeforeEventStartDef() *model.ProcessDefinition {
 			event.NewStart("root-start"),
 			activity.NewUserTask("root-user"),
 			event.NewEnd("root-end"),
-			event.NewEventSubProcess("esp", espInner),
+			activity.NewSubProcess("esp", espInner),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "root-start", Target: "root-user"},

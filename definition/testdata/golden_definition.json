@@ -115,16 +115,17 @@
     },
     {
       "id": "compensator",
-      "kind": "eventSubProcess",
+      "kind": "subProcess",
       "name": "Compensator",
-      "nonInterrupting": true,
       "subprocess": {
         "id": "sub",
         "version": 1,
         "nodes": [
           {
             "id": "sub-start",
-            "kind": "startEvent"
+            "kind": "startEvent",
+            "signalName": "recover",
+            "nonInterrupting": true
           },
           {
             "id": "sub-end",

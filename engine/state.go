@@ -111,8 +111,8 @@ type boundaryArm struct {
 
 // eventTriggeredSubprocessArm is the engine's bookkeeping entry for a single
 // armed event sub-process that is waiting to be triggered. One entry is
-// created per event sub-process node (see eventSubprocessNested — legacy
-// KindEventSubProcess or an event-triggered-start activity.SubProcess) when
+// created per event sub-process node (see eventSubprocessNested — an
+// event-triggered-start activity.SubProcess) when
 // the enclosing scope opens (or on StartInstance for top-level event
 // sub-processes). The entry is removed when the trigger fires (one-shot) or
 // when the enclosing scope closes/completes normally.

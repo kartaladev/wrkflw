@@ -55,8 +55,8 @@ type nodeStrategy interface {
 }
 
 // nodeStrategies maps each arm-bearing NodeKind to its strategy.
-// Kinds NOT in this map (KindBoundaryEvent, KindEventSubProcess,
-// KindUnspecified) fall through to the post-dispatch logic in drive() unchanged.
+// Kinds NOT in this map (KindBoundaryEvent, KindUnspecified) fall through to the
+// post-dispatch logic in drive() unchanged.
 var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindServiceTask:            serviceTaskStrategy{},
 	model.KindBusinessRuleTask:       businessRuleTaskStrategy{},
@@ -250,8 +250,9 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			subNodeID := scope.NodeID
 			parentScopeID := scope.ParentID
 
-			// Determine whether this scope belongs to a KindEventSubProcess node
-			// in the parent definition. Event sub-process scope exit is handled
+			// Determine whether this scope belongs to an event sub-process node
+			// (a SubProcess with an event-triggered inner start) in the parent
+			// definition. Event sub-process scope exit is handled
 			// differently from regular sub-process scope exit:
 			//   - Non-interrupting: just close this child scope; the enclosing scope
 			//     keeps running (its tokens are still there).
@@ -266,15 +267,15 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			// The previous guard (parentScopeID != "") excluded root-level ESPs,
 			// causing the engine to fall into the regular sub-process branch and
 			// error ("no outgoing flows from root-esp in root definition").
-			isEventSubProcess := false
+			isEventSubprocess := false
 			parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
 			if pErr == nil {
 				if espNode, ok2 := parentDef.Node(subNodeID); ok2 {
-					_, _, _, isEventSubProcess = eventSubprocessNested(espNode)
+					_, _, _, isEventSubprocess = eventSubprocessNested(espNode)
 				}
 			}
 
-			if isEventSubProcess {
+			if isEventSubprocess {
 				// Event sub-process scope drained.
 				// Close this child scope.
 				c.s.closeScope(currentScopeID)
@@ -540,8 +541,9 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	c.s.placeTokenInScope(manualStart, scopeID, c.at)
 	// Consume the sub-process activity token (execution is now "inside").
 	c.s.consumeToken(tok, c.at)
-	// Arm any KindEventSubProcess nodes defined inside this sub-process's
-	// nested definition. They are scoped to the newly opened scope.
+	// Arm any event sub-process nodes (SubProcess with an event-triggered inner
+	// start) defined inside this sub-process's nested definition. They are scoped
+	// to the newly opened scope.
 	espCmdsScope, espErrScope := armEventTriggeredSubprocesses(sp.Subprocess, c.s, scopeID, c.at, c.eval)
 	if espErrScope != nil {
 		return cmds, false, espErrScope
