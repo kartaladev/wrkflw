@@ -32,6 +32,42 @@ func msgStartDef(defID, msgName string) *model.ProcessDefinition {
 	}
 }
 
+// msgStartDefSingleton builds a keyless message-start definition marked
+// WithMessageStartSingleton, so a keyless delivery creates at most one instance
+// ever for msgName (name-only deterministic id).
+func msgStartDefSingleton(defID, msgName string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      defID,
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start",
+				event.WithMessageCorrelator(msgName, ""),
+				event.WithMessageStartSingleton()),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "end"},
+		},
+	}
+}
+
+// manualStartDef builds a definition whose start is a manual (trigger-less)
+// event — its MessageName is "". Used to prove an empty-name DeliverMessage
+// never matches a manual start.
+func manualStartDef(defID string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      defID,
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "end"},
+		},
+	}
+}
+
 // mustMsgDriver builds a ProcessDriver over store with defs registered in a
 // fresh MemDefinitionRegistry.
 func mustMsgDriver(t *testing.T, store kernel.InstanceStore, defs ...*model.ProcessDefinition) *ProcessDriver {
@@ -107,6 +143,53 @@ func TestDeliverMessageStartBehavior(t *testing.T) {
 			},
 			assert: func(t *testing.T, store *kernel.MemInstanceStore) {
 				assert.Equal(t, 1, countInstances(t, store))
+			},
+		},
+		{
+			name: "keyless default creates a fresh instance per message (BPMN fan-in)",
+			defs: []*model.ProcessDefinition{msgStartDef("keyless-fanin", "order.created")},
+			calls: []deliverCall{
+				{name: "order.created", key: "", assert: noErr},
+				{name: "order.created", key: "", assert: noErr},
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore) {
+				assert.Equal(t, 2, countInstances(t, store), "each keyless message must mint a fresh instance")
+			},
+		},
+		{
+			name: "keyless singleton creates at most one instance ever",
+			defs: []*model.ProcessDefinition{msgStartDefSingleton("keyless-singleton", "order.created")},
+			calls: []deliverCall{
+				{name: "order.created", key: "", assert: noErr},
+				{name: "order.created", key: "", assert: noErr},
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore) {
+				assert.Equal(t, 1, countInstances(t, store), "singleton keyless message-start must dedup to one instance")
+				id := messageStartInstanceID("order.created", "")
+				_, _, err := store.Load(t.Context(), id)
+				require.NoError(t, err, "singleton must use the name-only deterministic id")
+			},
+		},
+		{
+			name: "keyed message-start dedups by correlation key",
+			defs: []*model.ProcessDefinition{msgStartDef("keyed-dedup", "order.created")},
+			calls: []deliverCall{
+				{name: "order.created", key: "k1", assert: noErr},
+				{name: "order.created", key: "k1", assert: noErr},
+				{name: "order.created", key: "k2", assert: noErr},
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore) {
+				assert.Equal(t, 2, countInstances(t, store), "one instance per distinct key; same key dedups")
+			},
+		},
+		{
+			name: "empty message name is a clean no-op and never matches a manual start",
+			defs: []*model.ProcessDefinition{manualStartDef("manual-start-def")},
+			calls: []deliverCall{
+				{name: "", key: "k", assert: noErr},
+			},
+			assert: func(t *testing.T, store *kernel.MemInstanceStore) {
+				assert.Equal(t, 0, countInstances(t, store), "empty message name must not spawn any instance")
 			},
 		},
 		{

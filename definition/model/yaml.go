@@ -34,17 +34,19 @@ type nodeYAML struct {
 	CompensateAction   string       `yaml:"compensateAction,omitempty"`
 	CompensateRef      string       `yaml:"compensateRef,omitempty"`
 	// CompensateScopeLocal mirrors NodeWire.CompensateScopeLocal (ADR-0120).
-	CompensateScopeLocal bool            `yaml:"compensateScopeLocal,omitempty"`
-	CancelAction         string          `yaml:"cancelAction,omitempty"`
-	CompletionAction     string          `yaml:"completionAction,omitempty"`
-	SignalName           string          `yaml:"signalName,omitempty"`
-	MessageName          string          `yaml:"messageName,omitempty"`
-	CorrelationKey       string          `yaml:"correlationKey,omitempty"`
-	ErrorCode            string          `yaml:"errorCode,omitempty"`
-	AttachedTo           string          `yaml:"attachedTo,omitempty"`
-	NonInterrupting      bool            `yaml:"nonInterrupting,omitempty"`
-	Subprocess           *definitionYAML `yaml:"subprocess,omitempty"`
-	DefRef               string          `yaml:"defRef,omitempty"`
+	CompensateScopeLocal bool   `yaml:"compensateScopeLocal,omitempty"`
+	CancelAction         string `yaml:"cancelAction,omitempty"`
+	CompletionAction     string `yaml:"completionAction,omitempty"`
+	SignalName           string `yaml:"signalName,omitempty"`
+	MessageName          string `yaml:"messageName,omitempty"`
+	CorrelationKey       string `yaml:"correlationKey,omitempty"`
+	// MessageStartSingleton mirrors NodeWire.MessageStartSingleton (ADR-0121 review).
+	MessageStartSingleton bool            `yaml:"messageStartSingleton,omitempty"`
+	ErrorCode             string          `yaml:"errorCode,omitempty"`
+	AttachedTo            string          `yaml:"attachedTo,omitempty"`
+	NonInterrupting       bool            `yaml:"nonInterrupting,omitempty"`
+	Subprocess            *definitionYAML `yaml:"subprocess,omitempty"`
+	DefRef                string          `yaml:"defRef,omitempty"`
 	// Validation mirrors NodeWire.Validation for the YAML authoring form.
 	Validation *validate.ValidationDescriptor `yaml:"validation,omitempty"`
 }
@@ -93,37 +95,38 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 	}
 
 	w := NodeWire{
-		ID:                   ny.ID,
-		Kind:                 kind,
-		Name:                 ny.Name,
-		Action:               ny.Action,
-		EligibleRoles:        ny.EligibleRoles,
-		EligiblePrivileges:   ny.EligiblePrivileges,
-		EligibleExpr:         ny.EligibleExpr,
-		Manual:               ny.Manual,
-		ManualImmediate:      ny.ManualImmediate,
-		TimerDuration:        ny.TimerDuration,
-		DeadlineDuration:     ny.DeadlineDuration,
-		DeadlineFlow:         ny.DeadlineFlow,
-		DeadlineAction:       ny.DeadlineAction,
-		WaitEvery:            ny.WaitEvery,
-		WaitAction:           ny.WaitAction,
-		RetryPolicy:          ny.RetryPolicy,
-		RecoveryFlow:         ny.RecoveryFlow,
-		CompensateAction:     ny.CompensateAction,
-		CompensateRef:        ny.CompensateRef,
-		CompensateScopeLocal: ny.CompensateScopeLocal,
-		CancelAction:         ny.CancelAction,
-		CompletionAction:     ny.CompletionAction,
-		SignalName:           ny.SignalName,
-		MessageName:          ny.MessageName,
-		CorrelationKey:       ny.CorrelationKey,
-		ErrorCode:            ny.ErrorCode,
-		AttachedTo:           ny.AttachedTo,
-		NonInterrupting:      ny.NonInterrupting,
-		Subprocess:           subDef,
-		DefRef:               ny.DefRef,
-		Validation:           ny.Validation,
+		ID:                    ny.ID,
+		Kind:                  kind,
+		Name:                  ny.Name,
+		Action:                ny.Action,
+		EligibleRoles:         ny.EligibleRoles,
+		EligiblePrivileges:    ny.EligiblePrivileges,
+		EligibleExpr:          ny.EligibleExpr,
+		Manual:                ny.Manual,
+		ManualImmediate:       ny.ManualImmediate,
+		TimerDuration:         ny.TimerDuration,
+		DeadlineDuration:      ny.DeadlineDuration,
+		DeadlineFlow:          ny.DeadlineFlow,
+		DeadlineAction:        ny.DeadlineAction,
+		WaitEvery:             ny.WaitEvery,
+		WaitAction:            ny.WaitAction,
+		RetryPolicy:           ny.RetryPolicy,
+		RecoveryFlow:          ny.RecoveryFlow,
+		CompensateAction:      ny.CompensateAction,
+		CompensateRef:         ny.CompensateRef,
+		CompensateScopeLocal:  ny.CompensateScopeLocal,
+		CancelAction:          ny.CancelAction,
+		CompletionAction:      ny.CompletionAction,
+		SignalName:            ny.SignalName,
+		MessageName:           ny.MessageName,
+		CorrelationKey:        ny.CorrelationKey,
+		MessageStartSingleton: ny.MessageStartSingleton,
+		ErrorCode:             ny.ErrorCode,
+		AttachedTo:            ny.AttachedTo,
+		NonInterrupting:       ny.NonInterrupting,
+		Subprocess:            subDef,
+		DefRef:                ny.DefRef,
+		Validation:            ny.Validation,
 	}
 	return fromWire(w)
 }

@@ -21,13 +21,21 @@ import (
 // per-entity wait that must resume a single instance, use
 // [ProcessDriver.DeliverMessage] with a correlation key instead.
 //
-// It returns a descriptive error only when there is NEITHER a SignalBus
-// configured (via [WithSignalBus]) NOR any signal-start match — i.e. the
-// broadcast could not possibly do anything. A delivered signal that matches no
-// waiter and no signal-start is otherwise a clean no-op; errors encountered
-// while resuming waiters or creating signal-start instances are joined via
-// [errors.Join] rather than aborting the rest of the fan-out.
+// An empty name is a clean no-op (nil): it is meaningless and must never match a
+// manual (trigger-less) start, whose SignalName is also "". Otherwise it returns
+// a descriptive error only when there is NEITHER a SignalBus configured (via
+// [WithSignalBus]) NOR any signal-start match — i.e. the broadcast could not
+// possibly do anything. A delivered signal that matches no waiter and no
+// signal-start is otherwise a clean no-op; errors encountered while resuming
+// waiters or creating signal-start instances are joined via [errors.Join] rather
+// than aborting the rest of the fan-out.
 func (driver *ProcessDriver) BroadcastSignal(ctx context.Context, name string, payload map[string]any) error {
+	// An empty signal name is meaningless and must never match a manual
+	// (trigger-less) start, whose SignalName is also "" — a clean no-op.
+	if name == "" {
+		return nil
+	}
+
 	hits := signalStartDefs(driver.listDefinitions(ctx), name)
 	if driver.sigbus == nil && len(hits) == 0 {
 		return fmt.Errorf("workflow-runtime: BroadcastSignal %q: no SignalBus configured and no signal start (use WithSignalBus)", name)

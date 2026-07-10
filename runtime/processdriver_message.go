@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
@@ -24,18 +26,32 @@ var ErrAmbiguousMessageStart = errors.New("workflow-runtime: ambiguous message s
 // no longer supplies one. When no running waiter matches, the message may START
 // a new instance from a unique message-start event (ADR-0121).
 //
-// Message-start dedup is deterministic: the created instance's id is a pure
-// function of (name, correlationKey), and Store.Create's ErrInstanceExists is the
-// authoritative, multi-replica- and restart-safe dedup — a redelivered or
-// concurrent message for the same correlation computes the same id, so exactly
-// one instance is created and the rest are clean no-ops. A correlation key is
-// therefore single-use per instance lifetime: re-delivering it after the
-// instance has completed is a no-op, not a fresh start.
+// Message-start dedup breadth depends on how the start is configured (ADR-0121):
 //
-// It is a clean no-op (nil) when the message matches neither a running waiter
-// nor any message-start definition. It returns ErrAmbiguousMessageStart when the
-// name matches a message-start on more than one definition.
+//   - KEYED (correlationKey != ""): the created instance's id is a pure function
+//     of (name, correlationKey), and Store.Create's ErrInstanceExists is the
+//     authoritative, multi-replica- and restart-safe dedup — a redelivered or
+//     concurrent message for the same correlation computes the same id, so
+//     exactly one instance is created and the rest are clean no-ops. A
+//     correlation key is single-use per instance lifetime: re-delivering it after
+//     the instance completed is a no-op, not a fresh start.
+//   - KEYLESS + WithMessageStartSingleton: at most one instance ever for the
+//     message name (name-only deterministic id + ErrInstanceExists no-op).
+//   - KEYLESS, default: each message mints a FRESH instance via the id generator
+//     (BPMN message fan-in) — no dedup.
+//
+// An empty name is a clean no-op (nil): it is meaningless and must never match a
+// manual (trigger-less) start. It is likewise a clean no-op when the message
+// matches neither a running waiter nor any message-start definition. It returns
+// ErrAmbiguousMessageStart when the name matches a message-start on more than one
+// (latest-version) definition.
 func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlationKey string, payload map[string]any) error {
+	// An empty message name is meaningless and must never match a manual
+	// (trigger-less) start, whose MessageName is also "" — a clean no-op.
+	if name == "" {
+		return nil
+	}
+
 	// 1. Correlate to a running waiter parked on this message. The instance's
 	//    definition is resolved from its own snapshot (DefID/DefVersion).
 	if instanceID, found := driver.findMessageWaiter(name, correlationKey); found {
@@ -57,17 +73,43 @@ func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlati
 		return fmt.Errorf("%w: %q", ErrAmbiguousMessageStart, name)
 	}
 
-	// Deterministic id: concurrent/duplicate/redelivered messages for the same
-	// (name, correlationKey) all compute the same id; Store.Create lets exactly
-	// one win, the rest get ErrInstanceExists.
-	id := messageStartInstanceID(name, correlationKey)
+	// Choose the instance id, which decides dedup breadth (ADR-0121 review):
+	//   - KEYED (correlationKey != "")     → deterministic id from (name, key);
+	//     concurrent/duplicate/redelivered messages for the same key dedup to one.
+	//   - keyless + MessageStartSingleton  → name-only deterministic id; at most
+	//     one instance ever for this message name.
+	//   - keyless, default                 → id == "" → createAtNode mints a FRESH
+	//     instance per message (BPMN message fan-in).
+	id := ""
+	switch {
+	case correlationKey != "":
+		id = messageStartInstanceID(name, correlationKey)
+	case messageStartIsSingleton(def, nodeID):
+		id = messageStartInstanceID(name, "")
+	}
+
 	switch _, err := driver.createAtNode(ctx, def, nodeID, id, payload); {
-	case errors.Is(err, kernel.ErrInstanceExists):
-		return nil // an instance already exists for this key (running or completed) — no-op dedup
+	case id != "" && errors.Is(err, kernel.ErrInstanceExists):
+		// A deterministic-id create (keyed or singleton) whose instance already
+		// exists (running or completed) is a clean no-op dedup. A fresh-idgen
+		// create (id == "") must never swallow this — it surfaces below.
+		return nil
 	case err != nil:
 		return err
 	}
 	return nil
+}
+
+// messageStartIsSingleton reports whether def's start node nodeID is a message
+// StartEvent marked MessageStartSingleton. A missing node or a non-StartEvent is
+// treated as not-singleton (default keyless fan-in).
+func messageStartIsSingleton(def *model.ProcessDefinition, nodeID string) bool {
+	n, ok := def.Node(nodeID)
+	if !ok {
+		return false
+	}
+	se, ok := n.(event.StartEvent)
+	return ok && se.MessageStartSingleton
 }
 
 // messageStartInstanceID is the deterministic, collision-safe id of the instance

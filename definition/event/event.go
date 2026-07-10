@@ -20,6 +20,12 @@ type StartEvent struct {
 	SignalName     string
 	MessageName    string
 	CorrelationKey string
+	// MessageStartSingleton, when true, makes a KEYLESS message-start create at
+	// most one instance ever for its message name (name-only deterministic id +
+	// ErrInstanceExists no-op). Default false: each message mints a fresh
+	// instance (BPMN fan-in). Ignored when a correlation key is set — keyed
+	// message-start already dedups per key. Set via WithMessageStartSingleton.
+	MessageStartSingleton bool
 	// Timer is the trigger spec for a timer-start event (e.g. schedule.AfterExpr("...")).
 	Timer schedule.TriggerSpec
 	// InputValidation, when set, validates the manually-provided start vars
@@ -278,7 +284,8 @@ func init() {
 		Name: "startEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
-				Timer: model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
+				MessageStartSingleton: w.MessageStartSingleton,
+				Timer:                 model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
 			if w.Validation != nil {
 				n.InputValidation = model.PendingValidation(*w.Validation)
 			}
@@ -287,6 +294,7 @@ func init() {
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(StartEvent)
 			w.SignalName, w.MessageName, w.CorrelationKey = v.SignalName, v.MessageName, v.CorrelationKey
+			w.MessageStartSingleton = v.MessageStartSingleton
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.Validation = model.PutValidation(v.InputValidation)
 		},

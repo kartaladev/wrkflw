@@ -1,8 +1,12 @@
 package runtime_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -115,6 +119,45 @@ func TestRehydrateTimersRequiresWiring(t *testing.T) {
 	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
 	err := driver.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")
+}
+
+// lookupOnlyReg is a DefinitionRegistry that does NOT implement
+// kernel.DefinitionLister, so event-based START enumeration is unavailable.
+type lookupOnlyReg struct{}
+
+func (lookupOnlyReg) Lookup(context.Context, model.Qualifier) (*model.ProcessDefinition, error) {
+	return nil, kernel.ErrDefinitionNotFound
+}
+
+// TestRehydrateStartTimersWarnsWhenRegistryNotEnumerable verifies that when the
+// registry cannot enumerate definitions (no DefinitionLister), RehydrateStartTimers
+// arms nothing but logs a single WARN explaining event-based start is disabled.
+func TestRehydrateStartTimersWarnsWhenRegistryNotEnumerable(t *testing.T) {
+	fc := clockwork.NewFakeClock()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
+
+	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t),
+		runtime.WithClock(fc),
+		runtime.WithScheduler(sched),
+		runtime.WithDefinitions(lookupOnlyReg{}),
+		runtime.WithLogger(logger))
+
+	require.NoError(t, driver.RehydrateStartTimers(t.Context()))
+
+	var sawWarn bool
+	for _, line := range splitNonEmpty(buf.Bytes()) {
+		var entry struct {
+			Level string `json:"level"`
+			Msg   string `json:"msg"`
+		}
+		require.NoError(t, json.Unmarshal(line, &entry))
+		if entry.Level == "WARN" && strings.Contains(entry.Msg, "event-based start") {
+			sawWarn = true
+		}
+	}
+	assert.True(t, sawWarn, "expected a WARN that event-based start is disabled without an enumerable registry")
 }
 
 func TestRehydrateStartTimersFiresCreatesInstance(t *testing.T) {

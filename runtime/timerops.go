@@ -323,6 +323,16 @@ func (driver *ProcessDriver) RehydrateStartTimers(ctx context.Context) error {
 	if driver.sched == nil || driver.defsReg == nil {
 		return fmt.Errorf("workflow-runtime: RehydrateStartTimers requires WithScheduler and WithDefinitions")
 	}
+	// Event-based START (timer/signal/message) needs to enumerate registered
+	// definitions. A registry that does not implement kernel.DefinitionLister
+	// silently disables it: warn once here so the missing capability is
+	// diagnosable rather than a mystery non-event.
+	if _, ok := driver.defsReg.(kernel.DefinitionLister); !ok {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
+			"runtime: event-based start disabled: definition registry does not implement DefinitionLister (no start timers armed)",
+			driver.obs.tel.LogAttrs(ctx)...)
+		return nil
+	}
 	for _, hit := range timerStartDefs(driver.listDefinitions(ctx)) {
 		driver.armStartTimer(ctx, hit.Def, hit.NodeID, startTimerID(hit.Def.ID, hit.Def.Version, hit.NodeID), hit.Trigger)
 	}

@@ -133,12 +133,18 @@ func TestBroadcastSignalFanOut(t *testing.T) {
 	type testCase struct {
 		name string
 		defs []*model.ProcessDefinition
+		// broadcast overrides the signal name passed to BroadcastSignal; nil means
+		// the default "order.completed". A non-nil pointer to "" exercises the
+		// empty-name guard.
+		broadcast *string
 		// moreOpts builds extra driver options beyond WithDefinitions(reg); nil
 		// means none. Used to inject a failing SignalBus or id generator for the
 		// error-composition cases below.
 		moreOpts func(t *testing.T) []runtime.Option
 		assert   func(t *testing.T, store *kernel.MemInstanceStore, err error)
 	}
+
+	strptr := func(s string) *string { return &s }
 
 	cases := []testCase{
 		{
@@ -169,6 +175,23 @@ func TestBroadcastSignalFanOut(t *testing.T) {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "SignalBus")
 				assert.Equal(t, 0, countCompletedInstances(t, store))
+			},
+		},
+		{
+			name: "empty signal name is a clean no-op and never matches a manual start",
+			defs: []*model.ProcessDefinition{
+				// A manual (trigger-less) start has SignalName == ""; the guard must
+				// stop it from matching an empty broadcast name.
+				{
+					ID: "manual-sig", Version: 1,
+					Nodes: []model.Node{event.NewStart("start"), event.NewEnd("end")},
+					Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
+				},
+			},
+			broadcast: strptr(""),
+			assert: func(t *testing.T, store *kernel.MemInstanceStore, err error) {
+				require.NoError(t, err, "empty signal name must be a clean no-op, not an error")
+				assert.Equal(t, 0, countCompletedInstances(t, store), "empty signal name must not spawn any instance")
 			},
 		},
 		{
@@ -221,7 +244,11 @@ func TestBroadcastSignalFanOut(t *testing.T) {
 			}
 			driver := runtimetest.MustRunner(t, nil, store, opts...)
 
-			err := driver.BroadcastSignal(t.Context(), "order.completed", map[string]any{"orderId": "7"})
+			signalName := "order.completed"
+			if tc.broadcast != nil {
+				signalName = *tc.broadcast
+			}
+			err := driver.BroadcastSignal(t.Context(), signalName, map[string]any{"orderId": "7"})
 			tc.assert(t, store, err)
 		})
 	}
