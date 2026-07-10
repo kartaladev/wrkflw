@@ -852,7 +852,7 @@ git commit -m "feat(runtime): RehydrateStartTimers + plain-Drive none-start reso
 **Interfaces:**
 - Consumes: the full public surface — `BroadcastSignal`, `DeliverMessage`, `RegisterDefinition`, builders.
 
-Illustrate: an `order.completed` **signal** fanning out to start **payment** and **shipment** definitions; shipment then parks on a `payment.completed` **message** that correlates-then-completes it. Keep it a thin, self-contained `main` per the examples convention (engine mechanics, not testing helpers).
+Illustrate a genuinely **external** trigger (not "a predecessor process completed" — that is Chainer's turf per the spec's *Relationship to Chainer* section). Show an inbound **signal** `order.received` fanning out to start **payment** and **shipment** definitions; shipment then parks on a `payment.completed` **message** that correlates-then-completes it. Keep it a thin, self-contained `main` per the examples convention (engine mechanics, not testing helpers). A short header comment states the positioning: event-start (this) is preferred for BPMN-native process-to-process choreography; `runtime/chain.Chainer` remains for lineage / outcome-routing / exactly-once-durable chaining.
 
 - [ ] **Step 1: Write the example** (buildable `main`), then a doc-style walk-through in comments.
 
@@ -875,7 +875,7 @@ git commit -m "docs(examples): event_start signal fan-out + message correlation 
 **Files:**
 - Create: `docs/adr/0121-event-based-start.md` (Nygard template)
 
-- [ ] **Step 1: Write the ADR** — Status/Date, Context, Decision, Consequences — distilled from `docs/specs/2026-07-10-event-based-start-design.md` (placement, def-less publish, BPMN semantics, no durable store + `DefinitionLister`, `StartNodeID` seam, concurrency: Elector / fan-out-safe / advisory-lock message dedup with the documented cross-replica limitation and deferred durable follow-up).
+- [ ] **Step 1: Write the ADR** — Status/Date, Context, Decision, Consequences — distilled from `docs/specs/2026-07-10-event-based-start-design.md` (placement, def-less publish, BPMN semantics, no durable store + `DefinitionLister`, `StartNodeID` seam, concurrency: Elector / fan-out-safe / advisory-lock message dedup with the documented cross-replica limitation and deferred durable follow-up). **Include a "Relationship to Chainer (ADR-0045)" subsection** with the retained-but-event-start-preferred positioning: prefer signal choreography (throw-at-end → signal-start) for process-to-process starts; use `Chainer` only for lineage / outcome-based routing / exactly-once-durable chaining.
 
 - [ ] **Step 2: Commit**
 

@@ -224,6 +224,34 @@ distinct hazard, handled with the machinery the repo already provides.
   `DeliverMessage` / `BroadcastSignal`.
 - No cross-definition message *routing* beyond start (correlate-then-create only).
 
+## Relationship to Chainer (ADR-0045) — positioning
+
+Event-based start overlaps conceptually with the existing `runtime/chain.Chainer`
+(predecessor terminal outbox event → `SuccessorPolicy` Go callback → start a fresh root
+instance, with lineage + exactly-once-durable idempotency). They are **complementary, not
+redundant**, on different axes:
+
+- **Event-start** — *external* trigger (message/signal/timer), *declarative* (the definition
+  declares its own start event), publisher-decoupled, fan-out, **no lineage**.
+- **Chainer** — *predecessor-terminal* trigger, *imperative* (a Go `SuccessorPolicy` in
+  consumer code), routes on terminal **outcome**, records **lineage** (`ChainLink`), and is
+  **exactly-once over the durable outbox** (deterministic id + `Store.Create`
+  `ErrInstanceExists` + `ChainLinkStore`).
+
+**Decision (retain Chainer, event-start preferred for choreography).** Keep `Chainer` as-is.
+Position event-start — specifically **signal-throw-at-an-end-event → signal-start-elsewhere** —
+as the **preferred, BPMN-native path for process-to-process choreography**. Reserve `Chainer`
+for the cases event-start does not cover: **predecessor→successor lineage**, **outcome-based
+routing without editing the predecessor definition**, and **exactly-once durable** chaining.
+ADR-0121 documents this "when to use which"; the ADR-0121 example stays on a genuinely
+*external* trigger (an inbound message/signal), not "a predecessor process completed," which is
+Chainer's turf.
+
+No code reuse in either direction beyond the shared "start a root instance" primitive
+(`Chainer` uses `Drive`; event-start uses `createAtNode`). Event-start does **not** reinvent
+Chainer. (Chainer's deterministic-id idempotency is noted in §8 as the natural upgrade path if
+durable message-start dedup is ever needed.)
+
 ## Consequences
 
 **Positive**
