@@ -13,6 +13,43 @@ import (
 // plus Store.Create's ErrInstanceExists, so no in-process correlation state is
 // kept here.
 
+// latestPerID collapses defs to at most one definition per def.ID: the one with
+// the highest Version. It is the runtime counterpart of the model.Latest /
+// Qualifier{Version:0} "latest" convention, applied to event-based START
+// enumeration (ADR-0121): a MemDefinitionRegistry keeps every registered version
+// so in-flight instances can still resume, but only the LATEST version of each id
+// starts NEW instances — a redeploy replaces the old version's start subscription
+// (Camunda semantics). Without this collapse a version bump would make a message
+// start perpetually ambiguous and a signal/timer start fan out one spurious
+// instance per retained version.
+//
+// Input order is not significant: the highest Version wins deterministically
+// (versions are unique per id, so there is no tie to break). The returned slice
+// preserves first-seen order of the winning definitions.
+func latestPerID(defs []*model.ProcessDefinition) []*model.ProcessDefinition {
+	if len(defs) == 0 {
+		return nil
+	}
+	// idx maps def.ID to its position in out, so we can overwrite in place when a
+	// higher version arrives while keeping first-seen order stable.
+	idx := make(map[string]int, len(defs))
+	out := make([]*model.ProcessDefinition, 0, len(defs))
+	for _, def := range defs {
+		if def == nil {
+			continue
+		}
+		if pos, ok := idx[def.ID]; ok {
+			if def.Version > out[pos].Version {
+				out[pos] = def
+			}
+			continue
+		}
+		idx[def.ID] = len(out)
+		out = append(out, def)
+	}
+	return out
+}
+
 // signalStartHit identifies a definition + node pair whose start event listens
 // for a given signal name.
 type signalStartHit struct {
@@ -48,11 +85,13 @@ func messageStartNode(def *model.ProcessDefinition, name string) (nodeID string,
 }
 
 // signalStartDefs returns every definition+node pair, across defs, whose
-// start event listens for the signal name. Order follows defs then each
-// def's StartNodes order.
+// start event listens for the signal name. defs is first collapsed via
+// latestPerID so a superseded version never fans out a spurious instance
+// (ADR-0121); order then follows the surviving latest defs and each def's
+// StartNodes order.
 func signalStartDefs(defs []*model.ProcessDefinition, name string) []signalStartHit {
 	var hits []signalStartHit
-	for _, def := range defs {
+	for _, def := range latestPerID(defs) {
 		for _, n := range def.StartNodes() {
 			se, isStart := n.(event.StartEvent)
 			if !isStart {
@@ -67,7 +106,9 @@ func signalStartDefs(defs []*model.ProcessDefinition, name string) []signalStart
 }
 
 // uniqueMessageStartDef finds the definition (and its start node) whose
-// message-start name equals name, across defs. count is the number of
+// message-start name equals name, across defs. defs is first collapsed via
+// latestPerID so two retained versions of the same id resolve to a single
+// latest match rather than a false ambiguity (ADR-0121). count is the number of
 // matching def+node pairs found: 0 means no match, 1 means a unique match
 // (def and nodeID are populated), and >=2 means the name is ambiguous across
 // multiple definitions (def and nodeID are the zero value / empty in that
@@ -79,7 +120,7 @@ func uniqueMessageStartDef(defs []*model.ProcessDefinition, name string) (*model
 		nodeID  string
 		matches int
 	)
-	for _, def := range defs {
+	for _, def := range latestPerID(defs) {
 		id, ok := messageStartNode(def, name)
 		if !ok {
 			continue
@@ -97,10 +138,11 @@ func uniqueMessageStartDef(defs []*model.ProcessDefinition, name string) (*model
 
 // timerStartDefs returns every definition+node pair, across defs, whose start
 // event carries a timer trigger (Timer.IsZero() == false), along with that
-// trigger.
+// trigger. defs is first collapsed via latestPerID so a superseded version does
+// not arm a duplicate start timer (ADR-0121).
 func timerStartDefs(defs []*model.ProcessDefinition) []timerStartHit {
 	var hits []timerStartHit
-	for _, def := range defs {
+	for _, def := range latestPerID(defs) {
 		for _, n := range def.StartNodes() {
 			se, isStart := n.(event.StartEvent)
 			if !isStart {

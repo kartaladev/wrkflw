@@ -58,6 +58,128 @@ func defWithoutStart(t *testing.T, defID string) *model.ProcessDefinition {
 	}
 }
 
+// versioned returns def with Version set, for building two versions of the same
+// def id in latest-per-id enumeration tests.
+func versioned(def *model.ProcessDefinition, version int) *model.ProcessDefinition {
+	def.Version = version
+	return def
+}
+
+// TestLatestPerID verifies latestPerID keeps only the highest-Version definition
+// per def id, dropping superseded versions while leaving distinct ids intact.
+func TestLatestPerID(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		defs   []*model.ProcessDefinition
+		assert func(t *testing.T, out []*model.ProcessDefinition)
+	}
+
+	cases := []testCase{
+		{
+			name: "nil input yields nil",
+			defs: nil,
+			assert: func(t *testing.T, out []*model.ProcessDefinition) {
+				assert.Empty(t, out)
+			},
+		},
+		{
+			name: "two versions of same id collapse to the highest",
+			defs: []*model.ProcessDefinition{
+				versioned(defWithMessageStart(t, "order", "m1"), 1),
+				versioned(defWithMessageStart(t, "order", "m2"), 2),
+			},
+			assert: func(t *testing.T, out []*model.ProcessDefinition) {
+				if assert.Len(t, out, 1) {
+					assert.Equal(t, "order", out[0].ID)
+					assert.Equal(t, 2, out[0].Version)
+				}
+			},
+		},
+		{
+			name: "highest wins regardless of input order",
+			defs: []*model.ProcessDefinition{
+				versioned(defWithMessageStart(t, "order", "m2"), 2),
+				versioned(defWithMessageStart(t, "order", "m1"), 1),
+			},
+			assert: func(t *testing.T, out []*model.ProcessDefinition) {
+				if assert.Len(t, out, 1) {
+					assert.Equal(t, 2, out[0].Version)
+				}
+			},
+		},
+		{
+			name: "distinct ids are all retained",
+			defs: []*model.ProcessDefinition{
+				versioned(defWithMessageStart(t, "a", "m"), 1),
+				versioned(defWithMessageStart(t, "b", "m"), 1),
+			},
+			assert: func(t *testing.T, out []*model.ProcessDefinition) {
+				ids := []string{}
+				for _, d := range out {
+					ids = append(ids, d.ID)
+				}
+				assert.ElementsMatch(t, []string{"a", "b"}, ids)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			out := latestPerID(tc.defs)
+			tc.assert(t, out)
+		})
+	}
+}
+
+// TestEventStartEnumerationLatestVersionOnly verifies the enumeration helpers
+// consider only the latest version per def id: a superseded version's event
+// start must neither add duplicate hits (signal/timer) nor create ambiguity
+// (message).
+func TestEventStartEnumerationLatestVersionOnly(t *testing.T) {
+	t.Parallel()
+
+	t.Run("signal enumeration ignores superseded version", func(t *testing.T) {
+		t.Parallel()
+		defs := []*model.ProcessDefinition{
+			versioned(defWithSignalStart(t, "sig-def", "s"), 1),
+			versioned(defWithSignalStart(t, "sig-def", "s"), 2),
+		}
+		hits := signalStartDefs(defs, "s")
+		if assert.Len(t, hits, 1, "only the latest version must produce a signal-start hit") {
+			assert.Equal(t, 2, hits[0].Def.Version)
+		}
+	})
+
+	t.Run("timer enumeration ignores superseded version", func(t *testing.T) {
+		t.Parallel()
+		trig := schedule.AfterDuration(time.Hour)
+		defs := []*model.ProcessDefinition{
+			versioned(defWithTimerStart(t, "timer-def", trig), 1),
+			versioned(defWithTimerStart(t, "timer-def", trig), 2),
+		}
+		hits := timerStartDefs(defs)
+		if assert.Len(t, hits, 1, "only the latest version must produce a timer-start hit") {
+			assert.Equal(t, 2, hits[0].Def.Version)
+		}
+	})
+
+	t.Run("message enumeration is unambiguous across versions", func(t *testing.T) {
+		t.Parallel()
+		defs := []*model.ProcessDefinition{
+			versioned(defWithMessageStart(t, "msg-def", "m"), 1),
+			versioned(defWithMessageStart(t, "msg-def", "m"), 2),
+		}
+		def, _, count := uniqueMessageStartDef(defs, "m")
+		if assert.Equal(t, 1, count, "same id across versions must resolve to a unique latest match, not ambiguity") {
+			assert.Equal(t, 2, def.Version)
+		}
+	})
+}
+
 func uniqueDefID(t *testing.T, prefix string) string {
 	t.Helper()
 	return fmt.Sprintf("%s-%d", prefix, eventStartTestDefSeq.Add(1))

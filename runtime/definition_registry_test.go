@@ -379,6 +379,21 @@ func multiStartMessageDef(t *testing.T, idPrefix string, msgNames ...string) *mo
 	return def
 }
 
+// messageStartDefVersioned builds a message-start definition with an explicit id
+// and version, so a test can register two versions of the SAME def id. Its lone
+// start event carries msgName as its message-start.
+func messageStartDefVersioned(t *testing.T, id, msgName string, version int) *model.ProcessDefinition {
+	t.Helper()
+
+	def, err := definition.NewBuilder(id, version).
+		AddStartEvent("s", event.WithMessageCorrelator(msgName, "")).
+		AddEndEvent("e").
+		Connect("s", "e").
+		Build()
+	require.NoError(t, err)
+	return def
+}
+
 // TestRegisterDefinitionRejectsDuplicateMessageStart verifies that
 // RegisterDefinition rejects a message-start name collision — both across two
 // distinct definitions, and within a single definition that declares the same
@@ -420,6 +435,30 @@ func TestRegisterDefinitionRejectsDuplicateMessageStart(t *testing.T) {
 			assert: func(t *testing.T, errs []error) {
 				require.Len(t, errs, 1)
 				assert.ErrorIs(t, errs[0], runtime.ErrDuplicateMessageStart)
+			},
+		},
+		{
+			name: "superseded version's message name does not block a new def reusing it",
+			defs: func(t *testing.T) []*model.ProcessDefinition {
+				seq := uniqueDefSeq.Add(1)
+				oldName := fmt.Sprintf("order.super.old.%d", seq)
+				newName := fmt.Sprintf("order.super.new.%d", seq)
+				sharedID := fmt.Sprintf("super-a-%d", seq)
+				return []*model.ProcessDefinition{
+					// A v1 claims oldName, then A v2 renames its start to newName —
+					// v2 supersedes v1's start subscription (ADR-0121 Camunda semantics).
+					messageStartDefVersioned(t, sharedID, oldName, 1),
+					messageStartDefVersioned(t, sharedID, newName, 2),
+					// A distinct def B reuses oldName: since only the LATEST version of
+					// A (v2, newName) holds an active start subscription, oldName is free.
+					messageStartDefVersioned(t, fmt.Sprintf("super-b-%d", seq), oldName, 1),
+				}
+			},
+			assert: func(t *testing.T, errs []error) {
+				require.Len(t, errs, 3)
+				assert.NoError(t, errs[0], "A v1 registers")
+				assert.NoError(t, errs[1], "A v2 registers (renamed start)")
+				assert.NoError(t, errs[2], "B may reuse the superseded v1 name")
 			},
 		},
 		{

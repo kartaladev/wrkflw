@@ -130,7 +130,13 @@ func checkMessageStartUnique(reg *kernel.MemDefinitionRegistry, def *model.Proce
 		return nil
 	}
 
-	for _, existing := range reg.ListDefinitions(context.Background()) {
+	// Compare only against the LATEST version of each OTHER def id: a
+	// MemDefinitionRegistry retains every registered version so in-flight
+	// instances resume, but only the latest version holds an active message-start
+	// subscription (ADR-0121 Camunda semantics). A superseded version's name must
+	// therefore not cause a false collision, and a redeploy that keeps the same
+	// name is still allowed via the existing existing.ID == def.ID skip.
+	for _, existing := range latestPerID(reg.ListDefinitions(context.Background())) {
 		if def != nil && existing.ID == def.ID {
 			continue // re-registering the same def id is not a message-name collision
 		}

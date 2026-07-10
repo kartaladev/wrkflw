@@ -142,13 +142,15 @@ func TestRehydrateStartTimersFiresCreatesInstance(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final.Status, "start->end with no other nodes must complete immediately")
 }
 
-func TestRehydrateStartTimersMultiVersionNoCollision(t *testing.T) {
+func TestRehydrateStartTimersLatestVersionOnly(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 13, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 
 	// Two VERSIONS of the same def id, both with a timer-start on the SAME node id
-	// ("start"). Their scheduler timer ids must differ by version, or the second
-	// Schedule silently replaces the first's callback and one version never fires.
+	// ("start"). A MemDefinitionRegistry retains both versions so in-flight
+	// instances can resume, but only the LATEST (v2) holds an active start
+	// subscription (ADR-0121 Camunda semantics): a version bump replaces, it does
+	// not duplicate. Exactly ONE instance must be created per occurrence, from v2.
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(timerStartOnlyDefVersion("cron", 1, schedule.AfterDuration(time.Hour))))
 	require.NoError(t, reg.Register(timerStartOnlyDefVersion("cron", 2, schedule.AfterDuration(time.Hour))))
@@ -165,18 +167,13 @@ func TestRehydrateStartTimersMultiVersionNoCollision(t *testing.T) {
 	fc.Advance(time.Hour + time.Minute)
 	require.NoError(t, sched.Tick(t.Context()))
 
-	// Both versions' timer-starts must have fired → two distinct instances created.
+	// Only the latest version's timer-start fires → exactly ONE instance created.
 	inst1, _, err1 := store.Load(t.Context(), "cron-inst-1")
-	require.NoError(t, err1)
-	inst2, _, err2 := store.Load(t.Context(), "cron-inst-2")
-	require.NoError(t, err2, "both def versions' timer-starts must fire; a shared timer id drops one")
+	require.NoError(t, err1, "the latest version's timer-start must fire and create one instance")
 	assert.Equal(t, engine.StatusCompleted, inst1.Status)
-	assert.Equal(t, engine.StatusCompleted, inst2.Status)
+	assert.Equal(t, 2, inst1.DefVersion, "the sole instance must be seeded from the LATEST version (v2)")
 
-	// The two instances must be seeded from DIFFERENT def versions (1 and 2), not
-	// the same version fired twice.
-	gotVersions := map[int]struct{}{inst1.DefVersion: {}, inst2.DefVersion: {}}
-	_, has1 := gotVersions[1]
-	_, has2 := gotVersions[2]
-	assert.True(t, has1 && has2, "expected one instance per def version (1 and 2), got versions %v", gotVersions)
+	// The superseded version (v1) must NOT start a new instance — no second id.
+	_, _, err2 := store.Load(t.Context(), "cron-inst-2")
+	require.Error(t, err2, "superseded version must not start a new instance")
 }
