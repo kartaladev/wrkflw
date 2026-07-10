@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/humantask"
@@ -486,15 +487,23 @@ func handleHumanCompleted(def *model.ProcessDefinition, s *InstanceState, t Huma
 	if task == nil {
 		return StepResult{}, fmt.Errorf("workflow-engine: human-completed for token %q has no task record: %w", t.TaskToken, humantask.ErrTaskNotFound)
 	}
+	humanTdef, humanTdefErr := defForScope(def, s, tok.ScopeID)
+	if humanTdefErr != nil {
+		return StepResult{}, humanTdefErr
+	}
+	// A wait-mode manual UserTask (Manual && !ManualImmediate) is a form-less
+	// checkpoint: it completes on a bare trigger only. Reject a non-empty
+	// completion payload before any output is merged (ADR-0118).
+	if n, ok := humanTdef.Node(tok.NodeID); ok {
+		if ut, ok := n.(activity.UserTask); ok && ut.Manual && !ut.ManualImmediate && len(t.Output) > 0 {
+			return StepResult{}, fmt.Errorf("%w: node %q", ErrManualTaskPayload, tok.NodeID)
+		}
+	}
 	mergeVars(s, t.Output)
 	s.setVisitActor(tok.ID, tok.NodeID, t.Actor.ID)
 	task.State = humantask.Completed
 	tok.State = TokenActive
 	tok.AwaitCommand = ""
-	humanTdef, humanTdefErr := defForScope(def, s, tok.ScopeID)
-	if humanTdefErr != nil {
-		return StepResult{}, humanTdefErr
-	}
 	cmds := []Command{UpdateTask{Task: *task}}
 	// Cancel any deadline or reminder timers that were guarding this task.
 	for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
