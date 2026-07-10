@@ -476,6 +476,17 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			popDeferred:          true,
 			consumePendingCancel: true,
 		}
+		if archiveKey == "" {
+			// Scope-wide compensate throw (ADR-0120): the drained records came from
+			// the throwing scope's LIVE list (RootCompensations or a sub-scope's
+			// Compensations), not an archive entry. Clear them here (compensate-once)
+			// so a second throw or a later cancel/rollback cannot re-run the
+			// already-run compensations. A targeted throw (archiveKey != "") instead
+			// deletes only its archive entry above and RETAINS RootCompensations,
+			// which hold unrelated outer records a later walk must still compensate.
+			plan.doClearRecords = true
+			plan.clearScope = scopeID
+		}
 	case toNode != "":
 		// Partial rollback: resume at toNode. Records are RETAINED (not cleared):
 		// the instance keeps running and a later full walk must still see them.
@@ -547,14 +558,17 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 	if plan.resume && plan.consumePendingCancel && s.PendingCancel {
 		s.PendingCancel = false
 		// Clear THIS walk's own already-compensated records BEFORE the cancel walk
-		// so it cannot re-run them (double-compensation). The throw walk deleted
-		// its archive above (deleteArchive) and RETAINS RootCompensations — those
-		// are genuinely-uncompensated outer records the cancel walk must still
-		// compensate (doClearRecords == false, skipped here). A full-reverse walk
-		// compensated ALL of RootCompensations, so it clears them here
-		// (doClearRecords == true): the re-issued beginCompensation then finds zero
-		// eligible records and drops straight into the terminate branch
-		// (FailInstance{"cancelled"}, StatusTerminated) — the correct outcome.
+		// so it cannot re-run them (double-compensation). A TARGETED throw walk
+		// (archiveKey != "") deleted its archive above (deleteArchive) and RETAINS
+		// RootCompensations — those are genuinely-uncompensated outer records the
+		// cancel walk must still compensate (doClearRecords == false, skipped here).
+		// A SCOPE-WIDE throw walk (archiveKey == "", ADR-0120) instead compensated
+		// the throwing scope's own live records, so — like the full-reverse walk —
+		// it clears them here (doClearRecords == true): the re-issued
+		// beginCompensation then finds zero eligible records in that scope and drops
+		// straight into the terminate branch (FailInstance{"cancelled"},
+		// StatusTerminated) — the correct compensate-once outcome. A full-reverse
+		// walk compensated ALL of RootCompensations and clears them the same way.
 		if plan.doClearRecords {
 			clearRecords(s, plan.clearScope)
 		}
