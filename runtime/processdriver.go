@@ -102,6 +102,12 @@ type ProcessDriver struct {
 	// validate.ValidationStrategy by its descriptor (kind + schema). Always
 	// non-nil after NewProcessDriver.
 	gate *validation.Gate
+
+	// es holds the event-based-start bookkeeping (ADR-0121): the pure
+	// start-node resolution helpers (message/signal/timer) plus the
+	// active-correlation map that makes a message-start idempotent per
+	// (name, correlation key). Always non-nil after NewProcessDriver.
+	es *eventStart
 }
 
 // NewProcessDriver constructs a ProcessDriver with sensible in-memory defaults
@@ -143,6 +149,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		actionTimeout: defaultActionTimeout,
 		msgWaiters:    make(map[msgKey]string),
 		gate:          validation.NewGate(),
+		es:            newEventStart(),
 	}
 	for _, o := range opts {
 		o(driver)
