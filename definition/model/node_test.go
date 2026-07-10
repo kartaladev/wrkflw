@@ -272,16 +272,19 @@ func TestIntermediateThrowEventConstructor(t *testing.T) {
 	}
 }
 
-func TestIntermediateThrowEventCompensateRef(t *testing.T) {
-	n := event.NewIntermediateThrow("comp-throw",
+func TestCompensateThrowEventConstructor(t *testing.T) {
+	n := event.NewCompensateThrow("comp-throw",
 		event.WithCompensateRef("my-task"),
 	)
-	ite, ok := n.(event.IntermediateThrowEvent)
-	if !ok {
-		t.Fatalf("node is %T, want event.IntermediateThrowEvent", n)
+	if n.Kind() != model.KindCompensationThrowEvent {
+		t.Fatalf("Kind() = %v, want KindCompensationThrowEvent", n.Kind())
 	}
-	if ite.CompensateRef != "my-task" {
-		t.Fatalf("CompensateRef = %q", ite.CompensateRef)
+	cte, ok := n.(event.CompensationThrowEvent)
+	if !ok {
+		t.Fatalf("node is %T, want event.CompensationThrowEvent", n)
+	}
+	if cte.CompensateRef != "my-task" {
+		t.Fatalf("CompensateRef = %q", cte.CompensateRef)
 	}
 }
 

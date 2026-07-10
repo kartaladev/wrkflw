@@ -97,7 +97,7 @@ var (
 	// source — no parallel/inclusive split can deliver two concurrent tokens toward
 	// it — so it would deadlock at runtime waiting for branches that never arrive.
 	ErrUnpairedJoin = errors.New("workflow-definition: unpaired parallel join")
-	// ErrCompensateRefNotFound is returned when a KindIntermediateThrowEvent node
+	// ErrCompensateRefNotFound is returned when a KindCompensationThrowEvent node
 	// carries a non-empty CompensateRef that does not match any node ID in the
 	// enclosing process definition. The referenced node must exist so the engine
 	// can resolve the compensation target at execution time.
@@ -503,13 +503,12 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 
-	// CompensateRef: a KindIntermediateThrowEvent or KindCompensationThrowEvent
-	// with a non-empty CompensateRef must reference a node that exists in this
-	// definition. An empty CompensateRef means "scope-wide compensation" and is
-	// always valid. This rule recurses into sub-processes automatically (it
-	// lives inside validate).
+	// CompensateRef: a KindCompensationThrowEvent with a non-empty CompensateRef
+	// must reference a node that exists in this definition. An empty
+	// CompensateRef means "scope-wide compensation" and is always valid. This
+	// rule recurses into sub-processes automatically (it lives inside validate).
 	for _, n := range d.Nodes {
-		if n.Kind() != KindIntermediateThrowEvent && n.Kind() != KindCompensationThrowEvent {
+		if n.Kind() != KindCompensationThrowEvent {
 			continue
 		}
 		compensateRef := toWire(n).CompensateRef

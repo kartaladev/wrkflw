@@ -10,8 +10,7 @@ import (
 
 // TestNewCompensateThrow covers construction of a CompensationThrowEvent: the
 // scope-wide (whole-instance) default, scope-local narrowing, and a targeted
-// throw via WithCompensateTargetRef (temporary name — see options.go for the
-// rename-to-WithCompensateRef note tracked for ADR-0120 Task 4).
+// throw via WithCompensateRef.
 func TestNewCompensateThrow(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -35,7 +34,7 @@ func TestNewCompensateThrow(t *testing.T) {
 					t.Fatal("want ScopeLocal")
 				}
 			}},
-		{"targeted", func() model.Node { return event.NewCompensateThrow("rb", event.WithCompensateTargetRef("sub")) },
+		{"targeted", func() model.Node { return event.NewCompensateThrow("rb", event.WithCompensateRef("sub")) },
 			func(t *testing.T, n model.Node) {
 				if n.(event.CompensationThrowEvent).CompensateRef != "sub" {
 					t.Fatal("want CompensateRef=sub")
@@ -78,7 +77,7 @@ func TestCompensationThrowWireRoundTrip(t *testing.T) {
 					t.Fatal("ScopeLocal lost in round-trip")
 				}
 			}},
-		{"targeted", event.NewCompensateThrow("rb-target", event.WithCompensateTargetRef("sub")),
+		{"targeted", event.NewCompensateThrow("rb-target", event.WithCompensateRef("sub")),
 			func(t *testing.T, n model.Node) {
 				if n.(event.CompensationThrowEvent).CompensateRef != "sub" {
 					t.Fatal("CompensateRef lost in round-trip")

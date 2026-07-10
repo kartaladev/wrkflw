@@ -98,7 +98,8 @@ kind-specific data generically).
 | `KindEndEvent` | `event.NewEnd(id, opts...)` (`WithName`, `WithForceTermination(reason, outcome)`) |
 | `KindErrorEndEvent` | `event.NewErrorEnd(id, errorCode, name...)` |
 | `KindIntermediateCatchEvent` | `event.NewIntermediateCatch(id, opts...)` |
-| `KindIntermediateThrowEvent` | `event.NewIntermediateThrow(id, opts...)` |
+| `KindIntermediateThrowEvent` | `event.NewIntermediateThrow(id, opts...)` (signal broadcast only — see `NewCompensateThrow` for compensation) |
+| `KindCompensationThrowEvent` | `event.NewCompensateThrow(id, opts...)` (targeted or scope-wide compensation throw, ADR-0120) |
 | `KindBoundaryEvent` | `event.NewBoundary(id, attachedTo, opts...)` |
 | `KindEventSubProcess` | `event.NewEventSubProcess(id, *ProcessDefinition, opts...)` |
 
@@ -157,10 +158,12 @@ task := activity.NewServiceTask("charge",
 (start/catch/boundary); `WithSignalName` (start/catch/boundary); start triggers
 `WithStartTimer`; catch
 `WithCatchTimer` / `WithWaitDeadline` /
-`WithDeadlineAction` / `WithWaitAction`; throw `WithThrowSignalName` / `WithCompensateRef` /
+`WithDeadlineAction` / `WithWaitAction`; throw `WithThrowSignalName` /
 `WithThrowName`; boundary `WithBoundaryTimer` /
 `WithBoundaryErrorCode` / `WithBoundaryNonInterrupting`;
-event-sub-process `WithEventSubProcessNonInterrupting`.
+event-sub-process `WithEventSubProcessNonInterrupting`; compensation throw
+(`event.NewCompensateThrow`, `KindCompensationThrowEvent`) `WithCompensateRef` /
+`WithScopeLocalCompensation` / `WithCompensateThrowName` (ADR-0120).
 
 > The start / catch / boundary trigger options are symmetric
 > (`WithStartTimer` / `WithCatchTimer` / `WithBoundaryTimer`, etc.).

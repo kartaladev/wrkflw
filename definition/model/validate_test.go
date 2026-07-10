@@ -678,49 +678,9 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		// CompensateRef validation rules
-		"compensation throw with dangling CompensateRef is rejected": {
-			// KindIntermediateThrowEvent with CompensateRef pointing to a non-existent node.
-			def: &model.ProcessDefinition{
-				ID: "p", Version: 1,
-				Nodes: []model.Node{
-					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
-					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("missing-node")),
-					event.NewEnd("end"),
-				},
-				Flows: []flow.SequenceFlow{
-					{ID: "f1", Source: "start", Target: "task"},
-					{ID: "f2", Source: "task", Target: "comp-throw"},
-					{ID: "f3", Source: "comp-throw", Target: "end"},
-				},
-			},
-			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
-			},
-		},
-		"compensation throw with valid CompensateRef is accepted": {
-			// KindIntermediateThrowEvent with CompensateRef pointing to a real node.
-			def: &model.ProcessDefinition{
-				ID: "p", Version: 1,
-				Nodes: []model.Node{
-					event.NewStart("start"),
-					activity.NewServiceTask("task", activity.WithTaskAction("do-work"), activity.WithCompensateAction("undo-work")),
-					event.NewIntermediateThrow("comp-throw", event.WithCompensateRef("task")),
-					event.NewEnd("end"),
-				},
-				Flows: []flow.SequenceFlow{
-					{ID: "f1", Source: "start", Target: "task"},
-					{ID: "f2", Source: "task", Target: "comp-throw"},
-					{ID: "f3", Source: "comp-throw", Target: "end"},
-				},
-			},
-			assert: func(t *testing.T, err error) {
-				require.NoError(t, err)
-			},
-		},
-		"normal intermediate throw event with no CompensateRef is unaffected": {
-			// KindIntermediateThrowEvent with empty CompensateRef (a normal signal throw)
-			// must not trigger ErrCompensateRefNotFound.
+		"normal intermediate throw event is unaffected": {
+			// KindIntermediateThrowEvent no longer carries CompensateRef at all (ADR-0120);
+			// a normal signal throw must not trigger ErrCompensateRefNotFound.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
@@ -745,7 +705,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
-					event.NewCompensateThrow("comp-throw", event.WithCompensateTargetRef("no-such")),
+					event.NewCompensateThrow("comp-throw", event.WithCompensateRef("no-such")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -766,7 +726,7 @@ func TestValidate(t *testing.T) {
 				Nodes: []model.Node{
 					event.NewStart("start"),
 					activity.NewServiceTask("task", activity.WithTaskAction("do-work"), activity.WithCompensateAction("undo-work")),
-					event.NewCompensateThrow("comp-throw", event.WithCompensateTargetRef("task")),
+					event.NewCompensateThrow("comp-throw", event.WithCompensateRef("task")),
 					event.NewEnd("end"),
 				},
 				Flows: []flow.SequenceFlow{
@@ -809,7 +769,7 @@ func TestValidate(t *testing.T) {
 						ID: "inner", Version: 1,
 						Nodes: []model.Node{
 							event.NewStart("ns"),
-							event.NewIntermediateThrow("nthrow", event.WithCompensateRef("no-such")),
+							event.NewCompensateThrow("nthrow", event.WithCompensateRef("no-such")),
 							event.NewEnd("ne"),
 						},
 						Flows: []flow.SequenceFlow{

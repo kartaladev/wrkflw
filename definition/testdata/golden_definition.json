@@ -169,8 +169,13 @@
       "id": "emit",
       "kind": "intermediateThrowEvent",
       "name": "Emit",
-      "compensateRef": "charge",
       "signalName": "done"
+    },
+    {
+      "id": "compensate",
+      "kind": "compensationThrowEvent",
+      "name": "Compensate",
+      "compensateRef": "charge"
     },
     {
       "id": "timeout",

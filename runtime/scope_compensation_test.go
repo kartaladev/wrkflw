@@ -33,7 +33,7 @@ import (
 //
 //	start → sub(KindSubProcess: inner-start → inner-svc(ServiceTask, Action:"book",
 //	            CompensateAction:"cancel-book") → inner-end)
-//	       → compThrow(KindIntermediateThrowEvent, CompensateRef:"sub")
+//	       → compThrow(KindCompensationThrowEvent, CompensateRef:"sub")
 //	       → end
 //
 // The compensation throw refers to "sub". After the sub-process completes
@@ -58,7 +58,7 @@ func scopeCompensationDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			// Compensation throw: runs ArchivedCompensations["sub"] then resumes.
-			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewCompensateThrow("compThrow", event.WithCompensateRef("sub")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{

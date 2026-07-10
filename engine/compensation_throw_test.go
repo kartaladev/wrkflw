@@ -262,7 +262,7 @@ func targetedNewKindDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			event.NewCompensateThrow("tgt", event.WithCompensateTargetRef("sub")),
+			event.NewCompensateThrow("tgt", event.WithCompensateRef("sub")),
 			activity.NewUserTask("afterThrow"),
 			event.NewEnd("end"),
 		},

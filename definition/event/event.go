@@ -106,12 +106,11 @@ func (IntermediateCatchEvent) Kind() model.NodeKind {
 	return model.KindIntermediateCatchEvent
 }
 
-// IntermediateThrowEvent throws a signal or triggers a compensation.
+// IntermediateThrowEvent throws a signal (broadcast to every waiting instance).
+// Compensation throws are a separate node kind — see CompensationThrowEvent.
 type IntermediateThrowEvent struct {
 	model.Base
 	SignalName string
-	// CompensateRef names the node whose compensation to run (empty = scope-wide).
-	CompensateRef string
 }
 
 // Kind returns model.KindIntermediateThrowEvent.
@@ -229,8 +228,8 @@ func NewIntermediateCatch(id string, opts ...CatchOption) model.Node {
 	return n
 }
 
-// NewIntermediateThrow constructs an IntermediateThrowEvent. Use WithThrowSignalName,
-// WithCompensateRef, or WithThrowName.
+// NewIntermediateThrow constructs an IntermediateThrowEvent. Use WithThrowSignalName
+// or WithThrowName. For compensation, use NewCompensateThrow instead.
 func NewIntermediateThrow(id string, opts ...ThrowOption) model.Node {
 	n := IntermediateThrowEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
@@ -240,7 +239,7 @@ func NewIntermediateThrow(id string, opts ...ThrowOption) model.Node {
 }
 
 // NewCompensateThrow constructs a compensation throw. With no options it is a
-// scope-wide, whole-instance throw; WithCompensateTargetRef makes it targeted,
+// scope-wide, whole-instance throw; WithCompensateRef makes it targeted,
 // WithScopeLocalCompensation narrows the root breadth, WithCompensateThrowName
 // sets a display name.
 func NewCompensateThrow(id string, opts ...CompensateThrowOption) model.Node {
@@ -352,11 +351,10 @@ func init() {
 	model.RegisterKind(model.KindIntermediateThrowEvent, model.NodeSpec{
 		Name: "intermediateThrowEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return IntermediateThrowEvent{Base: b, SignalName: w.SignalName, CompensateRef: w.CompensateRef}
+			return IntermediateThrowEvent{Base: b, SignalName: w.SignalName}
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
-			v := n.(IntermediateThrowEvent)
-			w.SignalName, w.CompensateRef = v.SignalName, v.CompensateRef
+			w.SignalName = n.(IntermediateThrowEvent).SignalName
 		},
 	})
 	model.RegisterKind(model.KindCompensationThrowEvent, model.NodeSpec{

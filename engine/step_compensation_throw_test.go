@@ -2,13 +2,15 @@ package engine_test
 
 // step_compensation_throw_test.go — Phase 3: compensation throw event.
 //
-// Tests the KindIntermediateThrowEvent with CompensateRef: it runs the archived
-// sub-process compensations in reverse order, then RESUMES past the throw node
-// (continuing normal execution), and deletes the archive entry (single ownership
-// — no double-compensation). All tests are strict RED-first per the TDD discipline.
+// Tests the KindCompensationThrowEvent (event.NewCompensateThrow) with a
+// targeted CompensateRef: it runs the archived sub-process compensations in
+// reverse order, then RESUMES past the throw node (continuing normal
+// execution), and deletes the archive entry (single ownership — no
+// double-compensation). All tests are strict RED-first per the TDD discipline.
 //
 // Design ref: docs/specs/2026-06-23-scope-targeted-compensation-design.md §2.2
-// ADR: 0039
+// ADR: 0039, 0120 (targeted throw migrated off IntermediateThrowEvent onto the
+// dedicated CompensationThrowEvent kind)
 
 import (
 	"testing"
@@ -30,7 +32,7 @@ import (
 // throwDefWithCompensableSubProcess returns a process definition:
 //
 //	start → sub(inner-start → inner-svc(CompensateAction:"cancel-inner") → inner-end)
-//	      → compThrow(KindIntermediateThrowEvent, CompensateRef:"sub")
+//	      → compThrow(KindCompensationThrowEvent, CompensateRef:"sub")
 //	      → afterThrow(UserTask or ServiceTask — keeps execution parked after resume)
 //	      → end
 //
@@ -56,7 +58,7 @@ func throwDefWithCompensableSubProcess() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
 			// Compensation throw: when reached, runs ArchivedCompensations["sub"].
-			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewCompensateThrow("compThrow", event.WithCompensateRef("sub")),
 			// After the throw resumes, we park here (UserTask) so the test can observe
 			// that the token arrived at afterThrow and then drove to end.
 			activity.NewUserTask("afterThrow"),
@@ -214,8 +216,8 @@ func secondThrowDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			event.NewIntermediateThrow("compThrow1", event.WithCompensateRef("sub")),
-			event.NewIntermediateThrow("compThrow2", event.WithCompensateRef("sub")),
+			event.NewCompensateThrow("compThrow1", event.WithCompensateRef("sub")),
+			event.NewCompensateThrow("compThrow2", event.WithCompensateRef("sub")),
 			event.NewEnd("end"),
 		},
 		Flows: []flow.SequenceFlow{
@@ -312,7 +314,7 @@ func throwThenCancelDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewCompensateThrow("compThrow", event.WithCompensateRef("sub")),
 			activity.NewUserTask("userTask"),
 			event.NewEnd("end"),
 		},
@@ -509,7 +511,7 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			activity.NewServiceTask("rootSvc", activity.WithTaskAction("book-root"), activity.WithCompensateAction("cancel-root")),
 			activity.NewSubProcess("sub", nested),
-			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewCompensateThrow("compThrow", event.WithCompensateRef("sub")),
 			activity.NewUserTask("afterThrow"),
 			event.NewEnd("end"),
 		},
@@ -696,7 +698,7 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewSubProcess("sub", nested),
-			event.NewIntermediateThrow("compThrow", event.WithCompensateRef("sub")),
+			event.NewCompensateThrow("compThrow", event.WithCompensateRef("sub")),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "sub"},
