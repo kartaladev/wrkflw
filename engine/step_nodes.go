@@ -211,6 +211,13 @@ func (startEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 type endEventStrategy struct{}
 
 func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	// Force-termination (ADR-0119) short-circuits the normal per-scope completion
+	// logic below: instead of consuming only this token, it cancels ALL remaining
+	// parallel work and ends the whole instance at the outcome-selected status.
+	if ev, ok := node.(event.EndEvent); ok && ev.ForceTermination {
+		return forceTerminate(c, ev)
+	}
+
 	var cmds []Command
 	// An EndEvent behaves differently depending on whether the token is at the
 	// root scope or inside a sub-process scope:
@@ -445,6 +452,46 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	// stopped=true.
 	tok.State = TokenWaitingCommand
 	return cmds, false, nil
+}
+
+// forceTerminate implements a force-termination end event (ADR-0119): it cancels
+// all remaining parallel work — open tasks, timers, boundaries/arms, and event
+// sub-process arms — then ends the instance at the outcome-selected status
+// (OutcomeAbort → StatusTerminated + FailInstance, OutcomeComplete →
+// StatusCompleted + CompleteInstance). It mirrors the immediate-termination tail
+// of handleCancelRequested and returns halt=true so drive() exits immediately:
+// the instance is terminal and its tokens have been dropped.
+func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
+	ended := c.at
+	c.s.EndedAt = &ended
+	// Close every open visit and drop all tokens (including this end-event token).
+	for i := range c.s.Tokens {
+		tok := &c.s.Tokens[i]
+		c.s.closeVisit(tok.ID, tok.NodeID, c.at)
+	}
+	c.s.Tokens = nil
+
+	// Reconcile open human tasks before the terminal command (matches ADR-0088).
+	cmds := c.s.cancelOpenTasks()
+
+	if ev.Outcome == event.OutcomeAbort {
+		c.s.Status = StatusTerminated
+		reason := ev.TerminationReason
+		if reason == "" {
+			reason = "force-terminated"
+		}
+		cmds = append(cmds, FailInstance{Err: reason})
+	} else {
+		c.s.Status = StatusCompleted
+		cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+	}
+
+	cmds = append(cmds, c.s.cancelAllTimers()...)
+	cmds = append(cmds, c.s.cancelAllArmsAndBoundaries()...)
+	for _, timerID := range c.s.removeAllEventSubprocessArms() {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
+	return cmds, true, nil
 }
 
 // subProcessStrategy handles KindSubProcess node entry.
