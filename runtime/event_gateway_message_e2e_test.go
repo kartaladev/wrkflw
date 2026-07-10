@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // eventGatewayCorrelatedMsgDef returns a definition whose event-based gateway
@@ -72,8 +73,10 @@ func TestDeliverMessageFiresEventGatewayArm(t *testing.T) {
 		}),
 	})
 
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc))
 	def := eventGatewayCorrelatedMsgDef()
+	reg := kernel.NewMemDefinitionRegistry()
+	require.NoError(t, reg.Register(def))
+	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 	st, err := r.Drive(ctx, def, "order-fast", map[string]any{"order": "order-fast"})
 	require.NoError(t, err)
@@ -83,7 +86,7 @@ func TestDeliverMessageFiresEventGatewayArm(t *testing.T) {
 	// ApplyTrigger the correlated message. It must route to the parked instance even
 	// though no token carries AwaitMessage == "payment-confirmed" (the event-gateway
 	// arm holds it), and the correlation key must match the resolved value.
-	err = r.DeliverMessage(ctx, def, "payment-confirmed", "order-fast", map[string]any{"amount": 4200})
+	err = r.DeliverMessage(ctx, "payment-confirmed", "order-fast", map[string]any{"amount": 4200})
 	require.NoError(t, err)
 
 	final, _, err := store.Load(ctx, "order-fast")

@@ -101,13 +101,7 @@ func DeliverMessage(ctx context.Context, svc service.Service, in MessageInput) (
 	if err := Validate(&in); err != nil {
 		return 0, nil, err
 	}
-	// See StartInstance: a zero Qualifier passes validate:"required", so enforce
-	// def_ref presence explicitly for the "missing def_ref → 400" behavior.
-	if in.DefRef.ID == "" {
-		return 0, nil, fmt.Errorf("%w: def_ref is required", ErrBadInput)
-	}
 	if err := svc.DeliverMessage(ctx, service.DeliverMessageRequest{
-		DefRef:         in.DefRef,
 		Name:           in.Name,
 		CorrelationKey: in.CorrelationKey,
 		Payload:        in.Payload,

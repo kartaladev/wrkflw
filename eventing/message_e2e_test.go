@@ -17,6 +17,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 	"github.com/zakyalvan/krtlwrkflw/persistence"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // receiverDef returns a minimal process that parks on a ReceiveTask awaiting "OrderPlaced":
@@ -91,11 +92,16 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 3. Runner (shared by receiver and sender) ────────────────────────────
-	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
+	// The driver resolves the correlated instance's definition from its own
+	// snapshot via the registry (ADR-0121), so both definitions are registered.
+	recvDef := receiverDef()
+	reg := kernel.NewMemDefinitionRegistry()
+	require.NoError(t, reg.Register(recvDef))
+	require.NoError(t, reg.Register(senderDef()))
+	driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithDefinitions(reg))
 	require.NoError(t, err)
 
 	// ── 4. Park the receiver instance ────────────────────────────────────────
-	recvDef := receiverDef()
 	recvState, err := driver.Drive(ctx, recvDef, "recv-inst-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, recvState.Status,
@@ -130,9 +136,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	// ── 7. Read from GoChannel and call the message handler ──────────────────
 	// NewMessageHandler decodes the message.OrderPlaced payload and calls deliver,
 	// which routes to runner.DeliverMessage to resume the parked receiver.
-	deliver := eventing.NewMessageHandler(func(hCtx context.Context, name, key string, vars map[string]any) error {
-		return driver.DeliverMessage(hCtx, recvDef, name, key, vars)
-	})
+	deliver := eventing.NewMessageHandler(driver.DeliverMessage)
 
 	// Drain the GoChannel until we see and process the message.OrderPlaced message.
 	// Other outbox events (instance.completed for the sender) land on different

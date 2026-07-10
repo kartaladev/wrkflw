@@ -31,12 +31,12 @@ func TestSignalInputJSONTags(t *testing.T) {
 }
 
 func TestMessageInputJSONTags(t *testing.T) {
-	const in = `{"def_ref":"order","name":"payment","correlation_key":"ord-1","payload":{"amt":10}}`
+	const in = `{"name":"payment","correlation_key":"ord-1","payload":{"amt":10}}`
 	var got httpcore.MessageInput
 	if err := json.Unmarshal([]byte(in), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.DefRef != model.Latest("order") || got.Name != "payment" || got.CorrelationKey != "ord-1" {
+	if got.Name != "payment" || got.CorrelationKey != "ord-1" {
 		t.Fatalf("wire tags mismatch: %+v", got)
 	}
 }

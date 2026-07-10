@@ -114,11 +114,18 @@ func main() {
 	// SignalBus is needed (that is for broadcast signals). The runtime registers the
 	// event-gateway message arm as a message waiter, so a delivered message with the
 	// matching name+correlation key resumes exactly this instance.
+	// The driver resolves a correlated instance's definition from its own
+	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	reg := kernel.NewMemDefinitionRegistry()
+	if err := reg.Register(def); err != nil {
+		log.Fatal("register:", err)
+	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
 		runtime.WithScheduler(sched),
+		runtime.WithDefinitions(reg),
 	)
 	if err != nil {
 		log.Fatal("driver:", err)
@@ -138,7 +145,7 @@ func main() {
 	// the resolved value of the `order` variable) targets exactly this instance;
 	// order-slow, parked on the same node, is untouched.
 	fmt.Printf("payment confirmation arrives for %s\n", fast)
-	if err := driver.DeliverMessage(ctx, def, "payment-confirmed", fast, map[string]any{"order": fast}); err != nil {
+	if err := driver.DeliverMessage(ctx, "payment-confirmed", fast, map[string]any{"order": fast}); err != nil {
 		log.Fatal("deliver payment:", err)
 	}
 	select {

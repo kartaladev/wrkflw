@@ -116,10 +116,17 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
+	// The driver resolves a correlated instance's definition from its own
+	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	reg := kernel.NewMemDefinitionRegistry()
+	if err := reg.Register(def); err != nil {
+		log.Fatal("register:", err)
+	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
+		runtime.WithDefinitions(reg),
 	)
 	if err != nil {
 		log.Fatal("driver:", err)
@@ -145,7 +152,7 @@ func main() {
 	// 2) ApplyTrigger the reminder message: the NON-INTERRUPTING boundary fires once.
 	//    The reminder runs, but the approval task stays parked and running.
 	fmt.Println("delivering order.remind (non-interrupting), correlated to this order...")
-	if err := driver.DeliverMessage(ctx, def, "order.remind", instanceID, nil); err != nil {
+	if err := driver.DeliverMessage(ctx, "order.remind", instanceID, nil); err != nil {
 		log.Fatal("deliver remind:", err)
 	}
 	afterRemind, _, err := store.Load(ctx, instanceID)
@@ -158,7 +165,7 @@ func main() {
 	// 3) ApplyTrigger the cancel message: the INTERRUPTING boundary fires — the human
 	//    task is Cancelled and the instance completes via the cancelled path.
 	fmt.Println("delivering order.cancel (interrupting), correlated to this order...")
-	if err := driver.DeliverMessage(ctx, def, "order.cancel", instanceID, nil); err != nil {
+	if err := driver.DeliverMessage(ctx, "order.cancel", instanceID, nil); err != nil {
 		log.Fatal("deliver cancel:", err)
 	}
 	final, _, err := store.Load(ctx, instanceID)

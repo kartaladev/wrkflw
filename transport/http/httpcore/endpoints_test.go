@@ -323,18 +323,9 @@ func TestDeliverMessage(t *testing.T) {
 		in     httpcore.MessageInput
 		assert func(t *testing.T, status int, body any, err error)
 	}{
-		"missing def_ref → ErrBadInput": {
-			setup: func(_ service.Service) {},
-			in:    httpcore.MessageInput{DefRef: model.Qualifier{}, Name: "order-shipped"},
-			assert: func(t *testing.T, _ int, _ any, err error) {
-				if !errors.Is(err, httpcore.ErrBadInput) {
-					t.Fatalf("want ErrBadInput, got %v", err)
-				}
-			},
-		},
 		"missing name → ErrBadInput": {
 			setup: func(_ service.Service) {},
-			in:    httpcore.MessageInput{DefRef: model.Version("message-catch-order-shipped", 1), Name: ""},
+			in:    httpcore.MessageInput{Name: ""},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if !errors.Is(err, httpcore.ErrBadInput) {
 					t.Fatalf("want ErrBadInput, got %v", err)
@@ -352,7 +343,6 @@ func TestDeliverMessage(t *testing.T) {
 				}
 			},
 			in: httpcore.MessageInput{
-				DefRef:         model.Version("message-catch-order-shipped", 1),
 				Name:           "order-shipped",
 				CorrelationKey: "42",
 				Payload:        map[string]any{"shipped": true},
@@ -369,15 +359,18 @@ func TestDeliverMessage(t *testing.T) {
 				}
 			},
 		},
-		"unknown definition → service error propagated": {
+		"no matching waiter or message-start → 202 no-op": {
 			setup: func(_ service.Service) {},
-			in:    httpcore.MessageInput{DefRef: model.Version("no-such-def", 1), Name: "order-shipped"},
+			in:    httpcore.MessageInput{Name: "order-shipped", CorrelationKey: "999"},
 			assert: func(t *testing.T, status int, body any, err error) {
-				if err == nil {
-					t.Fatal("want error for unknown definition")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
 				}
-				if status != 0 || body != nil {
-					t.Fatalf("want (0, nil) on error, got (%d, %v)", status, body)
+				if status != http.StatusAccepted {
+					t.Fatalf("want 202, got %d", status)
+				}
+				if body != nil {
+					t.Fatalf("want nil body, got %v", body)
 				}
 			},
 		},

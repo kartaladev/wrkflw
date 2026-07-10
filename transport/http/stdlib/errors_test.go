@@ -119,8 +119,11 @@ func TestInstanceRoutes_Signal_NotFound(t *testing.T) {
 	}
 }
 
-// TestMessageRoutes_ServiceError exercises the error path when service.DeliverMessage fails.
-func TestMessageRoutes_ServiceError(t *testing.T) {
+// TestMessageRoutes_NoMatchNoop verifies the message route returns 202 when the
+// message matches neither a running waiter nor a message-start definition: with
+// no def ref supplied (ADR-0121) an unmatched delivery is a clean no-op, not an
+// error.
+func TestMessageRoutes_NoMatchNoop(t *testing.T) {
 	t.Parallel()
 
 	_, svc := transporttest.NewHarness(t)
@@ -128,12 +131,11 @@ func TestMessageRoutes_ServiceError(t *testing.T) {
 	stdlib.Mount(mux, svc)
 
 	req := newPostRequest(t, "/messages", map[string]any{
-		"def_ref": "no-such-def:1",
-		"name":    "order-shipped",
+		"name": "order-shipped",
 	})
 	rr := do(mux, req)
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("want 404 message service error, got %d (body=%s)", rr.Code, rr.Body)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("want 202 no-op, got %d (body=%s)", rr.Code, rr.Body)
 	}
 }
 

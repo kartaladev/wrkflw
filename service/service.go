@@ -58,8 +58,10 @@ type Messaging interface {
 	// ErrConflict when the instance has already reached a terminal state.
 	DeliverSignal(ctx context.Context, req DeliverSignalRequest) (ProcessInstance, error)
 
-	// DeliverMessage routes a message to the waiting instance via the driver's
-	// internal message-waiter table. The definition is resolved by req.DefRef.
+	// DeliverMessage routes a message to a waiting instance via the driver's
+	// internal message-waiter table, or starts a new instance from a unique
+	// message-start event when none is waiting (ADR-0121). The definition is
+	// resolved by the driver, not supplied by the caller.
 	DeliverMessage(ctx context.Context, req DeliverMessageRequest) error
 }
 
@@ -352,14 +354,14 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 	return NewProcessInstance(def, newSt), nil
 }
 
-// DeliverMessage routes a message to the waiting instance via the driver's
-// message-waiter table. No-op when no instance is waiting.
+// DeliverMessage routes a message to a waiting instance via the driver's
+// message-waiter table, or starts a new instance from a unique message-start
+// event when none is waiting (ADR-0121). The driver resolves the definition
+// itself — from the correlated instance's own snapshot, or from the registered
+// message-start definitions — so the caller no longer supplies a def reference.
+// No-op when the message matches neither a waiting instance nor a message-start.
 func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
-	def, err := e.reg.Lookup(ctx, req.DefRef)
-	if err != nil {
-		return fmt.Errorf("workflow-service: deliver message: %w", err)
-	}
-	if err := e.driver.DeliverMessage(ctx, def, req.Name, req.CorrelationKey, req.Payload); err != nil {
+	if err := e.driver.DeliverMessage(ctx, req.Name, req.CorrelationKey, req.Payload); err != nil {
 		// No ErrInvalidTransition classification here: DeliverMessage routes via
 		// the driver's waiter table and no-ops when no instance is waiting, so a
 		// wrong-state error is not produced on this path (see ADR-0026).

@@ -373,7 +373,6 @@ func TestMessageRoutes_DeliverMessage_202(t *testing.T) {
 	}
 
 	resp := post(t, srv, "/messages", map[string]any{
-		"def_ref":         "message-catch-order-shipped:1",
 		"name":            "order-shipped",
 		"correlation_key": "42",
 	})
@@ -387,8 +386,8 @@ func TestMessageRoutes_DeliverMessage_400_MissingField(t *testing.T) {
 	srv, _ := newSrv(t)
 
 	resp := post(t, srv, "/messages", map[string]any{
-		"name": "order-shipped",
-		// missing def_ref
+		"correlation_key": "42",
+		// missing name (the only required field)
 	})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)

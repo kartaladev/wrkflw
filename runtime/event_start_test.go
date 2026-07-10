@@ -262,15 +262,3 @@ func TestTimerStartDefs(t *testing.T) {
 		})
 	}
 }
-
-// TestNewEventStart verifies newEventStart returns a ready-to-use zero state:
-// non-nil active map, no entries.
-func TestNewEventStart(t *testing.T) {
-	t.Parallel()
-
-	es := newEventStart()
-
-	assert.NotNil(t, es)
-	assert.NotNil(t, es.active)
-	assert.Empty(t, es.active)
-}

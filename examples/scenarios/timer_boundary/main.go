@@ -108,11 +108,18 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 
+	// The driver resolves a correlated instance's definition from its own
+	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	reg := kernel.NewMemDefinitionRegistry()
+	if err := reg.Register(def); err != nil {
+		log.Fatal("register:", err)
+	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
 		runtime.WithScheduler(sched),
+		runtime.WithDefinitions(reg),
 	)
 	if err != nil {
 		log.Fatal("driver:", err)
@@ -133,7 +140,7 @@ func main() {
 	// order-ontime: deliver the confirmation before the deadline. The ReceiveTask
 	// resumes and the timer boundary is disarmed (it will never fire).
 	fmt.Println("delivering payment.confirmed for order-ontime (before the deadline)...")
-	if derr := driver.DeliverMessage(ctx, def, "payment.confirmed", "order-ontime", nil); derr != nil {
+	if derr := driver.DeliverMessage(ctx, "payment.confirmed", "order-ontime", nil); derr != nil {
 		log.Fatal("deliver:", derr)
 	}
 

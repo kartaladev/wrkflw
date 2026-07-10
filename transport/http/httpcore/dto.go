@@ -24,12 +24,13 @@ type SignalInput struct {
 }
 
 // MessageInput is the request body for POST /messages (deliver a message).
-// DefRef and Name are required on the wire.
+// Name is required on the wire; the definition is resolved by the engine from
+// the correlated instance or a message-start event (ADR-0121), so no def_ref is
+// carried.
 type MessageInput struct {
-	DefRef         model.Qualifier `json:"def_ref"         validate:"required"`
-	Name           string          `json:"name"            validate:"required"`
-	CorrelationKey string          `json:"correlation_key"`
-	Payload        map[string]any  `json:"payload"`
+	Name           string         `json:"name"            validate:"required"`
+	CorrelationKey string         `json:"correlation_key"`
+	Payload        map[string]any `json:"payload"`
 }
 
 // ClaimInput is the request body for POST /tasks/{token}/claim.

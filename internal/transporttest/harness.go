@@ -70,17 +70,20 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 		"greet": greetAction{},
 	})
 
+	// NewMapDefinitionRegistry indexes each definition under both its short ("id")
+	// and versioned ("id:version") keys internally. The driver resolves a
+	// correlated instance's definition from this registry (ADR-0121), so it is
+	// wired into the driver as well as the service facade.
+	reg := kernel.NewMapDefinitionRegistry(defs...)
+
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
+		runtime.WithDefinitions(reg),
 	)
 	require.NoError(t, err)
-
-	// NewMapDefinitionRegistry indexes each definition under both its short ("id")
-	// and versioned ("id:version") keys internally.
-	reg := kernel.NewMapDefinitionRegistry(defs...)
 
 	svc, err := service.NewEngine(
 		service.WithProcessDriver(driver),

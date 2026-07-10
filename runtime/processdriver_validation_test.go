@@ -171,8 +171,10 @@ func TestValidateInputNestedMessage(t *testing.T) {
 
 			fc := clockwork.NewFakeClock()
 			store := runtimetest.MustMemStore(t)
-			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
 			def := nestedMessageValidationDef()
+			reg := kernel.NewMemDefinitionRegistry()
+			require.NoError(t, reg.Register(def))
+			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 			const instanceID = "nested-msg-1"
 			parked, err := r.Drive(t.Context(), def, instanceID, nil)
@@ -182,7 +184,7 @@ func TestValidateInputNestedMessage(t *testing.T) {
 			before, _, err := store.Load(t.Context(), instanceID)
 			require.NoError(t, err)
 
-			derr := r.DeliverMessage(t.Context(), def, "proceed", "", tc.payload)
+			derr := r.DeliverMessage(t.Context(), "proceed", "", tc.payload)
 
 			after, _, loadErr := store.Load(t.Context(), instanceID)
 			require.NoError(t, loadErr)
@@ -243,8 +245,10 @@ func TestValidateInput_NoDescriptorCollisionAcrossScopes(t *testing.T) {
 
 	fc := clockwork.NewFakeClock()
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
 	def := sameIDDifferentSchemaDef()
+	reg := kernel.NewMemDefinitionRegistry()
+	require.NoError(t, reg.Register(def))
+	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 	const instanceID = "collide-1"
 	parked, err := r.Drive(t.Context(), def, instanceID, nil)
@@ -252,11 +256,11 @@ func TestValidateInput_NoDescriptorCollisionAcrossScopes(t *testing.T) {
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at top-level x")
 
 	// Satisfy the top-level schema (a == true) to advance into the sub-process.
-	require.NoError(t, r.DeliverMessage(t.Context(), def, "top-msg", "", map[string]any{"a": true}))
+	require.NoError(t, r.DeliverMessage(t.Context(), "top-msg", "", map[string]any{"a": true}))
 
 	// Deliver a payload valid ONLY under the nested schema (b == true). A collision
 	// would validate this against a == true and reject on the missing key.
-	derr := r.DeliverMessage(t.Context(), def, "inner-msg", "", map[string]any{"b": true})
+	derr := r.DeliverMessage(t.Context(), "inner-msg", "", map[string]any{"b": true})
 	require.NoError(t, derr, "nested node must validate against its own schema, not the top node's")
 
 	after, _, loadErr := store.Load(t.Context(), instanceID)
@@ -372,8 +376,10 @@ func TestValidateInputIntermediateCatchMessage(t *testing.T) {
 
 			fc := clockwork.NewFakeClock()
 			store := runtimetest.MustMemStore(t)
-			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
 			def := catchMessageValidationDef()
+			reg := kernel.NewMemDefinitionRegistry()
+			require.NoError(t, reg.Register(def))
+			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 			const instanceID = "catch-msg-1"
 			parked, err := r.Drive(t.Context(), def, instanceID, nil)
@@ -383,7 +389,7 @@ func TestValidateInputIntermediateCatchMessage(t *testing.T) {
 			before, _, err := store.Load(t.Context(), instanceID)
 			require.NoError(t, err)
 
-			derr := r.DeliverMessage(t.Context(), def, "confirm", "", tc.payload)
+			derr := r.DeliverMessage(t.Context(), "confirm", "", tc.payload)
 
 			after, _, loadErr := store.Load(t.Context(), instanceID)
 			require.NoError(t, loadErr)

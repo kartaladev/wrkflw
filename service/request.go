@@ -31,13 +31,10 @@ type DeliverSignalRequest struct {
 
 // DeliverMessageRequest carries the parameters for delivering a message.
 // The driver's internal message-waiter table routes the message to the
-// correct instance by (Name, CorrelationKey) without needing the caller
-// to know which instance is waiting.
+// correct instance by (Name, CorrelationKey), or starts a new instance from a
+// unique message-start event when none is waiting (ADR-0121) — without needing
+// the caller to know which instance is waiting or which definition to use.
 type DeliverMessageRequest struct {
-	// DefRef is the process-definition reference (id, or id:version); the
-	// definition is resolved via the registry before calling
-	// ProcessDriver.DeliverMessage. A zero Version selects the latest.
-	DefRef model.Qualifier
 	// Name is the message name.
 	Name string
 	// CorrelationKey is the value that routes the message to a specific instance.

@@ -1,35 +1,17 @@
 package runtime
 
 import (
-	"sync"
-
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
-// eventStart holds the driver's event-based-start bookkeeping (ADR-0121): the
-// active-correlation map used to make a message-start idempotent per
-// (name, correlation key). It carries no reference to *ProcessDriver so its
-// pure resolution helpers (messageStartNode, signalStartDefs,
-// uniqueMessageStartDef, timerStartDefs) stay independently testable.
-type eventStart struct {
-	// mu guards active. Not yet locked anywhere in this file: the
-	// record/evict methods that take it land in a later task (ADR-0121) once
-	// a driver-side consumer (Drive-on-message-start) exists to call them.
-	//nolint:unused // guards `active`; taken by the Task 5 record/evict methods.
-	mu sync.Mutex
-	// active maps a message-start (name, correlation key) to the instance ID
-	// it already created, so a repeat delivery of the same correlated message
-	// does not spawn a second instance.
-	active map[msgKey]string
-}
-
-// newEventStart returns a ready-to-use *eventStart with an initialized active
-// map (zero entries).
-func newEventStart() *eventStart {
-	return &eventStart{active: make(map[msgKey]string)}
-}
+// This file holds the pure, driver-independent start-node resolution helpers
+// used by the event-based-start subsystem (ADR-0121): messageStartNode,
+// signalStartDefs, uniqueMessageStartDef, and timerStartDefs. Message-start
+// dedup is handled by a deterministic instance id (see messageStartInstanceID)
+// plus Store.Create's ErrInstanceExists, so no in-process correlation state is
+// kept here.
 
 // signalStartHit identifies a definition + node pair whose start event listens
 // for a given signal name.

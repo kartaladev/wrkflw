@@ -102,12 +102,6 @@ type ProcessDriver struct {
 	// validate.ValidationStrategy by its descriptor (kind + schema). Always
 	// non-nil after NewProcessDriver.
 	gate *validation.Gate
-
-	// es holds the event-based-start bookkeeping (ADR-0121): the pure
-	// start-node resolution helpers (message/signal/timer) plus the
-	// active-correlation map that makes a message-start idempotent per
-	// (name, correlation key). Always non-nil after NewProcessDriver.
-	es *eventStart
 }
 
 // NewProcessDriver constructs a ProcessDriver with sensible in-memory defaults
@@ -149,7 +143,6 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		actionTimeout: defaultActionTimeout,
 		msgWaiters:    make(map[msgKey]string),
 		gate:          validation.NewGate(),
-		es:            newEventStart(),
 	}
 	for _, o := range opts {
 		o(driver)
@@ -329,6 +322,54 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 		span.SetAttributes(attribute.String("wrkflw.status", statusName(out.Status)))
 	}
 	return out, err
+}
+
+// createAtNode starts a new instance seeded at a specific start node (ADR-0121)
+// and drives it through deliverLoop, exactly like Drive but for an explicit start
+// node rather than the definition's manual start. When instanceID is empty a
+// fresh id is minted via the driver's id generator (signal/timer starts); a
+// non-empty instanceID is used verbatim (the message-start deterministic id).
+//
+// It surfaces kernel.ErrInstanceExists from Store.Create UNCHANGED — the caller
+// decides whether a pre-existing id is a duplicate no-op (message-start dedup) or
+// a real error.
+func (driver *ProcessDriver) createAtNode(ctx context.Context, def *model.ProcessDefinition, nodeID, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+	if instanceID == "" {
+		id, err := driver.idgen.NewID()
+		if err != nil {
+			return engine.InstanceState{}, fmt.Errorf("workflow-runtime: create-at-node: generate id: %w", err)
+		}
+		instanceID = id
+	}
+	st := engine.InstanceState{InstanceID: instanceID}
+	return driver.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstanceAtNode(driver.clk.Now(), nodeID, vars))
+}
+
+// resolveInstanceDef loads instanceID's snapshot and resolves its definition from
+// the registry via the snapshot's own DefID/DefVersion. It is how the message
+// correlate path recovers the definition the caller no longer supplies.
+func (driver *ProcessDriver) resolveInstanceDef(ctx context.Context, instanceID string) (*model.ProcessDefinition, error) {
+	st, _, err := driver.store.Load(ctx, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-runtime: resolve instance definition: load %q: %w", instanceID, err)
+	}
+	def, err := driver.defsReg.Lookup(ctx, model.Version(st.DefID, st.DefVersion))
+	if err != nil {
+		return nil, fmt.Errorf("workflow-runtime: resolve instance definition: lookup %s: %w", model.Version(st.DefID, st.DefVersion), err)
+	}
+	return def, nil
+}
+
+// listDefinitions returns every registered definition when the registry supports
+// enumeration (kernel.DefinitionLister), or nil otherwise. A registry that does
+// not implement DefinitionLister simply disables event-based START; correlating
+// a message to an already-running instance still works through Lookup alone.
+func (driver *ProcessDriver) listDefinitions(ctx context.Context) []*model.ProcessDefinition {
+	lister, ok := driver.defsReg.(kernel.DefinitionLister)
+	if !ok {
+		return nil
+	}
+	return lister.ListDefinitions(ctx)
 }
 
 // ApplyTrigger loads the current instance state, applies one trigger via engine.Step,
