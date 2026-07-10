@@ -525,10 +525,19 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	if len(innerStarts) == 0 {
 		return cmds, false, fmt.Errorf("workflow-engine: sub-process %q: nested definition has no start node", node.ID())
 	}
+	// An embedded sub-process is entered INLINE at its MANUAL (trigger-less)
+	// start; any event-triggered starts in the nested def are ESP-style arms
+	// handled by armEventSubprocesses below, not the inline entry point. Once
+	// multi-start became legal in nested defs (ADR-0121), innerStarts[0] could be
+	// an event-start, so resolve the manual start explicitly.
+	manualStart, msErr := resolveManualStart(sp.Subprocess)
+	if msErr != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: sub-process %q: %w", node.ID(), msErr)
+	}
 	// Open a scope parented to the current token's scope.
 	scopeID := c.s.openScope(node.ID(), tok.ScopeID)
-	// Place the inner start-event token in the new scope.
-	c.s.placeTokenInScope(innerStarts[0].ID(), scopeID, c.at)
+	// Place the inner manual-start token in the new scope.
+	c.s.placeTokenInScope(manualStart, scopeID, c.at)
 	// Consume the sub-process activity token (execution is now "inside").
 	c.s.consumeToken(tok, c.at)
 	// Arm any KindEventSubProcess nodes defined inside this sub-process's

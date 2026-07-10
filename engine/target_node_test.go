@@ -5,6 +5,7 @@ package engine
 // assert on unexported plumbing where useful.
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -16,7 +17,42 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/flow"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
 )
+
+// startStubStrategy is a no-op validate.ValidationStrategy used to prove that
+// TargetNode returns the specific start node that carries InputValidation
+// (so runtime validateInput runs against it) rather than starts[0].
+type startStubStrategy struct{}
+
+func (startStubStrategy) NewValidator() (validate.Validator, error) { return startStubValidator{}, nil }
+
+type startStubValidator struct{}
+
+func (startStubValidator) Validate(context.Context, map[string]any) error { return nil }
+
+// multiStartDef builds a definition with TWO start events: a manual
+// (trigger-less) start at index 0 and a message-triggered start at index 1 that
+// carries InputValidation. Used to prove TargetNode honours StartNodeID /
+// manual-start resolution instead of the old len(starts)==1 short-circuit.
+func multiStartDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "multi-start", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("manual-start"),
+			event.NewStart("msg-start",
+				event.WithMessageCorrelator("go-msg", ""),
+				event.WithInputValidation(startStubStrategy{})),
+			activity.NewServiceTask("svc", activity.WithTaskAction("a")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "manual-start", Target: "svc"},
+			{ID: "f2", Source: "msg-start", Target: "svc"},
+			{ID: "f3", Source: "svc", Target: "end"},
+		},
+	}
+}
 
 // nestedUserTaskDef builds: start -> sub{ inner-start -> approve(UserTask) ->
 // inner-end } -> end. Used to reproduce the nested-completion regression: the
@@ -144,6 +180,43 @@ func TestTargetNode(t *testing.T) {
 				require.True(t, ok)
 				require.NotNil(t, node)
 				assert.Equal(t, "start", node.ID())
+			},
+		},
+		{
+			name: "event-started: StartNodeID targets the message-start (carrying InputValidation), not starts[0]",
+			def:  multiStartDef(),
+			st:   InstanceState{InstanceID: "evt-started"},
+			trg:  NewStartInstanceAtNode(at, "msg-start", nil),
+			assert: func(t *testing.T, node model.Node, ok bool) {
+				require.True(t, ok)
+				require.NotNil(t, node)
+				assert.Equal(t, "msg-start", node.ID())
+				se, isSE := node.(event.StartEvent)
+				require.True(t, isSE, "resolved node must be a StartEvent, got %T", node)
+				assert.NotNil(t, se.InputValidation,
+					"the resolved start must carry InputValidation so validateInput runs")
+			},
+		},
+		{
+			name: "manual start resolved when StartNodeID empty on a multi-start def",
+			def:  multiStartDef(),
+			st:   InstanceState{InstanceID: "manual-started"},
+			trg:  NewStartInstance(at, nil),
+			assert: func(t *testing.T, node model.Node, ok bool) {
+				require.True(t, ok)
+				require.NotNil(t, node)
+				assert.Equal(t, "manual-start", node.ID())
+			},
+		},
+		{
+			name: "StartNodeID targets manual start explicitly on a 2-start def returns that node, not starts[0] semantics",
+			def:  multiStartDef(),
+			st:   InstanceState{InstanceID: "explicit-manual"},
+			trg:  NewStartInstanceAtNode(at, "manual-start", nil),
+			assert: func(t *testing.T, node model.Node, ok bool) {
+				require.True(t, ok)
+				require.NotNil(t, node)
+				assert.Equal(t, "manual-start", node.ID())
 			},
 		},
 		{

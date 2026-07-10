@@ -8,9 +8,11 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 )
 
-// MessageDeliverFunc routes a decoded outbound SendTask message to its receiver. A
-// consumer typically wraps [runtime.ProcessDriver.DeliverMessage] with the receiver definition
-// pre-captured in the closure.
+// MessageDeliverFunc routes a decoded outbound SendTask message to its receiver.
+// Its signature matches [runtime.ProcessDriver.DeliverMessage] exactly, so a
+// consumer can pass that method value directly — the driver resolves the target
+// definition itself (correlate to a running instance or start from a
+// message-start event), so no receiver definition needs pre-capturing (ADR-0121).
 type MessageDeliverFunc func(ctx context.Context, name, correlationKey string, payload map[string]any) error
 
 // messageBody is the wire shape of a message.<Name> outbox event payload (ADR-0067).

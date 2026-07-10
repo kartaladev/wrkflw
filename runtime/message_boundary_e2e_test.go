@@ -16,6 +16,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // messageBoundaryDef returns a definition whose host UserTask("review") parks
@@ -56,11 +57,13 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
+	def := messageBoundaryDef()
+	reg := kernel.NewMemDefinitionRegistry()
+	require.NoError(t, reg.Register(def))
 	r := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(fc),
+		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
-
-	def := messageBoundaryDef()
 
 	st, err := r.Drive(ctx, def, "i1", nil)
 	require.NoError(t, err)
@@ -69,7 +72,7 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 
 	// ApplyTrigger the BOUNDARY message. This must be routed to the parked instance
 	// even though no token has AwaitMessage == "cancel" (the boundary arm holds it).
-	err = r.DeliverMessage(ctx, def, "cancel", "", nil)
+	err = r.DeliverMessage(ctx, "cancel", "", nil)
 	require.NoError(t, err)
 
 	final, _, err := store.Load(ctx, "i1")

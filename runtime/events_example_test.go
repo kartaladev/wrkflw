@@ -19,6 +19,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
 )
 
@@ -249,8 +250,10 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 
 	store := runtimetest.MustMemStore(t)
 	def := messageCatchDef("order-shipped")
+	reg := kernel.NewMemDefinitionRegistry()
+	require.NoError(t, reg.Register(def))
 
-	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
+	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 	// Start two instances with different orderId values.
 	_, err := driver.Drive(ctx, def, "order-100", map[string]any{"orderId": "100"})
@@ -260,7 +263,7 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	require.NoError(t, err)
 
 	// ApplyTrigger message targeting orderId=100.
-	err = driver.DeliverMessage(ctx, def, "order-shipped", "100", map[string]any{"shipped": true})
+	err = driver.DeliverMessage(ctx, "order-shipped", "100", map[string]any{"shipped": true})
 	require.NoError(t, err)
 
 	// order-100 must complete; order-200 must still be running.

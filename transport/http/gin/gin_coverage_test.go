@@ -151,8 +151,7 @@ func TestMessageRoutes_DeliverMessage_ErrorPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	resp := post(t, srv, "/messages", map[string]any{
-		"def_ref": "no-such:1",
-		"name":    "evt",
+		"name": "evt",
 	})
 	// not-found propagates as 404 from ErrInstanceNotFound
 	if resp.StatusCode == http.StatusOK {

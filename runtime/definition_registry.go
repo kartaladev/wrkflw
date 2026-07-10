@@ -1,12 +1,32 @@
 package runtime
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+)
+
+var (
+	// registerMu serializes the scan-then-register sequence performed by
+	// RegisterDefinition/MustRegisterDefinition (message-start uniqueness check
+	// followed by the actual registry write) so two concurrent registrations
+	// can never both observe an empty collision set and both succeed
+	// (TOCTOU-free).
+	registerMu sync.Mutex
+
+	// ErrDuplicateMessageStart is returned by RegisterDefinition/
+	// MustRegisterDefinition when a definition's message-start name collides
+	// with an already-registered message-start — either on a different
+	// definition, or on another start node within the same definition
+	// (message-start names must be unique; structural validation does not
+	// catch the intra-definition case). See ADR-0121.
+	ErrDuplicateMessageStart = errors.New("workflow-runtime: duplicate message start name")
 )
 
 // defaultDefinitionRegistry is the process-global DefinitionRegistry a
@@ -46,6 +66,10 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 //   - [kernel.ErrEmptyDefinitionID] if def.ID is empty.
 //   - [kernel.ErrDefinitionExists] (wrapped with the versioned key) if
 //     "<ID>:<Version>" was already registered (first-registration-wins).
+//   - [ErrDuplicateMessageStart] (wrapped with the colliding name) if any of
+//     def's message-start names is already claimed by another registered
+//     definition's message-start, or is repeated on two of def's own start
+//     nodes (see ADR-0121).
 //
 // For init-time wiring where a registration failure is a programming error use
 // [MustRegisterDefinition].
@@ -60,6 +84,12 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 // pass [WithDefinitions](kernel.NewMemDefinitionRegistry()) to [NewProcessDriver]
 // and register directly into that isolated instance.
 func RegisterDefinition(def *model.ProcessDefinition) error {
+	registerMu.Lock()
+	defer registerMu.Unlock()
+
+	if err := checkMessageStartUnique(defaultDefinitionRegistry, def); err != nil {
+		return err
+	}
 	if err := defaultDefinitionRegistry.Register(def); err != nil {
 		return err
 	}
@@ -68,14 +98,85 @@ func RegisterDefinition(def *model.ProcessDefinition) error {
 }
 
 // MustRegisterDefinition registers def into the process-global
-// [DefaultDefinitionRegistry] and panics if registration fails. Intended for
-// init-time wiring where a registration failure is a programming error (e.g. in
-// package-level var blocks or TestMain).
+// [DefaultDefinitionRegistry] and panics if registration fails — including on
+// [ErrDuplicateMessageStart]. Intended for init-time wiring where a
+// registration failure is a programming error (e.g. in package-level var
+// blocks or TestMain).
 //
 // See [RegisterDefinition] for the error-returning variant and the full contract.
 func MustRegisterDefinition(def *model.ProcessDefinition) {
+	registerMu.Lock()
+	defer registerMu.Unlock()
+
+	if err := checkMessageStartUnique(defaultDefinitionRegistry, def); err != nil {
+		panic(err)
+	}
 	defaultDefinitionRegistry.MustRegister(def)
 	warnForceTermination(def)
+}
+
+// checkMessageStartUnique rejects def with [ErrDuplicateMessageStart] when any
+// of its message-start names collides with an already-registered definition's
+// message-start, or is repeated across two of def's own start nodes. Callers
+// must hold registerMu for the whole scan-then-register sequence so two
+// concurrent registrations can never both observe a clean collision set
+// (TOCTOU-free).
+func checkMessageStartUnique(reg *kernel.MemDefinitionRegistry, def *model.ProcessDefinition) error {
+	incoming, err := messageStartNames(def)
+	if err != nil {
+		return err
+	}
+	if len(incoming) == 0 {
+		return nil
+	}
+
+	// Compare only against the LATEST version of each OTHER def id: a
+	// MemDefinitionRegistry retains every registered version so in-flight
+	// instances resume, but only the latest version holds an active message-start
+	// subscription (ADR-0121 Camunda semantics). A superseded version's name must
+	// therefore not cause a false collision, and a redeploy that keeps the same
+	// name is still allowed via the existing existing.ID == def.ID skip.
+	for _, existing := range latestPerID(reg.ListDefinitions(context.Background())) {
+		if def != nil && existing.ID == def.ID {
+			continue // re-registering the same def id is not a message-name collision
+		}
+		existingNames, err := messageStartNames(existing)
+		if err != nil {
+			// An already-registered definition failing its own intra-def check
+			// would be a bug in a prior registration, not something the current
+			// call should surface; skip it defensively rather than block def.
+			continue
+		}
+		for name := range incoming {
+			if existingNames[name] {
+				return fmt.Errorf("%w: %q", ErrDuplicateMessageStart, name)
+			}
+		}
+	}
+	return nil
+}
+
+// messageStartNames collects def's message-start event names (its StartNodes
+// that carry a non-empty MessageName) into a set. It returns
+// [ErrDuplicateMessageStart] when the same name is declared on two different
+// start nodes of def itself — a case structural validation does not catch,
+// since ADR-0121 permits any number of event-triggered start events.
+func messageStartNames(def *model.ProcessDefinition) (map[string]bool, error) {
+	if def == nil {
+		return nil, nil
+	}
+	names := make(map[string]bool)
+	for _, n := range def.StartNodes() {
+		se, ok := n.(event.StartEvent)
+		if !ok || se.MessageName == "" {
+			continue
+		}
+		if names[se.MessageName] {
+			return nil, fmt.Errorf("%w: %q", ErrDuplicateMessageStart, se.MessageName)
+		}
+		names[se.MessageName] = true
+	}
+	return names, nil
 }
 
 // forceTerminationWarnings returns a non-fatal warning for each force-termination

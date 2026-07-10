@@ -41,13 +41,3 @@ func TestStartInstanceMissingDefRef(t *testing.T) {
 		t.Fatalf("want ErrBadInput for empty def_ref, got %v", err)
 	}
 }
-
-// TestDeliverMessageMissingDefRef mirrors TestStartInstanceMissingDefRef for the
-// message-delivery endpoint. Name is present so only the empty def_ref triggers 400.
-func TestDeliverMessageMissingDefRef(t *testing.T) {
-	t.Parallel()
-	_, _, err := httpcore.DeliverMessage(t.Context(), nil, httpcore.MessageInput{Name: "msg"})
-	if !errors.Is(err, httpcore.ErrBadInput) {
-		t.Fatalf("want ErrBadInput for empty def_ref, got %v", err)
-	}
-}

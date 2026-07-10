@@ -1,23 +1,19 @@
 package eventing_test
 
 import (
-	"context"
-
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/eventing"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 )
 
 // ExampleNewMessageHandler shows wiring a message.* subscription to intra-engine delivery.
 func ExampleNewMessageHandler() {
-	// Given a driver and the receiver definition (the process that has a ReceiveTask):
+	// Given a driver — the receiver definition is resolved by the driver itself
+	// (correlate to a running instance, or start from a message-start event), so
+	// DeliverMessage's signature matches MessageDeliverFunc and can be passed as a
+	// method value directly (ADR-0121):
 	var driver *runtime.ProcessDriver
-	var receiverDef *model.ProcessDefinition
 
-	handler := eventing.NewMessageHandler(func(ctx context.Context, name, key string, payload map[string]any) error {
-		// Route intra-engine: wake the instance parked on (name, key) in receiverDef.
-		return driver.DeliverMessage(ctx, receiverDef, name, key, payload)
-	})
+	handler := eventing.NewMessageHandler(driver.DeliverMessage)
 
 	// Mount handler on your message.Router for the "message.<Name>" topics you consume,
 	// subscribing the same broker the persistence.Relay publishes to.

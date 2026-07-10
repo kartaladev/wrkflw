@@ -44,7 +44,12 @@ type NodeWire struct {
 	SignalName           string `json:"signalName,omitempty"`
 	MessageName          string `json:"messageName,omitempty"`
 	CorrelationKey       string `json:"correlationKey,omitempty"`
-	ErrorCode            string `json:"errorCode,omitempty"`
+	// MessageStartSingleton, when true on a StartEvent, makes a keyless
+	// message-start create at most one instance ever for its message name
+	// (name-only deterministic id). Default false = fresh instance per message
+	// (ADR-0121 review).
+	MessageStartSingleton bool   `json:"messageStartSingleton,omitempty"`
+	ErrorCode             string `json:"errorCode,omitempty"`
 	// ForceTermination, TerminationReason, and TerminationOutcome carry
 	// EndEvent's force-termination fields (ADR-0119). TerminationOutcome is the
 	// string form of TerminationOutcome ("complete"/"abort"), written only when

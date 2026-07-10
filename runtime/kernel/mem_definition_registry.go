@@ -114,5 +114,28 @@ func (r *MemDefinitionRegistry) Lookup(_ context.Context, q model.Qualifier) (*m
 	return def, nil
 }
 
-// Compile-time assertion: MemDefinitionRegistry satisfies DefinitionRegistry.
+// ListDefinitions implements [DefinitionLister]. It returns each registered
+// definition exactly once, even though Register indexes every definition
+// under two Qualifier keys (pinned and latest) — dedupe is by concrete
+// *model.ProcessDefinition pointer, not by map key. ctx is ignored — the
+// enumeration is entirely in-memory.
+func (r *MemDefinitionRegistry) ListDefinitions(context.Context) []*model.ProcessDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	seen := make(map[*model.ProcessDefinition]struct{}, len(r.m))
+	out := make([]*model.ProcessDefinition, 0, len(r.m))
+	for _, d := range r.m {
+		if _, ok := seen[d]; ok {
+			continue
+		}
+		seen[d] = struct{}{}
+		out = append(out, d)
+	}
+	return out
+}
+
+// Compile-time assertions: MemDefinitionRegistry satisfies DefinitionRegistry
+// and DefinitionLister.
 var _ DefinitionRegistry = (*MemDefinitionRegistry)(nil)
+var _ DefinitionLister = (*MemDefinitionRegistry)(nil)

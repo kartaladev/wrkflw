@@ -25,6 +25,10 @@ func (baseTrigger) isTrigger()              {}
 type StartInstance struct {
 	baseTrigger
 	Vars map[string]any
+	// StartNodeID is the start node to seed. Empty resolves the definition's
+	// manual (trigger-less, caller-driven) start; non-empty seeds that specific
+	// start node (ADR-0121). Set via NewStartInstanceAtNode.
+	StartNodeID string
 }
 
 // ActionCompleted reports that a action.Action finished successfully.
@@ -55,8 +59,17 @@ type ActionFailed struct {
 }
 
 // NewStartInstance builds a StartInstance trigger stamped with the given time.
+// StartNodeID is left empty, resolving the definition's sole manual (trigger-less,
+// caller-driven) start event. Use NewStartInstanceAtNode to seed a specific start node.
 func NewStartInstance(at time.Time, vars map[string]any) StartInstance {
 	return StartInstance{baseTrigger: baseTrigger{at: at}, Vars: vars}
+}
+
+// NewStartInstanceAtNode builds a StartInstance trigger that seeds the given
+// start node explicitly, instead of resolving the definition's manual start
+// (ADR-0121). nodeID must identify one of the definition's start nodes.
+func NewStartInstanceAtNode(at time.Time, nodeID string, vars map[string]any) StartInstance {
+	return StartInstance{baseTrigger: baseTrigger{at: at}, Vars: vars, StartNodeID: nodeID}
 }
 
 // NewActionCompleted builds an ActionCompleted trigger reporting a successful service-action result.

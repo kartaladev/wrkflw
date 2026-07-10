@@ -137,7 +137,53 @@ release.
   a catalog and reference it by name via `WithTaskAction` (or the matching `WithXxxAction`
   option) instead.
 
+- **`DeliverMessage` drops its `def` parameter; `DeliverMessageRequest.DefRef` removed
+  (ADR-0121).** `runtime.ProcessDriver.DeliverMessage(ctx, name, key, payload)` and
+  `service.Engine.DeliverMessage` no longer take a target definition — message delivery is
+  now def-less, matching `BroadcastSignal`. `service.DeliverMessageRequest.DefRef` is removed
+  (`StartInstanceRequest.DefRef` is unaffected). Consumers correlating a message to a running
+  instance must have that instance's definition registered with the driver's definition
+  registry (resolved via `Lookup` at correlation time); an unregistered definition now fails
+  correlation with `kernel.ErrDefinitionNotFound` instead of relying on the caller-supplied
+  `def`. `BroadcastSignal` and `DeliverMessage` also change miss-branch behaviour: a signal or
+  message with no waiter now additionally checks for a matching signal-/message-start event
+  and creates an instance when one exists (previously always a no-op); definitions with no
+  event-starts see no behaviour change.
+
 ### Added
+
+- **Event-based start events: message, signal, and timer starts (ADR-0121).**
+  A process definition may now declare multiple start events — up to one trigger-less
+  **manual start** (BPMN's "none start", `ErrMultipleManualStarts` if more than one) plus any
+  number of event-triggered starts, each with exactly one trigger family
+  (`ErrAmbiguousStartTrigger`/`ErrEventStartMissingTrigger` otherwise). Reachability validation
+  now walks from the union of all start nodes. `engine.StartInstance` gains `StartNodeID`
+  (empty resolves the manual start, `ErrNoManualStart` if there is none); the driver resolves
+  which start node fired and the engine only places the token.
+  - **Signal start** — broadcast fan-out: `BroadcastSignal(ctx, name, payload)` now also
+    creates one instance per registered definition with a matching signal-start, in addition
+    to resuming parked waiters. Signal names need not be unique across definitions.
+  - **Message start** — correlate-to-running-first, then create: `DeliverMessage` (see
+    Breaking changes) resolves a running waiter by `(name, key)` first; on a miss it creates a
+    new instance at the unique matching message-start (`ErrAmbiguousMessageStart` if more than
+    one matches). New-instance dedup is via a deterministic `(messageName, correlationKey)`
+    instance id plus `Store.Create`'s `ErrInstanceExists` — fully multi-replica and restart
+    safe, no advisory lock, no new schema (the `runtime/chain.Chainer` pattern). Message-start
+    name uniqueness is enforced at `RegisterDefinition`/`MustRegisterDefinition`
+    (`ErrDuplicateMessageStart`).
+  - **Timer start** — scheduler-driven, multi-replica safe via the existing
+    `scheduling.Elector`. New explicit `runtime.ProcessDriver.RehydrateStartTimers(ctx) error`
+    step (a sibling of `RehydrateTimers`) arms recurring/one-shot start timers by enumerating
+    registered definitions; each fire creates one instance.
+  - New opt-in `runtime/kernel.DefinitionLister` capability (`ListDefinitions(ctx)
+    []*model.ProcessDefinition`) lets the event-start subsystem enumerate registered
+    definitions for signal/message matching; `MemDefinitionRegistry` and
+    `MapDefinitionRegistry` implement it, `CachingDefinitionRegistry` passes through. A
+    registry that does not implement it disables event-based *start* (correlate-to-running
+    still works).
+  - A definition with only event-starts (no manual start) makes plain `Drive` error rather
+    than silently doing nothing.
+  - See `examples/scenarios/event_start` for a signal fan-out + message correlation walkthrough.
 
 - **`definition.Qualifier`: typed process-definition reference (ADR-0101).**
   New value type `definition.Qualifier{ID string; Version int}` (`Version == 0` = latest)

@@ -102,11 +102,18 @@ func main() {
 	// SignalBus is needed (that is for broadcast signals). A standalone message catch
 	// parks a token carrying AwaitMessage, which the runtime registers as a message
 	// waiter, so a delivered message with the matching name+key resumes this instance.
+	// The driver resolves a correlated instance's definition from its own
+	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	reg := kernel.NewMemDefinitionRegistry()
+	if err := reg.Register(def); err != nil {
+		log.Fatal("register:", err)
+	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
 		runtime.WithScheduler(sched),
+		runtime.WithDefinitions(reg),
 	)
 	if err != nil {
 		log.Fatal("driver:", err)
@@ -146,7 +153,7 @@ func main() {
 	// message resumes the instance to completion, which cancels the recurring
 	// reminder. The correlation key targets exactly this instance.
 	fmt.Println("delivering message \"approved\" — resuming the instance")
-	if err := driver.DeliverMessage(ctx, def, "approved", instanceID, map[string]any{"by": "manager"}); err != nil {
+	if err := driver.DeliverMessage(ctx, "approved", instanceID, map[string]any{"by": "manager"}); err != nil {
 		log.Fatal("deliver approved:", err)
 	}
 

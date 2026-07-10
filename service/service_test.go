@@ -164,16 +164,19 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 		"greet": greetAction{},
 	})
 
+	// Build the definition registry with all provided definitions. The driver
+	// resolves a correlated instance's definition from this registry (ADR-0121),
+	// so it must be wired into the driver as well as the service facade.
+	reg := kernel.NewMapDefinitionRegistry(defs...)
+
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
+		runtime.WithDefinitions(reg),
 	)
 	require.NoError(t, err)
-
-	// Build the definition registry with all provided definitions.
-	reg := kernel.NewMapDefinitionRegistry(defs...)
 
 	return &harness{
 		driver:    driver,
@@ -427,7 +430,6 @@ func TestDeliverMessage(t *testing.T) {
 	svc := h.newEngine(t)
 
 	err = svc.DeliverMessage(t.Context(), service.DeliverMessageRequest{
-		DefRef:         defRefFor(def),
 		Name:           "order-shipped",
 		CorrelationKey: "100",
 		Payload:        map[string]any{"shipped": true},
@@ -467,19 +469,19 @@ func TestListInstances(t *testing.T) {
 	assert.False(t, page.HasMore)
 }
 
-// TestDeliverMessageUnknownDefRef verifies that DeliverMessage propagates
-// ErrDefinitionNotFound when the DefRef is not registered.
-func TestDeliverMessageUnknownDefRef(t *testing.T) {
+// TestDeliverMessageNoMatchIsNoop verifies that DeliverMessage is a clean no-op
+// when the message matches neither a running waiter nor a message-start
+// definition — the caller no longer supplies a def ref, so an unmatched message
+// simply does nothing (ADR-0121).
+func TestDeliverMessageNoMatchIsNoop(t *testing.T) {
 	h := newHarness(t) // no defs registered
 	svc := h.newEngine(t)
 
 	err := svc.DeliverMessage(t.Context(), service.DeliverMessageRequest{
-		DefRef:         model.Version("non-existent", 1),
 		Name:           "order-shipped",
 		CorrelationKey: "100",
 	})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, kernel.ErrDefinitionNotFound)
+	require.NoError(t, err)
 }
 
 // TestReassignTaskUnauthorized verifies that ReassignTask propagates

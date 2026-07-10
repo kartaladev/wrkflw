@@ -29,13 +29,12 @@ func TestValidateSignalInput(t *testing.T) {
 }
 
 func TestValidateMessageInput(t *testing.T) {
-	if err := httpcore.Validate(httpcore.MessageInput{DefRef: model.Latest("order"), Name: "payment"}); err != nil {
+	// Name is the only required field; the definition is resolved by the engine,
+	// so MessageInput no longer carries a def_ref (ADR-0121).
+	if err := httpcore.Validate(httpcore.MessageInput{Name: "payment"}); err != nil {
 		t.Fatalf("valid MessageInput should pass: %v", err)
 	}
-	if err := httpcore.Validate(httpcore.MessageInput{Name: "payment"}); err == nil || !errors.Is(err, httpcore.ErrBadInput) {
-		t.Fatalf("missing def_ref must wrap ErrBadInput, got %v", err)
-	}
-	if err := httpcore.Validate(httpcore.MessageInput{DefRef: model.Latest("order")}); err == nil || !errors.Is(err, httpcore.ErrBadInput) {
+	if err := httpcore.Validate(httpcore.MessageInput{}); err == nil || !errors.Is(err, httpcore.ErrBadInput) {
 		t.Fatalf("missing name must wrap ErrBadInput, got %v", err)
 	}
 }

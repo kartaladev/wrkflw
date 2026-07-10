@@ -337,6 +337,162 @@ func TestConstructionSummaryDefinitionsField(t *testing.T) {
 // so parallel tests never collide on the shared global registry.
 var uniqueDefSeq atomic.Int64
 
+// ── (f) message-start name uniqueness at registration (ADR-0121) ──────────
+
+// messageStartDef builds a single-message-start definition registered under a
+// unique id (idPrefix + a process-global counter suffix), with its lone start
+// event's message-start name set to msgName. It does not register the
+// definition — callers pass it to runtime.RegisterDefinition themselves.
+func messageStartDef(t *testing.T, idPrefix, msgName string) *model.ProcessDefinition {
+	t.Helper()
+
+	id := fmt.Sprintf("%s-%d", idPrefix, uniqueDefSeq.Add(1))
+	def, err := definition.NewBuilder(id, 1).
+		AddStartEvent("s", event.WithMessageCorrelator(msgName, "")).
+		AddEndEvent("e").
+		Connect("s", "e").
+		Build()
+	require.NoError(t, err)
+	return def
+}
+
+// multiStartMessageDef builds a definition with one message-start event per
+// entry in msgNames (same id-uniqueness scheme as messageStartDef), all
+// flowing into a single shared end event. Used to exercise the
+// intra-definition duplicate-message-start-name case, which structural
+// validation does not catch (ADR-0121 permits any number of event-triggered
+// starts; only registration-time uniqueness closes this gap).
+func multiStartMessageDef(t *testing.T, idPrefix string, msgNames ...string) *model.ProcessDefinition {
+	t.Helper()
+
+	id := fmt.Sprintf("%s-%d", idPrefix, uniqueDefSeq.Add(1))
+	b := definition.NewBuilder(id, 1)
+	for i, name := range msgNames {
+		b = b.AddStartEvent(fmt.Sprintf("s%d", i), event.WithMessageCorrelator(name, ""))
+	}
+	b = b.AddEndEvent("e")
+	for i := range msgNames {
+		b = b.Connect(fmt.Sprintf("s%d", i), "e")
+	}
+	def, err := b.Build()
+	require.NoError(t, err)
+	return def
+}
+
+// messageStartDefVersioned builds a message-start definition with an explicit id
+// and version, so a test can register two versions of the SAME def id. Its lone
+// start event carries msgName as its message-start.
+func messageStartDefVersioned(t *testing.T, id, msgName string, version int) *model.ProcessDefinition {
+	t.Helper()
+
+	def, err := definition.NewBuilder(id, version).
+		AddStartEvent("s", event.WithMessageCorrelator(msgName, "")).
+		AddEndEvent("e").
+		Connect("s", "e").
+		Build()
+	require.NoError(t, err)
+	return def
+}
+
+// TestRegisterDefinitionRejectsDuplicateMessageStart verifies that
+// RegisterDefinition rejects a message-start name collision — both across two
+// distinct definitions, and within a single definition that declares the same
+// message-start name on two different start nodes — while distinct
+// message-start names register cleanly. Each case generates its own unique
+// message names (via uniqueDefSeq) so it is safe against the shared
+// process-global registry and against other tests' message-start names.
+func TestRegisterDefinitionRejectsDuplicateMessageStart(t *testing.T) {
+	type testCase struct {
+		name   string
+		defs   func(t *testing.T) []*model.ProcessDefinition
+		assert func(t *testing.T, errs []error)
+	}
+
+	cases := []testCase{
+		{
+			name: "cross-definition duplicate message-start name is rejected",
+			defs: func(t *testing.T) []*model.ProcessDefinition {
+				msg := fmt.Sprintf("order.created.%d", uniqueDefSeq.Add(1))
+				return []*model.ProcessDefinition{
+					messageStartDef(t, "cross-a", msg),
+					messageStartDef(t, "cross-b", msg),
+				}
+			},
+			assert: func(t *testing.T, errs []error) {
+				require.Len(t, errs, 2)
+				require.NoError(t, errs[0])
+				assert.ErrorIs(t, errs[1], runtime.ErrDuplicateMessageStart)
+			},
+		},
+		{
+			name: "intra-definition duplicate message-start name is rejected",
+			defs: func(t *testing.T) []*model.ProcessDefinition {
+				msg := fmt.Sprintf("order.dup.%d", uniqueDefSeq.Add(1))
+				return []*model.ProcessDefinition{
+					multiStartMessageDef(t, "intra", msg, msg),
+				}
+			},
+			assert: func(t *testing.T, errs []error) {
+				require.Len(t, errs, 1)
+				assert.ErrorIs(t, errs[0], runtime.ErrDuplicateMessageStart)
+			},
+		},
+		{
+			name: "superseded version's message name does not block a new def reusing it",
+			defs: func(t *testing.T) []*model.ProcessDefinition {
+				seq := uniqueDefSeq.Add(1)
+				oldName := fmt.Sprintf("order.super.old.%d", seq)
+				newName := fmt.Sprintf("order.super.new.%d", seq)
+				sharedID := fmt.Sprintf("super-a-%d", seq)
+				return []*model.ProcessDefinition{
+					// A v1 claims oldName, then A v2 renames its start to newName —
+					// v2 supersedes v1's start subscription (ADR-0121 Camunda semantics).
+					messageStartDefVersioned(t, sharedID, oldName, 1),
+					messageStartDefVersioned(t, sharedID, newName, 2),
+					// A distinct def B reuses oldName: since only the LATEST version of
+					// A (v2, newName) holds an active start subscription, oldName is free.
+					messageStartDefVersioned(t, fmt.Sprintf("super-b-%d", seq), oldName, 1),
+				}
+			},
+			assert: func(t *testing.T, errs []error) {
+				require.Len(t, errs, 3)
+				assert.NoError(t, errs[0], "A v1 registers")
+				assert.NoError(t, errs[1], "A v2 registers (renamed start)")
+				assert.NoError(t, errs[2], "B may reuse the superseded v1 name")
+			},
+		},
+		{
+			name: "distinct message-start names register fine",
+			defs: func(t *testing.T) []*model.ProcessDefinition {
+				seq := uniqueDefSeq.Add(1)
+				return []*model.ProcessDefinition{
+					messageStartDef(t, "distinct-a", fmt.Sprintf("order.a.%d", seq)),
+					messageStartDef(t, "distinct-b", fmt.Sprintf("order.b.%d", seq)),
+				}
+			},
+			assert: func(t *testing.T, errs []error) {
+				require.Len(t, errs, 2)
+				assert.NoError(t, errs[0])
+				assert.NoError(t, errs[1])
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			defs := tc.defs(t)
+			errs := make([]error, len(defs))
+			for i, def := range defs {
+				errs[i] = runtime.RegisterDefinition(def)
+			}
+			tc.assert(t, errs)
+		})
+	}
+}
+
 // ── (e) forceTerminationWarnings + registration-time WARN (ADR-0119) ───────
 
 // TestForceTerminationWarnings verifies the pure forceTerminationWarnings

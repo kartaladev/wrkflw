@@ -282,3 +282,34 @@ func splitNonEmpty(buf []byte) [][]byte {
 // Ensure context import is used (t.Context() is used above, but context is also
 // pulled in as a package reference in the JSON handler options).
 var _ = context.Background
+
+// TestDriveErrorsWhenOnlyEventStarts verifies that plain Drive — which always
+// seeds an empty StartNodeID (engine.NewStartInstance), i.e. asks for the
+// definition's manual/"none" start event — surfaces a friendly, wrapped
+// engine.ErrNoManualStart when def has ONLY event-triggered start events
+// (ADR-0121: message/signal/timer start, no manual start). The caller must
+// instead reach the process through an event entry point.
+func TestDriveErrorsWhenOnlyEventStarts(t *testing.T) {
+	def := &model.ProcessDefinition{
+		ID:      "message-only-start",
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start", event.WithMessageCorrelator("order.placed", "")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "end"},
+		},
+	}
+
+	driver, err := runtime.NewProcessDriver()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+
+	_, driveErr := driver.Drive(t.Context(), def, "x", nil)
+
+	require.Error(t, driveErr)
+	assert.ErrorIs(t, driveErr, engine.ErrNoManualStart)
+	assert.Contains(t, driveErr.Error(), def.ID, "friendly hint must name the offending definition")
+	assert.Contains(t, driveErr.Error(), "event entry point", "friendly hint must point at the event-based alternatives")
+}
