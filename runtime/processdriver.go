@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -315,6 +316,14 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 	}
 	st := engine.InstanceState{InstanceID: instanceID}
 	out, err := driver.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(driver.clk.Now(), vars))
+	if errors.Is(err, engine.ErrNoManualStart) {
+		// def has ONLY event-triggered start events (message/signal/timer) — Drive
+		// always asks for the manual/"none" start via an empty StartNodeID, so wrap
+		// the engine's sentinel once with a friendly hint at the event entry points
+		// that DO work (ADR-0121). Wrapped with %w so errors.Is(err,
+		// engine.ErrNoManualStart) still holds for the caller.
+		err = fmt.Errorf("workflow-runtime: definition %s has no manual start; use an event entry point (DeliverMessage / BroadcastSignal / timer start): %w", def.ID, err)
+	}
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

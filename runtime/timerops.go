@@ -232,6 +232,94 @@ func (driver *ProcessDriver) RehydrateTimers(ctx context.Context) error {
 	return nil
 }
 
+// startTimerID computes the stable, unique scheduler timer id for a timer-start
+// event (ADR-0121): defID's node nodeID. Stable across process restarts so
+// [ProcessDriver.RehydrateStartTimers] re-arming on boot replaces the SAME
+// scheduler entry rather than accumulating duplicates.
+func startTimerID(defID, nodeID string) string {
+	return "start-timer:" + defID + ":" + nodeID
+}
+
+// startTimerFireFunc builds the fire callback for a timer-start event
+// (ADR-0121). Unlike timerFireFunc — whose fire delivers a TimerFired trigger to
+// an EXISTING instance — a timer-start has no instance yet: each fire CREATES a
+// brand-new one, seeded at nodeID via createAtNode with a fresh generated id (so
+// a recurring schedule produces one new instance per occurrence, and concurrent
+// fires never collide on id).
+//
+// It uses a background context, mirroring timerFireFunc: the arming request's
+// context may be cancelled by the time the timer becomes due. Unlike
+// timerFireFunc, no CAS-retry loop is needed — createAtNode always targets a
+// fresh instance id, so there is no concurrent writer to conflict with. Any
+// error from createAtNode is logged at ERROR and dropped; a failed create must
+// never crash the scheduler's fire goroutine.
+func (driver *ProcessDriver) startTimerFireFunc(def *model.ProcessDefinition, nodeID, timerID string) func() {
+	return func() {
+		fireCtx := context.Background()
+		driver.obs.timerFired.Add(fireCtx, 1)
+		if _, err := driver.createAtNode(fireCtx, def, nodeID, "", nil); err != nil {
+			driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer-start fire: createAtNode failed",
+				append(driver.obs.tel.LogAttrs(fireCtx),
+					slog.String("timer_id", timerID),
+					slog.String("def_id", def.ID),
+					slog.String("node_id", nodeID),
+					slog.Any("error", err))...)
+		}
+	}
+}
+
+// armStartTimer registers a timer-start event's timerID on the scheduler from
+// its resolved [schedule.TriggerSpec], firing startTimerFireFunc on each
+// occurrence. An unschedulable trigger is logged at WARN and skipped — it must
+// never crash the driver.
+func (driver *ProcessDriver) armStartTimer(ctx context.Context, def *model.ProcessDefinition, nodeID, timerID string, trig schedule.TriggerSpec) {
+	nextRun, err := driver.sched.Schedule(ctx, timerID, trig, driver.startTimerFireFunc(def, nodeID, timerID))
+	if err != nil {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armStartTimer: trigger not schedulable, skipping timer-start",
+			append(driver.obs.tel.LogAttrs(ctx),
+				slog.String("timer_id", timerID),
+				slog.String("def_id", def.ID),
+				slog.String("node_id", nodeID),
+				slog.Any("error", err))...)
+		return
+	}
+	driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "runtime: armStartTimer: scheduled",
+		append(driver.obs.tel.LogAttrs(ctx),
+			slog.String("timer_id", timerID),
+			slog.String("def_id", def.ID),
+			slog.String("node_id", nodeID),
+			slog.Time("next_run", nextRun))...)
+}
+
+// RehydrateStartTimers arms every registered definition's timer-start event on
+// the scheduler (ADR-0121). Call it once at startup, after constructing the
+// ProcessDriver and registering definitions — it is a separate explicit boot
+// step, sibling to [ProcessDriver.RehydrateTimers]:
+//
+//   - RehydrateTimers restores IN-FLIGHT instance timers from the durable timer
+//     store (there is an existing instance to resume).
+//   - RehydrateStartTimers re-derives its arms purely from registered
+//     definitions — a timer-start has no instance yet, so nothing about it is
+//     persisted in the timer store; no durable store is required.
+//
+// Each timer-start is armed under the stable id computed by startTimerID, so
+// calling RehydrateStartTimers again (e.g. across restarts) re-arms the SAME
+// scheduler entry idempotently rather than accumulating duplicates. Each fire
+// creates exactly one new process instance (see startTimerFireFunc); a
+// recurring trigger therefore keeps creating a fresh instance on every
+// occurrence.
+//
+// Requires [WithScheduler] and [WithDefinitions].
+func (driver *ProcessDriver) RehydrateStartTimers(ctx context.Context) error {
+	if driver.sched == nil || driver.defsReg == nil {
+		return fmt.Errorf("workflow-runtime: RehydrateStartTimers requires WithScheduler and WithDefinitions")
+	}
+	for _, hit := range timerStartDefs(driver.listDefinitions(ctx)) {
+		driver.armStartTimer(ctx, hit.Def, hit.NodeID, startTimerID(hit.Def.ID, hit.NodeID), hit.Trigger)
+	}
+	return nil
+}
+
 // rehydrateTrigger picks the TriggerSpec to re-arm a persisted timer with. A
 // non-recurring timer with a valid persisted NextRun re-arms via
 // schedule.At(NextRun) so it fires at its original absolute instant; every other

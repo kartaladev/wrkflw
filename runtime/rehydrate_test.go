@@ -10,12 +10,40 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 	"github.com/zakyalvan/krtlwrkflw/engine"
 	"github.com/zakyalvan/krtlwrkflw/processtest"
 	"github.com/zakyalvan/krtlwrkflw/runtime"
 	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
+
+// timerStartOnlyDef returns a minimal process whose start event carries a timer
+// trigger (ADR-0121 timer-start): start(timer) → end. Used to exercise
+// RehydrateStartTimers, whose fire callback creates one instance per fire.
+func timerStartOnlyDef(defID string, trig schedule.TriggerSpec) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      defID,
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start", event.WithStartTimer(trig)),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "end"},
+		},
+	}
+}
+
+// fixedIDGenerator is a deterministic idgen.Generator test double that always
+// returns the same id, so a test can assert on the exact instance id a
+// timer-start fire will create.
+type fixedIDGenerator struct{ id string }
+
+func (g fixedIDGenerator) NewID() (string, error) { return g.id, nil }
 
 func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 13, 0, 0, 0, time.UTC)
@@ -63,4 +91,29 @@ func TestRehydrateTimersRequiresWiring(t *testing.T) {
 	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
 	err := driver.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")
+}
+
+func TestRehydrateStartTimersFiresCreatesInstance(t *testing.T) {
+	startAt := time.Date(2026, 6, 22, 13, 0, 0, 0, time.UTC)
+	fc := clockwork.NewFakeClockAt(startAt)
+	reg := kernel.NewMemDefinitionRegistry()
+	require.NoError(t, reg.Register(timerStartOnlyDef("cron", schedule.AfterDuration(time.Hour))))
+	store := runtimetest.MustMemStore(t)
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
+	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store,
+		runtime.WithClock(fc),
+		runtime.WithScheduler(sched), runtime.WithDefinitions(reg),
+		runtime.WithIDGenerator(fixedIDGenerator{id: "cron-instance-1"}))
+
+	require.NoError(t, driver.RehydrateStartTimers(t.Context()))
+
+	// Advance + tick the scheduler: the armed timer-start fires and creates a
+	// brand-new instance (no pre-existing instance to resume, unlike a
+	// TimerFired delivered to an already-running one).
+	fc.Advance(time.Hour + time.Minute)
+	require.NoError(t, sched.Tick(t.Context()))
+
+	final, _, err := store.Load(t.Context(), "cron-instance-1")
+	require.NoError(t, err, "timer-start fire must have created the instance")
+	assert.Equal(t, engine.StatusCompleted, final.Status, "start->end with no other nodes must complete immediately")
 }
