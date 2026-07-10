@@ -35,15 +35,31 @@ var (
 )
 
 var (
-	ErrNoStartEvent        = errors.New("workflow-definition: no start event")
-	ErrMultipleStartEvents = errors.New("workflow-definition: multiple start events")
-	ErrDanglingFlow        = errors.New("workflow-definition: flow references unknown node")
-	ErrDeadEnd             = errors.New("workflow-definition: non-end node has no outgoing flow")
-	ErrStartHasIncoming    = errors.New("workflow-definition: start event has incoming flow")
-	ErrEndHasOutgoing      = errors.New("workflow-definition: end event has outgoing flow")
-	ErrConditionNotAllowed = errors.New("workflow-definition: condition on flow from a non-conditional gateway")
-	ErrDefaultNotAllowed   = errors.New("workflow-definition: default flow from a non-conditional gateway")
-	ErrMultipleDefaults    = errors.New("workflow-definition: node has more than one default flow")
+	ErrNoStartEvent = errors.New("workflow-definition: no start event")
+	// ErrMultipleNoneStarts is returned when a definition has more than one
+	// trigger-less ("none") start event; at most one is allowed. A none-start is
+	// a KindStartEvent whose MessageName, SignalName, and Timer are all unset.
+	// Multiple event-triggered starts (message/signal/timer) remain legal
+	// alongside it — see ErrAmbiguousStartTrigger and ErrEventStartMissingTrigger
+	// for the per-start trigger rules (ADR-0121).
+	ErrMultipleNoneStarts = errors.New("workflow-definition: multiple none start events")
+	// ErrAmbiguousStartTrigger is returned when a start event sets more than one
+	// trigger family (message/signal/timer). Exactly one family — or none — is
+	// allowed per start event (ADR-0121).
+	ErrAmbiguousStartTrigger = errors.New("workflow-definition: start event has ambiguous trigger")
+	// ErrEventStartMissingTrigger is returned when a start event declares a
+	// trigger family incompletely — currently: a non-empty CorrelationKey with
+	// no MessageName, i.e. a message start missing its message name. Such a
+	// start is neither a valid none-start nor a valid message start, so it is
+	// rejected rather than silently treated as none (ADR-0121).
+	ErrEventStartMissingTrigger = errors.New("workflow-definition: event start missing trigger detail")
+	ErrDanglingFlow             = errors.New("workflow-definition: flow references unknown node")
+	ErrDeadEnd                  = errors.New("workflow-definition: non-end node has no outgoing flow")
+	ErrStartHasIncoming         = errors.New("workflow-definition: start event has incoming flow")
+	ErrEndHasOutgoing           = errors.New("workflow-definition: end event has outgoing flow")
+	ErrConditionNotAllowed      = errors.New("workflow-definition: condition on flow from a non-conditional gateway")
+	ErrDefaultNotAllowed        = errors.New("workflow-definition: default flow from a non-conditional gateway")
+	ErrMultipleDefaults         = errors.New("workflow-definition: node has more than one default flow")
 	// ErrEventGatewayTarget is returned when an outgoing flow from a
 	// KindEventBasedGateway targets a node that is not a catch event.
 	// Every outgoing flow from an event-based gateway must target a
@@ -191,12 +207,47 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 
 	var errs []error
 
+	// Start events (ADR-0121): a definition may have any number of start
+	// events. At most one may be a trigger-less "none" start
+	// (ErrMultipleNoneStarts); each event-triggered start must set exactly one
+	// trigger family — message, signal, or timer (ErrAmbiguousStartTrigger for
+	// >1 set). A non-empty CorrelationKey with no MessageName is an
+	// incompletely-specified message start, not a none-start
+	// (ErrEventStartMissingTrigger).
 	starts := d.StartNodes()
-	switch {
-	case len(starts) == 0:
+	if len(starts) == 0 {
 		errs = append(errs, ErrNoStartEvent)
-	case len(starts) > 1:
-		errs = append(errs, fmt.Errorf("%w: %d found", ErrMultipleStartEvents, len(starts)))
+	}
+	var noneCount int
+	for _, s := range starts {
+		w := toWire(s)
+		hasMessage := w.MessageName != ""
+		hasSignal := w.SignalName != ""
+		hasTimer := w.TimerTrigger != nil || w.TimerDuration != ""
+		switch {
+		case !hasMessage && w.CorrelationKey != "":
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrEventStartMissingTrigger, s.ID()))
+		default:
+			fams := 0
+			if hasMessage {
+				fams++
+			}
+			if hasSignal {
+				fams++
+			}
+			if hasTimer {
+				fams++
+			}
+			switch {
+			case fams == 0:
+				noneCount++
+			case fams > 1:
+				errs = append(errs, fmt.Errorf("%w: node %q", ErrAmbiguousStartTrigger, s.ID()))
+			}
+		}
+	}
+	if noneCount > 1 {
+		errs = append(errs, ErrMultipleNoneStarts)
 	}
 
 	for _, f := range d.Flows {
@@ -276,15 +327,22 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 
-	// Reachability (ErrUnreachableNode). Runs only with exactly one start event;
-	// with 0 or >1 starts the start-count error already fires and reachability is
-	// ill-defined, so we skip to avoid cascade noise. Boundary events have no
+	// Reachability (ErrUnreachableNode). Runs whenever there is at least one
+	// start event, over the UNION of forward-reachable sets from every start
+	// (ADR-0121: multiple starts are legal, so reachability is well-defined for
+	// any start count > 0). With 0 starts the start-count error already fires
+	// and reachability is undefined, so we skip. Boundary events have no
 	// incoming flow (reachable iff their host is reachable, to a fixpoint, since a
 	// boundary branch may host another activity-with-boundary) and event-sub-processes
 	// are event-triggered roots.
 	var reached map[string]bool
-	if starts := d.StartNodes(); len(starts) == 1 {
-		reached = forwardReachable(d, starts[0].ID())
+	if starts := d.StartNodes(); len(starts) > 0 {
+		reached = map[string]bool{}
+		for _, s := range starts {
+			for id := range forwardReachable(d, s.ID()) {
+				reached[id] = true
+			}
+		}
 		for _, n := range d.Nodes {
 			if n.Kind() == KindEventSubProcess {
 				for id := range forwardReachable(d, n.ID()) {
@@ -329,9 +387,12 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// concurrency source clears the join (favouring no false positives). Unreachable
 	// joins are skipped — ErrUnreachableNode already reports them.
 	//
-	// reached == nil means 0 or >1 start events: reachability is ill-defined and the
-	// start-count error already fires, so we skip pairing entirely to avoid noise on
-	// an already-invalid definition (it is re-checked once the start count is fixed).
+	// reached == nil means 0 start events: reachability is undefined and the
+	// no-start-event error already fires, so we skip pairing entirely to avoid
+	// noise on an already-invalid definition. With >=1 starts (ADR-0121)
+	// reachability is well-defined via the union above, so pairing runs even
+	// when the start configuration itself is otherwise invalid (e.g. multiple
+	// none-starts) — it is an independent structural rule.
 	if reached != nil {
 		for _, n := range d.Nodes {
 			if n.Kind() != KindParallelGateway {

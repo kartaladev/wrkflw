@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
@@ -35,7 +36,9 @@ func TestValidate(t *testing.T) {
 				require.ErrorIs(t, err, model.ErrNoStartEvent)
 			},
 		},
-		"multiple start events": {
+		"multiple none start events": {
+			// ADR-0121: multiple start events are legal, but at most one may be a
+			// trigger-less "none" start — a second one is rejected.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
@@ -49,7 +52,7 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, model.ErrMultipleStartEvents)
+				require.ErrorIs(t, err, model.ErrMultipleNoneStarts)
 			},
 		},
 		"dangling flow target": {
@@ -564,7 +567,13 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err)
 			},
 		},
-		"multiple starts skips pairing (reachability ill-defined)": {
+		"multiple starts still runs pairing (reachability well-defined via union)": {
+			// ADR-0121: reachability/pairing are computed over the union of all
+			// starts, so they run (and can flag real defects) even when the start
+			// configuration itself is separately invalid (two none-starts here).
+			// The join "j" is genuinely unpaired regardless of start count: its
+			// only upstream split ("split") is exclusive, not a concurrency
+			// source, so it deadlocks at runtime waiting for a second token.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
 				Nodes: []model.Node{
@@ -588,10 +597,8 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, model.ErrMultipleStartEvents)
-				// Pairing is skipped when the start count is ill-defined, so the
-				// otherwise-unpaired join is not reported on an already-invalid def.
-				require.NotErrorIs(t, err, model.ErrUnpairedJoin)
+				require.ErrorIs(t, err, model.ErrMultipleNoneStarts)
+				require.ErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
 		"loop containing a properly forked parallel join is valid": {
@@ -1774,5 +1781,159 @@ func TestValidateManualTaskRejectsCompletionValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.assert(t, model.Validate(tc.def))
 		})
+	}
+}
+
+// TestValidateStartEvents covers the ADR-0121 relaxation: a process
+// definition may now have multiple start events (at most one trigger-less
+// "none" start, plus any number of event-triggered starts each declaring
+// exactly one trigger family), and reachability/pairing are computed over the
+// union of all starts rather than requiring exactly one.
+func TestValidateStartEvents(t *testing.T) {
+	tests := map[string]struct {
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		"two none starts rejected": {
+			def: twoNoneStartDef(),
+			assert: func(t *testing.T, err error) {
+				assert.ErrorIs(t, err, model.ErrMultipleNoneStarts)
+			},
+		},
+		"one none + one message start allowed": {
+			def:    noneAndMessageStartDef(),
+			assert: func(t *testing.T, err error) { assert.NoError(t, err) },
+		},
+		"two event starts allowed": {
+			def:    signalAndTimerStartDef(),
+			assert: func(t *testing.T, err error) { assert.NoError(t, err) },
+		},
+		"message start without name rejected": {
+			def: messageStartMissingNameDef(),
+			assert: func(t *testing.T, err error) {
+				assert.ErrorIs(t, err, model.ErrEventStartMissingTrigger)
+			},
+		},
+		"start with signal and timer rejected": {
+			def: signalPlusTimerOneNodeDef(),
+			assert: func(t *testing.T, err error) {
+				assert.ErrorIs(t, err, model.ErrAmbiguousStartTrigger)
+			},
+		},
+		"node reachable from a non-first start is not unreachable": {
+			def: twoStartsBothReachDef(),
+			assert: func(t *testing.T, err error) {
+				assert.NotErrorIs(t, err, model.ErrUnreachableNode)
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// twoNoneStartDef has two trigger-less start events — always rejected
+// (ErrMultipleNoneStarts), regardless of how many event-triggered starts a
+// definition also carries.
+func twoNoneStartDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s1"),
+			event.NewStart("s2"),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s1", Target: "end"},
+			{ID: "f2", Source: "s2", Target: "end"},
+		},
+	}
+}
+
+// noneAndMessageStartDef has one none-start plus one message-triggered
+// start — legal under the ADR-0121 relaxation (at most one none-start).
+func noneAndMessageStartDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s1"),
+			event.NewStart("s2", event.WithMessageCorrelator("orderPlaced", "orderId")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s1", Target: "end"},
+			{ID: "f2", Source: "s2", Target: "end"},
+		},
+	}
+}
+
+// signalAndTimerStartDef has two event-triggered starts (signal + timer),
+// zero none-starts — legal.
+func signalAndTimerStartDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s1", event.WithSignalName("sig")),
+			event.NewStart("s2", event.WithStartTimer(schedule.AfterDuration(time.Hour))),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s1", Target: "end"},
+			{ID: "f2", Source: "s2", Target: "end"},
+		},
+	}
+}
+
+// messageStartMissingNameDef declares a message-family correlation key
+// without a message name — an incompletely-specified trigger family, not a
+// none-start (ErrEventStartMissingTrigger).
+func messageStartMissingNameDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s1", event.WithMessageCorrelator("", "someKey")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s1", Target: "end"},
+		},
+	}
+}
+
+// signalPlusTimerOneNodeDef sets both a signal name and a timer on the same
+// start event — two trigger families set (ErrAmbiguousStartTrigger).
+func signalPlusTimerOneNodeDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s1", event.WithSignalName("sig"), event.WithStartTimer(schedule.AfterDuration(time.Hour))),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s1", Target: "end"},
+		},
+	}
+}
+
+// twoStartsBothReachDef has a none-start reaching "end" directly and a
+// message start reaching "end" via "task" — every node is reachable from the
+// union of both starts, so none should be reported unreachable even though
+// "task" is only reachable from the second (non-first) start.
+func twoStartsBothReachDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s1"),
+			event.NewStart("s2", event.WithMessageCorrelator("orderPlaced", "orderId")),
+			activity.NewServiceTask("task", activity.WithTaskAction("x")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s1", Target: "end"},
+			{ID: "f2", Source: "s2", Target: "task"},
+			{ID: "f3", Source: "task", Target: "end"},
+		},
 	}
 }
