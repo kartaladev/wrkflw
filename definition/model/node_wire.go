@@ -36,12 +36,15 @@ type NodeWire struct {
 	RecoveryFlow     string       `json:"recoveryFlow,omitempty"`
 	CompensateAction string       `json:"compensateAction,omitempty"`
 	CompensateRef    string       `json:"compensateRef,omitempty"`
-	CancelAction     string       `json:"cancelAction,omitempty"`
-	CompletionAction string       `json:"completionAction,omitempty"`
-	SignalName       string       `json:"signalName,omitempty"`
-	MessageName      string       `json:"messageName,omitempty"`
-	CorrelationKey   string       `json:"correlationKey,omitempty"`
-	ErrorCode        string       `json:"errorCode,omitempty"`
+	// CompensateScopeLocal narrows a scope-wide CompensationThrowEvent at the
+	// root scope to root-direct compensable activities (ADR-0120).
+	CompensateScopeLocal bool   `json:"compensateScopeLocal,omitempty"`
+	CancelAction         string `json:"cancelAction,omitempty"`
+	CompletionAction     string `json:"completionAction,omitempty"`
+	SignalName           string `json:"signalName,omitempty"`
+	MessageName          string `json:"messageName,omitempty"`
+	CorrelationKey       string `json:"correlationKey,omitempty"`
+	ErrorCode            string `json:"errorCode,omitempty"`
 	// ForceTermination, TerminationReason, and TerminationOutcome carry
 	// EndEvent's force-termination fields (ADR-0119). TerminationOutcome is the
 	// string form of TerminationOutcome ("complete"/"abort"), written only when

@@ -162,6 +162,28 @@ type EventSubProcess struct {
 // Kind returns model.KindEventSubProcess.
 func (EventSubProcess) Kind() model.NodeKind { return model.KindEventSubProcess }
 
+// CompensationThrowEvent triggers intra-process compensation when reached. It
+// runs completed compensable activities' compensation actions in reverse order,
+// then continues past the throw (it does NOT terminate). With CompensateRef set
+// it targets a specific completed sub-process node's archived records; empty
+// CompensateRef is scope-wide (the throwing scope's completed compensable
+// activities). Unlike a signal throw (IntermediateThrowEvent), compensation
+// never crosses process boundaries.
+type CompensationThrowEvent struct {
+	model.Base
+	// CompensateRef names a completed sub-process node whose archived compensation
+	// records to run (targeted). Empty = scope-wide.
+	CompensateRef string
+	// ScopeLocal narrows a scope-wide throw at the ROOT scope to root-direct
+	// compensable activities, excluding records archived from completed
+	// sub-processes. Default false = whole-instance (BPMN-conformant). Ignored for
+	// a targeted throw and at a sub-process scope.
+	ScopeLocal bool
+}
+
+// Kind returns model.KindCompensationThrowEvent.
+func (CompensationThrowEvent) Kind() model.NodeKind { return model.KindCompensationThrowEvent }
+
 // --- constructors ---
 
 func optName(name []string) string {
@@ -211,6 +233,18 @@ func NewIntermediateCatch(id string, opts ...CatchOption) model.Node {
 // WithCompensateRef, or WithThrowName.
 func NewIntermediateThrow(id string, opts ...ThrowOption) model.Node {
 	n := IntermediateThrowEvent{Base: model.NewBase(id, "")}
+	for _, o := range opts {
+		o(&n)
+	}
+	return n
+}
+
+// NewCompensateThrow constructs a compensation throw. With no options it is a
+// scope-wide, whole-instance throw; WithCompensateTargetRef makes it targeted,
+// WithScopeLocalCompensation narrows the root breadth, WithCompensateThrowName
+// sets a display name.
+func NewCompensateThrow(id string, opts ...CompensateThrowOption) model.Node {
+	n := CompensationThrowEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
 		o(&n)
 	}
@@ -323,6 +357,16 @@ func init() {
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(IntermediateThrowEvent)
 			w.SignalName, w.CompensateRef = v.SignalName, v.CompensateRef
+		},
+	})
+	model.RegisterKind(model.KindCompensationThrowEvent, model.NodeSpec{
+		Name: "compensationThrowEvent",
+		FromWire: func(b model.Base, w model.NodeWire) model.Node {
+			return CompensationThrowEvent{Base: b, CompensateRef: w.CompensateRef, ScopeLocal: w.CompensateScopeLocal}
+		},
+		ToWire: func(n model.Node, w *model.NodeWire) {
+			v := n.(CompensationThrowEvent)
+			w.CompensateRef, w.CompensateScopeLocal = v.CompensateRef, v.ScopeLocal
 		},
 	})
 	model.RegisterKind(model.KindBoundaryEvent, model.NodeSpec{
