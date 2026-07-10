@@ -8,6 +8,7 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/build"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
@@ -83,7 +84,7 @@ func TestFluentAllAdders(t *testing.T) {
 		AddIntermediateCatchEvent("catch").
 		AddIntermediateThrowEvent("throw").
 		AddBoundaryEvent("bnd", "recv").
-		AddTerminateEndEvent("term").
+		AddEndEvent("term", event.WithForceTermination("terminated", event.OutcomeAbort)).
 		AddErrorEndEvent("err", "E").
 		RegisterAction("a", action.ActionFunc(noop)).
 		RegisterActionFunc("b", noop).

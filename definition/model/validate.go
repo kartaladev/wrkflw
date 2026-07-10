@@ -202,7 +202,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	}
 
 	for _, n := range d.Nodes {
-		isEnd := n.Kind() == KindEndEvent || n.Kind() == KindTerminateEndEvent || n.Kind() == KindErrorEndEvent
+		isEnd := n.Kind() == KindEndEvent || n.Kind() == KindErrorEndEvent
 		out := d.Outgoing(n.ID())
 		in := d.Incoming(n.ID())
 

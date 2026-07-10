@@ -209,8 +209,11 @@
     },
     {
       "id": "kill",
-      "kind": "terminateEndEvent",
-      "name": "Kill"
+      "kind": "endEvent",
+      "name": "Kill",
+      "forceTermination": true,
+      "terminationReason": "operator-initiated kill",
+      "terminationOutcome": "abort"
     },
     {
       "id": "boom",

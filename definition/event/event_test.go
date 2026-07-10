@@ -89,8 +89,8 @@ func TestEndEventConstructors(t *testing.T) {
 		n model.Node
 		k model.NodeKind
 	}{
-		{event.NewEnd("e", "End"), model.KindEndEvent},
-		{event.NewTerminateEnd("t"), model.KindTerminateEndEvent},
+		{event.NewEnd("e", event.WithName("End")), model.KindEndEvent},
+		{event.NewEnd("t", event.WithForceTermination("terminated", event.OutcomeAbort)), model.KindEndEvent},
 		{event.NewErrorEnd("er", "E_BOOM", "Boom"), model.KindErrorEndEvent},
 	}
 	for _, c := range cases {
