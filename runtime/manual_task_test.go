@@ -136,4 +136,61 @@ func TestManualWaitTaskRejectsPayload(t *testing.T) {
 	if !errors.Is(err, engine.ErrManualTaskPayload) {
 		t.Fatalf("err = %v, want ErrManualTaskPayload", err)
 	}
+	// The rejected payload must not have been merged into instance variables:
+	// the guard must run before mergeVars, not after.
+	reloaded, _, loadErr := memSt.Load(ctx, id)
+	if loadErr != nil {
+		t.Fatalf("reload: %v", loadErr)
+	}
+	if _, ok := reloaded.Variables["note"]; ok {
+		t.Fatal("rejected payload key \"note\" leaked into instance variables")
+	}
+}
+
+// TestImmediateManualTaskAutoCompletes locks ADR-0118: an immediate-mode
+// manual UserTask (WithManual(true)) never parks — driving alone, with no
+// external trigger, must record a completed human task (audit trail) and
+// reach StatusCompleted.
+func TestImmediateManualTaskAutoCompletes(t *testing.T) {
+	ctx := t.Context()
+	def, err := definition.NewBuilder("manual-immediate", 1).
+		Add(event.NewStart("s")).
+		Add(activity.NewUserTask("noted", activity.WithManual(true))).
+		Add(event.NewEnd("e")).
+		Connect("s", "noted").Connect("noted", "e").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	taskStore := humantask.NewMemTaskStore()
+	memSt, err := kernel.NewMemInstanceStore()
+	if err != nil {
+		t.Fatalf("memstore: %v", err)
+	}
+	driver, err := runtime.NewProcessDriver(
+		runtime.WithInstanceStore(memSt),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.RoleAuthorizer{}),
+	)
+	if err != nil {
+		t.Fatalf("driver: %v", err)
+	}
+	// No external trigger: driving alone must reach Completed.
+	final, err := driver.Drive(ctx, def, "mi-1", nil)
+	if err != nil {
+		t.Fatalf("drive: %v", err)
+	}
+	if final.Status != engine.StatusCompleted {
+		t.Fatalf("status = %v, want Completed (immediate manual auto-completes)", final.Status)
+	}
+	// Audit: a completed task for the manual node exists in history.
+	var found bool
+	for i := range final.Tasks {
+		if final.Tasks[i].NodeID == "noted" && final.Tasks[i].State == humantask.Completed {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no completed task recorded for the immediate manual node")
+	}
 }
