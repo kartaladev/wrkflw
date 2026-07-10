@@ -807,6 +807,26 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err, "ScopeLocal on a scope-wide throw is valid")
 			},
 		},
+		"event-triggered SubProcess with no incoming flow is a reachability root": {
+			// ADR-0122: a KindSubProcess whose nested definition has an
+			// event-triggered (message, here) start is recognized as a
+			// reachability root, the same as the legacy KindEventSubProcess —
+			// it must not be flagged ErrUnreachableNode despite having no
+			// incoming sequence flow of its own.
+			def: eventTriggeredSubprocessRootDef(),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"event-triggered SubProcess with an incoming flow is rejected": {
+			// ADR-0122 authoring guard: an event-triggered SubProcess must not
+			// also carry an incoming sequence flow — that combination is
+			// unmodelable (embedded vs. event sub-process semantics collide).
+			def: eventTriggeredSubprocessOnFlowDef(),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrEventSubprocessOnFlow)
+			},
+		},
 		"dangling CompensateRef inside a sub-process is rejected (recursion)": {
 			// The CompensateRef rule lives in the recursive validate(), so a dangling
 			// ref inside a nested sub-process definition must also be caught.
@@ -1934,6 +1954,71 @@ func twoStartsBothReachDef() *model.ProcessDefinition {
 			{ID: "f1", Source: "s1", Target: "end"},
 			{ID: "f2", Source: "s2", Target: "task"},
 			{ID: "f3", Source: "task", Target: "end"},
+		},
+	}
+}
+
+// eventTriggeredSubprocessRootDef returns a definition whose only
+// flow-reachable nodes are the none-start chain (s -> work -> e), plus a
+// KindSubProcess ("handleCancel") whose nested definition has a
+// message-triggered start and NO incoming sequence flow of its own — it is a
+// reachability root by virtue of its event-triggered inner start, the same
+// as the legacy KindEventSubProcess (ADR-0122).
+func eventTriggeredSubprocessRootDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "esc", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("onCancel", event.WithMessageCorrelator("cancel", "orderId")),
+			activity.NewServiceTask("notify", activity.WithTaskAction("notify")),
+			event.NewEnd("ie"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "if1", Source: "onCancel", Target: "notify"},
+			{ID: "if2", Source: "notify", Target: "ie"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s"),
+			activity.NewServiceTask("work", activity.WithTaskAction("work")),
+			event.NewEnd("e"),
+			activity.NewSubProcess("handleCancel", inner), // no incoming flow — event-triggered root
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s", Target: "work"},
+			{ID: "f2", Source: "work", Target: "e"},
+		},
+	}
+}
+
+// eventTriggeredSubprocessOnFlowDef is the ADR-0122 authoring-guard
+// counter-case: a KindSubProcess whose nested start is event-triggered
+// (signal, here) but which ALSO carries an incoming sequence flow. Mixing
+// "embedded, flow-driven" and "event sub-process, trigger-driven" semantics
+// on the same node is unmodelable, so it must be rejected.
+func eventTriggeredSubprocessOnFlowDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "esc2", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("onCancel", event.WithSignalName("cancel.signal")),
+			event.NewEnd("ie"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "if1", Source: "onCancel", Target: "ie"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s"),
+			activity.NewSubProcess("handleCancel", inner),
+			event.NewEnd("e"),
+		},
+		Flows: []flow.SequenceFlow{
+			// illegal: an incoming flow into an event-triggered SubProcess.
+			{ID: "f1", Source: "s", Target: "handleCancel"},
+			{ID: "f2", Source: "handleCancel", Target: "e"},
 		},
 	}
 }
