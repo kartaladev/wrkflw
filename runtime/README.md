@@ -196,15 +196,18 @@ to resume a parked instance:
 - message correlation,
 - compensation or cancel.
 
-### `DeliverMessage` — message correlation
+### `DeliverMessage` — message correlation / message-start
 
 ```go
-err := r.DeliverMessage(ctx, def, messageName, correlationKey, payload)
+err := r.DeliverMessage(ctx, messageName, correlationKey, payload)
 ```
 
-Finds the single instance currently waiting for a `ReceiveTask` or message catch
-event with the given name and correlation key and delivers a `MessageReceived`
-trigger to it. No-op if no matching waiter is found.
+Def-less (ADR-0121): correlates to the single instance currently waiting for a
+`ReceiveTask` or message catch event with the given name and correlation key and
+delivers a `MessageReceived` trigger to it. On a miss, creates a new instance at
+the unique registered message-start matching `messageName`, deterministically
+deduped by `(messageName, correlationKey)`. No-op if there is no waiter and no
+matching message-start.
 
 ### `ResolveIncident` — admin recovery
 

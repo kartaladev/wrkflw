@@ -267,7 +267,8 @@ fills zero fields (preserving `MaxAttempts == 0`). Attach with
 the YAML/JSON loaders. It runs a comprehensive structural check and returns a
 joined error. The sentinel errors live in `definition/model` — check them with
 `errors.Is(err, model.ErrNoStartEvent)`. They include: `ErrNoStartEvent`,
-`ErrMultipleStartEvents`, `ErrDanglingFlow`, `ErrDeadEnd`, `ErrStartHasIncoming`,
+`ErrMultipleManualStarts`, `ErrAmbiguousStartTrigger`,
+`ErrEventStartMissingTrigger`, `ErrDanglingFlow`, `ErrDeadEnd`, `ErrStartHasIncoming`,
 `ErrEndHasOutgoing`, `ErrConditionNotAllowed`, `ErrDefaultNotAllowed`,
 `ErrMultipleDefaults`, `ErrEventGatewayTarget`, `ErrMixedGateway`,
 `ErrUnreachableNode`, `ErrUnpairedJoin`, `ErrBoundaryAttachment`,

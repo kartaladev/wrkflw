@@ -1176,7 +1176,7 @@ def, _ := definition.NewBuilder("order-shipping", 1).
     Build()
 
 driver.Drive(ctx, def, "order-1", map[string]any{"orderID": "order-1"}) // parks on "PaymentReceived"
-driver.DeliverMessage(ctx, def, "PaymentReceived", "order-1", nil)    // resumes order-1 only
+driver.DeliverMessage(ctx, "PaymentReceived", "order-1", nil)        // resumes order-1 only
 ```
 
 **At runtime:** two orders park on the same message name; delivering key `"order-1"`
