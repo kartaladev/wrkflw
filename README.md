@@ -685,8 +685,7 @@ model.RetryPolicy{
 | Node | What it does | Constructor |
 |---|---|---|
 | **StartEvent** | Entry point of a process (or the trigger of an EventSubProcess). | `event.NewStart(id string, opts ...) Node` |
-| **EndEvent** | Normal completion of one branch. | `event.NewEnd(id string, name ...string) Node` |
-| **TerminateEndEvent** | Terminates the whole instance, including parallel branches. | `event.NewTerminateEnd(id string, name ...string) Node` |
+| **EndEvent** | Normal completion of one branch; `WithForceTermination(reason, outcome)` upgrades it to terminate the whole instance (all parallel branches), abort or complete. | `event.NewEnd(id string, opts ...event.EndOption) Node` |
 | **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `event.NewErrorEnd(id, errorCode string, name ...string) Node` |
 
 `NewStartEvent` options (only meaningful when the start is an EventSubProcess trigger):
@@ -696,8 +695,8 @@ model.RetryPolicy{
 
 ```go
 event.NewStart("start")
-event.NewEnd("end", "Order complete")
-event.NewTerminateEnd("kill-all")
+event.NewEnd("end", event.WithName("Order complete"))
+event.NewEnd("kill-all", event.WithForceTermination("abort", event.OutcomeAbort))
 event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 ```
 
@@ -873,7 +872,7 @@ flows:
   - { id: f3, source: approve, target: end }
 ```
 
-Valid `kind` values: `startEvent`, `endEvent`, `terminateEndEvent`, `errorEndEvent`,
+Valid `kind` values: `startEvent`, `endEvent`, `errorEndEvent`,
 `serviceTask`, `userTask`, `receiveTask`, `sendTask`, `businessRuleTask`, `subProcess`,
 `callActivity`, `eventSubProcess`, `intermediateCatchEvent`, `intermediateThrowEvent`,
 `boundaryEvent`, `exclusiveGateway`, `parallelGateway`, `inclusiveGateway`,

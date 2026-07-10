@@ -292,8 +292,8 @@ Sixteen kinds are registered: `KindServiceTask`, `KindStartEvent`,
 `KindIntermediateThrowEvent`, `KindBusinessRuleTask`, `KindReceiveTask`,
 `KindSendTask`.
 
-Four kinds intentionally fall through to the post-dispatch parking logic (token
-is set `TokenWaitingCommand`): `KindTerminateEndEvent`, `KindBoundaryEvent`,
+Three kinds intentionally fall through to the post-dispatch parking logic (token
+is set `TokenWaitingCommand`): `KindBoundaryEvent`,
 `KindEventSubProcess`, `KindUnspecified`. `step_nodes_test.go` pins both sets as
 a completeness check (replaces the compiler's switch-exhaustiveness guarantee).
 

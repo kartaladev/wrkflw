@@ -466,6 +466,9 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // event's scope. A force-termination end firing inside a sub-process scope still
 // ends the entire instance; scoped (sub-process-local) force-termination is not
 // yet modeled.
+//
+// Intentionally does not invoke node/def CancelActions or run compensation —
+// this is a modeled terminate, not an admin cancel (unlike handleCancelRequested).
 func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
 	ended := c.at
 	c.s.EndedAt = &ended
