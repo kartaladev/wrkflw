@@ -758,6 +758,48 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err, "a scope-wide compensation throw with no CompensateRef must validate clean")
 			},
 		},
+		"targeted compensation throw with ScopeLocal is rejected (nonsensical combination)": {
+			// ADR-0120 review C2: WithScopeLocalCompensation only applies to the
+			// scope-wide (empty CompensateRef) branch; combining it with a targeted
+			// CompensateRef is a silent no-op at runtime, so it is rejected at
+			// authoring time.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work"), activity.WithCompensateAction("undo-work")),
+					event.NewCompensateThrow("comp-throw", event.WithCompensateRef("task"), event.WithScopeLocalCompensation()),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "comp-throw"},
+					{ID: "f3", Source: "comp-throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrScopeLocalWithCompensateRef)
+			},
+		},
+		"scope-wide compensation throw with ScopeLocal is accepted": {
+			// ScopeLocal is meaningful only on a scope-wide (empty CompensateRef)
+			// throw — it must validate clean.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewCompensateThrow("comp-throw", event.WithScopeLocalCompensation()),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "comp-throw"},
+					{ID: "f2", Source: "comp-throw", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err, "ScopeLocal on a scope-wide throw is valid")
+			},
+		},
 		"dangling CompensateRef inside a sub-process is rejected (recursion)": {
 			// The CompensateRef rule lives in the recursive validate(), so a dangling
 			// ref inside a nested sub-process definition must also be caught.

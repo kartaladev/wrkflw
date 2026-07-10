@@ -1044,40 +1044,62 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 	} else {
 		// Scope-wide throw (ADR-0120): compensate the throwing scope's completed
 		// compensable activities in reverse, then resume forward.
-		if tokScope == "" && !cte.ScopeLocal {
-			// Whole-instance default (BPMN conformant): merge archived sub-process
-			// records into RootCompensations so they are compensated too. ScopeLocal
-			// skips this — root-direct records only.
-			c.s.consolidateArchiveIntoRoot()
-		}
-		records := compensationRecordsForScope(c.s, tokScope)
-		if len(records) == 0 || resumeNode == "" {
-			// Nothing to compensate (or no successor) — auto-advance.
+		//
+		// consolidateArchiveIntoRoot MUST run only on the path that actually
+		// commits to a walk — it MOVES ArchivedCompensations into RootCompensations
+		// and nils the archive, so running it on a path that never compensates
+		// would silently destroy the archive (review C1). The branch order below
+		// keeps it off the dead-end and defer paths for exactly that reason.
+		switch {
+		case resumeNode == "":
+			// Dead-end throw (no successor): auto-advance/park without starting a
+			// walk. Do NOT consolidate — a throw that never compensates must leave
+			// ArchivedCompensations intact for a later targeted throw or cancel (C1).
 			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
-		} else if c.s.Compensating.ActiveCmdID != "" {
-			// SERIALIZE (ADR-0071): defer this throw behind the in-flight walk.
+		case c.s.Compensating.ActiveCmdID != "":
+			// SERIALIZE (ADR-0071): defer this throw behind the in-flight walk. Do
+			// NOT consolidate here — merging into RootCompensations under a live
+			// cursor could corrupt the in-flight walk's record source. The deferred
+			// token is re-driven through this strategy when the current walk finishes
+			// (popOneDeferredThrow → drive), so consolidation happens then, on the
+			// committing path below.
 			tok.State = TokenWaitingCommand
 			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
-		} else {
-			// Start the scope-wide walk. The cursor carries NO ArchiveKey, so
-			// cursorRecords reads the throwing scope's live records; the finish
-			// then clears them (compensate-once).
-			c.s.consumeToken(tok, c.at)
-			c.s.Status = StatusCompensating
-			cmdID := c.s.nextCommandID()
-			c.s.Compensating = compensationCursor{
-				ScopeID:     tokScope,
-				ResumeNode:  resumeNode,
-				ResumeScope: tokScope,
-				NextIndex:   len(records) - 1,
-				ActiveCmdID: cmdID,
+		default:
+			// Committing to a walk. Whole-instance default (BPMN conformant): merge
+			// archived sub-process records into RootCompensations FIRST so they are
+			// compensated too, THEN read the throwing scope's records. ScopeLocal
+			// skips the merge — root-direct records only.
+			if tokScope == "" && !cte.ScopeLocal {
+				c.s.consolidateArchiveIntoRoot()
 			}
-			cmds = append(cmds, InvokeAction{
-				CommandID: cmdID,
-				Name:      records[len(records)-1].Action,
-				Input:     copyVars(records[len(records)-1].Input),
-			})
-			tok.State = TokenWaitingCommand
+			records := compensationRecordsForScope(c.s, tokScope)
+			if len(records) == 0 {
+				// Nothing to compensate even after consolidation — auto-advance
+				// (harmless: nothing was there to merge).
+				c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+			} else {
+				// Start the scope-wide walk. The cursor carries NO ArchiveKey, so
+				// cursorRecords reads the throwing scope's live records; the finish
+				// then clears them (compensate-once).
+				c.s.consumeToken(tok, c.at)
+				c.s.Status = StatusCompensating
+				cmdID := c.s.nextCommandID()
+				c.s.Compensating = compensationCursor{
+					ScopeID:          tokScope,
+					ResumeNode:       resumeNode,
+					ResumeScope:      tokScope,
+					NextIndex:        len(records) - 1,
+					StartRecordCount: len(records),
+					ActiveCmdID:      cmdID,
+				}
+				cmds = append(cmds, InvokeAction{
+					CommandID: cmdID,
+					Name:      records[len(records)-1].Action,
+					Input:     copyVars(records[len(records)-1].Input),
+				})
+				tok.State = TokenWaitingCommand
+			}
 		}
 	}
 	return cmds, false, nil

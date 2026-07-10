@@ -13,7 +13,10 @@ import (
 // TestAllKindsRegistered asserts every node kind resolves once the kinds bundle
 // is imported — guarding against a leaf package forgetting to register a kind.
 func TestAllKindsRegistered(t *testing.T) {
-	for k := model.KindStartEvent; k <= model.KindEventBasedGateway; k++ {
+	// Bound to the LAST kind constant (KindCompensationThrowEvent, ADR-0120) so a
+	// newly-appended kind is always checked — the previous KindEventBasedGateway
+	// bound silently skipped every kind appended after it.
+	for k := model.KindStartEvent; k <= model.KindCompensationThrowEvent; k++ {
 		var buf bytes.Buffer
 		if err := json.NewEncoder(&buf).Encode(k); err != nil {
 			t.Fatalf("kind %d not encodable (unregistered name?): %v", int(k), err)

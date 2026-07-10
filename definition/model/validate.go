@@ -102,6 +102,13 @@ var (
 	// enclosing process definition. The referenced node must exist so the engine
 	// can resolve the compensation target at execution time.
 	ErrCompensateRefNotFound = errors.New("workflow-definition: compensation throw references unknown node")
+	// ErrScopeLocalWithCompensateRef is returned when a KindCompensationThrowEvent
+	// node carries BOTH a non-empty CompensateRef (targeted throw) AND ScopeLocal
+	// (WithScopeLocalCompensation). ScopeLocal narrows only the scope-wide (empty
+	// CompensateRef) throw's root breadth; the engine ignores it on the targeted
+	// branch, so the combination is a silent no-op. It is rejected at authoring
+	// time to make the nonsensical combination inexpressible (ADR-0120).
+	ErrScopeLocalWithCompensateRef = errors.New("workflow-definition: compensation throw cannot combine CompensateRef with scope-local compensation")
 	// ErrInvalidVersion is returned by Validate when a (root) definition's
 	// Version is below 1. Version 0 is reserved as the "latest" resolution
 	// sentinel (see Qualifier), so an authored definition must use a concrete
@@ -511,9 +518,16 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		if n.Kind() != KindCompensationThrowEvent {
 			continue
 		}
-		compensateRef := toWire(n).CompensateRef
+		w := toWire(n)
+		compensateRef := w.CompensateRef
 		if compensateRef == "" {
 			continue
+		}
+		// A targeted throw (non-empty CompensateRef) must not also request
+		// scope-local compensation: ScopeLocal applies only to the scope-wide
+		// branch, so the combination is a silent no-op — reject it (ADR-0120).
+		if w.CompensateScopeLocal {
+			errs = append(errs, fmt.Errorf("%w: throw %q", ErrScopeLocalWithCompensateRef, n.ID()))
 		}
 		if _, ok := d.Node(compensateRef); !ok {
 			errs = append(errs, fmt.Errorf("%w: throw %q -> %q", ErrCompensateRefNotFound, n.ID(), compensateRef))
