@@ -849,6 +849,93 @@ func (s *InstanceState) MessageArmedEventWaiters() []MessageWaiter {
 	return out
 }
 
+// MessageEventSubprocessWaiters returns the (message name, correlation key) pairs
+// for every armed MESSAGE-triggered event sub-process arm. A runtime registers
+// these alongside message-catch tokens, message-boundary waiters, and
+// event-based-gateway message arms so a delivered message can be correlated to a
+// parked instance even though an event sub-process arm carries no token — the arm
+// lives in s.EventTriggeredSubprocesses, not on a Token.AwaitMessage
+// (ADR-0122/0123).
+//
+// Timer and signal arms contribute no entries. The result preserves
+// s.EventTriggeredSubprocesses slice order (deterministic) and is nil when no
+// message arm is armed.
+func (s *InstanceState) MessageEventSubprocessWaiters() []MessageWaiter {
+	var out []MessageWaiter
+	for i := range s.EventTriggeredSubprocesses {
+		ea := &s.EventTriggeredSubprocesses[i]
+		if ea.Message != "" {
+			out = append(out, MessageWaiter{Name: ea.Message, CorrelationKey: ea.MessageKey})
+		}
+	}
+	return out
+}
+
+// SignalEventSubprocessNames returns the signal names of every armed
+// SIGNAL-triggered event sub-process arm. A runtime subscribes these in its
+// SignalBus alongside signal-catch tokens (Token.AwaitSignal) so a broadcast
+// signal can wake an event sub-process arm, which — like a message event-sub arm
+// — carries no token (ADR-0123).
+//
+// Timer and message arms contribute no entries. The result preserves
+// s.EventTriggeredSubprocesses slice order (deterministic) and is nil when no
+// signal arm is armed.
+func (s *InstanceState) SignalEventSubprocessNames() []string {
+	var out []string
+	for i := range s.EventTriggeredSubprocesses {
+		ea := &s.EventTriggeredSubprocesses[i]
+		if ea.Signal != "" {
+			out = append(out, ea.Signal)
+		}
+	}
+	return out
+}
+
+// MessageWaiters returns EVERY (message name, correlation key) pair the instance
+// can currently be woken by: token message-catch awaits (Token.AwaitMessage),
+// armed message boundaries, event-based-gateway message arms, and
+// message-triggered event sub-process arms. It is the single authority a runtime
+// mirrors into its correlation table — a future message construct extends only
+// this method, not every runtime call site (ADR-0123). The scattered per-construct
+// enumeration that this method centralizes is exactly what let event-sub arms be
+// forgotten by the runtime in the first place.
+//
+// Order is deterministic: tokens (slice order), then boundaries, then gateway
+// arms, then event-subs. The result is nil when the instance awaits no message.
+func (s *InstanceState) MessageWaiters() []MessageWaiter {
+	var out []MessageWaiter
+	for i := range s.Tokens {
+		tok := &s.Tokens[i]
+		if tok.AwaitMessage != "" {
+			out = append(out, MessageWaiter{Name: tok.AwaitMessage, CorrelationKey: tok.AwaitMessageKey})
+		}
+	}
+	out = append(out, s.MessageBoundaryWaiters()...)
+	out = append(out, s.MessageArmedEventWaiters()...)
+	out = append(out, s.MessageEventSubprocessWaiters()...)
+	return out
+}
+
+// SignalWaiters returns EVERY signal name the instance can currently be woken by:
+// token signal-catch awaits (Token.AwaitSignal) and signal-triggered event
+// sub-process arms. It is the single authority a runtime mirrors into its
+// SignalBus subscription set (ADR-0123).
+//
+// Order is deterministic: token signals (slice order), then event-sub signals.
+// The list may contain duplicates when a token and an event-sub await the same
+// signal name; a set-based SignalBus.Sync collapses them, so no dedup is done
+// here. The result is nil when the instance awaits no signal.
+func (s *InstanceState) SignalWaiters() []string {
+	var out []string
+	for i := range s.Tokens {
+		if s.Tokens[i].AwaitSignal != "" {
+			out = append(out, s.Tokens[i].AwaitSignal)
+		}
+	}
+	out = append(out, s.SignalEventSubprocessNames()...)
+	return out
+}
+
 // removeBoundaryArmsForHost removes all boundaryArm entries for the given
 // hostToken, returning the TimerIDs of any timer-boundary arms so the caller
 // can emit CancelTimer commands for them.
