@@ -50,7 +50,6 @@ func TestRetryPolicyOf(t *testing.T) {
 		event.NewBoundary("be", "host"),
 		event.NewIntermediateCatch("ice"),
 		event.NewIntermediateThrow("ite"),
-		event.NewEventSubProcess("esp", nil),
 	}
 	for _, c := range nonActivities {
 		require.Nil(t, model.RetryPolicyOf(c), "kind %v should return nil", c.Kind())
@@ -260,7 +259,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 			{"id": "send", "kind": "sendTask", "messageName": "msg.send"},
 			{"id": "recv", "kind": "receiveTask", "messageName": "msg.recv", "correlationKey": "order.id"},
 			{"id": "brt", "kind": "businessRuleTask", "action": "apply-discount"},
-			{"id": "esp", "kind": "eventSubProcess", "subprocess": {"id": "esp-inner", "version": 1, "nodes": [{"id": "es", "kind": "startEvent"}, {"id": "ee", "kind": "endEvent"}], "flows": [{"id": "ef1", "source": "es", "target": "ee"}]}},
+			{"id": "esp", "kind": "subProcess", "subprocess": {"id": "esp-inner", "version": 1, "nodes": [{"id": "es", "kind": "startEvent", "signalName": "cancel"}, {"id": "ee", "kind": "endEvent"}], "flows": [{"id": "ef1", "source": "es", "target": "ee"}]}},
 			{"id": "comp-throw", "kind": "compensationThrowEvent", "compensateRef": "charge"}
 		],
 		"flows": []
@@ -344,8 +343,8 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	require.True(t, ok, "nodes[16] should be BusinessRuleTask")
 	assert.Equal(t, "apply-discount", brt.Action)
 
-	esp, ok := def.Nodes[17].(event.EventSubProcess)
-	require.True(t, ok, "nodes[17] should be EventSubProcess")
+	esp, ok := def.Nodes[17].(activity.SubProcess)
+	require.True(t, ok, "nodes[17] should be SubProcess")
 	require.NotNil(t, esp.Subprocess)
 
 	compThrow, ok := def.Nodes[18].(event.CompensationThrowEvent)

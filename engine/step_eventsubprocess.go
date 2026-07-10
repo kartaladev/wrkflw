@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
@@ -27,8 +28,32 @@ func eventTriggeredStart(def *model.ProcessDefinition) (event.StartEvent, bool) 
 	return event.StartEvent{}, false
 }
 
-// armEventSubprocesses scans the given definition for KindEventSubProcess nodes
-// and records an eventSubprocessArm for each. Called when a scope opens (via
+// eventSubprocessNested reports whether raw acts as an event sub-process and,
+// if so, returns its nested definition, its event-triggered inner start, and
+// the non-interrupting flag. An event sub-process is an activity.SubProcess
+// whose inner start is event-triggered (signal/timer/message); the
+// non-interrupting flag is read from that start event (ADR-0122). A SubProcess
+// with only a manual/none start is NOT an event sub-process (ok=false) — it
+// stays token-driven inline. The returned inner start is the same one
+// eventTriggeredStart selects, so callers need not re-scan.
+func eventSubprocessNested(raw model.Node) (nested *model.ProcessDefinition, innerStart event.StartEvent, nonInterrupting bool, ok bool) {
+	switch n := raw.(type) {
+	case activity.SubProcess:
+		if n.Subprocess == nil {
+			return nil, event.StartEvent{}, false, false
+		}
+		se, has := eventTriggeredStart(n.Subprocess)
+		if !has {
+			return nil, event.StartEvent{}, false, false
+		}
+		return n.Subprocess, se, se.NonInterrupting, true
+	}
+	return nil, event.StartEvent{}, false, false
+}
+
+// armEventTriggeredSubprocesses scans the given definition for event
+// sub-process nodes (see eventSubprocessNested) and records an
+// eventTriggeredSubprocessArm for each. Called when a scope opens (via
 // openScope in the KindSubProcess drive case) and at StartInstance for the root
 // definition. enclosingScopeID is "" for root-level event sub-processes.
 //
@@ -43,28 +68,21 @@ func eventTriggeredStart(def *model.ProcessDefinition) (event.StartEvent, bool) 
 // only (delivery arrives via SignalReceived/MessageReceived).
 //
 // Definition-scan order is deterministic; arms are appended in that order.
-func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
+func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclosingScopeID string, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for _, raw := range def.Nodes {
-		n, ok := raw.(event.EventSubProcess)
+		_, se, nonInterrupting, ok := eventSubprocessNested(raw)
 		if !ok {
 			continue
 		}
-		if n.Subprocess == nil {
-			continue // defensive: no nested def, skip
-		}
-		// Select the event-triggered start; StartNodes()[0] may be a manual start
-		// once multi-start nested defs are legal (ADR-0121). An ESP with no
-		// event-triggered start has no delivery to arm — skip it.
-		se, ok := eventTriggeredStart(n.Subprocess)
-		if !ok {
-			continue
-		}
+		// se is the event-triggered inner start eventSubprocessNested already
+		// resolved (StartNodes()[0] may be a manual start under multi-start nested
+		// defs, ADR-0121) — no re-scan needed.
 
-		arm := eventSubprocessArm{
+		arm := eventTriggeredSubprocessArm{
 			EnclosingScopeID:    enclosingScopeID,
-			EventSubprocessNode: n.ID(),
-			NonInterrupting:     n.NonInterrupting,
+			EventSubprocessNode: raw.ID(),
+			NonInterrupting:     nonInterrupting,
 		}
 
 		if se.SignalName != "" {
@@ -72,7 +90,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 		} else if !se.Timer.IsZero() {
 			timerSpec, err := ResolveTrigger(eval, se.Timer, s.Variables)
 			if err != nil {
-				return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", n.ID(), err)
+				return nil, fmt.Errorf("workflow-engine: event sub-process %q timer: %w", raw.ID(), err)
 			}
 			timerID := s.nextTimerID()
 			arm.TimerID = timerID
@@ -85,20 +103,20 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 		} else if se.MessageName != "" {
 			resolvedKey, err := eval.EvalString(se.CorrelationKey, s.Variables)
 			if err != nil {
-				return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", n.ID(), err)
+				return nil, fmt.Errorf("workflow-engine: event sub-process %q message correlation key: %w", raw.ID(), err)
 			}
 			arm.Message = se.MessageName
 			arm.MessageKey = resolvedKey
 		}
 
-		s.EventSubprocesses = append(s.EventSubprocesses, arm)
+		s.EventTriggeredSubprocesses = append(s.EventTriggeredSubprocesses, arm)
 	}
 	return cmds, nil
 }
 
-// fireEventSubprocessArm executes an event sub-process arm that has been triggered.
+// fireEventTriggeredSubprocessArm executes an event sub-process arm that has been triggered.
 // Called from the SignalReceived, TimerFired, and MessageReceived handlers when the
-// trigger matches an eventSubprocessArm entry.
+// trigger matches an eventTriggeredSubprocessArm entry.
 //
 // Dispatch order (relative to gateway/boundary/deadline/standalone):
 //  1. Event-gateway arm (first-event-wins routing).
@@ -124,7 +142,7 @@ func armEventSubprocesses(def *model.ProcessDefinition, s *InstanceState, enclos
 //  3. Remove ONLY this arm (one-shot).
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
-func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func fireEventTriggeredSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventTriggeredSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Verify the enclosing scope is still active. For root scope (empty enclosingScopeID),
 	// the scope is always "active" as long as the instance is running.
 	if ea.EnclosingScopeID != "" {
@@ -152,17 +170,12 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// Node missing: defensive no-op.
 		return nil, nil
 	}
-	espNode, isESP := espRaw.(event.EventSubProcess)
-	if !isESP || espNode.Subprocess == nil {
-		// Not an EventSubProcess or has no nested def: defensive no-op.
-		return nil, nil
-	}
-	// Enter the ESP at its event-triggered start (the one that armed this arm),
-	// not StartNodes()[0] which may be a manual start under multi-start nested
-	// defs (ADR-0121). If no event-triggered start exists, the arm should never
-	// have been recorded: defensive no-op.
-	innerStart, ok := eventTriggeredStart(espNode.Subprocess)
-	if !ok {
+	_, innerStart, _, isESP := eventSubprocessNested(espRaw)
+	if !isESP {
+		// Not an event sub-process (legacy or SubProcess-form): defensive no-op.
+		// innerStart is the event-triggered start that armed this arm (the one
+		// eventSubprocessNested resolved), not StartNodes()[0] which may be a
+		// manual start under multi-start nested defs (ADR-0121).
 		return nil, nil
 	}
 
@@ -215,13 +228,13 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 
 		// Cancel sibling event-subprocess arms for the same enclosing scope (all arms,
 		// including this one). Emit CancelTimer for timer arms.
-		// removeEventSubprocessArmsForScope removes ALL arms for the scope including this one.
-		for _, timerID := range s.removeEventSubprocessArmsForScope(ea.EnclosingScopeID) {
+		// removeEventTriggeredSubprocessArmsForScope removes ALL arms for the scope including this one.
+		for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(ea.EnclosingScopeID) {
 			cmds = append(cmds, CancelTimer{TimerID: timerID})
 		}
 
 		// Open a child scope for the event sub-process, parented to the ENCLOSING scope.
-		// NodeID = the event sub-process node ID (KindEventSubProcess).
+		// NodeID = the event sub-process node ID.
 		// The drain code (KindEndEvent case) detects this as an event sub-process scope
 		// (by checking the node kind in the parent definition) and handles completion:
 		// when this child scope drains with no tokens left in the enclosing scope,
@@ -232,10 +245,10 @@ func fireEventSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea e
 		// Non-interrupting: leave enclosing scope running, spawn alongside.
 
 		// Remove only THIS arm (one-shot).
-		s.removeEventSubprocessArm(ea.EnclosingScopeID, ea.EventSubprocessNode)
+		s.removeEventTriggeredSubprocessArm(ea.EnclosingScopeID, ea.EventSubprocessNode)
 
 		// Open a child scope for the event sub-process, parented to the enclosing scope.
-		// NodeID = the event sub-process node ID (KindEventSubProcess).
+		// NodeID = the event sub-process node ID.
 		// This child scope runs alongside; when it drains, it is closed without affecting
 		// the enclosing scope (tokensInScope for the enclosing scope is unaffected).
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)

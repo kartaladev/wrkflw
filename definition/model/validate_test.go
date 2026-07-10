@@ -807,6 +807,38 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err, "ScopeLocal on a scope-wide throw is valid")
 			},
 		},
+		"event-triggered SubProcess with no incoming flow is a reachability root": {
+			// ADR-0122: a KindSubProcess whose nested definition has an
+			// event-triggered (message, here) start is recognized as a
+			// reachability root —
+			// it must not be flagged ErrUnreachableNode despite having no
+			// incoming sequence flow of its own.
+			def: eventTriggeredSubprocessRootDef(),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"event-triggered SubProcess with an incoming flow is rejected": {
+			// ADR-0122 authoring guard: an event-triggered SubProcess must not
+			// also carry an incoming sequence flow — that combination is
+			// unmodelable (embedded vs. event sub-process semantics collide).
+			def: eventTriggeredSubprocessOnFlowDef(),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrEventSubprocessOnFlow)
+			},
+		},
+		"event-triggered SubProcess with an outgoing flow is rejected": {
+			// ADR-0122 review guard: an event sub-process never traverses its own
+			// sequence flows (it resumes via the enclosing scope), so an OUTGOING
+			// flow is dead — and worse, the reachability seed forwardReachable
+			// would follow it and wrongly mark the orphan target reachable,
+			// letting it escape ErrUnreachableNode. Without this guard the def
+			// below validates clean; with it, ErrEventSubprocessOnFlow fires.
+			def: eventTriggeredSubprocessOutgoingFlowDef(),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrEventSubprocessOnFlow)
+			},
+		},
 		"dangling CompensateRef inside a sub-process is rejected (recursion)": {
 			// The CompensateRef rule lives in the recursive validate(), so a dangling
 			// ref inside a nested sub-process definition must also be caught.
@@ -897,23 +929,6 @@ func TestValidateSubProcess(t *testing.T) {
 				Flows: []flow.SequenceFlow{
 					{ID: "f1", Source: "start", Target: "sp"},
 					{ID: "f2", Source: "sp", Target: "end"},
-				},
-			},
-			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, model.ErrMissingSubprocess)
-			},
-		},
-		"event-subprocess with nil Subprocess pointer is invalid": {
-			def: &model.ProcessDefinition{
-				ID: "outer", Version: 1,
-				Nodes: []model.Node{
-					event.NewStart("start"),
-					event.NewEventSubProcess("esp", nil),
-					event.NewEnd("end"),
-				},
-				Flows: []flow.SequenceFlow{
-					{ID: "f1", Source: "start", Target: "esp"},
-					{ID: "f2", Source: "esp", Target: "end"},
 				},
 			},
 			assert: func(t *testing.T, err error) {
@@ -1934,6 +1949,106 @@ func twoStartsBothReachDef() *model.ProcessDefinition {
 			{ID: "f1", Source: "s1", Target: "end"},
 			{ID: "f2", Source: "s2", Target: "task"},
 			{ID: "f3", Source: "task", Target: "end"},
+		},
+	}
+}
+
+// eventTriggeredSubprocessRootDef returns a definition whose only
+// flow-reachable nodes are the none-start chain (s -> work -> e), plus a
+// KindSubProcess ("handleCancel") whose nested definition has a
+// message-triggered start and NO incoming sequence flow of its own — it is a
+// reachability root by virtue of its event-triggered inner start (ADR-0122).
+func eventTriggeredSubprocessRootDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "esc", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("onCancel", event.WithMessageCorrelator("cancel", "orderId")),
+			activity.NewServiceTask("notify", activity.WithTaskAction("notify")),
+			event.NewEnd("ie"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "if1", Source: "onCancel", Target: "notify"},
+			{ID: "if2", Source: "notify", Target: "ie"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s"),
+			activity.NewServiceTask("work", activity.WithTaskAction("work")),
+			event.NewEnd("e"),
+			activity.NewSubProcess("handleCancel", inner), // no incoming flow — event-triggered root
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s", Target: "work"},
+			{ID: "f2", Source: "work", Target: "e"},
+		},
+	}
+}
+
+// eventTriggeredSubprocessOnFlowDef is the ADR-0122 authoring-guard
+// counter-case: a KindSubProcess whose nested start is event-triggered
+// (signal, here) but which ALSO carries an incoming sequence flow. Mixing
+// "embedded, flow-driven" and "event sub-process, trigger-driven" semantics
+// on the same node is unmodelable, so it must be rejected.
+func eventTriggeredSubprocessOnFlowDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "esc2", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("onCancel", event.WithSignalName("cancel.signal")),
+			event.NewEnd("ie"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "if1", Source: "onCancel", Target: "ie"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s"),
+			activity.NewSubProcess("handleCancel", inner),
+			event.NewEnd("e"),
+		},
+		Flows: []flow.SequenceFlow{
+			// illegal: an incoming flow into an event-triggered SubProcess.
+			{ID: "f1", Source: "s", Target: "handleCancel"},
+			{ID: "f2", Source: "handleCancel", Target: "e"},
+		},
+	}
+}
+
+// eventTriggeredSubprocessOutgoingFlowDef is the ADR-0122 review counter-case:
+// a KindSubProcess whose nested start is event-triggered (signal, here) but
+// which carries an OUTGOING sequence flow to a node ("orphan") that has no
+// other way in. An event sub-process never traverses its own sequence flows,
+// so the outgoing flow is dead; worse, the reachability seed forwardReachable
+// would follow it and wrongly mark "orphan" reachable, letting it escape
+// ErrUnreachableNode. It must be rejected with ErrEventSubprocessOnFlow.
+func eventTriggeredSubprocessOutgoingFlowDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "esc3", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("onCancel", event.WithSignalName("cancel.signal")),
+			event.NewEnd("ie"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "if1", Source: "onCancel", Target: "ie"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("s"),
+			activity.NewServiceTask("work", activity.WithTaskAction("work")),
+			event.NewEnd("e"),
+			activity.NewSubProcess("handleCancel", inner), // no incoming — event-triggered root
+			event.NewEnd("orphan"),                        // reachable ONLY via handleCancel's illegal outgoing flow
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "s", Target: "work"},
+			{ID: "f2", Source: "work", Target: "e"},
+			// illegal: an outgoing flow FROM an event-triggered SubProcess.
+			{ID: "f3", Source: "handleCancel", Target: "orphan"},
 		},
 	}
 }

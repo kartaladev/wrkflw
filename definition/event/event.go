@@ -1,8 +1,9 @@
 // Package event holds the workflow event node kinds — start, end, error-end,
-// intermediate catch/throw, boundary, and event sub-process — for the
-// definition authoring layer. Import it to construct events (event.NewStart, …)
-// and, via its init, to register their (de)serialization with the definition
-// package.
+// intermediate catch/throw, and boundary — for the definition authoring layer.
+// Import it to construct events (event.NewStart, …) and, via its init, to
+// register their (de)serialization with the definition package. An event
+// sub-process is authored as an activity.SubProcess whose inner start is
+// event-triggered (ADR-0122); it is not a distinct kind.
 package event
 
 import (
@@ -14,7 +15,8 @@ import (
 // --- concrete node types ---
 
 // StartEvent is the workflow start event: the entry point of a process. As the
-// trigger start of an EventSubProcess it may carry correlation fields.
+// event-triggered inner start of a SubProcess acting as an event sub-process it
+// may carry correlation fields.
 type StartEvent struct {
 	model.Base
 	SignalName     string
@@ -32,6 +34,12 @@ type StartEvent struct {
 	// (Drive) against this start event's contract before the instance is
 	// created. Nil = no validation. Set via WithInputValidation.
 	InputValidation validate.ValidationStrategy
+	// NonInterrupting applies only when this start is the event-triggered inner
+	// start of a SubProcess acting as an event sub-process: false (default) =
+	// interrupting (the event sub-process cancels and replaces its enclosing
+	// scope); true = non-interrupting (runs alongside). It has no effect on a
+	// root / manual start. Set via WithNonInterrupting.
+	NonInterrupting bool
 }
 
 // Kind returns model.KindStartEvent.
@@ -154,19 +162,6 @@ type BoundaryEvent struct {
 // Kind returns model.KindBoundaryEvent.
 func (BoundaryEvent) Kind() model.NodeKind { return model.KindBoundaryEvent }
 
-// EventSubProcess is an event-triggered subprocess rooted at an event start.
-type EventSubProcess struct {
-	model.Base
-	// Subprocess is the nested process definition (must be non-nil).
-	Subprocess *model.ProcessDefinition
-	// NonInterrupting, when true, runs the event sub-process alongside the
-	// enclosing scope without cancelling it (default false = interrupting).
-	NonInterrupting bool
-}
-
-// Kind returns model.KindEventSubProcess.
-func (EventSubProcess) Kind() model.NodeKind { return model.KindEventSubProcess }
-
 // CompensationThrowEvent triggers intra-process compensation when reached. It
 // runs completed compensable activities' compensation actions in reverse order,
 // then continues past the throw (it does NOT terminate). With CompensateRef set
@@ -199,7 +194,8 @@ func optName(name []string) string {
 }
 
 // NewStart constructs a StartEvent. Use WithName plus WithSignalName/
-// WithMessageCorrelator/WithStartTimer to configure EventSubProcess triggers.
+// WithMessageCorrelator/WithStartTimer to configure an event-triggered
+// (signal/message/timer) start, e.g. the inner start of an event sub-process.
 func NewStart(id string, opts ...StartOption) model.Node {
 	n := StartEvent{Base: model.NewBase(id, "")}
 	for _, o := range opts {
@@ -267,16 +263,6 @@ func NewBoundary(id, attachedTo string, opts ...BoundaryOption) model.Node {
 	return n
 }
 
-// NewEventSubProcess constructs an EventSubProcess with the given id and nested
-// model. Use WithEventSubProcessNonInterrupting and WithName.
-func NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...EventSubProcessOption) model.Node {
-	n := EventSubProcess{Base: model.NewBase(id, ""), Subprocess: sub}
-	for _, o := range opts {
-		o.applyEventSubProcess(&n)
-	}
-	return n
-}
-
 // --- serialization registration ---
 
 func init() {
@@ -285,7 +271,8 @@ func init() {
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
 				MessageStartSingleton: w.MessageStartSingleton,
-				Timer:                 model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false)}
+				Timer:                 model.ReadTrigger(w.TimerTrigger, w.TimerDuration, false),
+				NonInterrupting:       w.NonInterrupting}
 			if w.Validation != nil {
 				n.InputValidation = model.PendingValidation(*w.Validation)
 			}
@@ -297,6 +284,7 @@ func init() {
 			w.MessageStartSingleton = v.MessageStartSingleton
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.Validation = model.PutValidation(v.InputValidation)
+			w.NonInterrupting = v.NonInterrupting
 		},
 		ValidationGet: func(n model.Node) validate.ValidationStrategy { return n.(StartEvent).InputValidation },
 		ValidationSet: func(n model.Node, s validate.ValidationStrategy) model.Node {
@@ -393,16 +381,6 @@ func init() {
 			w.TimerTrigger = model.PutTrigger(v.Timer)
 			w.BoundaryAction, w.BoundaryErrorExpr = v.Action, v.ErrorExpr
 			// ErrorCheck intentionally not written to wire — non-serializable Go closure.
-		},
-	})
-	model.RegisterKind(model.KindEventSubProcess, model.NodeSpec{
-		Name: "eventSubProcess",
-		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return EventSubProcess{Base: b, Subprocess: w.Subprocess, NonInterrupting: w.NonInterrupting}
-		},
-		ToWire: func(n model.Node, w *model.NodeWire) {
-			v := n.(EventSubProcess)
-			w.Subprocess, w.NonInterrupting = v.Subprocess, v.NonInterrupting
 		},
 	})
 }

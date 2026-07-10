@@ -25,7 +25,6 @@ const (
 	KindBusinessRuleTask
 	KindSubProcess
 	KindCallActivity
-	KindEventSubProcess
 	KindIntermediateCatchEvent
 	KindIntermediateThrowEvent
 	KindBoundaryEvent

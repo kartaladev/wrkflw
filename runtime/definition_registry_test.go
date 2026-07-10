@@ -562,6 +562,135 @@ func TestForceTerminationWarnings(t *testing.T) {
 	}
 }
 
+// TestMixedSubprocessStartWarnings verifies the pure mixedSubprocessStartWarnings
+// helper (ADR-0122 review): a SubProcess whose nested definition has BOTH a
+// manual/none start AND an event-triggered start is treated as an event
+// sub-process (armed at the event-triggered start), so its manual-start branch
+// is dead. That foot-gun warrants a register-time WARN — but not an error.
+// Event-only or manual-only subprocesses (and definitions with no subprocess)
+// produce no warning.
+func TestMixedSubprocessStartWarnings(t *testing.T) {
+	t.Parallel()
+
+	// mixedInner has both a manual (none) start and a message-triggered start.
+	mixedInner := func() *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "inner", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("manual"),
+				event.NewStart("onMsg", event.WithMessageCorrelator("go", "")),
+				event.NewEnd("ie"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "if1", Source: "manual", Target: "ie"},
+				{ID: "if2", Source: "onMsg", Target: "ie"},
+			},
+		}
+	}
+	eventOnlyInner := func() *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "inner", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("onMsg", event.WithMessageCorrelator("go", "")),
+				event.NewEnd("ie"),
+			},
+			Flows: []flow.SequenceFlow{{ID: "if1", Source: "onMsg", Target: "ie"}},
+		}
+	}
+	manualOnlyInner := func() *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "inner", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("manual"),
+				event.NewEnd("ie"),
+			},
+			Flows: []flow.SequenceFlow{{ID: "if1", Source: "manual", Target: "ie"}},
+		}
+	}
+
+	cases := []struct {
+		name   string
+		build  func() *model.ProcessDefinition
+		assert func(t *testing.T, warns []string)
+	}{
+		{
+			name: "mixed manual + event-triggered start warns",
+			build: func() *model.ProcessDefinition {
+				return &model.ProcessDefinition{
+					ID: "outer", Version: 1,
+					Nodes: []model.Node{
+						event.NewStart("s"),
+						event.NewEnd("e"),
+						activity.NewSubProcess("sp", mixedInner()),
+					},
+					Flows: []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+				}
+			},
+			assert: func(t *testing.T, warns []string) {
+				require.Len(t, warns, 1)
+				assert.Contains(t, warns[0], `"sp"`)
+				assert.Contains(t, warns[0], `"outer"`)
+				assert.Contains(t, warns[0], "both a manual and an event-triggered start")
+			},
+		},
+		{
+			name: "event-only subprocess (true event sub-process) does not warn",
+			build: func() *model.ProcessDefinition {
+				return &model.ProcessDefinition{
+					ID: "outer", Version: 1,
+					Nodes: []model.Node{
+						event.NewStart("s"),
+						event.NewEnd("e"),
+						activity.NewSubProcess("sp", eventOnlyInner()),
+					},
+					Flows: []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+				}
+			},
+			assert: func(t *testing.T, warns []string) {
+				require.Empty(t, warns)
+			},
+		},
+		{
+			name: "manual-only subprocess (embedded) does not warn",
+			build: func() *model.ProcessDefinition {
+				return &model.ProcessDefinition{
+					ID: "outer", Version: 1,
+					Nodes: []model.Node{
+						event.NewStart("s"),
+						event.NewEnd("e"),
+						activity.NewSubProcess("sp", manualOnlyInner()),
+					},
+					Flows: []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+				}
+			},
+			assert: func(t *testing.T, warns []string) {
+				require.Empty(t, warns)
+			},
+		},
+		{
+			name: "no subprocess, no warnings",
+			build: func() *model.ProcessDefinition {
+				return &model.ProcessDefinition{
+					ID: "outer", Version: 1,
+					Nodes: []model.Node{event.NewStart("s"), event.NewEnd("e")},
+					Flows: []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+				}
+			},
+			assert: func(t *testing.T, warns []string) {
+				require.Empty(t, warns)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, runtime.ExportMixedSubprocessStartWarnings(tc.build()))
+		})
+	}
+}
+
 // TestRegisterDefinitionWarnsOnRedundantForceTermination verifies that
 // RegisterDefinition logs a WARN via slog.Default() after a successful
 // registration of a single-end force-termination definition. This test

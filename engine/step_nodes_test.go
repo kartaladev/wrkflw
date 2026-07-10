@@ -32,12 +32,11 @@ var armBearingKinds = []model.NodeKind{
 // drive() strategy — they fall through to the default park logic in drive().
 var intentionallyUnhandledKinds = []model.NodeKind{
 	model.KindBoundaryEvent,
-	model.KindEventSubProcess,
 	model.KindUnspecified,
 }
 
 // TestNodeStrategyRegistry asserts that nodeStrategies covers exactly the
-// 17 arm-bearing kinds and does NOT include the 3 intentionally-unhandled kinds.
+// 17 arm-bearing kinds and does NOT include the 2 intentionally-unhandled kinds.
 func TestNodeStrategyRegistry(t *testing.T) {
 	t.Run("all arm-bearing kinds are registered", func(t *testing.T) {
 		for _, k := range armBearingKinds {

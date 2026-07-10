@@ -71,10 +71,10 @@ var (
 	// (KindServiceTask, KindUserTask, KindReceiveTask, KindSendTask,
 	// KindBusinessRuleTask, KindSubProcess, KindCallActivity).
 	ErrBoundaryAttachment = errors.New("workflow-definition: boundary event attached to missing or non-activity node")
-	// ErrMissingSubprocess is returned when a KindSubProcess or
-	// KindEventSubProcess node has a nil Subprocess field. Embedded sub-process
-	// and event-sub-process nodes must carry their nested definition inline.
-	ErrMissingSubprocess = errors.New("workflow-definition: subprocess or event-subprocess node missing nested definition")
+	// ErrMissingSubprocess is returned when a KindSubProcess node has a nil
+	// Subprocess field. Embedded sub-process nodes (including a SubProcess acting
+	// as an event sub-process) must carry their nested definition inline.
+	ErrMissingSubprocess = errors.New("workflow-definition: subprocess node missing nested definition")
 	// ErrMissingDefRef is returned when a KindCallActivity node has an empty
 	// DefRef field. A call-activity must name the top-level definition it
 	// delegates to so the runtime registry can resolve it at execution time.
@@ -176,6 +176,19 @@ var (
 	// on a bare trigger with no payload, so there is no output to validate — the
 	// combination is contradictory and rejected at authoring time. See ADR-0118.
 	ErrManualTaskValidation = errors.New("workflow-definition: manual user task cannot carry completion validation")
+	// ErrEventSubprocessOnFlow is returned when a KindSubProcess node whose
+	// nested definition has an event-triggered (signal/message/timer) start
+	// also carries an incoming or outgoing sequence flow. An event sub-process
+	// is latent until its trigger fires — it is never entered by a token
+	// flowing to it, and it resumes via its enclosing scope rather than
+	// traversing its own sequence flows — so any incoming or outgoing flow on
+	// one is unmodelable. An incoming flow makes authoring intent ambiguous
+	// between "embedded sub-process" (token-driven, none start) and "event
+	// sub-process" (trigger-driven, no flow); an outgoing flow is dead, and the
+	// reachability seed would follow it and wrongly mark an otherwise-orphan
+	// node reachable (escaping ErrUnreachableNode). Rejected at authoring time
+	// rather than silently picking one interpretation (ADR-0122).
+	ErrEventSubprocessOnFlow = errors.New("workflow-definition: event-triggered subprocess has incoming or outgoing sequence flow")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -261,10 +274,18 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 
 	for _, n := range d.Nodes {
 		isEnd := n.Kind() == KindEndEvent || n.Kind() == KindErrorEndEvent
+		// An event sub-process (a KindSubProcess whose inner start is
+		// event-triggered) is not sequenced by flow: it is latent until its
+		// trigger fires, runs its nested definition to its OWN end, and never
+		// hands a token back to the enclosing graph via an outgoing sequence
+		// flow. It is exempt from the outgoing-flow requirement the same way it
+		// is exempt from the incoming-flow requirement (see the reachability-root
+		// seed below).
+		isEventSubprocessRoot := isEventTriggeredSubprocess(n)
 		out := d.Outgoing(n.ID())
 		in := d.Incoming(n.ID())
 
-		if !isEnd && len(out) == 0 {
+		if !isEnd && !isEventSubprocessRoot && len(out) == 0 {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadEnd, n.ID()))
 		}
 		if n.Kind() == KindStartEvent && len(in) > 0 {
@@ -327,6 +348,19 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 
+	// Event-triggered SubProcess must not carry an incoming OR outgoing sequence
+	// flow (ErrEventSubprocessOnFlow, ADR-0122): it is latent until its trigger
+	// fires, never entered by a flowing token, and resumes via its enclosing
+	// scope rather than traversing its own flows. An incoming flow is ambiguous
+	// between "embedded" (token-driven) and "event sub-process" (trigger-driven)
+	// semantics; an outgoing flow is dead and would let the reachability seed
+	// (forwardReachable) wrongly mark an otherwise-orphan target reachable.
+	for _, n := range d.Nodes {
+		if isEventTriggeredSubprocess(n) && (len(d.Incoming(n.ID())) > 0 || len(d.Outgoing(n.ID())) > 0) {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrEventSubprocessOnFlow, n.ID()))
+		}
+	}
+
 	// Reachability (ErrUnreachableNode). Runs whenever there is at least one
 	// start event, over the UNION of forward-reachable sets from every start
 	// (ADR-0121: multiple starts are legal, so reachability is well-defined for
@@ -344,7 +378,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 			}
 		}
 		for _, n := range d.Nodes {
-			if n.Kind() == KindEventSubProcess {
+			if isEventTriggeredSubprocess(n) {
 				for id := range forwardReachable(d, n.ID()) {
 					reached[id] = true
 				}
@@ -443,7 +477,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// definition are wrapped with the host node id so callers can trace which
 	// sub-process contains the violation.
 	for _, n := range d.Nodes {
-		if n.Kind() != KindSubProcess && n.Kind() != KindEventSubProcess {
+		if n.Kind() != KindSubProcess {
 			continue
 		}
 		sub := toWire(n).Subprocess
@@ -596,6 +630,31 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	}
 
 	return errors.Join(errs...)
+}
+
+// isEventTriggeredSubprocess reports whether n is a KindSubProcess whose nested
+// definition has an event-triggered (signal/message/timer) start. Model-space
+// only — uses the wire projection because definition/model cannot import event
+// (import cycle). A SubProcess whose inner start carries a trigger is an event
+// sub-process (a reachability root, latent until its trigger fires); a
+// SubProcess whose inner start is a plain "none" start is an embedded
+// sub-process (token-driven inline). Returns false for a nil Subprocess
+// (reported separately as ErrMissingSubprocess).
+func isEventTriggeredSubprocess(n Node) bool {
+	if n.Kind() != KindSubProcess {
+		return false
+	}
+	sub := toWire(n).Subprocess
+	if sub == nil {
+		return false
+	}
+	for _, st := range sub.StartNodes() {
+		w := toWire(st)
+		if w.SignalName != "" || w.MessageName != "" || w.TimerTrigger != nil || w.TimerDuration != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // forwardReachable returns the set of node IDs reachable from seed by following

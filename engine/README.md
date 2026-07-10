@@ -268,7 +268,7 @@ The engine's file layout after the ADR-0044 decomposition:
 | `step_nodes.go` | `nodeStrategy` interface + `nodeStrategies` registry (16 registered kinds) + one stateless strategy struct per kind. |
 | `step_gateways.go` | XOR/AND/OR fork/join algorithms. |
 | `step_boundaries.go` | Boundary-event arming and firing. |
-| `step_eventsubprocess.go` | Event-subprocess arming, scope open/close. |
+| `step_eventsubprocess.go` | Event-triggered sub-process arming, scope open/close (`eventSubprocessNested` + `armEventTriggeredSubprocesses`). |
 | `step_compensation.go` | Compensation walk cursor, `beginCompensation`, `stepCompensationFinish`. |
 | `step_errors.go` | `propagateError` — scope-chain error propagation for error end events and boundary error handlers. |
 | `step_timers.go` | deadline/reminder/retry timer sub-dispatch inside `handleTimerFired`. |
@@ -292,10 +292,10 @@ Sixteen kinds are registered: `KindServiceTask`, `KindStartEvent`,
 `KindIntermediateThrowEvent`, `KindBusinessRuleTask`, `KindReceiveTask`,
 `KindSendTask`.
 
-Three kinds intentionally fall through to the post-dispatch parking logic (token
-is set `TokenWaitingCommand`): `KindBoundaryEvent`,
-`KindEventSubProcess`, `KindUnspecified`. `step_nodes_test.go` pins both sets as
-a completeness check (replaces the compiler's switch-exhaustiveness guarantee).
+Two kinds intentionally fall through to the post-dispatch parking logic (token
+is set `TokenWaitingCommand`): `KindBoundaryEvent` and `KindUnspecified`.
+`step_nodes_test.go` pins both sets as a completeness check (replaces the
+compiler's switch-exhaustiveness guarantee).
 
 ### The `halt` signal
 
@@ -329,7 +329,7 @@ The full execution state of one process instance. Consumer-relevant fields:
 | `Tasks` | `[]humantask.HumanTask` | Human-task records created for user-task nodes. |
 | `Incidents` | `[]Incident` | Open incident records (see the `Incident` table below). |
 
-The remaining fields are **internal bookkeeping** (not part of the consumer contract; may change): `Timers`, `Scopes`, `ArmedEvents`, `Boundaries`, `EventSubprocesses`, `RootCompensations`, `ArchivedCompensations`, `Compensating`, `PendingCancel`, `DeferredCompensationThrows` (the ADR-0071 serialized-throw queue), and the sequence counters (`TokenSeq`, `CmdSeq`, `IncidentSeq`, …).
+The remaining fields are **internal bookkeeping** (not part of the consumer contract; may change): `Timers`, `Scopes`, `ArmedEvents`, `Boundaries`, `EventTriggeredSubprocesses`, `RootCompensations`, `ArchivedCompensations`, `Compensating`, `PendingCancel`, `DeferredCompensationThrows` (the ADR-0071 serialized-throw queue), and the sequence counters (`TokenSeq`, `CmdSeq`, `IncidentSeq`, …).
 
 Use `st.Clone()` to take a deep copy when you need to retain a state snapshot; note that `Step` already clones its input internally and never mutates it.
 

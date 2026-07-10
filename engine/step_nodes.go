@@ -55,8 +55,8 @@ type nodeStrategy interface {
 }
 
 // nodeStrategies maps each arm-bearing NodeKind to its strategy.
-// Kinds NOT in this map (KindBoundaryEvent, KindEventSubProcess,
-// KindUnspecified) fall through to the post-dispatch logic in drive() unchanged.
+// Kinds NOT in this map (KindBoundaryEvent, KindUnspecified) fall through to the
+// post-dispatch logic in drive() unchanged.
 var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindServiceTask:            serviceTaskStrategy{},
 	model.KindBusinessRuleTask:       businessRuleTaskStrategy{},
@@ -250,8 +250,9 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			subNodeID := scope.NodeID
 			parentScopeID := scope.ParentID
 
-			// Determine whether this scope belongs to a KindEventSubProcess node
-			// in the parent definition. Event sub-process scope exit is handled
+			// Determine whether this scope belongs to an event sub-process node
+			// (a SubProcess with an event-triggered inner start) in the parent
+			// definition. Event sub-process scope exit is handled
 			// differently from regular sub-process scope exit:
 			//   - Non-interrupting: just close this child scope; the enclosing scope
 			//     keeps running (its tokens are still there).
@@ -266,15 +267,15 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			// The previous guard (parentScopeID != "") excluded root-level ESPs,
 			// causing the engine to fall into the regular sub-process branch and
 			// error ("no outgoing flows from root-esp in root definition").
-			isEventSubProcess := false
+			isEventSubprocess := false
 			parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
 			if pErr == nil {
 				if espNode, ok2 := parentDef.Node(subNodeID); ok2 {
-					_, isEventSubProcess = espNode.(event.EventSubProcess)
+					_, _, _, isEventSubprocess = eventSubprocessNested(espNode)
 				}
 			}
 
-			if isEventSubProcess {
+			if isEventSubprocess {
 				// Event sub-process scope drained.
 				// Close this child scope.
 				c.s.closeScope(currentScopeID)
@@ -308,7 +309,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 					// Interrupting root-level ESP completed: all root tokens were cancelled
 					// and no sibling child scopes remain. The instance is now complete.
 					// Cancel any remaining ESP arms for the root scope.
-					for _, timerID := range c.s.removeEventSubprocessArmsForScope("") {
+					for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope("") {
 						cmds = append(cmds, CancelTimer{TimerID: timerID})
 					}
 					// Instance completes: all tokens gone, no active root children.
@@ -362,7 +363,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 				grandparentScopeID := enclosingScope.ParentID
 				enclosingNodeID := enclosingScope.NodeID
 				// Cancel remaining event sub-process arms for the enclosing scope.
-				for _, timerID := range c.s.removeEventSubprocessArmsForScope(parentScopeID) {
+				for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID) {
 					cmds = append(cmds, CancelTimer{TimerID: timerID})
 				}
 				c.s.closeScope(parentScopeID)
@@ -415,7 +416,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 
 				// Scope drained (and no active children): close it and resume in parent.
 				// Cancel any still-armed event sub-process arms for this scope.
-				for _, timerID := range c.s.removeEventSubprocessArmsForScope(currentScopeID) {
+				for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(currentScopeID) {
 					cmds = append(cmds, CancelTimer{TimerID: timerID})
 				}
 				c.s.archiveCompensations(currentScopeID)
@@ -497,7 +498,7 @@ func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
 
 	cmds = append(cmds, c.s.cancelAllTimers()...)
 	cmds = append(cmds, c.s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range c.s.removeAllEventSubprocessArms() {
+	for _, timerID := range c.s.removeAllEventTriggeredSubprocessArms() {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
 	return cmds, true, nil
@@ -527,7 +528,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	}
 	// An embedded sub-process is entered INLINE at its MANUAL (trigger-less)
 	// start; any event-triggered starts in the nested def are ESP-style arms
-	// handled by armEventSubprocesses below, not the inline entry point. Once
+	// handled by armEventTriggeredSubprocesses below, not the inline entry point. Once
 	// multi-start became legal in nested defs (ADR-0121), innerStarts[0] could be
 	// an event-start, so resolve the manual start explicitly.
 	manualStart, msErr := resolveManualStart(sp.Subprocess)
@@ -540,9 +541,10 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	c.s.placeTokenInScope(manualStart, scopeID, c.at)
 	// Consume the sub-process activity token (execution is now "inside").
 	c.s.consumeToken(tok, c.at)
-	// Arm any KindEventSubProcess nodes defined inside this sub-process's
-	// nested definition. They are scoped to the newly opened scope.
-	espCmdsScope, espErrScope := armEventSubprocesses(sp.Subprocess, c.s, scopeID, c.at, c.eval)
+	// Arm any event sub-process nodes (SubProcess with an event-triggered inner
+	// start) defined inside this sub-process's nested definition. They are scoped
+	// to the newly opened scope.
+	espCmdsScope, espErrScope := armEventTriggeredSubprocesses(sp.Subprocess, c.s, scopeID, c.at, c.eval)
 	if espErrScope != nil {
 		return cmds, false, espErrScope
 	}

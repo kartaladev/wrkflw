@@ -109,11 +109,13 @@ type boundaryArm struct {
 	Action string
 }
 
-// eventSubprocessArm is the engine's bookkeeping entry for a single armed event
-// sub-process that is waiting to be triggered. One entry is created per
-// KindEventSubProcess node when the enclosing scope opens (or on StartInstance
-// for top-level event sub-processes). The entry is removed when the trigger fires
-// (one-shot) or when the enclosing scope closes/completes normally.
+// eventTriggeredSubprocessArm is the engine's bookkeeping entry for a single
+// armed event sub-process that is waiting to be triggered. One entry is
+// created per event sub-process node (see eventSubprocessNested — an
+// event-triggered-start activity.SubProcess) when
+// the enclosing scope opens (or on StartInstance for top-level event
+// sub-processes). The entry is removed when the trigger fires (one-shot) or
+// when the enclosing scope closes/completes normally.
 //
 // Design mirrors boundaryArm but is keyed to an enclosing SCOPE rather than a
 // host activity token.
@@ -121,15 +123,17 @@ type boundaryArm struct {
 // Flat value struct (no pointers): cloneState copies the slice shallowly (correct
 // because there are no pointer fields). Appended in definition-scan order so the
 // slice is deterministic.
-type eventSubprocessArm struct {
+type eventTriggeredSubprocessArm struct {
 	// EnclosingScopeID is the ID of the scope inside which this event sub-process
 	// lives. Empty string means the root scope (top-level event sub-process).
 	EnclosingScopeID string
-	// EventSubprocessNode is the BPMN node ID of the KindEventSubProcess node in
-	// the enclosing scope's definition.
+	// EventSubprocessNode is the BPMN node ID of the event sub-process node (see
+	// eventSubprocessNested) in the enclosing scope's definition.
 	EventSubprocessNode string
-	// NonInterrupting mirrors model.Node.NonInterrupting on the KindEventSubProcess
-	// node. false = interrupting (the default); true = non-interrupting.
+	// NonInterrupting mirrors the event sub-process's non-interrupting flag (see
+	// eventSubprocessNested — the legacy node's own flag, or the SubProcess-form
+	// inner event-triggered start's flag). false = interrupting (the default);
+	// true = non-interrupting.
 	NonInterrupting bool
 	// Signal is the signal name from the event sub-process's nested start event.
 	// Non-empty for signal-triggered event sub-processes.
@@ -140,7 +144,7 @@ type eventSubprocessArm struct {
 	// NOTE: the corresponding ScheduleTimer.Token is intentionally EMPTY for ESP
 	// arms — the timer is keyed to the enclosing scope (EnclosingScopeID), not to
 	// any individual token. Cancellation is performed via
-	// removeEventSubprocessArmsForScope (by TimerID), not by token lookup.
+	// removeEventTriggeredSubprocessArmsForScope (by TimerID), not by token lookup.
 	TimerID string
 	// Message is the message name for message-triggered event sub-processes.
 	Message string
@@ -510,11 +514,12 @@ type InstanceState struct {
 	// into RootCompensations before traversal via consolidateArchiveIntoRoot.
 	ArchivedCompensations map[string][]CompensationRecord
 
-	// EventSubprocesses holds the set of pending arms for in-flight event
-	// sub-processes. One entry per KindEventSubProcess node while its enclosing
-	// scope is active. Entries are appended in definition-scan order (deterministic).
-	// Removed when the trigger fires (one-shot) or when the enclosing scope closes.
-	EventSubprocesses []eventSubprocessArm
+	// EventTriggeredSubprocesses holds the set of pending arms for in-flight
+	// event sub-processes. One entry per event sub-process node (see
+	// eventSubprocessNested) while its enclosing scope is active. Entries are
+	// appended in definition-scan order (deterministic). Removed when the
+	// trigger fires (one-shot) or when the enclosing scope closes.
+	EventTriggeredSubprocesses []eventTriggeredSubprocessArm
 
 	// Compensating tracks the in-flight reverse-order compensation walk, if any.
 	// It is non-zero only while Status == StatusCompensating. The cursor is a
@@ -682,13 +687,13 @@ func (s *InstanceState) cancelAllTimers() []Command {
 //   - applyTerminate (compensation walk finish, reached via stepCompensationFinish
 //     → applyFinish, when the walk ends the instance rather than resuming it)
 //
-// This function does NOT drain s.EventSubprocesses. beginCompensation invokes
-// it at walk-START, where root-scope ESP arms must survive — the walk may
-// still resume the instance (a ReverseNode target) rather than end it, so
+// This function does NOT drain s.EventTriggeredSubprocesses. beginCompensation
+// invokes it at walk-START, where root-scope ESP arms must survive — the walk
+// may still resume the instance (a ReverseNode target) rather than end it, so
 // their timers must keep running. The other four callers above run once the
 // instance is genuinely terminating and each additionally drains ESP arms
-// itself, via removeAllEventSubprocessArms (a sweep across ALL scopes) — not
-// through this function.
+// itself, via removeAllEventTriggeredSubprocessArms (a sweep across ALL
+// scopes) — not through this function.
 func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	var cmds []Command
 	for _, ae := range s.ArmedEvents {
@@ -876,33 +881,34 @@ func (s *InstanceState) removeBoundaryArm(hostToken, boundaryNode string) {
 	s.Boundaries = out
 }
 
-// eventSubprocessArmBySignal returns a pointer to the first eventSubprocessArm
-// with the given signal name, or nil if none exists.
-func (s *InstanceState) eventSubprocessArmBySignal(name string) *eventSubprocessArm {
-	for i := range s.EventSubprocesses {
-		if s.EventSubprocesses[i].Signal == name {
-			return &s.EventSubprocesses[i]
+// eventTriggeredSubprocessArmBySignal returns a pointer to the first
+// eventTriggeredSubprocessArm with the given signal name, or nil if none exists.
+func (s *InstanceState) eventTriggeredSubprocessArmBySignal(name string) *eventTriggeredSubprocessArm {
+	for i := range s.EventTriggeredSubprocesses {
+		if s.EventTriggeredSubprocesses[i].Signal == name {
+			return &s.EventTriggeredSubprocesses[i]
 		}
 	}
 	return nil
 }
 
-// eventSubprocessArmByTimer returns a pointer to the first eventSubprocessArm
-// with the given timerID, or nil if none exists.
-func (s *InstanceState) eventSubprocessArmByTimer(timerID string) *eventSubprocessArm {
-	for i := range s.EventSubprocesses {
-		if s.EventSubprocesses[i].TimerID == timerID {
-			return &s.EventSubprocesses[i]
+// eventTriggeredSubprocessArmByTimer returns a pointer to the first
+// eventTriggeredSubprocessArm with the given timerID, or nil if none exists.
+func (s *InstanceState) eventTriggeredSubprocessArmByTimer(timerID string) *eventTriggeredSubprocessArm {
+	for i := range s.EventTriggeredSubprocesses {
+		if s.EventTriggeredSubprocesses[i].TimerID == timerID {
+			return &s.EventTriggeredSubprocesses[i]
 		}
 	}
 	return nil
 }
 
-// eventSubprocessArmByMessage returns a pointer to the first eventSubprocessArm
-// whose Message matches name and whose MessageKey matches correlationKey, or nil.
-func (s *InstanceState) eventSubprocessArmByMessage(name, correlationKey string) *eventSubprocessArm {
-	for i := range s.EventSubprocesses {
-		ea := &s.EventSubprocesses[i]
+// eventTriggeredSubprocessArmByMessage returns a pointer to the first
+// eventTriggeredSubprocessArm whose Message matches name and whose MessageKey
+// matches correlationKey, or nil.
+func (s *InstanceState) eventTriggeredSubprocessArmByMessage(name, correlationKey string) *eventTriggeredSubprocessArm {
+	for i := range s.EventTriggeredSubprocesses {
+		ea := &s.EventTriggeredSubprocesses[i]
 		if ea.Message == name && ea.MessageKey == correlationKey {
 			return ea
 		}
@@ -910,26 +916,28 @@ func (s *InstanceState) eventSubprocessArmByMessage(name, correlationKey string)
 	return nil
 }
 
-// removeEventSubprocessArm removes the single eventSubprocessArm for the given
-// (enclosingScopeID, eventSubprocessNode) pair. It is a no-op if no such entry exists.
-func (s *InstanceState) removeEventSubprocessArm(enclosingScopeID, espNode string) {
-	out := make([]eventSubprocessArm, 0, len(s.EventSubprocesses))
-	for _, ea := range s.EventSubprocesses {
+// removeEventTriggeredSubprocessArm removes the single
+// eventTriggeredSubprocessArm for the given (enclosingScopeID,
+// eventSubprocessNode) pair. It is a no-op if no such entry exists.
+func (s *InstanceState) removeEventTriggeredSubprocessArm(enclosingScopeID, espNode string) {
+	out := make([]eventTriggeredSubprocessArm, 0, len(s.EventTriggeredSubprocesses))
+	for _, ea := range s.EventTriggeredSubprocesses {
 		if ea.EnclosingScopeID == enclosingScopeID && ea.EventSubprocessNode == espNode {
 			continue
 		}
 		out = append(out, ea)
 	}
-	s.EventSubprocesses = out
+	s.EventTriggeredSubprocesses = out
 }
 
-// removeEventSubprocessArmsForScope removes all eventSubprocessArm entries
-// whose EnclosingScopeID matches the given scopeID, returning the TimerIDs of
-// any timer-armed entries so the caller can emit CancelTimer commands.
-func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []string {
+// removeEventTriggeredSubprocessArmsForScope removes all
+// eventTriggeredSubprocessArm entries whose EnclosingScopeID matches the given
+// scopeID, returning the TimerIDs of any timer-armed entries so the caller can
+// emit CancelTimer commands.
+func (s *InstanceState) removeEventTriggeredSubprocessArmsForScope(scopeID string) []string {
 	var cancelTimerIDs []string
-	out := make([]eventSubprocessArm, 0, len(s.EventSubprocesses))
-	for _, ea := range s.EventSubprocesses {
+	out := make([]eventTriggeredSubprocessArm, 0, len(s.EventTriggeredSubprocesses))
+	for _, ea := range s.EventTriggeredSubprocesses {
 		if ea.EnclosingScopeID == scopeID {
 			if ea.TimerID != "" {
 				cancelTimerIDs = append(cancelTimerIDs, ea.TimerID)
@@ -938,25 +946,25 @@ func (s *InstanceState) removeEventSubprocessArmsForScope(scopeID string) []stri
 		}
 		out = append(out, ea)
 	}
-	s.EventSubprocesses = out
+	s.EventTriggeredSubprocesses = out
 	return cancelTimerIDs
 }
 
-// removeAllEventSubprocessArms drains every armed event sub-process across ALL
-// scopes (unlike removeEventSubprocessArmsForScope, which is scoped to one
-// EnclosingScopeID), returning the TimerIDs of any timer-armed entries so the
-// caller can emit CancelTimer commands. It is the sweep-all used by terminal
-// paths (terminate / immediate-cancel / immediate-fail) where no ESP arm
-// should survive instance end. Iterates s.EventSubprocesses in slice order for
-// deterministic output.
-func (s *InstanceState) removeAllEventSubprocessArms() []string {
+// removeAllEventTriggeredSubprocessArms drains every armed event sub-process
+// across ALL scopes (unlike removeEventTriggeredSubprocessArmsForScope, which
+// is scoped to one EnclosingScopeID), returning the TimerIDs of any
+// timer-armed entries so the caller can emit CancelTimer commands. It is the
+// sweep-all used by terminal paths (terminate / immediate-cancel /
+// immediate-fail) where no ESP arm should survive instance end. Iterates
+// s.EventTriggeredSubprocesses in slice order for deterministic output.
+func (s *InstanceState) removeAllEventTriggeredSubprocessArms() []string {
 	var cancelTimerIDs []string
-	for _, ea := range s.EventSubprocesses {
+	for _, ea := range s.EventTriggeredSubprocesses {
 		if ea.TimerID != "" {
 			cancelTimerIDs = append(cancelTimerIDs, ea.TimerID)
 		}
 	}
-	s.EventSubprocesses = nil
+	s.EventTriggeredSubprocesses = nil
 	return cancelTimerIDs
 }
 

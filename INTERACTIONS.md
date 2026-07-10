@@ -367,7 +367,7 @@ token reaches KindSubProcess node
    ├─ openScope(nodeID, parentScope)  → Scope{ID, ParentID, Compensations:[]}
    ├─ place token on the inner start node INSIDE the new scope
    ├─ consume the outer sub-process token (execution is now "inside")
-   └─ arm any KindEventSubProcess nodes in the scope
+   └─ arm any event-triggered SubProcess nodes in the scope (ADR-0122)
         │  ...inner tokens flow entirely within drive() — no command, no port...
         ▼
    inner end event reached

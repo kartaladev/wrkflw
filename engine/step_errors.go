@@ -331,7 +331,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 				}
 			}
 			// Cancel ESP arms for the scope.
-			for _, timerID := range s.removeEventSubprocessArmsForScope(currentScopeID) {
+			for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(currentScopeID) {
 				cmds = append(cmds, CancelTimer{TimerID: timerID})
 			}
 
@@ -412,7 +412,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	cmds = append(cmds, FailInstance{Err: errorCode})
 	cmds = append(cmds, s.cancelAllTimers()...)
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventSubprocessArms() {
+	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
 	return cmds, nil

@@ -193,21 +193,6 @@ func TestCallActivityConstructor(t *testing.T) {
 	}
 }
 
-func TestEventSubProcessConstructor(t *testing.T) {
-	sub := &model.ProcessDefinition{ID: "esp-sub", Version: 1}
-	n := event.NewEventSubProcess("esp", sub)
-	if n.Kind() != model.KindEventSubProcess {
-		t.Fatalf("Kind() = %v, want KindEventSubProcess", n.Kind())
-	}
-	esp, ok := n.(event.EventSubProcess)
-	if !ok {
-		t.Fatalf("node is %T, want event.EventSubProcess", n)
-	}
-	if esp.Subprocess != sub {
-		t.Fatal("Subprocess pointer not preserved")
-	}
-}
-
 func TestIntermediateCatchEventConstructor(t *testing.T) {
 	n := event.NewIntermediateCatch("ice",
 		event.WithCatchTimer(schedule.AfterExpr("PT1H")),
@@ -360,18 +345,6 @@ func TestRetryPolicyOption(t *testing.T) {
 	}
 }
 
-func TestEventSubProcessNonInterrupting(t *testing.T) {
-	sub := &model.ProcessDefinition{ID: "esp-ni-sub", Version: 1}
-	n := event.NewEventSubProcess("esp-ni", sub, event.WithEventSubProcessNonInterrupting())
-	esp, ok := n.(event.EventSubProcess)
-	if !ok {
-		t.Fatalf("node is %T, want event.EventSubProcess", n)
-	}
-	if !esp.NonInterrupting {
-		t.Fatal("NonInterrupting should be true when WithESPNonInterrupting is used")
-	}
-}
-
 // TestUserTaskCombinedOptions verifies that WithEligibleExpr, WithName, and
 // WithRetryPolicy can all be combined on NewUserTask and that each field is set.
 func TestUserTaskCombinedOptions(t *testing.T) {
@@ -465,52 +438,5 @@ func TestWithEligiblePrivilegesRoundTrip(t *testing.T) {
 	}
 	if len(ut.EligiblePrivileges) != 1 || ut.EligiblePrivileges[0] != "doc read" {
 		t.Fatalf("EligiblePrivileges = %v, want [doc read]", ut.EligiblePrivileges)
-	}
-}
-
-func TestEventSubProcessNonInterruptingRoundTrip(t *testing.T) {
-	inner := &model.ProcessDefinition{
-		ID:      "inner",
-		Version: 1,
-		Nodes: []model.Node{
-			event.NewStart("s"),
-			event.NewEnd("e"),
-		},
-		Flows: []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
-	}
-	outer := &model.ProcessDefinition{
-		ID:      "outer",
-		Version: 1,
-		Nodes: []model.Node{
-			event.NewEventSubProcess("esp-ni", inner,
-				event.WithEventSubProcessNonInterrupting(),
-				event.WithName("Non-Interrupting ESP"),
-			),
-		},
-		Flows: []flow.SequenceFlow{},
-	}
-
-	data, err := json.Marshal(outer)
-	if err != nil {
-		t.Fatalf("Marshal failed: %v", err)
-	}
-
-	var decoded model.ProcessDefinition
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-
-	if len(decoded.Nodes) != 1 {
-		t.Fatalf("expected 1 node, got %d", len(decoded.Nodes))
-	}
-	esp, ok := decoded.Nodes[0].(event.EventSubProcess)
-	if !ok {
-		t.Fatalf("decoded node is %T, want event.EventSubProcess", decoded.Nodes[0])
-	}
-	if !esp.NonInterrupting {
-		t.Fatal("NonInterrupting not preserved through JSON round-trip")
-	}
-	if esp.Name() != "Non-Interrupting ESP" {
-		t.Fatalf("Name = %q, want 'Non-Interrupting ESP'", esp.Name())
 	}
 }

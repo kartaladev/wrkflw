@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/zakyalvan/krtlwrkflw/definition/activity"
 	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
@@ -94,6 +95,7 @@ func RegisterDefinition(def *model.ProcessDefinition) error {
 		return err
 	}
 	warnForceTermination(def)
+	warnMixedSubprocessStart(def)
 	return nil
 }
 
@@ -113,6 +115,7 @@ func MustRegisterDefinition(def *model.ProcessDefinition) {
 	}
 	defaultDefinitionRegistry.MustRegister(def)
 	warnForceTermination(def)
+	warnMixedSubprocessStart(def)
 }
 
 // checkMessageStartUnique rejects def with [ErrDuplicateMessageStart] when any
@@ -214,6 +217,56 @@ func forceTerminationWarnings(def *model.ProcessDefinition) []string {
 // level via the process-wide slog default logger.
 func warnForceTermination(def *model.ProcessDefinition) {
 	for _, w := range forceTerminationWarnings(def) {
+		slog.Default().Warn(w)
+	}
+}
+
+// mixedSubprocessStartWarnings returns a non-fatal warning for each SubProcess
+// node in def whose nested definition declares BOTH at least one manual/none
+// start (a StartEvent with no signal/message/timer trigger) AND at least one
+// event-triggered start. Such a SubProcess is treated as an event sub-process —
+// the engine arms it at its event-triggered start — so its manual-start branch
+// is dead (never entered). This is a foot-gun, not wrong behaviour, so it is a
+// WARN rather than a validation error (ADR-0122 review). Only top-level
+// SubProcess nodes are inspected, mirroring forceTerminationWarnings.
+func mixedSubprocessStartWarnings(def *model.ProcessDefinition) []string {
+	if def == nil {
+		return nil
+	}
+	var warns []string
+	for _, n := range def.Nodes {
+		if n.Kind() != model.KindSubProcess {
+			continue
+		}
+		sp, ok := n.(activity.SubProcess)
+		if !ok || sp.Subprocess == nil {
+			continue
+		}
+		var manual, eventTriggered int
+		for _, s := range sp.Subprocess.StartNodes() {
+			se, ok := s.(event.StartEvent)
+			if !ok {
+				continue
+			}
+			if se.SignalName != "" || se.MessageName != "" || !se.Timer.IsZero() {
+				eventTriggered++
+			} else {
+				manual++
+			}
+		}
+		if manual > 0 && eventTriggered > 0 {
+			warns = append(warns, fmt.Sprintf(
+				"workflow-runtime: subprocess %q in definition %q has both a manual and an event-triggered start; it acts as an event sub-process and the manual-start branch is unreachable",
+				n.ID(), def.ID))
+		}
+	}
+	return warns
+}
+
+// warnMixedSubprocessStart logs each mixedSubprocessStartWarnings entry for def
+// at WARN level via the process-wide slog default logger.
+func warnMixedSubprocessStart(def *model.ProcessDefinition) {
+	for _, w := range mixedSubprocessStartWarnings(def) {
 		slog.Default().Warn(w)
 	}
 }

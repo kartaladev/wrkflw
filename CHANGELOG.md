@@ -150,6 +150,18 @@ release.
   and creates an instance when one exists (previously always a no-op); definitions with no
   event-starts see no behaviour change.
 
+- **`EventSubProcess` node kind removed; an event sub-process is now an `activity.SubProcess`
+  with an event-triggered inner start (ADR-0122).** Deleted: `event.EventSubProcess`,
+  `model.KindEventSubProcess`, `event.NewEventSubProcess`, `event.WithEventSubProcessNonInterrupting`,
+  `event.EventSubProcessOption`, `build.(*Builder).AddEventSubProcess`, and the `"eventSubProcess"`
+  wire discriminator (old JSON/YAML carrying it no longer unmarshals). Author an event sub-process
+  as `activity.NewSubProcess(id, sub)` where `sub` has an event-triggered inner start; the new
+  `event.WithNonInterrupting()` start option (`event.StartEvent.NonInterrupting`) carries the
+  interrupting marker (default interrupting). New validation sentinel
+  `model.ErrEventSubprocessOnFlow` rejects an event-triggered SubProcess that has an incoming
+  sequence flow. Known limitation: `DeliverMessage` does not route to a message-triggered
+  event-sub arm (pre-existing) — use `ApplyTrigger`.
+
 ### Added
 
 - **Event-based start events: message, signal, and timer starts (ADR-0121).**
@@ -204,12 +216,12 @@ release.
   existing `WithClock` seam. `service.Engine.StartInstance` always mints the ID; the service option
   also threads the generator into the default driver so both layers agree on the strategy.
 
-- **Token-based, BPMN-inspired engine core** — process definitions across 19 typed node
-  kinds (start/end/terminate/error events, service/user/business-rule/send/receive tasks,
-  exclusive/parallel/inclusive/event-based gateways, sub-process, call activity, boundary
-  and intermediate events, event sub-processes), token execution, and `expr-lang`-driven
-  gateway routing. The vocabulary is BPMN-inspired, not BPMN-compatible; there is no BPMN2
-  XML loader.
+- **Token-based, BPMN-inspired engine core** — process definitions across 18 typed node
+  kinds (start/end/error events, service/user/business-rule/send/receive tasks,
+  exclusive/parallel/inclusive/event-based gateways, sub-process — embeddable as an event
+  sub-process via an event-triggered inner start — call activity, boundary, and intermediate
+  catch/throw/compensation events), token execution, and `expr-lang`-driven gateway routing.
+  The vocabulary is BPMN-inspired, not BPMN-compatible; there is no BPMN2 XML loader.
 
 - **Authoring** — the `definition` root package is a thin aggregator with two entry points:
   `definition.NewBuilder(id, version)` (fluent Go builder with one `Add<Kind>` per node kind)

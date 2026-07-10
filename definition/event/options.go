@@ -27,27 +27,22 @@ type CompensateThrowOption func(n *CompensationThrowEvent)
 // BoundaryOption configures a BoundaryEvent.
 type BoundaryOption interface{ applyBoundary(n *BoundaryEvent) }
 
-// EventSubProcessOption configures an EventSubProcess.
-type EventSubProcessOption interface{ applyEventSubProcess(n *EventSubProcess) }
-
-// --- WithName (Start, Catch, Boundary, EventSubProcess) ---
+// --- WithName (Start, Catch, Boundary) ---
 
 type nameOpt struct{ name string }
 
-func (o nameOpt) applyStart(n *StartEvent)                { n.SetName(o.name) }
-func (o nameOpt) applyCatch(n *IntermediateCatchEvent)    { n.SetName(o.name) }
-func (o nameOpt) applyEnd(n *EndEvent)                    { n.SetName(o.name) }
-func (o nameOpt) applyBoundary(n *BoundaryEvent)          { n.SetName(o.name) }
-func (o nameOpt) applyEventSubProcess(n *EventSubProcess) { n.SetName(o.name) }
+func (o nameOpt) applyStart(n *StartEvent)             { n.SetName(o.name) }
+func (o nameOpt) applyCatch(n *IntermediateCatchEvent) { n.SetName(o.name) }
+func (o nameOpt) applyEnd(n *EndEvent)                 { n.SetName(o.name) }
+func (o nameOpt) applyBoundary(n *BoundaryEvent)       { n.SetName(o.name) }
 
-// WithName sets the display name on a start, end, catch, boundary, or event
-// sub-process node. IntermediateThrowEvent uses WithThrowName instead.
+// WithName sets the display name on a start, end, catch, or boundary node.
+// IntermediateThrowEvent uses WithThrowName instead.
 func WithName(name string) interface {
 	StartOption
 	EndOption
 	CatchOption
 	BoundaryOption
-	EventSubProcessOption
 } {
 	return nameOpt{name}
 }
@@ -94,7 +89,7 @@ func WithSignalName(name string) interface {
 	return signalNameOpt{name}
 }
 
-// --- StartEvent options (EventSubProcess triggers) ---
+// --- StartEvent options (event-triggered start triggers) ---
 
 type startFuncOpt struct{ fn func(*StartEvent) }
 
@@ -114,6 +109,14 @@ func WithStartTimer(t schedule.TriggerSpec) StartOption {
 // with a non-empty key), which already dedups per correlation key. See ADR-0121.
 func WithMessageStartSingleton() StartOption {
 	return startFuncOpt{func(n *StartEvent) { n.MessageStartSingleton = true }}
+}
+
+// WithNonInterrupting marks an event-triggered start as non-interrupting: when
+// this start is the inner start of a SubProcess acting as an event sub-process,
+// the sub-process runs alongside its enclosing scope instead of cancelling it.
+// Default (unset) is interrupting. No effect on a root / manual start.
+func WithNonInterrupting() StartOption {
+	return startFuncOpt{func(n *StartEvent) { n.NonInterrupting = true }}
 }
 
 type inputValidationOpt struct{ s validate.ValidationStrategy }
@@ -261,18 +264,6 @@ func WithBoundaryErrorExpr(expr string) BoundaryOption {
 // Expr, then Code) decides exclusively.
 func WithBoundaryErrorCheck(fn func(map[string]any, error) bool) BoundaryOption {
 	return boundaryFuncOpt{func(n *BoundaryEvent) { n.ErrorCheck = fn }}
-}
-
-// --- EventSubProcess options ---
-
-type espFuncOpt struct{ fn func(*EventSubProcess) }
-
-func (o espFuncOpt) applyEventSubProcess(n *EventSubProcess) { o.fn(n) }
-
-// WithEventSubProcessNonInterrupting marks an EventSubProcess non-interrupting
-// (was WithESPNonInterrupting).
-func WithEventSubProcessNonInterrupting() EventSubProcessOption {
-	return espFuncOpt{func(n *EventSubProcess) { n.NonInterrupting = true }}
 }
 
 // --- EndEvent options ---

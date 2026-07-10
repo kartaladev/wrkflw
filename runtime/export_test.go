@@ -7,3 +7,9 @@ import "github.com/zakyalvan/krtlwrkflw/definition/model"
 func ExportForceTerminationWarnings(d *model.ProcessDefinition) []string {
 	return forceTerminationWarnings(d)
 }
+
+// ExportMixedSubprocessStartWarnings exposes mixedSubprocessStartWarnings to
+// black-box tests in package runtime_test.
+func ExportMixedSubprocessStartWarnings(d *model.ProcessDefinition) []string {
+	return mixedSubprocessStartWarnings(d)
+}

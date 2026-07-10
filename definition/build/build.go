@@ -89,9 +89,6 @@ func (b *Builder) AddIntermediateThrowEvent(id string, opts ...event.ThrowOption
 func (b *Builder) AddBoundaryEvent(id, attachedTo string, opts ...event.BoundaryOption) *Builder {
 	return b.Add(event.NewBoundary(id, attachedTo, opts...))
 }
-func (b *Builder) AddEventSubProcess(id string, sub *model.ProcessDefinition, opts ...event.EventSubProcessOption) *Builder {
-	return b.Add(event.NewEventSubProcess(id, sub, opts...))
-}
 
 // AddCompensationThrow adds a compensation throw. Use event.WithCompensateRef
 // (targeted), event.WithScopeLocalCompensation, and event.WithCompensateThrowName.

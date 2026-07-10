@@ -684,14 +684,15 @@ model.RetryPolicy{
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **StartEvent** | Entry point of a process (or the trigger of an EventSubProcess). | `event.NewStart(id string, opts ...) Node` |
+| **StartEvent** | Entry point of a process (or the event-triggered inner start of a SubProcess acting as an event sub-process). | `event.NewStart(id string, opts ...) Node` |
 | **EndEvent** | Normal completion of one branch; `WithForceTermination(reason, outcome)` upgrades it to terminate the whole instance (all parallel branches), abort or complete. | `event.NewEnd(id string, opts ...event.EndOption) Node` |
 | **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `event.NewErrorEnd(id, errorCode string, name ...string) Node` |
 
-`NewStartEvent` options (only meaningful when the start is an EventSubProcess trigger):
+`NewStart` options (the trigger + `WithNonInterrupting` are only meaningful when the
+start is the event-triggered inner start of a SubProcess acting as an event sub-process):
 `WithName(string)`, `WithSignalName(name)`, `WithMessageCorrelator(msg, key)`,
-`WithStartTimer(dur)`. An empty `errorCode` on `NewErrorEndEvent` throws an anonymous
-(catch-all) error.
+`WithStartTimer(dur)`, `WithNonInterrupting()`. An empty `errorCode` on `NewErrorEnd`
+throws an anonymous (catch-all) error.
 
 ```go
 event.NewStart("start")
@@ -709,14 +710,15 @@ event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 | **ReceiveTask** | Waits for an inbound correlated message. | `activity.NewReceiveTask(id, messageName string, opts ...) Node` |
 | **SendTask** | Sends an outbound message. | `activity.NewSendTask(id, messageName string, opts ...) Node` |
 | **BusinessRuleTask** | Runs a named business-rule action. | `activity.NewBusinessRuleTask(id string, opts ...) Node` |
-| **SubProcess** | Runs an *embedded* nested definition as a scope. | `activity.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
+| **SubProcess** | Runs a nested definition as a scope — *embedded* (none start, entered by a token) or an *event sub-process* (event-triggered inner start, no incoming flow, latent until its trigger fires). | `activity.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
 | **CallActivity** | Calls a *separate* top-level definition by name. | `activity.NewCallActivity(id, defRef string, opts ...) Node` |
-| **EventSubProcess** | Event-triggered subprocess rooted at an event start. | `event.NewEventSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
 
 All activity constructors take the shared activity options above. `NewUserTask` also
-takes `WithEligibleExpr`; `NewReceiveTask` also takes `WithCorrelationKey`.
-`NewEventSubProcess` takes `WithName(string)` and `WithEventSubProcessNonInterrupting()` (default
-is interrupting) — its nested start event carries the trigger.
+takes `WithEligibleExpr`; `NewReceiveTask` also takes `WithCorrelationKey`. An **event
+sub-process** is not a distinct kind (ADR-0122): author it as a `SubProcess` whose nested
+definition has an event-triggered inner start (`event.NewStart(..., event.WithSignalName/
+WithMessageCorrelator/WithStartTimer)`); put `event.WithNonInterrupting()` on that start to
+run alongside the enclosing scope instead of cancelling it (default is interrupting).
 
 ```go
 activity.NewServiceTask("charge",
@@ -732,9 +734,11 @@ activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
 activity.NewReceiveTask("await-payment", "payment-received",
     activity.WithCorrelationKey("orderId"),
 )
-activity.NewSubProcess("reserve-hotel", hotelDef)
+activity.NewSubProcess("reserve-hotel", hotelDef)               // embedded (none start, token-driven)
 activity.NewCallActivity("credit-check", "credit-check")        // resolved via a DefinitionRegistry
-event.NewEventSubProcess("on-cancel", cancelActionDef, event.WithEventSubProcessNonInterrupting())
+// event sub-process (ADR-0122): a SubProcess whose inner start is event-triggered;
+// cancelDef's start = event.NewStart("on-cancel", WithMessageCorrelator("cancel","orderId"), WithNonInterrupting())
+activity.NewSubProcess("on-cancel", cancelDef)                  // no incoming flow — latent until "cancel" fires
 ```
 
 ### SendTask delivery (transactional outbox)
@@ -877,9 +881,9 @@ flows:
 
 Valid `kind` values: `startEvent`, `endEvent`, `errorEndEvent`,
 `serviceTask`, `userTask`, `receiveTask`, `sendTask`, `businessRuleTask`, `subProcess`,
-`callActivity`, `eventSubProcess`, `intermediateCatchEvent`, `intermediateThrowEvent`,
-`boundaryEvent`, `exclusiveGateway`, `parallelGateway`, `inclusiveGateway`,
-`eventBasedGateway`.
+`callActivity`, `intermediateCatchEvent`, `intermediateThrowEvent`,
+`compensationThrowEvent`, `boundaryEvent`, `exclusiveGateway`, `parallelGateway`,
+`inclusiveGateway`, `eventBasedGateway`.
 
 ---
 
