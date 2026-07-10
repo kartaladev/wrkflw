@@ -52,7 +52,7 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, model.ErrMultipleNoneStarts)
+				require.ErrorIs(t, err, model.ErrMultipleManualStarts)
 			},
 		},
 		"dangling flow target": {
@@ -597,7 +597,7 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, model.ErrMultipleNoneStarts)
+				require.ErrorIs(t, err, model.ErrMultipleManualStarts)
 				require.ErrorIs(t, err, model.ErrUnpairedJoin)
 			},
 		},
@@ -1797,7 +1797,7 @@ func TestValidateStartEvents(t *testing.T) {
 		"two none starts rejected": {
 			def: twoNoneStartDef(),
 			assert: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, model.ErrMultipleNoneStarts)
+				assert.ErrorIs(t, err, model.ErrMultipleManualStarts)
 			},
 		},
 		"one none + one message start allowed": {
@@ -1835,7 +1835,7 @@ func TestValidateStartEvents(t *testing.T) {
 }
 
 // twoNoneStartDef has two trigger-less start events — always rejected
-// (ErrMultipleNoneStarts), regardless of how many event-triggered starts a
+// (ErrMultipleManualStarts), regardless of how many event-triggered starts a
 // definition also carries.
 func twoNoneStartDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{

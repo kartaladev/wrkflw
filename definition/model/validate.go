@@ -36,13 +36,13 @@ var (
 
 var (
 	ErrNoStartEvent = errors.New("workflow-definition: no start event")
-	// ErrMultipleNoneStarts is returned when a definition has more than one
-	// trigger-less ("none") start event; at most one is allowed. A none-start is
-	// a KindStartEvent whose MessageName, SignalName, and Timer are all unset.
-	// Multiple event-triggered starts (message/signal/timer) remain legal
-	// alongside it — see ErrAmbiguousStartTrigger and ErrEventStartMissingTrigger
-	// for the per-start trigger rules (ADR-0121).
-	ErrMultipleNoneStarts = errors.New("workflow-definition: multiple none start events")
+	// ErrMultipleManualStarts is returned when a definition has more than one
+	// manual (trigger-less, caller-driven) start event (BPMN's none start event);
+	// at most one is allowed. A manual start is a KindStartEvent whose MessageName,
+	// SignalName, and Timer are all unset. Multiple event-triggered starts
+	// (message/signal/timer) remain legal alongside it — see ErrAmbiguousStartTrigger
+	// and ErrEventStartMissingTrigger for the per-start trigger rules (ADR-0121).
+	ErrMultipleManualStarts = errors.New("workflow-definition: multiple manual start events")
 	// ErrAmbiguousStartTrigger is returned when a start event sets more than one
 	// trigger family (message/signal/timer). Exactly one family — or none — is
 	// allowed per start event (ADR-0121).
@@ -209,7 +209,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 
 	// Start events (ADR-0121): a definition may have any number of start
 	// events. At most one may be a trigger-less "none" start
-	// (ErrMultipleNoneStarts); each event-triggered start must set exactly one
+	// (ErrMultipleManualStarts); each event-triggered start must set exactly one
 	// trigger family — message, signal, or timer (ErrAmbiguousStartTrigger for
 	// >1 set). A non-empty CorrelationKey with no MessageName is an
 	// incompletely-specified message start, not a none-start
@@ -247,7 +247,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 	if noneCount > 1 {
-		errs = append(errs, ErrMultipleNoneStarts)
+		errs = append(errs, ErrMultipleManualStarts)
 	}
 
 	for _, f := range d.Flows {

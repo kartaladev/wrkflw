@@ -12,10 +12,11 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
-// ErrNoNoneStart is returned when a StartInstance with an empty StartNodeID is
-// applied to a definition that has no none (trigger-less) start event — i.e.
-// every start event carries a message, signal, or timer trigger (ADR-0121).
-var ErrNoNoneStart = errors.New("workflow-engine: definition has no none start event")
+// ErrNoManualStart is returned when a StartInstance with an empty StartNodeID is
+// applied to a definition that has no manual (trigger-less, caller-driven) start
+// event — i.e. every start event carries a message, signal, or timer trigger
+// (ADR-0121). A manual start maps to BPMN's "none start event".
+var ErrNoManualStart = errors.New("workflow-engine: definition has no manual start event")
 
 // handleStartInstance processes a StartInstance trigger: initialises instance
 // state, places the start token, arms top-level event sub-processes, and drives
@@ -29,7 +30,7 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	s.StartVariables = copyVars(s.Variables)
 	startID := t.StartNodeID
 	if startID == "" {
-		n, err := resolveNoneStart(def)
+		n, err := resolveManualStart(def)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -49,12 +50,13 @@ func handleStartInstance(def *model.ProcessDefinition, s *InstanceState, t Start
 	return StepResult{State: *s, Commands: append(espCmds, driveCmdsStart...)}, nil
 }
 
-// resolveNoneStart returns the id of the definition's single none (trigger-less)
-// start event — a StartEvent with no message name, signal name, or timer — or
-// ErrNoNoneStart if the definition has none (e.g. every start is event-triggered).
-// When multiple none-starts exist (a definition-authoring choice outside this
-// seam's remit to validate), the first one found in def.StartNodes() order wins.
-func resolveNoneStart(def *model.ProcessDefinition) (string, error) {
+// resolveManualStart returns the id of the definition's single manual
+// (trigger-less, caller-driven) start event — a StartEvent with no message name,
+// signal name, or timer, i.e. BPMN's "none start event" — or ErrNoManualStart if
+// the definition has none (e.g. every start is event-triggered). When multiple
+// manual starts exist (a definition-authoring choice outside this seam's remit to
+// validate), the first one found in def.StartNodes() order wins.
+func resolveManualStart(def *model.ProcessDefinition) (string, error) {
 	for _, s := range def.StartNodes() {
 		se, ok := s.(event.StartEvent)
 		if !ok {
@@ -64,7 +66,7 @@ func resolveNoneStart(def *model.ProcessDefinition) (string, error) {
 			return se.ID(), nil
 		}
 	}
-	return "", ErrNoNoneStart
+	return "", ErrNoManualStart
 }
 
 // handleActionCompleted processes an ActionCompleted trigger: resumes the token
