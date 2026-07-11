@@ -17,24 +17,26 @@ func (driver *ProcessDriver) syncWaiters(st engine.InstanceState) {
 	driver.syncMsgWaiters(st)
 }
 
-// syncSignalBus reconciles st's AwaitSignal tokens with the SignalBus, if one
-// is configured. This is a no-op when driver.sigbus is nil.
+// syncSignalBus reconciles st's signal awaits with the SignalBus, if one is
+// configured. The authoritative set of signal names the instance can be woken by
+// — token AwaitSignal catches AND signal-triggered event sub-process arms — comes
+// from the engine's st.SignalWaiters() (ADR-0123), so the runtime never has to
+// know which constructs contribute. This is a no-op when driver.sigbus is nil.
 func (driver *ProcessDriver) syncSignalBus(st engine.InstanceState) {
 	if driver.sigbus == nil {
 		return
 	}
-	var awaiting []string
-	for _, tok := range st.Tokens {
-		if tok.AwaitSignal != "" {
-			awaiting = append(awaiting, tok.AwaitSignal)
-		}
-	}
-	driver.sigbus.Sync(st.InstanceID, awaiting)
+	driver.sigbus.Sync(st.InstanceID, st.SignalWaiters())
 }
 
 // syncMsgWaiters reconciles the runner's internal message-waiter table with the
-// current state of st. It registers new message-awaiting tokens and removes
-// entries that are no longer waiting.
+// current state of st. It removes stale entries for the instance, then
+// re-registers every (name, key) the instance can be woken by, as reported by the
+// engine's single authority st.MessageWaiters() — token message-catch awaits,
+// armed message boundaries (host parks on a task, not the message — ADR-0053),
+// event-based-gateway message arms, and message-triggered event sub-process arms
+// (ADR-0123). Consolidating the per-construct enumeration in the engine is what
+// keeps a future message construct from being silently forgotten here.
 func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 	driver.msgMu.Lock()
 	defer driver.msgMu.Unlock()
@@ -46,30 +48,9 @@ func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 		}
 	}
 
-	// Re-register from current tokens (message-catch intermediate events / receive tasks).
-	for _, tok := range st.Tokens {
-		if tok.AwaitMessage != "" {
-			k := msgKey{Name: tok.AwaitMessage, CorrelationKey: tok.AwaitMessageKey}
-			driver.msgWaiters[k] = st.InstanceID
-		}
-	}
-
-	// Re-register from armed message BOUNDARY events. Their host token parks on a
-	// task/command (not on the message), so they are not covered by the token loop
-	// above; DeliverMessage must still be able to correlate a delivered message to
-	// this instance to fire the boundary (ADR-0053).
-	for _, w := range st.MessageBoundaryWaiters() {
-		k := msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}
-		driver.msgWaiters[k] = st.InstanceID
-	}
-
-	// Re-register from armed message arms of in-flight event-based gateways. The
-	// gateway's parked token carries no AwaitMessage (the arm is tracked as an
-	// armedEvent), so — like message boundaries — DeliverMessage must correlate a
-	// delivered message to this instance to win the gateway race.
-	for _, w := range st.MessageArmedEventWaiters() {
-		k := msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}
-		driver.msgWaiters[k] = st.InstanceID
+	// Re-register from the engine's authoritative union of message awaits.
+	for _, w := range st.MessageWaiters() {
+		driver.msgWaiters[msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}] = st.InstanceID
 	}
 }
 

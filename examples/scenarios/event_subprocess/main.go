@@ -34,7 +34,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/zakyalvan/krtlwrkflw/action"
 	"github.com/zakyalvan/krtlwrkflw/definition"
@@ -132,16 +131,11 @@ func main() {
 	// onCancel is non-interrupting, this spawns the event-sub ALONGSIDE the
 	// main path — await-delivery is left untouched.
 	//
-	// driver.DeliverMessage correlates to a RUNNING waiter parked directly on
-	// AwaitMessage (a catch/ReceiveTask), a message boundary, or an
-	// event-based-gateway arm — not (yet) an event-sub's own message arm. Since
-	// the target instance id is already known here, deliver the trigger
-	// directly via driver.ApplyTrigger instead — the same pattern
-	// runtime/signal.SignalBus's delivery callback uses (see signal_broadcast)
-	// to resume a specific instance.
+	// driver.DeliverMessage correlates a delivered message to an event-sub's own
+	// message arm (ADR-0123), alongside message-catch tokens, message boundaries,
+	// and event-based-gateway arms — so no ApplyTrigger workaround is needed.
 	fmt.Println(`delivering message "cancel" (orderId=order-1)...`)
-	if _, err := driver.ApplyTrigger(ctx, def, "order-1",
-		engine.NewMessageReceived(time.Now(), "cancel", "order-1", map[string]any{"orderId": "order-1"})); err != nil {
+	if err := driver.DeliverMessage(ctx, "cancel", "order-1", map[string]any{"orderId": "order-1"}); err != nil {
 		log.Fatal("deliver cancel:", err)
 	}
 
