@@ -1,6 +1,11 @@
 package runtime
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import (
+	"context"
+	"log/slog"
+
+	"github.com/zakyalvan/krtlwrkflw/engine"
+)
 
 // msgKey is the composite key used to look up a message waiter by name+correlation.
 type msgKey struct {
@@ -67,7 +72,23 @@ func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 
 	// Re-register from the engine's authoritative union of message awaits.
 	for _, w := range st.MessageWaiters() {
-		driver.msgWaiters[msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}] = st.InstanceID
+		k := msgKey{Name: w.Name, CorrelationKey: w.CorrelationKey}
+		// The msgWaiters table is 1:1 by contract (one instance per correlation
+		// key). If a DIFFERENT running instance already owns this key, delivery is
+		// ambiguous — a modeling error for a keyed await, inherently ambiguous for a
+		// keyless one. Messages are point-to-point (fan-out is the signal model), so
+		// the engine does not invent multi-delivery; it surfaces the ambiguity with a
+		// WARN and proceeds with the existing last-writer-wins overwrite (ADR-0125).
+		if existing, ok := driver.msgWaiters[k]; ok && existing != st.InstanceID {
+			driver.obs.tel.Logger.LogAttrs(context.Background(), slog.LevelWarn,
+				"runtime: ambiguous message correlation: two instances await the same (message, correlationKey); delivery is 1:1 so only one will receive it — use a unique correlation key",
+				slog.String("message", k.Name),
+				slog.String("correlation_key", k.CorrelationKey),
+				slog.String("incumbent_instance", existing),
+				slog.String("joining_instance", st.InstanceID),
+			)
+		}
+		driver.msgWaiters[k] = st.InstanceID
 	}
 }
 

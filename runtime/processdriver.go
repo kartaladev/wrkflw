@@ -81,7 +81,10 @@ type ProcessDriver struct {
 	msgMu sync.Mutex
 	// msgWaiters maps a (messageName, correlationKey) pair to the instance ID
 	// that is waiting on it. Message catch events are 1:1 (each correlation key
-	// routes to exactly one instance), so a simple map suffices.
+	// routes to exactly one instance), so a simple map suffices. A violation of
+	// that 1:1 contract — two running instances awaiting the same (name, key) — is
+	// WARN-logged by syncMsgWaiters before the last-writer-wins overwrite (ADR-0125);
+	// delivery stays point-to-point (fan-out is the signal model).
 	msgWaiters map[msgKey]string
 
 	// shutdown aggregates the teardown of resources the driver itself created and
