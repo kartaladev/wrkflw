@@ -63,8 +63,10 @@ func TestCatalogRegistryLazyDefault(t *testing.T) {
 			},
 		},
 		{
-			name:   "catalog default miss returns not-found",
-			build:  func() action.Catalog { return action.NewCatalog(map[string]action.Action{"a": bare}, action.WithExecTimeout(defTimeout)) },
+			name: "catalog default miss returns not-found",
+			build: func() action.Catalog {
+				return action.NewCatalog(map[string]action.Action{"a": bare}, action.WithExecTimeout(defTimeout))
+			},
 			lookup: "missing",
 			assert: func(t *testing.T, _ action.Policy, ok bool) {
 				assert.False(t, ok)
