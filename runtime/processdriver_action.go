@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -50,22 +51,28 @@ func copyVarsForOutcome(vars map[string]any) map[string]any {
 	return out
 }
 
-// safeActionDo invokes a.Do, converting a panic into an error so a buggy or
-// malicious service action cannot crash the runner — and with it every in-flight
-// instance on the replica. A recovered panic is surfaced as an ordinary action
-// error, so callers route it through their normal failure path (a retryable
-// ActionFailed for InvokeAction, a best-effort log for InvokeCancelAction).
-// actionContext derives the context an action runs under. When actionTimeout is
-// positive it applies a deadline; otherwise the parent context passes through
-// unchanged. The caller must always invoke the returned cancel func.
-func (driver *ProcessDriver) actionContext(parent context.Context) (context.Context, context.CancelFunc) {
-	if driver.actionTimeout <= 0 {
+// actionContextFor derives the context an action runs under for an effective
+// timeout d. When d is positive it applies a deadline; otherwise the parent
+// context passes through unchanged. The caller must always invoke the returned
+// cancel func. d is the per-action effective timeout ([action.Policy.Timeout] when
+// the action declares one, else [ProcessDriver.actionTimeout]).
+func actionContextFor(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if d <= 0 {
 		return parent, func() {}
 	}
-	return context.WithTimeout(parent, driver.actionTimeout)
+	return context.WithTimeout(parent, d)
 }
 
-func safeActionDo(ctx context.Context, a action.Action, in map[string]any) (out map[string]any, err error) {
+// invokeActionDo invokes a.Do. When recoverPanics is true it converts a panic into
+// an error so a buggy or malicious service action cannot crash the runner — and
+// with it every in-flight instance on the replica; a recovered panic is surfaced as
+// an ordinary action error so callers route it through their normal failure path.
+// When recoverPanics is false (a consumer's explicit [action.WithRecover](false))
+// the panic propagates unchanged.
+func invokeActionDo(ctx context.Context, a action.Action, in map[string]any, recoverPanics bool) (out map[string]any, err error) {
+	if !recoverPanics {
+		return a.Do(ctx, in)
+	}
 	defer func() {
 		if rec := recover(); rec != nil {
 			out = nil
@@ -73,6 +80,65 @@ func safeActionDo(ctx context.Context, a action.Action, in map[string]any) (out 
 		}
 	}()
 	return a.Do(ctx, in)
+}
+
+// effectiveActionPolicy resolves the effective per-invocation execution policy for
+// a resolved action: the bare (fully-unwrapped) action to run at the single site,
+// the effective timeout (the action's declared [action.WithExecTimeout] else the
+// runtime default), and the effective recover flag (the action's declared
+// [action.WithRecover] else true).
+func (driver *ProcessDriver) effectiveActionPolicy(a action.Action) (bare action.Action, timeout time.Duration, recoverPanics bool) {
+	pol := action.ResolvePolicy(a)
+	bare = action.Unwrap(a)
+	timeout = driver.actionTimeout
+	if pol.Timeout != nil {
+		timeout = *pol.Timeout
+	}
+	recoverPanics = true
+	if pol.Recover != nil {
+		recoverPanics = *pol.Recover
+	}
+	return bare, timeout, recoverPanics
+}
+
+// actionRetryToModel converts a declarative [action.RetrySpecs] to the engine's
+// [model.RetryPolicy] (which owns the retry algorithm). Only the four mirrored
+// fields are carried; the model's Normalize fills the rest.
+func actionRetryToModel(p action.RetrySpecs) model.RetryPolicy {
+	return model.RetryPolicy{
+		MaxAttempts:     p.MaxAttempts,
+		InitialInterval: p.InitialInterval,
+		BackoffCoef:     p.Multiplier,
+		MaxInterval:     p.MaxInterval,
+	}
+}
+
+// overrideRetryPolicy derives the per-action retry override for a trigger, if any.
+// It returns non-nil only for an [engine.ActionFailed] whose failing node resolves
+// to an action carrying an [action.RetrySpecs] — surfacing precedence action >
+// node > runtime-default via [engine.StepOptions.OverrideRetryPolicy]. It is
+// re-derived from durable state (def + st + CommandID) on every ActionFailed step,
+// so a retry re-attempt after a restart resolves the same override. st is the
+// pre-step state; other triggers and policy-less actions yield nil (today's behavior).
+func (driver *ProcessDriver) overrideRetryPolicy(def *model.ProcessDefinition, st engine.InstanceState, trg engine.Trigger) *model.RetryPolicy {
+	af, ok := trg.(engine.ActionFailed)
+	if !ok {
+		return nil
+	}
+	name, scopeDef, ok := engine.FailingActionName(def, st, af.CommandID)
+	if !ok {
+		return nil
+	}
+	a, ok := action.Resolve(scopeDef.ScopedCatalog(), driver.cat, name)
+	if !ok {
+		return nil
+	}
+	pol := action.ResolvePolicy(a)
+	if pol.Retry == nil {
+		return nil
+	}
+	mp := actionRetryToModel(*pol.Retry)
+	return &mp
 }
 
 // perform executes one command and returns the resulting trigger, if any.
@@ -114,8 +180,9 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 			return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
 		}
 		start := driver.clk.Now()
-		tctx, cancel := driver.actionContext(actx)
-		out, err := safeActionDo(tctx, a, cmd.Input)
+		bare, timeout, recoverPanics := driver.effectiveActionPolicy(a)
+		tctx, cancel := actionContextFor(actx, timeout)
+		out, err := invokeActionDo(tctx, bare, cmd.Input, recoverPanics)
 		cancel()
 		elapsed = driver.clk.Now().Sub(start).Seconds()
 		if err != nil {
@@ -153,8 +220,13 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 				slog.String("action", cmd.Name))
 			return nil, nil
 		}
-		cctx, cancel := driver.actionContext(ctx)
-		_, err := safeActionDo(cctx, a, cmd.Input)
+		// Cancel actions run for their side effect only and MUST NOT crash the
+		// terminal-cancel path, so recover is always forced on here regardless of a
+		// per-action WithRecover(false) — best-effort semantics (ADR-0028). The
+		// per-action execution timeout is still honoured.
+		bare, timeout, _ := driver.effectiveActionPolicy(a)
+		cctx, cancel := actionContextFor(ctx, timeout)
+		_, err := invokeActionDo(cctx, bare, cmd.Input, true)
 		cancel()
 		if err != nil {
 			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",

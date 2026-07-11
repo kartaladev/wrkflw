@@ -25,6 +25,11 @@ type StepOptions struct {
 	// DefaultRetryPolicy is the fallback retry policy applied when a node does
 	// not carry its own RetryPolicy. nil means retry is disabled by default.
 	DefaultRetryPolicy *model.RetryPolicy
+	// OverrideRetryPolicy, when non-nil, takes precedence over both the node's
+	// own RetryPolicy and DefaultRetryPolicy for this Step. It is the seam the
+	// runtime uses to surface a per-action retry policy (action > node >
+	// runtime-default). nil (the default) leaves the node > default chain intact.
+	OverrideRetryPolicy *model.RetryPolicy
 	// Evaluator overrides the expression evaluator the engine uses for gateway
 	// conditions, timer/deadline durations, and correlation keys. When nil (the
 	// default) the engine uses its pure, wall-clock-free package-global

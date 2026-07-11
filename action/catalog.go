@@ -17,13 +17,54 @@ type Catalog interface {
 // responsibility.
 type MapCatalog map[string]Action
 
-// NewCatalog wraps m in a MapCatalog. The caller must not modify m after
+// NewCatalog wraps m in a read-only Catalog. The caller must not modify m after
 // calling NewCatalog.
-func NewCatalog(m map[string]Action) MapCatalog { return MapCatalog(m) }
+//
+// With no opts it returns a bare [MapCatalog] (identical to the historical
+// behavior): stored actions resolve exactly as registered. When one or more
+// resiliency options are supplied they become a DEFAULT policy applied lazily at
+// Resolve — only to a resolved action that declares no policy of its own (see
+// [ResolvePolicy]). A per-action [Wrap] (or a type implementing a capability
+// interface directly) therefore always wins over the catalog default; bare stored
+// actions are decorated on the way out and remain bare in the map.
+//
+// A default retry policy applies in the ACTION tier (action > node > runtime-default),
+// so it overrides a node-level retry policy for any action that declares none of its
+// own — see the precedence note on [RetrySpecs].
+func NewCatalog(m map[string]Action, opts ...Option) Catalog {
+	base := MapCatalog(m)
+	if len(opts) == 0 {
+		return base
+	}
+	return &defaultingCatalog{inner: base, defaults: opts}
+}
 
 func (c MapCatalog) Resolve(name string) (Action, bool) {
 	a, ok := c[name]
 	return a, ok
+}
+
+// defaultingCatalog decorates an inner Catalog with a default resiliency policy
+// applied lazily at Resolve to any action that declares none of its own.
+type defaultingCatalog struct {
+	inner    Catalog
+	defaults []Option
+}
+
+func (c *defaultingCatalog) Resolve(name string) (Action, bool) {
+	a, ok := c.inner.Resolve(name)
+	if !ok {
+		return nil, false
+	}
+	return applyDefaults(a, c.defaults), true
+}
+
+// applyDefaults wraps a with defaults only when a carries no policy of its own.
+func applyDefaults(a Action, defaults []Option) Action {
+	if len(defaults) == 0 || !ResolvePolicy(a).empty() {
+		return a
+	}
+	return Wrap(a, defaults...)
 }
 
 // Compile-time assertion.
@@ -69,12 +110,24 @@ type Registry struct {
 
 	mu      sync.RWMutex
 	actions map[string]Action
+
+	// defaults is the optional default resiliency policy applied lazily at
+	// Resolve to any registered action that declares none of its own. Empty when
+	// NewRegistry was called with no options.
+	defaults []Option
 }
 
-// NewRegistry returns an empty, ready-to-use Registry.
-func NewRegistry() *Registry {
+// NewRegistry returns an empty, ready-to-use Registry. When one or more resiliency
+// options are supplied they become a DEFAULT policy applied lazily at [Registry.Resolve]
+// — only to a resolved action that declares no policy of its own (a per-action
+// [Wrap], or a type implementing a capability interface directly, wins). NewRegistry()
+// with no options is fully back-compatible. A default retry policy applies in the
+// ACTION tier and thus overrides a node-level retry policy for actions that declare
+// none of their own — see the precedence note on [RetrySpecs].
+func NewRegistry(opts ...Option) *Registry {
 	return &Registry{
-		actions: make(map[string]Action),
+		actions:  make(map[string]Action),
+		defaults: opts,
 	}
 }
 
@@ -137,9 +190,12 @@ func (r *Registry) MustRegisterFunc(
 // hit, or nil and false on a miss. Safe for concurrent use.
 func (r *Registry) Resolve(name string) (Action, bool) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
 	a, ok := r.actions[name]
-	return a, ok
+	r.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	return applyDefaults(a, r.defaults), true
 }
 
 // Compile-time assertions.
