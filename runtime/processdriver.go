@@ -463,8 +463,9 @@ func (driver *ProcessDriver) deliverLoop(
 		))
 		start := driver.clk.Now()
 		res, err := engine.Step(def, st, t, engine.StepOptions{
-			DefaultRetryPolicy: driver.defaultRetryPolicy,
-			Evaluator:          driver.conditionEval,
+			DefaultRetryPolicy:  driver.defaultRetryPolicy,
+			OverrideRetryPolicy: driver.overrideRetryPolicy(def, st, t),
+			Evaluator:           driver.conditionEval,
 		})
 		driver.obs.stepDuration.Record(stepCtx, driver.clk.Now().Sub(start).Seconds(),
 			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
