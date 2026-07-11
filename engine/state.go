@@ -990,20 +990,6 @@ func (s *InstanceState) eventTriggeredSubprocessArmByMessage(name, correlationKe
 	return nil
 }
 
-// removeEventTriggeredSubprocessArm removes the single
-// eventTriggeredSubprocessArm for the given (enclosingScopeID,
-// eventSubprocessNode) pair. It is a no-op if no such entry exists.
-func (s *InstanceState) removeEventTriggeredSubprocessArm(enclosingScopeID, espNode string) {
-	out := make([]eventTriggeredSubprocessArm, 0, len(s.EventTriggeredSubprocesses))
-	for _, ea := range s.EventTriggeredSubprocesses {
-		if ea.EnclosingScopeID == enclosingScopeID && ea.EventSubprocessNode == espNode {
-			continue
-		}
-		out = append(out, ea)
-	}
-	s.EventTriggeredSubprocesses = out
-}
-
 // removeEventTriggeredSubprocessArmsForScope removes all
 // eventTriggeredSubprocessArm entries whose EnclosingScopeID matches the given
 // scopeID, returning the TimerIDs of any timer-armed entries so the caller can

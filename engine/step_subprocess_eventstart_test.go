@@ -222,21 +222,37 @@ func TestEventStartSubprocess_RootNonInterrupting_Signal(t *testing.T) {
 	}
 	assert.True(t, rootSvcPresent, "root-svc must still be pending (non-interrupting)")
 
-	// The arm is one-shot: removed after firing.
-	assert.Empty(t, r2.State.EventTriggeredSubprocesses, "one-shot arm must be removed after firing")
+	// The arm STAYS armed after firing — non-interrupting is repeatable (ADR-0124).
+	require.Len(t, r2.State.EventTriggeredSubprocesses, 1, "non-interrupting event-sub stays armed (repeatable)")
+	require.Len(t, r2.State.Scopes, 1, "first fire opened one event-sub child scope")
 
-	notifyCmdID := findInvokeActionID(t, r2.Commands, "notify-action")
+	notifyCmdID1 := findInvokeActionID(t, r2.Commands, "notify-action")
 
-	// ---- Step 3: complete notify-action → event-sub scope drains, root-svc still pending ----
-	r3, err := engine.Step(def, r2.State,
-		engine.NewActionCompleted(at.Add(2*time.Second), notifyCmdID, nil), engine.StepOptions{})
+	// ---- Step 2b: a SECOND "notify" signal fires the still-armed event-sub AGAIN ----
+	r2b, err := engine.Step(def, r2.State,
+		engine.NewSignalReceived(at.Add(time.Second), "notify", nil), engine.StepOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, engine.StatusRunning, r3.State.Status, "instance still running: root-svc still pending")
-	assert.Empty(t, r3.State.Scopes, "event-sub child scope must be closed after it drains")
+	require.Len(t, r2b.State.EventTriggeredSubprocesses, 1, "event-sub stays armed across repeated fires")
+	require.Len(t, r2b.State.Scopes, 2, "second fire opened a second event-sub child scope")
+	notifyCmdID2 := findInvokeActionID(t, r2b.Commands, "notify-action")
+
+	// ---- Step 3: complete the first notify-action → its child scope drains ----
+	r3, err := engine.Step(def, r2b.State,
+		engine.NewActionCompleted(at.Add(2*time.Second), notifyCmdID1, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r3.State.Status, "instance still running: root-svc + second event-sub pending")
+	require.Len(t, r3.State.Scopes, 1, "one event-sub child scope remains")
+
+	// ---- Step 3b: complete the second notify-action → its child scope drains ----
+	r3b, err := engine.Step(def, r3.State,
+		engine.NewActionCompleted(at.Add(3*time.Second), notifyCmdID2, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusRunning, r3b.State.Status, "instance still running: root-svc still pending")
+	assert.Empty(t, r3b.State.Scopes, "both event-sub child scopes closed after draining")
 
 	// ---- Step 4: complete normal-action → root drains → instance completes ----
-	r4, err := engine.Step(def, r3.State,
-		engine.NewActionCompleted(at.Add(3*time.Second), normalCmdID, nil), engine.StepOptions{})
+	r4, err := engine.Step(def, r3b.State,
+		engine.NewActionCompleted(at.Add(4*time.Second), normalCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status)
 	assert.Empty(t, r4.State.Tokens)

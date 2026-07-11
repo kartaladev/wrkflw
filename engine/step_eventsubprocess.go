@@ -242,10 +242,14 @@ func fireEventTriggeredSubprocessArm(def *model.ProcessDefinition, s *InstanceSt
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
 		s.placeTokenInScope(innerStart.ID(), childScopeID, at)
 	} else {
-		// Non-interrupting: leave enclosing scope running, spawn alongside.
-
-		// Remove only THIS arm (one-shot).
-		s.removeEventTriggeredSubprocessArm(ea.EnclosingScopeID, ea.EventSubprocessNode)
+		// Non-interrupting: leave enclosing scope running, spawn alongside. The arm
+		// STAYS armed so it can fire again on the next delivery — BPMN
+		// non-interrupting is repeatable (ADR-0124). Each fire opens its own child
+		// scope; the arm is retired only when the enclosing scope closes
+		// (removeEventTriggeredSubprocessArmsForScope) or the instance ends. A root
+		// arm may therefore be present in a terminal snapshot; the runtime refuses
+		// to hold correlation waiters for terminal instances, and this fire path is
+		// status-guarded, so that is harmless.
 
 		// Open a child scope for the event sub-process, parented to the enclosing scope.
 		// NodeID = the event sub-process node ID.
