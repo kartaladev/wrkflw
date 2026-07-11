@@ -955,19 +955,6 @@ func (s *InstanceState) removeBoundaryArmsForHost(hostToken string) []string {
 	return cancelTimerIDs
 }
 
-// removeBoundaryArm removes the single boundaryArm entry with the given
-// (hostToken, boundaryNode) pair. It is a no-op if no such entry exists.
-func (s *InstanceState) removeBoundaryArm(hostToken, boundaryNode string) {
-	out := make([]boundaryArm, 0, len(s.Boundaries))
-	for _, ba := range s.Boundaries {
-		if ba.HostToken == hostToken && ba.BoundaryNode == boundaryNode {
-			continue
-		}
-		out = append(out, ba)
-	}
-	s.Boundaries = out
-}
-
 // eventTriggeredSubprocessArmBySignal returns a pointer to the first
 // eventTriggeredSubprocessArm with the given signal name, or nil if none exists.
 func (s *InstanceState) eventTriggeredSubprocessArmBySignal(name string) *eventTriggeredSubprocessArm {

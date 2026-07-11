@@ -166,10 +166,13 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 		// the host token's scope so boundary-routed tokens stay in the same scope.
 		s.placeTokenInScope(flowTarget, hostScopeID, at)
 	} else {
-		// Non-interrupting: leave host parked, spawn an additional token.
-
-		// Remove only THIS boundary arm (it fired once; no re-arm in scope).
-		s.removeBoundaryArm(ba.HostToken, ba.BoundaryNode)
+		// Non-interrupting: leave host parked, spawn an additional token. The arm
+		// STAYS armed so it can fire again on the next delivery — BPMN
+		// non-interrupting is repeatable (ADR-0124). The arm is retired only when
+		// the host token completes/advances (removeBoundaryArmsForHost) or the
+		// instance ends (terminal sweep). Keeping the arm also lets a recurring
+		// timer boundary's job be cancelled at host end (the arm still holds its
+		// TimerID), fixing a latent gocron-job leak.
 
 		// Spawn a new Active token at the boundary's outgoing flow target, keeping
 		// the host token's scope.

@@ -296,10 +296,26 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 	}
 	assert.True(t, nodeIDs["work"], "host token must still be at work")
 	assert.True(t, nodeIDs["notify-svc"], "new token must be at notify-svc")
-	assert.Empty(t, r2.State.Boundaries, "fired non-interrupting arm removed")
+	require.Len(t, r2.State.Boundaries, 1,
+		"non-interrupting boundary stays armed after firing (repeatable, ADR-0124)")
+
+	// Step 2b: a SECOND "notify" delivery fires the still-armed boundary AGAIN,
+	// spawning another parallel token (BPMN non-interrupting is repeatable).
+	r2b, err := engine.Step(def, r2.State,
+		engine.NewMessageReceived(t0, "notify", "", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	notifyCount := 0
+	for _, tok := range r2b.State.Tokens {
+		if tok.NodeID == "notify-svc" {
+			notifyCount++
+		}
+	}
+	assert.Equal(t, 2, notifyCount, "second delivery must spawn a second notify-svc token")
+	require.Len(t, r2b.State.Tokens, 3, "host + two boundary tokens")
+	require.Len(t, r2b.State.Boundaries, 1, "boundary stays armed across repeated fires")
 
 	// Step 3: Host can still be completed normally.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(def, r2b.State,
 		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
