@@ -26,7 +26,15 @@ func (driver *ProcessDriver) syncSignalBus(st engine.InstanceState) {
 	if driver.sigbus == nil {
 		return
 	}
-	driver.sigbus.Sync(st.InstanceID, st.SignalWaiters())
+	var awaiting []string
+	if !isTerminal(st.Status) {
+		// A terminal instance awaits nothing. A repeatable non-interrupting root
+		// event-sub arm can still be present in a terminal snapshot (ADR-0124), so
+		// leaving its subscription would misroute a later broadcast to a dead
+		// instance; drop all subscriptions by syncing an empty set.
+		awaiting = st.SignalWaiters()
+	}
+	driver.sigbus.Sync(st.InstanceID, awaiting)
 }
 
 // syncMsgWaiters reconciles the runner's internal message-waiter table with the
@@ -46,6 +54,15 @@ func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 		if id == st.InstanceID {
 			delete(driver.msgWaiters, k)
 		}
+	}
+
+	// A terminal instance awaits nothing: registering a waiter for it would
+	// misroute a later delivery (e.g. swallow a message that should start a fresh
+	// message-start instance). A repeatable non-interrupting root event-sub arm can
+	// still be present in the terminal snapshot, so this guard is required
+	// (ADR-0124); it also retroactively closes the same gap for a never-fired arm.
+	if isTerminal(st.Status) {
+		return
 	}
 
 	// Re-register from the engine's authoritative union of message awaits.
