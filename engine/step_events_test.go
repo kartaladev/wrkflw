@@ -874,13 +874,27 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 	assert.True(t, nodeIDs["work"], "host token must still be at work")
 	assert.True(t, nodeIDs["notify-svc"], "new token must be at notify-svc")
 
-	// The fired boundary arm is removed (one-shot).
-	assert.Empty(t, r2.State.Boundaries, "fired non-interrupting arm removed")
+	// The boundary arm STAYS armed after firing — non-interrupting is repeatable (ADR-0124).
+	require.Len(t, r2.State.Boundaries, 1, "non-interrupting boundary stays armed (repeatable)")
+
+	// Step 2b: a SECOND "notify" signal fires the still-armed boundary AGAIN.
+	r2b, err := engine.Step(def, r2.State,
+		engine.NewSignalReceived(t0, "notify", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	notifyCount := 0
+	for _, tok := range r2b.State.Tokens {
+		if tok.NodeID == "notify-svc" {
+			notifyCount++
+		}
+	}
+	assert.Equal(t, 2, notifyCount, "second signal must spawn a second notify-svc token")
+	require.Len(t, r2b.State.Tokens, 3, "host + two boundary tokens")
+	require.Len(t, r2b.State.Boundaries, 1, "boundary stays armed across repeated fires")
 
 	// Step 3: Complete the host normally — the host token advances, the instance
 	// keeps running because the notify-svc token (from the non-interrupting boundary)
 	// is still pending.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(def, r2b.State,
 		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	// Instance still running: notify-svc token is pending its action.

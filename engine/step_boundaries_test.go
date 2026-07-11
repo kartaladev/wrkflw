@@ -296,11 +296,113 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 	}
 	assert.True(t, nodeIDs["work"], "host token must still be at work")
 	assert.True(t, nodeIDs["notify-svc"], "new token must be at notify-svc")
-	assert.Empty(t, r2.State.Boundaries, "fired non-interrupting arm removed")
+	require.Len(t, r2.State.Boundaries, 1,
+		"non-interrupting boundary stays armed after firing (repeatable, ADR-0124)")
+
+	// Step 2b: a SECOND "notify" delivery fires the still-armed boundary AGAIN,
+	// spawning another parallel token (BPMN non-interrupting is repeatable).
+	r2b, err := engine.Step(def, r2.State,
+		engine.NewMessageReceived(t0, "notify", "", nil), engine.StepOptions{})
+	require.NoError(t, err)
+	notifyCount := 0
+	for _, tok := range r2b.State.Tokens {
+		if tok.NodeID == "notify-svc" {
+			notifyCount++
+		}
+	}
+	assert.Equal(t, 2, notifyCount, "second delivery must spawn a second notify-svc token")
+	require.Len(t, r2b.State.Tokens, 3, "host + two boundary tokens")
+	require.Len(t, r2b.State.Boundaries, 1, "boundary stays armed across repeated fires")
 
 	// Step 3: Host can still be completed normally.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(def, r2b.State,
 		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
+}
+
+// nonInterruptingRecurringTimerBoundaryDef: UserTask("work") with a
+// non-interrupting RECURRING-timer boundary that spawns notify-svc on each tick.
+func nonInterruptingRecurringTimerBoundaryDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-bnd-timer-nonint", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewUserTask("work"),
+			event.NewBoundary("bnd-timer", "work",
+				event.WithBoundaryTimer(schedule.Every(time.Hour)),
+				event.WithBoundaryNonInterrupting()),
+			activity.NewServiceTask("notify-svc", activity.WithTaskAction("notify-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end2"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f-start", Source: "start", Target: "work"},
+			{ID: "f-work-end", Source: "work", Target: "end"},
+			{ID: "f-bnd-notify", Source: "bnd-timer", Target: "notify-svc"},
+			{ID: "f-notify-end", Source: "notify-svc", Target: "end2"},
+		},
+	}
+}
+
+// TestNonInterruptingRecurringTimerBoundaryRepeatsAndCancelsOnHostEnd verifies the
+// timer-trigger arm of the repeatable non-interrupting change (ADR-0124): a
+// recurring-timer boundary fires on each of two TimerFired deliveries (same
+// TimerID) — spawning two parallel tokens with the arm surviving — and the
+// surviving arm is CANCELLED when the host completes (the latent gocron-job leak
+// fix; under the old one-shot code the second tick would no-op and no CancelTimer
+// would be emitted because the arm was deleted on the first fire).
+func TestNonInterruptingRecurringTimerBoundaryRepeatsAndCancelsOnHostEnd(t *testing.T) {
+	def := nonInterruptingRecurringTimerBoundaryDef()
+	t0 := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
+
+	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	var timerID string
+	var awaitHuman *engine.AwaitHuman
+	for _, c := range r1.Commands {
+		switch cc := c.(type) {
+		case engine.ScheduleTimer:
+			timerID = cc.TimerID
+		case engine.AwaitHuman:
+			vv := cc
+			awaitHuman = &vv
+		}
+	}
+	require.NotEmpty(t, timerID, "recurring timer boundary must schedule a timer")
+	require.NotNil(t, awaitHuman)
+	require.Len(t, r1.State.Boundaries, 1)
+
+	// First tick → spawns a notify-svc token; arm survives.
+	r2, err := engine.Step(def, r1.State, engine.NewTimerFired(t0, timerID), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r2.State.Boundaries, 1, "recurring timer boundary stays armed after first tick")
+
+	// Second tick (same TimerID) → fires AGAIN; second token; arm still survives.
+	r3, err := engine.Step(def, r2.State, engine.NewTimerFired(t0, timerID), engine.StepOptions{})
+	require.NoError(t, err)
+	notifyCount := 0
+	for _, tok := range r3.State.Tokens {
+		if tok.NodeID == "notify-svc" {
+			notifyCount++
+		}
+	}
+	assert.Equal(t, 2, notifyCount, "each tick spawns a parallel token (repeatable)")
+	require.Len(t, r3.State.Boundaries, 1, "arm survives repeated ticks")
+
+	// Host completes → the surviving recurring-timer arm is cancelled (leak fix).
+	r4, err := engine.Step(def, r3.State,
+		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "u1"}), engine.StepOptions{})
+	require.NoError(t, err)
+	cancelled := false
+	for _, c := range r4.Commands {
+		if ct, ok := c.(engine.CancelTimer); ok && ct.TimerID == timerID {
+			cancelled = true
+		}
+	}
+	assert.True(t, cancelled,
+		"recurring timer boundary must be cancelled when the host completes (no gocron-job leak)")
+	assert.Empty(t, r4.State.Boundaries, "boundary arm swept at host completion")
 }

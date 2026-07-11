@@ -76,8 +76,10 @@ func TestDeliverMessageFiresMessageEventSubprocess(t *testing.T) {
 			assert: func(t *testing.T, final engine.InstanceState) {
 				assert.Equal(t, engine.StatusRunning, final.Status,
 					"non-interrupting event-sub must not cancel the main path")
-				assert.Empty(t, final.EventTriggeredSubprocesses,
-					"the fired message event-sub arm must be consumed (proves it was NOT a no-op)")
+				// Repeatable (ADR-0124): the arm STAYS armed after firing (proves it
+				// was NOT a no-op AND that it can fire again on the next delivery).
+				require.Len(t, final.EventTriggeredSubprocesses, 1,
+					"non-interrupting message event-sub stays armed after firing")
 				require.Len(t, final.Tokens, 1, "main token still parked on await")
 				assert.Equal(t, "await", final.Tokens[0].NodeID)
 			},
@@ -133,8 +135,9 @@ func TestBroadcastSignalFiresSignalEventSubprocess(t *testing.T) {
 			assert: func(t *testing.T, final engine.InstanceState) {
 				assert.Equal(t, engine.StatusRunning, final.Status,
 					"non-interrupting event-sub must not cancel the main path")
-				assert.Empty(t, final.EventTriggeredSubprocesses,
-					"the fired signal event-sub arm must be consumed (proves it was NOT a no-op)")
+				// Repeatable (ADR-0124): the arm STAYS armed after firing.
+				require.Len(t, final.EventTriggeredSubprocesses, 1,
+					"non-interrupting signal event-sub stays armed after firing")
 				require.Len(t, final.Tokens, 1, "main token still parked on await")
 				assert.Equal(t, "await", final.Tokens[0].NodeID)
 			},
