@@ -22,6 +22,18 @@ func TestEffectiveRetryPolicyPrecedence(t *testing.T) {
 	nodeWith := activity.NewServiceTask("t", activity.WithTaskAction("a"), activity.WithRetryPolicy(nodePolicy))
 	nodeBare := activity.NewServiceTask("t", activity.WithTaskAction("a"))
 
+	// A node whose policy carries the two safety-only fields the action tier
+	// cannot express (ADR-0126 field-merge).
+	nodeSafetyPolicy := &model.RetryPolicy{
+		MaxAttempts:        7,
+		InitialInterval:    time.Second,
+		BackoffCoef:        2,
+		MaxInterval:        time.Minute,
+		MaxElapsed:         5 * time.Minute,
+		NonRetryableErrors: []string{"permission denied", "not found"},
+	}
+	nodeWithSafety := activity.NewServiceTask("t", activity.WithTaskAction("a"), activity.WithRetryPolicy(nodeSafetyPolicy))
+
 	type testCase struct {
 		name   string
 		node   model.Node
@@ -70,6 +82,36 @@ func TestEffectiveRetryPolicyPrecedence(t *testing.T) {
 			assert: func(t *testing.T, rp model.RetryPolicy, ok bool) {
 				require.True(t, ok)
 				assert.Equal(t, 9, rp.MaxAttempts)
+			},
+		},
+		{
+			// Field-merge (ADR-0126): the action override wins on the four fields
+			// it can express, but the node's safety-only fields (MaxElapsed,
+			// NonRetryableErrors) — which action.RetryPolicy cannot express — are
+			// PRESERVED, not dropped.
+			name: "override field-merges node safety fields",
+			node: nodeWithSafety,
+			opt:  StepOptions{OverrideRetryPolicy: overridePolicy},
+			assert: func(t *testing.T, rp model.RetryPolicy, ok bool) {
+				require.True(t, ok)
+				assert.Equal(t, 9, rp.MaxAttempts, "override wins on MaxAttempts")
+				assert.Equal(t, 3.0, rp.BackoffCoef, "override wins on BackoffCoef")
+				assert.Equal(t, 5*time.Minute, rp.MaxElapsed, "node MaxElapsed preserved")
+				assert.Equal(t, []string{"permission denied", "not found"}, rp.NonRetryableErrors,
+					"node NonRetryableErrors preserved")
+			},
+		},
+		{
+			// When the node has NO policy, the override applies alone (no safety
+			// fields to inherit).
+			name: "override alone when node bare — no safety inheritance",
+			node: nodeBare,
+			opt:  StepOptions{OverrideRetryPolicy: overridePolicy},
+			assert: func(t *testing.T, rp model.RetryPolicy, ok bool) {
+				require.True(t, ok)
+				assert.Equal(t, 9, rp.MaxAttempts)
+				assert.Zero(t, rp.MaxElapsed)
+				assert.Empty(t, rp.NonRetryableErrors)
 			},
 		},
 	}

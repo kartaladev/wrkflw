@@ -209,13 +209,27 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 // step options, plus a boolean indicating whether a policy is in effect.
 // Precedence: StepOptions.OverrideRetryPolicy > node-level policy >
 // StepOptions.DefaultRetryPolicy > none. The override is the runtime's seam for a
-// per-action retry policy (action > node > runtime-default). The returned policy
-// has been normalized via [model.RetryPolicy.Normalize].
+// per-action retry policy (action > node > runtime-default).
+//
+// FIELD-MERGE (ADR-0126): the override tier is fed from action.RetrySpecs, which
+// can express only MaxAttempts/InitialInterval/BackoffCoef/MaxInterval. When the
+// override is applied AND the node also declares a policy, the node's
+// safety-only fields the action tier cannot express — MaxElapsed and
+// NonRetryableErrors — are PRESERVED from the node rather than silently dropped.
+// The action still wins on every field it can express.
+//
+// The returned policy has been normalized via [model.RetryPolicy.Normalize].
 func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, bool) {
 	rp := model.RetryPolicyOf(node)
 	switch {
 	case opt.OverrideRetryPolicy != nil:
-		return opt.OverrideRetryPolicy.Normalize(), true
+		eff := *opt.OverrideRetryPolicy
+		if rp != nil {
+			// Inherit the node's safety-only fields the action tier can't express.
+			eff.MaxElapsed = rp.MaxElapsed
+			eff.NonRetryableErrors = rp.NonRetryableErrors
+		}
+		return eff.Normalize(), true
 	case rp != nil:
 		return rp.Normalize(), true
 	case opt.DefaultRetryPolicy != nil:
