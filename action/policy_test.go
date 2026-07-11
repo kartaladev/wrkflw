@@ -17,7 +17,7 @@ func TestOptionConstructorsBuildPolicy(t *testing.T) {
 	t.Parallel()
 
 	bare := action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) { return nil, nil })
-	rp := action.RetryPolicy{MaxAttempts: 4, InitialInterval: time.Second, Multiplier: 2, MaxInterval: time.Minute}
+	rp := action.RetrySpecs{MaxAttempts: 4, InitialInterval: time.Second, Multiplier: 2, MaxInterval: time.Minute}
 
 	type testCase struct {
 		name   string
@@ -37,8 +37,8 @@ func TestOptionConstructorsBuildPolicy(t *testing.T) {
 			},
 		},
 		{
-			name: "WithRetryPolicy sets only Retry",
-			opt:  action.WithRetryPolicy(rp),
+			name: "WithRetrySpecs sets only Retry",
+			opt:  action.WithRetrySpecs(rp),
 			assert: func(t *testing.T, p action.Policy) {
 				require.NotNil(t, p.Retry)
 				assert.Equal(t, rp, *p.Retry)
@@ -89,7 +89,7 @@ func (timedOnly) ExecTimeout() time.Duration                                 { r
 type retriableOnly struct{}
 
 func (retriableOnly) Do(context.Context, map[string]any) (map[string]any, error) { return nil, nil }
-func (retriableOnly) RetryPolicy() action.RetryPolicy                            { return action.RetryPolicy{} }
+func (retriableOnly) RetrySpecs() action.RetrySpecs                              { return action.RetrySpecs{} }
 
 type recoverableOnly struct{}
 

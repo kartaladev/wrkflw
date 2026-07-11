@@ -25,9 +25,9 @@ per-action policy, falling back to the runtime default when unset**.
 
 `definition/model` **imports** `action` (`definition/model/definition.go`, `builder.go`). Therefore
 `action` **must not** import `definition/model` — so the action package cannot reference
-`model.RetryPolicy`. Resolution: `action` declares its own pure-data `RetryPolicy` (the same four
+`model.RetryPolicy`. Resolution: `action` declares its own pure-data `RetrySpecs` (the same four
 fields); the runtime (which imports both) converts it to `model.RetryPolicy` at the boundary. The
-retry *algorithm* (`Normalize`/`Backoff`) stays solely in `model` — `action.RetryPolicy` is a
+retry *algorithm* (`Normalize`/`Backoff`) stays solely in `model` — `action.RetrySpecs` is a
 declaration, `model.RetryPolicy` is the mechanism.
 
 ## Decisions (locked)
@@ -52,10 +52,11 @@ adopting a combined accessor. Interface *satisfaction* signals the capability is
 returns its value.
 
 ```go
-// RetryPolicy is a pure declaration mirroring the engine's retry fields. The
-// runtime converts it to model.RetryPolicy (which owns Normalize/Backoff). Kept
-// separate to avoid the model→action import cycle.
-type RetryPolicy struct {
+// RetrySpecs is a pure declaration mirroring the engine's four core retry fields.
+// The runtime converts it to model.RetryPolicy (which owns Normalize/Backoff).
+// Kept separate to avoid the model→action import cycle. (Named "specs" because it
+// only carries specs; model.RetryPolicy is the enforced policy.)
+type RetrySpecs struct {
     MaxAttempts     int
     InitialInterval time.Duration
     Multiplier      float64
@@ -70,7 +71,7 @@ type TimedAction interface {
 }
 type RetriableAction interface {
     Action
-    RetryPolicy() RetryPolicy // the per-action retry policy
+    RetrySpecs() RetrySpecs // the per-action retry policy
 }
 type RecoverableAction interface {
     Action
@@ -80,7 +81,7 @@ type RecoverableAction interface {
 // Options build the wrapper layers. Same ergonomic surface as before.
 type Option func(*policy) // policy is unexported; consumers only use the WithX ctors
 func WithExecTimeout(d time.Duration) Option
-func WithRetryPolicy(p RetryPolicy) Option
+func WithRetrySpecs(p RetrySpecs) Option
 func WithRecover(on bool) Option
 
 // Wrap applies the option-selected capabilities as typed wrapper layers. It first
@@ -97,7 +98,7 @@ func Wrap(a Action, opts ...Option) Action
 // returns the aggregate. Used by the runtime and by Wrap's unwrap step.
 type Policy struct {
     Timeout *time.Duration
-    Retry   *RetryPolicy
+    Retry   *RetrySpecs
     Recover *bool
 }
 func ResolvePolicy(a Action) Policy
@@ -136,9 +137,13 @@ At `InvokeAction` (`runtime/processdriver_action.go`):
   - Add `StepOptions.OverrideRetryPolicy *model.RetryPolicy`.
   - `effectiveRetryPolicy` precedence becomes **override > node > `DefaultRetryPolicy` > none**.
   - The runtime, when it feeds the `ActionFailed` step for a node whose action carries a
-    `Retry` policy, resolves that action, converts `action.RetryPolicy → model.RetryPolicy`, and
+    `Retry` policy, resolves that action, converts `action.RetrySpecs → model.RetryPolicy`, and
     sets `StepOptions.OverrideRetryPolicy`. When the action has no retry policy, the override is nil
     and today's node>default behavior is unchanged.
+  - **Field-merge:** because `RetrySpecs` expresses only four fields, when the override is applied
+    AND the node also declares a policy, `effectiveRetryPolicy` inherits the node's safety-only
+    `MaxElapsed` and `NonRetryableErrors` from the node (the action still wins on its four fields).
+    A per-action/catalog-default retry must not silently drop a workflow author's safety guards.
 
 No other engine change; interrupting/durable/incident paths untouched.
 
@@ -160,8 +165,8 @@ No other engine change; interrupting/durable/incident paths untouched.
   Policy accessor. Wrap still emits typed layers, canonical order, no double-stacking of a concern;
   the runtime aggregates via `ResolvePolicy`.
 - **Reuse `model.RetryPolicy` in `action`** — impossible (import cycle). Chosen: a pure-data
-  `action.RetryPolicy` + runtime converter (action stays a leaf, zero change to `model`). Alternative
-  (extract `RetryPolicy` to a neutral leaf both packages import, `model.RetryPolicy` a type alias) was
+  `action.RetrySpecs` + runtime converter (action stays a leaf, zero change to `model`). Alternative
+  (extract `RetrySpecs` to a neutral leaf both packages import, `model.RetryPolicy` a type alias) was
   considered and NOT chosen.
 
 ## Quality attributes
@@ -186,7 +191,7 @@ TDD, observable RED first.
 - **Catalog/Registry:** lazy default applied only when unset; per-action `Wrap` wins; bare passes
   through when no default.
 - **Runtime e2e:** (a) action `WithExecTimeout` shorter/longer than the runtime default is respected
-  (longer proves it's not just min()); (b) action `WithRetryPolicy` overrides a node-level
+  (longer proves it's not just min()); (b) action `WithRetrySpecs` overrides a node-level
   `model.RetryPolicy` (action>node) and drives the durable retry; (c) `WithRecover(false)` lets a
   panic propagate as a (non-recovered) failure; (d) no policy ⇒ runtime defaults unchanged
   (regression).
@@ -197,7 +202,7 @@ Coverage ≥ 85% on touched packages; `go test ./...` clean; `golangci-lint run 
 ## ADR
 
 ADR-0126 (Nygard): Context = 3-locus runtime-only resiliency + the model→action cycle; Decision =
-`action.{TimedAction,RetriableAction,RecoverableAction}` + `Wrap` + `ResolvePolicy` + `action.RetryPolicy` (declaration) + lazy catalog default
+`action.{TimedAction,RetriableAction,RecoverableAction}` + `Wrap` + `ResolvePolicy` + `action.RetrySpecs` (declaration) + lazy catalog default
 + runtime effective-policy execution + `StepOptions.OverrideRetryPolicy` engine seam, precedence
 action>node>default; Consequences = per-action resiliency, one execution site, durable retry intact,
 one new optional engine field.

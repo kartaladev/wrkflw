@@ -39,11 +39,11 @@ func (a timedAction) Do(ctx context.Context, in map[string]any) (map[string]any,
 // engine-driven mechanism, not an in-process loop.
 type retriableAction struct {
 	bare Action
-	p    RetryPolicy
+	p    RetrySpecs
 }
 
-func (a retriableAction) RetryPolicy() RetryPolicy { return a.p }
-func (a retriableAction) Unwrap() Action           { return a.bare }
+func (a retriableAction) RetrySpecs() RetrySpecs { return a.p }
+func (a retriableAction) Unwrap() Action         { return a.bare }
 
 // Do delegates to the bare action once. It does NOT retry (see the type doc).
 func (a retriableAction) Do(ctx context.Context, in map[string]any) (map[string]any, error) {
@@ -108,7 +108,7 @@ func ResolvePolicy(a Action) Policy {
 		}
 		if p.Retry == nil {
 			if r, ok := a.(RetriableAction); ok {
-				rp := r.RetryPolicy()
+				rp := r.RetrySpecs()
 				p.Retry = &rp
 			}
 		}

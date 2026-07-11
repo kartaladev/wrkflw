@@ -31,25 +31,25 @@ retry mechanism and one execution site.
 
 **`action` package (stays a leaf — no `definition/model` import):**
 
-- `action.RetryPolicy` — pure-data struct mirroring the engine's four core retry fields
+- `action.RetrySpecs` — pure-data struct mirroring the engine's four core retry fields
   (`MaxAttempts`, `InitialInterval`, `Multiplier`, `MaxInterval`). A declaration; the runtime
   converts it to `model.RetryPolicy` (which owns `Normalize`/`Backoff`).
 - **Three single-method capability interfaces**, each embedding `Action`, so a consumer's own type
   may implement just ONE directly: `TimedAction{ ExecTimeout() time.Duration }`,
-  `RetriableAction{ RetryPolicy() RetryPolicy }`, `RecoverableAction{ RecoverPanics() bool }`.
+  `RetriableAction{ RetrySpecs() RetrySpecs }`, `RecoverableAction{ RecoverPanics() bool }`.
   Interface satisfaction signals the capability; the method returns its value.
 - Three unexported wrapper types (`timedAction`, `retriableAction`, `recoverableAction`), each with
   its capability method + `Unwrap() Action` + `Do`. Timed and recoverable **self-enforce** in `Do`
   for standalone use; retriable's `Do` is **declarative** (delegates once — retry is engine-only).
   The bare action is a NAMED field (not embedded) so no capability is promoted across layers.
-- `Option` (`func(*policy)`) with `WithExecTimeout`/`WithRetryPolicy`/`WithRecover`.
+- `Option` (`func(*policy)`) with `WithExecTimeout`/`WithRetrySpecs`/`WithRecover`.
 - `Wrap(a, opts...)`: unwraps `a` to bare while aggregating existing layers' capabilities, applies
   options (same-concern **override**, never double-stack), and rebuilds layers in canonical order
   recover→retry→timeout (innermost→outermost) for each set field. `Wrap(bare)` with no opts returns
   bare unchanged.
 - `Unwrap(a)` (full unwrap to bare) and `ResolvePolicy(a) Policy` (walks the Unwrap chain,
   first-occurrence-per-concern wins; also detects a consumer type implementing a capability directly).
-  `Policy{ Timeout *time.Duration; Retry *RetryPolicy; Recover *bool }` is the runtime-facing view.
+  `Policy{ Timeout *time.Duration; Retry *RetrySpecs; Recover *bool }` is the runtime-facing view.
 - `NewCatalog(m, opts...)` and `NewRegistry(opts...)` store a **lazy default** applied at Resolve
   only to an action whose `ResolvePolicy` is all-nil; a per-action `Wrap` (or a custom capability
   type) always wins. Both remain back-compatible with no opts. `NewCatalog` now returns `Catalog`;
@@ -61,6 +61,11 @@ retry mechanism and one execution site.
 
 - `StepOptions.OverrideRetryPolicy *model.RetryPolicy`; `effectiveRetryPolicy` precedence becomes
   **override > node > `DefaultRetryPolicy` > none**.
+- **Field-merge, not full replace:** when the override is applied AND the node also declares a policy,
+  `effectiveRetryPolicy` inherits the node's SAFETY-only fields that the action tier cannot express —
+  `MaxElapsed` and `NonRetryableErrors` — from the node. The action still wins on the four fields it
+  can express. This prevents a per-action (or catalog-default) retry policy from silently dropping a
+  workflow author's non-retryable-error / total-time-budget guards.
 - `FailingActionNode(def, st, commandID)` maps an `ActionFailed` command back to the failing node and
   its scope-effective definition, so the runtime can resolve the node's action.
 
@@ -70,7 +75,7 @@ retry mechanism and one execution site.
   (`Policy.Timeout` ?? `driver.actionTimeout`) and effective recover (`Policy.Recover` ?? true) — not
   the wrappers' `Do`, avoiding double-application and keeping spans/metrics at one site.
 - `overrideRetryPolicy(def, st, trg)` — for an `ActionFailed` only — resolves the failing node's
-  action, converts `action.RetryPolicy → model.RetryPolicy`, and sets `StepOptions.OverrideRetryPolicy`.
+  action, converts `action.RetrySpecs → model.RetryPolicy`, and sets `StepOptions.OverrideRetryPolicy`.
   It is re-derived from durable state each step, so a retry re-attempt after a restart resolves the
   same override. `InvokeCancelAction` honours the per-action timeout but always recovers (best-effort).
 
@@ -92,4 +97,4 @@ runtime-default.
 - **Neutral:** `NewCatalog`'s return type widened from `MapCatalog` to `Catalog`; no caller depended
   on the concrete type. Rejected alternatives: a single combined `ResilientAction` accessor (three
   capability interfaces chosen instead); an in-process retry loop in the wrapper (non-durable, would
-  double with node retry); extracting `RetryPolicy` to a shared leaf with a `model` type alias.
+  double with node retry); extracting `RetrySpecs` to a shared leaf with a `model` type alias.

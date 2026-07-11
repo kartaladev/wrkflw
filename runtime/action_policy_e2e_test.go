@@ -92,7 +92,7 @@ func TestActionRetryOverridesNodeRetry(t *testing.T) {
 	})
 	// Action policy allows 5 attempts; node policy allows only 1 (would fail fast).
 	cat := action.NewCatalog(map[string]action.Action{
-		"t": action.Wrap(inner, action.WithRetryPolicy(action.RetryPolicy{
+		"t": action.Wrap(inner, action.WithRetrySpecs(action.RetrySpecs{
 			MaxAttempts: 5, InitialInterval: time.Second, Multiplier: 2, MaxInterval: time.Minute,
 		})),
 	})

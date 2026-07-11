@@ -2,26 +2,27 @@ package action
 
 import "time"
 
-// RetryPolicy is a pure declaration of how a failed action should be retried. It
+// RetrySpecs is a pure declaration of how a failed action should be retried. It
 // mirrors the four core fields of the engine's retry policy; the runtime converts
 // it to the engine's own policy type (which owns the retry algorithm) at execution
 // time. It is kept as a leaf value here so the action package never imports the
 // definition model (which would create an import cycle: model already imports action).
 //
-// A RetryPolicy is a declaration only — attaching one to an action (via
-// [WithRetryPolicy] or by implementing [RetriableAction]) makes the runtime feed it
+// A RetrySpecs is a declaration only — attaching one to an action (via
+// [WithRetrySpecs] or by implementing [RetriableAction]) makes the runtime feed it
 // into its durable retry mechanism; the [Wrap] wrapper does NOT retry in-process.
 //
-// PRECEDENCE / FULL REPLACE: an action-level RetryPolicy takes precedence over a
-// node-level policy (action > node > runtime-default) and REPLACES it wholesale —
-// it does not merge. Because this struct mirrors only the four core fields, a node
-// policy's MaxElapsed budget and NonRetryableErrors substrings are NOT carried over
-// when an action policy is present; encode any such limits in the action policy's
-// MaxAttempts, or mark individual errors non-retryable at runtime via
-// [NonRetryable]. (A catalog/registry default RetryPolicy sits in this same action
-// tier — see [NewCatalog]/[NewRegistry] — and therefore also overrides a node
-// policy for actions that declare none of their own.)
-type RetryPolicy struct {
+// PRECEDENCE / FIELD-MERGE: an action-level RetrySpecs takes precedence over a
+// node-level policy (action > node > runtime-default) on every field it can
+// express (MaxAttempts, InitialInterval, Multiplier, MaxInterval). Because this
+// struct mirrors only those four fields, the node policy's SAFETY-only fields —
+// the MaxElapsed budget and the NonRetryableErrors substrings — that the action
+// tier cannot express are PRESERVED from the node rather than dropped. The action
+// therefore tunes attempts/backoff within the workflow author's safety envelope.
+// (A catalog/registry default RetrySpecs sits in this same action tier — see
+// [NewCatalog]/[NewRegistry] — and likewise field-merges with a node policy for
+// actions that declare none of their own.)
+type RetrySpecs struct {
 	// MaxAttempts is the total number of execution attempts including the first.
 	// 0 means unlimited.
 	MaxAttempts int
@@ -49,8 +50,8 @@ type TimedAction interface {
 // retry mechanism, overriding any node- or runtime-level default.
 type RetriableAction interface {
 	Action
-	// RetryPolicy returns the per-action retry declaration.
-	RetryPolicy() RetryPolicy
+	// RetrySpecs returns the per-action retry declaration.
+	RetrySpecs() RetrySpecs
 }
 
 // RecoverableAction is an [Action] that declares whether panics raised by its Do
@@ -70,7 +71,7 @@ type Policy struct {
 	// Timeout is the per-action execution timeout, or nil when unset.
 	Timeout *time.Duration
 	// Retry is the per-action retry policy, or nil when unset.
-	Retry *RetryPolicy
+	Retry *RetrySpecs
 	// Recover is the per-action panic-recovery flag, or nil when unset.
 	Recover *bool
 }
@@ -83,7 +84,7 @@ func (p Policy) empty() bool {
 // consumer only ever sees the WithX option constructors.
 type policy struct {
 	timeout *time.Duration
-	retry   *RetryPolicy
+	retry   *RetrySpecs
 	recover *bool
 }
 
@@ -97,10 +98,10 @@ func WithExecTimeout(d time.Duration) Option {
 	return func(p *policy) { p.timeout = &d }
 }
 
-// WithRetryPolicy sets the per-action retry policy fed into the runtime's durable
+// WithRetrySpecs sets the per-action retry policy fed into the runtime's durable
 // retry mechanism, overriding any node- or runtime-level default (action > node >
 // runtime-default).
-func WithRetryPolicy(rp RetryPolicy) Option {
+func WithRetrySpecs(rp RetrySpecs) Option {
 	return func(p *policy) { p.retry = &rp }
 }
 

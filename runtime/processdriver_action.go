@@ -101,10 +101,10 @@ func (driver *ProcessDriver) effectiveActionPolicy(a action.Action) (bare action
 	return bare, timeout, recoverPanics
 }
 
-// actionRetryToModel converts a declarative [action.RetryPolicy] to the engine's
+// actionRetryToModel converts a declarative [action.RetrySpecs] to the engine's
 // [model.RetryPolicy] (which owns the retry algorithm). Only the four mirrored
 // fields are carried; the model's Normalize fills the rest.
-func actionRetryToModel(p action.RetryPolicy) model.RetryPolicy {
+func actionRetryToModel(p action.RetrySpecs) model.RetryPolicy {
 	return model.RetryPolicy{
 		MaxAttempts:     p.MaxAttempts,
 		InitialInterval: p.InitialInterval,
@@ -115,7 +115,7 @@ func actionRetryToModel(p action.RetryPolicy) model.RetryPolicy {
 
 // overrideRetryPolicy derives the per-action retry override for a trigger, if any.
 // It returns non-nil only for an [engine.ActionFailed] whose failing node resolves
-// to an action carrying an [action.RetryPolicy] — surfacing precedence action >
+// to an action carrying an [action.RetrySpecs] — surfacing precedence action >
 // node > runtime-default via [engine.StepOptions.OverrideRetryPolicy]. It is
 // re-derived from durable state (def + st + CommandID) on every ActionFailed step,
 // so a retry re-attempt after a restart resolves the same override. st is the

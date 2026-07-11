@@ -40,12 +40,12 @@ func (a countAction) Do(ctx context.Context, _ map[string]any) (map[string]any, 
 
 // customRetriable implements RetriableAction directly (no Wrap), to prove
 // ResolvePolicy detects a consumer type that natively declares a capability.
-type customRetriable struct{ p action.RetryPolicy }
+type customRetriable struct{ p action.RetrySpecs }
 
 func (c customRetriable) Do(context.Context, map[string]any) (map[string]any, error) {
 	return nil, nil
 }
-func (c customRetriable) RetryPolicy() action.RetryPolicy { return c.p }
+func (c customRetriable) RetrySpecs() action.RetrySpecs { return c.p }
 
 func TestWrappersStandaloneDo(t *testing.T) {
 	t.Parallel()
@@ -90,7 +90,7 @@ func TestWrappersStandaloneDo(t *testing.T) {
 			name: "retriable Do does NOT retry a failing action",
 			build: func(calls *int) action.Action {
 				return action.Wrap(countAction{calls: calls, err: errors.New("boom")},
-					action.WithRetryPolicy(action.RetryPolicy{MaxAttempts: 5}))
+					action.WithRetrySpecs(action.RetrySpecs{MaxAttempts: 5}))
 			},
 			assert: func(t *testing.T, calls int, _ map[string]any, err error) {
 				require.Error(t, err)
@@ -121,8 +121,8 @@ func TestResolvePolicyAndWrap(t *testing.T) {
 
 	d10 := 10 * time.Second
 	d30 := 30 * time.Second
-	rp3 := action.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, Multiplier: 2, MaxInterval: time.Minute}
-	rp5 := action.RetryPolicy{MaxAttempts: 5, InitialInterval: 2 * time.Second, Multiplier: 3, MaxInterval: time.Hour}
+	rp3 := action.RetrySpecs{MaxAttempts: 3, InitialInterval: time.Second, Multiplier: 2, MaxInterval: time.Minute}
+	rp5 := action.RetrySpecs{MaxAttempts: 5, InitialInterval: 2 * time.Second, Multiplier: 3, MaxInterval: time.Hour}
 	on := true
 
 	bare := action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) { return nil, nil })
@@ -155,7 +155,7 @@ func TestResolvePolicyAndWrap(t *testing.T) {
 		{
 			name: "distinct concerns nest and aggregate",
 			build: func() action.Action {
-				return action.Wrap(bare, action.WithExecTimeout(d10), action.WithRetryPolicy(rp3), action.WithRecover(on))
+				return action.Wrap(bare, action.WithExecTimeout(d10), action.WithRetrySpecs(rp3), action.WithRecover(on))
 			},
 			assert: func(t *testing.T, p action.Policy, _ action.Action) {
 				require.NotNil(t, p.Timeout)
@@ -169,8 +169,8 @@ func TestResolvePolicyAndWrap(t *testing.T) {
 		{
 			name: "re-wrapping the same concern replaces, never double-stacks",
 			build: func() action.Action {
-				once := action.Wrap(bare, action.WithExecTimeout(d10), action.WithRetryPolicy(rp3))
-				return action.Wrap(once, action.WithExecTimeout(d30), action.WithRetryPolicy(rp5))
+				once := action.Wrap(bare, action.WithExecTimeout(d10), action.WithRetrySpecs(rp3))
+				return action.Wrap(once, action.WithExecTimeout(d30), action.WithRetrySpecs(rp5))
 			},
 			assert: func(t *testing.T, p action.Policy, a action.Action) {
 				require.NotNil(t, p.Timeout)

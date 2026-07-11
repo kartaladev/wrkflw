@@ -87,7 +87,7 @@ func TestEffectiveRetryPolicyPrecedence(t *testing.T) {
 		{
 			// Field-merge (ADR-0126): the action override wins on the four fields
 			// it can express, but the node's safety-only fields (MaxElapsed,
-			// NonRetryableErrors) — which action.RetryPolicy cannot express — are
+			// NonRetryableErrors) — which action.RetrySpecs cannot express — are
 			// PRESERVED, not dropped.
 			name: "override field-merges node safety fields",
 			node: nodeWithSafety,
