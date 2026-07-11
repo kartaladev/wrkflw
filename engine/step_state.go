@@ -207,11 +207,15 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 
 // effectiveRetryPolicy returns the retry policy to apply for the given node and
 // step options, plus a boolean indicating whether a policy is in effect.
-// Precedence: node-level policy > StepOptions.DefaultRetryPolicy > none.
-// The returned policy has been normalized via [model.RetryPolicy.Normalize].
+// Precedence: StepOptions.OverrideRetryPolicy > node-level policy >
+// StepOptions.DefaultRetryPolicy > none. The override is the runtime's seam for a
+// per-action retry policy (action > node > runtime-default). The returned policy
+// has been normalized via [model.RetryPolicy.Normalize].
 func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, bool) {
 	rp := model.RetryPolicyOf(node)
 	switch {
+	case opt.OverrideRetryPolicy != nil:
+		return opt.OverrideRetryPolicy.Normalize(), true
 	case rp != nil:
 		return rp.Normalize(), true
 	case opt.DefaultRetryPolicy != nil:
