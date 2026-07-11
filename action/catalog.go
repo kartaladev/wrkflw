@@ -27,6 +27,10 @@ type MapCatalog map[string]Action
 // [ResolvePolicy]). A per-action [Wrap] (or a type implementing a capability
 // interface directly) therefore always wins over the catalog default; bare stored
 // actions are decorated on the way out and remain bare in the map.
+//
+// A default retry policy applies in the ACTION tier (action > node > runtime-default),
+// so it overrides a node-level retry policy for any action that declares none of its
+// own — see the precedence note on [RetryPolicy].
 func NewCatalog(m map[string]Action, opts ...Option) Catalog {
 	base := MapCatalog(m)
 	if len(opts) == 0 {
@@ -117,7 +121,9 @@ type Registry struct {
 // options are supplied they become a DEFAULT policy applied lazily at [Registry.Resolve]
 // — only to a resolved action that declares no policy of its own (a per-action
 // [Wrap], or a type implementing a capability interface directly, wins). NewRegistry()
-// with no options is fully back-compatible.
+// with no options is fully back-compatible. A default retry policy applies in the
+// ACTION tier and thus overrides a node-level retry policy for actions that declare
+// none of their own — see the precedence note on [RetryPolicy].
 func NewRegistry(opts ...Option) *Registry {
 	return &Registry{
 		actions:  make(map[string]Action),

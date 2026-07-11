@@ -11,6 +11,16 @@ import "time"
 // A RetryPolicy is a declaration only — attaching one to an action (via
 // [WithRetryPolicy] or by implementing [RetriableAction]) makes the runtime feed it
 // into its durable retry mechanism; the [Wrap] wrapper does NOT retry in-process.
+//
+// PRECEDENCE / FULL REPLACE: an action-level RetryPolicy takes precedence over a
+// node-level policy (action > node > runtime-default) and REPLACES it wholesale —
+// it does not merge. Because this struct mirrors only the four core fields, a node
+// policy's MaxElapsed budget and NonRetryableErrors substrings are NOT carried over
+// when an action policy is present; encode any such limits in the action policy's
+// MaxAttempts, or mark individual errors non-retryable at runtime via
+// [NonRetryable]. (A catalog/registry default RetryPolicy sits in this same action
+// tier — see [NewCatalog]/[NewRegistry] — and therefore also overrides a node
+// policy for actions that declare none of their own.)
 type RetryPolicy struct {
 	// MaxAttempts is the total number of execution attempts including the first.
 	// 0 means unlimited.

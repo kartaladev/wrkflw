@@ -125,13 +125,9 @@ func (driver *ProcessDriver) overrideRetryPolicy(def *model.ProcessDefinition, s
 	if !ok {
 		return nil
 	}
-	node, scopeDef, ok := engine.FailingActionNode(def, st, af.CommandID)
+	name, scopeDef, ok := engine.FailingActionName(def, st, af.CommandID)
 	if !ok {
 		return nil
-	}
-	name := model.ActionOf(node)
-	if name == "" {
-		name = node.ID()
 	}
 	a, ok := action.Resolve(scopeDef.ScopedCatalog(), driver.cat, name)
 	if !ok {

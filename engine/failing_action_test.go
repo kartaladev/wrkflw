@@ -99,21 +99,20 @@ func TestFailingActionNode(t *testing.T) {
 		name   string
 		st     InstanceState
 		cmdID  string
-		assert func(t *testing.T, node model.Node, scopeDef *model.ProcessDefinition, ok bool)
+		assert func(t *testing.T, name string, scopeDef *model.ProcessDefinition, ok bool)
 	}
 
 	cases := []testCase{
 		{
-			name: "resolves node and scope def for an awaiting token",
+			name: "resolves action name (default-by-id owned by the engine) and scope def",
 			st: InstanceState{
 				InstanceID: "p",
 				Tokens:     []Token{{ID: "p-t1", NodeID: "task", AwaitCommand: "p-c1", State: TokenWaitingCommand}},
 			},
 			cmdID: "p-c1",
-			assert: func(t *testing.T, node model.Node, scopeDef *model.ProcessDefinition, ok bool) {
+			assert: func(t *testing.T, name string, scopeDef *model.ProcessDefinition, ok bool) {
 				require.True(t, ok)
-				require.NotNil(t, node)
-				assert.Equal(t, "task", node.ID())
+				assert.Equal(t, "a", name, "explicit WithTaskAction(\"a\") is the lookup key")
 				assert.Equal(t, def, scopeDef)
 			},
 		},
@@ -124,7 +123,7 @@ func TestFailingActionNode(t *testing.T) {
 				Tokens:     []Token{{ID: "p-t1", NodeID: "task", AwaitCommand: "p-cX", State: TokenWaitingCommand}},
 			},
 			cmdID: "p-c1",
-			assert: func(t *testing.T, _ model.Node, _ *model.ProcessDefinition, ok bool) {
+			assert: func(t *testing.T, _ string, _ *model.ProcessDefinition, ok bool) {
 				assert.False(t, ok)
 			},
 		},
@@ -134,8 +133,8 @@ func TestFailingActionNode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			node, scopeDef, ok := FailingActionNode(def, tc.st, tc.cmdID)
-			tc.assert(t, node, scopeDef, ok)
+			name, scopeDef, ok := FailingActionName(def, tc.st, tc.cmdID)
+			tc.assert(t, name, scopeDef, ok)
 		})
 	}
 }
